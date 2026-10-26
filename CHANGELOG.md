@@ -177,6 +177,27 @@ automation a template carries, and the removal of dollars per day.
 - **The runner no longer compiles the board's database code.** The runner-v1 contract (the types the board
   and a runner exchange, the attempt lifecycle, the merge-readiness pack and the prepare step) is its own
   crate, `tack-protocol`, and the runner builds on that and on `tack-core` only.
+- **The workspace has a new layer, `tack-app`.** What Tack does with a run (claim, heartbeat, start,
+  complete, cancel, decide) and every background loop (auto-start, the automatic merge, the GitHub
+  poll, the remote backup, the due-soon announcement, retention, the health snapshot) moved out of
+  `tack-api`'s handlers into use cases and ticks that a test calls directly, with no router and
+  no sleeping. `tack-api` keeps only HTTP.
+- **`tack-orch` is pure.** It holds the scheduler and the model policy over plain values, with no
+  database; the code that reads the rows is in `tack-app`.
+- **SQL has one home, `tack-db`.** Commands are `Repository` methods, reads are functions in
+  `queries/`, and every call answers with `StoreError`; `ApiError::Database` is gone. The raw pool
+  is public only behind the `raw-pool` feature, which only `tack-test-support` turns on.
+- **The allowed crate dependencies are checked.** `scripts/check-crate-graph.sh` (run by pre-push)
+  fails on an edge outside its table and on `sqlx` or the raw pool outside `tack-db` and
+  `tack-test-support`; `deny.toml` bans `sqlx` and `axum` outside their crates.
+- **Tests plant rows with `tack_test_support::seed` and read them with `queries::`**, so a test of a
+  route or a use case no longer writes SQL.
+- **`scripts/arch-facts.sh` prints the counts** (crates, documented paths, migrations, tests) and the
+  allowed edges; the architecture documents point to it instead of quoting numbers.
+- **The big files are cut by what each part does:** the `tack` command's subcommands (`board`,
+  `entities`, `backup`, `runs`), the execution repository (enqueue, claim, events, decisions, artifacts,
+  completion, recovery) and the runner's engine (decisions, outcome, resume). In the frontend, `shared/`
+  no longer imports from `features/`, and a test forbids it.
 - A docket run makes one copy of the code, docket's own: the runner no longer checks out a second one, and reads the base commit and the task's branch from the project's repository, whose working tree, index and `HEAD` it never changes. A command verifier (`kind = "command"`) has no working copy to read for such a run and records `attempt.verify_failed`; use `kind = "prill"`.
 - **"prill is not installed on the board" names both ways to fix it:** a `[verify]` table naming
   prill in the runner's settings file, or `TACK_PRILL_PROGRAM`.

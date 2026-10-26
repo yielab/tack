@@ -5,7 +5,7 @@ These are prill's `mrp/v1` fixtures, copied verbatim from
 `kind = "prill"` verifier translates into `mrp-v1`
 (`crates/tack-runner/src/verify/prill.rs`). They are not `mrp-v1` documents and the
 contract test does not pin them; the runner's tests translate each one and prove the
-result round-trips through `tack_core::mrp::MergeReadinessPack`.
+result round-trips through `tack_protocol::mrp::MergeReadinessPack`.
 
 | File | prill's decision | What it exercises |
 | --- | --- | --- |
