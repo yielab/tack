@@ -133,9 +133,9 @@ time each group of steps took (a step has no time).
 
 ## Phase 79 — the crates say what depends on what
 
-**Status:** built 2026-10-26 on branch `phase-79-impl` (proposed 2026-10-20 from an architecture
-audit of `develop`, revised 2026-10-25 after an audit of the plan itself); the full suite and the
-pre-push gate pass; awaiting the maintainer's review and merge. **ADR:** 0087.
+**Status:** built 2026-10-26 (proposed 2026-10-20 from an architecture audit of `develop`, revised
+2026-10-25 after an audit of the plan itself); the full suite and the pre-push gate pass; not yet in
+`develop`. **ADR:** 0087, accepted 2026-10-26.
 **Plan:** [`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
 
 The runner, the process that holds credentials, compiles SQLite because the types it shares with

@@ -1,7 +1,8 @@
 # ADR 0087: the protocol is a crate, and the SQL has one home
 
-**Status: PROPOSED 2026-10-20, revised 2026-10-25 after an audit of the first draft; BUILT
-2026-10-26 on branch `phase-79-impl`, awaiting acceptance.** Executed by Phase 79
+**Status: ACCEPTED 2026-10-26 by the maintainer. Proposed 2026-10-20, revised 2026-10-25 after an
+audit of the first draft, built 2026-10-26 (the build waited for this acceptance to be recorded;
+"continúa" authorised the work, not the decision).** Executed by Phase 79
 (`docs/plans/phase-79.md`, §8 lists what the execution found, including the one `Host` trait
 through which `tack-app` calls back into `tack-api`).
 
