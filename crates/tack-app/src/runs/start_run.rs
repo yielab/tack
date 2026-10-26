@@ -10,11 +10,12 @@ use tack_core::models;
 use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
 use tack_db::repo::execution::{EnqueueResult, NewExecutionRequest, RunnerListingRow};
 use tack_db::{Repository, queries};
-use tack_orch::model_policy::wiring::resolve_request_model_policy;
 use tack_orch::scheduler::select::SchedulingPolicy;
 use tack_protocol::Clock;
 use tack_protocol::execution::{ExecutionRequestSnapshot, StableErrorCode};
 use uuid::Uuid;
+
+use crate::model_policy_wiring::resolve_request_model_policy;
 
 /// What an operator asks for when starting a run. Every field the caller leaves out is resolved
 /// by [`start_run`].

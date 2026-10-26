@@ -34,7 +34,11 @@ pub mod github_sync;
 pub mod host;
 pub mod local_runner;
 pub mod merge;
+pub mod model_policy_wiring;
+pub mod observability;
 pub mod remote_backup;
+pub mod retention;
 pub mod runs;
+pub mod scheduler_wiring;
 
 pub use error::AppError;

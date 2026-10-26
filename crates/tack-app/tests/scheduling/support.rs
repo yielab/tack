@@ -7,12 +7,10 @@
 
 use chrono::Utc;
 use tack_core::models::{CreateItem, ItemType, Priority as ItemPriority, ProjectType};
-use tack_core::vocabulary;
 use tack_db::Repository;
 use tack_db::repo::execution::NewAgentProfile;
-use uuid::Uuid;
 
-use crate::common::setup_test_db;
+use tack_test_support::{create_test_workspace, setup_test_db};
 
 pub(crate) struct FixedClock(pub(crate) chrono::DateTime<Utc>);
 impl tack_protocol::Clock for FixedClock {
@@ -23,16 +21,7 @@ impl tack_protocol::Clock for FixedClock {
 
 pub(crate) async fn setup_repo() -> (Repository, String) {
     let repo = setup_test_db().await;
-    let workspace_id = Uuid::new_v4();
-    let vocab = serde_json::to_string(&vocabulary::default_vocabulary()).unwrap();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'Scheduling', ?)",
-    )
-    .bind(workspace_id.to_string())
-    .bind(vocab)
-    .execute(repo.pool())
-    .await
-    .expect("workspace");
+    let workspace_id = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace_id,

@@ -92,7 +92,7 @@ pub struct QueuedRequestForScheduling {
     pub created_at: String,
     /// JSON object string (`execution_requests.metadata`). The caller may
     /// read a `priority` key from this as a documented, best-effort
-    /// convention — see `tack_orch::scheduler::wiring`'s module doc for why
+    /// convention — see `tack_app::scheduler_wiring`'s module doc for why
     /// no dedicated column exists yet.
     pub metadata: String,
     /// JSON object string (`execution_requests.permission_policy`). The

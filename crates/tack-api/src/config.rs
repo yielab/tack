@@ -123,7 +123,7 @@ pub struct AppConfig {
     // ── Execution runtime retention/observability ───────────────
     /// Enables the execution-domain retention sweep (replay/idempotency
     /// bookkeeping + terminal `execution_events` purge — see
-    /// `tack_orch::execution_retention`). **Off by default** — see
+    /// `tack_app::retention`). **Off by default** — see
     /// `default_execution_retention_enable`'s doc comment for the full
     /// rationale. This sweep deletes rows; data deletion must be an
     /// operator opt-in.
@@ -142,7 +142,7 @@ pub struct AppConfig {
 
     /// Enables the execution-domain health watch (runner/queue/lease/event
     /// counts; logs a `warn!` on stale-lease/`needs_operator` onset — see
-    /// `tack_orch::execution_observability`). **On by default** — unlike
+    /// `tack_app::observability`). **On by default** — unlike
     /// retention above, this reads and logs only; it deletes nothing, so it
     /// carries none of retention's data-loss risk.
     #[serde(default = "default_execution_health_enable")]

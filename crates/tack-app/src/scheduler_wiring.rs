@@ -1,5 +1,4 @@
-//! Live wiring between the pure [`super::select`]/[`super::batch`] decision
-//! functions and real `agent_runners`/`agent_fleet_members`/
+//! Live wiring between the pure `tack_orch::scheduler` decision functions and real `agent_runners`/`agent_fleet_members`/
 //! `execution_requests` rows.
 //!
 //! [`choose_request_for_runner`] is the one entry point: the claim handler
@@ -20,15 +19,14 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
-use tack_db::Repository;
 use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForScheduling};
-use tack_protocol::SystemClock;
-
-use super::select::{EXPIRED_LEASE_GRACE, SchedulingPolicy, select_runner};
-use super::types::{
+use tack_db::{Repository, StoreError, queries};
+use tack_orch::scheduler::select::{EXPIRED_LEASE_GRACE, SchedulingPolicy, select_runner};
+use tack_orch::scheduler::types::{
     BudgetKind, IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
     SelectionOutcome,
 };
+use tack_protocol::SystemClock;
 use tack_protocol::execution::{
     Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RunnerId,
 };
@@ -140,18 +138,17 @@ const BUDGET_REACHED: &str = "budget_reached";
 
 /// Which of the project's budgets, if any, forbids starting new work now.
 /// A project with no `project_budgets` row has none. The token branch reads
-/// `budgets::day_room`: the day is closed when nothing is left of it, whether
+/// `queries::budgets::day_room`: the day is closed when nothing is left of it, whether
 /// finished runs used it or open ones have it reserved.
 pub async fn budget_reached(
     repo: &Repository,
     project_id: &str,
     now: DateTime<Utc>,
-) -> Result<Option<BudgetKind>, sqlx::Error> {
-    use tack_db::repo::budgets;
-    let Some(limits) = budgets::get(repo.pool(), project_id).await? else {
+) -> Result<Option<BudgetKind>, StoreError> {
+    let Some(limits) = queries::budgets::project_budgets(repo, project_id).await? else {
         return Ok(None);
     };
-    if let Some(day) = budgets::day_room(repo.pool(), project_id, now).await?
+    if let Some(day) = queries::budgets::day_room(repo, project_id, now).await?
         && day.room == 0
     {
         return Ok(Some(if day.counted >= day.limit {
@@ -161,7 +158,7 @@ pub async fn budget_reached(
         }));
     }
     if let Some(max) = limits.queue_items_max {
-        let waiting = budgets::queue_items(repo.pool(), project_id).await?;
+        let waiting = queries::budgets::review_queue_items(repo, project_id).await?;
         if waiting >= max {
             return Ok(Some(BudgetKind::ReviewQueue {
                 waiting: u32::try_from(waiting).unwrap_or(u32::MAX),
@@ -335,7 +332,7 @@ async fn record_waiting(
     outcomes: &[(String, SelectionOutcome)],
     now: DateTime<Utc>,
     policy: &SchedulingPolicy,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreError> {
     for (request_id, outcome) in outcomes {
         let Some((code, sentence, transient)) = waiting_note(outcome) else {
             continue;
@@ -353,12 +350,14 @@ async fn record_waiting(
         if overdue
             && repo
                 .fail_unclaimable_request(request_id, NO_RUNNER_CAN_CLAIM, &sentence, now)
-                .await?
+                .await
+                .map_err(StoreError::from)?
         {
             continue;
         }
         repo.record_request_waiting(request_id, &code, &sentence, !transient, now)
-            .await?;
+            .await
+            .map_err(StoreError::from)?;
     }
     Ok(())
 }
@@ -375,7 +374,7 @@ pub async fn choose_request_for_runner(
     runner_id: &str,
     now: DateTime<Utc>,
     policy: &SchedulingPolicy,
-) -> Result<Option<String>, sqlx::Error> {
+) -> Result<Option<String>, StoreError> {
     // A run whose lease expired and was not renewed is nobody's: ask a person
     // about it before looking for work, since it is no longer queued.
     repo.expire_unheld_leases(
@@ -384,11 +383,19 @@ pub async fn choose_request_for_runner(
         LEASE_EXPIRED_SENTENCE,
         &SystemClock,
     )
-    .await?;
-    let Some(runner) = repo.fetch_runner_scheduling_snapshot(runner_id).await? else {
+    .await
+    .map_err(StoreError::from)?;
+    let Some(runner) = repo
+        .fetch_runner_scheduling_snapshot(runner_id)
+        .await
+        .map_err(StoreError::from)?
+    else {
         return Ok(None);
     };
-    let queued = repo.list_eligible_queued_requests(runner_id).await?;
+    let queued = repo
+        .list_eligible_queued_requests(runner_id)
+        .await
+        .map_err(StoreError::from)?;
     if queued.is_empty() {
         return Ok(None);
     }
@@ -435,7 +442,10 @@ pub async fn choose_request_for_runner(
     let mut fleet_status: BTreeMap<String, Option<FleetConcurrencySnapshot>> = BTreeMap::new();
     for row in &queued {
         if row.selector_kind == "fleet" && !fleet_status.contains_key(&row.selector_id) {
-            let snapshot = repo.fetch_fleet_concurrency(&row.selector_id).await?;
+            let snapshot = repo
+                .fetch_fleet_concurrency(&row.selector_id)
+                .await
+                .map_err(StoreError::from)?;
             fleet_status.insert(row.selector_id.clone(), snapshot);
         }
     }
@@ -449,8 +459,7 @@ pub async fn choose_request_for_runner(
         row.selector_kind != "fleet"
             || !fleet_is_saturated(fleet_status.get(&row.selector_id).and_then(Option::as_ref))
     }) {
-        let reached = match tack_db::repo::budgets::project_of_request(repo.pool(), &row.id).await?
-        {
+        let reached = match queries::budgets::project_of_request(repo, &row.id).await? {
             Some((project_id, asking)) => {
                 if !project_budgets.contains_key(&project_id) {
                     let reached = budget_reached(repo, &project_id, now).await?;
@@ -458,8 +467,7 @@ pub async fn choose_request_for_runner(
                 }
                 let mut reached = project_budgets.get(&project_id).cloned().flatten();
                 if reached.is_none()
-                    && let Some(day) =
-                        tack_db::repo::budgets::day_room(repo.pool(), &project_id, now).await?
+                    && let Some(day) = queries::budgets::day_room(repo, &project_id, now).await?
                 {
                     match asking {
                         Some(asking) if asking > day.room => reached = Some(reserved(&day)),
@@ -487,7 +495,7 @@ pub async fn choose_request_for_runner(
             select_runner(&requests[0], &[candidate], now, policy),
         )]
     } else {
-        super::batch::schedule(&requests, &[candidate], now, policy)
+        tack_orch::scheduler::schedule(&requests, &[candidate], now, policy)
     };
 
     let outcomes: Vec<(String, SelectionOutcome)> = outcomes
@@ -501,7 +509,7 @@ pub async fn choose_request_for_runner(
     if let Some(request_id) = &selected
         && let Some(room) = day_rooms.get(request_id)
     {
-        tack_db::repo::budgets::limit_to_day_room(repo.pool(), request_id, *room).await?;
+        repo.limit_request_to_day_room(request_id, *room).await?;
     }
     Ok(selected)
 }

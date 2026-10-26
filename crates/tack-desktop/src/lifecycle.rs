@@ -16,7 +16,7 @@ use tauri_plugin_dialog::{
 const MAIN_WINDOW: &str = "main";
 
 /// Execution states that count as "in flight" are everything except the
-/// three terminal ones (`crates/tack-orch/src/execution_observability.rs`'s
+/// three terminal ones (`crates/tack-app/src/observability.rs`'s
 /// `known_request_states` is the closed vocabulary this reads from: queued,
 /// leased, preparing, running, waiting_decision, succeeded, failed,
 /// cancelled, lost, needs_operator). `lost` and `needs_operator` are not

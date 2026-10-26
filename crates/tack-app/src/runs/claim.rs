@@ -1,11 +1,12 @@
 use chrono::Duration;
 use tack_db::repo::execution::{ClaimedExecution, RequestSelection};
 use tack_db::{Repository, StoreError};
-use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
+use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::AppError;
+use crate::scheduler_wiring::choose_request_for_runner;
 
 /// Leases the queued request the scheduler picks for `runner_id`, or answers `None` when there
 /// is nothing this runner may take. Idempotent on `claim_request_id`: a replay returns the
@@ -21,8 +22,7 @@ pub async fn claim(
 ) -> Result<Option<ClaimedExecution>, AppError> {
     let scheduled_request_id =
         choose_request_for_runner(repo, runner_id, clock.now(), &SchedulingPolicy::default())
-            .await
-            .map_err(StoreError::from)?;
+            .await?;
     let attempt_id = format!("att_{}", Uuid::new_v4());
     Ok(repo
         .claim_execution_idempotent_with_snapshot(

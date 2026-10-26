@@ -188,7 +188,7 @@ pub struct ClaimedExecution {
 /// other way — see `crates/tack-orch/Cargo.toml`'s own header comment), so
 /// the pure `tack_orch::scheduler` decision cannot be called from inside
 /// this module or its transaction. Instead the caller (today, only
-/// `tack_orch::scheduler::wiring::choose_request_for_runner`, invoked from
+/// `tack_app::scheduler_wiring::choose_request_for_runner`, invoked from
 /// `crates/tack-api/src/handlers/runner_protocol.rs`'s `claim` handler)
 /// resolves the decision *first*, against a read-only snapshot fetched via
 /// [`Repository::fetch_runner_scheduling_snapshot`]/

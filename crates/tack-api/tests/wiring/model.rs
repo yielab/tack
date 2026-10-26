@@ -1,5 +1,5 @@
 //! Proves `create_execution`'s model resolution
-//! (`tack_orch::model_policy::wiring::resolve_request_model_policy`) and
+//! (`tack_app::model_policy_wiring::resolve_request_model_policy`) and
 //! `GET /api/executions/{id}/attempts`'s `model_provenance`/
 //! `usage_economics` fields work through the real production router
 //! (`tack_api::router::build_router`), not a handler-local harness. Every

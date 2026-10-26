@@ -311,3 +311,15 @@ pub async fn auto_merges_today(
     .fetch_one(pool)
     .await
 }
+
+impl crate::Repository {
+    /// A queued run with no limit of its own, in a project with a daily limit, runs with what is
+    /// left of the day: writes `tokens` as its limit (see [`limit_to_day_room`]).
+    pub async fn limit_request_to_day_room(
+        &self,
+        request_id: &str,
+        tokens: i64,
+    ) -> Result<(), crate::StoreError> {
+        Ok(limit_to_day_room(self.pool(), request_id, tokens).await?)
+    }
+}

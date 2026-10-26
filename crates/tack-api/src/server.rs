@@ -65,17 +65,15 @@ pub async fn serve(
     let config = state.config.clone();
     let local_runner = state.local_runner.clone();
 
-    // Start the execution-domain retention sweep (artifact/event + decision-
-    // expiry) and the health watch — cancellable background tasks gated by
-    // `TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`. The
-    // artifact/event/decision sweep shares `retention_enable` with the
-    // replay/idempotency purge above it on purpose (see
+    // Start the execution-domain artifact/event sweep and decision-expiry
+    // sweep — a cancellable background task gated by
+    // `TACK_EXECUTION_RETENTION_ENABLE`, which shares that flag with the
+    // replay/idempotency purge `tack-cli` spawns (see
     // `spawn_artifact_and_decision_sweep`'s doc for why deletion must never
-    // be gated more loosely than that purge). Health defaults on (read-only:
-    // just a `warn!` on a stale lease/`needs_operator` request); retention
-    // defaults **off** (it deletes rows, an explicit operator opt-in). Not
-    // stored on `AppState`: `stop()` runs once below, after the HTTP server
-    // stops accepting requests.
+    // be gated more loosely than that purge). Retention defaults **off** (it
+    // deletes rows, an explicit operator opt-in). Not stored on `AppState`:
+    // `stop()` runs once below, after the HTTP server stops accepting
+    // requests.
     let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
     execution_runtime
         .start(state.repo.clone(), (&config).into())
@@ -146,11 +144,11 @@ pub async fn serve(
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Join the execution retention/health tasks before exiting — the HTTP
+    // Join the execution sweep task before exiting — the HTTP
     // server has already stopped accepting requests at this point, so this
     // wait costs nothing observable and is what makes "shutdown joins task"
     // true rather than aspirational (`execution_runtime.rs`'s `stop()`
-    // really does block until each live task's loop returns).
+    // really does block until the live task's loop returns).
     execution_runtime.stop().await;
 
     info!("Server shut down gracefully");

@@ -35,3 +35,26 @@ pub async fn auto_merges_today(
 ) -> Result<i64, StoreError> {
     Ok(crate::repo::budgets::auto_merges_today(repo.pool(), project_id, now).await?)
 }
+
+/// The project's limits; `None` when it has no `project_budgets` row (no budget at all).
+pub async fn project_budgets(
+    repo: &Repository,
+    project_id: &str,
+) -> Result<Option<crate::repo::budgets::ProjectBudgets>, StoreError> {
+    Ok(crate::repo::budgets::get(repo.pool(), project_id).await?)
+}
+
+/// How many of the project's unfinished items wait for a human (show **Needs your review**).
+pub async fn review_queue_items(repo: &Repository, project_id: &str) -> Result<i64, StoreError> {
+    Ok(crate::repo::budgets::queue_items(repo.pool(), project_id).await?)
+}
+
+/// The project that owns a request, through its item, and the token limit the request carries
+/// (`None`: it has none of its own, or only the provisional one). `None` when the request is
+/// unknown.
+pub async fn project_of_request(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<(String, Option<i64>)>, StoreError> {
+    Ok(crate::repo::budgets::project_of_request(repo.pool(), request_id).await?)
+}

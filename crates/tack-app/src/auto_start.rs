@@ -108,11 +108,9 @@ async fn project_tick(
         None => None,
     };
     let open = queries::execution_requests::items_with_an_open_request(repo, &project_id).await?;
-    let budget_reached =
-        tack_orch::scheduler::wiring::budget_reached(repo, &project_id, clock.now())
-            .await
-            .map_err(StoreError::from)?
-            .is_some();
+    let budget_reached = crate::scheduler_wiring::budget_reached(repo, &project_id, clock.now())
+        .await?
+        .is_some();
 
     let item_ids: Vec<Uuid> = rows.iter().filter_map(|row| row.id.parse().ok()).collect();
     let edges: Vec<DependencyEdge> = repo

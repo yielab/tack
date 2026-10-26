@@ -97,6 +97,30 @@ pub async fn run(
         ));
     }
 
+    // Purges stale replay bookkeeping and terminal events; off unless the operator opts in, since
+    // it deletes rows.
+    if state.config.execution_retention_enable {
+        tokio::spawn(tack_app::retention::run(
+            state.repo.clone(),
+            Arc::new(SystemClock),
+            tack_app::retention::Settings {
+                retention_days: state.config.execution_retention_days,
+                batch_size: tack_app::retention::DEFAULT_BATCH_SIZE,
+            },
+            Duration::from_secs(state.config.execution_retention_interval_secs),
+        ));
+    }
+
+    // Logs a stale lease or a request stuck in needs_operator; on by default, it only reads.
+    if state.config.execution_health_enable {
+        tokio::spawn(tack_app::observability::run(
+            state.repo.clone(),
+            Arc::new(SystemClock),
+            tack_app::observability::Settings::default(),
+            Duration::from_secs(state.config.execution_health_interval_secs),
+        ));
+    }
+
     tack_api::serve(state, ready_tx).await
 }
 
