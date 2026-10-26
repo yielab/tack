@@ -15,7 +15,7 @@ use tack_protocol::Clock;
 
 use std::sync::{Arc, Mutex};
 
-use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
+use crate::runner_protocol::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{
     Router,

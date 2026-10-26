@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tack_test_support::poll_until_sync as poll_until;
 
-mod common;
+use crate::common;
 use common::free_port;
 
 struct ServerGuard {

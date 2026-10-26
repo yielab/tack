@@ -8,8 +8,6 @@
 //! `execution_retention` and `event_artifact_retention`), and the
 //! concurrency-sensitive `version_concurrency` write path.
 
-mod common;
-
 #[path = "repository/counted_tokens.rs"]
 mod counted_tokens;
 #[path = "repository/event_artifact_retention.rs"]

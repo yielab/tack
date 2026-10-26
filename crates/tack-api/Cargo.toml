@@ -1,5 +1,6 @@
 [package]
 name = "tack-api"
+autotests = false
 description = "HTTP API server for Tack"
 version.workspace = true
 edition.workspace = true
@@ -55,3 +56,9 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

@@ -1,7 +1,7 @@
 //! Enqueueing execution requests, snapshot validation, and the legacy
 //! (pre-`request_snapshot`) schema-quarantine migration.
 
-use crate::execution_fixture::{FakeClock, Fixture, request};
+use crate::repository::execution_fixture::{FakeClock, Fixture, request};
 
 use chrono::Duration;
 use tack_db::{

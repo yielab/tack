@@ -1,7 +1,7 @@
 //! The rule behind `POST /enroll`: a token is single-use, and the runner it activates holds the
 //! credential for ninety days.
 
-mod common;
+use crate::common;
 
 use chrono::Duration;
 use common::{FakeClock, World, world};

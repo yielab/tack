@@ -30,6 +30,7 @@ The Status line in each file is the authority. The "Superseded by" column below 
 
 | ADR | Title | Status | Superseded by |
 |---|---|---|---|
+| 0088 | [one test binary per crate, dependencies without debug info, agent builds without the incremental cache](https://github.com/yielab/tack/blob/develop/docs/adr/0088-one-test-binary-per-crate.md) | Accepted 2026-10-26 | — |
 | 0083 | [limits in tokens, and nothing sent to an agent twice](https://github.com/yielab/tack/blob/develop/docs/adr/0083-limits-in-tokens-and-a-lean-context.md) | Accepted 2026-10-18 | — |
 | 0082 | [what the first real project found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0082-what-the-first-real-project-found.md) | Accepted 2026-10-17 | — |
 | 0081 | [a whole project goes in and out through one file](https://github.com/yielab/tack/blob/develop/docs/adr/0081-a-whole-project-goes-in-and-out-through-one-file.md) | Accepted 2026-10-17 | — |
@@ -49,7 +50,7 @@ The Status line in each file is the authority. The "Superseded by" column below 
 | 0067 | [opencode is readmitted as a fourth harness, on the shared core, with its one limitation typed](https://github.com/yielab/tack/blob/develop/docs/adr/0067-opencode-readmitted-as-a-fourth-harness.md) | Accepted 2026-09-14 | 0078 |
 | 0066 | [Docket becomes a third harness — the runner spawns it, and the model axis finally has a harness that proves it](https://github.com/yielab/tack/blob/develop/docs/adr/0066-docket-as-a-third-harness.md) | Accepted 2026-09-14 | — |
 | 0065 | [The Docket pipeline-dispatch trigger gets a caller, its own token, and no claim on an item](https://github.com/yielab/tack/blob/develop/docs/adr/0065-docket-pipeline-dispatch-trigger.md) | Accepted 2026-09-08 | 0068 |
-| 0064 | [Tests run under nextest, build once per resolution, and group one binary per subject](https://github.com/yielab/tack/blob/develop/docs/adr/0064-test-architecture.md) | Accepted 2026-09-05 | 0068 |
+| 0064 | [Tests run under nextest, build once per resolution, and group one binary per subject](https://github.com/yielab/tack/blob/develop/docs/adr/0064-test-architecture.md) | Accepted 2026-09-05 | 0068, 0088 |
 | 0063 | [A harness is credentialed one of two ways, and a provider is a module](https://github.com/yielab/tack/blob/develop/docs/adr/0063-harness-credential-modes.md) | Accepted 2026-09-05 | 0078 |
 | 0062 | [Tack runs as a background service, and ships as a desktop app](https://github.com/yielab/tack/blob/develop/docs/adr/0062-desktop-app-and-background-service.md) | Accepted 2026-09-03 | — |
 | 0061 | [Where a model provider's API key lives, and who's allowed to touch it](https://github.com/yielab/tack/blob/develop/docs/adr/0061-provider-credentials-at-the-runner-boundary.md) | Accepted 2026-09-03 | 0078 |

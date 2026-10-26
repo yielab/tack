@@ -1,7 +1,7 @@
 //! The rule behind `POST /api/executions/{id}/requeue`: only a recovered `needs_operator` run goes
 //! back to the queue, once per confirmation, and the recovery is audited.
 
-mod support;
+use crate::support;
 
 use chrono::Utc;
 use support::{board, full_request, start};

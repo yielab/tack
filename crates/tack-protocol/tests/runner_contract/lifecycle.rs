@@ -1,4 +1,4 @@
-use crate::fixtures::load_value;
+use crate::runner_contract::fixtures::load_value;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

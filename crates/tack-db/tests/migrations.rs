@@ -3,8 +3,6 @@
 //! legacy Docket bridge's tables (`bridge_tables_dropped`), and the tables the
 //! factory loop reads (`factory_loop_tables`).
 
-mod common;
-
 #[path = "migrations/automation_tables.rs"]
 mod automation_tables;
 #[path = "migrations/autonomy.rs"]

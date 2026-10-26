@@ -28,7 +28,7 @@ use tack_runner::{
     },
 };
 
-mod common;
+use crate::common;
 use common::temp_dir as root;
 
 static FAKE: HarnessDescriptor = HarnessDescriptor {

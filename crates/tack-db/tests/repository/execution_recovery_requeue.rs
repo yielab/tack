@@ -1,6 +1,6 @@
 //! Recovery observations and the operator-requeue path they can unblock.
 
-use crate::execution_fixture::{Fixture, recovery_input};
+use crate::repository::execution_fixture::{Fixture, recovery_input};
 
 use chrono::Duration;
 use tack_db::repo::execution::{

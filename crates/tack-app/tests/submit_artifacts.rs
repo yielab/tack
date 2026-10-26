@@ -3,7 +3,7 @@
 //! an upload is checked against its manifest before a byte is read and its content is recorded
 //! once.
 
-mod common;
+use crate::common;
 
 use chrono::Duration;
 use common::{RUNNER_ID, running_attempt, world};

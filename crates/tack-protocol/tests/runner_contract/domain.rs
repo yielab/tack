@@ -1,4 +1,4 @@
-use crate::fixtures::{fixture_name, fixture_paths, load_value};
+use crate::runner_contract::fixtures::{fixture_name, fixture_paths, load_value};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;

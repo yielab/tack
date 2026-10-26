@@ -1,7 +1,7 @@
 //! The rule behind `POST /api/executions/{id}/cancel`: a run somebody holds is only marked and its
 //! runner stops it; a run nobody holds ends at once; one that is over cannot be cancelled.
 
-mod support;
+use crate::support;
 
 use chrono::{Duration, Utc};
 use support::{board, full_request, start};

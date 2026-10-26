@@ -7,8 +7,6 @@
 //! routes, runner-fleet membership, optimistic item-version concurrency, and
 //! outline and CSV imports.
 
-mod common;
-
 #[path = "handlers/attachments.rs"]
 mod attachments;
 #[path = "handlers/attempt_lists.rs"]

@@ -1,4 +1,4 @@
-use crate::fixtures::{fixture_name, fixture_paths, load_value};
+use crate::runner_contract::fixtures::{fixture_name, fixture_paths, load_value};
 use serde::Deserialize;
 use std::collections::BTreeSet;
 use std::fs;

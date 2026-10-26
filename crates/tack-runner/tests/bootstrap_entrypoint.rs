@@ -17,7 +17,7 @@ use tack_runner::{
     harness::process::ProcessLimits,
 };
 
-mod common;
+use crate::common;
 use common::temp_dir as temp_state_dir;
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {

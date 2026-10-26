@@ -7,7 +7,7 @@
 # dependency features differently from `--workspace`, so the two forms build
 # every tack crate twice and each source change is compiled once per form.
 #   cargo nextest run --workspace -E 'package(tack-api)'
-#   cargo nextest run --workspace -E 'binary(runner_protocol)'
+#   cargo nextest run --workspace -E 'test(/^runner_protocol::/)'  # one file of a crate's `it` binary
 #   cargo nextest run --workspace -E 'rdeps(tack-core)'   # all a core change can reach
 #   cargo nextest run --workspace -E 'test(/fencing/)'    # by test-name regex
 
@@ -41,5 +41,5 @@ path = "junit.xml"
 # of these tests runs with nothing else alongside — the guarantee
 # `--test-threads=1` on a sequential `cargo test` used to give.
 [[profile.default.overrides]]
-filter = 'binary(e6_scheduler_e2e_test) | binary(embedded_runner_orphaned_credential) | binary(embedded_runner_state_scoping)'
+filter = 'binary_id(tack-cli::it) & test(/^(e6_scheduler_e2e_test|embedded_runner_orphaned_credential|embedded_runner_state_scoping)::/)'
 threads-required = "num-test-threads"

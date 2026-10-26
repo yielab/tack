@@ -5,8 +5,5 @@
 //! nextest run` never attempts them: run explicitly with
 //! `--run-ignored ignored-only`.
 
-#[path = "../common/mod.rs"]
-mod common;
-
 mod claude_code;
 mod codex;

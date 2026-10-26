@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 use common::{create_test_workspace, setup_test_db};
 use std::time::{Duration, Instant};

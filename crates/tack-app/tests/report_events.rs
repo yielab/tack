@@ -3,7 +3,7 @@
 //! conflict, a batch that does not continue from the stream is a conflict, and a stale fence
 //! writes nothing.
 
-mod common;
+use crate::common;
 
 use common::{RUNNER_ID, running_attempt, world};
 use tack_app::runs::report_events::{EventReport, EventsReported, ReportedEvent, report_events};

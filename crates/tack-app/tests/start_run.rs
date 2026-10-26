@@ -1,7 +1,7 @@
 //! The rules behind `POST /api/executions`: what a run is given when the request leaves it out
 //! (profile, agent, machine, repository, limits), what it is refused for, and how a retry replays.
 
-mod support;
+use crate::support;
 
 use serde_json::{Value, json};
 use support::{

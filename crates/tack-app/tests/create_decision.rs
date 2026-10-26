@@ -3,7 +3,7 @@
 //! id is an idempotency conflict that overwrites nothing, and an attempt that cannot wait or a
 //! lease that ended is refused.
 
-mod common;
+use crate::common;
 
 use chrono::Duration;
 use common::{RUNNER_ID, running_attempt, world};

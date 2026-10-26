@@ -36,7 +36,7 @@ if ! command -v cargo-nextest >/dev/null 2>&1; then
   exit 1
 fi
 echo "→ cargo nextest run --workspace (boundary suites)"
-cargo nextest run --workspace --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+cargo nextest run --workspace --no-tests=fail -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'
 
 # A merge can leave a derived file describing the tree as it was on one side of
 # it. CI's `openapi_contract` test catches the spec; nothing caught a stale

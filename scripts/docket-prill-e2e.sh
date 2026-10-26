@@ -164,7 +164,7 @@ E2E_TARGET=${DOCKET_PRILL_TARGET_DIR:-$HOME/Sites/.cargo-targets/tack-docket-pri
 if [ "${DOCKET_PRILL_SKIP_BUILD:-0}" != "1" ]; then
   say "building the SPA and the tack binary with it embedded"
   (cd "$ROOT/frontend" && npm run build >"$WORK/build-frontend.log" 2>&1) || die "frontend build failed — see $WORK/build-frontend.log"
-  (cd "$ROOT" && CARGO_TARGET_DIR="$E2E_TARGET" cargo build -p tack-cli --features embed-spa >"$WORK/build-tack.log" 2>&1) || die "cargo build failed — see $WORK/build-tack.log"
+  (cd "$ROOT" && CARGO_INCREMENTAL=0 CARGO_TARGET_DIR="$E2E_TARGET" cargo build -p tack-cli --features embed-spa >"$WORK/build-tack.log" 2>&1) || die "cargo build failed — see $WORK/build-tack.log"
 fi
 BIN="$E2E_TARGET/debug/tack"
 [ -x "$BIN" ] || die "$BIN is missing"

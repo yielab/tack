@@ -53,7 +53,7 @@ fn test_secret_store(dir: &std::path::Path) -> SecretStore {
 /// fake-binary tests already cover both independently).
 #[tokio::test]
 #[ignore = "opt-in: requires a real `codex` binary on PATH; run with \
-            `cargo nextest run --workspace --run-ignored ignored-only -E 'binary(live)'`"]
+            `cargo nextest run --workspace --run-ignored ignored-only -E 'binary_id(tack-runner::it) & test(/^live::/)'`"]
 async fn live_probe_and_artifact_staging_against_a_real_codex_binary_when_present() {
     if locate_installed(CODEX_PROGRAM_NAME).is_err() {
         eprintln!("skipping live codex test: `codex` not found on PATH");

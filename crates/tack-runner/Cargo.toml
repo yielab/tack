@@ -1,5 +1,6 @@
 [package]
 name = "tack-runner"
+autotests = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -63,3 +64,9 @@ jsonschema = { version = "0.33", default-features = false }
 
 [lints]
 workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

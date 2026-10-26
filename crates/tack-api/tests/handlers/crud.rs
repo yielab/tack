@@ -1666,7 +1666,7 @@ async fn push_uses_the_project_token_before_the_environment_token() {
         .mount(&gh)
         .await;
 
-    let control = Arc::new(crate::local_runner::FakeControl::default());
+    let control = Arc::new(crate::handlers::local_runner::FakeControl::default());
     control
         .set_secret("gh", "project-tok")
         .await

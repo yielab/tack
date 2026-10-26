@@ -34,13 +34,13 @@ use tack_runner::{
     },
 };
 
-mod common;
+use crate::common;
+use crate::usage_fixture;
 use common::temp_dir as temp_root;
-mod usage_fixture;
 use usage_fixture::usage;
 // The fake serves more routes than these tests use.
 #[allow(dead_code)]
-mod fake_docket;
+use crate::fake_docket;
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///

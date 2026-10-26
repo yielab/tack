@@ -2,7 +2,7 @@
 //! before it spawned requeues the request, the same observation again is a replay, and a fence
 //! that is no longer current is refused.
 
-mod common;
+use crate::common;
 
 use chrono::Duration;
 use common::{RUNNER_ID, enqueue, world};

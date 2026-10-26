@@ -5,7 +5,7 @@
 //! the runner and the harness are never run.
 
 use crate::common;
-use crate::mrp::{
+use crate::handlers::mrp::{
     BASE_REVISION, ClaimedAttempt, MRP_MEDIA_TYPE, accept_and_start, completion_with_pushed_branch,
     headers_ref, operator_headers, request_and_claim, sha256_hex,
 };

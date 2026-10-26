@@ -1,7 +1,7 @@
 //! The rule behind `POST /heartbeat`: a beat is idempotent on its id and content, and a lease
 //! the runner no longer holds is refused.
 
-mod common;
+use crate::common;
 
 use chrono::{DateTime, Duration, Utc};
 use common::{RUNNER_ID, enqueue, world};

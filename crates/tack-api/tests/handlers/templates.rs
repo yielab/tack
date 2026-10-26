@@ -676,7 +676,7 @@ async fn builtin_template_id(repo: &Repository) -> Uuid {
 /// profiles and automation.
 #[tokio::test]
 async fn templates_carry_roles_profiles_and_automation() {
-    let app = crate::bundle::app().await;
+    let app = crate::handlers::bundle::app().await;
     let (_, listed) = common::send(&app, "GET", "/api/templates", Value::Null, &[]).await;
     let web = listed
         .as_array()
@@ -722,8 +722,12 @@ async fn templates_carry_roles_profiles_and_automation() {
         );
     }
 
-    let (_, made) =
-        crate::bundle::import(&app, "/api/projects/outline", crate::bundle::FABULADA).await;
+    let (_, made) = crate::handlers::bundle::import(
+        &app,
+        "/api/projects/outline",
+        crate::handlers::bundle::FABULADA,
+    )
+    .await;
     let (status, saved) = common::send(
         &app,
         "POST",

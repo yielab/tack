@@ -26,7 +26,7 @@ everything passes.
 ```bash
 cargo nextest run --workspace                                   # everything — ~15 s to execute on a warm build
 cargo nextest run --workspace -E 'package(tack-db)'             # one crate
-cargo nextest run --workspace -E 'binary(runner_contract)'        # one test binary
+cargo nextest run --workspace -E 'test(/^runner_contract::/)'    # one file of a crate's tests
 cargo nextest run --workspace -E 'test(/fencing/)'              # tests whose name matches a regex
 cargo nextest run --workspace --no-capture -E 'test(<name>)'    # see println!/tracing output (runs serially)
 cargo nextest run --workspace --run-ignored ignored-only -E 'package(tack-db)'   # the perf test (50k items, p95 < 100 ms)
@@ -100,9 +100,12 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 | `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. docket is a daemon and not a process: its adapter is proved against `tests/fake_docket/`, an in-process fake of API 5 that answers each route from a file under `fixtures/docket/v5/` (a capture from a real docket, or an answer marked `constructed` because a model would have to run for docket to send it) and answers `400` to a request key no captured request has; `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway home with no model (rerun it when docket changes, and commit the diff), `tests/docket_v5.rs` fails when a route the client sends has no capture, and the daemon's supervision is proved against a shell script on a scratch path that serves `/health`; no real docket and no model is ever run by a test. Vendor output of the other harnesses is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
 | `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
 
-Each `tests/*.rs` file is its own binary — its own crate, its own full link, seconds of CPU
-and tens of megabytes on disk per file. **Add a test to the existing file whose subject
-fits; do not add a file per feature.** (ADR 0064 groups the existing files by subject.)
+Each crate has **one integration-test binary**, `it` (ADR 0088): `tests/it.rs` declares every
+file under `tests/` as a module, so the dependency graph is linked once per crate, not once per
+file. A file is selected by its module, `-E 'test(/^<module>::/)'`. **Add a test to the existing
+module whose subject fits; a new subject is a new `mod` line in `tests/it.rs`.** Helpers shared by
+several modules (`common`, and in some crates `support` or `fake_docket`) are declared once in
+`it.rs` and reached as `crate::common`.
 
 ## Where a test lives, and how big it may be
 
@@ -112,7 +115,8 @@ crates/<crate>/
   src/<module>/tests.rs        that module's unit tests once they outgrow 150 lines
                                (`#[cfg(test)] mod tests;` — `use super::*` still works)
   tests/common/mod.rs          the crate's shared fixtures — the only place a helper lives
-  tests/<subject>.rs + dir     one binary per subject
+  tests/it.rs                  the crate's one test binary: a `mod` line per subject
+  tests/<subject>.rs + dir     one module per subject
   tests/contract/, tests/live/ byte-pinned fixtures; real binaries or billed runs, #[ignore]d
   tests/scratch_*.rs           gitignored: your local proof, never tracked
 crates/tack-test-support/      fixtures for the layers below the API
@@ -164,8 +168,8 @@ full suite; the first also *rewrites* the artifact when asked, and CI fails when
 rewrite differs from what is committed:
 
 ```bash
-UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)' && git diff --exit-code docs/openapi.json
-cargo nextest run --workspace -E 'binary(runner_contract)'   # never regenerated: the fixtures are the authority
+UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary_id(tack-api::it) & test(/^openapi_contract::/)' && git diff --exit-code docs/openapi.json
+cargo nextest run --workspace -E 'binary_id(tack-protocol::it) & test(/^runner_contract::/)'   # never regenerated: the fixtures are the authority
 ```
 
 Three more contracts under `docs/contracts/` are held the same way, each by tests that read
@@ -207,7 +211,7 @@ file — no separate workflow per tier:
 | `mutants` | `cargo-mutants` over `tack-core` and `tack-db`'s repository layer. Report-only: surviving mutants are listed in the job summary and the `mutants-*` artifacts, and never fail the build. Read it when deciding where the next test goes — a survivor is a line a test runs but would not miss |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `embed-spa` | release build with the SPA embedded, binary-size budget |
-| `security-boundaries` | `cargo nextest run --workspace --profile ci --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'` — the boundary suites; see below |
+| `security-boundaries` | `cargo nextest run --workspace --profile ci --no-tests=fail -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'` — the boundary suites; see below |
 | `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
 
 The suite runs exactly once per applicable trigger, in the `coverage` job's `cargo llvm-cov
@@ -238,11 +242,11 @@ no local protection against schema drift there — CI's `frontend` job still cat
 
 ## The boundary suites are required
 
-Four test binaries are required checks. The CI job `security-boundaries` runs them on every
+Four test modules are required checks. The CI job `security-boundaries` runs them on every
 push and pull request, and the pre-push gate runs the same filterset after clippy:
 
 ```bash
-cargo nextest run --workspace -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+cargo nextest run --workspace -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'
 ```
 
 - `security` (`crates/tack-api/tests/security.rs`, module `trust_boundary`) is the server's trust

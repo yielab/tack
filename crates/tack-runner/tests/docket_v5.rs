@@ -25,8 +25,8 @@ use tack_runner::{
     harness::{AdapterRegistry, HarnessProbe, docket::DocketAdapter},
 };
 
-mod common;
-mod fake_docket;
+use crate::common;
+use crate::fake_docket;
 use fake_docket::{FakeDocket, Gate, Script, fixture};
 
 const POD: &str = "fab-dev";

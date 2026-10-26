@@ -1,7 +1,7 @@
 //! The rule behind `POST /claim`: the scheduler picks, the claim leases once per
 //! `claim_request_id`, and a runner with nothing eligible gets no lease.
 
-mod common;
+use crate::common;
 
 use chrono::Duration;
 use common::{RUNNER_ID, enqueue, world};

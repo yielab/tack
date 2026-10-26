@@ -1,7 +1,7 @@
 //! Claiming an execution request into a leased attempt, and the heartbeat
 //! protocol that keeps a lease alive.
 
-use crate::execution_fixture::{Fixture, recovery_input, request};
+use crate::repository::execution_fixture::{Fixture, recovery_input, request};
 
 use chrono::Duration;
 use sqlx::Row;

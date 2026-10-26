@@ -17,7 +17,7 @@ use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
 
-use crate::support::{FixedClock, codex_capability_snapshot, setup_repo};
+use crate::scheduling::support::{FixedClock, codex_capability_snapshot, setup_repo};
 
 const ALPHA_MODEL: Option<&str> = Some("opaque/model-alpha");
 

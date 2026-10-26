@@ -1,6 +1,6 @@
 //! Structured event batch replay under a claimed attempt's fence.
 
-use crate::execution_fixture::Fixture;
+use crate::repository::execution_fixture::Fixture;
 
 use chrono::Duration;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, NewEvent};

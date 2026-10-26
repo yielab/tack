@@ -6,7 +6,7 @@
 //! machine's own secret store already carries is used as configured.
 //!
 //! Run: `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace
-//! --run-ignored ignored-only -E 'binary(live)'`
+//! --run-ignored ignored-only -E 'binary_id(tack-runner::it) & test(/^live::/)'`
 
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -169,7 +169,7 @@ fn git_init(workspace: &std::path::Path) {
 #[ignore = "opt-in: requires a real `claude` binary on PATH *and* \
             TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real invocation is billed); run with \
             TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace \
-            --run-ignored ignored-only -E 'binary(live_claude_code)'"]
+            --run-ignored ignored-only -E 'binary_id(tack-runner::it) & test(/^live::claude_code::/)'"]
 async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
     if !opted_in() {
         eprintln!(

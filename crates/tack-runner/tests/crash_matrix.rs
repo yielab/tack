@@ -32,9 +32,9 @@ use tack_runner::{
     },
 };
 
-mod common;
+use crate::common;
+use crate::usage_fixture;
 use common::temp_dir as root;
-mod usage_fixture;
 use usage_fixture::usage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

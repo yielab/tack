@@ -1,7 +1,7 @@
 //! The store's shared conventions: `StoreError`, the state conversion, the
 //! `queries` read functions and a command that raises `NotFound` / `Conflict`.
 
-use crate::execution_fixture::Fixture;
+use crate::repository::execution_fixture::Fixture;
 
 use tack_db::StoreError;
 use tack_db::queries::{execution_attempts, execution_decisions, execution_requests};

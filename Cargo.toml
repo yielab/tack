@@ -118,3 +118,8 @@ opt-level = 0
 # Line tables only: a backtrace still shows file:line, and full debuginfo is
 # ~85% of every test binary's size for nothing here that reads it.
 debug = "line-tables-only"
+
+# Dependencies carry no debug info at all: a backtrace still names their functions, and their
+# line tables were most of what the workspace's line tables cost on disk.
+[profile.dev.package."*"]
+debug = false

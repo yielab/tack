@@ -30,10 +30,15 @@ it. So:
   in the tree; Sonnet takes the ones that change a design.
 - **Budget.** Read only the files the card names before starting (about 25k tokens). Stop and
   report at about 150k tokens with what is done and what is left, rather than pressing on.
-- **Tests while working: only what the card touched.** `cargo nextest run -p <crate> --test <binary>`
-  or `-E 'test(<name>)'`, and `npx vitest run <paths>`, always with `--build-jobs 4 --test-threads 4`
-  (two different limits; in nextest `-j` is `--test-threads`). `cargo check -p <crate>` between
-  edits. Never `cargo nextest run --workspace`, never the whole Vitest or Playwright suite, never
+- **Tests while working: only what the card touched.** Each crate has one integration-test binary,
+  `it`, and each file under its `tests/` is a module of it (ADR 0088), so a file is selected by its
+  module: `cargo nextest run --workspace -E 'package(<crate>) & test(/^<module>::/)'`; unit tests by
+  name, `-E 'package(<crate>) & test(/<name>/)'`. Always `--workspace` with a filterset, never `-p`
+  (it builds every crate a second time), and always `--build-jobs 4 --test-threads 4` (two
+  different limits; in nextest `-j` is `--test-threads`). `npx vitest run <paths>` for the
+  frontend. `cargo check --workspace` between edits. Every build runs with `CARGO_INCREMENTAL=0`:
+  a card compiles a handful of times, and the incremental cache would cost more disk than it saves
+  time. Never the unfiltered workspace suite, never the whole Vitest or Playwright suite, never
   `.githooks/pre-push` inside a card. Fix the tests the change breaks; add a test for a behaviour
   that changes, never for a restyle or a move.
 - **The full suites run once per round**, on the merged tree, by whoever integrates: `.githooks/pre-push`,
@@ -142,7 +147,8 @@ making docket pause), `docs/TESTING.md`'s live-suite section, docket's
    rework). The roadmap's and `CLAUDE.md`'s "9 of 9" sentence gives this run's result and date.
 
 **Tests.** `bash -n` on both scripts; `npx playwright test -c playwright.docket-prill.config.ts --list`;
-`cargo nextest run -p tack-runner --test briefing_schema --run-ignored all` with prill on `PATH`;
+`cargo nextest run --workspace --run-ignored all -E 'package(tack-runner) & test(/^briefing_schema::/)'`
+with prill on `PATH`;
 then the whole local suite once, at the end, on the local model.
 
 **Done when:** `docket-prill-e2e.sh` and `--check` pass against docket's and prill's current
@@ -185,8 +191,7 @@ of each loop, `tack-app/src/runs/complete.rs`, `ARCHITECTURE.md`'s background-wo
    step that needs the network would justify an outbox; none is expected.
 5. The two lost tests come back in `tack-app/tests/`.
 
-**Tests.** `cargo nextest run -p tack-app`; in `tack-api`, the execution-runtime and server tests by
-name; in `tack-cli`, the serve tests by binary.
+**Tests.** `cargo nextest run --workspace -E 'package(tack-app) | (package(tack-api) & test(/execution_runtime|server/)) | (package(tack-cli) & test(/serve/))'`.
 
 **Done when:** shutdown stops every loop and waits for every spawned use case; one loop deletes
 from `execution_events`; a crash after the completion commit cannot lose the board move; and
@@ -235,8 +240,7 @@ from `execution_events`; a crash after the completion commit cannot lose the boa
 7. `TESTING.md` and `runner-contract.md` stop saying "API 5"; `ARCHITECTURE.md`'s docket paragraph
    describes the escalation record.
 
-**Tests.** `cargo nextest run -p tack-runner --test docket_v5`; `-p tack-runner -E 'test(prill)'`;
-`-p tack-protocol`; `-p tack-db -E 'test(metrics)'`.
+**Tests.** `cargo nextest run --workspace -E 'package(tack-protocol) | (package(tack-runner) & test(/^docket_v5::|prill/)) | (package(tack-db) & test(/metrics/))'`.
 
 **Done when:** two docket runs on different teams start without waiting on each other; every docket
 answer is read through a struct; the timeline text has no ids; and the fixtures match prill's
@@ -276,7 +280,7 @@ contracts at the recorded commit.
    Round 1 gate and written into both.
 7. `api.spec.ts` creates the project it needs.
 
-**Tests.** `cargo nextest run -p tack-cli --test embedded_runner_id --test cli_test`; `npx vitest run`
+**Tests.** `cargo nextest run --workspace -E 'package(tack-cli) & test(/^(embedded_runner_id|cli_test)::/)'`; `npx vitest run`
 on the modal test; `bash -n .githooks/pre-push`; `actionlint` if installed.
 
 **Done when:** no test picks a port by bind-and-drop; `TESTING.md`'s "no fixed waits" is true;
@@ -359,7 +363,7 @@ no deferred control is hidden; and `a11y.spec.ts` covers the listed pages.
 5. `?tab=execution&run=<id>` opens a given run; run state changes are announced politely.
 
 **Tests.** `npx vitest run src/shared/runWithAgent src/shared/execution`;
-`cargo nextest run -p tack-app -E 'test(start_run)'`.
+`cargo nextest run --workspace -E 'package(tack-app) & test(/start_run/)'`.
 
 **Done when:** a level can only reach docket and is never dropped in silence; every timeline event
 reads in words; and a run can be linked to.
@@ -433,8 +437,7 @@ swallows errors.
 6. Attempts are listed by one query in `tack-db/src/queries/`, errors returned.
 7. `./scripts/regen-generated.sh` if any response type changed.
 
-**Tests.** `cargo nextest run -p tack-db -p tack-app -p tack-protocol`; in `tack-api`, the execution
-and runner-protocol test binaries.
+**Tests.** `cargo nextest run --workspace -E 'package(tack-db) | package(tack-app) | package(tack-protocol) | (package(tack-api) & test(/execution|^runner_protocol::/))'`.
 
 **Done when:** outside tests, no SQL string in `crates/` spells an execution state; the guards come
 from `lifecycle`; and ADR 0087 decision 3 holds.
@@ -469,8 +472,8 @@ from `lifecycle`; and ADR 0087 decision 3 holds.
    them instead of `unwrap`; `map_err(|_|` keeps its source.
 4. `./scripts/regen-generated.sh`.
 
-**Tests.** `cargo nextest run -p tack-protocol -p tack-db -p tack-app -p tack-runner`; in `tack-api`,
-the error, runner-protocol and handler test binaries.
+**Tests.** `cargo nextest run --workspace -E 'package(tack-protocol) | package(tack-db) | package(tack-app) | package(tack-runner) | package(tack-api)'`:
+this card touches every layer, so it runs those crates whole, once, at its end.
 
 **Done when:** no runner message is built with `json!`; every error body has a code a client can
 match on; and no row read can panic.
@@ -508,7 +511,7 @@ passes the embedded runner's switch to `tack-app` through `unsafe set_var`.
 typed errors; the GitHub client and its base URL live in `tack-app`; config is read once and
 passed as values; the `set_var` blocks go.
 
-**Tests.** `cargo nextest run -p tack-app -p tack-cli`; in `tack-api`, the host and handler binaries.
+**Tests.** `cargo nextest run --workspace -E 'package(tack-app) | package(tack-cli) | (package(tack-api) & test(/host|^handlers::/))'`.
 
 ---
 
@@ -525,4 +528,4 @@ drop bad values with `.ok()`.
 the boolean chain; `update_item` goes; workflow and WIP checks move to `tack-core`, called by the
 use case; a bad row is an error. `./scripts/regen-generated.sh`.
 
-**Tests.** `cargo nextest run -p tack-core -p tack-db`; in `tack-api`, the items handler binaries.
+**Tests.** `cargo nextest run --workspace -E 'package(tack-core) | package(tack-db) | (package(tack-api) & test(/^handlers::items/))'`.

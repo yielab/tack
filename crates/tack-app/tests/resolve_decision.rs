@@ -1,7 +1,7 @@
 //! The rules behind `POST /attempts/{attempt_id}/decisions/{decision_id}/resolve`: one winner
 //! among racing answers, and the attempt resuming once its last pending decision is settled.
 
-mod decisions;
+use crate::decisions;
 
 use decisions::{
     attempt_and_request_state, clock, decision_state, pending_decision, running_attempt, seed_store,

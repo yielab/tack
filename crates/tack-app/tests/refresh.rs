@@ -2,7 +2,7 @@
 //! compare-and-set on the credential the request authenticated with, and a revoked runner is
 //! refused.
 
-mod common;
+use crate::common;
 
 use chrono::Duration;
 use common::{CREDENTIAL_HASH, RUNNER_ID, World, world};

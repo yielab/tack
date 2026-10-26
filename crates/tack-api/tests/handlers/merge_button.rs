@@ -2,12 +2,14 @@
 //! the move to Done (`merge_on_done`), and MCP's mark (`X-Tack-Client: mcp`,
 //! `origin: "mcp"` on the run). The GitHub is a mock; prill is a fake script.
 
-use crate::autonomy::{
+use crate::common;
+use crate::handlers::autonomy::{
     Board, Setup, board, comments, fake_prill, finished_attempt, fixture, merge_row, put_autonomy,
     tick,
 };
-use crate::common;
-use crate::mrp::{BASE_REVISION, ClaimedAttempt, execution_request_body, operator_headers};
+use crate::handlers::mrp::{
+    BASE_REVISION, ClaimedAttempt, execution_request_body, operator_headers,
+};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use wiremock::matchers::{body_json, method, path, path_regex};

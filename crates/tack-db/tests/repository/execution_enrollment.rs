@@ -1,6 +1,6 @@
 //! Enrollment tokens and credential rotation for `agent_runners`.
 
-use crate::execution_fixture::{Fixture, count_where};
+use crate::repository::execution_fixture::{Fixture, count_where};
 
 use chrono::Duration;
 use tack_db::repo::execution::{

@@ -4,7 +4,7 @@
 //! revert demotes its domain L4 to L3; one row each for the holds.
 
 use crate::common;
-use crate::mrp::{
+use crate::handlers::mrp::{
     BASE_REVISION, ClaimedAttempt, MRP_MEDIA_TYPE, READY, accept_and_start,
     completion_with_pushed_branch, headers_ref, operator_headers, request_and_claim, sha256_hex,
 };
@@ -974,7 +974,7 @@ async fn a_run_created_at_l3_keeps_that_level_and_another_level_name_is_refused(
             .map(|raw| serde_json::from_str::<Value>(&raw).unwrap()["agent_profile_id"].clone())
             .unwrap();
     for (autonomy, key) in [("L3", "again"), ("L9", "refused")] {
-        let mut body = crate::mrp::execution_request_body(
+        let mut body = crate::handlers::mrp::execution_request_body(
             &b.item_id,
             key,
             &a.runner_id,

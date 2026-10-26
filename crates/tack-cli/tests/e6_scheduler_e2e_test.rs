@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-mod common;
+use crate::common;
 use common::free_port;
 
 /// Owns the `tack serve` child process and its temp database directory;

@@ -18,7 +18,7 @@ use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
 use uuid::Uuid;
 
-use crate::support::{FixedClock, codex_capability_snapshot, setup_repo};
+use crate::scheduling::support::{FixedClock, codex_capability_snapshot, setup_repo};
 
 async fn register_active_runner(
     repo: &Repository,

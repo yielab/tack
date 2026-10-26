@@ -1,5 +1,6 @@
 [package]
 name = "tack-cli"
+autotests = false
 description = "CLI companion for Tack"
 version.workspace = true
 edition.workspace = true
@@ -115,3 +116,9 @@ tack-test-support = { path = "../tack-test-support" }
 
 [lints]
 workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

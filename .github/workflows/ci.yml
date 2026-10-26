@@ -90,7 +90,7 @@ jobs:
         run: |
           set -euo pipefail
           UPDATE_OPENAPI=1 cargo nextest run --workspace --no-tests=fail \
-            -E 'binary(openapi_contract) & test(openapi_spec_matches_committed_file)'
+            -E 'binary_id(tack-api::it) & test(/^openapi_contract::openapi_spec_matches_committed_file$/)'
           git diff --exit-code docs/openapi.json
 
   msrv:
@@ -566,7 +566,7 @@ jobs:
       - name: Boundary suites
         env:
           TACK_REQUIRE_BWRAP: "1"
-        run: cargo nextest run --workspace --profile ci --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+        run: cargo nextest run --workspace --profile ci --no-tests=fail -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'
 
   e2e:
     name: E2E (Playwright)

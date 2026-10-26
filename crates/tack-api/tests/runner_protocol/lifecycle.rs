@@ -13,7 +13,7 @@ use tack_protocol::Clock;
 use std::sync::{Arc, Mutex};
 
 use crate::common::send_str_strict as send;
-use crate::log_capture::ensure_global_log_capture_installed;
+use crate::runner_protocol::log_capture::ensure_global_log_capture_installed;
 
 use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};

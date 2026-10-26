@@ -2,7 +2,7 @@
 //! `completion_id`, a success moves the item per the project's finish status, and a change the
 //! verifier rejected goes back to the agent as one follow-up until a stop condition holds.
 
-mod common;
+use crate::common;
 
 use std::future::Future;
 

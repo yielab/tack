@@ -1,7 +1,7 @@
 //! The fail-closed expiry of a decision nobody answered in time: by the sweep, and lazily when an
 //! answer arrives after the deadline.
 
-mod decisions;
+use crate::decisions;
 
 use chrono::Duration;
 use decisions::{
