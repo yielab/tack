@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
+use tack_db::Repository;
 use tack_db::repo::execution::{HeartbeatBatchResponse, HeartbeatBatchResult, HeartbeatLease};
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 
 use crate::AppError;
@@ -66,8 +66,7 @@ pub async fn heartbeat(
             beat.lease_duration,
             clock,
         )
-        .await
-        .map_err(StoreError::from)?;
+        .await?;
     Ok(match result {
         HeartbeatBatchResult::Accepted(response) => Heartbeat::Accepted(response),
         HeartbeatBatchResult::Replayed(response) => Heartbeat::Replayed(response),

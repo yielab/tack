@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_db::repo::execution::NewDecision;
-use tack_db::{Repository, StoreError, queries};
+use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use tack_protocol::execution::{ExecutionState, TransitionActor, validate_transition};
 use uuid::Uuid;
@@ -100,8 +100,7 @@ pub async fn create_decision(
             },
             clock,
         )
-        .await
-        .map_err(StoreError::from)?;
+        .await?;
     if !written {
         return Ok(DecisionCreated::Stale);
     }

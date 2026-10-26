@@ -69,7 +69,7 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
 /// only ever refreshed in `summary`; edits to the rest are never overwritten.
 /// A custom profile already holding a built-in's name makes that insert a
 /// no-op (`name` is unique) rather than failing startup.
-pub async fn seed_builtin_profiles(repo: &crate::Repository) -> Result<(), sqlx::Error> {
+pub async fn seed_builtin_profiles(repo: &crate::Repository) -> Result<(), StoreError> {
     let pool = repo.pool();
     let now = chrono::Utc::now().to_rfc3339();
     for (kind, name, summary, tools, instructions) in BUILTIN_PROFILES {
@@ -284,10 +284,10 @@ fn heartbeat_fingerprint(
     available_capacity: i64,
     leases: &[HeartbeatLease<'_>],
     lease_duration: Duration,
-) -> Result<String, sqlx::Error> {
+) -> Result<String, StoreError> {
     let lease_duration_nanoseconds = lease_duration
         .num_nanoseconds()
-        .ok_or_else(|| sqlx::Error::Protocol("heartbeat lease duration is out of range".into()))?;
+        .ok_or_else(|| StoreError::malformed("heartbeat lease duration is out of range"))?;
     let mut leases = leases
         .iter()
         .map(|lease| {
@@ -318,50 +318,48 @@ fn heartbeat_fingerprint(
             }))
             .collect::<Vec<_>>(),
     }))
-    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+    .map_err(|error| StoreError::malformed(error.to_string()))
 }
 
-fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::Error> {
+fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let object = value
         .as_object()
-        .ok_or_else(|| sqlx::Error::Protocol("invalid heartbeat replay response".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid heartbeat replay response"))?;
     let required_string = |object: &serde_json::Map<String, serde_json::Value>, field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                sqlx::Error::Protocol(format!("invalid heartbeat replay response field: {field}"))
+                StoreError::malformed(format!("invalid heartbeat replay response field: {field}"))
             })
     };
     let accepted_at = DateTime::parse_from_rfc3339(&required_string(object, "accepted_at")?)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let leases = object
         .get("leases")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| {
-            sqlx::Error::Protocol("invalid heartbeat replay response field: leases".into())
-        })?
+        .ok_or_else(|| StoreError::malformed("invalid heartbeat replay response field: leases"))?
         .iter()
         .map(|value| {
-            let value = value.as_object().ok_or_else(|| {
-                sqlx::Error::Protocol("invalid heartbeat replay response lease".into())
-            })?;
+            let value = value
+                .as_object()
+                .ok_or_else(|| StoreError::malformed("invalid heartbeat replay response lease"))?;
             let lease_expires_at =
                 DateTime::parse_from_rfc3339(&required_string(value, "lease_expires_at")?)
                     .map(|value| value.with_timezone(&Utc))
-                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+                    .map_err(|error| StoreError::malformed(error.to_string()))?;
             Ok(HeartbeatLeaseResponse {
                 attempt_id: required_string(value, "attempt_id")?,
                 fencing_token: value
                     .get("fencing_token")
                     .and_then(serde_json::Value::as_i64)
                     .ok_or_else(|| {
-                        sqlx::Error::Protocol(
-                            "invalid heartbeat replay response field: fencing_token".into(),
+                        StoreError::malformed(
+                            "invalid heartbeat replay response field: fencing_token",
                         )
                     })?,
                 state: required_string(value, "state")?,
@@ -370,8 +368,8 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::
                     Some(serde_json::Value::Null) => None,
                     Some(serde_json::Value::String(value)) => Some(value.clone()),
                     _ => {
-                        return Err(sqlx::Error::Protocol(
-                            "invalid heartbeat replay response field: last_event_checkpoint".into(),
+                        return Err(StoreError::malformed(
+                            "invalid heartbeat replay response field: last_event_checkpoint",
                         ));
                     }
                 },
@@ -380,14 +378,13 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::
                     .get("cancellation_requested")
                     .and_then(serde_json::Value::as_bool)
                     .ok_or_else(|| {
-                        sqlx::Error::Protocol(
-                            "invalid heartbeat replay response field: cancellation_requested"
-                                .into(),
+                        StoreError::malformed(
+                            "invalid heartbeat replay response field: cancellation_requested",
                         )
                     })?,
             })
         })
-        .collect::<Result<Vec<_>, sqlx::Error>>()?;
+        .collect::<Result<Vec<_>, StoreError>>()?;
     Ok(HeartbeatBatchResponse {
         heartbeat_id: required_string(object, "heartbeat_id")?,
         accepted_at,
@@ -395,13 +392,13 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, sqlx::
     })
 }
 
-fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
+fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, StoreError> {
     let issued: String = row.get("lease_issued_at");
     let expires: String = row.get("lease_expires_at");
     let parse = |value: String| {
         DateTime::parse_from_rfc3339(&value)
             .map(|value| value.with_timezone(&Utc))
-            .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+            .map_err(|error| StoreError::malformed(error.to_string()))
     };
     Ok(Lease {
         attempt_id: row.get("id"),
@@ -414,7 +411,7 @@ fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, sqlx::Error> {
     })
 }
 
-fn snapshot(row: &sqlx::sqlite::SqliteRow) -> Result<serde_json::Value, sqlx::Error> {
+fn snapshot(row: &sqlx::sqlite::SqliteRow) -> Result<serde_json::Value, StoreError> {
     parse_execution_request_snapshot(&row.get::<String, _>("request_snapshot"))
 }
 
@@ -457,9 +454,7 @@ impl Repository {
         clock: &dyn Clock,
     ) -> Result<(), StoreError> {
         if !pending_runner_input_is_valid(&runner, &token, clock.now()) {
-            return Err(StoreError::Sql(sqlx::Error::Protocol(
-                "invalid pending runner/token input".into(),
-            )));
+            return Err(StoreError::malformed("invalid pending runner/token input"));
         }
         let now = stamp(clock);
         let mut tx = self.pool().begin().await?;
@@ -496,7 +491,7 @@ impl Repository {
         &self,
         runner_id: &str,
         token_id: &str,
-    ) -> Result<Option<EnrollmentTokenMetadata>, sqlx::Error> {
+    ) -> Result<Option<EnrollmentTokenMetadata>, StoreError> {
         sqlx::query("SELECT id,runner_id,expires_at,consumed_at,revoked_at FROM agent_enrollment_tokens WHERE runner_id=? AND id=?").bind(runner_id).bind(token_id).fetch_optional(self.pool()).await?.map(|r|Ok(EnrollmentTokenMetadata{id:r.get("id"),runner_id:r.get("runner_id"),expires_at:r.get("expires_at"),consumed_at:r.get("consumed_at"),revoked_at:r.get("revoked_at")})).transpose()
     }
 
@@ -505,7 +500,7 @@ impl Repository {
         runner_id: &str,
         token_id: &str,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let r=sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE runner_id=? AND id=? AND consumed_at IS NULL").bind(stamp(clock)).bind(runner_id).bind(token_id).execute(self.pool()).await?;
         Ok(r.rows_affected() == 1)
     }
@@ -514,7 +509,7 @@ impl Repository {
         &self,
         runner_id: &str,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = stamp(clock);
         let mut tx = self.pool().begin().await?;
         let r=sqlx::query("UPDATE agent_runners SET state='revoked',revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE id=?").bind(&now).bind(&now).bind(runner_id).execute(&mut *tx).await?;
@@ -539,7 +534,7 @@ impl Repository {
         fleet_id: &str,
         runner_id: &str,
         clock: &dyn Clock,
-    ) -> Result<AddFleetMemberOutcome, sqlx::Error> {
+    ) -> Result<AddFleetMemberOutcome, StoreError> {
         let fleet_exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_fleets WHERE id = ?)")
                 .bind(fleet_id)
@@ -581,7 +576,7 @@ impl Repository {
         &self,
         fleet_id: &str,
         runner_id: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let result =
             sqlx::query("DELETE FROM agent_fleet_members WHERE fleet_id = ? AND runner_id = ?")
                 .bind(fleet_id)
@@ -607,7 +602,7 @@ impl Repository {
         new_credential_hash: &str,
         credential_expires_at: DateTime<Utc>,
         clock: &dyn Clock,
-    ) -> Result<CredentialRotationResult, sqlx::Error> {
+    ) -> Result<CredentialRotationResult, StoreError> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let updated = sqlx::query(
@@ -644,7 +639,7 @@ impl Repository {
         leases: &[HeartbeatLease<'_>],
         lease_duration: Duration,
         clock: &dyn Clock,
-    ) -> Result<HeartbeatBatchResult, sqlx::Error> {
+    ) -> Result<HeartbeatBatchResult, StoreError> {
         let now = clock.now();
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
@@ -752,7 +747,7 @@ impl Repository {
         &self,
         token: EnrollmentToken<'_>,
         clock: &dyn Clock,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         sqlx::query("INSERT INTO agent_enrollment_tokens (id, runner_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)")
             .bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(stamp(clock))
             .execute(self.pool()).await?;
@@ -763,7 +758,7 @@ impl Repository {
         &self,
         token_hash: &str,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let result = sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE token_hash = ? AND consumed_at IS NULL")
             .bind(stamp(clock)).bind(token_hash).execute(self.pool()).await?;
         Ok(result.rows_affected() == 1)
@@ -898,7 +893,7 @@ impl Repository {
         lease_duration: Duration,
         clock: &dyn Clock,
         selection: RequestSelection<'_>,
-    ) -> Result<Option<ClaimedExecution>, sqlx::Error> {
+    ) -> Result<Option<ClaimedExecution>, StoreError> {
         let now = clock.now();
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
@@ -984,7 +979,7 @@ impl Repository {
     /// roster. Backs `GET /api/runners` — `agent_runners`
     /// itself has held this data since migration 040; nothing read it back
     /// to an operator before this.
-    pub async fn list_runners(&self) -> Result<Vec<RunnerListingRow>, sqlx::Error> {
+    pub async fn list_runners(&self) -> Result<Vec<RunnerListingRow>, StoreError> {
         let rows = sqlx::query(
             "SELECT id, name, state, labels, total_capacity, available_capacity, \
              capability_snapshot, protocol_version, runner_version, last_heartbeat_at, \
@@ -1025,7 +1020,7 @@ impl Repository {
         &self,
         input: NewRunner<'_>,
         clock: &dyn Clock,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         let now = stamp(clock);
         sqlx::query(
             "INSERT INTO agent_runners (id, name, credential_hash, labels, total_capacity, \
@@ -1052,7 +1047,7 @@ impl Repository {
         &self,
         input: NewAgentProfile<'_>,
         clock: &dyn Clock,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         let now = stamp(clock);
         sqlx::query(
             "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) \
@@ -1068,7 +1063,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_agent_profile_rows(
         &self,
-    ) -> Result<Vec<tack_core::outline::bundle::ProfileRow>, sqlx::Error> {
+    ) -> Result<Vec<tack_core::outline::bundle::ProfileRow>, StoreError> {
         use sqlx::Row;
         let rows = sqlx::query(
             "SELECT id, name, kind, instructions, tool_policy, limits, builtin, fleet_id, delivers \
@@ -1096,10 +1091,11 @@ impl Repository {
 
     /// Every fleet as `(id, name)`, by name.
     #[instrument(skip(self))]
-    pub async fn fleet_names(&self) -> Result<Vec<(String, String)>, sqlx::Error> {
+    pub async fn fleet_names(&self) -> Result<Vec<(String, String)>, StoreError> {
         sqlx::query_as("SELECT id, name FROM agent_fleets ORDER BY name")
             .fetch_all(self.pool())
             .await
+            .map_err(StoreError::from)
     }
 
     /// Insert the profile, or change the row with its id; `builtin` is never written.
@@ -1108,7 +1104,7 @@ impl Repository {
         &self,
         row: &tack_core::outline::bundle::ProfileRow,
         clock: &dyn Clock,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         let now = stamp(clock);
         sqlx::query(
             "INSERT INTO agent_profiles \

@@ -1,5 +1,6 @@
 //! Item ↔ GitHub issue links: status and comments sync both ways over them.
 
+use crate::StoreError;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
@@ -9,7 +10,7 @@ pub(crate) async fn set_link(
     item_id: Uuid,
     repo: &str,
     issue_number: i64,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreError> {
     sqlx::query(
         "INSERT INTO github_links (item_id, repo, issue_number)
          VALUES (?, ?, ?)
@@ -25,7 +26,7 @@ pub(crate) async fn set_link(
 
 /// Remove the GitHub link for an item, if any. Not an error if it was
 /// already absent — matches `rm -f`, not `rm`.
-pub(crate) async fn remove_link(pool: &SqlitePool, item_id: Uuid) -> Result<(), sqlx::Error> {
+pub(crate) async fn remove_link(pool: &SqlitePool, item_id: Uuid) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM github_links WHERE item_id = ?")
         .bind(item_id.to_string())
         .execute(pool)
@@ -37,7 +38,7 @@ pub(crate) async fn remove_link(pool: &SqlitePool, item_id: Uuid) -> Result<(), 
 pub(crate) async fn get_link(
     pool: &SqlitePool,
     item_id: Uuid,
-) -> Result<Option<(String, i64)>, sqlx::Error> {
+) -> Result<Option<(String, i64)>, StoreError> {
     let row: Option<(String, i64)> =
         sqlx::query_as("SELECT repo, issue_number FROM github_links WHERE item_id = ?")
             .bind(item_id.to_string())

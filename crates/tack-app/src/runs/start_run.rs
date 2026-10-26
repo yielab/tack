@@ -942,7 +942,7 @@ pub async fn enqueue_run(
         )
         .await
         .map_err(|err| {
-            // `err` is a driver-level `sqlx::Error` (a constraint name, a
+            // `err` is a driver-level store error (a constraint name, a
             // SQLite status message, or one of `execution.rs`'s own fixed
             // `snapshot_error` strings) — never a bound value, credential or
             // request body, so it is safe to log verbatim. Without this, an

@@ -31,6 +31,16 @@ use tack_protocol::execution::{
     Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RunnerId,
 };
 
+/// Whether a runner is online as of `now`: the scheduler's own rule (active, and a heartbeat
+/// within its window), for readers that show the answer without selecting anything.
+pub fn runner_is_online(
+    active: bool,
+    last_heartbeat_at: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> bool {
+    SchedulingPolicy::default().is_online(active, last_heartbeat_at, now)
+}
+
 /// Maps `agent_runners.state`'s three literal values (migration 040) to the
 /// typed [`RunnerState`]. An unrecognised string (never written by this
 /// codebase, but the raw `TEXT` column has no enum constraint) maps to
@@ -350,14 +360,12 @@ async fn record_waiting(
         if overdue
             && repo
                 .fail_unclaimable_request(request_id, NO_RUNNER_CAN_CLAIM, &sentence, now)
-                .await
-                .map_err(StoreError::from)?
+                .await?
         {
             continue;
         }
         repo.record_request_waiting(request_id, &code, &sentence, !transient, now)
-            .await
-            .map_err(StoreError::from)?;
+            .await?;
     }
     Ok(())
 }
@@ -383,19 +391,11 @@ pub async fn choose_request_for_runner(
         LEASE_EXPIRED_SENTENCE,
         &SystemClock,
     )
-    .await
-    .map_err(StoreError::from)?;
-    let Some(runner) = repo
-        .fetch_runner_scheduling_snapshot(runner_id)
-        .await
-        .map_err(StoreError::from)?
-    else {
+    .await?;
+    let Some(runner) = repo.fetch_runner_scheduling_snapshot(runner_id).await? else {
         return Ok(None);
     };
-    let queued = repo
-        .list_eligible_queued_requests(runner_id)
-        .await
-        .map_err(StoreError::from)?;
+    let queued = repo.list_eligible_queued_requests(runner_id).await?;
     if queued.is_empty() {
         return Ok(None);
     }
@@ -442,10 +442,7 @@ pub async fn choose_request_for_runner(
     let mut fleet_status: BTreeMap<String, Option<FleetConcurrencySnapshot>> = BTreeMap::new();
     for row in &queued {
         if row.selector_kind == "fleet" && !fleet_status.contains_key(&row.selector_id) {
-            let snapshot = repo
-                .fetch_fleet_concurrency(&row.selector_id)
-                .await
-                .map_err(StoreError::from)?;
+            let snapshot = repo.fetch_fleet_concurrency(&row.selector_id).await?;
             fleet_status.insert(row.selector_id.clone(), snapshot);
         }
     }

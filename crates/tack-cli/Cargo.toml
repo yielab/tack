@@ -81,14 +81,10 @@ tack-api = { path = "../tack-api" }
 tack-app = { path = "../tack-app" }
 # Hosts the runner role in-process for `tack runner start` and
 # `tack serve --with-runner` — the same composition root the standalone
-# tack-runner binary uses. No cycle: tack-runner depends on tack-orch only.
+# tack-runner binary uses. No cycle: tack-runner depends on tack-core and tack-protocol only.
 tack-runner = { path = "../tack-runner" }
 # `serve.rs` opens the store and builds the `Repository` it hands to the server.
 tack-db = { path = "../tack-db" }
-# `tack runner doctor` renders the RunnerCapabilities/FeatureCapabilities
-# tack-runner's bootstrap module reports, so this crate needs their real
-# types rather than re-declaring shadow copies of its own.
-tack-orch = { path = "../tack-orch" }
 # `CliRunnerHost` (`local_runner.rs`) implements `tack-app`'s async `RunnerHost` trait, so the
 # implementor needs the same macro.
 async-trait = { workspace = true }

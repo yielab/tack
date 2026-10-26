@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 tack-protocol = { path = "../tack-protocol" }
 tack-core = { path = "../tack-core" }
-tack-db = { path = "../tack-db" }
+tack-db = { path = "../tack-db", features = ["raw-pool"] }
 sqlx = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }

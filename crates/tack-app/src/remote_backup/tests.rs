@@ -308,7 +308,7 @@ async fn scrub_removes_secrets_from_snapshot() {
         );
     }
     assert!(app_meta_value(&repo, "install_id").await.unwrap().is_some());
-    snapshot.pool().close().await;
+    tack_test_support::seed::pool_closed(&snapshot).await;
 
     // And the secret bytes are physically absent from the file (post-VACUUM).
     let bytes = std::fs::read(&path).unwrap();
@@ -478,7 +478,7 @@ async fn perform_backup_bumps_generation_and_enforces_conflict() {
     assert_eq!(forced.generation, 3);
     assert_eq!(repo.backup_generation().await.unwrap(), 3);
 
-    repo.pool().close().await;
+    tack_test_support::seed::pool_closed(&repo).await;
 }
 
 // ── 28.5: verify_bundle validates without staging ─────────────────────────

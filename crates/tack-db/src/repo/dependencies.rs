@@ -1,3 +1,4 @@
+use crate::StoreError;
 use chrono::Utc;
 use sqlx::SqliteConnection;
 use tracing::{debug, instrument};
@@ -28,7 +29,12 @@ impl Repository {
             .validate_new_edge(source_item_id, input.target_item_id)
             .map_err(DependencyError::Core)?;
 
-        let mut conn = self.pool().acquire().await.map_err(DependencyError::Db)?;
+        let mut conn = self
+            .pool()
+            .acquire()
+            .await
+            .map_err(StoreError::from)
+            .map_err(DependencyError::Db)?;
         insert_dependency(
             &mut conn,
             source_item_id,
@@ -43,7 +49,7 @@ impl Repository {
     pub async fn list_dependencies_for_item(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<Dependency>, sqlx::Error> {
+    ) -> Result<Vec<Dependency>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
             "SELECT id, source_item_id, target_item_id, dependency_type, created_at
              FROM dependencies
@@ -59,7 +65,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_dependency(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_dependency(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM dependencies WHERE id = ?")
             .bind(id.to_string())
             .execute(self.pool())
@@ -71,7 +77,7 @@ impl Repository {
     pub async fn list_dependencies_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<Dependency>, sqlx::Error> {
+    ) -> Result<Vec<Dependency>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
             "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
              FROM dependencies d
@@ -98,7 +104,7 @@ impl Repository {
     pub async fn list_dependencies_for_items(
         &self,
         item_ids: &[Uuid],
-    ) -> Result<Vec<Dependency>, sqlx::Error> {
+    ) -> Result<Vec<Dependency>, StoreError> {
         if item_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -124,7 +130,7 @@ impl Repository {
     async fn load_dependency_edges(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<DependencyEdge>, sqlx::Error> {
+    ) -> Result<Vec<DependencyEdge>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
             "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
              FROM dependencies d
@@ -151,7 +157,7 @@ impl Repository {
 #[derive(Debug, thiserror::Error)]
 pub enum DependencyError {
     #[error("Database error: {0}")]
-    Db(#[from] sqlx::Error),
+    Db(#[from] StoreError),
     #[error("Dependency validation error: {0}")]
     Core(#[from] CoreError),
 }
@@ -197,7 +203,7 @@ pub(crate) async fn insert_dependency(
     source_item_id: Uuid,
     target_item_id: Uuid,
     dependency_type: &DependencyType,
-) -> Result<Dependency, sqlx::Error> {
+) -> Result<Dependency, StoreError> {
     let id = Uuid::new_v4();
     let now = Utc::now();
     let dep_type_str = dependency_type.to_string();

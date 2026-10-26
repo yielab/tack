@@ -37,7 +37,17 @@ impl Repository {
         Self { pool }
     }
 
+    /// The raw connection pool, for the seeds and assertions of `tack-test-support`.
+    /// Only that crate turns the `raw-pool` feature on; cargo unifies features across a
+    /// build, so the feature alone does not keep other crates out, and the real gate is
+    /// `scripts/check-crate-graph.sh` and the ban rules in `deny.toml`.
+    #[cfg(feature = "raw-pool")]
     pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    #[cfg(not(feature = "raw-pool"))]
+    pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
@@ -50,18 +60,18 @@ impl Repository {
         item_id: Uuid,
         repo: &str,
         issue_number: i64,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         github_links::set_link(self.pool(), item_id, repo, issue_number).await
     }
 
     pub async fn get_github_link(
         &self,
         item_id: Uuid,
-    ) -> Result<Option<(String, i64)>, sqlx::Error> {
+    ) -> Result<Option<(String, i64)>, StoreError> {
         github_links::get_link(self.pool(), item_id).await
     }
 
-    pub async fn remove_github_link(&self, item_id: Uuid) -> Result<(), sqlx::Error> {
+    pub async fn remove_github_link(&self, item_id: Uuid) -> Result<(), StoreError> {
         github_links::remove_link(self.pool(), item_id).await
     }
 
@@ -131,18 +141,18 @@ impl Repository {
         &self,
         project_id: Uuid,
         data: CreateCustomField,
-    ) -> Result<CustomFieldDefinition, sqlx::Error> {
+    ) -> Result<CustomFieldDefinition, StoreError> {
         custom_fields::create_field(self, project_id, data).await
     }
 
-    pub async fn get_field(&self, id: Uuid) -> Result<CustomFieldDefinition, sqlx::Error> {
+    pub async fn get_field(&self, id: Uuid) -> Result<CustomFieldDefinition, StoreError> {
         custom_fields::get_field(self, id).await
     }
 
     pub async fn list_fields_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<CustomFieldDefinition>, sqlx::Error> {
+    ) -> Result<Vec<CustomFieldDefinition>, StoreError> {
         custom_fields::list_fields_for_project(self, project_id).await
     }
 
@@ -150,11 +160,11 @@ impl Repository {
         &self,
         id: Uuid,
         data: UpdateCustomField,
-    ) -> Result<CustomFieldDefinition, sqlx::Error> {
+    ) -> Result<CustomFieldDefinition, StoreError> {
         custom_fields::update_field(self, id, data).await
     }
 
-    pub async fn delete_field(&self, id: Uuid) -> Result<(), sqlx::Error> {
+    pub async fn delete_field(&self, id: Uuid) -> Result<(), StoreError> {
         custom_fields::delete_field(self, id).await
     }
 
@@ -163,7 +173,7 @@ impl Repository {
         item_id: Uuid,
         field_id: Uuid,
         value: serde_json::Value,
-    ) -> Result<CustomFieldValue, sqlx::Error> {
+    ) -> Result<CustomFieldValue, StoreError> {
         custom_fields::set_field_value(self, item_id, field_id, value).await
     }
 
@@ -171,21 +181,21 @@ impl Repository {
         &self,
         item_id: Uuid,
         field_id: Uuid,
-    ) -> Result<CustomFieldValue, sqlx::Error> {
+    ) -> Result<CustomFieldValue, StoreError> {
         custom_fields::get_field_value(self, item_id, field_id).await
     }
 
     pub async fn get_all_field_values_for_item(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
+    ) -> Result<Vec<CustomFieldValue>, StoreError> {
         custom_fields::get_all_field_values_for_item(self, item_id).await
     }
 
     pub async fn field_values_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
+    ) -> Result<Vec<CustomFieldValue>, StoreError> {
         custom_fields::field_values_for_project(self, project_id).await
     }
 
@@ -193,7 +203,7 @@ impl Repository {
         &self,
         item_id: Uuid,
         field_id: Uuid,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         custom_fields::delete_field_value(self, item_id, field_id).await
     }
 
@@ -208,23 +218,23 @@ impl Repository {
         mime_type: String,
         storage_path: String,
         size_bytes: u64,
-    ) -> Result<Attachment, sqlx::Error> {
+    ) -> Result<Attachment, StoreError> {
         let repo = attachments::AttachmentRepo::new(self);
         repo.create_attachment(item_id, filename, mime_type, storage_path, size_bytes)
             .await
     }
 
-    pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, sqlx::Error> {
+    pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, StoreError> {
         let repo = attachments::AttachmentRepo::new(self);
         repo.get_attachment(id).await
     }
 
-    pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, sqlx::Error> {
+    pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, StoreError> {
         let repo = attachments::AttachmentRepo::new(self);
         repo.list_attachments(item_id).await
     }
 
-    pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, StoreError> {
         let repo = attachments::AttachmentRepo::new(self);
         repo.delete_attachment(id).await
     }

@@ -97,9 +97,10 @@ pub async fn migration_count_of_file(path: &Path) -> Result<u32, StoreError> {
         .read_only(true)
         .connect()
         .await?;
-    let count: Result<i64, sqlx::Error> = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
+    let count: Result<i64, StoreError> = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
         .fetch_one(&mut conn)
-        .await;
+        .await
+        .map_err(StoreError::from);
     conn.close().await.ok();
     Ok(count? as u32)
 }

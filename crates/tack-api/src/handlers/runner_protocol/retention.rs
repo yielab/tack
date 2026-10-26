@@ -53,9 +53,8 @@ pub async fn sweep_events(
     batch_limit: i64,
 ) -> Result<u64, StoreError> {
     let cutoff = now - policy.event_retention;
-    Ok(repo
-        .purge_execution_events_older_than(cutoff, batch_limit)
-        .await?)
+    repo.purge_execution_events_older_than(cutoff, batch_limit)
+        .await
 }
 
 /// One bounded pass over `execution_artifacts` older than

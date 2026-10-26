@@ -1,5 +1,6 @@
 //! Artifacts an attempt produced, their stored content, and the operator's review of a Merge-Readiness Pack.
 
+use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
 use tack_protocol::Clock;
@@ -95,7 +96,7 @@ impl Repository {
         fence: i64,
         artifact: NewArtifact<'_>,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = stamp(clock);
         // Serialize the eligibility check and the insert against a concurrent
         // completion, cancellation, or recovery transition for the same
@@ -126,7 +127,7 @@ impl Repository {
         &self,
         attempt_id: &str,
         artifact_id: &str,
-    ) -> Result<Option<ExecutionArtifactRow>, sqlx::Error> {
+    ) -> Result<Option<ExecutionArtifactRow>, StoreError> {
         let row = sqlx::query(
             "SELECT id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, \
              content_disposition, content_reference, metadata, created_at \
@@ -167,7 +168,7 @@ impl Repository {
         request_id: &str,
         attempt_number: i64,
         artifact_id: &str,
-    ) -> Result<Option<ExecutionArtifactRow>, sqlx::Error> {
+    ) -> Result<Option<ExecutionArtifactRow>, StoreError> {
         let attempt_id: Option<String> = sqlx::query_scalar(
             "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
         )
@@ -216,7 +217,7 @@ impl Repository {
         fence: i64,
         content_reference: &str,
         clock: &dyn Clock,
-    ) -> Result<ArtifactContentCommitResult, sqlx::Error> {
+    ) -> Result<ArtifactContentCommitResult, StoreError> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at > ?)")
@@ -255,7 +256,7 @@ impl Repository {
         &self,
         cutoff: DateTime<Utc>,
         batch_limit: i64,
-    ) -> Result<Vec<ExecutionArtifactRow>, sqlx::Error> {
+    ) -> Result<Vec<ExecutionArtifactRow>, StoreError> {
         let rows = sqlx::query(
             "SELECT id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, \
              content_disposition, content_reference, metadata, created_at \
@@ -292,7 +293,7 @@ impl Repository {
     pub async fn delete_execution_artifacts_by_row_ids(
         &self,
         ids: &[String],
-    ) -> Result<u64, sqlx::Error> {
+    ) -> Result<u64, StoreError> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -331,7 +332,7 @@ impl Repository {
     pub async fn delete_unresolved_execution_artifacts_by_row_ids(
         &self,
         ids: &[String],
-    ) -> Result<u64, sqlx::Error> {
+    ) -> Result<u64, StoreError> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -359,7 +360,7 @@ impl Repository {
     pub async fn get_mrp_review(
         &self,
         attempt_id: &str,
-    ) -> Result<Option<MrpReviewRow>, sqlx::Error> {
+    ) -> Result<Option<MrpReviewRow>, StoreError> {
         let row = sqlx::query(AssertSqlSafe(format!(
             "SELECT {MRP_REVIEW_COLUMNS} FROM mrp_reviews WHERE attempt_id = ?"
         )))
@@ -377,7 +378,7 @@ impl Repository {
         attempt_id: &str,
         artifact_id: &str,
         clock: &dyn Clock,
-    ) -> Result<MrpReviewRow, sqlx::Error> {
+    ) -> Result<MrpReviewRow, StoreError> {
         let row = sqlx::query(AssertSqlSafe(format!(
             "INSERT INTO mrp_reviews (attempt_id, artifact_id, viewed_at) VALUES (?, ?, ?) \
              ON CONFLICT(attempt_id) DO UPDATE SET viewed_at = COALESCE(mrp_reviews.viewed_at, excluded.viewed_at) \
@@ -402,7 +403,7 @@ impl Repository {
         reason: &str,
         reviewed_by: &str,
         clock: &dyn Clock,
-    ) -> Result<Option<MrpReviewRow>, sqlx::Error> {
+    ) -> Result<Option<MrpReviewRow>, StoreError> {
         let now = stamp(clock);
         let row = sqlx::query(AssertSqlSafe(format!(
             "INSERT INTO mrp_reviews (attempt_id, artifact_id, verdict, reason, viewed_at, reviewed_at, reviewed_by) \

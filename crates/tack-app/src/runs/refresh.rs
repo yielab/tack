@@ -1,6 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
+use tack_db::Repository;
 use tack_db::repo::execution::{CredentialRotationResult, RunnerCapabilityUpdate};
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 
 use super::enroll::CREDENTIAL_LIFETIME_DAYS;
@@ -53,8 +53,7 @@ pub async fn refresh(
                     expires,
                     clock,
                 )
-                .await
-                .map_err(StoreError::from)?;
+                .await?;
             match rotation {
                 CredentialRotationResult::Rotated(_) => Some(expires),
                 CredentialRotationResult::HashMismatch => return Ok(Refreshed::CredentialChanged),

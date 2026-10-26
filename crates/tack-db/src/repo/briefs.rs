@@ -1,3 +1,4 @@
+use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use tracing::instrument;
@@ -10,11 +11,11 @@ use tack_core::models::{ItemBrief, UpsertItemBrief};
 
 use super::Repository;
 
-fn decode_error(e: impl std::error::Error + Send + Sync + 'static) -> sqlx::Error {
-    sqlx::Error::Decode(Box::new(e))
+fn decode_error(e: impl std::error::Error + Send + Sync + 'static) -> StoreError {
+    StoreError::Sql(sqlx::Error::Decode(Box::new(e)))
 }
 
-fn brief_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBrief, sqlx::Error> {
+fn brief_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBrief, StoreError> {
     let item_id: String = row.get("item_id");
     let acceptance: String = row.get("acceptance");
     let constraints: String = row.get("constraints");
@@ -35,7 +36,7 @@ fn brief_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBrief, sqlx::Erro
     })
 }
 
-fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBriefVersion, sqlx::Error> {
+fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBriefVersion, StoreError> {
     let item_id: String = row.get("item_id");
     let acceptance: String = row.get("acceptance");
     let constraints: String = row.get("constraints");
@@ -58,7 +59,7 @@ fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBriefVersion, s
 
 /// A stored instant: RFC 3339 as this layer writes it, or SQLite's
 /// `datetime('now')` form as the 087 backfill and column default write it.
-fn parse_instant(text: &str) -> Result<DateTime<Utc>, sqlx::Error> {
+fn parse_instant(text: &str) -> Result<DateTime<Utc>, StoreError> {
     text.parse::<DateTime<Utc>>().or_else(|_| {
         chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S")
             .map(|naive| naive.and_utc())
@@ -69,7 +70,7 @@ fn parse_instant(text: &str) -> Result<DateTime<Utc>, sqlx::Error> {
 impl Repository {
     /// The brief of one item, if it has one.
     #[instrument(skip(self))]
-    pub async fn get_item_brief(&self, item_id: Uuid) -> Result<Option<ItemBrief>, sqlx::Error> {
+    pub async fn get_item_brief(&self, item_id: Uuid) -> Result<Option<ItemBrief>, StoreError> {
         let row = sqlx::query(
             "SELECT item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at
              FROM item_briefs WHERE item_id = ?",
@@ -85,7 +86,7 @@ impl Repository {
     pub async fn list_item_briefs_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<ItemBrief>, sqlx::Error> {
+    ) -> Result<Vec<ItemBrief>, StoreError> {
         let rows = sqlx::query(
             "SELECT b.item_id, b.acceptance, b.constraints, b.definition_of_done, b.risk,
                     b.created_at, b.updated_at
@@ -107,7 +108,7 @@ impl Repository {
         &self,
         item_id: Uuid,
         input: UpsertItemBrief,
-    ) -> Result<ItemBrief, sqlx::Error> {
+    ) -> Result<ItemBrief, StoreError> {
         let now = Utc::now().to_rfc3339();
         let risk = input
             .risk
@@ -135,7 +136,7 @@ impl Repository {
                 return self
                     .get_item_brief(item_id)
                     .await?
-                    .ok_or(sqlx::Error::RowNotFound);
+                    .ok_or(StoreError::Sql(sqlx::Error::RowNotFound));
             }
         }
         sqlx::query(
@@ -199,7 +200,7 @@ impl Repository {
     pub async fn list_item_brief_versions(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<ItemBriefVersion>, sqlx::Error> {
+    ) -> Result<Vec<ItemBriefVersion>, StoreError> {
         let rows = sqlx::query(
             "SELECT v.item_id, v.version, v.acceptance, v.constraints, v.definition_of_done, v.risk, v.brief_sha256, v.created_at FROM item_brief_versions v
              WHERE v.item_id = ? ORDER BY v.version ASC",
@@ -215,7 +216,7 @@ impl Repository {
     pub async fn list_item_brief_versions_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<ItemBriefVersion>, sqlx::Error> {
+    ) -> Result<Vec<ItemBriefVersion>, StoreError> {
         let rows = sqlx::query(
             "SELECT v.item_id, v.version, v.acceptance, v.constraints, v.definition_of_done, v.risk, v.brief_sha256, v.created_at FROM item_brief_versions v JOIN items i ON i.id = v.item_id
              WHERE i.project_id = ? ORDER BY v.item_id ASC, v.version ASC",
@@ -233,7 +234,7 @@ impl Repository {
         &self,
         item_id: Uuid,
         versions: &[ItemBriefVersion],
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         let mut tx = self.pool().begin().await?;
         sqlx::query("DELETE FROM item_brief_versions WHERE item_id = ?")
             .bind(item_id.to_string())
@@ -262,12 +263,12 @@ impl Repository {
             .execute(&mut *tx)
             .await?;
         }
-        tx.commit().await
+        tx.commit().await.map_err(StoreError::from)
     }
 
     /// Delete an item's brief; `false` when it had none.
     #[instrument(skip(self))]
-    pub async fn delete_item_brief(&self, item_id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_item_brief(&self, item_id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM item_briefs WHERE item_id = ?")
             .bind(item_id.to_string())
             .execute(self.pool())

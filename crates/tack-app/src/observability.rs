@@ -17,8 +17,8 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use chrono::Duration;
+use tack_db::Repository;
 pub use tack_db::repo::execution::ExecutionFleetSnapshotRow as ExecutionFleetSnapshot;
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 use tracing::{debug, info, warn};
 
@@ -88,8 +88,7 @@ pub async fn tick(
 ) -> Result<Outcome, AppError> {
     let snapshot = repo
         .execution_fleet_snapshot(clock.now(), Duration::seconds(settings.event_window_secs))
-        .await
-        .map_err(StoreError::from)?;
+        .await?;
     let alerts = evaluate_alerts(&snapshot);
     Ok(Outcome { snapshot, alerts })
 }

@@ -1,8 +1,7 @@
+use tack_db::Repository;
 use tack_db::repo::execution::{
-    RecoveryDisposition as StoredDisposition, RecoveryObservation as StoredObservation,
-    RecoveryObservationInput, RecoveryObservationResult,
+    RecoveryObservation as StoredObservation, RecoveryObservationInput, RecoveryObservationResult,
 };
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 use tack_protocol::execution::{RecoveryDisposition, RecoveryObservation};
 
@@ -66,23 +65,17 @@ pub async fn observe_recovery(
             },
             clock,
         )
-        .await
-        .map_err(StoreError::from)?;
+        .await?;
     let (response, replayed) = match result {
         RecoveryObservationResult::Applied(response) => (response, false),
         RecoveryObservationResult::Replayed(response) => (response, true),
         RecoveryObservationResult::Conflict => return Ok(RecoveryObserved::IdempotencyConflict),
         RecoveryObservationResult::Stale => return Ok(RecoveryObserved::Stale),
     };
-    let disposition = match response.disposition {
-        StoredDisposition::SafePreSpawnRequeue => RecoveryDisposition::SafePreSpawnRequeue,
-        StoredDisposition::NeedsOperator => RecoveryDisposition::NeedsOperator,
-        StoredDisposition::AlreadyTerminal => RecoveryDisposition::AlreadyTerminal,
-    };
     Ok(RecoveryObserved::Recorded(Recovered {
         attempt_id: response.attempt_id,
         recovery_key: response.recovery_key,
-        disposition,
+        disposition: response.disposition,
         replayed,
         committed_at: response.committed_at,
     }))

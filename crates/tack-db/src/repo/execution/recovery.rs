@@ -1,5 +1,6 @@
 //! Recovery: a lost or silent attempt is recovered or handed to the operator, leases that nobody holds expire, and the fleet's health is counted.
 
+use crate::StoreError;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use tack_protocol::Clock;
@@ -7,7 +8,9 @@ use tracing::instrument;
 
 use super::decisions::end_attempt_decisions;
 use super::shared::{canonical_json, stamp, terminal};
+use super::state;
 use crate::Repository;
+use tack_protocol::execution::ExecutionState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatorRequeueResult {
@@ -78,12 +81,7 @@ pub struct RecoveryObservationInput<'a> {
     pub details: &'a str,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RecoveryDisposition {
-    SafePreSpawnRequeue,
-    NeedsOperator,
-    AlreadyTerminal,
-}
+pub use tack_protocol::execution::RecoveryDisposition;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoveryResponse {
@@ -106,21 +104,21 @@ struct RecoveryDetails {
     process_observed: bool,
 }
 
-fn recovery_details(details: &str) -> Result<RecoveryDetails, sqlx::Error> {
+fn recovery_details(details: &str) -> Result<RecoveryDetails, StoreError> {
     let value: serde_json::Value =
-        serde_json::from_str(details).map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        serde_json::from_str(details).map_err(|error| StoreError::malformed(error.to_string()))?;
     let object = value
         .as_object()
-        .ok_or_else(|| sqlx::Error::Protocol("invalid recovery details".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid recovery details"))?;
     let journal_state = object
         .get("journal_state")
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| sqlx::Error::Protocol("invalid recovery details journal_state".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid recovery details journal_state"))?;
     let process_observed = object
         .get("process_observed")
         .and_then(serde_json::Value::as_bool)
-        .ok_or_else(|| sqlx::Error::Protocol("invalid recovery details process_observed".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid recovery details process_observed"))?;
     Ok(RecoveryDetails {
         journal_state,
         process_observed,
@@ -135,9 +133,9 @@ fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
     }
 }
 
-fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, sqlx::Error> {
+fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, StoreError> {
     let details: serde_json::Value = serde_json::from_str(input.details)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     serde_json::to_string(&serde_json::json!({
         "runner_id": input.runner_id,
         "attempt_id": input.attempt_id,
@@ -146,7 +144,7 @@ fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, 
         "observation": recovery_observation_name(input.observation),
         "details": canonical_json(details),
     }))
-    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+    .map_err(|error| StoreError::malformed(error.to_string()))
 }
 
 /// Everything `recover_attempt` does once it holds the open transaction and
@@ -164,7 +162,7 @@ async fn apply_recovery(
     fingerprint: &str,
     now: &str,
     waiting: Option<(&str, &str)>,
-) -> Result<RecoveryObservationResult, sqlx::Error> {
+) -> Result<RecoveryObservationResult, StoreError> {
     if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?")
         .bind(input.attempt_id).bind(input.recovery_key).fetch_optional(&mut *tx).await? {
         let stored_fingerprint: String = row.get("fingerprint");
@@ -199,10 +197,7 @@ async fn apply_recovery(
         tx.commit().await?;
         return Ok(RecoveryObservationResult::Applied(response));
     }
-    if !matches!(
-        state.as_str(),
-        "leased" | "preparing" | "running" | "waiting_decision"
-    ) {
+    if !state::is_live(&state) {
         tx.commit().await?;
         return Ok(RecoveryObservationResult::Stale);
     }
@@ -219,13 +214,15 @@ async fn apply_recovery(
         | RecoveryObservation::ProcessRunning
         | RecoveryObservation::Ambiguous => RecoveryDisposition::NeedsOperator,
     };
-    let (attempt_state, request_state, classification) = match disposition {
-        RecoveryDisposition::SafePreSpawnRequeue => ("lost", "queued", "safe_pre_spawn_requeue"),
+    let (attempt_state, request_state) = match disposition {
+        RecoveryDisposition::SafePreSpawnRequeue => (ExecutionState::Lost, ExecutionState::Queued),
         RecoveryDisposition::NeedsOperator => {
-            ("needs_operator", "needs_operator", "needs_operator")
+            (ExecutionState::NeedsOperator, ExecutionState::NeedsOperator)
         }
         RecoveryDisposition::AlreadyTerminal => unreachable!("terminal states return above"),
     };
+    let classification = disposition.as_str();
+    let (attempt_state, request_state) = (state::text(attempt_state), state::text(request_state));
     let updated = sqlx::query("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision')")
         .bind(attempt_state)
         .bind(now)
@@ -258,17 +255,13 @@ async fn apply_recovery(
     let response = RecoveryResponse {
         attempt_id: input.attempt_id.into(),
         recovery_key: input.recovery_key.into(),
-        disposition: disposition.clone(),
+        disposition,
         committed_at: now.to_owned(),
     };
     let serialized_response = serde_json::json!({
         "attempt_id": response.attempt_id,
         "recovery_key": response.recovery_key,
-        "disposition": match response.disposition {
-            RecoveryDisposition::SafePreSpawnRequeue => "safe_pre_spawn_requeue",
-            RecoveryDisposition::NeedsOperator => "needs_operator",
-            RecoveryDisposition::AlreadyTerminal => "already_terminal",
-        },
+        "disposition": response.disposition.as_str(),
         "committed_at": response.committed_at,
     })
     .to_string();
@@ -278,31 +271,24 @@ async fn apply_recovery(
     Ok(RecoveryObservationResult::Applied(response))
 }
 
-fn recovery_response(serialized: &str) -> Result<RecoveryResponse, sqlx::Error> {
+fn recovery_response(serialized: &str) -> Result<RecoveryResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let object = value
         .as_object()
-        .ok_or_else(|| sqlx::Error::Protocol("invalid recovery replay response".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid recovery replay response"))?;
     let required = |field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                sqlx::Error::Protocol(format!("invalid recovery replay response field: {field}"))
+                StoreError::malformed(format!("invalid recovery replay response field: {field}"))
             })
     };
-    let disposition = match required("disposition")?.as_str() {
-        "safe_pre_spawn_requeue" => RecoveryDisposition::SafePreSpawnRequeue,
-        "needs_operator" => RecoveryDisposition::NeedsOperator,
-        "already_terminal" => RecoveryDisposition::AlreadyTerminal,
-        _ => {
-            return Err(sqlx::Error::Protocol(
-                "invalid recovery replay response disposition".into(),
-            ));
-        }
-    };
+    let disposition = required("disposition")?
+        .parse::<RecoveryDisposition>()
+        .map_err(|_| StoreError::malformed("invalid recovery replay response disposition"))?;
     Ok(RecoveryResponse {
         attempt_id: required("attempt_id")?,
         recovery_key: required("recovery_key")?,
@@ -319,7 +305,7 @@ impl Repository {
         actor: &str,
         reason_fingerprint: &str,
         clock: &dyn Clock,
-    ) -> Result<OperatorRequeueResult, sqlx::Error> {
+    ) -> Result<OperatorRequeueResult, StoreError> {
         let now = stamp(clock);
         // Serialize duplicate operator requeues for the same request (e.g. a
         // double-clicked retry) before either transaction reads the
@@ -369,7 +355,7 @@ impl Repository {
         &self,
         input: RecoveryObservationInput<'_>,
         clock: &dyn Clock,
-    ) -> Result<RecoveryObservationResult, sqlx::Error> {
+    ) -> Result<RecoveryObservationResult, StoreError> {
         let now = stamp(clock);
         let details = recovery_details(input.details)?;
         let fingerprint = recovery_fingerprint(&input)?;
@@ -405,7 +391,7 @@ impl Repository {
         code: &str,
         sentence: &str,
         clock: &dyn Clock,
-    ) -> Result<u64, sqlx::Error> {
+    ) -> Result<u64, StoreError> {
         let candidates = sqlx::query_scalar::<_, String>("SELECT id FROM execution_attempts WHERE state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
             .bind(expired_before.to_rfc3339()).fetch_all(self.pool()).await?;
         let details =
@@ -457,7 +443,7 @@ impl Repository {
         &self,
         now: DateTime<Utc>,
         event_window: Duration,
-    ) -> Result<ExecutionFleetSnapshotRow, sqlx::Error> {
+    ) -> Result<ExecutionFleetSnapshotRow, StoreError> {
         let now_s = now.to_rfc3339();
 
         let runner_rows: Vec<(String, i64)> =

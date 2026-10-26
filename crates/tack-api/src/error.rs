@@ -53,9 +53,6 @@ pub enum ApiError {
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
 
-    #[error("Database error: {0}")]
-    Database(#[from] sqlx::Error),
-
     #[error("{0}")]
     Store(#[from] StoreError),
 
@@ -119,13 +116,6 @@ impl IntoResponse for ApiError {
                     format!("The {section} section could not be written, so nothing was created.")
                 };
                 (StatusCode::INTERNAL_SERVER_ERROR, message)
-            }
-            ApiError::Database(err) => {
-                error!(error = %err, "Database error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".into(),
-                )
             }
             ApiError::Store(err) => match err {
                 StoreError::NotFound => (StatusCode::NOT_FOUND, err.to_string()),
@@ -233,11 +223,6 @@ mod tests {
             (status, message.as_str()),
             (StatusCode::CONFLICT, "conflict: already_reviewed")
         );
-        let (status, message) = message_of(StoreError::Sql(sqlx::Error::RowNotFound).into()).await;
-        assert_eq!(
-            (status, message.as_str()),
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
-        );
     }
 
     #[tokio::test]
@@ -264,10 +249,6 @@ mod tests {
             })
             .await,
             StatusCode::CONFLICT
-        );
-        assert_eq!(
-            status_of(AppError::Store(StoreError::Sql(sqlx::Error::RowNotFound))).await,
-            StatusCode::INTERNAL_SERVER_ERROR
         );
     }
 }

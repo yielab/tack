@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use chrono::Duration;
+use tack_db::Repository;
 use tack_db::repo::execution::PurgeStats;
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 use tracing::{debug, info, warn};
 
@@ -63,12 +63,10 @@ pub async fn tick(
 
     let replays = repo
         .purge_stale_execution_replays(cutoff, settings.batch_size)
-        .await
-        .map_err(StoreError::from);
+        .await;
     let events = repo
         .purge_stale_terminal_execution_events(cutoff, settings.batch_size)
-        .await
-        .map_err(StoreError::from);
+        .await;
 
     match (replays, events) {
         (Ok(replays), Ok(events)) => Ok(Outcome { replays, events }),

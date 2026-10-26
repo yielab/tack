@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
+use tack_db::Repository;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, EventBatchResult, NewEvent};
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 use uuid::Uuid;
 
@@ -83,8 +83,7 @@ pub async fn report_events(
             &events,
             clock,
         )
-        .await
-        .map_err(StoreError::from)?;
+        .await?;
     Ok(match result {
         EventApplyResult::Applied(batch) => EventsReported::Applied(batch),
         EventApplyResult::IdempotencyConflict => EventsReported::IdempotencyConflict,

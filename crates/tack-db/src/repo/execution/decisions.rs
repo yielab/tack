@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 use tack_protocol::Clock;
+use tack_protocol::execution::ExecutionState;
 use tracing::instrument;
 
 use super::shared::{mirror_request_state, stamp};
@@ -35,7 +36,7 @@ pub(super) async fn end_attempt_decisions(
     conn: &mut SqliteConnection,
     attempt_id: &str,
     now: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreError> {
     sqlx::query(
         "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
          WHERE attempt_id=? AND state='pending'",
@@ -58,7 +59,7 @@ async fn park_attempt_on_pending_decision(
     conn: &mut SqliteConnection,
     attempt_id: &str,
     now: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreError> {
     let parked = sqlx::query(
         "UPDATE execution_attempts SET state='waiting_decision',updated_at=? \
          WHERE id=? AND state='running' \
@@ -70,7 +71,7 @@ async fn park_attempt_on_pending_decision(
     .execute(&mut *conn)
     .await?;
     if parked.rows_affected() == 1 {
-        mirror_request_state(conn, attempt_id, "waiting_decision", now).await?;
+        mirror_request_state(conn, attempt_id, ExecutionState::WaitingDecision, now).await?;
     }
     Ok(())
 }
@@ -85,7 +86,7 @@ pub async fn resume_attempt_after_decisions(
     conn: &mut SqliteConnection,
     attempt_id: &str,
     now: DateTime<Utc>,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool, StoreError> {
     let now = now.to_rfc3339();
     let resumed = sqlx::query(
         "UPDATE execution_attempts SET state='running',updated_at=? \
@@ -100,7 +101,7 @@ pub async fn resume_attempt_after_decisions(
     if resumed.rows_affected() != 1 {
         return Ok(false);
     }
-    mirror_request_state(conn, attempt_id, "running", &now).await?;
+    mirror_request_state(conn, attempt_id, ExecutionState::Running, &now).await?;
     Ok(true)
 }
 
@@ -113,7 +114,7 @@ impl Repository {
     pub async fn expire_decisions_of_ended_attempts(
         &self,
         clock: &dyn Clock,
-    ) -> Result<u64, sqlx::Error> {
+    ) -> Result<u64, StoreError> {
         let now = stamp(clock);
         let closed = sqlx::query(
             "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
@@ -141,7 +142,7 @@ impl Repository {
         fence: i64,
         decision: NewDecision<'_>,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = stamp(clock);
         // Serialize the eligibility check and the insert against a concurrent
         // completion, cancellation, or recovery transition for the same
@@ -173,7 +174,7 @@ impl Repository {
         attempt_id: &str,
         decision_id: &str,
         clock: &dyn Clock,
-    ) -> Result<Option<String>, sqlx::Error> {
+    ) -> Result<Option<String>, StoreError> {
         let now = stamp(clock);
         sqlx::query_scalar(
             "UPDATE execution_decisions SET viewed_at = COALESCE(viewed_at, ?) \
@@ -184,6 +185,7 @@ impl Repository {
         .bind(decision_id)
         .fetch_optional(self.pool())
         .await
+        .map_err(StoreError::from)
     }
 
     // ─── Runtime retention and observability ───────────────────────────────

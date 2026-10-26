@@ -5,7 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# No axum and no sqlx, on purpose: this crate is the application layer. HTTP types belong to
+# No axum and no SQL driver, on purpose: this crate is the application layer. HTTP types belong to
 # tack-api and SQL to tack-db; `scripts/check-crate-graph.sh` and `make deny` keep both out.
 [dependencies]
 tack-protocol = { path = "../tack-protocol" }

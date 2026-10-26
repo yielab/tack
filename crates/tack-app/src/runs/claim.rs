@@ -1,6 +1,6 @@
 use chrono::Duration;
+use tack_db::Repository;
 use tack_db::repo::execution::{ClaimedExecution, RequestSelection};
-use tack_db::{Repository, StoreError};
 use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::Clock;
 use uuid::Uuid;
@@ -33,6 +33,5 @@ pub async fn claim(
             clock,
             RequestSelection::Scheduled(scheduled_request_id.as_deref()),
         )
-        .await
-        .map_err(StoreError::from)?)
+        .await?)
 }

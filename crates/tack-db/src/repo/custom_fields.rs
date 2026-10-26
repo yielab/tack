@@ -1,4 +1,5 @@
 use crate::Repository;
+use crate::StoreError;
 use sqlx::FromRow;
 use tack_core::models::*;
 use tracing::instrument;
@@ -35,7 +36,7 @@ pub async fn create_field(
     repo: &Repository,
     project_id: Uuid,
     data: CreateCustomField,
-) -> Result<CustomFieldDefinition, sqlx::Error> {
+) -> Result<CustomFieldDefinition, StoreError> {
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
@@ -81,7 +82,7 @@ pub async fn create_field(
 
 /// Get a custom field definition by ID
 #[instrument(skip(repo))]
-pub async fn get_field(repo: &Repository, id: Uuid) -> Result<CustomFieldDefinition, sqlx::Error> {
+pub async fn get_field(repo: &Repository, id: Uuid) -> Result<CustomFieldDefinition, StoreError> {
     let row = sqlx::query_as::<_, CustomFieldRow>(
         "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
@@ -144,7 +145,7 @@ pub async fn get_field(repo: &Repository, id: Uuid) -> Result<CustomFieldDefinit
 pub async fn list_fields_for_project(
     repo: &Repository,
     project_id: Uuid,
-) -> Result<Vec<CustomFieldDefinition>, sqlx::Error> {
+) -> Result<Vec<CustomFieldDefinition>, StoreError> {
     let rows = sqlx::query_as::<_, CustomFieldRow>(
         "SELECT id, project_id, name, field_type, description, required, default_value, options, validation, created_at, updated_at
          FROM custom_field_definitions
@@ -216,7 +217,7 @@ pub async fn update_field(
     repo: &Repository,
     id: Uuid,
     data: UpdateCustomField,
-) -> Result<CustomFieldDefinition, sqlx::Error> {
+) -> Result<CustomFieldDefinition, StoreError> {
     let now = chrono::Utc::now();
 
     if let Some(name) = &data.name {
@@ -289,7 +290,7 @@ pub async fn update_field(
 
 /// Delete a custom field definition
 #[instrument(skip(repo))]
-pub async fn delete_field(repo: &Repository, id: Uuid) -> Result<(), sqlx::Error> {
+pub async fn delete_field(repo: &Repository, id: Uuid) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM custom_field_definitions WHERE id = ?")
         .bind(id.to_string())
         .execute(repo.pool())
@@ -306,7 +307,7 @@ pub async fn set_field_value(
     item_id: Uuid,
     field_id: Uuid,
     value: serde_json::Value,
-) -> Result<CustomFieldValue, sqlx::Error> {
+) -> Result<CustomFieldValue, StoreError> {
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
     let value_str = value.to_string();
@@ -337,7 +338,7 @@ pub async fn get_field_value(
     repo: &Repository,
     item_id: Uuid,
     field_id: Uuid,
-) -> Result<CustomFieldValue, sqlx::Error> {
+) -> Result<CustomFieldValue, StoreError> {
     let row = sqlx::query_as::<_, CustomFieldValueRow>(
         "SELECT id, item_id, field_id, value, created_at, updated_at
          FROM custom_field_values
@@ -370,7 +371,7 @@ pub async fn get_field_value(
 pub async fn get_all_field_values_for_item(
     repo: &Repository,
     item_id: Uuid,
-) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
+) -> Result<Vec<CustomFieldValue>, StoreError> {
     let rows = sqlx::query_as::<_, CustomFieldValueRow>(
         "SELECT id, item_id, field_id, value, created_at, updated_at
          FROM custom_field_values
@@ -410,7 +411,7 @@ pub async fn delete_field_value(
     repo: &Repository,
     item_id: Uuid,
     field_id: Uuid,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM custom_field_values WHERE item_id = ? AND field_id = ?")
         .bind(item_id.to_string())
         .bind(field_id.to_string())
@@ -424,7 +425,7 @@ pub async fn delete_field_value(
 pub async fn field_values_for_project(
     repo: &Repository,
     project_id: Uuid,
-) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
+) -> Result<Vec<CustomFieldValue>, StoreError> {
     let rows = sqlx::query_as::<_, CustomFieldValueRow>(
         "SELECT v.id, v.item_id, v.field_id, v.value, v.created_at, v.updated_at
          FROM custom_field_values v JOIN items i ON i.id = v.item_id

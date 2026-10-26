@@ -7,8 +7,8 @@ mod status_map;
 
 use std::future::Future;
 
+use tack_db::Repository;
 use tack_db::repo::execution::{Completion, CompletionResponse, CompletionResult, state};
-use tack_db::{Repository, StoreError};
 use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
@@ -83,8 +83,7 @@ where
             },
             clock,
         )
-        .await
-        .map_err(StoreError::from)?;
+        .await?;
     Ok(match result {
         CompletionResult::Committed(response) => {
             let mut item_moved = None;

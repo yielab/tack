@@ -1,5 +1,6 @@
 //! Events: a runner's batches of events are appended once, read back per attempt, and purged with the replay bookkeeping.
 
+use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
 use tack_protocol::Clock;
@@ -85,12 +86,12 @@ pub enum EventApplyResult {
 fn event_batch_fingerprint(
     batch: &EventBatch<'_>,
     events: &[NewEvent<'_>],
-) -> Result<String, sqlx::Error> {
-    let values: Result<Vec<serde_json::Value>, sqlx::Error> = events
+) -> Result<String, StoreError> {
+    let values: Result<Vec<serde_json::Value>, StoreError> = events
         .iter()
         .map(|event| {
             let payload: serde_json::Value = serde_json::from_str(event.payload)
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+                .map_err(|error| StoreError::malformed(error.to_string()))?;
             Ok(serde_json::json!({
                 "event_id": event.event_id,
                 "sequence": event.sequence,
@@ -107,7 +108,7 @@ fn event_batch_fingerprint(
         "previous_checkpoint": batch.previous_checkpoint,
         "events": values?,
     }))
-    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+    .map_err(|error| StoreError::malformed(error.to_string()))
 }
 
 impl Repository {
@@ -122,7 +123,7 @@ impl Repository {
         &self,
         request_id: &str,
         attempt_number: i64,
-    ) -> Result<Option<Vec<EventListingRow>>, sqlx::Error> {
+    ) -> Result<Option<Vec<EventListingRow>>, StoreError> {
         let attempt_id: Option<String> = sqlx::query_scalar(
             "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
         )
@@ -161,7 +162,7 @@ impl Repository {
         batch: EventBatch<'_>,
         events: &[NewEvent<'_>],
         clock: &dyn Clock,
-    ) -> Result<EventApplyResult, sqlx::Error> {
+    ) -> Result<EventApplyResult, StoreError> {
         let now = stamp(clock);
         let fingerprint = event_batch_fingerprint(&batch, events)?;
         // Serialize duplicate/replayed event batches for the same attempt
@@ -194,26 +195,26 @@ impl Repository {
             }
             let response: String = row.get("response");
             let value: serde_json::Value = serde_json::from_str(&response)
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+                .map_err(|error| StoreError::malformed(error.to_string()))?;
             let accepted = value["accepted_event_ids"]
                 .as_array()
-                .ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?
+                .ok_or_else(|| StoreError::malformed("invalid event replay response"))?
                 .iter()
                 .map(|value| {
                     value
                         .as_str()
-                        .ok_or_else(|| sqlx::Error::Protocol("invalid event replay id".into()))
+                        .ok_or_else(|| StoreError::malformed("invalid event replay id"))
                         .map(str::to_owned)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let duplicate = value["duplicate_event_ids"]
                 .as_array()
-                .ok_or_else(|| sqlx::Error::Protocol("invalid event replay response".into()))?
+                .ok_or_else(|| StoreError::malformed("invalid event replay response"))?
                 .iter()
                 .map(|value| {
                     value
                         .as_str()
-                        .ok_or_else(|| sqlx::Error::Protocol("invalid event replay id".into()))
+                        .ok_or_else(|| StoreError::malformed("invalid event replay id"))
                         .map(str::to_owned)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -289,7 +290,7 @@ impl Repository {
         &self,
         cutoff: DateTime<Utc>,
         batch_limit: i64,
-    ) -> Result<u64, sqlx::Error> {
+    ) -> Result<u64, StoreError> {
         let result = sqlx::query(
             "DELETE FROM execution_events WHERE id IN (SELECT id FROM execution_events WHERE created_at < ? LIMIT ?)",
         )
@@ -317,7 +318,7 @@ impl Repository {
         &self,
         cutoff: DateTime<Utc>,
         batch_size: i64,
-    ) -> Result<PurgeStats, sqlx::Error> {
+    ) -> Result<PurgeStats, StoreError> {
         const TABLES: [(&str, &str); 6] = [
             ("execution_claim_replays", "created_at"),
             ("execution_heartbeat_replays", "created_at"),
@@ -389,7 +390,7 @@ impl Repository {
         &self,
         cutoff: DateTime<Utc>,
         batch_size: i64,
-    ) -> Result<PurgeStats, sqlx::Error> {
+    ) -> Result<PurgeStats, StoreError> {
         let cutoff_str = cutoff.to_rfc3339();
         let mut stats = PurgeStats::default();
 

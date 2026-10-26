@@ -1,4 +1,4 @@
-use tack_db::{Repository, StoreError};
+use tack_db::Repository;
 use tack_protocol::Clock;
 
 use crate::AppError;
@@ -13,7 +13,6 @@ pub async fn mark_decision_viewed(
     decision_id: &str,
 ) -> Result<String, AppError> {
     repo.mark_execution_decision_viewed(attempt_id, decision_id, clock)
-        .await
-        .map_err(StoreError::from)?
+        .await?
         .ok_or(AppError::NotFound)
 }

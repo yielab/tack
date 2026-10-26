@@ -5,6 +5,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Makes `Repository::pool` public. Only tack-test-support enables it. Cargo unifies features
+# across a build, so this cannot stop another crate from calling it; the gate that does is
+# `scripts/check-crate-graph.sh` (no `.pool()` or SQL driver outside tack-db and
+# tack-test-support) together with the ban rules in `deny.toml`.
+raw-pool = []
+
 [dependencies]
 tack-protocol = { path = "../tack-protocol" }
 tack-core = { path = "../tack-core" }

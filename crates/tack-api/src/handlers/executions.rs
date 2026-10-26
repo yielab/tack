@@ -18,9 +18,9 @@ use tack_db::queries::{
     agent_profiles, attempt_reviews, autonomy, budgets, execution_attempts, execution_requests,
     pull_requests,
 };
+use tack_db::repo::execution::state as execution_state;
 use tack_db::{Repository, StoreError, repo::execution::RunnerListingRow};
-use tack_orch::scheduler::select::SchedulingPolicy;
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ExecutionState, ProtocolErrorEnvelope, StableErrorCode};
 use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -871,10 +871,10 @@ pub async fn list_executions(
 /// window. Decided at read time; never stored, never grounds for failing it.
 const NO_RUNNER_ONLINE: &str = "no runner is online";
 
-/// Whether a listed runner is online now: [`SchedulingPolicy::is_online`] is the one rule,
+/// Whether a listed runner is online now: [`tack_app::scheduler_wiring::runner_is_online`] is the one rule,
 /// this only reads the stored row into it.
 pub(crate) fn runner_is_online(runner: &RunnerListingRow, now: DateTime<Utc>) -> bool {
-    SchedulingPolicy::default().is_online(
+    tack_app::scheduler_wiring::runner_is_online(
         runner.state == "active" && runner.revoked_at.is_none(),
         runner
             .last_heartbeat_at
@@ -925,7 +925,7 @@ fn silent_since(
         .filter_map(|runner| runner.last_heartbeat_at.as_deref().and_then(parse_rfc3339))
         .max()?;
     // The scheduler's own rule for "answering": past its window, nothing in the group answers.
-    (!SchedulingPolicy::default().is_online(true, Some(last), now)).then_some(last)
+    (!tack_app::scheduler_wiring::runner_is_online(true, Some(last), now)).then_some(last)
 }
 
 /// A listed run's reason. A queued run waits for the computer it asked for when that has stopped
@@ -1488,8 +1488,8 @@ pub async fn requeue_needs_operator(
     Ok(Json(RequeueResponse {
         protocol_version: 1,
         request_id,
-        state: "queued".into(),
-        recovered_from: "needs_operator".into(),
+        state: execution_state::text(ExecutionState::Queued).into(),
+        recovered_from: execution_state::text(ExecutionState::NeedsOperator).into(),
         replayed: requeued.replayed,
     }))
 }

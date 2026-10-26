@@ -10,3 +10,10 @@ pub enum StoreError {
     #[error(transparent)]
     Sql(#[from] sqlx::Error),
 }
+
+impl StoreError {
+    /// A row or stored document that does not have the shape this layer wrote.
+    pub(crate) fn malformed(message: impl Into<String>) -> Self {
+        StoreError::Sql(sqlx::Error::Protocol(message.into()))
+    }
+}

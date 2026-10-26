@@ -1,3 +1,4 @@
+use crate::StoreError;
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -15,7 +16,7 @@ impl Repository {
         &self,
         workspace_id: Uuid,
         input: CreateProject,
-    ) -> Result<Project, sqlx::Error> {
+    ) -> Result<Project, StoreError> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let vocabulary = vocabulary_for_type(&input.project_type);
@@ -83,7 +84,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
+    pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, StoreError> {
         let row = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
@@ -104,7 +105,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
+    pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, StoreError> {
         let rows = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
@@ -129,7 +130,7 @@ impl Repository {
         &self,
         id: Uuid,
         input: UpdateProject,
-    ) -> Result<Option<Project>, sqlx::Error> {
+    ) -> Result<Option<Project>, StoreError> {
         let now = Utc::now().to_rfc3339();
 
         if let Some(ref name) = input.name {
@@ -266,7 +267,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_project(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_project(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM projects WHERE id = ?")
             .bind(id.to_string())
             .execute(self.pool())
@@ -308,7 +309,7 @@ struct ProjectRow {
 }
 
 impl ProjectRow {
-    fn into_project(self) -> Result<Project, sqlx::Error> {
+    fn into_project(self) -> Result<Project, StoreError> {
         Ok(Project {
             id: Uuid::parse_str(&self.id).unwrap(),
             workspace_id: Uuid::parse_str(&self.workspace_id).unwrap(),

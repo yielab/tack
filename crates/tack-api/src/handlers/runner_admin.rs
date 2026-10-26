@@ -870,8 +870,7 @@ pub async fn local_runner_id_exists(
     let repo = Repository::new(pool);
     Ok(repo
         .fetch_runner_scheduling_snapshot(runner_id)
-        .await
-        .map_err(StoreError::from)?
+        .await?
         .is_some())
 }
 

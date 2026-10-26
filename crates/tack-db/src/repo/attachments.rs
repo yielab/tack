@@ -1,3 +1,4 @@
+use crate::StoreError;
 use chrono::Utc;
 use sqlx::Row;
 use tracing::instrument;
@@ -26,7 +27,7 @@ impl<'a> AttachmentRepo<'a> {
         mime_type: String,
         storage_path: String,
         size_bytes: u64,
-    ) -> Result<Attachment, sqlx::Error> {
+    ) -> Result<Attachment, StoreError> {
         let id = Uuid::new_v4();
         let uploaded_at = Utc::now().to_rfc3339();
 
@@ -57,7 +58,7 @@ impl<'a> AttachmentRepo<'a> {
 
     /// Get attachment by ID
     #[instrument(skip(self))]
-    pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, sqlx::Error> {
+    pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, StoreError> {
         let row = sqlx::query(
             "SELECT id, item_id, filename, mime_type, storage_path, size_bytes, uploaded_at
              FROM attachments WHERE id = ?",
@@ -79,7 +80,7 @@ impl<'a> AttachmentRepo<'a> {
 
     /// List attachments for an item
     #[instrument(skip(self))]
-    pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, sqlx::Error> {
+    pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, StoreError> {
         let rows = sqlx::query(
             "SELECT id, item_id, filename, mime_type, storage_path, size_bytes, uploaded_at
              FROM attachments WHERE item_id = ? ORDER BY uploaded_at DESC",
@@ -104,7 +105,7 @@ impl<'a> AttachmentRepo<'a> {
 
     /// Delete attachment
     #[instrument(skip(self))]
-    pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM attachments WHERE id = ?")
             .bind(id.to_string())
             .execute(self.repo.pool())

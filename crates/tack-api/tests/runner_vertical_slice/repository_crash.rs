@@ -217,7 +217,6 @@ async fn try_claim(
             RequestSelection::Naive,
         )
         .await
-        .map_err(StoreError::from)
 }
 
 #[tokio::test]
@@ -534,7 +533,6 @@ async fn request_cancellation(fixture: &Fixture) -> Result<bool, StoreError> {
         .repo
         .request_execution_cancellation("request-crash", &fixture.clock)
         .await
-        .map_err(StoreError::from)
 }
 
 /// The request-crash row's `(state, cancellation_requested_at)`.
@@ -691,7 +689,6 @@ async fn crash_heartbeat(
             &fixture.clock,
         )
         .await
-        .map_err(StoreError::from)
 }
 
 #[tokio::test]

@@ -145,7 +145,7 @@ impl Fixture {
         id: &str,
         key: &str,
         fingerprint: &str,
-    ) -> Result<EnqueueResult, sqlx::Error> {
+    ) -> Result<EnqueueResult, tack_db::StoreError> {
         self.repo
             .enqueue_execution(self.request(id, key, fingerprint), &self.clock)
             .await
@@ -163,7 +163,7 @@ impl Fixture {
         &self,
         attempt_id: &str,
         lease_duration: Duration,
-    ) -> Result<Option<Lease>, sqlx::Error> {
+    ) -> Result<Option<Lease>, tack_db::StoreError> {
         self.claim_raw_result(attempt_id, attempt_id, lease_duration)
             .await
             .map(|claim| claim.map(|claim| claim.lease))
@@ -189,7 +189,7 @@ impl Fixture {
         claim_request_id: &str,
         attempt_id: &str,
         lease_duration: Duration,
-    ) -> Result<Option<ClaimedExecution>, sqlx::Error> {
+    ) -> Result<Option<ClaimedExecution>, tack_db::StoreError> {
         self.repo
             .claim_execution_idempotent_with_snapshot(
                 "runner-a",
@@ -305,7 +305,7 @@ impl Fixture {
         missed: i64,
         leases: &[HeartbeatLease<'_>],
         lease_duration: Duration,
-    ) -> Result<HeartbeatBatchResult, sqlx::Error> {
+    ) -> Result<HeartbeatBatchResult, tack_db::StoreError> {
         self.repo
             .heartbeat_batch(
                 "runner-a",
@@ -390,7 +390,7 @@ impl Fixture {
         &self,
         batch: EventBatch<'_>,
         events: &[NewEvent<'_>],
-    ) -> Result<EventApplyResult, sqlx::Error> {
+    ) -> Result<EventApplyResult, tack_db::StoreError> {
         self.repo
             .append_execution_events_result(batch, events, &self.clock)
             .await
@@ -417,7 +417,7 @@ impl Fixture {
     pub async fn observe_cancellation_result(
         &self,
         input: CancellationObservationInput<'_>,
-    ) -> Result<CancellationObservation, sqlx::Error> {
+    ) -> Result<CancellationObservation, tack_db::StoreError> {
         self.repo.observe_cancellation(input, &self.clock).await
     }
 
@@ -431,7 +431,7 @@ impl Fixture {
     pub async fn recover_result(
         &self,
         input: RecoveryObservationInput<'_>,
-    ) -> Result<RecoveryObservationResult, sqlx::Error> {
+    ) -> Result<RecoveryObservationResult, tack_db::StoreError> {
         self.repo.recover_attempt(input, &self.clock).await
     }
 
@@ -446,7 +446,7 @@ impl Fixture {
     pub async fn operator_requeue_result(
         &self,
         request_id: &str,
-    ) -> Result<OperatorRequeueResult, sqlx::Error> {
+    ) -> Result<OperatorRequeueResult, tack_db::StoreError> {
         self.repo
             .operator_requeue_needs_operator(
                 request_id,
@@ -468,7 +468,7 @@ impl Fixture {
     pub async fn transition_result(
         &self,
         input: AttemptTransitionInput<'_>,
-    ) -> Result<AttemptTransitionResult, sqlx::Error> {
+    ) -> Result<AttemptTransitionResult, tack_db::StoreError> {
         self.repo
             .transition_attempt_with_facts(input, &self.clock)
             .await
@@ -484,7 +484,7 @@ impl Fixture {
     pub async fn complete_result(
         &self,
         completion: Completion<'_>,
-    ) -> Result<CompletionResult, sqlx::Error> {
+    ) -> Result<CompletionResult, tack_db::StoreError> {
         self.repo
             .complete_execution_result(completion, &self.clock)
             .await
@@ -508,7 +508,7 @@ impl Fixture {
         expected_hash: &str,
         new_hash: &str,
         expires_at: DateTime<Utc>,
-    ) -> Result<CredentialRotationResult, sqlx::Error> {
+    ) -> Result<CredentialRotationResult, tack_db::StoreError> {
         self.repo
             .rotate_runner_credential("runner-a", expected_hash, new_hash, expires_at, &self.clock)
             .await
@@ -541,7 +541,7 @@ impl Fixture {
         attempt_id: &str,
         fencing_token: i64,
         artifact_id: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, tack_db::StoreError> {
         self.repo
             .record_execution_artifact(
                 "runner-a",
@@ -573,7 +573,7 @@ impl Fixture {
         attempt_id: &str,
         fencing_token: i64,
         decision_id: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, tack_db::StoreError> {
         self.repo
             .create_execution_decision(
                 "runner-a",

@@ -1,6 +1,7 @@
 //! Enqueueing: the request snapshot is parsed and validated, the request is stored, and the queue is read, both for listings and for what the
 //! scheduler may hand out next.
 
+use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
 use tack_protocol::Clock;
@@ -197,8 +198,8 @@ fn given_the_days_room(snapshot: &str) -> bool {
         .is_ok_and(|value| value["metadata"]["limit_source"] == "day")
 }
 
-fn snapshot_error(message: impl Into<String>) -> sqlx::Error {
-    sqlx::Error::Protocol(format!(
+fn snapshot_error(message: impl Into<String>) -> StoreError {
+    StoreError::malformed(format!(
         "invalid execution request snapshot: {}",
         message.into()
     ))
@@ -207,7 +208,7 @@ fn snapshot_error(message: impl Into<String>) -> sqlx::Error {
 fn snapshot_object<'a>(
     value: &'a serde_json::Value,
     field: &str,
-) -> Result<&'a serde_json::Map<String, serde_json::Value>, sqlx::Error> {
+) -> Result<&'a serde_json::Map<String, serde_json::Value>, StoreError> {
     value
         .as_object()
         .ok_or_else(|| snapshot_error(format!("{field} must be an object")))
@@ -216,7 +217,7 @@ fn snapshot_object<'a>(
 fn snapshot_field<'a>(
     object: &'a serde_json::Map<String, serde_json::Value>,
     field: &str,
-) -> Result<&'a serde_json::Value, sqlx::Error> {
+) -> Result<&'a serde_json::Value, StoreError> {
     object
         .get(field)
         .ok_or_else(|| snapshot_error(format!("missing {field}")))
@@ -225,7 +226,7 @@ fn snapshot_field<'a>(
 fn snapshot_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &str,
-) -> Result<String, sqlx::Error> {
+) -> Result<String, StoreError> {
     snapshot_field(object, field)?
         .as_str()
         .map(str::to_owned)
@@ -235,7 +236,7 @@ fn snapshot_string(
 fn snapshot_nullable_string(
     object: &serde_json::Map<String, serde_json::Value>,
     field: &str,
-) -> Result<Option<String>, sqlx::Error> {
+) -> Result<Option<String>, StoreError> {
     match snapshot_field(object, field)? {
         serde_json::Value::Null => Ok(None),
         serde_json::Value::String(value) => Ok(Some(value.clone())),
@@ -245,7 +246,7 @@ fn snapshot_nullable_string(
 
 pub(super) fn parse_execution_request_snapshot(
     serialized: &str,
-) -> Result<serde_json::Value, sqlx::Error> {
+) -> Result<serde_json::Value, StoreError> {
     let value: serde_json::Value =
         serde_json::from_str(serialized).map_err(|error| snapshot_error(error.to_string()))?;
     let root = snapshot_object(&value, "snapshot")?;
@@ -334,10 +335,10 @@ pub(super) fn parse_execution_request_snapshot(
 
 fn validate_execution_request_snapshot(
     input: &NewExecutionRequest<'_>,
-) -> Result<String, sqlx::Error> {
+) -> Result<String, StoreError> {
     let snapshot = parse_execution_request_snapshot(input.request_snapshot)?;
     let root = snapshot_object(&snapshot, "snapshot")?;
-    let matches = |field: &str, expected: &str| -> Result<(), sqlx::Error> {
+    let matches = |field: &str, expected: &str| -> Result<(), StoreError> {
         if snapshot_string(root, field)? == expected {
             Ok(())
         } else {
@@ -403,7 +404,7 @@ fn validate_execution_request_snapshot(
         .map_err(|error| snapshot_error(error.to_string()))
 }
 
-fn snapshot_created_at_matches_now(snapshot: &str, now: &str) -> Result<(), sqlx::Error> {
+fn snapshot_created_at_matches_now(snapshot: &str, now: &str) -> Result<(), StoreError> {
     let snapshot = parse_execution_request_snapshot(snapshot)?;
     let root = snapshot_object(&snapshot, "snapshot")?;
     let snapshot_created_at =
@@ -426,7 +427,7 @@ impl Repository {
     pub async fn fetch_runner_scheduling_snapshot(
         &self,
         runner_id: &str,
-    ) -> Result<Option<RunnerSchedulingSnapshot>, sqlx::Error> {
+    ) -> Result<Option<RunnerSchedulingSnapshot>, StoreError> {
         let row = sqlx::query(
             "SELECT state, labels, total_capacity, available_capacity, last_heartbeat_at, \
              capability_snapshot FROM agent_runners WHERE id = ?",
@@ -461,7 +462,7 @@ impl Repository {
     pub async fn list_eligible_queued_requests(
         &self,
         runner_id: &str,
-    ) -> Result<Vec<QueuedRequestForScheduling>, sqlx::Error> {
+    ) -> Result<Vec<QueuedRequestForScheduling>, StoreError> {
         let rows = sqlx::query(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
              requested_model, created_at, metadata, \
@@ -503,7 +504,7 @@ impl Repository {
         reason: &str,
         blocking: bool,
         now: DateTime<Utc>,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         sqlx::query("UPDATE execution_requests SET waiting_code=?,waiting_reason=?,waiting_since=CASE WHEN ? THEN COALESCE(waiting_since,?) ELSE NULL END WHERE id=? AND state='queued'")
             .bind(code).bind(reason).bind(blocking).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
@@ -519,7 +520,7 @@ impl Repository {
         code: &str,
         reason: &str,
         now: DateTime<Utc>,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let updated = sqlx::query("UPDATE execution_requests SET state='failed',waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND state='queued'")
             .bind(code).bind(reason).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
@@ -532,7 +533,7 @@ impl Repository {
     pub async fn fetch_fleet_concurrency(
         &self,
         fleet_id: &str,
-    ) -> Result<Option<FleetConcurrencySnapshot>, sqlx::Error> {
+    ) -> Result<Option<FleetConcurrencySnapshot>, StoreError> {
         let row = sqlx::query("SELECT concurrency_limit FROM agent_fleets WHERE id = ?")
             .bind(fleet_id)
             .fetch_optional(self.pool())
@@ -561,7 +562,7 @@ impl Repository {
         &self,
         item_id: Option<&str>,
         limit: i64,
-    ) -> Result<Vec<ExecutionListingRow>, sqlx::Error> {
+    ) -> Result<Vec<ExecutionListingRow>, StoreError> {
         let rows = match item_id {
             Some(item_id) => {
                 sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
@@ -607,7 +608,7 @@ impl Repository {
     pub async fn list_latest_executions_for_items(
         &self,
         item_ids: &[String],
-    ) -> Result<Vec<ExecutionListingRow>, sqlx::Error> {
+    ) -> Result<Vec<ExecutionListingRow>, StoreError> {
         if item_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -647,7 +648,7 @@ impl Repository {
     pub async fn list_attempts_for_request(
         &self,
         request_id: &str,
-    ) -> Result<Vec<AttemptListingRow>, sqlx::Error> {
+    ) -> Result<Vec<AttemptListingRow>, StoreError> {
         let rows = sqlx::query(
             "SELECT id, request_id, attempt_number, runner_id, fencing_token, state, \
              lease_issued_at, lease_expires_at, last_heartbeat_at, event_checkpoint, \
@@ -691,7 +692,7 @@ impl Repository {
         &self,
         input: NewExecutionRequest<'_>,
         clock: &dyn Clock,
-    ) -> Result<EnqueueResult, sqlx::Error> {
+    ) -> Result<EnqueueResult, StoreError> {
         let now = stamp(clock);
         let request_snapshot = validate_execution_request_snapshot(&input)?;
         // Serialize duplicate enqueue requests for the same idempotency key

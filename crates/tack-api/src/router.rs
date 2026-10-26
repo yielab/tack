@@ -53,10 +53,6 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn pool(&self) -> &sqlx::SqlitePool {
-        self.repo.pool()
-    }
-
     /// The prill the board runs: the one place that asks the embedded runner.
     pub async fn prill_program(&self) -> String {
         let runner = match &self.local_runner {

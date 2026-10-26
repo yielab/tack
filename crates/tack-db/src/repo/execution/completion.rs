@@ -119,11 +119,11 @@ fn canonical_json_or_string(value: &str) -> serde_json::Value {
     }
 }
 
-fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, sqlx::Error> {
+fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreError> {
     let actual_execution: serde_json::Value = serde_json::from_str(completion.actual_execution)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let usage: serde_json::Value = serde_json::from_str(completion.usage)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     serde_json::to_string(&serde_json::json!({
         "runner_id": completion.runner_id,
         "attempt_id": completion.attempt_id,
@@ -135,30 +135,30 @@ fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, sqlx::E
         "actual_execution": canonical_json(actual_execution),
         "usage": canonical_json(usage),
     }))
-    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+    .map_err(|error| StoreError::malformed(error.to_string()))
 }
 
-fn replay_response(serialized: &str) -> Result<CompletionResponse, sqlx::Error> {
+fn replay_response(serialized: &str) -> Result<CompletionResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let object = value
         .as_object()
-        .ok_or_else(|| sqlx::Error::Protocol("invalid completion replay response".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid completion replay response"))?;
     let required = |field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                sqlx::Error::Protocol(format!("invalid completion replay response field: {field}"))
+                StoreError::malformed(format!("invalid completion replay response field: {field}"))
             })
     };
     let final_event_checkpoint = match object.get("final_event_checkpoint") {
         Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::String(value)) => Some(value.clone()),
         _ => {
-            return Err(sqlx::Error::Protocol(
-                "invalid completion replay response field: final_event_checkpoint".into(),
+            return Err(StoreError::malformed(
+                "invalid completion replay response field: final_event_checkpoint",
             ));
         }
     };
@@ -172,14 +172,14 @@ fn replay_response(serialized: &str) -> Result<CompletionResponse, sqlx::Error> 
 
 fn cancellation_fingerprint(
     input: &CancellationObservationInput<'_>,
-) -> Result<String, sqlx::Error> {
+) -> Result<String, StoreError> {
     let details: serde_json::Value = serde_json::from_str(input.details)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let observation: serde_json::Value = serde_json::from_str(input.observation)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     if observation != serde_json::Value::String("process_stopped".into()) {
-        return Err(sqlx::Error::Protocol(
-            "cancellation observation must be JSON string process_stopped".into(),
+        return Err(StoreError::malformed(
+            "cancellation observation must be JSON string process_stopped",
         ));
     }
     serde_json::to_string(&serde_json::json!({
@@ -191,22 +191,22 @@ fn cancellation_fingerprint(
         "details": canonical_json(details),
         "observation": canonical_json(observation),
     }))
-    .map_err(|error| sqlx::Error::Protocol(error.to_string()))
+    .map_err(|error| StoreError::malformed(error.to_string()))
 }
 
-fn cancellation_response(serialized: &str) -> Result<CancellationResponse, sqlx::Error> {
+fn cancellation_response(serialized: &str) -> Result<CancellationResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        .map_err(|error| StoreError::malformed(error.to_string()))?;
     let object = value
         .as_object()
-        .ok_or_else(|| sqlx::Error::Protocol("invalid cancellation replay response".into()))?;
+        .ok_or_else(|| StoreError::malformed("invalid cancellation replay response"))?;
     let required = |field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                sqlx::Error::Protocol(format!(
+                StoreError::malformed(format!(
                     "invalid cancellation replay response field: {field}"
                 ))
             })
@@ -224,7 +224,7 @@ impl Repository {
         &self,
         completion: Completion<'_>,
         clock: &dyn Clock,
-    ) -> Result<CompletionResult, sqlx::Error> {
+    ) -> Result<CompletionResult, StoreError> {
         if !terminal(completion.terminal_state) {
             return Ok(CompletionResult::Conflict);
         }
@@ -351,7 +351,7 @@ impl Repository {
         &self,
         input: AttemptTransitionInput<'_>,
         clock: &dyn Clock,
-    ) -> Result<AttemptTransitionResult, sqlx::Error> {
+    ) -> Result<AttemptTransitionResult, StoreError> {
         if input.workspace_id.is_empty()
             || input.base_revision.is_empty()
             || matches!(input.phase, AttemptTransitionPhase::Preparing)
@@ -364,8 +364,8 @@ impl Repository {
 
         let now = stamp(clock);
         // Serialize duplicate transition acknowledgements for the same
-        // attempt (e.g. a runner retrying an unacknowledged "preparing" or
-        // "running" report) before either transaction reads this attempt
+        // attempt (e.g. a runner retrying an unacknowledged preparing or
+        // running report) before either transaction reads this attempt
         // row. Two deferred readers can otherwise deadlock while both try to
         // upgrade to writers. Mirrors the redeem_enrollment_token and
         // claim_execution_idempotent_with_snapshot fixes above.
@@ -387,7 +387,7 @@ impl Repository {
             return Ok(AttemptTransitionResult::Stale);
         };
 
-        let state: String = row.get("state");
+        let state = state::parse(&row.get::<String, _>("state"))?;
         let workspace_id: Option<String> = row.get("workspace_id");
         let base_revision: Option<String> = row.get("base_revision");
         let process_id: Option<String> = row.get("process_id");
@@ -405,7 +405,7 @@ impl Repository {
                 return Ok(AttemptTransitionResult::Replayed(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: "preparing".into(),
+                        state: state::text(ExecutionState::Preparing).into(),
                         committed_at,
                     },
                 ));
@@ -422,12 +422,12 @@ impl Repository {
                 return Ok(AttemptTransitionResult::Replayed(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: "running".into(),
+                        state: state::text(ExecutionState::Running).into(),
                         committed_at,
                     },
                 ));
             }
-            AttemptTransitionPhase::Preparing if state == "leased" => {
+            AttemptTransitionPhase::Preparing if state == ExecutionState::Leased => {
                 let updated = sqlx::query(
                     "UPDATE execution_attempts SET state='preparing',workspace_id=?,base_revision=?,prepared_at=?,updated_at=? \
                      WHERE id=? AND runner_id=? AND fencing_token=? AND state='leased' AND lease_expires_at>?",
@@ -446,17 +446,20 @@ impl Repository {
                     tx.rollback().await?;
                     return Ok(AttemptTransitionResult::Stale);
                 }
-                mirror_request_state(&mut tx, input.attempt_id, "preparing", &now).await?;
+                mirror_request_state(&mut tx, input.attempt_id, ExecutionState::Preparing, &now)
+                    .await?;
                 tx.commit().await?;
                 return Ok(AttemptTransitionResult::Applied(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: "preparing".into(),
+                        state: state::text(ExecutionState::Preparing).into(),
                         committed_at: now,
                     },
                 ));
             }
-            AttemptTransitionPhase::Running if state == "preparing" && exact_workspace => {
+            AttemptTransitionPhase::Running
+                if state == ExecutionState::Preparing && exact_workspace =>
+            {
                 let updated = sqlx::query(
                     "UPDATE execution_attempts SET state='running',process_id=?,started_at=?,updated_at=? \
                      WHERE id=? AND runner_id=? AND fencing_token=? AND state='preparing' \
@@ -477,12 +480,13 @@ impl Repository {
                     tx.rollback().await?;
                     return Ok(AttemptTransitionResult::Stale);
                 }
-                mirror_request_state(&mut tx, input.attempt_id, "running", &now).await?;
+                mirror_request_state(&mut tx, input.attempt_id, ExecutionState::Running, &now)
+                    .await?;
                 tx.commit().await?;
                 return Ok(AttemptTransitionResult::Applied(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: "running".into(),
+                        state: state::text(ExecutionState::Running).into(),
                         committed_at: now,
                     },
                 ));
@@ -498,7 +502,7 @@ impl Repository {
         &self,
         input: CancellationObservationInput<'_>,
         clock: &dyn Clock,
-    ) -> Result<CancellationObservation, sqlx::Error> {
+    ) -> Result<CancellationObservation, StoreError> {
         let now = stamp(clock);
         let fingerprint = cancellation_fingerprint(&input)?;
         // Serialize duplicate cancellation observations for the same attempt
@@ -533,10 +537,7 @@ impl Repository {
             tx.commit().await?;
             return Ok(CancellationObservation::AlreadyTerminal { state });
         }
-        if !matches!(
-            state.as_str(),
-            "leased" | "preparing" | "running" | "waiting_decision"
-        ) {
+        if !state::is_live(&state) {
             tx.commit().await?;
             return Ok(CancellationObservation::Ambiguous { state });
         }
@@ -587,7 +588,7 @@ impl Repository {
         &self,
         completion: Completion<'_>,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         Ok(matches!(
             self.complete_execution_result(completion, clock).await?,
             CompletionResult::Committed(_) | CompletionResult::Replayed(_)
@@ -605,7 +606,7 @@ impl Repository {
         &self,
         request_id: &str,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let applied = apply_cancellation(&mut tx, request_id, &now).await?;
@@ -659,7 +660,7 @@ async fn apply_cancellation(
     tx: &mut sqlx::SqliteConnection,
     request_id: &str,
     now: &str,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool, StoreError> {
     let result = sqlx::query("UPDATE execution_requests SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?), updated_at = ? WHERE id = ? AND state NOT IN ('succeeded','failed','cancelled')")
         .bind(now).bind(now).bind(request_id).execute(&mut *tx).await?;
     if result.rows_affected() != 1 {
@@ -670,11 +671,8 @@ async fn apply_cancellation(
     if let Some(latest) = latest {
         let state: String = latest.get("state");
         let expired = latest.get::<String, _>("lease_expires_at").as_str() <= now;
-        let active = matches!(
-            state.as_str(),
-            "leased" | "preparing" | "running" | "waiting_decision"
-        );
-        if state == "needs_operator" || (active && expired) {
+        let active = state::is_live(&state);
+        if state::is_needs_operator(&state) || (active && expired) {
             let attempt: String = latest.get("id");
             sqlx::query("UPDATE execution_attempts SET state='cancelled',ended_at=?,updated_at=? WHERE id=?")
                 .bind(now).bind(now).bind(&attempt).execute(&mut *tx).await?;

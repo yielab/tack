@@ -14,7 +14,7 @@ use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
 use tack_core::run_defaults::Source;
 use tack_core::workflow::StatusCategory;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
-use tack_db::{Repository, StoreError, queries};
+use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use uuid::Uuid;
 
@@ -101,8 +101,7 @@ async fn project_tick(
         Some(limit) => {
             let taken = repo
                 .count_items_by_status(project.id, &started.name)
-                .await
-                .map_err(StoreError::from)?;
+                .await?;
             Some(limit.saturating_sub(usize::try_from(taken).unwrap_or(usize::MAX)))
         }
         None => None,
@@ -115,8 +114,7 @@ async fn project_tick(
     let item_ids: Vec<Uuid> = rows.iter().filter_map(|row| row.id.parse().ok()).collect();
     let edges: Vec<DependencyEdge> = repo
         .list_dependencies_for_items(&item_ids)
-        .await
-        .map_err(StoreError::from)?
+        .await?
         .into_iter()
         .filter(|d| {
             matches!(
@@ -143,7 +141,7 @@ async fn project_tick(
         let Ok(item_id) = row.id.parse::<Uuid>() else {
             continue;
         };
-        let Some(item) = repo.get_item(item_id).await.map_err(StoreError::from)? else {
+        let Some(item) = repo.get_item(item_id).await? else {
             continue;
         };
         // Without an agent to name, the run could not be created at all.

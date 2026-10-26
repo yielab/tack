@@ -43,6 +43,7 @@ use tack_app::runs::submit_artifacts::{
     ArtifactManifest, ContentUpload, ManifestSubmission, ManifestSubmitted, UploadChecked,
 };
 use tack_db::StoreError;
+use tack_db::repo::execution::state as execution_state;
 use tack_db::{
     Repository, queries,
     repo::execution::{
@@ -846,7 +847,7 @@ pub async fn claim(
                     "attempt_number": lease.attempt_number,
                     "runner_id": lease.runner_id,
                     "fencing_token": lease.fencing_token,
-                    "state": "leased",
+                    "state": execution_state::text(ExecutionState::Leased),
                     "workspace_id": Value::Null,
                     "base_revision": base_revision,
                 },
@@ -1018,8 +1019,8 @@ async fn transition_attempt(
         .and_then(Value::as_str)
         .map(str::to_owned);
     let phase_name = match phase {
-        AttemptTransitionPhase::Preparing => "preparing",
-        AttemptTransitionPhase::Running => "running",
+        AttemptTransitionPhase::Preparing => execution_state::text(ExecutionState::Preparing),
+        AttemptTransitionPhase::Running => execution_state::text(ExecutionState::Running),
     };
     if matches!(phase, AttemptTransitionPhase::Running)
         && process_id.as_deref().map(str::is_empty).unwrap_or(true)

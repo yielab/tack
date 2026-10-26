@@ -17,10 +17,7 @@ pub async fn resolve_request_model_policy(
 ) -> Result<ResolvedModelPolicy, StoreError> {
     let project = match request {
         Some(_) => None,
-        None => repo
-            .get_project(project_id)
-            .await
-            .map_err(StoreError::from)?,
+        None => repo.get_project(project_id).await?,
     };
     Ok(resolve_model_policy(&ModelPolicySources {
         request,

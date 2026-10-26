@@ -1,3 +1,4 @@
+use crate::StoreError;
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -12,7 +13,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         input: CreateSprint,
-    ) -> Result<Sprint, sqlx::Error> {
+    ) -> Result<Sprint, StoreError> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();
@@ -48,7 +49,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_sprint(&self, id: Uuid) -> Result<Option<Sprint>, sqlx::Error> {
+    pub async fn get_sprint(&self, id: Uuid) -> Result<Option<Sprint>, StoreError> {
         let row = sqlx::query_as::<_, SprintRow>(
             "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
              FROM sprints WHERE id = ?"
@@ -61,7 +62,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_sprints(&self, project_id: Uuid) -> Result<Vec<Sprint>, sqlx::Error> {
+    pub async fn list_sprints(&self, project_id: Uuid) -> Result<Vec<Sprint>, StoreError> {
         let rows = sqlx::query_as::<_, SprintRow>(
             "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
              FROM sprints WHERE project_id = ? ORDER BY created_at DESC"
@@ -80,7 +81,7 @@ impl Repository {
         &self,
         id: Uuid,
         input: UpdateSprint,
-    ) -> Result<Option<Sprint>, sqlx::Error> {
+    ) -> Result<Option<Sprint>, StoreError> {
         let now = Utc::now().to_rfc3339();
         let result = sqlx::query(
             "UPDATE sprints SET name = ?, goal = ?, start_date = ?, end_date = ?, updated_at = ?
@@ -108,7 +109,7 @@ impl Repository {
         &self,
         id: Uuid,
         status: SprintStatus,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = Utc::now().to_rfc3339();
         let result = sqlx::query("UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?")
             .bind(status.to_string())

@@ -5,7 +5,7 @@
 use chrono::Duration;
 use serde_json::Value;
 use tack_db::repo::execution::{ArtifactContentCommitResult, NewArtifact};
-use tack_db::{Repository, StoreError, queries};
+use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use uuid::Uuid;
@@ -122,8 +122,7 @@ pub async fn submit_artifacts(
                 },
                 clock,
             )
-            .await
-            .map_err(StoreError::from)?;
+            .await?;
         if !written {
             return Ok(ManifestSubmitted::Stale);
         }
@@ -132,8 +131,7 @@ pub async fn submit_artifacts(
         // before reporting success for a reused `artifact_id`.
         let stored = repo
             .get_execution_artifact(submission.attempt_id, &item.artifact_id)
-            .await
-            .map_err(StoreError::from)?
+            .await?
             .ok_or(AppError::NotFound)?;
         let stored_metadata: Value = serde_json::from_str(&stored.metadata).unwrap_or(Value::Null);
         let mismatch = stored.kind != item.kind
@@ -260,6 +258,5 @@ pub async fn commit_artifact_content(
             content_reference,
             clock,
         )
-        .await
-        .map_err(StoreError::from)?)
+        .await?)
 }

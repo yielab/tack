@@ -1,3 +1,4 @@
+use crate::StoreError;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, instrument, warn};
@@ -89,7 +90,7 @@ impl Repository {
         project_id: Uuid,
         initial_status: &str,
         input: CreateItem,
-    ) -> Result<Item, sqlx::Error> {
+    ) -> Result<Item, StoreError> {
         self.create_item_with_source(project_id, initial_status, input, ItemSource::Manual)
             .await
     }
@@ -108,7 +109,7 @@ impl Repository {
         initial_status: &str,
         input: CreateItem,
         source: ItemSource,
-    ) -> Result<Item, sqlx::Error> {
+    ) -> Result<Item, StoreError> {
         let mut conn = self.pool().acquire().await?;
         insert_item(&mut conn, project_id, initial_status, input, source).await
     }
@@ -124,7 +125,7 @@ impl Repository {
         project_id: Uuid,
         outline: ResolvedOutline,
         source: ItemSource,
-    ) -> Result<(Vec<Item>, usize), sqlx::Error> {
+    ) -> Result<(Vec<Item>, usize), StoreError> {
         let mut tx = self.pool().begin().await?;
         let mut created: Vec<Item> = Vec::with_capacity(outline.items.len());
         for planned in outline.items {
@@ -151,7 +152,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
+    pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, StoreError> {
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
              FROM items WHERE id = ?"
@@ -170,18 +171,19 @@ impl Repository {
     /// so a caller that needs the counter asks for it separately rather than
     /// widening the domain model for one internal reader.
     #[instrument(skip(self))]
-    pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, sqlx::Error> {
+    pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, StoreError> {
         sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
             .bind(id.to_string())
             .fetch_optional(self.pool())
             .await
+            .map_err(StoreError::from)
     }
 
     /// Read the body and ETag counter from one database snapshot.  Two plain
     /// reads can otherwise observe different writers and send a body whose
     /// ETag describes a later version.
     #[instrument(skip(self))]
-    pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
+    pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, StoreError> {
         let mut tx = self.pool().begin().await?;
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
@@ -220,7 +222,7 @@ impl Repository {
         &self,
         id: Uuid,
         expected_version: i64,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = Utc::now().to_rfc3339();
         let result = sqlx::query(
             "UPDATE items SET version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
@@ -238,7 +240,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         filter: &ItemFilter,
-    ) -> Result<Vec<Item>, sqlx::Error> {
+    ) -> Result<Vec<Item>, StoreError> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let mut query = format!(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
@@ -268,14 +270,14 @@ impl Repository {
         &self,
         project_id: Uuid,
         filter: &ItemFilter,
-    ) -> Result<i64, sqlx::Error> {
+    ) -> Result<i64, StoreError> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let query = format!("SELECT COUNT(*) FROM items{where_clause}");
         let mut q = sqlx::query_scalar::<_, i64>(AssertSqlSafe(query));
         for bind in &binds {
             q = q.bind(bind);
         }
-        q.fetch_one(self.pool()).await
+        q.fetch_one(self.pool()).await.map_err(StoreError::from)
     }
 
     /// Return all incomplete items whose `due_date` falls in `[from, to)`.
@@ -312,7 +314,7 @@ impl Repository {
         &self,
         id: Uuid,
         input: UpdateItem,
-    ) -> Result<Option<Item>, sqlx::Error> {
+    ) -> Result<Option<Item>, StoreError> {
         let now = Utc::now().to_rfc3339();
 
         if let Some(ref title) = input.title {
@@ -516,7 +518,7 @@ impl Repository {
         input: UpdateItem,
         workflow: &WorkflowConfig,
         expected_version: Option<i64>,
-    ) -> Result<AtomicItemUpdateOutcome, sqlx::Error> {
+    ) -> Result<AtomicItemUpdateOutcome, StoreError> {
         let now = Utc::now().to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
 
@@ -714,7 +716,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_item(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_item(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM items WHERE id = ?")
             .bind(id.to_string())
             .execute(self.pool())
@@ -727,7 +729,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         status: &str,
-    ) -> Result<i64, sqlx::Error> {
+    ) -> Result<i64, StoreError> {
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
                 .bind(project_id.to_string())
@@ -742,7 +744,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         query: &str,
-    ) -> Result<Vec<Item>, sqlx::Error> {
+    ) -> Result<Vec<Item>, StoreError> {
         let rows = sqlx::query_as::<_, ItemRow>(
             "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.recurrence, i.recurrence_of, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
@@ -764,7 +766,7 @@ impl Repository {
         &self,
         workspace_id: Uuid,
         query: &str,
-    ) -> Result<Vec<Item>, sqlx::Error> {
+    ) -> Result<Vec<Item>, StoreError> {
         let rows = sqlx::query_as::<_, ItemRow>(
             "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.recurrence, i.recurrence_of, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
              FROM items i
@@ -783,7 +785,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
+    pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, StoreError> {
         let rows = sqlx::query_as::<_, ItemRow>(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
@@ -802,7 +804,7 @@ impl Repository {
         &self,
         parent_id: Uuid,
         done_status: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE parent_id = ?")
             .bind(parent_id.to_string())
             .fetch_one(self.pool())
@@ -828,7 +830,7 @@ impl Repository {
         &self,
         parent_id: Uuid,
         completed_status: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         // Get all children of this parent
         let children = sqlx::query_as::<_, ItemRow>(
             "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
@@ -1044,7 +1046,7 @@ async fn insert_item(
     initial_status: &str,
     input: CreateItem,
     source: ItemSource,
-) -> Result<Item, sqlx::Error> {
+) -> Result<Item, StoreError> {
     let id = Uuid::new_v4();
     let now = Utc::now();
     let now_str = now.to_rfc3339();

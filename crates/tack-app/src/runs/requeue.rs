@@ -34,8 +34,7 @@ pub async fn requeue(
             &fingerprint(reason),
             clock,
         )
-        .await
-        .map_err(tack_db::StoreError::from)?;
+        .await?;
     match result {
         OperatorRequeueResult::Requeued => Ok(Requeued { replayed: false }),
         OperatorRequeueResult::Replayed => Ok(Requeued { replayed: true }),

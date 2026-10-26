@@ -19,7 +19,6 @@ tack-db = { path = "../tack-db" }
 # The runner-v1 execution domain: scheduler/retention/observability task
 # spawn in execution_runtime.rs, and the request/attempt types the execution
 # and runner-protocol handlers build on.
-tack-orch = { path = "../tack-orch" }
 # The use cases the handlers call; `From<AppError> for ApiError` lives in error.rs.
 tack-app = { path = "../tack-app" }
 async-trait = { workspace = true }
@@ -28,7 +27,6 @@ utoipa = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tokio = { workspace = true }
-sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde-saphyr = { workspace = true }
