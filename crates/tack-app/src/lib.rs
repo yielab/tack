@@ -31,6 +31,10 @@ pub mod autonomy;
 mod error;
 pub mod host;
 pub mod merge;
+pub mod model_policy_wiring;
+pub mod observability;
+pub mod retention;
 pub mod runs;
+pub mod scheduler_wiring;
 
 pub use error::AppError;

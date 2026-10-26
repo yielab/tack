@@ -812,3 +812,133 @@ pub async fn role_running(
         .await
         .expect("seed roles");
 }
+
+// ─── scheduling fixtures ─────────────────────────────────────────────────────
+
+/// Stores the code a poll gave for a request waiting and when the wait began (RFC 3339).
+pub async fn execution_request_waiting(
+    repo: &Repository,
+    request_id: &str,
+    code: &str,
+    since: &str,
+) {
+    sqlx::query("UPDATE execution_requests SET waiting_code = ?, waiting_since = ? WHERE id = ?")
+        .bind(code)
+        .bind(since)
+        .bind(request_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_requests waiting");
+}
+
+/// Names the model an `execution_requests` row asks for.
+pub async fn execution_request_requested_model(repo: &Repository, request_id: &str, model: &str) {
+    sqlx::query("UPDATE execution_requests SET requested_model = ? WHERE id = ?")
+        .bind(model)
+        .bind(request_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_requests requested_model");
+}
+
+/// Sets the token limit in a request's snapshot; `provisional` marks it as the project's
+/// provisional limit rather than one the run asked for.
+pub async fn execution_request_token_limit(
+    repo: &Repository,
+    request_id: &str,
+    tokens: i64,
+    provisional: bool,
+) {
+    sqlx::query(
+        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.budgets.tokens', ?) WHERE id = ?",
+    )
+    .bind(tokens)
+    .bind(request_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_requests token limit");
+    if provisional {
+        sqlx::query(
+            "UPDATE execution_requests SET request_snapshot = \
+             json_set(request_snapshot, '$.metadata.limit_source', 'provisional') WHERE id = ?",
+        )
+        .bind(request_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_requests provisional limit");
+    }
+}
+
+/// Gives a project daily budgets: a token limit and a review-queue ceiling; the rest default.
+pub async fn project_budgets(
+    repo: &Repository,
+    project_id: &str,
+    tokens_per_day: Option<i64>,
+    queue_items_max: Option<i64>,
+) {
+    tack_db::repo::budgets::put(
+        repo.pool(),
+        project_id,
+        &tack_db::repo::budgets::ProjectBudgets {
+            tokens_per_day,
+            auto_merges_per_day: None,
+            queue_items_max,
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("seed project_budgets");
+}
+
+/// Plants a second item, `item_id`, in the same project as `like_item_id`, in `status`.
+pub async fn item_beside(
+    repo: &Repository,
+    like_item_id: &str,
+    item_id: &str,
+    title: &str,
+    status: &str,
+) {
+    sqlx::query(
+        "INSERT INTO items (id, project_id, title, status) \
+         SELECT ?, project_id, ?, ? FROM items WHERE id = ?",
+    )
+    .bind(item_id)
+    .bind(title)
+    .bind(status)
+    .bind(like_item_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed items beside another");
+}
+
+/// Plants a progress event of `attempt_id` carrying `payload` (JSON text), occurred at `at`.
+pub async fn execution_event(
+    repo: &Repository,
+    row_id: &str,
+    attempt_id: &str,
+    payload: &str,
+    at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) \
+         VALUES(?,?,?,1,'runner','agent.hop_finished',?,?,?)",
+    )
+    .bind(row_id)
+    .bind(attempt_id)
+    .bind(format!("evt-{row_id}"))
+    .bind(payload)
+    .bind(at)
+    .bind(at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_events");
+}
+
+/// Removes one `execution_events` row.
+pub async fn execution_event_removed(repo: &Repository, row_id: &str) {
+    sqlx::query("DELETE FROM execution_events WHERE id = ?")
+        .bind(row_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_events removal");
+}

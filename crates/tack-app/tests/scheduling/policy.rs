@@ -1,19 +1,21 @@
-//! Proves `tack_orch::model_policy::wiring::resolve_request_model_policy` against a real
+//! Proves `tack_app::model_policy_wiring::resolve_request_model_policy` against a real
 //! `tack_db::Repository`: the request's model, else the project's default model for the
 //! project's default agent, else none; and the load-bearing safety claim that a run needing a
-//! model but given none can never be leased — the unmodified claim path (`scheduler::wiring` +
+//! model but given none can never be leased — the unmodified claim path (`scheduler_wiring` +
 //! `claim_execution_idempotent_with_snapshot`) rejects it before any `execution_attempts` row,
 //! fencing token, or capacity change is committed. Assertions check the database directly (row
 //! counts, request state, runner capacity), not just return values.
 
 use chrono::{Duration as ChronoDuration, Utc};
+use tack_app::model_policy_wiring::resolve_request_model_policy;
+use tack_app::scheduler_wiring::choose_request_for_runner;
 use tack_core::models::UpdateProject;
-use tack_db::Repository;
 use tack_db::repo::execution::{NewExecutionRequest, NewRunner, RequestSelection};
-use tack_orch::model_policy::wiring::resolve_request_model_policy;
+use tack_db::{Repository, queries};
 use tack_orch::model_policy::{ModelPolicyTier, ResolvedModelPolicy};
-use tack_orch::scheduler::wiring::choose_request_for_runner;
-use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner as choose};
+use tack_orch::scheduler::SchedulingPolicy;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::seed;
 use uuid::Uuid;
 
 use crate::support::{FixedClock, codex_capability_snapshot, setup_repo};
@@ -39,24 +41,17 @@ async fn register_active_runner(
     )
     .await
     .expect("register runner");
-    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
-        .bind(now.to_rfc3339())
-        .bind(runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("set heartbeat");
+    seed::agent_runner_heartbeat(repo, runner_id, &now.to_rfc3339()).await;
 }
 
 async fn create_fleet(repo: &Repository, fleet_id: &str, now: chrono::DateTime<Utc>) {
-    sqlx::query(
-        "INSERT INTO agent_fleets (id, name, concurrency_limit, default_policy, created_at, updated_at) \
-         VALUES (?, ?, NULL, '{}', ?, ?)",
+    repo.create_agent_fleet(
+        fleet_id,
+        &format!("fleet-{fleet_id}"),
+        None,
+        "{}",
+        &FixedClock(now),
     )
-    .bind(fleet_id)
-    .bind(format!("fleet-{fleet_id}"))
-    .bind(now.to_rfc3339())
-    .bind(now.to_rfc3339())
-    .execute(repo.pool())
     .await
     .expect("insert fleet");
 }
@@ -67,15 +62,9 @@ async fn add_fleet_member(
     runner_id: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    sqlx::query(
-        "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, ?)",
-    )
-    .bind(fleet_id)
-    .bind(runner_id)
-    .bind(now.to_rfc3339())
-    .execute(repo.pool())
-    .await
-    .expect("fleet membership");
+    repo.add_fleet_member(fleet_id, runner_id, &FixedClock(now))
+        .await
+        .expect("fleet membership");
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -143,27 +132,23 @@ async fn enqueue_via_fleet(
 }
 
 async fn attempt_count_for_request(repo: &Repository, request_id: &str) -> i64 {
-    sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id = ?")
-        .bind(request_id)
-        .fetch_one(repo.pool())
+    queries::execution_attempts::attempt_count_of_request(repo, request_id)
         .await
         .expect("count attempts")
 }
 
-async fn request_state(repo: &Repository, request_id: &str) -> String {
-    sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
-        .bind(request_id)
-        .fetch_one(repo.pool())
+async fn request_state(repo: &Repository, request_id: &str) -> ExecutionState {
+    queries::execution_requests::request_state(repo, request_id)
         .await
         .expect("request state")
+        .expect("the request exists")
 }
 
 async fn runner_available_capacity(repo: &Repository, runner_id: &str) -> i64 {
-    sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = ?")
-        .bind(runner_id)
-        .fetch_one(repo.pool())
+    queries::agent_runners::available_capacity(repo, runner_id)
         .await
         .expect("runner capacity")
+        .expect("the runner exists")
 }
 
 // ---------------------------------------------------------------------
@@ -311,11 +296,6 @@ async fn assert_default_model_outcome(
         expected,
         "scheduler wiring must match the claim outcome"
     );
-    // The re-exported entry point must agree — not a second, drifting path.
-    let chosen_via_reexport = choose(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
-    assert_eq!(chosen_via_reexport.as_deref(), expected);
 
     let claimed = repo
         .claim_execution_idempotent_with_snapshot(
@@ -338,9 +318,9 @@ async fn assert_default_model_outcome(
     }
 
     let (expect_attempts, expect_state, expect_capacity) = if expect_leased {
-        (1, "leased", 0)
+        (1, ExecutionState::Leased, 0)
     } else {
-        (0, "queued", 1)
+        (0, ExecutionState::Queued, 1)
     };
     assert_eq!(
         attempt_count_for_request(&repo, request_id).await,

@@ -109,3 +109,16 @@ pub async fn capability_snapshots_of_active_runners(
         .fetch_all(repo.pool())
         .await?)
 }
+
+/// When the runner last sent a heartbeat, or `None` when it never has. An id no runner has is
+/// `StoreError::NotFound`.
+pub async fn runner_last_heartbeat_at(
+    repo: &Repository,
+    runner_id: &str,
+) -> Result<Option<String>, StoreError> {
+    sqlx::query_scalar("SELECT last_heartbeat_at FROM agent_runners WHERE id = ?")
+        .bind(runner_id)
+        .fetch_optional(repo.pool())
+        .await?
+        .ok_or(StoreError::NotFound)
+}

@@ -24,7 +24,7 @@ pub enum OperatorRequeueResult {
 /// vocabularies of `agent_runners.state` (3 values, migration 040) and
 /// `execution_requests.state` (the 10-value `ExecutionState` vocabulary)
 /// — never by attempt/request/runner id, so nothing here can grow
-/// an unbounded metric label set. See `crates/tack-orch/src/execution_observability.rs`
+/// an unbounded metric label set. See `crates/tack-app/src/observability.rs`
 /// for the background task that logs alerts from this snapshot and the pure
 /// `evaluate_alerts` function that decides what counts as "stuck"/"ambiguous."
 #[derive(Debug, Clone, PartialEq, Eq, Default)]

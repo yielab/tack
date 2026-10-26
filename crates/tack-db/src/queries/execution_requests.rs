@@ -271,7 +271,6 @@ pub async fn rework_cap_of_item(
     .fetch_optional(repo.pool())
     .await?;
     Ok(cap.flatten())
-
 }
 
 /// A request a failed verification queued after another.
@@ -308,4 +307,28 @@ pub async fn agent_profile_of_request(
             .await?
             .flatten(),
     )
+}
+
+/// What a poll left on a request that waits: its state, the code and sentence of the reason, and
+/// when the wait began.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct WaitingRow {
+    pub state: String,
+    pub waiting_code: Option<String>,
+    pub waiting_reason: Option<String>,
+    pub waiting_since: Option<String>,
+}
+
+/// The waiting columns of a request. An id no request has is `StoreError::NotFound`.
+pub async fn waiting_of_request(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<WaitingRow, StoreError> {
+    sqlx::query_as(
+        "SELECT state, waiting_code, waiting_reason, waiting_since FROM execution_requests WHERE id = ?",
+    )
+    .bind(request_id)
+    .fetch_optional(repo.pool())
+    .await?
+    .ok_or(StoreError::NotFound)
 }

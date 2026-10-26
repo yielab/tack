@@ -12,6 +12,7 @@ pub mod autonomy;
 pub mod budgets;
 pub mod execution_artifacts;
 pub mod execution_attempts;
+pub mod execution_claim_replays;
 pub mod execution_completion_replays;
 pub mod execution_decisions;
 pub mod execution_events;

@@ -133,7 +133,7 @@ fn bearer(token: &str) -> String {
 /// call sites) — and uses the *real* current wall-clock time as
 /// `reported_at`/`probed_at`, not a frozen fixture date: this file drives
 /// the real production router (`SystemClock`), and
-/// `tack_orch::scheduler::wiring` falls back to a capability report's own
+/// `tack_app::scheduler_wiring` falls back to a capability report's own
 /// `reported_at` as a liveness signal for a runner that has never sent a
 /// `/heartbeat` yet (true of every runner here). A hardcoded past date
 /// would make that fallback correctly, honestly judge the runner stale.

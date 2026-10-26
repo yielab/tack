@@ -336,8 +336,6 @@ async fn start_retention_runtime(
                 retention_enable,
                 retention_days,
                 retention_interval_secs: 1,
-                health_enable: false,
-                health_interval_secs: 3600,
                 storage_dir,
             },
         )

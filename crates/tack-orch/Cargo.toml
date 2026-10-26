@@ -1,39 +1,16 @@
 [package]
 name = "tack-orch"
-description = "The runner-v1 execution domain for Tack — capability negotiation, request/attempt lifecycle, scheduling, model policy and usage provenance."
+description = "The pure runner-v1 scheduling domain for Tack — runner selection and batching, and per-request model policy."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Dependency direction is INWARD ONLY: tack-orch may depend on tack-core and
-# tack-db, but must NEVER depend on tack-api. tack-api depends on tack-orch
-# instead, not the other way around. If you are adding a
-# `tack-api = { path = "../tack-api" }` line here, stop — you have the
-# dependency arrow backwards.
+# Pure on purpose: no store, no SQL, no clock. Dependency direction is INWARD ONLY:
+# tack-orch may depend on tack-core and tack-protocol, never on tack-db or tack-api.
+# `scripts/check-crate-graph.sh` keeps it that way.
 [dependencies]
 tack-protocol = { path = "../tack-protocol" }
-tack-core = { path = "../tack-core" }
-tack-db = { path = "../tack-db" }
-tokio = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
-async-trait = { workspace = true }
 chrono = { workspace = true }
-uuid = { workspace = true }
-tracing = { workspace = true }
-# `scheduler::wiring` calls straight through `tack_db::Repository`'s async
-# methods, whose `Result` error type is `sqlx::Error` — naming that type in
-# this crate's own public signatures (`choose_request_for_runner`) requires
-# `sqlx` as a real dependency, not only the test-only one below. No new crate
-# enters the workspace lockfile: `sqlx` is already the shared workspace
-# dependency `tack-db` itself uses.
-sqlx = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true }
-tempfile = { workspace = true }
-tack-test-support = { path = "../tack-test-support" }
 
 [lints]
 workspace = true

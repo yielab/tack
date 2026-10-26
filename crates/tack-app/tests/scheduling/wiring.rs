@@ -1,6 +1,6 @@
-//! Proves `tack_orch::scheduler::wiring::choose_request_for_runner` against a
+//! Proves `tack_app::scheduler_wiring::choose_request_for_runner` against a
 //! real, file-backed-shape (in-memory) `tack_db::Repository` — not the pure
-//! unit tests in `scheduler/wiring.rs` itself, which only cover the small
+//! unit tests in `scheduler_wiring.rs` itself, which only cover the small
 //! pure helper functions. This file is the actual "wire the scheduler to
 //! live data" proof: real
 //! `agent_runners`/`agent_fleet_members`/`agent_fleets`/`execution_requests`
@@ -9,10 +9,13 @@
 //! `crates/tack-api/src/handlers/runner_protocol.rs`'s `claim` handler does.
 
 use chrono::Utc;
+use tack_app::scheduler_wiring::choose_request_for_runner;
 use tack_db::Repository;
+use tack_db::queries;
 use tack_db::repo::execution::{NewExecutionRequest, NewRunner, RequestSelection};
-use tack_orch::scheduler::wiring::choose_request_for_runner;
-use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner as choose};
+use tack_orch::scheduler::SchedulingPolicy;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::seed;
 
 use crate::support::{FixedClock, codex_capability_snapshot, setup_repo};
 
@@ -46,12 +49,12 @@ async fn setup_runner(
     .await
     .expect("register runner");
     if let Some(offset) = heartbeat_offset_secs {
-        sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
-            .bind((now + chrono::Duration::seconds(offset)).to_rfc3339())
-            .bind(id)
-            .execute(repo.pool())
-            .await
-            .expect("set heartbeat");
+        seed::agent_runner_heartbeat(
+            repo,
+            id,
+            &(now + chrono::Duration::seconds(offset)).to_rfc3339(),
+        )
+        .await;
     }
 }
 
@@ -82,18 +85,9 @@ async fn setup_fleet(
     concurrency_limit: i64,
     now: chrono::DateTime<Utc>,
 ) {
-    sqlx::query(
-        "INSERT INTO agent_fleets (id, name, concurrency_limit, default_policy, created_at, updated_at) \
-         VALUES (?, ?, ?, '{}', ?, ?)",
-    )
-    .bind(id)
-    .bind(id)
-    .bind(concurrency_limit)
-    .bind(now.to_rfc3339())
-    .bind(now.to_rfc3339())
-    .execute(repo.pool())
-    .await
-    .expect("insert fleet");
+    repo.create_agent_fleet(id, id, Some(concurrency_limit), "{}", &FixedClock(now))
+        .await
+        .expect("insert fleet");
 }
 
 async fn join_fleet(
@@ -102,15 +96,9 @@ async fn join_fleet(
     runner_id: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    sqlx::query(
-        "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, ?)",
-    )
-    .bind(fleet_id)
-    .bind(runner_id)
-    .bind(now.to_rfc3339())
-    .execute(repo.pool())
-    .await
-    .expect("fleet membership");
+    repo.add_fleet_member(fleet_id, runner_id, &FixedClock(now))
+        .await
+        .expect("fleet membership");
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -269,26 +257,6 @@ async fn eligibility_needs_capability_capacity_and_fresh_heartbeat() {
     assert_eligibility("stale_heartbeat", 1, 1, &codex, -600, ALPHA_MODEL, false).await;
 }
 
-#[tokio::test]
-async fn reexported_choose_matches_the_primary_function() {
-    let (repo, item_id) = setup_repo().await;
-    let now = Utc::now();
-    setup_codex_runner(&repo, "runner-a", 1, 1, Some(0), now).await;
-    enqueue_for_runner(&repo, &item_id, "req-a", "runner-a", ALPHA_MODEL, "{}", now).await;
-
-    let via_module =
-        choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-            .await
-            .expect("no db error");
-    let via_reexport = choose(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
-    assert_eq!(
-        via_module, via_reexport,
-        "tack_orch::scheduler::choose_request_for_runner must not drift from the wiring module's own copy"
-    );
-}
-
 /// One row of the priority table below: enqueues an older normal-priority
 /// request and a newer one carrying `second_metadata`, then checks which id
 /// gets chosen.
@@ -405,11 +373,9 @@ async fn fresh_runner_with_no_heartbeat_can_claim_its_first_request() {
     let (repo, item_id) = setup_repo().await;
     let now = Utc::now();
     setup_codex_runner(&repo, "runner-fresh", 1, 1, None, now).await;
-    let heartbeat: Option<String> =
-        sqlx::query_scalar("SELECT last_heartbeat_at FROM agent_runners WHERE id = 'runner-fresh'")
-            .fetch_one(repo.pool())
-            .await
-            .expect("read heartbeat column");
+    let heartbeat = queries::agent_runners::runner_last_heartbeat_at(&repo, "runner-fresh")
+        .await
+        .expect("read heartbeat column");
     assert_eq!(
         heartbeat, None,
         "fixture must start with no heartbeat, matching real enrollment"
@@ -483,22 +449,19 @@ async fn waiting_row(
     repo: &Repository,
     id: &str,
 ) -> (String, Option<String>, Option<String>, Option<String>) {
-    sqlx::query_as(
-        "SELECT state, waiting_code, waiting_reason, waiting_since FROM execution_requests WHERE id = ?",
+    let row = queries::execution_requests::waiting_of_request(repo, id)
+        .await
+        .expect("request row");
+    (
+        row.state,
+        row.waiting_code,
+        row.waiting_reason,
+        row.waiting_since,
     )
-    .bind(id)
-    .fetch_one(repo.pool())
-    .await
-    .expect("request row")
 }
 
 async fn refresh_heartbeat(repo: &Repository, runner_id: &str, at: chrono::DateTime<Utc>) {
-    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
-        .bind(at.to_rfc3339())
-        .bind(runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("refresh heartbeat");
+    seed::agent_runner_heartbeat(repo, runner_id, &at.to_rfc3339()).await;
 }
 
 #[tokio::test]
@@ -524,11 +487,7 @@ async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
     assert_eq!(since, Some(now.to_rfc3339()));
 
     // The same request, made claimable, is selected and all three clear.
-    sqlx::query("UPDATE execution_requests SET requested_model = ? WHERE id = 'req'")
-        .bind("opaque/model-alpha")
-        .execute(repo.pool())
-        .await
-        .expect("make claimable");
+    seed::execution_request_requested_model(&repo, "req", "opaque/model-alpha").await;
     let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
         .await
         .expect("no db error");
@@ -613,11 +572,13 @@ async fn a_poll_that_proves_nothing_neither_starts_nor_keeps_the_clock() {
     let (repo, item_id) = setup_repo().await;
     setup_codex_runner(&repo, "runner-a", 1, 0, Some(0), now).await;
     enqueue_for_runner(&repo, &item_id, "req", "runner-a", ALPHA_MODEL, "{}", now).await;
-    sqlx::query("UPDATE execution_requests SET waiting_code = 'harness_not_declared', waiting_since = ? WHERE id = 'req'")
-        .bind((now - chrono::Duration::minutes(60)).to_rfc3339())
-        .execute(repo.pool())
-        .await
-        .expect("an earlier blocking poll");
+    seed::execution_request_waiting(
+        &repo,
+        "req",
+        "harness_not_declared",
+        &(now - chrono::Duration::minutes(60)).to_rfc3339(),
+    )
+    .await;
     let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
         .await
         .expect("no db error");
@@ -635,24 +596,33 @@ async fn a_poll_that_proves_nothing_neither_starts_nor_keeps_the_clock() {
     );
 }
 
-async fn set_budgets(repo: &Repository, item_id: &str, tokens: Option<i64>, queue: Option<i64>) {
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(item_id)
-        .fetch_one(repo.pool())
+async fn project_of(repo: &Repository, item_id: &str) -> String {
+    repo.get_item(item_id.parse().expect("item id"))
         .await
-        .expect("project");
-    tack_db::repo::budgets::put(
-        repo.pool(),
-        &project_id,
-        &tack_db::repo::budgets::ProjectBudgets {
-            tokens_per_day: tokens,
-            auto_merges_per_day: None,
-            queue_items_max: queue,
-            ..Default::default()
-        },
+        .expect("item")
+        .expect("the item exists")
+        .project_id
+        .to_string()
+}
+
+async fn set_budgets(repo: &Repository, item_id: &str, tokens: Option<i64>, queue: Option<i64>) {
+    let project_id = project_of(repo, item_id).await;
+    seed::project_budgets(repo, &project_id, tokens, queue).await;
+}
+
+/// The token limit and its source that a request's snapshot carries.
+async fn run_limit(repo: &Repository, request_id: &str) -> (i64, String) {
+    let row = queries::execution_requests::run_limit_inputs(repo, &[request_id.to_string()])
+        .await
+        .expect("limit inputs")
+        .pop()
+        .expect("the request exists");
+    let budgets: serde_json::Value =
+        serde_json::from_str(&row.budgets.expect("budgets")).expect("budgets json");
+    (
+        budgets["tokens"].as_i64().expect("a token limit"),
+        row.source.expect("a limit source"),
     )
-    .await
-    .expect("put budgets");
 }
 
 #[tokio::test]
@@ -690,20 +660,14 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     .await
     .expect("no db error")
     .expect("claimed");
-    sqlx::query("UPDATE execution_attempts SET usage = ? WHERE id = 'attempt'")
-        .bind(r#"{"tokens_in":{"value":60,"source":"measured"},"tokens_out":{"value":50,"source":"measured"}}"#)
-        .execute(repo.pool())
-        .await
-        .expect("usage");
-    // A second item whose finished run kept its workspace: it shows Needs your review.
-    sqlx::query(
-        "INSERT INTO items (id, project_id, title, status) \
-         SELECT 'item-review', project_id, 'Review me', 'In Progress' FROM items WHERE id = ?",
+    seed::execution_attempt_usage(
+        &repo,
+        "attempt",
+        r#"{"tokens_in":{"value":60,"source":"measured"},"tokens_out":{"value":50,"source":"measured"}}"#,
     )
-    .bind(&item_id)
-    .execute(repo.pool())
-    .await
-    .expect("second item");
+    .await;
+    // A second item whose finished run kept its workspace: it shows Needs your review.
+    seed::item_beside(&repo, &item_id, "item-review", "Review me", "In Progress").await;
     enqueue_for_runner(
         &repo,
         "item-review",
@@ -725,13 +689,13 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     .await
     .expect("no db error")
     .expect("claimed");
-    sqlx::query(
-        "UPDATE execution_attempts SET state = 'succeeded', \
-         terminal_reason = '{\"workspace_kept_at\":\"/tmp/kept\"}' WHERE id = 'attempt-review'",
+    seed::execution_attempt_ended(
+        &repo,
+        "attempt-review",
+        ExecutionState::Succeeded,
+        r#"{"workspace_kept_at":"/tmp/kept"}"#,
     )
-    .execute(repo.pool())
-    .await
-    .expect("finished with a kept workspace");
+    .await;
     enqueue_for_runner(
         &repo,
         &item_id,
@@ -790,12 +754,10 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
         }
     }
     // The running attempt is untouched throughout.
-    let running: String =
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = 'attempt'")
-            .fetch_one(repo.pool())
-            .await
-            .expect("attempt");
-    assert_eq!(running, "leased");
+    let running = queries::execution_attempts::attempt_state(&repo, "attempt")
+        .await
+        .expect("attempt");
+    assert_eq!(running, Some(ExecutionState::Leased));
 }
 
 // ADR 0083 decision 5: the day's limit is reserved when a run is admitted.
@@ -809,7 +771,7 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
     for n in 1..=2 {
         let id = format!("open-{n}");
         enqueue_for_runner(&repo, &item_id, &id, "runner-a", ALPHA_MODEL, "{}", now).await;
-        set_run_limit(&repo, &id, 800_000).await;
+        seed::execution_request_token_limit(&repo, &id, 800_000, false).await;
         repo.claim_execution_idempotent_with_snapshot(
             "runner-a",
             &format!("claim-{n}"),
@@ -822,12 +784,8 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         .expect("no db error")
         .expect("claimed");
     }
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .expect("project");
-    let room = tack_db::repo::budgets::day_room(repo.pool(), &project_id, now)
+    let project_id = project_of(&repo, &item_id).await;
+    let room = queries::budgets::day_room(&repo, &project_id, now)
         .await
         .expect("no db error")
         .expect("a daily limit");
@@ -842,17 +800,15 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         "tokens_out": {"value": 50_000, "source": "measured"},
         "cache_read_tokens": 150_000,
     });
-    sqlx::query(
-        "INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) \
-         VALUES('row-usage','attempt-1','evt-usage',1,'runner','agent.hop_finished',?,?,?)",
+    seed::execution_event(
+        &repo,
+        "row-usage",
+        "attempt-1",
+        &serde_json::json!({"text": "done", "usage": usage}).to_string(),
+        &now.to_rfc3339(),
     )
-    .bind(serde_json::json!({"text": "done", "usage": usage}).to_string())
-    .bind(now.to_rfc3339())
-    .bind(now.to_rfc3339())
-    .execute(repo.pool())
-    .await
-    .expect("a progress line with usage");
-    let running = tack_db::repo::budgets::day_room(repo.pool(), &project_id, now)
+    .await;
+    let running = queries::budgets::day_room(&repo, &project_id, now)
         .await
         .expect("no db error")
         .expect("a daily limit");
@@ -865,10 +821,7 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         ),
         (400_000, 1_200_000, 2, 400_000)
     );
-    sqlx::query("DELETE FROM execution_events WHERE id = 'row-usage'")
-        .execute(repo.pool())
-        .await
-        .expect("back to no usage");
+    seed::execution_event_removed(&repo, "row-usage").await;
 
     // A third that asks for 500k waits, and says why; one that asks for nothing is
     // admitted with the 400k that is left as its limit.
@@ -882,7 +835,7 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         now,
     )
     .await;
-    set_run_limit(&repo, "asks-500k", 500_000).await;
+    seed::execution_request_token_limit(&repo, "asks-500k", 500_000, false).await;
     enqueue_for_runner(
         &repo,
         &item_id,
@@ -904,20 +857,12 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         reason.as_deref(),
         Some("Today's token limit is reserved by 2 open runs (1 600 000 of 2 000 000)")
     );
-    let (tokens, source): (i64, String) = sqlx::query_as(
-        "SELECT json_extract(request_snapshot, '$.budgets.tokens'), \
-         json_extract(request_snapshot, '$.metadata.limit_source') \
-         FROM execution_requests WHERE id = 'asks-none'",
-    )
-    .fetch_one(repo.pool())
-    .await
-    .expect("snapshot");
+    let (tokens, source) = run_limit(&repo, "asks-none").await;
     assert_eq!((tokens, source.as_str()), (400_000, "day"));
     // A run asking for more than the whole day, with nothing reserved, says so.
-    sqlx::query("UPDATE execution_attempts SET state = 'succeeded'")
-        .execute(repo.pool())
-        .await
-        .expect("finish the open runs");
+    for attempt_id in ["attempt-1", "attempt-2"] {
+        seed::execution_attempt_state(&repo, attempt_id, ExecutionState::Succeeded).await;
+    }
     enqueue_for_runner(
         &repo,
         &item_id,
@@ -928,7 +873,7 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         now,
     )
     .await;
-    set_run_limit(&repo, "asks-3m", 3_000_000).await;
+    seed::execution_request_token_limit(&repo, "asks-3m", 3_000_000, false).await;
     choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
         .await
         .expect("no db error");
@@ -969,38 +914,13 @@ async fn a_provisional_limit_gives_way_to_the_days_room() {
         setup_codex_runner(&repo, "runner-a", 5, 5, Some(0), now).await;
         set_budgets(&repo, &item_id, Some(day), None).await;
         enqueue_for_runner(&repo, &item_id, "prov", "runner-a", ALPHA_MODEL, "{}", now).await;
-        set_run_limit(&repo, "prov", 2_000_000).await;
-        sqlx::query(
-            "UPDATE execution_requests SET request_snapshot = \
-             json_set(request_snapshot, '$.metadata.limit_source', 'provisional') WHERE id = 'prov'",
-        )
-        .execute(repo.pool())
-        .await
-        .expect("provisional source");
+        seed::execution_request_token_limit(&repo, "prov", 2_000_000, true).await;
         let chosen =
             choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
                 .await
                 .expect("no db error");
         assert_eq!(chosen.as_deref(), Some("prov"), "day {day}");
-        let (tokens, source): (i64, String) = sqlx::query_as(
-            "SELECT json_extract(request_snapshot, '$.budgets.tokens'), \
-             json_extract(request_snapshot, '$.metadata.limit_source') \
-             FROM execution_requests WHERE id = 'prov'",
-        )
-        .fetch_one(repo.pool())
-        .await
-        .expect("snapshot");
+        let (tokens, source) = run_limit(&repo, "prov").await;
         assert_eq!((tokens, source.as_str()), expected, "day {day}");
     }
-}
-
-async fn set_run_limit(repo: &Repository, request_id: &str, tokens: i64) {
-    sqlx::query(
-        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.budgets.tokens', ?) WHERE id = ?",
-    )
-    .bind(tokens)
-    .bind(request_id)
-    .execute(repo.pool())
-    .await
-    .expect("run limit");
 }
