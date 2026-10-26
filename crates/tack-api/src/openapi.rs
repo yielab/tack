@@ -558,7 +558,6 @@ impl OpenApi for RunnerProtocolApiDoc {
 /// server-side, not expressible in this schema). `text` may be omitted,
 /// `null`, or a string — never anything else.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct DecisionAnswerSchema {
     pub option_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -567,7 +566,6 @@ pub struct DecisionAnswerSchema {
 
 /// `POST .../decisions/{decision_id}/resolve` request body.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct ResolveDecisionRequest {
     pub answer: DecisionAnswerSchema,
 }

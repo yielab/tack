@@ -6,7 +6,6 @@
 //! dev-dependency cycle — `tack-api/tests/common` needs test-app/server helpers this crate
 //! has no business owning, so it stays where it is instead of moving here.
 
-use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -126,15 +125,6 @@ impl ControllableClock {
         let mut guard = self.0.lock().expect("clock mutex poisoned");
         *guard += delta;
     }
-}
-
-/// Read a fixture file's bytes from `<manifest_dir>/tests/<relative>`, panicking with the
-/// resolved path if it is missing. `manifest_dir` is the caller's own
-/// `env!("CARGO_MANIFEST_DIR")` — this helper cannot know which crate's `tests/` directory
-/// to look under, since that macro resolves at the call site, not here.
-pub fn read_fixture(manifest_dir: &str, relative: &str) -> Vec<u8> {
-    let path = Path::new(manifest_dir).join("tests").join(relative);
-    fs::read(&path).unwrap_or_else(|error| panic!("fixture {} not found: {error}", path.display()))
 }
 
 /// Create a file-backed SQLite store at `path` with all migrations applied, for a test that

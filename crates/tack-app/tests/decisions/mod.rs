@@ -1,7 +1,5 @@
 //! The store the decision tests share: one runner that can hold several attempts, one item.
 
-#![allow(dead_code)]
-
 use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_db::Repository;

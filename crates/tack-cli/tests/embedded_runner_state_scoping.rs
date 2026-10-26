@@ -22,8 +22,7 @@ use common::free_port;
 struct ServerGuard {
     child: Child,
     base_url: String,
-    #[allow(dead_code)]
-    root: tempfile::TempDir,
+    _root: tempfile::TempDir,
 }
 
 impl Drop for ServerGuard {
@@ -62,7 +61,7 @@ fn start_server_with_runner(shared_cwd: &Path, root: tempfile::TempDir) -> Serve
     let mut guard = ServerGuard {
         child,
         base_url,
-        root,
+        _root: root,
     };
     wait_for_ready(&guard.base_url, &mut guard.child);
     guard

@@ -14,8 +14,19 @@ use axum::http::StatusCode;
 use chaos_common::*;
 use serde_json::{Value, json};
 use tack_db::queries::{agent_runners, execution_attempts, execution_requests};
+use tack_db::{Repository, init_pool, migrations};
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
+
+pub async fn app_file_backed(
+    db_path: &std::path::Path,
+    storage_dir: &std::path::Path,
+) -> (axum::Router, Repository) {
+    let url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+    let pool = init_pool(&url).await.expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    build_app(Repository::new(pool), storage_dir, url).await
+}
 
 // =======================================================================
 // 1. Multi-runner contention: two distinct, independently-enrolled runners

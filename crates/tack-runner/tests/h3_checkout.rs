@@ -36,8 +36,10 @@ use tack_runner::{
 
 mod common;
 use common::temp_dir as temp_root;
-use common::usage;
-#[allow(dead_code)] // the fake serves more routes than these tests use
+mod usage_fixture;
+use usage_fixture::usage;
+// The fake serves more routes than these tests use.
+#[allow(dead_code)]
 mod fake_docket;
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.

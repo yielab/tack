@@ -1,7 +1,7 @@
 //! Attempt lifecycle transitions (preparing/running) and completion
 //! reporting, including the idempotency/terminal-lock invariants they share.
 
-use crate::common::execution_fixture::{Fixture, completion_input};
+use crate::execution_fixture::{Fixture, completion_input};
 
 use chrono::Duration;
 use sqlx::Row;

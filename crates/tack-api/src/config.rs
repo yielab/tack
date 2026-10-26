@@ -430,13 +430,6 @@ impl AppConfig {
         }
     }
 
-    /// Returns true when all three required remote-backup fields are set.
-    pub fn remote_backup_enabled(&self) -> bool {
-        self.backup_bucket.is_some()
-            && self.backup_access_key.is_some()
-            && self.backup_secret_key.is_some()
-    }
-
     /// Extract the filesystem path from the database URL.
     /// Returns `None` for in-memory databases.
     pub fn db_file_path(&self) -> Option<std::path::PathBuf> {

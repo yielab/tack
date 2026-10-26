@@ -18,14 +18,13 @@ use common::free_port;
 /// Owns the `tack serve` child process and its temp database directory;
 /// kills the process on drop, and the `TempDir` removes the directory after
 /// it, so a panicking assertion never leaks a listening server or scratch
-/// files into the next test run. `dir` is declared last deliberately: struct
+/// files into the next test run. `_dir` is declared last deliberately: struct
 /// fields drop in declaration order, and the directory must outlive the
 /// server still writing into it.
 struct ServerGuard {
     child: Child,
     base_url: String,
-    #[allow(dead_code)]
-    dir: tempfile::TempDir,
+    _dir: tempfile::TempDir,
 }
 
 impl Drop for ServerGuard {
@@ -44,8 +43,6 @@ fn scratch_dir() -> tempfile::TempDir {
         .expect("create scratch dir")
 }
 
-const OPERATOR_TOKEN: &str = "e6-cli-e2e-operator-token";
-
 fn start_server() -> ServerGuard {
     let dir = scratch_dir();
     let db_path = dir.path().join("e6-cli-e2e.db");
@@ -60,7 +57,7 @@ fn start_server() -> ServerGuard {
             "TACK_DATABASE_URL",
             format!("sqlite:{}?mode=rwc", db_path.display()),
         )
-        .env("TACK_API_TOKEN", OPERATOR_TOKEN)
+        .env("TACK_API_TOKEN", common::API_TOKEN)
         .env("TACK_STORAGE_DIR", dir.path().join("storage"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -69,7 +66,7 @@ fn start_server() -> ServerGuard {
 
     let mut guard = ServerGuard {
         child,
-        dir,
+        _dir: dir,
         base_url,
     };
     wait_for_ready(&guard.base_url, &mut guard.child);
@@ -108,7 +105,7 @@ fn tack(server: &ServerGuard, args: &[&str]) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_tack"))
         .args(&full_args)
         .env("TACK_API_URL", &server.base_url)
-        .env("TACK_API_TOKEN", OPERATOR_TOKEN)
+        .env("TACK_API_TOKEN", common::API_TOKEN)
         .output()
         .expect("run tack CLI");
     assert!(
@@ -136,7 +133,7 @@ fn tack_allow_failure(server: &ServerGuard, args: &[&str]) -> (bool, String, Str
     let output = Command::new(env!("CARGO_BIN_EXE_tack"))
         .args(&full_args)
         .env("TACK_API_URL", &server.base_url)
-        .env("TACK_API_TOKEN", OPERATOR_TOKEN)
+        .env("TACK_API_TOKEN", common::API_TOKEN)
         .output()
         .expect("run tack CLI");
     (
@@ -240,9 +237,8 @@ fn claim_once(
 fn create_project_and_item(server: &ServerGuard, name: &str) -> (String, String) {
     let project = tack(server, &["init", name, "--type", "software"]);
     let project_id = project["id"].as_str().unwrap().to_owned();
-    let patched = reqwest::blocking::Client::new()
+    let patched = common::authed_client()
         .patch(format!("{}/api/projects/{project_id}", server.base_url))
-        .bearer_auth(OPERATOR_TOKEN)
         .json(&serde_json::json!({
             "code_origin": "url",
             "repository": "https://example.test/e6-cli.git",

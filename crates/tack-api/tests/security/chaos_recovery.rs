@@ -9,12 +9,246 @@
 mod chaos_common;
 
 use crate::common;
-use axum::http::StatusCode;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode};
 use chaos_common::*;
+use chrono::Utc;
 use serde_json::{Value, json};
 use tack_db::Repository;
 use tack_db::queries::{execution_artifacts, execution_attempts, execution_decisions};
 use tack_test_support::seed;
+use tower::ServiceExt;
+
+pub async fn put_content(
+    app: &axum::Router,
+    uri: &str,
+    body: Vec<u8>,
+    extra_headers: &[(&str, &str)],
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder().method("PUT").uri(uri);
+    for (name, value) in extra_headers {
+        builder = builder.header(*name, *value);
+    }
+    let response = app
+        .clone()
+        .oneshot(builder.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1_048_576)
+        .await
+        .unwrap();
+    let value: Value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, value)
+}
+
+pub struct RunningAttempt {
+    pub runner_id: String,
+    pub credential: String,
+    pub attempt_id: String,
+    pub fencing_token: i64,
+}
+
+/// Enrolls one runner, creates one exact-runner-selected request, claims,
+/// accepts and starts it — leaving the attempt `running`. Mirrors
+/// `wiring/artifact.rs::ready_running_attempt`.
+pub async fn ready_running_attempt(
+    app: &axum::Router,
+    item_id: &str,
+    label: &str,
+) -> RunningAttempt {
+    let agent_profile_id = agent_profile(app, label).await;
+    let runner = enroll_runner(app, &format!("G2 runner {label}")).await;
+    let _request_id = create_execution_request(
+        app,
+        item_id,
+        &format!("key-{label}"),
+        "exact_runner",
+        &runner.runner_id,
+        &agent_profile_id,
+    )
+    .await;
+    let (status, claimed) = common::claim_runner(
+        app,
+        &runner.runner_id,
+        &runner.credential,
+        &format!("claim-{label}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{claimed}");
+    let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
+    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
+
+    let (status, accepted) = common::send_large(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{attempt_id}/accept"),
+        json!({
+            "protocol_version": 1, "runner_id": runner.runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+            "workspace_id": "ws-1", "base_revision": BASE_REVISION,
+        }),
+        &[("authorization", &auth(&runner.credential))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+
+    let (status, started) = common::send_large(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{attempt_id}/start"),
+        json!({
+            "protocol_version": 1, "runner_id": runner.runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+            "workspace_id": "ws-1", "base_revision": BASE_REVISION, "process_id": "pid-1",
+        }),
+        &[("authorization", &auth(&runner.credential))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+
+    RunningAttempt {
+        runner_id: runner.runner_id,
+        credential: runner.credential,
+        attempt_id,
+        fencing_token,
+    }
+}
+
+/// Minimal, test-local percent-encoder for a URI path segment — avoids
+/// pulling in an extra dependency just for this adversarial file. Encodes
+/// every byte that is not an unreserved URI character, which is sufficient
+/// (if wasteful) for the deliberately-malicious ids this file constructs.
+pub fn percent_encode_path_segment(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() * 3);
+    for byte in raw.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
+}
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
+}
+
+pub async fn walk_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&current).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if let Ok(meta) = entry.metadata().await
+                && meta.is_dir()
+            {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn artifact_manifest_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    artifact_id: &str,
+    kind: &str,
+    name: &str,
+    size_bytes: u64,
+    sha256: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "artifacts": [{
+            "artifact_id": artifact_id, "kind": kind, "name": name, "media_type": "text/plain",
+            "size_bytes": size_bytes, "sha256": sha256, "content_disposition": "inline_upload", "metadata": {},
+        }],
+    })
+}
+
+pub async fn post_artifact_manifest(
+    app: &axum::Router,
+    attempt: &RunningAttempt,
+    artifact_id: &str,
+    kind: &str,
+    name: &str,
+    size_bytes: u64,
+    sha256: &str,
+) -> (StatusCode, Value) {
+    let body = artifact_manifest_body(
+        &attempt.runner_id,
+        &attempt.attempt_id,
+        attempt.fencing_token,
+        artifact_id,
+        kind,
+        name,
+        size_bytes,
+        sha256,
+    );
+    let uri = format!("/api/runner/v1/attempts/{}/artifacts", attempt.attempt_id);
+    common::send_large(
+        app,
+        "POST",
+        &uri,
+        body,
+        &[("authorization", &auth(&attempt.credential))],
+    )
+    .await
+}
+
+pub fn decision_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    decision_id: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "decision_id": decision_id, "kind": "tool_permission", "prompt": "Allow?",
+        "options": [{"option_id": "allow", "label": "Allow"}],
+        "expires_at": (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(), "metadata": {},
+    })
+}
+
+pub fn recovery_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    recovery_key: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "recovery_key": recovery_key, "observation": "process_stopped",
+        "details": {"journal_state": "prepared", "process_observed": false},
+    })
+}
+
+pub fn cancellation_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    cancellation_request_id: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "cancellation_request_id": cancellation_request_id, "observation": "process_stopped",
+        "observed_at": Utc::now().to_rfc3339(), "details": {"exit_code": 130, "signal": "SIGTERM"},
+    })
+}
 
 // =======================================================================
 // 1. Stale fence: every attempt-scoped mutation checked here rejects a

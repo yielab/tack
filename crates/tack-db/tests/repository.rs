@@ -24,6 +24,8 @@ mod execution_enqueue;
 mod execution_enrollment;
 #[path = "repository/execution_events.rs"]
 mod execution_events;
+#[path = "repository/execution_fixture.rs"]
+mod execution_fixture;
 #[path = "repository/execution_races.rs"]
 mod execution_races;
 #[path = "repository/execution_recovery_requeue.rs"]

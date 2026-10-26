@@ -495,16 +495,6 @@ impl Repository {
         sqlx::query("SELECT id,runner_id,expires_at,consumed_at,revoked_at FROM agent_enrollment_tokens WHERE runner_id=? AND id=?").bind(runner_id).bind(token_id).fetch_optional(self.pool()).await?.map(|r|Ok(EnrollmentTokenMetadata{id:r.get("id"),runner_id:r.get("runner_id"),expires_at:r.get("expires_at"),consumed_at:r.get("consumed_at"),revoked_at:r.get("revoked_at")})).transpose()
     }
 
-    pub async fn revoke_enrollment_token_by_id(
-        &self,
-        runner_id: &str,
-        token_id: &str,
-        clock: &dyn Clock,
-    ) -> Result<bool, StoreError> {
-        let r=sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE runner_id=? AND id=? AND consumed_at IS NULL").bind(stamp(clock)).bind(runner_id).bind(token_id).execute(self.pool()).await?;
-        Ok(r.rows_affected() == 1)
-    }
-
     pub async fn revoke_runner(
         &self,
         runner_id: &str,

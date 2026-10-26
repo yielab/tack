@@ -34,7 +34,8 @@ use tack_runner::{
 
 mod common;
 use common::temp_dir as root;
-use common::usage;
+mod usage_fixture;
+use usage_fixture::usage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FailurePoint {

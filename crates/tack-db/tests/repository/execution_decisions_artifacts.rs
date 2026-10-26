@@ -1,7 +1,7 @@
 //! Cancellation observations, and artifacts/decisions recorded against an
 //! attempt (including the lease-expiry and concurrent-terminal races).
 
-use crate::common::execution_fixture::{
+use crate::execution_fixture::{
     Fixture, cancellation_input, completion_input, expect_cancelled, expect_replayed_cancellation,
     recovery_input,
 };

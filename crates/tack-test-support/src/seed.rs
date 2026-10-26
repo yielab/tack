@@ -97,16 +97,6 @@ pub async fn agent_profile_removed(repo: &Repository, profile_id: &str) {
         .expect("remove agent_profiles row");
 }
 
-/// Marks a runner revoked at `revoked_at` without touching its enrollment tokens.
-pub async fn agent_runner_revoked(repo: &Repository, runner_id: &str, revoked_at: &str) {
-    sqlx::query("UPDATE agent_runners SET state='revoked', revoked_at=? WHERE id=?")
-        .bind(revoked_at)
-        .bind(runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed agent_runners revoked");
-}
-
 /// Stores `heartbeat_at` as the last heartbeat of one runner.
 pub async fn agent_runner_heartbeat(repo: &Repository, runner_id: &str, heartbeat_at: &str) {
     sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
@@ -194,22 +184,6 @@ pub async fn item_card(repo: &Repository, item_id: &str, title: &str, descriptio
         .expect("seed items card");
 }
 
-/// Sets an item's type and priority.
-pub async fn item_type_and_priority(
-    repo: &Repository,
-    item_id: &str,
-    item_type: &str,
-    priority: &str,
-) {
-    sqlx::query("UPDATE items SET item_type = ?, priority = ? WHERE id = ?")
-        .bind(item_type)
-        .bind(priority)
-        .bind(item_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed items type and priority");
-}
-
 /// Sets, or clears with `None`, a project's definition of done.
 pub async fn project_definition_of_done(
     repo: &Repository,
@@ -244,44 +218,6 @@ pub async fn project_default_profile_of_kind(repo: &Repository, project_id: &str
     .execute(repo.pool())
     .await
     .expect("seed projects default_profile_id by kind");
-}
-
-/// Sets where a project's code lives, with `push_after_run` on and no default branch.
-pub async fn project_code(
-    repo: &Repository,
-    project_id: &str,
-    code_origin: &str,
-    repository: Option<&str>,
-    workspace_mode: &str,
-) {
-    sqlx::query("UPDATE projects SET code_origin=?, repository=?, default_branch=NULL, workspace_mode=?, push_after_run=1 WHERE id=?")
-        .bind(code_origin)
-        .bind(repository)
-        .bind(workspace_mode)
-        .bind(project_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed projects code");
-}
-
-/// Sets a project's install command.
-pub async fn project_prepare_command(repo: &Repository, project_id: &str, command: &str) {
-    sqlx::query("UPDATE projects SET prepare_command = ? WHERE id = ?")
-        .bind(command)
-        .bind(project_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed projects prepare_command");
-}
-
-/// Sets a project's default agent.
-pub async fn project_default_harness(repo: &Repository, project_id: &str, harness: &str) {
-    sqlx::query("UPDATE projects SET default_harness = ? WHERE id = ?")
-        .bind(harness)
-        .bind(project_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed projects default_harness");
 }
 
 /// Sets a project's default agent and the model that agent runs by default.
@@ -626,22 +562,6 @@ pub async fn pending_decision(
 }
 
 // ─── runner-protocol fixtures ───────────────────────────────────────────────
-
-/// Sets how many runs a runner can hold at all and how many it can still take.
-pub async fn agent_runner_capacity(
-    repo: &Repository,
-    runner_id: &str,
-    total_capacity: i64,
-    available_capacity: i64,
-) {
-    sqlx::query("UPDATE agent_runners SET total_capacity = ?, available_capacity = ? WHERE id = ?")
-        .bind(total_capacity)
-        .bind(available_capacity)
-        .bind(runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed agent_runners capacity");
-}
 
 /// Marks a decision resolved by an operator, with `answer` and `resolved_by` as raw JSON text,
 /// every timestamp being `at`.

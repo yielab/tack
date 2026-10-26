@@ -20,7 +20,7 @@ use tack_db::repo::execution::{
 use tack_db::{Repository, init_pool, migrations};
 use tack_protocol::Clock;
 
-use super::{create_test_workspace, make_item, make_project, setup_test_db};
+use crate::common::{create_test_workspace, make_item, make_project, setup_test_db};
 
 /// A shared, settable point in time implementing [`Clock`] — this
 /// crate's execution repository takes its clock as `&dyn Clock`, so
@@ -28,7 +28,6 @@ use super::{create_test_workspace, make_item, make_project, setup_test_db};
 /// for it directly.
 pub struct FakeClock(Mutex<DateTime<Utc>>);
 
-#[allow(dead_code)] // not every tack-db test binary drives the clock forward
 impl FakeClock {
     pub fn new() -> Self {
         Self(Mutex::new(
@@ -53,14 +52,12 @@ impl Clock for FakeClock {
     }
 }
 
-#[allow(dead_code)] // not every tack-db test binary exercises the execution-domain repo
 pub struct Fixture {
     pub repo: Repository,
     pub item_id: String,
     pub clock: FakeClock,
 }
 
-#[allow(dead_code)]
 impl Fixture {
     /// One workspace, project, item, runner and agent profile on a shared
     /// in-memory database.
@@ -514,12 +511,6 @@ impl Fixture {
             .await
     }
 
-    /// Two clones of this fixture's repository, for a `tokio::join!` race —
-    /// both share this fixture's one clock.
-    pub fn pair(&self) -> (Repository, Repository) {
-        (self.repo.clone(), self.repo.clone())
-    }
-
     /// Records an artifact on `attempt_id`, `artifact_id` doubling as its
     /// row id (each test records at most one).
     pub async fn record_artifact(
@@ -634,7 +625,6 @@ impl Fixture {
 /// A well-formed `NewExecutionRequest`: `id`, `item_id`, `key` and
 /// `fingerprint` are the only fields that vary across tests, every other
 /// field (selector, profile snapshot, budgets, ...) a fixed valid value.
-#[allow(dead_code)] // exercised through Fixture::request by every execution_repo test
 pub fn request<'a>(
     id: &'a str,
     item_id: &'a str,
@@ -671,7 +661,6 @@ pub fn request<'a>(
 }
 
 /// A `NewArtifact` in the fixture's default "log" shape.
-#[allow(dead_code)] // exercised through Fixture::record_artifact
 pub fn new_artifact<'a>(row_id: &'a str, artifact_id: &'a str) -> NewArtifact<'a> {
     NewArtifact {
         id: row_id,
@@ -688,7 +677,6 @@ pub fn new_artifact<'a>(row_id: &'a str, artifact_id: &'a str) -> NewArtifact<'a
 }
 
 /// A `NewDecision` in the fixture's default "approval" shape.
-#[allow(dead_code)] // exercised through Fixture::create_decision
 pub fn new_decision<'a>(row_id: &'a str, decision_id: &'a str) -> NewDecision<'a> {
     NewDecision {
         id: row_id,
@@ -704,7 +692,6 @@ pub fn new_decision<'a>(row_id: &'a str, decision_id: &'a str) -> NewDecision<'a
 
 /// A `Completion` for "runner-a" with the fixture's default succeeded
 /// terminal state/reason and result/usage JSON.
-#[allow(dead_code)]
 pub fn completion_input<'a>(
     attempt_id: &'a str,
     fencing_token: i64,
@@ -725,7 +712,6 @@ pub fn completion_input<'a>(
 }
 
 /// A `CancellationObservationInput` for "runner-a".
-#[allow(dead_code)]
 pub fn cancellation_input<'a>(
     attempt_id: &'a str,
     fencing_token: i64,
@@ -743,7 +729,6 @@ pub fn cancellation_input<'a>(
     }
 }
 
-#[allow(dead_code)]
 pub fn expect_cancelled(
     obs: CancellationObservation,
 ) -> tack_db::repo::execution::CancellationResponse {
@@ -753,7 +738,6 @@ pub fn expect_cancelled(
     }
 }
 
-#[allow(dead_code)]
 pub fn expect_replayed_cancellation(
     obs: CancellationObservation,
 ) -> tack_db::repo::execution::CancellationResponse {
@@ -764,7 +748,6 @@ pub fn expect_replayed_cancellation(
 }
 
 /// A `RecoveryObservationInput` for "runner-a".
-#[allow(dead_code)]
 pub fn recovery_input<'a>(
     attempt_id: &'a str,
     fencing_token: i64,
@@ -784,7 +767,6 @@ pub fn recovery_input<'a>(
 /// How many of the two racing results in `items` satisfy `pred` — used by the
 /// `concurrent_duplicate_*` tests to prove exactly one of a duplicate pair
 /// committed while the other replayed.
-#[allow(dead_code)]
 pub fn count_where<T>(items: [&T; 2], pred: impl Fn(&T) -> bool) -> usize {
     items.into_iter().filter(|r| pred(r)).count()
 }

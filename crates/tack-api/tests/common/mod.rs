@@ -1,3 +1,7 @@
+//! Shared router and request helpers. Each test binary includes this file whole and uses a
+//! different part of it, so what is unused in one binary is used in another.
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use tack_protocol::Clock;
 
@@ -15,7 +19,6 @@ use uuid::Uuid;
 
 /// An in-process router has no HTTP layer to supply `Host`, so a request
 /// that carries none gets `Host: localhost`; one that has it keeps it.
-#[allow(dead_code)] // only test binaries that build their own router call it
 pub fn with_default_host(router: Router) -> Router {
     router.layer(axum::middleware::map_request(
         |mut req: Request<Body>| async move {
@@ -29,7 +32,6 @@ pub fn with_default_host(router: Router) -> Router {
 
 /// Build a fully wired Axum router backed by an in-memory SQLite database.
 /// Returns the router and the test workspace ID.
-#[allow(dead_code)] // not every test binary calls the no-config constructor directly
 pub async fn test_app() -> (Router, Uuid) {
     test_app_with_config(AppConfig::default()).await
 }
@@ -43,7 +45,6 @@ pub async fn test_app_with_config(config: AppConfig) -> (Router, Uuid) {
 /// `AppState` — the seam a test of `handlers::local_runner`'s routes needs
 /// to supply a fake `LocalRunnerControl` (or `None`, to prove those routes
 /// stay absent even on a loopback bind when nothing was ever wired in).
-#[allow(dead_code)] // not every test binary needs a non-default local_runner
 pub async fn test_app_with_local_runner(
     config: AppConfig,
     local_runner: Option<Arc<dyn LocalRunnerControl>>,
@@ -74,7 +75,6 @@ pub async fn test_app_with_local_runner(
 /// Build a test app backed by a file-based SQLite database.
 /// The caller supplies the full SQLite URL (e.g. `"sqlite:/tmp/test.db?mode=rwc"`).
 /// Used for tests that require file-level operations (backup/restore).
-#[allow(dead_code)] // not every test binary exercises file-backed databases
 pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
     let pool = init_pool(db_url).await.expect("file-based pool");
     migrations::run_all(&pool).await.expect("migrations");
@@ -103,7 +103,6 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
 /// Create a project via `POST /api/projects`; returns its id. Every duplicate this
 /// replaces built this exact request (JSON `name`/`project_type` body,
 /// `Content-Type: application/json`) by hand.
-#[allow(dead_code)] // not every test binary creates projects through this route
 pub async fn create_project(app: &Router, name: &str, project_type: &str) -> Uuid {
     let res = app
         .clone()
@@ -129,7 +128,6 @@ pub async fn create_project(app: &Router, name: &str, project_type: &str) -> Uui
 /// Create an item on `project_id` via `POST /api/projects/{id}/items`; returns its id.
 /// Shared by the attachment and custom-field-value handler tests, which both need an
 /// item to attach data to and neither cares about its fields beyond a title.
-#[allow(dead_code)] // only the attachments and custom-fields handler suites create bare items
 pub async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
     let res = app
         .clone()
@@ -153,7 +151,6 @@ pub async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
 
 /// Send a request, returning `(status, parsed JSON body)`. An empty or non-JSON body
 /// parses to `Value::Null` rather than panicking. 8MB response cap.
-#[allow(dead_code)] // not every test binary sends generic JSON requests
 pub async fn send(
     app: &Router,
     method: &str,
@@ -175,7 +172,6 @@ pub async fn send(
 
 /// Same as [`send`] but with a 64MB response cap, for routes returning large artifact
 /// payloads.
-#[allow(dead_code)] // only the artifact/chaos-recovery suites need the larger cap
 pub async fn send_large(
     app: &Router,
     method: &str,
@@ -196,7 +192,6 @@ pub async fn send_large(
 }
 
 /// Same as [`send`], additionally returning the raw response body text.
-#[allow(dead_code)] // only the attempt-list/attempt-scoping suites need the raw text
 pub async fn send_with_raw(
     app: &Router,
     method: &str,
@@ -219,7 +214,6 @@ pub async fn send_with_raw(
 
 /// POST-only `send`, panicking (instead of defaulting to `Value::Null`) when the response
 /// body isn't valid JSON.
-#[allow(dead_code)] // only the runner-protocol decisions suite wants strict parsing
 pub async fn send_post_strict(
     app: &Router,
     uri: &str,
@@ -245,7 +239,6 @@ pub async fn send_post_strict(
 
 /// `send` with a raw string body, panicking (instead of defaulting to `Value::Null`) when
 /// the response body isn't valid JSON.
-#[allow(dead_code)] // only the runner-protocol lifecycle suite wants strict parsing
 pub async fn send_str_strict(
     app: &Router,
     method: &str,
@@ -265,7 +258,6 @@ pub async fn send_str_strict(
 
 /// Send a request as the given `x-tack-principal`, panicking if the response isn't valid
 /// JSON. 128KB response cap — this route family's bodies are small.
-#[allow(dead_code)] // only the executions/runner-admin suite impersonates a principal
 pub async fn send_as(
     app: &Router,
     method: &str,
@@ -293,7 +285,6 @@ pub async fn send_as(
 }
 
 /// [`send_as`] with the default `"operator-1"` principal.
-#[allow(dead_code)] // only the executions/runner-admin suite impersonates a principal
 pub async fn send_as_operator(
     app: &Router,
     method: &str,
@@ -303,7 +294,6 @@ pub async fn send_as_operator(
     send_as(app, method, uri, body, "operator-1").await
 }
 
-#[allow(dead_code)] // exercised transitively by whichever `send*` variants a binary uses
 async fn send_bytes(
     app: &Router,
     method: &str,
@@ -329,7 +319,6 @@ async fn send_bytes(
     (status, bytes.to_vec())
 }
 
-#[allow(dead_code)] // exercised transitively by whichever `send*` variants a binary uses
 fn parse_or_null(bytes: &[u8]) -> Value {
     if bytes.is_empty() {
         Value::Null
@@ -340,7 +329,6 @@ fn parse_or_null(bytes: &[u8]) -> Value {
 
 /// Runner-v1 `POST /api/runner/v1/claim` as `credential`, returning `(status, parsed JSON
 /// body)`.
-#[allow(dead_code)] // only the chaos-recovery suite drives the claim route directly
 pub async fn claim_runner(
     app: &Router,
     runner_id: &str,
@@ -363,7 +351,6 @@ pub async fn claim_runner(
 /// Claim the fixed `runner-crash`/`claim-crash`/`attempt-crash` execution directly at the
 /// repository layer, bypassing HTTP — the runner-vertical-slice crash matrix's own subject
 /// under test is the repository method, not a route.
-#[allow(dead_code)] // only the runner-vertical-slice crash matrix claims at the repo layer
 pub async fn claim_execution_for_test(repo: &Repository, clock: &dyn Clock) {
     repo.claim_execution_idempotent_with_snapshot(
         "runner-crash",

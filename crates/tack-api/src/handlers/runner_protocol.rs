@@ -208,96 +208,53 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
 // against the frozen fixture in this module's own test below.
 // ---------------------------------------------------------------------
 
-// Nine of the fields below (each individually annotated) are read only by
-// `limits_constants_match_frozen_fixture_exactly`, never by a request-time
-// check in this file. That is not an oversight: every one of them bounds a
-// concern no handler in this file implements a code path for —
-// `environment_*` bounds the execution *request's* environment entries
-// (validated at enqueue time, not by any runner-protocol
-// handler here); `decision_answer_bytes_max` bounds an operator's decision
-// *answer*, which the operator's resolve route checks in `decisions.rs`;
-// `request_timeout_seconds_max` bounds the execution request's timeout
-// policy (enqueue-time, not runner-protocol); `retention_event_days_default`/
-// `retention_artifact_days_default` are background-sweep/storage defaults,
-// not a per-request check; and `heartbeat_grace_seconds` /
-// `event_batch_bytes_max` are each documented no-ops at their own call sites
-// (`heartbeat_grace_seconds` has no fixture response field to echo — see
-// `enrollment.response.json` — and `event_batch_bytes_max` is numerically
-// identical to `json_body_bytes_max`, which `parse_body` already enforces on
-// every request body — see the comment in `submit_events`).
-//
-// The struct still carries all 27 fields, unconditionally, so the fixture
-// test proves the *entire* frozen `docs/contracts/runner-v1/limits.json`
-// round-trips with no drift — not just the subset these handlers
-// happen to enforce today. Each `#[allow(dead_code)]` below is therefore
-// scoped to exactly the field it excuses, not the whole struct or module.
+// Only the limits this file enforces at request time are mirrored. The other
+// nine keys of `limits.json` bound concerns owned elsewhere (the execution
+// request's environment and timeout at enqueue time, the operator's decision
+// answer in `decisions.rs`, the retention sweeps) or are documented no-ops at
+// their call sites (`heartbeat_grace_seconds`, `event_batch_bytes_max`); the
+// fixture test below names them, so a key added to or dropped from the
+// frozen file still fails it.
 struct Limits {
     json_body_bytes_max: u64,
     metadata_bytes_max: u64,
-    #[allow(dead_code)]
-    environment_entries_max: u64,
-    #[allow(dead_code)]
-    environment_name_bytes_max: u64,
-    #[allow(dead_code)]
-    environment_value_bytes_max: u64,
     labels_max: u64,
     label_name_bytes_max: u64,
     label_value_bytes_max: u64,
     heartbeat_interval_seconds: i64,
-    #[allow(dead_code)]
-    heartbeat_grace_seconds: i64,
     lease_duration_seconds: i64,
     claim_wait_ms_max: u64,
     active_attempts_per_heartbeat_max: u64,
     event_batch_count_max: u64,
     event_payload_bytes_max: u64,
-    #[allow(dead_code)]
-    event_batch_bytes_max: u64,
     decision_prompt_bytes_max: u64,
     decision_options_max: u64,
-    #[allow(dead_code)]
-    decision_answer_bytes_max: u64,
     artifact_manifest_count_max: u64,
     artifact_metadata_bytes_max: u64,
     artifact_content_bytes_max: u64,
     artifact_attempt_total_bytes_max: u64,
     capabilities_bytes_max: u64,
-    #[allow(dead_code)]
-    request_timeout_seconds_max: u64,
-    #[allow(dead_code)]
-    retention_event_days_default: u64,
-    #[allow(dead_code)]
-    retention_artifact_days_default: u64,
 }
 
 const LIMITS: Limits = Limits {
     json_body_bytes_max: 1_048_576,
     metadata_bytes_max: 65_536,
-    environment_entries_max: 64,
-    environment_name_bytes_max: 128,
-    environment_value_bytes_max: 4_096,
     labels_max: 64,
     label_name_bytes_max: 64,
     label_value_bytes_max: 256,
     heartbeat_interval_seconds: 15,
-    heartbeat_grace_seconds: 45,
     lease_duration_seconds: 60,
     claim_wait_ms_max: 30_000,
     active_attempts_per_heartbeat_max: 64,
     event_batch_count_max: 100,
     event_payload_bytes_max: 65_536,
-    event_batch_bytes_max: 1_048_576,
     decision_prompt_bytes_max: 32_768,
     decision_options_max: 32,
-    decision_answer_bytes_max: 32_768,
     artifact_manifest_count_max: 100,
     artifact_metadata_bytes_max: 32_768,
     artifact_content_bytes_max: 52_428_800,
     artifact_attempt_total_bytes_max: 524_288_000,
     capabilities_bytes_max: 262_144,
-    request_timeout_seconds_max: 86_400,
-    retention_event_days_default: 30,
-    retention_artifact_days_default: 30,
 };
 
 /// Not fixed by `limits.json`: a reasonable, explicitly-chosen window for the
@@ -2115,33 +2072,42 @@ mod tests {
             "protocol_version": 1,
             "json_body_bytes_max": LIMITS.json_body_bytes_max,
             "metadata_bytes_max": LIMITS.metadata_bytes_max,
-            "environment_entries_max": LIMITS.environment_entries_max,
-            "environment_name_bytes_max": LIMITS.environment_name_bytes_max,
-            "environment_value_bytes_max": LIMITS.environment_value_bytes_max,
             "labels_max": LIMITS.labels_max,
             "label_name_bytes_max": LIMITS.label_name_bytes_max,
             "label_value_bytes_max": LIMITS.label_value_bytes_max,
             "heartbeat_interval_seconds": LIMITS.heartbeat_interval_seconds,
-            "heartbeat_grace_seconds": LIMITS.heartbeat_grace_seconds,
             "lease_duration_seconds": LIMITS.lease_duration_seconds,
             "claim_wait_ms_max": LIMITS.claim_wait_ms_max,
             "active_attempts_per_heartbeat_max": LIMITS.active_attempts_per_heartbeat_max,
             "event_batch_count_max": LIMITS.event_batch_count_max,
             "event_payload_bytes_max": LIMITS.event_payload_bytes_max,
-            "event_batch_bytes_max": LIMITS.event_batch_bytes_max,
             "decision_prompt_bytes_max": LIMITS.decision_prompt_bytes_max,
             "decision_options_max": LIMITS.decision_options_max,
-            "decision_answer_bytes_max": LIMITS.decision_answer_bytes_max,
             "artifact_manifest_count_max": LIMITS.artifact_manifest_count_max,
             "artifact_metadata_bytes_max": LIMITS.artifact_metadata_bytes_max,
             "artifact_content_bytes_max": LIMITS.artifact_content_bytes_max,
             "artifact_attempt_total_bytes_max": LIMITS.artifact_attempt_total_bytes_max,
             "capabilities_bytes_max": LIMITS.capabilities_bytes_max,
-            "request_timeout_seconds_max": LIMITS.request_timeout_seconds_max,
-            "retention_event_days_default": LIMITS.retention_event_days_default,
-            "retention_artifact_days_default": LIMITS.retention_artifact_days_default,
         });
-        assert_eq!(mine, fixture);
+        let mut expected = fixture.clone();
+        for unmirrored in [
+            "environment_entries_max",
+            "environment_name_bytes_max",
+            "environment_value_bytes_max",
+            "heartbeat_grace_seconds",
+            "event_batch_bytes_max",
+            "decision_answer_bytes_max",
+            "request_timeout_seconds_max",
+            "retention_event_days_default",
+            "retention_artifact_days_default",
+        ] {
+            expected
+                .as_object_mut()
+                .expect("limits fixture is an object")
+                .remove(unmirrored)
+                .unwrap_or_else(|| panic!("limits fixture lost `{unmirrored}`"));
+        }
+        assert_eq!(mine, expected);
     }
 
     #[test]

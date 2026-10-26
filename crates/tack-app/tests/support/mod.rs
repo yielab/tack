@@ -1,5 +1,5 @@
 //! A board to start runs on: one project with a url repository, one item, one active runner and
-//! one profile, on `setup_test_db()`.
+//! one profile, on `setup_test_db()`. Not every test binary uses every function.
 #![allow(dead_code)]
 
 use serde_json::{Value, json};

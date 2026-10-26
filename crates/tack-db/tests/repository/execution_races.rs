@@ -5,7 +5,7 @@
 //! lost update. Grouped together because their shape is the pattern under
 //! test, not the individual operation each races.
 
-use crate::common::execution_fixture::{
+use crate::execution_fixture::{
     Fixture, cancellation_input, completion_input, count_where, recovery_input,
 };
 

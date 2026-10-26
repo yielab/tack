@@ -9,11 +9,9 @@ pub fn free_port() -> u16 {
 }
 
 /// The operator token every spawned server in these tests is started with.
-#[allow(dead_code)] // only the embedded-runner suites start a server with a token
 pub const API_TOKEN: &str = "test-operator-token";
 
 /// A blocking client that sends [`API_TOKEN`] as a Bearer credential.
-#[allow(dead_code)] // only the embedded-runner suites call it
 pub fn authed_client() -> reqwest::blocking::Client {
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
