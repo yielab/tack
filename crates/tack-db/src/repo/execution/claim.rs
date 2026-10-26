@@ -69,7 +69,8 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
 /// only ever refreshed in `summary`; edits to the rest are never overwritten.
 /// A custom profile already holding a built-in's name makes that insert a
 /// no-op (`name` is unique) rather than failing startup.
-pub async fn seed_builtin_profiles(pool: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
+pub async fn seed_builtin_profiles(repo: &crate::Repository) -> Result<(), sqlx::Error> {
+    let pool = repo.pool();
     let now = chrono::Utc::now().to_rfc3339();
     for (kind, name, summary, tools, instructions) in BUILTIN_PROFILES {
         let tool_policy = serde_json::json!({"tools": {

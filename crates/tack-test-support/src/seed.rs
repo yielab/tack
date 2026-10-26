@@ -284,6 +284,22 @@ pub async fn project_default_harness(repo: &Repository, project_id: &str, harnes
         .expect("seed projects default_harness");
 }
 
+/// Sets a project's default agent and the model that agent runs by default.
+pub async fn project_default_model(
+    repo: &Repository,
+    project_id: &str,
+    harness: &str,
+    model: &str,
+) {
+    sqlx::query("UPDATE projects SET default_harness = ?, default_model = ? WHERE id = ?")
+        .bind(harness)
+        .bind(model)
+        .bind(project_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed projects default_model");
+}
+
 /// Turns auto-start on for a project at `status`, running `harness` by default.
 pub async fn project_auto_start(repo: &Repository, project_id: &str, status: &str, harness: &str) {
     sqlx::query(

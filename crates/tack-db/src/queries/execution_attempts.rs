@@ -284,3 +284,30 @@ pub async fn count_completed_with(
     .fetch_one(repo.pool())
     .await?)
 }
+
+/// The runner an attempt was leased to, or `None` when no attempt has this id.
+pub async fn runner_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT runner_id FROM execution_attempts WHERE id = ?")
+            .bind(attempt_id)
+            .fetch_optional(repo.pool())
+            .await?,
+    )
+}
+
+/// When an attempt started and when it ended, as stored; the outer `None` means no attempt has
+/// this id, an inner one that the moment was not recorded.
+pub async fn started_and_ended_at(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<Option<(Option<String>, Option<String>)>, StoreError> {
+    Ok(
+        sqlx::query_as("SELECT started_at, ended_at FROM execution_attempts WHERE id = ?")
+            .bind(attempt_id)
+            .fetch_optional(repo.pool())
+            .await?,
+    )
+}

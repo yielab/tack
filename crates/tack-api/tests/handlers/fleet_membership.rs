@@ -15,30 +15,26 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::{
+    Repository,
+    queries::{agent_fleets, execution_attempts, execution_requests},
+};
+use tack_protocol::execution::ExecutionState;
 use uuid::Uuid;
 
 const OPERATOR_TOKEN: &str = "h8-fleet-membership-operator-token";
 const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 
-async fn fresh_database() -> (sqlx::SqlitePool, Uuid) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'H8FleetMembership', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
-    (pool, workspace_id)
+async fn fresh_database() -> (Repository, Uuid) {
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
+    (repo, workspace_id)
 }
 
-async fn router_for(pool: sqlx::SqlitePool, workspace_id: Uuid) -> axum::Router {
+async fn router_for(repo: Repository, workspace_id: Uuid) -> axum::Router {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
-        repo: Repository::new(pool),
+        repo,
         config: AppConfig {
             api_token: Some(OPERATOR_TOKEN.into()),
             database_url: "sqlite::memory:".to_string(),
@@ -183,8 +179,8 @@ fn execution_request_body(
 
 #[tokio::test]
 async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
-    let (pool, workspace_id) = fresh_database().await;
-    let app = router_for(pool.clone(), workspace_id).await;
+    let (repo, workspace_id) = fresh_database().await;
+    let app = router_for(repo.clone(), workspace_id).await;
     let op = operator_headers();
 
     let item_id = create_project_and_item(&app).await;
@@ -234,14 +230,9 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
 
     // Directly verify the write landed in `agent_fleet_members` (not just
     // that the endpoint returned 200).
-    let member_row_exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM agent_fleet_members WHERE fleet_id = ? AND runner_id = ?)",
-    )
-    .bind(&fleet_id)
-    .bind(&member_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let member_row_exists = agent_fleets::fleet_has_member(&repo, &fleet_id, &member_id)
+        .await
+        .unwrap();
     assert!(member_row_exists, "membership row was not persisted");
 
     // `GET /api/runners?fleet_id=` reflects the new membership.
@@ -320,15 +311,13 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
 
     // Prove the request is still queued, untouched by the outsider's claim
     // attempt — not merely that its response looked empty.
-    let (state, attempt_count): (String, i64) = sqlx::query_as(
-        "SELECT er.state, (SELECT COUNT(*) FROM execution_attempts WHERE request_id = er.id) \
-         FROM execution_requests er WHERE er.id = ?",
-    )
-    .bind(&request_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(state, "queued");
+    let state = execution_requests::request_state(&repo, &request_id)
+        .await
+        .unwrap();
+    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+        .await
+        .unwrap();
+    assert_eq!(state, Some(ExecutionState::Queued));
     assert_eq!(attempt_count, 0);
 
     // --- The member claims and gets exactly this request. ---
@@ -361,14 +350,14 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
         "the fleet's member must be handed the fleet-scoped request: {member_claim}"
     );
     let attempt_id = member_claim["lease"]["attempt_id"].as_str().unwrap();
-    let (db_state, db_runner_id): (String, String) =
-        sqlx::query_as("SELECT state, runner_id FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(db_state, "leased");
-    assert_eq!(db_runner_id, member_id);
+    let db_state = execution_attempts::attempt_state(&repo, attempt_id)
+        .await
+        .unwrap();
+    let db_runner_id = execution_attempts::runner_of_attempt(&repo, attempt_id)
+        .await
+        .unwrap();
+    assert_eq!(db_state, Some(ExecutionState::Leased));
+    assert_eq!(db_runner_id.as_deref(), Some(member_id.as_str()));
 
     // --- Removing the member from the fleet is also a real write. ---
     let (status, removed) = common::send(
@@ -381,14 +370,10 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
     .await;
     assert_eq!(status, StatusCode::OK, "{removed}");
     assert_eq!(removed["state"], "removed");
-    let member_row_exists_after_removal: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM agent_fleet_members WHERE fleet_id = ? AND runner_id = ?)",
-    )
-    .bind(&fleet_id)
-    .bind(&member_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let member_row_exists_after_removal =
+        agent_fleets::fleet_has_member(&repo, &fleet_id, &member_id)
+            .await
+            .unwrap();
     assert!(
         !member_row_exists_after_removal,
         "membership row must be gone after removal"
@@ -402,8 +387,8 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
 
 #[tokio::test]
 async fn adding_member_to_nonexistent_fleet_or_runner_writes_nothing() {
-    let (pool, workspace_id) = fresh_database().await;
-    let app = router_for(pool.clone(), workspace_id).await;
+    let (repo, workspace_id) = fresh_database().await;
+    let app = router_for(repo.clone(), workspace_id).await;
     let op = operator_headers();
 
     let (real_runner_id, _auth) = enroll_runner(&app, "H8 real runner").await;
@@ -444,10 +429,7 @@ async fn adding_member_to_nonexistent_fleet_or_runner_writes_nothing() {
     assert_eq!(body["error"]["code"], "not_found");
 
     // Neither adversarial call left a row behind.
-    let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_fleet_members")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+    let row_count = agent_fleets::fleet_member_count(&repo).await.unwrap();
     assert_eq!(
         row_count, 0,
         "a rejected add must not leave a membership row behind"

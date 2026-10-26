@@ -343,7 +343,7 @@ async fn init_folder_creates_a_repo_once() {
 async fn test_run_creates_a_hidden_project_and_a_request() {
     let repo = tack_test_support::setup_test_db().await;
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .unwrap();
     tack_test_support::seed::agent_runner(&repo, "runner-test", "2026-01-01T00:00:00Z").await;
@@ -401,7 +401,7 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
 async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
     let repo = tack_test_support::setup_test_db().await;
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .unwrap();
     let control = Arc::new(FakeControl::default());

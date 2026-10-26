@@ -132,7 +132,7 @@ async fn builtin_profiles_exist_on_a_fresh_database() {
     };
     assert!(list(app.clone()).await.is_empty());
 
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .expect("seed");
     let profiles = list(app.clone()).await;
@@ -169,7 +169,7 @@ async fn builtin_profiles_exist_on_a_fresh_database() {
     assert_eq!(status, StatusCode::OK, "{patched}");
     assert_eq!(patched["instructions"], "edited");
     assert_eq!(patched["builtin"], true);
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .expect("second seed");
     let again = list(app.clone()).await;
@@ -1218,7 +1218,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     let project_id = project_of(&repo, &item_id).await;
 
     // Seed builtin profiles
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo)
         .await
         .expect("seed profiles");
 
