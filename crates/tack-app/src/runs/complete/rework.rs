@@ -11,6 +11,7 @@ use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::{MergeDecision, MergeReadinessPack, NextStep};
 use uuid::Uuid;
 
+use crate::autonomy::MRP_MEDIA_TYPE;
 use crate::runs::start_run::canonical_json;
 
 /// How the section a rework appends to the instructions starts: its heading and the sentence
@@ -35,9 +36,10 @@ where
     R: Fn(String) -> Fut,
     Fut: Future<Output = Option<MergeReadinessPack>>,
 {
-    let reference = queries::execution_artifacts::pack_content_reference(repo, attempt_id)
-        .await
-        .ok()??;
+    let reference =
+        queries::execution_artifacts::latest_content_reference(repo, attempt_id, MRP_MEDIA_TYPE)
+            .await
+            .ok()??;
     read_pack(reference).await
 }
 

@@ -14,7 +14,7 @@ use crate::AppError;
 use crate::host::Host;
 use crate::merge::{self, FactsExtra};
 
-const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
+pub(crate) const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 
 /// What one pass did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

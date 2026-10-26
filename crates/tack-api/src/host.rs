@@ -35,7 +35,7 @@ impl AppState {
 #[async_trait]
 impl Host for AppHost {
     async fn github_token(&self, project_id: Uuid) -> Option<String> {
-        crate::github_sync::github_token_for_project(&self.0, project_id).await
+        crate::handlers::pull_requests::github_token_for_project(&self.0, project_id).await
     }
 
     async fn ci_state(
@@ -46,7 +46,7 @@ impl Host for AppHost {
         sha: &str,
     ) -> Result<CiState, String> {
         let base = self.0.config.github_api_base.as_str();
-        crate::github_sync::ci_state(client, base, token, repo, sha)
+        tack_app::github_sync::ci_state(client, base, token, repo, sha)
             .await
             .map_err(|error| error.to_string())
     }
@@ -60,7 +60,7 @@ impl Host for AppHost {
         sha: &str,
     ) -> Result<String, String> {
         let base = self.0.config.github_api_base.as_str();
-        crate::github_sync::merge_pull_request(client, base, token, repo, number, sha)
+        tack_app::github_sync::merge_pull_request(client, base, token, repo, number, sha)
             .await
             .map_err(|refused| refused.0)
     }

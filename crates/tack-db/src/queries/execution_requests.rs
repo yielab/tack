@@ -271,7 +271,6 @@ pub async fn rework_cap_of_item(
     .fetch_optional(repo.pool())
     .await?;
     Ok(cap.flatten())
-
 }
 
 /// A request a failed verification queued after another.

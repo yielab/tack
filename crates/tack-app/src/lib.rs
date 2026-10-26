@@ -29,6 +29,7 @@
 pub mod auto_start;
 pub mod autonomy;
 mod error;
+pub mod github_sync;
 pub mod host;
 pub mod merge;
 pub mod runs;

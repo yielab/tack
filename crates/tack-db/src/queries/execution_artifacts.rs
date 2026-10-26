@@ -3,9 +3,6 @@ use tack_protocol::execution::ExecutionState;
 use crate::repo::execution::{ExecutionArtifactRow, state};
 use crate::{Repository, StoreError};
 
-/// The media type of a Merge-Readiness Pack artifact.
-const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
-
 /// Every artifact manifested for one attempt, identified by its request id and
 /// 1-based attempt number, oldest first. `None` means no attempt with that
 /// number exists for the request, which differs from `Some(vec![])`: an attempt
@@ -92,23 +89,6 @@ pub async fn content_reference(
     .ok_or(StoreError::NotFound)
 }
 
-/// The content reference of the newest Merge-Readiness Pack the attempt uploaded, or `None`
-/// when it uploaded none.
-pub async fn pack_content_reference(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Option<String>, StoreError> {
-    Ok(sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts \
-         WHERE attempt_id = ? AND media_type = ? \
-         AND content_reference IS NOT NULL ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(attempt_id)
-    .bind(MRP_MEDIA_TYPE)
-    .fetch_optional(repo.pool())
-    .await?)
-}
-
 /// What an upload of one artifact's content is checked against: the manifest row and the
 /// lease of the attempt that owns it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,4 +137,22 @@ pub async fn upload_facts(
         },
     )
     .transpose()
+}
+
+/// The stored content reference of the attempt's newest artifact of `media_type` that has one,
+/// or `None` when it has none.
+pub async fn latest_content_reference(
+    repo: &Repository,
+    attempt_id: &str,
+    media_type: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT content_reference FROM execution_artifacts \
+         WHERE attempt_id = ? AND media_type = ? AND content_reference IS NOT NULL \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(attempt_id)
+    .bind(media_type)
+    .fetch_optional(repo.pool())
+    .await?)
 }

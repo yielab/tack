@@ -74,8 +74,6 @@ pub async fn serve(
     // the object store). The interval is env-only (`TACK_BACKUP_INTERVAL_SECS`),
     // but the destination can come from UI-saved settings too, so this spawns
     // whenever an interval is set and re-checks the effective config each tick.
-    // Inbound GitHub poll: returns at once when polling is off or no token is set.
-    tokio::spawn(crate::run_github_poll_task(state.clone()));
 
     if let Some(interval_secs) = config.backup_interval_secs {
         const MIN_BACKUP_INTERVAL_SECS: u64 = 60;

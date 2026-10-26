@@ -17,27 +17,72 @@
 //! poll: the `/issues` response also lists pull requests, and a stored one has its
 //! state, `merged_at` and `closed_at` kept current.
 
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use tack_db::Repository;
+use tack_db::queries::{github_links, pull_requests};
+use tack_protocol::Clock;
+
+use crate::AppError;
+
+/// What the poll needs from whoever composes it and the store cannot give: the secret behind
+/// a project's token reference (the embedded runner's secret store) and the hand-off of a
+/// pull request GitHub just reported on (the board's prill store).
+#[async_trait::async_trait]
+pub trait Hooks: Send + Sync {
+    /// Read-only resolution of a stored `secret_reference` (`store:<name>` or
+    /// `env:<VARIABLE>`). `None` when nothing is wired in to resolve one; `Err` carries the
+    /// failure, never the value.
+    async fn resolve_secret(&self, reference: &str) -> Option<Result<String, String>>;
+
+    /// Called once GitHub's report on pull request `number` of `repo` is stored.
+    async fn pull_request_observed(&self, repo: &str, number: i64);
+
+    /// Called by [`run`] after every pass, whatever its outcome: the board's merge autonomy
+    /// looks at what the pass learnt here.
+    async fn after_pass(&self);
+}
+
+/// What the inbound poll is configured with.
+#[derive(Debug, Clone)]
+pub struct Settings {
+    /// The environment's GitHub token; the poll does not start without one.
+    pub github_token: Option<String>,
+    /// The API root (`https://api.github.com`, overridable for Enterprise or tests).
+    pub api_base: String,
+}
+
+/// The HTTP client every GitHub call of the poll goes through.
+pub fn client() -> reqwest::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent("Tack/1.0 (github.com/yielab/tack)")
+        .timeout(Duration::from_secs(15))
+        // A redirect target is remote input — never forward the token to it.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+}
+
 /// The single place the token-resolution order lives: a project's own
-/// `github_token_ref` (resolved through the embedded runner's secret store,
-/// when one is wired into this `AppState`), falling through to the
-/// environment's `TACK_GITHUB_TOKEN` when the project has no reference, no
-/// runner control is wired in, or the reference fails to resolve. A
-/// resolution failure logs the reference *name* — never the value — at
-/// `warn` and falls through rather than failing the caller.
-/// `handlers::items::maybe_sync_github` and `handlers::comments::
-/// maybe_sync_github` call this instead of reading `state.config.
-/// github_token` directly; so does the inbound poll's `poll_repo`.
-pub(crate) async fn github_token_for_project(
-    state: &crate::router::AppState,
+/// `github_token_ref` (resolved through [`Hooks::resolve_secret`], when one is wired in),
+/// falling through to the environment's `TACK_GITHUB_TOKEN` (`env_token`) when the project has
+/// no reference, nothing is wired in, or the reference fails to resolve. A resolution failure
+/// logs the reference *name* — never the value — at `warn` and falls through rather than
+/// failing the caller. The item and comment pushes call this instead of reading the
+/// environment token directly; so does the inbound poll's `poll_repo`.
+pub async fn github_token_for_project(
+    repo: &Repository,
+    hooks: &dyn Hooks,
+    env_token: Option<&str>,
     project_id: uuid::Uuid,
 ) -> Option<String> {
-    if let Ok(Some(project)) = state.repo.get_project(project_id).await
+    if let Ok(Some(project)) = repo.get_project(project_id).await
         && let Some(reference) = project.github_token_ref.as_deref()
-        && let Some(local_runner) = &state.local_runner
     {
-        match local_runner.resolve_secret(reference).await {
-            Ok(value) => return Some(value),
-            Err(error) => {
+        match hooks.resolve_secret(reference).await {
+            Some(Ok(value)) => return Some(value),
+            Some(Err(error)) => {
                 tracing::warn!(
                     project_id = %project_id,
                     reference = %reference,
@@ -45,9 +90,10 @@ pub(crate) async fn github_token_for_project(
                     "GitHub token reference did not resolve"
                 );
             }
+            None => {}
         }
     }
-    state.config.github_token.clone()
+    env_token.map(str::to_owned)
 }
 
 /// Decide whether a status change warrants a GitHub push, and in which direction.
@@ -267,12 +313,61 @@ struct GithubCommentAuthor {
     login: String,
 }
 
-/// What one [`poll_once`] iteration did, for a caller (a test, or the
-/// background task) to log or assert on without a timer.
+/// What one [`tick`] did, for a caller (a test, or the background task) to log or assert on
+/// without a timer.
 #[derive(Debug, Default)]
 pub struct PollSummary {
     pub repos_polled: usize,
     pub issues_updated: usize,
+}
+
+/// The loop `tack serve` spawns: every `interval`, one [`tick`], a failed pass logged and the
+/// next one awaited. Returns at once when polling is off (`interval` is zero) or no
+/// `github_token` is configured — [`tick`] re-checks the token every pass too.
+pub async fn run(
+    repo: Repository,
+    clock: Arc<dyn Clock>,
+    settings: Settings,
+    hooks: Arc<dyn Hooks>,
+    interval: Duration,
+) {
+    if interval.is_zero() || settings.github_token.is_none() {
+        return;
+    }
+    let client = match client() {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "GitHub inbound poll could not start");
+            return;
+        }
+    };
+    let mut etags = HashMap::new();
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // skip the first immediate tick
+    loop {
+        ticker.tick().await;
+        match tick(
+            &repo,
+            clock.as_ref(),
+            &settings,
+            hooks.as_ref(),
+            &client,
+            &mut etags,
+        )
+        .await
+        {
+            Ok(summary) => {
+                tracing::debug!(
+                    repos_polled = summary.repos_polled,
+                    issues_updated = summary.issues_updated,
+                    "GitHub inbound poll complete"
+                );
+            }
+            Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
+        }
+        hooks.after_pass().await;
+    }
 }
 
 /// Poll every linked GitHub repo once for issue-state changes. No-op
@@ -280,38 +375,40 @@ pub struct PollSummary {
 /// poll only *starts* on the environment token; it does not gate on any
 /// project's `github_token_ref` (a project reference can only ever narrow
 /// which token a given repo's requests use once the poll is already
-/// running — see `poll_repo`).
+/// running — see `poll_repo`). `etags` carries each repo's last `ETag` from one
+/// pass to the next.
 ///
 /// A per-repo failure (a bad response, a network error) is logged and
 /// skipped rather than failing the whole poll; ids only are logged, never
 /// the token or an issue body.
-pub async fn poll_once(
-    state: &crate::router::AppState,
-    etags: &mut std::collections::HashMap<String, String>,
-) -> anyhow::Result<PollSummary> {
+pub async fn tick(
+    repo: &Repository,
+    clock: &dyn Clock,
+    settings: &Settings,
+    hooks: &dyn Hooks,
+    client: &reqwest::Client,
+    etags: &mut HashMap<String, String>,
+) -> Result<PollSummary, AppError> {
     let mut summary = PollSummary::default();
-    let Some(token) = state.config.github_token.clone() else {
+    let Some(token) = settings.github_token.as_deref() else {
         return Ok(summary);
     };
-    let base = state.config.github_api_base.clone();
+    let base = settings.api_base.as_str();
 
-    let repos: Vec<String> = sqlx::query_scalar("SELECT DISTINCT repo FROM github_links")
-        .fetch_all(state.pool())
-        .await?;
+    let repos = github_links::linked_repos(repo).await?;
 
-    let client = reqwest::Client::builder()
-        .user_agent("Tack/1.0 (github.com/yielab/tack)")
-        .timeout(std::time::Duration::from_secs(15))
-        // A redirect target is remote input — never forward the token to it.
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
-
-    for repo in repos {
+    let ctx = Ctx {
+        store: repo,
+        clock,
+        hooks,
+        env_token: settings.github_token.as_deref(),
+    };
+    for github_repo in repos {
         summary.repos_polled += 1;
-        match poll_repo(state, &client, &base, &token, &repo, etags).await {
+        match poll_repo(&ctx, client, base, token, &github_repo, etags).await {
             Ok(updated) => summary.issues_updated += updated,
             Err(error) => {
-                tracing::warn!(repo = %repo, %error, "GitHub inbound poll failed for repo");
+                tracing::warn!(repo = %github_repo, %error, "GitHub inbound poll failed for repo");
             }
         }
     }
@@ -319,16 +416,24 @@ pub async fn poll_once(
     Ok(summary)
 }
 
+/// What one pass reads and writes through, besides the HTTP client.
+struct Ctx<'a> {
+    store: &'a Repository,
+    clock: &'a dyn Clock,
+    hooks: &'a dyn Hooks,
+    env_token: Option<&'a str>,
+}
+
 /// Poll one repo and return how many linked items it moved.
 async fn poll_repo(
-    state: &crate::router::AppState,
+    ctx: &Ctx<'_>,
     client: &reqwest::Client,
     base: &str,
     token: &str,
     repo: &str,
-    etags: &mut std::collections::HashMap<String, String>,
+    etags: &mut HashMap<String, String>,
 ) -> anyhow::Result<usize> {
-    let links = tack_db::repo::github_links::list_links_for_repo(state.pool(), repo).await?;
+    let links = github_links::links_of_repo(ctx.store, repo).await?;
     if links.is_empty() {
         return Ok(0);
     }
@@ -338,8 +443,10 @@ async fn poll_repo(
     // Falls back to the env token already passed in when there is no
     // project-level reference, no runner control wired in, or it fails to
     // resolve — see `github_token_for_project`.
-    let project_token = match state.repo.get_item(links[0].0).await {
-        Ok(Some(item)) => github_token_for_project(state, item.project_id).await,
+    let project_token = match ctx.store.get_item(links[0].0).await {
+        Ok(Some(item)) => {
+            github_token_for_project(ctx.store, ctx.hooks, ctx.env_token, item.project_id).await
+        }
         _ => None,
     };
     let token: &str = project_token.as_deref().unwrap_or(token);
@@ -365,7 +472,7 @@ async fn poll_repo(
     let resp = request.send().await?;
     let status = resp.status();
     if status == reqwest::StatusCode::NOT_MODIFIED {
-        follow_merged(state, client, base, token, repo).await;
+        follow_merged(ctx, client, base, token, repo).await;
         return Ok(0);
     }
     if !status.is_success() {
@@ -382,12 +489,12 @@ async fn poll_repo(
         issues.iter().map(|issue| (issue.number, issue)).collect();
 
     for issue in issues.iter().filter(|issue| issue.pull_request.is_some()) {
-        if let Err(error) = follow_pull_request(state, repo, issue).await {
+        if let Err(error) = follow_pull_request(ctx, repo, issue).await {
             tracing::warn!(pull_request = issue.number, %error, "GitHub pull request follow failed");
         }
     }
 
-    follow_merged(state, client, base, token, repo).await;
+    follow_merged(ctx, client, base, token, repo).await;
 
     let mut updated = 0;
     for link in &links {
@@ -402,15 +509,15 @@ async fn poll_repo(
 
         // Inbound comments: mirror any GitHub comment on this issue not yet
         // stored on the item, whether or not its state changed.
-        if let Err(error) = sync_inbound_comments(state, client, base, token, repo, link).await {
+        if let Err(error) = sync_inbound_comments(ctx, client, base, token, repo, link).await {
             tracing::warn!(item_id = %item_id, %error, "GitHub inbound comment sync failed");
         }
         let closed = issue.state == "closed";
 
-        let Ok(Some(item)) = state.repo.get_item(*item_id).await else {
+        let Ok(Some(item)) = ctx.store.get_item(*item_id).await else {
             continue;
         };
-        let Ok(Some(project)) = state.repo.get_project(item.project_id).await else {
+        let Ok(Some(project)) = ctx.store.get_project(item.project_id).await else {
             continue;
         };
 
@@ -437,8 +544,8 @@ async fn poll_repo(
                 status: Some(target.to_string()),
                 ..Default::default()
             };
-            match state
-                .repo
+            match ctx
+                .store
                 .update_item_atomically(*item_id, input, &project.workflow, None)
                 .await
             {
@@ -453,10 +560,8 @@ async fn poll_repo(
             }
         }
 
-        sqlx::query("UPDATE github_links SET synced_at = ? WHERE item_id = ?")
-            .bind(&issue.updated_at)
-            .bind(item_id.to_string())
-            .execute(state.pool())
+        ctx.store
+            .mark_github_link_synced(*item_id, &issue.updated_at)
             .await?;
     }
 
@@ -466,11 +571,7 @@ async fn poll_repo(
 /// Record what GitHub says about one pull-request entry of the issues list:
 /// its state, and, when it is a `Revert` PR whose body cites `#<n>`, that the
 /// stored merged PR `n` was reverted by it.
-async fn follow_pull_request(
-    state: &crate::router::AppState,
-    repo: &str,
-    pr: &GithubIssue,
-) -> anyhow::Result<()> {
+async fn follow_pull_request(ctx: &Ctx<'_>, repo: &str, pr: &GithubIssue) -> anyhow::Result<()> {
     let Some(pull_request) = &pr.pull_request else {
         return Ok(());
     };
@@ -482,24 +583,25 @@ async fn follow_pull_request(
     } else {
         "open"
     };
-    tack_db::repo::pull_requests::observe(
-        state.pool(),
-        repo,
-        pr.number,
-        pr_state,
-        merged_at,
-        pr.closed_at.as_deref(),
-    )
-    .await?;
+    ctx.store
+        .observe_pull_request(
+            repo,
+            pr.number,
+            pr_state,
+            merged_at,
+            pr.closed_at.as_deref(),
+        )
+        .await?;
 
     if pr.title.as_deref().is_some_and(|t| t.starts_with("Revert")) {
         for cited in cited_numbers(pr.body.as_deref().unwrap_or_default()) {
-            tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, cited, Some(pr.number))
+            ctx.store
+                .mark_pull_request_reverted(repo, cited, Some(pr.number))
                 .await?;
-            crate::prill_store::observed(state, repo, cited).await;
+            ctx.hooks.pull_request_observed(repo, cited).await;
         }
     }
-    crate::prill_store::observed(state, repo, pr.number).await;
+    ctx.hooks.pull_request_observed(repo, pr.number).await;
     Ok(())
 }
 
@@ -645,19 +747,19 @@ pub async fn merge_pull_request(
 /// <merge_sha>`, and record when CI on that commit first read red. A failure
 /// is logged and skipped, like the rest of the poll.
 async fn follow_merged(
-    state: &crate::router::AppState,
+    ctx: &Ctx<'_>,
     client: &reqwest::Client,
     base: &str,
     token: &str,
     repo: &str,
 ) {
-    if let Err(error) = follow_merged_inner(state, client, base, token, repo).await {
+    if let Err(error) = follow_merged_inner(ctx, client, base, token, repo).await {
         tracing::warn!(repo = %repo, %error, "GitHub merged pull request follow failed");
     }
 }
 
 async fn follow_merged_inner(
-    state: &crate::router::AppState,
+    ctx: &Ctx<'_>,
     client: &reqwest::Client,
     base: &str,
     token: &str,
@@ -676,11 +778,10 @@ async fn follow_merged_inner(
         message: String,
     }
 
-    let now = chrono::Utc::now();
+    let now = ctx.clock.now();
     let cutoff =
         (now - chrono::Duration::days(14)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let mut merged =
-        tack_db::repo::pull_requests::list_merged_since(state.pool(), repo, &cutoff).await?;
+    let mut merged = pull_requests::merged_pull_requests_since(ctx.store, repo, &cutoff).await?;
     if merged.is_empty() {
         return Ok(());
     }
@@ -700,7 +801,8 @@ async fn follow_merged_inner(
             continue;
         }
         if let Some(sha) = resp.json::<Pull>().await?.merge_commit_sha {
-            tack_db::repo::pull_requests::set_merge_sha(state.pool(), repo, row.number, &sha)
+            ctx.store
+                .set_pull_request_merge_sha(repo, row.number, &sha)
                 .await?;
             row.merge_sha = Some(sha);
         }
@@ -727,7 +829,8 @@ async fn follow_merged_inner(
         };
         let needle = format!("This reverts commit {sha}");
         if commits.iter().any(|c| c.commit.message.contains(&needle)) {
-            tack_db::repo::pull_requests::mark_reverted(state.pool(), repo, row.number, None)
+            ctx.store
+                .mark_pull_request_reverted(repo, row.number, None)
                 .await?;
         } else if row.red_ci_at.is_none()
             && row
@@ -736,10 +839,11 @@ async fn follow_merged_inner(
                 .is_some_and(|merged| merged >= ci_cutoff.as_str())
             && ci_state(client, base, token, repo, sha).await? == tack_core::autonomy::CiState::Red
         {
-            tack_db::repo::pull_requests::set_red_ci_at(state.pool(), repo, row.number, &at)
+            ctx.store
+                .set_pull_request_red_ci_at(repo, row.number, &at)
                 .await?;
         }
-        crate::prill_store::observed(state, repo, row.number).await;
+        ctx.hooks.pull_request_observed(repo, row.number).await;
     }
     Ok(())
 }
@@ -760,7 +864,7 @@ fn cited_numbers(text: &str) -> Vec<i64> {
 /// repo directly (never `handlers::comments::create_comment`), so a comment
 /// created here is never itself pushed back out to GitHub.
 async fn sync_inbound_comments(
-    state: &crate::router::AppState,
+    ctx: &Ctx<'_>,
     client: &reqwest::Client,
     base: &str,
     token: &str,
@@ -794,13 +898,13 @@ async fn sync_inbound_comments(
         return Ok(());
     }
 
-    let stored = state.repo.list_github_comment_ids(*item_id).await?;
+    let stored = ctx.store.list_github_comment_ids(*item_id).await?;
     for comment in comments {
         if stored.contains(&comment.id) {
             continue;
         }
-        let created = state
-            .repo
+        let created = ctx
+            .store
             .create_comment(
                 *item_id,
                 tack_core::models::CreateComment {
@@ -809,8 +913,7 @@ async fn sync_inbound_comments(
                 },
             )
             .await?;
-        state
-            .repo
+        ctx.store
             .set_comment_github_id(created.id, comment.id)
             .await?;
     }
@@ -831,7 +934,7 @@ mod tests {
 
     fn fixture(name: &str) -> String {
         std::fs::read_to_string(format!(
-            "{}/tests/fixtures/github/{name}",
+            "{}/../tack-api/tests/fixtures/github/{name}",
             env!("CARGO_MANIFEST_DIR")
         ))
         .unwrap_or_else(|e| panic!("fixture {name}: {e}"))

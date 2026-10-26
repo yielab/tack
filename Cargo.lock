@@ -3629,6 +3629,8 @@ dependencies = [
 name = "tack-app"
 version = "0.1.0-beta.10"
 dependencies = [
+ "anyhow",
+ "async-trait",
  "chrono",
  "hex",
  "reqwest 0.12.28",
@@ -3645,6 +3647,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
@@ -3661,6 +3664,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tack-api",
+ "tack-app",
  "tack-db",
  "tack-orch",
  "tack-protocol",

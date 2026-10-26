@@ -21,6 +21,7 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 # The ticks that talk to GitHub and the backup store need an HTTP client.
 reqwest = { workspace = true }
@@ -29,6 +30,7 @@ reqwest = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+wiremock = { workspace = true }
 
 [lints]
 workspace = true

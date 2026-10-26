@@ -18,6 +18,7 @@ pub mod execution_events;
 pub mod execution_recovery_audits;
 pub mod execution_request_rows;
 pub mod execution_requests;
+pub mod github_links;
 pub mod items;
 pub mod projects;
 pub mod pull_requests;
