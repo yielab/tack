@@ -1,0 +1,132 @@
+{
+  "needsYou": [],
+  "failed": [
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "status": "failed",
+      "a2aState": "FAILED",
+      "reason": "unknown pipeline 'no-such-pipeline': pod 'fab-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml",
+      "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "escalation": null,
+      "brief": {
+        "objective": "Capture only",
+        "acceptance": [
+          "nothing"
+        ],
+        "context": [],
+        "constraints": [
+          "nothing"
+        ],
+        "assumptions": [],
+        "questions": [],
+        "resources": [],
+        "expectedRiskyActions": [],
+        "answers": []
+      }
+    },
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "status": "failed",
+      "a2aState": "FAILED",
+      "reason": "unknown pipeline 'no-such-pipeline': pod 'fab-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml",
+      "description": "Capture only: a task with the four keys every task carries.",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "escalation": null,
+      "brief": null
+    },
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "status": "failed",
+      "a2aState": "FAILED",
+      "reason": "unknown pipeline 'no-such-pipeline': pod 'fab-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml",
+      "description": "Capture only: capture-needs-approval holds this enqueue for a person.",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "escalation": null,
+      "brief": null
+    },
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-lights",
+      "status": "failed",
+      "a2aState": "FAILED",
+      "reason": "approval required before lead hop and a task at L5 asks nobody",
+      "description": "Capture only: an approval step at L5 asks nobody, so this task fails needs_human.",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "escalation": null,
+      "brief": null
+    }
+  ],
+  "doneSince": [],
+  "running": [],
+  "next": "2026-01-01T00:00:00Z",
+  "escalations": [],
+  "decided": [
+    {
+      "id": "esc-000000000000",
+      "task": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-lights",
+      "step": "ask",
+      "role": "lead",
+      "kind": "approval",
+      "causedBy": "lead",
+      "prompt": "pod dispatch — lead hop for task task-00000000-0000-0000-0000-000000000000: Capture only: an approval step at L5 asks nobody, so this task fails needs_human.",
+      "options": [
+        {
+          "id": "approve_once",
+          "label": "Approve once",
+          "description": "Run this call now; ask again next time.",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "approve_task",
+          "label": "Approve for this task",
+          "description": "Run this call and any identical one in this task.",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "deny",
+          "label": "Deny",
+          "description": "Refuse this call; a reason can be given.",
+          "risks": [],
+          "estimatedTokens": null
+        }
+      ],
+      "recommendation": null,
+      "requestedSchema": null,
+      "askedAt": "2026-01-01T00:00:00Z",
+      "expiresAt": null,
+      "onExpiry": "deny",
+      "policy": "deny",
+      "level": "L5",
+      "state": "decided",
+      "resolution": {
+        "optionId": "deny",
+        "content": null,
+        "by": "policy",
+        "channel": "policy",
+        "at": "2026-01-01T00:00:00Z",
+        "appliedAt": null
+      },
+      "seq": 3,
+      "affordances": {
+        "options": [],
+        "acceptsText": false,
+        "resolveUrl": "/escalations/esc-000000000000"
+      }
+    }
+  ]
+}

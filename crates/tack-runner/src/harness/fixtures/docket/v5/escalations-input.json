@@ -1,0 +1,51 @@
+{
+  "escalations": [
+    {
+      "id": "esc-000000000000",
+      "task": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "step": "ask",
+      "role": "",
+      "kind": "input",
+      "causedBy": "ask",
+      "prompt": "Operator input requested (from step 'plan').",
+      "options": [
+        {
+          "id": "decline",
+          "label": "Decline",
+          "description": "Refuse without choosing an option.",
+          "risks": [],
+          "estimatedTokens": null
+        }
+      ],
+      "recommendation": null,
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
+      "askedAt": "2026-01-01T00:00:00Z",
+      "expiresAt": "2026-01-01T00:00:00Z",
+      "onExpiry": "block",
+      "policy": "person",
+      "level": "L3",
+      "state": "pending",
+      "resolution": null,
+      "seq": 1,
+      "affordances": {
+        "options": [
+          "decline"
+        ],
+        "acceptsText": true,
+        "resolveUrl": "/escalations/esc-000000000000"
+      }
+    }
+  ],
+  "next": 1
+}

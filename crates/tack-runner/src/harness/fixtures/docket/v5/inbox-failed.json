@@ -11,8 +11,7 @@
       "priority": "normal",
       "createdAt": "2026-01-01T00:00:00Z",
       "updatedAt": "2026-01-01T00:00:00Z",
-      "question": null,
-      "approvalToken": null,
+      "escalation": null,
       "brief": {
         "objective": "Capture only",
         "acceptance": [
@@ -39,12 +38,12 @@
       "priority": "normal",
       "createdAt": "2026-01-01T00:00:00Z",
       "updatedAt": "2026-01-01T00:00:00Z",
-      "question": null,
-      "approvalToken": null,
+      "escalation": null,
       "brief": null
     }
   ],
   "doneSince": [],
   "running": [],
-  "next": "2026-01-01T00:00:00Z"
+  "next": "2026-01-01T00:00:00Z",
+  "escalations": []
 }

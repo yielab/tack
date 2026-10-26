@@ -1,8 +1,8 @@
 constructed
 route: GET /tasks/<pod>/<id>
 status: 200
-built-from: the usage block of a finished task as docket's _finalize_task writes it at da556114 (byModel carries cached and cacheWrite, the top level only input and output)
-docket: 0.2.0b6 (API 5), source develop 6fba7057, the keys from da556114
-source: src/docket/core/dispatch.py _finalize_task
-date: 2026-10-18
-note: not captured, because a task would have to run on a model for docket to send it; the values are made up. This is the usage block alone, not the whole task.
+built-from: the usage block of a finished task as docket wrote it before e187be8a: byModel carries cached and cacheWrite, the top level only input and output
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+source: src/docket/tasks/application/lifecycle.py _task_usage, which at e187be8a began writing cached and cacheWrite at the top level
+date: 2026-10-26
+note: a shape the current docket no longer sends: _task_usage at 9954b4f8 always writes cached and cacheWrite at the top level too (see task-usage-cached). Kept because Tack still sums byModel when the top-level keys are absent, which only a docket older than e187be8a does. Not captured, because a task would have to run on a model; the values are made up. This is the usage block alone, not the whole task.

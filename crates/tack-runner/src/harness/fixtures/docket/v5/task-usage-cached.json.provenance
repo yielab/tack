@@ -2,7 +2,7 @@ constructed
 route: GET /tasks/<pod>/<id>
 status: 200
 built-from: the usage block of a finished task with the top-level cached and cacheWrite docket added in e187be8a (operator API 5.7.0)
-docket: 0.2.0b6 (API 5), source develop e187be8a ("a task's usage carries cached and cacheWrite at the top level")
-source: src/docket/core/dispatch.py _finalize_task at e187be8a; specs/api/operator-api.spec.md "Version 5.7.0"
-date: 2026-10-18
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+source: specs/api/operator-api.spec.md "Task answers" (usage: input, cached, cacheWrite, output, byModel) and src/docket/tasks/application/lifecycle.py _task_usage, at 9954b4f8
+date: 2026-10-26
 note: not captured (the zero-spend docket capture never reaches a hop); committed in docket at e187be8a. Tack reads the top-level keys when present and sums byModel when not. This is the usage block alone, not the whole task.

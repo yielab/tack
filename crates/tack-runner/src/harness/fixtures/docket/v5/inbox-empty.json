@@ -3,5 +3,6 @@
   "failed": [],
   "doneSince": [],
   "running": [],
-  "next": null
+  "next": null,
+  "escalations": []
 }

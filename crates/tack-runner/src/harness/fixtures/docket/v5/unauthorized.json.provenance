@@ -3,8 +3,8 @@ route: GET /pods
 status: 401
 tack-sends: no
 note: a request without the bearer token
-command: curl -X GET http://127.0.0.1:36507/pods
-docket: docket 0.2.0b6 (API 5), source checkout a9f6f81c
+command: curl -X GET http://127.0.0.1:<port>/pods
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
-date: 2026-10-18
-redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), claimPid
+date: 2026-10-26
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

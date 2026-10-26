@@ -1,8 +1,0 @@
-{
-  "pod": "fab-dev",
-  "action": "accept",
-  "actor": "tack",
-  "content": {
-    "answer": "yes"
-  }
-}

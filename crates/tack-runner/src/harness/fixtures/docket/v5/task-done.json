@@ -2,53 +2,8 @@
   "id": "task-00000000-0000-0000-0000-000000000000",
   "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
   "priority": "normal",
-  "status": "done",
   "created": "2026-01-01T00:00:00Z",
-  "startedAt": "2026-01-01T00:00:00Z",
-  "completedAt": "2026-01-01T00:00:00Z",
-  "source": "operator",
   "channel": "http",
-  "hops": [
-    {
-      "role": "implementer",
-      "member": "fab-dev-implementer",
-      "ok": true,
-      "output": "",
-      "costUsd": 0.0,
-      "error": "",
-      "attempts": 1,
-      "stepId": "implementer",
-      "artifact": {
-        "summary": "",
-        "files_changed": [],
-        "diff_ref": null,
-        "verdict": null,
-        "notes": "",
-        "brief": null
-      },
-      "nextStep": null,
-      "parked": false,
-      "verify": null,
-      "evidence": null,
-      "usage": {
-        "input": 1000,
-        "output": 200
-      },
-      "trace": {
-        "project": "fab-dev",
-        "session": "agent:fab-dev:task-00000000-0000-0000-0000-000000000000",
-        "firstTs": "2026-01-01T00:00:00Z",
-        "lastTs": "2026-01-01T00:00:00Z"
-      },
-      "repoFiles": null,
-      "model": "local/local-model",
-      "provider": "local"
-    }
-  ],
-  "reason": "",
-  "costUsd": 0.0,
-  "claimId": null,
-  "claimedAt": "2026-01-01T00:00:00Z",
   "brief": {
     "objective": "Capture only",
     "acceptance": [
@@ -79,9 +34,53 @@
     ],
     "network": "none"
   },
-  "approvalToken": null,
+  "autonomy": "L3",
+  "status": "done",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "",
   "pendingApprovalIndex": null,
-  "pregrants": [],
+  "hops": [
+    {
+      "role": "implementer",
+      "member": "fab-dev-implementer",
+      "ok": true,
+      "output": "",
+      "costUsd": 0.0,
+      "error": "",
+      "attempts": 1,
+      "stepId": "implementer",
+      "artifact": {
+        "summary": "",
+        "files_changed": [],
+        "diff_ref": null,
+        "diff": "",
+        "verdict": null,
+        "brief": null
+      },
+      "nextStep": null,
+      "parked": false,
+      "verify": null,
+      "evidence": null,
+      "usage": {
+        "input": 1000,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 200
+      },
+      "trace": {
+        "project": "fab-dev",
+        "session": "agent:fab-dev:task-00000000-0000-0000-0000-000000000000",
+        "firstTs": "2026-01-01T00:00:00Z",
+        "lastTs": "2026-01-01T00:00:00Z"
+      },
+      "repoFiles": {},
+      "model": "local/local-model",
+      "provider": "local"
+    }
+  ],
+  "costUsd": 0.0,
   "worktree": {
     "dir": "/scratch/home/.docket/workspaces/projects/fab-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
     "branch": "docket/fab-dev/task-00000000-0000-0000-0000-000000000000",
@@ -90,13 +89,17 @@
     "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
     "commonDir": "/scratch/repo/.git"
   },
-  "gateOverridePipelineIndex": null,
+  "tokenBudget": 1000,
   "usage": {
     "input": 1000,
+    "cached": 0,
+    "cacheWrite": 0,
     "output": 200,
     "byModel": {
       "local/local-model": {
         "input": 1000,
+        "cached": 0,
+        "cacheWrite": 0,
         "output": 200
       }
     }

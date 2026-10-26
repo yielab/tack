@@ -1,4 +1,0 @@
-{
-  "ok": false,
-  "error": "1 validation error for AnswerResult\naction\n  Input should be 'accept', 'decline' or 'cancel' [type=literal_error, input_value='maybe', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.14/v/literal_error"
-}

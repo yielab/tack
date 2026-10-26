@@ -83,6 +83,10 @@
       "value": 3,
       "source": "default"
     },
+    "consultMode": {
+      "value": "park",
+      "source": "default"
+    },
     "network": {
       "value": "open",
       "source": "default"
@@ -94,6 +98,14 @@
     "readOnly": {
       "value": "none",
       "source": "set"
+    },
+    "prepare": {
+      "value": "",
+      "source": "default"
+    },
+    "protects": {
+      "value": "",
+      "source": "default"
     }
   },
   "approvalMode": {

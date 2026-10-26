@@ -1,7 +1,8 @@
 constructed
 route: GET /tasks/<pod>/<id>
 status: 200
-built-from: task-failed-pipeline.json with status blocked, a reason sentence of the fake's own and blockedReason set to input_expired
-docket: 0.2.0b6 (API 5), docket's code read at develop, not run
-date: 2026-10-25
-note: PROPOSED, not accepted by docket. The key blockedReason and the value input_expired are the names docket's maintainers drafted for a task whose open question passed its expiresAt; no capture has either, and the code it gives Tack, not_answered, is Tack's own. Replace this file with a capture once a docket that accepts the name is available.
+built-from: task-failed-pipeline.json (captured against this docket) with status blocked, a reason sentence of this folder's own, blockedReason input_expired and the id of the escalation that expired in escalations
+source: specs/api/operator-api.spec.md "Re-attaching after a restart" item 5 ("a question past its expiresAt moves the task to blocked with blockedReason: \"input_expired\""), src/docket/tasks/domain/task.py TaskRecord.blocked_reason at 9954b4f8
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+date: 2026-10-26
+note: confirmed by docket's spec and TaskRecord: the key blockedReason and the value input_expired are docket's. Not captured, because expiring a question needs a consult, which needs a model; the sentence in reason is made up. The attempt code not_answered is Tack's own.

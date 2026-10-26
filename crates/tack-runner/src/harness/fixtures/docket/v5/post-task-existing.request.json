@@ -7,6 +7,7 @@
   "maxTokens": 1000,
   "priority": "normal",
   "trusted": false,
+  "autonomy": "L3",
   "restrictions": {
     "network": "none",
     "deniedTools": [

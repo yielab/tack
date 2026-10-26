@@ -2,17 +2,8 @@
   "id": "task-00000000-0000-0000-0000-000000000000",
   "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
   "priority": "normal",
-  "status": "failed",
   "created": "2026-01-01T00:00:00Z",
-  "startedAt": "2026-01-01T00:00:00Z",
-  "completedAt": "2026-01-01T00:00:00Z",
-  "source": "operator",
   "channel": "http",
-  "hops": [],
-  "reason": "unknown pipeline 'no-such-pipeline': pod 'fab-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml",
-  "costUsd": 0.0,
-  "claimId": null,
-  "claimedAt": "2026-01-01T00:00:00Z",
   "brief": {
     "objective": "Capture only",
     "acceptance": [
@@ -43,9 +34,16 @@
     ],
     "network": "none"
   },
-  "approvalToken": null,
+  "autonomy": "L3",
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "unknown pipeline 'no-such-pipeline': pod 'fab-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml",
+  "failureKind": "pipeline",
   "pendingApprovalIndex": null,
-  "pregrants": [],
+  "hops": [],
+  "costUsd": 0.0,
   "worktree": {
     "dir": "/scratch/home/.docket/workspaces/projects/fab-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
     "branch": "docket/fab-dev/task-00000000-0000-0000-0000-000000000000",
@@ -54,7 +52,5 @@
     "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
     "commonDir": "/scratch/repo/.git"
   },
-  "failureKind": "pipeline",
-  "gateOverridePipelineIndex": null,
   "tokenBudget": 1000
 }

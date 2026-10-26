@@ -1,0 +1,87 @@
+{
+  "needsYou": [
+    {
+      "id": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "status": "waiting_input",
+      "a2aState": "INPUT_REQUIRED",
+      "reason": "implementer hop parked a consultation (escalation=esc-000000000000)",
+      "description": "Add a cache to the service",
+      "priority": "normal",
+      "createdAt": "2026-01-01T00:00:00Z",
+      "updatedAt": "2026-01-01T00:00:00Z",
+      "escalation": "esc-000000000000",
+      "brief": null
+    }
+  ],
+  "failed": [],
+  "doneSince": [],
+  "running": [],
+  "next": "2026-01-01T00:00:00Z",
+  "escalations": [
+    {
+      "id": "esc-000000000000",
+      "task": "task-00000000-0000-0000-0000-000000000000",
+      "pod": "fab-dev",
+      "step": "implement",
+      "role": "implementer",
+      "kind": "consult",
+      "causedBy": "implement",
+      "prompt": "Which cache should the service use?",
+      "options": [
+        {
+          "id": "redis",
+          "label": "Redis",
+          "description": "already deployed",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "memcached",
+          "label": "Memcached",
+          "description": "simpler",
+          "risks": [],
+          "estimatedTokens": null
+        },
+        {
+          "id": "decline",
+          "label": "Decline",
+          "description": "Refuse without choosing an option.",
+          "risks": [],
+          "estimatedTokens": null
+        }
+      ],
+      "recommendation": {
+        "optionId": "redis",
+        "rationale": "it is already deployed",
+        "evidenceRefs": []
+      },
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": []
+      },
+      "askedAt": "2026-01-01T00:00:00Z",
+      "expiresAt": "2026-01-01T00:00:00Z",
+      "onExpiry": "block",
+      "policy": "person",
+      "level": "L3",
+      "state": "pending",
+      "resolution": null,
+      "seq": 1,
+      "affordances": {
+        "options": [
+          "redis",
+          "memcached",
+          "decline"
+        ],
+        "acceptsText": true,
+        "resolveUrl": "/escalations/esc-000000000000"
+      }
+    }
+  ]
+}
