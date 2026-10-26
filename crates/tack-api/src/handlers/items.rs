@@ -347,10 +347,7 @@ async fn create_next_recurrence(
         return;
     }
     let Ok(made) =
-        sqlx::query_scalar::<_, String>("SELECT status FROM items WHERE recurrence_of = ?")
-            .bind(item.id.to_string())
-            .fetch_all(state.repo.pool())
-            .await
+        tack_db::queries::items::statuses_of_recurrences(&state.repo, &item.id.to_string()).await
     else {
         return;
     };

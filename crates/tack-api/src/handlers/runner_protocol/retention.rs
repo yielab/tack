@@ -7,7 +7,7 @@
 //! a blob can outlive or be purged independently of its attempt's event history.
 
 use chrono::{DateTime, Duration, Utc};
-use tack_db::Repository;
+use tack_db::{Repository, StoreError};
 
 use super::artifact_storage::ArtifactStorage;
 
@@ -51,10 +51,11 @@ pub async fn sweep_events(
     now: DateTime<Utc>,
     policy: &RetentionPolicy,
     batch_limit: i64,
-) -> Result<u64, sqlx::Error> {
+) -> Result<u64, StoreError> {
     let cutoff = now - policy.event_retention;
-    repo.purge_execution_events_older_than(cutoff, batch_limit)
-        .await
+    Ok(repo
+        .purge_execution_events_older_than(cutoff, batch_limit)
+        .await?)
 }
 
 /// One bounded pass over `execution_artifacts` older than
@@ -69,7 +70,7 @@ pub async fn sweep_artifacts(
     now: DateTime<Utc>,
     policy: &RetentionPolicy,
     batch_limit: i64,
-) -> Result<SweepOutcome, sqlx::Error> {
+) -> Result<SweepOutcome, StoreError> {
     let cutoff = now - policy.artifact_retention;
     let expired = repo
         .list_execution_artifacts_older_than(cutoff, batch_limit)

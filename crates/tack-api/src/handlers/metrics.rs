@@ -338,17 +338,9 @@ async fn prill_quality(
 ) -> Result<(String, Vec<(String, serde_json::Value)>), String> {
     let program = &state.prill_program().await;
     let version = crate::prill_store::version(program).await?;
-    let repos: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT p.repo FROM pull_requests p
-         JOIN execution_attempts a ON a.id = p.attempt_id
-         JOIN execution_requests r ON r.id = a.request_id
-         JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? ORDER BY p.repo",
-    )
-    .bind(project)
-    .fetch_all(state.pool())
-    .await
-    .map_err(|_| "the board could not list the project's repositories".to_owned())?;
+    let repos = tack_db::queries::pull_requests::repos_of_project(&state.repo, project)
+        .await
+        .map_err(|_| "the board could not list the project's repositories".to_owned())?;
     let mut found = Vec::new();
     let mut failure = None;
     for repo in repos {
