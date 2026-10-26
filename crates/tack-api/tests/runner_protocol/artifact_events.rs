@@ -133,7 +133,6 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
     (app, repo, clock, item.id.to_string(), storage_root)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn enqueue_request(
     repo: &Repository,
     clock: &FakeClock,

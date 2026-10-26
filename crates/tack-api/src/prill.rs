@@ -27,7 +27,6 @@ pub const NOT_INSTALLED: &str = "prill is not installed on the board (give the r
 /// A program that cannot start, or does not finish within `timeout`, is
 /// [`Unavailable`]; a program that exits non-zero is still an `Output`.
 pub async fn run(program: &str, args: &[String], timeout: Duration) -> Result<Output, Unavailable> {
-    #[allow(clippy::disallowed_methods)]
     let path = std::env::var("PATH").unwrap_or_default();
     let child = Command::new(program)
         .args(args)

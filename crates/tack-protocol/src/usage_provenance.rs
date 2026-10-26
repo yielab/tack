@@ -142,7 +142,6 @@ pub struct AttemptFacts {
 /// Parses raw `execution_attempts` columns into [`AttemptFacts`]. Malformed
 /// JSON (a raw `TEXT` column has no schema enforcement) is treated as "not
 /// yet reported," never a panic.
-#[allow(clippy::too_many_arguments)]
 pub fn derive_attempt_facts(
     requested_model: Option<&str>,
     actual_execution_json: Option<&str>,

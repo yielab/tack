@@ -72,7 +72,6 @@ pub fn program_found(program: &str) -> bool {
     if program.contains('/') {
         return Path::new(program).is_file();
     }
-    #[allow(clippy::disallowed_methods)]
     let path = std::env::var_os("PATH").unwrap_or_default();
     std::env::split_paths(&path).any(|directory| directory.join(program).is_file())
 }
@@ -193,7 +192,6 @@ async fn spawn_verifier(
     workspace: &Workspace,
     args: Vec<String>,
 ) -> Result<ProcessResult, VerifyFailure> {
-    #[allow(clippy::disallowed_methods)]
     let path = std::env::var("PATH").unwrap_or_default();
     let spec = ProcessSpec {
         program: PathBuf::from(&config.program),

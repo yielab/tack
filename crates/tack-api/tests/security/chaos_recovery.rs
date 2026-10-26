@@ -4,7 +4,6 @@
 //! alone. The multi-runner/duplicated-credential races and revocation test
 //! live in `chaos_races.rs` — split out once this file passed 1000 lines.
 
-#[allow(clippy::duplicate_mod)]
 #[path = "chaos_common.rs"]
 mod chaos_common;
 

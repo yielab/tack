@@ -705,7 +705,6 @@ fn cmd_field_list(client: &TackClient, project: String, as_json: bool) -> anyhow
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn cmd_field_create(
     client: &TackClient,
     name: String,

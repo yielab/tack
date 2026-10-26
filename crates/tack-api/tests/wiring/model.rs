@@ -165,7 +165,6 @@ async fn create_agent_profile(app: &axum::Router, name: &str) -> String {
 
 /// `requested_model` is the field under test — `None` reproduces "client
 /// expressed no opinion", the case wired to the resolver.
-#[allow(clippy::too_many_arguments)]
 fn execution_request_body(
     item_id: &str,
     key: &str,
@@ -422,7 +421,6 @@ fn not_measured_usage() -> Value {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn completion_body(
     runner_id: &str,
     attempt_id: &str,
