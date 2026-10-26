@@ -6,9 +6,10 @@ use sqlx::Row;
 use tack_protocol::Clock;
 use tracing::instrument;
 
+use super::admin::conflict_on_unique;
 use super::enqueue::parse_execution_request_snapshot;
 use super::shared::stamp;
-use crate::Repository;
+use crate::{Repository, StoreError};
 
 #[derive(Debug, Clone)]
 pub struct NewRunner<'a> {
@@ -410,27 +411,37 @@ pub enum AddFleetMemberOutcome {
     RunnerNotFound,
 }
 
+/// Whether a pending runner and its enrollment token can be stored together: the
+/// token belongs to the runner, expires after `now`, and the capacities are
+/// non-negative with the available one within the total.
+pub fn pending_runner_input_is_valid(
+    runner: &NewRunner<'_>,
+    token: &EnrollmentToken<'_>,
+    now: DateTime<Utc>,
+) -> bool {
+    token.runner_id == runner.id
+        && token.expires_at > now
+        && runner.total_capacity >= 0
+        && runner.available_capacity >= 0
+        && runner.available_capacity <= runner.total_capacity
+}
+
 impl Repository {
     pub async fn create_pending_runner_and_issue_token(
         &self,
         runner: NewRunner<'_>,
         token: EnrollmentToken<'_>,
         clock: &dyn Clock,
-    ) -> Result<(), sqlx::Error> {
-        if token.runner_id != runner.id
-            || token.expires_at <= clock.now()
-            || runner.total_capacity < 0
-            || runner.available_capacity < 0
-            || runner.available_capacity > runner.total_capacity
-        {
-            return Err(sqlx::Error::Protocol(
+    ) -> Result<(), StoreError> {
+        if !pending_runner_input_is_valid(&runner, &token, clock.now()) {
+            return Err(StoreError::Sql(sqlx::Error::Protocol(
                 "invalid pending runner/token input".into(),
-            ));
+            )));
         }
         let now = stamp(clock);
         let mut tx = self.pool().begin().await?;
-        sqlx::query("INSERT INTO agent_runners(id,name,credential_hash,state,labels,total_capacity,available_capacity,capability_snapshot,protocol_version,created_at,updated_at) VALUES(?,?,?,'pending_enrollment',?,?,?,?,?,?,?)").bind(runner.id).bind(runner.name).bind("pending:no-credential").bind(runner.labels).bind(runner.total_capacity).bind(runner.available_capacity).bind(runner.capability_snapshot).bind(runner.protocol_version).bind(&now).bind(&now).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO agent_enrollment_tokens(id,runner_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)").bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO agent_runners(id,name,credential_hash,state,labels,total_capacity,available_capacity,capability_snapshot,protocol_version,created_at,updated_at) VALUES(?,?,?,'pending_enrollment',?,?,?,?,?,?,?)").bind(runner.id).bind(runner.name).bind("pending:no-credential").bind(runner.labels).bind(runner.total_capacity).bind(runner.available_capacity).bind(runner.capability_snapshot).bind(runner.protocol_version).bind(&now).bind(&now).execute(&mut *tx).await.map_err(|err| conflict_on_unique(err, "runner_name_taken"))?;
+        sqlx::query("INSERT INTO agent_enrollment_tokens(id,runner_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)").bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(&now).execute(&mut *tx).await.map_err(|err| conflict_on_unique(err, "runner_name_taken"))?;
         tx.commit().await?;
         Ok(())
     }
@@ -444,7 +455,7 @@ impl Repository {
         runner_id: &str,
         name: &str,
         clock: &dyn Clock,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let result = sqlx::query(
             "UPDATE agent_runners SET name = ?, updated_at = ? WHERE id = ? \
              AND name GLOB 'local-????????-????-????-????-????????????'",
@@ -453,7 +464,8 @@ impl Repository {
         .bind(stamp(clock))
         .bind(runner_id)
         .execute(self.pool())
-        .await?;
+        .await
+        .map_err(|err| conflict_on_unique(err, "runner_name_taken"))?;
         Ok(result.rows_affected() == 1)
     }
 

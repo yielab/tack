@@ -10,11 +10,12 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
-use tack_db::Repository;
+use tack_db::queries::{agent_fleets, agent_profiles};
 use tack_db::repo::execution::{
     AddFleetMemberOutcome, EnrollmentToken, NewAgentProfile, NewRunner,
 };
+use tack_db::repo::execution::{AgentProfilePatch, pending_runner_input_is_valid};
+use tack_db::{Repository, StoreError};
 use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use tack_protocol::{Clock, SystemClock};
 use utoipa::ToSchema;
@@ -42,16 +43,6 @@ fn error(
         status,
         Json(serde_json::to_value(envelope).expect("envelope serializes")),
     )
-}
-
-/// Whether a `sqlx::Error` from an INSERT is a unique-constraint violation on
-/// a caller-chosen name, as opposed to any other database-level fault. Used
-/// so name collisions map to `conflict` and everything else maps to
-/// `internal_error`, instead of collapsing every insert failure into one code.
-fn is_unique_violation(error: &sqlx::Error) -> bool {
-    error
-        .as_database_error()
-        .is_some_and(|db_error| db_error.is_unique_violation())
 }
 
 pub fn routes(state: OperatorExecutionState) -> Router {
@@ -296,16 +287,23 @@ pub async fn create_fleet(
     Json(input): Json<CreateFleet>,
 ) -> Result<Json<CreateFleetResponse>, (StatusCode, Json<Value>)> {
     let id = format!("fleet_{}", Uuid::new_v4());
-    let now = state.clock.now().to_rfc3339();
-    let inserted = sqlx::query("INSERT INTO agent_fleets (id,name,concurrency_limit,default_policy,created_at,updated_at) VALUES (?,?,?,?,?,?)")
-        .bind(&id).bind(&input.name).bind(input.concurrency_limit).bind(input.default_policy.to_string()).bind(&now).bind(&now).execute(state.repo.pool()).await;
+    let inserted = state
+        .repo
+        .create_agent_fleet(
+            &id,
+            &input.name,
+            input.concurrency_limit,
+            &input.default_policy.to_string(),
+            state.clock.as_ref(),
+        )
+        .await;
     match inserted {
         Ok(_) => Ok(Json(CreateFleetResponse {
             protocol_version: 1,
             fleet_id: id,
             name: input.name,
         })),
-        Err(err) if is_unique_violation(&err) => Err(error(
+        Err(StoreError::Conflict(_)) => Err(error(
             StatusCode::CONFLICT,
             StableErrorCode::Conflict,
             "Fleet name already exists",
@@ -331,35 +329,31 @@ pub async fn create_fleet(
 pub async fn list_fleets(
     State(state): State<OperatorExecutionState>,
 ) -> Result<Json<FleetListResponse>, (StatusCode, Json<Value>)> {
-    let rows = sqlx::query(
-        "SELECT id,name,concurrency_limit,default_policy FROM agent_fleets ORDER BY name",
-    )
-    .fetch_all(state.repo.pool())
-    .await
-    .map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not list fleets",
-            json!({}),
-        )
-    })?;
+    let rows = agent_fleets::fleets_by_name(&state.repo)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list fleets",
+                json!({}),
+            )
+        })?;
     let data: Vec<FleetSummary> = rows
         .into_iter()
         .map(|r| -> Result<FleetSummary, (StatusCode, Json<Value>)> {
-            let policy = serde_json::from_str::<Value>(&r.get::<String, _>("default_policy"))
-                .map_err(|_| {
-                    error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        StableErrorCode::InternalError,
-                        "Fleet policy is corrupt",
-                        json!({}),
-                    )
-                })?;
+            let policy = serde_json::from_str::<Value>(&r.default_policy).map_err(|_| {
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Fleet policy is corrupt",
+                    json!({}),
+                )
+            })?;
             Ok(FleetSummary {
-                fleet_id: r.get("id"),
-                name: r.get("name"),
-                concurrency_limit: r.get("concurrency_limit"),
+                fleet_id: r.id,
+                name: r.name,
+                concurrency_limit: r.concurrency_limit,
                 default_policy: policy,
             })
         })
@@ -728,33 +722,32 @@ pub async fn provision_pending_runner(
     let capabilities = serde_json::to_string(&input.capability_snapshot)
         .map_err(|_| ProvisionError::CapabilitySnapshotNotSerializable)?;
     let enrollment_token_hash = token_hash(&raw_token);
-    repo.create_pending_runner_and_issue_token(
-        NewRunner {
-            id: &runner_id,
-            name: &input.name,
-            credential_hash: "pending:no-credential",
-            labels: &labels,
-            total_capacity: input.total_capacity,
-            available_capacity: input.available_capacity,
-            capability_snapshot: &capabilities,
-            protocol_version: input.protocol_version,
-        },
-        EnrollmentToken {
-            id: &token_id,
-            runner_id: &runner_id,
-            token_hash: &enrollment_token_hash,
-            expires_at,
-        },
-        clock,
-    )
-    .await
-    .map_err(|err| match err {
-        // The repo layer reports out-of-bounds capacity/expiry via
-        // `sqlx::Error::Protocol` — a genuine client input problem.
-        sqlx::Error::Protocol(_) => ProvisionError::InvalidCapacityOrWindow,
-        _ if is_unique_violation(&err) => ProvisionError::NameConflict,
-        _ => ProvisionError::Internal,
-    })?;
+    let runner = NewRunner {
+        id: &runner_id,
+        name: &input.name,
+        credential_hash: "pending:no-credential",
+        labels: &labels,
+        total_capacity: input.total_capacity,
+        available_capacity: input.available_capacity,
+        capability_snapshot: &capabilities,
+        protocol_version: input.protocol_version,
+    };
+    let token = EnrollmentToken {
+        id: &token_id,
+        runner_id: &runner_id,
+        token_hash: &enrollment_token_hash,
+        expires_at,
+    };
+    // Out-of-bounds capacity or expiry is a genuine client input problem.
+    if !pending_runner_input_is_valid(&runner, &token, clock.now()) {
+        return Err(ProvisionError::InvalidCapacityOrWindow);
+    }
+    repo.create_pending_runner_and_issue_token(runner, token, clock)
+        .await
+        .map_err(|err| match err {
+            StoreError::Conflict(_) => ProvisionError::NameConflict,
+            _ => ProvisionError::Internal,
+        })?;
     Ok(CreatePendingRunnerResponse {
         protocol_version: 1,
         runner_id,
@@ -770,7 +763,7 @@ pub async fn provision_pending_runner(
 #[derive(Debug, thiserror::Error)]
 pub enum ProvisionLocalRunnerError {
     #[error("could not open the database: {0}")]
-    Pool(#[from] sqlx::Error),
+    Pool(#[from] StoreError),
     #[error(transparent)]
     Provision(#[from] ProvisionError),
 }
@@ -808,7 +801,9 @@ pub async fn provision_local_runner(
     database_url: &str,
     host: &str,
 ) -> Result<CreatePendingRunnerResponse, ProvisionLocalRunnerError> {
-    let pool = tack_db::init_pool(database_url).await?;
+    let pool = tack_db::init_pool(database_url)
+        .await
+        .map_err(StoreError::from)?;
     let repo = Repository::new(pool);
     let mut attempt = 1;
     loop {
@@ -839,7 +834,9 @@ pub async fn name_local_runner_after_host(
     runner_id: &str,
     host: &str,
 ) -> Result<bool, ProvisionLocalRunnerError> {
-    let pool = tack_db::init_pool(database_url).await?;
+    let pool = tack_db::init_pool(database_url)
+        .await
+        .map_err(StoreError::from)?;
     let repo = Repository::new(pool);
     for attempt in 1..=LOCAL_NAME_ATTEMPTS {
         match repo
@@ -850,7 +847,7 @@ pub async fn name_local_runner_after_host(
             )
             .await
         {
-            Err(err) if is_unique_violation(&err) => {}
+            Err(StoreError::Conflict(_)) => {}
             result => return Ok(result?),
         }
     }
@@ -867,11 +864,14 @@ pub async fn local_runner_id_exists(
     database_url: &str,
     runner_id: &str,
 ) -> Result<bool, ProvisionLocalRunnerError> {
-    let pool = tack_db::init_pool(database_url).await?;
+    let pool = tack_db::init_pool(database_url)
+        .await
+        .map_err(StoreError::from)?;
     let repo = Repository::new(pool);
     Ok(repo
         .fetch_runner_scheduling_snapshot(runner_id)
-        .await?
+        .await
+        .map_err(StoreError::from)?
         .is_some())
 }
 
@@ -893,54 +893,30 @@ pub async fn revoke_enrollment_token(
     State(state): State<OperatorExecutionState>,
     Path((runner_id, token_id)): Path<(String, String)>,
 ) -> Result<Json<RevokeEnrollmentTokenResponse>, (StatusCode, Json<Value>)> {
-    let changed = state
+    state
         .repo
-        .revoke_enrollment_token_by_id(&runner_id, &token_id, state.clock.as_ref())
+        .revoke_runner_enrollment_token(&runner_id, &token_id, state.clock.as_ref())
         .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not revoke enrollment token",
-                json!({}),
-            )
-        })?;
-    if !changed {
-        // `revoke_enrollment_token_by_id` also returns false for a token
-        // that exists but was already consumed; disambiguate that genuine
-        // conflict from a token id that never existed instead of reporting
-        // `not_found` for both.
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM agent_enrollment_tokens WHERE runner_id = ? AND id = ?)",
-        )
-        .bind(&runner_id)
-        .bind(&token_id)
-        .fetch_one(state.repo.pool())
-        .await
-        .map_err(|_| {
-            error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not verify enrollment token",
-                json!({}),
-            )
-        })?;
-        return Err(if exists {
-            error(
+        .map_err(|err| match err {
+            StoreError::Conflict(_) => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "Enrollment token was already consumed",
                 json!({}),
-            )
-        } else {
-            error(
+            ),
+            StoreError::NotFound => error(
                 StatusCode::NOT_FOUND,
                 StableErrorCode::NotFound,
                 "Enrollment token does not exist",
                 json!({"resource": "enrollment_token"}),
-            )
-        });
-    }
+            ),
+            StoreError::Sql(_) => error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not revoke enrollment token",
+                json!({}),
+            ),
+        })?;
     Ok(Json(RevokeEnrollmentTokenResponse {
         protocol_version: 1,
         runner_id,
@@ -988,9 +964,14 @@ pub async fn create_profile(
             json!({"field": "limits"}),
         )
     })?;
+    let delivers = input
+        .delivers
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty());
     let result = state
         .repo
-        .create_agent_profile(
+        .create_agent_profile_placed(
             NewAgentProfile {
                 id: &id,
                 name: &input.name,
@@ -998,33 +979,18 @@ pub async fn create_profile(
                 tool_policy: &tool_policy,
                 limits: &limits,
             },
+            input.fleet_id.as_deref(),
+            delivers,
             state.clock.as_ref(),
         )
         .await;
-    let delivers = input
-        .delivers
-        .as_deref()
-        .map(str::trim)
-        .filter(|d| !d.is_empty());
-    let result = match (result, input.fleet_id.as_deref()) {
-        (Ok(()), fleet_id) if fleet_id.is_some() || delivers.is_some() => {
-            sqlx::query("UPDATE agent_profiles SET fleet_id = ?, delivers = ? WHERE id = ?")
-                .bind(fleet_id)
-                .bind(delivers)
-                .bind(&id)
-                .execute(state.repo.pool())
-                .await
-                .map(|_| ())
-        }
-        (result, _) => result,
-    };
     match result {
         Ok(_) => Ok(Json(CreateProfileResponse {
             protocol_version: 1,
             agent_profile_id: id,
             name: input.name,
         })),
-        Err(err) if is_unique_violation(&err) => Err(error(
+        Err(StoreError::Conflict(_)) => Err(error(
             StatusCode::CONFLICT,
             StableErrorCode::Conflict,
             "Agent profile name already exists",
@@ -1050,22 +1016,18 @@ pub async fn create_profile(
 pub async fn list_profiles(
     State(state): State<OperatorExecutionState>,
 ) -> Result<Json<AgentProfileListResponse>, (StatusCode, Json<Value>)> {
-    let rows = sqlx::query(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers FROM agent_profiles",
-        " ORDER BY name"
-    ))
-    .fetch_all(state.repo.pool())
-    .await
-    .map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not list agent profiles",
-            json!({}),
-        )
-    })?;
+    let rows = agent_profiles::profiles_by_name(&state.repo)
+        .await
+        .map_err(|_| {
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not list agent profiles",
+                json!({}),
+            )
+        })?;
     let data = rows
-        .iter()
+        .into_iter()
         .map(profile_from_row)
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Json(AgentProfileListResponse {
@@ -1075,7 +1037,7 @@ pub async fn list_profiles(
 }
 
 fn profile_from_row(
-    r: &sqlx::sqlite::SqliteRow,
+    r: agent_profiles::AgentProfileRow,
 ) -> Result<AgentProfileSummary, (StatusCode, Json<Value>)> {
     let corrupt = |what: &str| {
         error(
@@ -1085,21 +1047,21 @@ fn profile_from_row(
             json!({}),
         )
     };
-    let tool_policy: Value = serde_json::from_str(&r.get::<String, _>("tool_policy"))
+    let tool_policy: Value = serde_json::from_str(&r.tool_policy)
         .map_err(|_| corrupt("Agent profile policy is corrupt"))?;
     let caps = tack_core::run_defaults::profile_capabilities(&tool_policy);
     Ok(AgentProfileSummary {
-        agent_profile_id: r.get("id"),
-        name: r.get("name"),
-        instructions: r.get("instructions"),
+        agent_profile_id: r.id,
+        name: r.name,
+        instructions: r.instructions,
         tool_policy,
-        limits: serde_json::from_str(&r.get::<String, _>("limits"))
+        limits: serde_json::from_str(&r.limits)
             .map_err(|_| corrupt("Agent profile limits are corrupt"))?,
-        kind: r.get("kind"),
-        builtin: r.get::<i64, _>("builtin") != 0,
-        summary: r.get("summary"),
-        fleet_id: r.get("fleet_id"),
-        delivers: r.get("delivers"),
+        kind: r.kind,
+        builtin: r.builtin != 0,
+        summary: r.summary,
+        fleet_id: r.fleet_id,
+        delivers: r.delivers,
         changes_files: caps.changes_files,
         runs_commands: caps.runs_commands,
         uses_network: caps.uses_network,
@@ -1176,12 +1138,9 @@ async fn check_profile_fields(
         }
     }
     if let Some(fleet_id) = fleet_id {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_fleets WHERE id = ?)")
-                .bind(fleet_id)
-                .fetch_one(repo.pool())
-                .await
-                .map_err(|_| profile_db_error("Could not verify fleet"))?;
+        let exists = agent_fleets::fleet_exists(repo, fleet_id)
+            .await
+            .map_err(|_| profile_db_error("Could not verify fleet"))?;
         if !exists {
             return Err(error(
                 StatusCode::BAD_REQUEST,
@@ -1241,60 +1200,38 @@ pub async fn update_profile(
     }
     let tool_policy = input.tool_policy.map(|v| v.to_string());
     let limits = input.limits.map(|v| v.to_string());
-    let (set_fleet, fleet_id) = match input.fleet_id {
-        Some(value) => (1, value),
-        None => (0, None),
+    let delivers = input
+        .delivers
+        .map(|value| value.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()));
+    let patch = AgentProfilePatch {
+        name: input.name.as_deref(),
+        instructions: input.instructions.as_deref(),
+        tool_policy: tool_policy.as_deref(),
+        limits: limits.as_deref(),
+        summary: input.summary.as_deref(),
+        fleet_id: input.fleet_id.as_ref().map(|f| f.as_deref()),
+        delivers: delivers.as_ref().map(|d| d.as_deref()),
     };
-    let (set_delivers, delivers) = match input.delivers {
-        Some(value) => (
-            1,
-            value.map(|d| d.trim().to_owned()).filter(|d| !d.is_empty()),
-        ),
-        None => (0, None),
-    };
-    let now = state.clock.now().to_rfc3339();
-    let result = sqlx::query(
-        "UPDATE agent_profiles SET name = COALESCE(?, name), instructions = COALESCE(?, instructions), \
-         tool_policy = COALESCE(?, tool_policy), limits = COALESCE(?, limits), \
-         summary = COALESCE(?, summary), \
-         fleet_id = CASE WHEN ? = 1 THEN ? ELSE fleet_id END, \
-         delivers = CASE WHEN ? = 1 THEN ? ELSE delivers END, updated_at = ? WHERE id = ?",
-    )
-    .bind(&input.name)
-    .bind(&input.instructions)
-    .bind(&tool_policy)
-    .bind(&limits)
-    .bind(&input.summary)
-    .bind(set_fleet)
-    .bind(&fleet_id)
-    .bind(set_delivers)
-    .bind(&delivers)
-    .bind(&now)
-    .bind(&id)
-    .execute(state.repo.pool())
-    .await;
-    match result {
-        Ok(done) if done.rows_affected() == 0 => return Err(profile_not_found()),
-        Ok(_) => {}
-        Err(err) if is_unique_violation(&err) => {
-            return Err(error(
+    state
+        .repo
+        .update_agent_profile(&id, patch, state.clock.as_ref())
+        .await
+        .map_err(|err| match err {
+            StoreError::NotFound => profile_not_found(),
+            StoreError::Conflict(_) => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "Agent profile name already exists",
                 json!({}),
-            ));
-        }
-        Err(_) => return Err(profile_db_error("Could not update agent profile")),
-    }
-    let row = sqlx::query(concat!(
-        "SELECT id,name,instructions,tool_policy,limits,kind,builtin,summary,fleet_id,delivers FROM agent_profiles",
-        " WHERE id = ?"
-    ))
-    .bind(&id)
-    .fetch_one(state.repo.pool())
-    .await
-    .map_err(|_| profile_db_error("Could not read agent profile"))?;
-    Ok(Json(profile_from_row(&row)?))
+            ),
+            StoreError::Sql(_) => profile_db_error("Could not update agent profile"),
+        })?;
+    let row = agent_profiles::profile_by_id(&state.repo, &id)
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| profile_db_error("Could not read agent profile"))?;
+    Ok(Json(profile_from_row(row)?))
 }
 
 /// What a profile's last successful runs counted, and the limit proposed from them.
@@ -1326,18 +1263,15 @@ pub async fn profile_history(
     State(state): State<OperatorExecutionState>,
     Path(id): Path<String>,
 ) -> Result<Json<ProfileHistory>, (StatusCode, Json<Value>)> {
-    let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM agent_profiles WHERE id = ?")
-        .bind(&id)
-        .fetch_optional(state.repo.pool())
+    let exists = agent_profiles::profile_exists(&state.repo, &id)
         .await
         .map_err(|_| profile_db_error("Could not read agent profile"))?;
-    if exists.is_none() {
+    if !exists {
         return Err(profile_not_found());
     }
-    let mut runs =
-        tack_db::repo::metrics::profile_successful_run_tokens(state.repo.pool(), &id, 20)
-            .await
-            .map_err(|_| profile_db_error("Could not read the profile's runs"))?;
+    let mut runs = agent_profiles::successful_run_tokens(&state.repo, &id, 20)
+        .await
+        .map_err(|_| profile_db_error("Could not read the profile's runs"))?;
     runs.sort_unstable();
     let p90 = tack_core::run_defaults::percentile(&runs, 90);
     Ok(Json(ProfileHistory {
@@ -1368,27 +1302,19 @@ pub async fn delete_profile(
     State(state): State<OperatorExecutionState>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    let builtin: Option<i64> =
-        sqlx::query_scalar("SELECT builtin FROM agent_profiles WHERE id = ?")
-            .bind(&id)
-            .fetch_optional(state.repo.pool())
-            .await
-            .map_err(|_| profile_db_error("Could not read agent profile"))?;
-    match builtin {
-        None => Err(profile_not_found()),
-        Some(0) => {
-            sqlx::query("DELETE FROM agent_profiles WHERE id = ? AND builtin = 0")
-                .bind(&id)
-                .execute(state.repo.pool())
-                .await
-                .map_err(|_| profile_db_error("Could not delete agent profile"))?;
-            Ok(Json(json!({"agent_profile_id": id, "deleted": true})))
-        }
-        Some(_) => Err(error(
-            StatusCode::CONFLICT,
-            StableErrorCode::Conflict,
-            "A built-in agent profile cannot be deleted",
-            json!({"reason": "builtin_profile"}),
-        )),
-    }
+    state
+        .repo
+        .delete_agent_profile(&id)
+        .await
+        .map_err(|err| match err {
+            StoreError::NotFound => profile_not_found(),
+            StoreError::Conflict(_) => error(
+                StatusCode::CONFLICT,
+                StableErrorCode::Conflict,
+                "A built-in agent profile cannot be deleted",
+                json!({"reason": "builtin_profile"}),
+            ),
+            StoreError::Sql(_) => profile_db_error("Could not delete agent profile"),
+        })?;
+    Ok(Json(json!({"agent_profile_id": id, "deleted": true})))
 }
