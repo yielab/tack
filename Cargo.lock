@@ -3602,6 +3602,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "sqlx",
+ "tack-app",
  "tack-core",
  "tack-db",
  "tack-orch",
@@ -3625,6 +3626,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "tack-app"
+version = "0.1.0-beta.10"
+dependencies = [
+ "chrono",
+ "reqwest 0.12.28",
+ "serde",
+ "tack-core",
+ "tack-db",
+ "tack-orch",
+ "tack-protocol",
+ "tack-test-support",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "tack-cli"
 version = "0.1.0-beta.10"
 dependencies = [
@@ -3638,6 +3657,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tack-api",
+ "tack-db",
  "tack-orch",
  "tack-protocol",
  "tack-runner",

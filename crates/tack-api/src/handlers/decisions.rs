@@ -32,6 +32,7 @@ use serde_json::{Value, json};
 use sqlx::{Row, SqlitePool};
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use tack_app::{AppError, runs};
 use tack_db::{Repository, repo::execution::resume_attempt_after_decisions};
 use tack_protocol::Clock;
 use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
@@ -499,20 +500,23 @@ pub async fn mark_decision_viewed(
     Path((attempt_id, decision_id)): Path<(String, String)>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     principal(&headers)?;
-    let viewed_at = state
-        .repo
-        .mark_execution_decision_viewed(&attempt_id, &decision_id, state.clock.as_ref())
-        .await
-        .map_err(|_| internal_error())?;
-    match viewed_at {
-        Some(viewed_at) => Ok(Json(json!({"viewed_at": viewed_at}))),
-        None => Err(error(
+    let viewed_at = runs::mark_decision_viewed::mark_decision_viewed(
+        &state.repo,
+        state.clock.as_ref(),
+        &attempt_id,
+        &decision_id,
+    )
+    .await
+    .map_err(|failure| match failure {
+        AppError::NotFound => error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
             "The requested resource does not exist",
             json!({"resource": "decision"}),
-        )),
-    }
+        ),
+        _ => internal_error(),
+    })?;
+    Ok(Json(json!({"viewed_at": viewed_at})))
 }
 
 /// `POST /attempts/{attempt_id}/decisions/{decision_id}/resolve` —

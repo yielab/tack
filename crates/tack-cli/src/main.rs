@@ -13,6 +13,7 @@ mod doctor;
 mod local_enrollment;
 mod local_runner;
 mod secret;
+mod serve;
 mod service;
 
 // ─── CLI structure ────────────────────────────────────────────────────────────
