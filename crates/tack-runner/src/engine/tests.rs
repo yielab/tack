@@ -8,12 +8,15 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use super::decisions::decision_id_for;
+use super::outcome::no_change_delivered;
 use super::*;
 use crate::client::{
-    ArtifactUploadGrant, AttemptLease, CancellationResponse, ClaimRequestId, ClaimResult,
-    ClaimedWork, CompletionResponse, DecisionCreateReport, DecisionCreateResponse,
-    DecisionPollReport, DecisionPollResponse, EventBatchResponse, FencingToken, LeaseResult,
-    ProtocolClientError, ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
+    ArtifactManifestReport, ArtifactUploadGrant, AttemptLease, CancellationResponse,
+    ClaimRequestId, ClaimResult, ClaimedWork, CompletionResponse, DecisionCreateReport,
+    DecisionCreateResponse, DecisionPollReport, DecisionPollResponse, EventBatchReport,
+    EventBatchResponse, FencingToken, LeaseResult, PendingTerminalReport, ProtocolClientError,
+    ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
 };
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, RecoveryDisposition,
