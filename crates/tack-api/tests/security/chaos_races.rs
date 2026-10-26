@@ -14,6 +14,9 @@ use axum::http::StatusCode;
 use chaos_common::*;
 use chrono::Utc;
 use serde_json::{Value, json};
+use tack_db::Repository;
+use tack_db::queries::{agent_runners, execution_attempts};
+use tack_protocol::execution::ExecutionState;
 
 // =======================================================================
 // 1. Multi-runner contention: two distinct, independently-enrolled runners
@@ -183,12 +186,11 @@ async fn duplicated_credential_race_grants_exactly_one_lease() {
         distinct_fences, 1,
         "only one fence may ever be issued for this request"
     );
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = ?")
-            .bind(&runner.runner_id)
-            .fetch_one(&pool)
+    let capacity =
+        agent_runners::available_capacity(&Repository::new(pool.clone()), &runner.runner_id)
             .await
-            .unwrap();
+            .unwrap()
+            .expect("runner exists");
     assert_eq!(
         capacity, 0,
         "capacity must be decremented exactly once, not twice"
@@ -270,32 +272,27 @@ async fn revoked_credential_rejected_everywhere_freezes_attempt() {
     )
     .await;
     assert_ne!(status, StatusCode::OK, "{hb_resp}");
-    let attempt_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = ?")
-            .bind(&attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let repo = Repository::new(pool.clone());
+    let attempt_state = execution_attempts::attempt_state(&repo, &attempt_id)
+        .await
+        .unwrap()
+        .expect("attempt exists");
     assert_eq!(
-        attempt_state, "leased",
+        attempt_state,
+        ExecutionState::Leased,
         "a revoked runner's heartbeat must not move the attempt forward"
     );
-    let last_heartbeat: Option<String> =
-        sqlx::query_scalar("SELECT last_heartbeat_at FROM execution_attempts WHERE id = ?")
-            .bind(&attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let last_heartbeat = execution_attempts::last_heartbeat_at(&repo, &attempt_id)
+        .await
+        .unwrap();
     assert_eq!(last_heartbeat, None, "no heartbeat timestamp was recorded");
 
     // The runner row itself is genuinely revoked in the database, not just
     // rejected at the HTTP layer by coincidence.
-    let (state, revoked_at): (String, Option<String>) =
-        sqlx::query_as("SELECT state, revoked_at FROM agent_runners WHERE id = ?")
-            .bind(&runner.runner_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(state, "revoked");
-    assert!(revoked_at.is_some());
+    let lifecycle = agent_runners::runner_lifecycle(&repo, &runner.runner_id)
+        .await
+        .unwrap()
+        .expect("runner exists");
+    assert_eq!(lifecycle.state, "revoked");
+    assert!(lifecycle.revoked_at.is_some());
 }

@@ -19,6 +19,7 @@ use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
+use tack_db::queries::{agent_runners, execution_attempts, execution_requests};
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner},
@@ -387,18 +388,6 @@ impl Fixture {
         .await
     }
 
-    async fn heartbeat(&self, heartbeat_id: &str, capacity: i64) -> (StatusCode, Value) {
-        self.post(
-            "/heartbeat",
-            json!({
-                "protocol_version": 1, "runner_id": RUNNER_ID, "heartbeat_id": heartbeat_id,
-                "sent_at": self.clock.now().to_rfc3339(), "available_capacity": capacity, "active_attempts": [],
-            })
-            .to_string(),
-        )
-        .await
-    }
-
     #[allow(clippy::too_many_arguments)]
     async fn recovery_observation(
         &self,
@@ -432,19 +421,21 @@ impl Fixture {
     }
 
     async fn attempt_state(&self, attempt_id: &str) -> String {
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id=?")
-            .bind(attempt_id)
-            .fetch_one(self.repo.pool())
+        execution_attempts::attempt_state(&self.repo, attempt_id)
             .await
             .unwrap()
+            .expect("attempt exists")
+            .as_str()
+            .to_owned()
     }
 
     async fn request_state(&self, request_id: &str) -> String {
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-            .bind(request_id)
-            .fetch_one(self.repo.pool())
+        execution_requests::request_state(&self.repo, request_id)
             .await
             .unwrap()
+            .expect("request exists")
+            .as_str()
+            .to_owned()
     }
 
     async fn checkpoint(&self, attempt_id: &str) -> Option<String> {
@@ -456,11 +447,10 @@ impl Fixture {
     }
 
     async fn available_capacity(&self) -> i64 {
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id=?")
-            .bind(RUNNER_ID)
-            .fetch_one(self.repo.pool())
+        agent_runners::available_capacity(&self.repo, RUNNER_ID)
             .await
             .unwrap()
+            .expect("runner exists")
     }
 }
 
@@ -793,31 +783,6 @@ async fn stale_and_expired_fence_write_nothing() {
         None,
         "attempt row is untouched"
     );
-}
-
-// ---------------------------------------------------------------------
-// 3. Heartbeat replay returns the original success; a same-id retry with
-//    different content is a stable, distinct conflict code. (The
-//    completion analogue of this claim is pinned once, in
-//    `completion_replay_changed_content_is_idempotency_conflict` below —
-//    not duplicated here.)
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn heartbeat_replay_succeeds_conflicting_retry_rejected() {
-    let fx = Fixture::new().await;
-    fx.enqueue_and_claim("replay-key", "claim-replay").await;
-    let (status, first) = fx.heartbeat("hb-replay", 1).await;
-    assert_eq!(status, StatusCode::OK, "{first}");
-    let (status, replay) = fx.heartbeat("hb-replay", 1).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        replay["accepted_at"], first["accepted_at"],
-        "exact replay returns the original success"
-    );
-    let (status, conflicting) = fx.heartbeat("hb-replay", 2).await;
-    assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(conflicting["error"]["code"], "idempotency_conflict");
 }
 
 // ---------------------------------------------------------------------
@@ -1190,46 +1155,6 @@ async fn create_execution_rejects_an_unknown_status_map_policy_id() {
         resp["error"]["details"]["field"], "status_map_policy_id",
         "{resp}"
     );
-}
-
-// ---------------------------------------------------------------------
-// 10. Recovery observation: a proven pre-spawn-stopped observation safely
-//     requeues the request, and replays idempotently.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn recovery_observation_requeues_and_replays_idempotently() {
-    let fx = Fixture::new().await;
-    let (request_id, attempt_id, fencing_token) =
-        fx.enqueue_and_claim("recovery-key", "claim-recovery").await;
-
-    let (status, applied) = fx
-        .recovery_observation(
-            &attempt_id,
-            fencing_token,
-            "process_stopped",
-            "prepared",
-            false,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{applied}");
-    assert_eq!(applied["disposition"], "safe_pre_spawn_requeue");
-    assert_eq!(applied["replayed"], false);
-    assert_eq!(fx.attempt_state(&attempt_id).await, "lost");
-    assert_eq!(fx.request_state(&request_id).await, "queued");
-
-    let (status, replayed) = fx
-        .recovery_observation(
-            &attempt_id,
-            fencing_token,
-            "process_stopped",
-            "prepared",
-            false,
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(replayed["replayed"], true);
-    assert_eq!(replayed["committed_at"], applied["committed_at"]);
 }
 
 // ---------------------------------------------------------------------

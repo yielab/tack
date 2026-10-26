@@ -137,6 +137,28 @@ pub enum RedeemEnrollmentResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunnerCapabilityUpdate {
+    /// The runner is not active: nothing was written.
+    Revoked,
+    /// Written. `credential_expires_at` is the stored expiry, or `None` when the runner has
+    /// none. An expiry that is not a timestamp is a database error.
+    Updated {
+        credential_expires_at: Option<DateTime<Utc>>,
+    },
+}
+
+/// A unique-constraint violation is a `Conflict` carrying the database's message; every other
+/// failure stays a database error.
+fn unique_as_conflict(error: sqlx::Error) -> StoreError {
+    match error.as_database_error() {
+        Some(db_error) if db_error.is_unique_violation() => {
+            StoreError::Conflict(db_error.message().to_owned())
+        }
+        _ => StoreError::Sql(error),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RotatedCredential {
     pub runner_id: String,
     pub credential_expires_at: String,
@@ -774,7 +796,7 @@ impl Repository {
         capability_snapshot: &str,
         protocol_version: i64,
         clock: &dyn Clock,
-    ) -> Result<RedeemEnrollmentResult, sqlx::Error> {
+    ) -> Result<RedeemEnrollmentResult, StoreError> {
         let now = stamp(clock);
         // Serialize token consumers before either transaction reads the
         // single-use row. Two deferred readers can otherwise deadlock while
@@ -789,19 +811,75 @@ impl Repository {
         };
         let runner_id: String = token.get("runner_id");
         let used = sqlx::query("UPDATE agent_enrollment_tokens SET consumed_at = ? WHERE token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at > ?")
-            .bind(&now).bind(token_hash).bind(&now).execute(&mut *tx).await?;
+            .bind(&now).bind(token_hash).bind(&now).execute(&mut *tx).await.map_err(unique_as_conflict)?;
         if used.rows_affected() != 1 {
             tx.rollback().await?;
             return Ok(RedeemEnrollmentResult::InvalidOrExpired);
         }
         let runner = sqlx::query("UPDATE agent_runners SET credential_hash=?, credential_expires_at=?, credential_rotated_at=?, runner_version=?, labels=?, total_capacity=?, available_capacity=?, capability_snapshot=?, protocol_version=?, state='active', updated_at=? WHERE id=? AND state='pending_enrollment' AND revoked_at IS NULL")
-            .bind(credential_hash).bind(credential_expires_at.to_rfc3339()).bind(&now).bind(runner_version).bind(labels).bind(total_capacity).bind(available_capacity).bind(capability_snapshot).bind(protocol_version).bind(&now).bind(&runner_id).execute(&mut *tx).await?;
+            .bind(credential_hash).bind(credential_expires_at.to_rfc3339()).bind(&now).bind(runner_version).bind(labels).bind(total_capacity).bind(available_capacity).bind(capability_snapshot).bind(protocol_version).bind(&now).bind(&runner_id).execute(&mut *tx).await.map_err(unique_as_conflict)?;
         if runner.rows_affected() != 1 {
             tx.rollback().await?;
             return Ok(RedeemEnrollmentResult::InvalidOrExpired);
         }
         tx.commit().await?;
         Ok(RedeemEnrollmentResult::Redeemed(runner_id))
+    }
+
+    /// Writes a runner's self-reported version, labels and capability snapshot, and says what
+    /// credential expiry it holds. The read of the expiry and the write are one transaction, so
+    /// a revoke cannot land between them. A runner that is no longer active (revoked, or never
+    /// enrolled) is `RunnerCapabilityUpdate::Revoked` and nothing is written. A value another
+    /// runner already holds under a unique column is `StoreError::Conflict` carrying the
+    /// database's message.
+    pub async fn update_runner_capabilities(
+        &self,
+        runner_id: &str,
+        runner_version: &str,
+        labels: &str,
+        capability_snapshot: &str,
+        clock: &dyn Clock,
+    ) -> Result<RunnerCapabilityUpdate, StoreError> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let row = sqlx::query(
+            "SELECT credential_expires_at FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL",
+        )
+        .bind(runner_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(row) = row else {
+            tx.commit().await?;
+            return Ok(RunnerCapabilityUpdate::Revoked);
+        };
+        let stored: Option<String> = row.get("credential_expires_at");
+        let credential_expires_at = stored
+            .map(|raw| {
+                DateTime::parse_from_rfc3339(&raw)
+                    .map(|value| value.with_timezone(&Utc))
+                    .map_err(|error| sqlx::Error::Decode(Box::new(error)))
+            })
+            .transpose()?;
+        let updated = sqlx::query(
+            "UPDATE agent_runners SET runner_version=?, labels=?, capability_snapshot=?, updated_at=? \
+             WHERE id=? AND state='active' AND revoked_at IS NULL",
+        )
+        .bind(runner_version)
+        .bind(labels)
+        .bind(capability_snapshot)
+        .bind(&now)
+        .bind(runner_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(unique_as_conflict)?;
+        if updated.rows_affected() != 1 {
+            tx.rollback().await?;
+            return Ok(RunnerCapabilityUpdate::Revoked);
+        }
+        tx.commit().await?;
+        Ok(RunnerCapabilityUpdate::Updated {
+            credential_expires_at,
+        })
     }
 
     /// Strong claim: replay lookup, capacity reservation, attempt and replay
