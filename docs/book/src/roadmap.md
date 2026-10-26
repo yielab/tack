@@ -4,7 +4,7 @@
 > history; closed phases are archived under
 > [`docs/closed-cycles/boards/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/boards).
 
-**Tack is delivered through Phase 73.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 78, bar Phase 76.** A project is planned and tracked on a board, a list, a
 table, a calendar or a timeline, with or without agents. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. The run's work comes back as evidence to review, an independent
@@ -15,19 +15,18 @@ team, repeat tasks, and travel whole in one file.
 
 **Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. `v0.1.0-beta.10`,
 which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not published yet.
-Phase 73 is in `develop` and ships in the release after it.
+Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79 and 80
+are built on a branch and not yet merged; Phases 76 and 81 are proposed.
 
-**Where this is going.** Phase 74 closes what the first real project found when it was put
-into Tack and docket end to end, and ends with that project's first runs through its teams,
-which is also the live proof of Phase 73. Phase 75 puts every limit in tokens, with dollars
-only as an estimate, and keeps what an agent is sent free of repeated material. Phase 76 makes
-the project file a place the configuration is kept, not only imported from: a key that survives a
-rename, an import that removes what the file removed and keeps what the board changed, the cost of
-every removal shown first, and a revision to go back to. Phase 78 is one pass over everything
-else still open, ordered so each screen is changed once, and gives each item a page of its own. Tack
-keeps the same three neighbours it never contains: an agent runtime such as docket, which runs
-the work; an independent verifier such as prill, which judges it; and GitHub. Each still works
-alone, and without a verifier a project stays at Level 3.
+**Where this is going.** Fabulada, the first real project, is the proof of Phases 73 to 77: its
+code card through a team, with a real install. Phase 76 makes the project file a place the
+configuration is kept, not only imported from: a key that survives a rename, an import that
+removes what the file removed and keeps what the board changed, the cost of every removal shown
+first, and a revision to go back to. Phases 79 and 80 give the runner a crate of its own and make
+a run that waits on a person wait without a clock. Phase 81 fixes what an audit of that tree
+found. Tack keeps the same three neighbours it never contains: an agent runtime such as docket,
+which runs the work; an independent verifier such as prill, which judges it; and GitHub. Each
+still works alone, and without a verifier a project stays at Level 3.
 
 ---
 
@@ -50,25 +49,35 @@ plan or the page named beside it.
   a required check, a garbage collection asked of GitHub support, the tunnel and its DNS
   record, the local permission list, and the `.env` file, which Tack no longer reads since it
   holds no model key.
+- Review and merge Phases 79 and 80 into `develop`. Phase 79's points to decide are in §8 of
+  [its plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md): the `Host`
+  trait that stays until the last callers move, and four shared test fixtures that keep a
+  dead-code allowance. `cargo deny check advisories` also fails on advisories published since
+  its last run (an unsound `AsyncFd::new`, certificate-trust issues); `bans`, `licenses` and
+  `sources` pass.
+- Rerun `scripts/docket-prill-e2e.sh` against docket's `develop`. It passed on 2026-10-18, before
+  docket's escalation record; Phase 80 changed what it expects and
+  [Phase 81](#phase-81--what-the-audit-found) card A makes it pass again.
+- Approve Phase 76 to start it. It is proposed and builds nothing until then.
 
 **Waiting on a partner:**
 
-- docket's context and its token count (Phase 75's requests to docket) are fixed in docket's
-  `develop` (its Phase 44): a rerun of Fabulada's first steps counted at most 59 575 tokens a task,
-  and no step reached docket's own per-step limit. The live run of `scripts/docket-prill-e2e.sh`
-  passes against it (2026-10-18), inside docket's sandbox with a read-only grant for the
-  toolchain. Fabulada's code runs through a team wait on docket installing their dependencies: ADR 0027
-  (accepted 2026-10-19) has whoever makes the agent's copy install them from the lockfile. Tack's
-  side is in `develop` (Phase 77: the runner installs for Claude Code, Codex and opencode, a docket
-  run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
-  ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check asks a person. What is left is the proof: Fabulada's code card through a team, with a real install. The
-  end-to-end scenario with two teams and a rework is still to write.
-- Phase 80, built 2026-10-26 (not yet in `develop`): a docket run waits on a person
-  without burning its time, and Tack follows docket's one escalation record. What is open: the live
-  proof (`scripts/docket-prill-e2e.sh`) against docket's `develop`, and the three decisions the plan
-  lists.
-- The verifier: directives learnt from a person's corrections. When the verifier proposes one,
-  Tack applies an approved one to `AGENTS.md` through a pull request.
+- Fabulada's code card through a team, with a real install: the proof of Phases 74, 75 and 77.
+  docket's context and token count are fixed in docket's `develop`. Installing dependencies is
+  ADR 0027 (accepted 2026-10-19): whoever makes the agent's copy installs them from the lockfile.
+  Tack's side is in `develop` (the runner installs for Claude Code, Codex and opencode, a docket
+  run makes no runner copy, and every run has a limit learnt from its profile); docket's side is
+  docket's own ADR 0029, and Tack sends it the command from docket's API 6 on. The end-to-end
+  scenario with two teams and a rework is still to write.
+- Phase 80, built 2026-10-26: a docket run waits on a person without burning its time, and Tack
+  follows docket's one escalation record. Card G, the contract guard, waits on docket's P51-9 and
+  on the live proof above. Tack has no fallback for a docket without the escalation record: it
+  asks `GET /escalations` and fails with a sentence on a 404, because docket's `apiVersion` is
+  still `"6"` on both shapes. Measuring docket's polling stays deferred until a replacement is
+  proposed.
+- The verifier: directives learnt from a person's corrections (ADR 0020, decision 6, not built).
+  The verifier groups corrections and proposes a directive; a person approves it; Tack applies
+  the approved one to `AGENTS.md` through a pull request.
 
 **Gaps in what shipped**, each shown in the product with its reason:
 
@@ -137,9 +146,8 @@ time each group of steps took (a step has no time).
 
 ## Phase 79 — the crates say what depends on what
 
-**Status:** built 2026-10-26 (proposed 2026-10-20 from an architecture audit of `develop`, revised
-2026-10-25 after an audit of the plan itself); the full suite and the pre-push gate pass; not yet in
-`develop`. **ADR:** 0028, accepted 2026-10-26.
+**Status:** built 2026-10-26, from an architecture audit of `develop`; the full suite and the
+pre-push gate pass; not yet in `develop`. **ADR:** 0028, accepted 2026-10-26.
 **Plan:** [`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
 
 The runner, the process that holds credentials, compiles SQLite because the types it shares with
@@ -150,22 +158,11 @@ puts the rules of a run into use cases that take the store and a clock, puts eve
 loop in one crate as a function the binary schedules, and adds a script to the pre-push hook
 that fails on any crate edge the plan does not allow. Nothing on the wire changes.
 
-The 2026-10-25 revision dropped the store traits, the in-memory fakes and the contract suite of
-the first draft: every test already runs on in-memory SQLite in milliseconds, and a fake would
-hide the transactions and fencing the store exists for. It also fixed four contradictions the
-first draft could not have executed (the HTTP crate must name the database crate; the
-scheduler's wiring names `sqlx` and had no step to move; only four of thirteen spawns are
-loops; the graph table omitted the dev edges its own script reported) and re-sliced the work:
-four scripts and twenty-four model runs, none with more than about 1 500 lines in scope,
-where the draft had six agents and two of them facing 7 000 lines. A second re-read the same day
-merged the SQL pass and the use-case pass into one visit per file, so the four biggest handler
-files are read once, not twice, and made sequential tasks share one worktree and build
-directory.
+There are no store traits and no in-memory fakes: every test already runs on in-memory SQLite in
+milliseconds, and a fake would hide the transactions and fencing the store exists for.
 
-What is open: the review and merge of the branch, and the points the maintainer decides, listed
-in §8 of the plan (the `Host` trait that stays until the last callers move, four shared test
-fixtures that keep a dead-code allowance, and the `cargo deny` advisories that arrived since the
-last run).
+What is open is in [Open](#open) above: the review and merge of the branch, and the points §8 of
+the plan leaves to the maintainer.
 
 ---
 
@@ -189,7 +186,11 @@ That made the adapter fail for every question, so the whole phase was built agai
   alone beside, never inside, what a person answered.
 
 The polling measurement stays deferred (nothing can replace polling while Tack has no inbound
-endpoint) and the A2A client was cut (the one answer route removes its trigger).
+endpoint) and the A2A client was cut (the one answer route removes its trigger). The maintainer
+decided that lights-out is L5 and docket's own, so Tack sends an `autonomy` level only when a
+person asks for one ("Run again at L3"), never from the project's merge level, and that a
+question with no `expiresAt` holds its run until it is answered, resolved or stopped. What is
+left is in [Open](#open): card G and the live proof.
 
 ---
 
@@ -227,10 +228,8 @@ once per round on the merged tree, and the local suite of the three after Round 
 
 ## Phase 76 — the project file is kept in sync
 
-**Status:** proposed 2026-10-18; ADR 0025 proposed the same day, with its four defaults. Checked
-against Phase 75's Rounds 1 and 2 the same day: nothing in Phase 75 changes; Phase 76 takes
-the next two free migration numbers, and an older file's dollars-per-day warning reaches its preview.
-**ADR:** 0025 (amends 0022 §2 and §6). **Plan:**
+**Status:** proposed 2026-10-18; ADR 0025 proposed the same day, with its four defaults. It waits
+on the maintainer's approval. **ADR:** 0025 (amends 0022 §2 and §6). **Plan:**
 [`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md).
 
 The project file of Phase 73 is a one-way door: it creates and updates by name and never
@@ -271,14 +270,34 @@ the file.
 
 ---
 
+## Phase 77 — the agent's copy is prepared, and every run has a limit learnt from its kind
+
+**Status:** built 2026-10-19 and in `develop`. **ADR:** 0027, accepted 2026-10-19. **Plan:**
+[`docs/plans/phase-77.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-77.md).
+
+An agent that starts in a copy with no dependencies spends its first steps failing to run the
+project's check. Whoever makes the agent's copy now installs the dependencies from the lockfile:
+
+- **The project's install command** is detected from its lockfile, can be replaced or turned off
+  in Settings → Automation, and the Run dialog says what a run prepares with.
+- **The runner prepares the copy it makes** for Claude Code, Codex and opencode, caches the install
+  per lockfile, and ends the attempt with the command's output if the install fails.
+- **A docket run makes no runner copy:** the runner reads docket's branch from the project's
+  repository, and docket installs for itself. Tack sends it the command from docket's API 6 on.
+- **Every run has a limit and says where it comes from.** A profile with five successful runs
+  offers a limit proposed from them; until then a provisional one applies.
+
+What is open is in [Open](#open): Fabulada's code card through a team.
+
+---
+
 ## Phase 75 — limits in tokens, and a lean context
 
 **Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0024 accepted
-the same day. Every round is in `develop` the same day, with the guides: Round 4 on one capture
-of Claude Code's and opencode's live usage (four short paid calls), so Tack now stops both at a
-run's token limit and counts docket's cache reads as docket does; Round 5's screens print the
-attempt's counted tokens and the run dialog's limit line. Fabulada's runs wait on docket's context
-and count. What is left is in Open above.
+the same day. Every round is in `develop`, with the guides: Round 4 on one capture of Claude Code's
+and opencode's live usage, so Tack stops both at a run's token limit and counts docket's cache
+reads as docket does; Round 5's screens print the attempt's counted tokens and the run dialog's
+limit line. What is left is in [Open](#open).
 **ADR:** 0024 (amends 0020 §5, 0021 §7 and 0012 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
@@ -317,16 +336,15 @@ provider. Tokens are what every agent measures. So:
 | 2 | The daily limit with its reservation and bar; dollars per day removed from the schema, the screen and the project file; dollars shown as an estimate. | Sonnet |
 | 3 | A profile's limit checked where it is saved and shown before a run starts; a run's tokens while it runs, from docket's steps, so its reservation shrinks and its timeline shows them. | Integrator, Sonnet |
 | 4 | Claude Code and opencode stopped at their limit from what they report, and Claude Code's tools per role, from one capture of the real programs. | Sonnet |
-| 5 | The screens that read them; the guides; Fabulada's runs again once docket's context and count are fixed. | Integrator |
+| 5 | The screens that read them; the guides; Fabulada's runs again. | Integrator |
 
 ---
 
 ## Phase 74 — what the first real project found
 
 **Status:** opened 2026-10-17; ADR 0023 accepted the same day, with its three defaults. Rounds 1
-to 3 landed in `develop` on 2026-10-18, with Round 4's pages in the book. The first runs on the
-real board reached their teams the same day and ended on docket's per-step token limit; the
-next ones, on paid models, wait on docket's context and token count (Phase 75).
+to 6 are in `develop` (2026-10-18), with Round 4's pages in the book. The first runs on the real
+board reached their teams the same day; what is left is in [Open](#open).
 **ADR:** 0023 (inside ADRs 0002, 0006 §5 and 0021). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
@@ -356,6 +374,8 @@ each fact is owned, so no rule is computed twice:
 | 2 | Current team reports and the per-team ceiling; logs, messages and the file's switch. | Sonnet |
 | 3 | The docket contract from captures, once docket's `POST /pods` is fixed. | Sonnet |
 | 4 | Docs and the gate; then Fabulada's first runs through its teams on the real board. | Integrator |
+| 5 | From those runs: a docket task that outlives the runner is followed again, and the board makes its own decision token. | Sonnet |
+| 6 | A run that ended says why; a question ends with its run and the board finds its runner's verifier; the tutorial's screenshots. | Sonnet |
 
 ---
 
