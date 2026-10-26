@@ -705,3 +705,13 @@ pub async fn project_verify_loop_max_attempts(repo: &Repository, project_id: &st
         .await
         .expect("seed projects verify_loop_max_attempts");
 }
+
+/// Backdates the `execution_artifacts` row `row_id` to `created_at`.
+pub async fn execution_artifact_created_at(repo: &Repository, row_id: &str, created_at: &str) {
+    sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = ?")
+        .bind(created_at)
+        .bind(row_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_artifacts created_at");
+}

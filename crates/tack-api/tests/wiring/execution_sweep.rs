@@ -8,13 +8,15 @@
 use std::future::Future;
 use std::time::Duration as StdDuration;
 use tack_protocol::SystemClock;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 
 use chrono::{Duration, Utc};
 use tack_api::execution_runtime::{ExecutionRuntime, ExecutionRuntimeConfig};
 use tack_api::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
-    Repository, init_pool, migrations,
+    Repository, queries,
     repo::execution::{
         NewAgentProfile, NewArtifact, NewDecision, NewExecutionRequest, NewRunner, RequestSelection,
     },
@@ -25,15 +27,8 @@ const RUNNER_ID: &str = "runner-wiring";
 const PROFILE_ID: &str = "profile-wiring";
 
 async fn setup() -> (Repository, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'W', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("workspace");
+    let repo = setup_test_db().await;
+    let workspace = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace,
@@ -178,11 +173,7 @@ async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String
         .await
         .expect("claim")
         .expect("work available");
-    sqlx::query("UPDATE execution_attempts SET state='running' WHERE id=?")
-        .bind(&attempt_id)
-        .execute(repo.pool())
-        .await
-        .expect("bump to running");
+    seed::execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
     (claim.lease.attempt_id, claim.lease.fencing_token)
 }
 
@@ -253,32 +244,28 @@ async fn seed_real_artifact(
     .expect("record artifact");
 
     if let Some(days) = backdate_days {
-        sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = ?")
-            .bind((Utc::now() - Duration::days(days)).to_rfc3339())
-            .bind(row_id)
-            .execute(repo.pool())
-            .await
-            .expect("backdate artifact");
+        seed::execution_artifact_created_at(
+            repo,
+            row_id,
+            &(Utc::now() - Duration::days(days)).to_rfc3339(),
+        )
+        .await;
     }
 
     artifact_root.join(&stored.content_reference)
 }
 
 async fn artifact_row_exists(repo: &Repository, row_id: &str) -> bool {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE id=?")
-        .bind(row_id)
-        .fetch_one(repo.pool())
+    queries::execution_artifacts::artifact_row_exists(repo, row_id)
         .await
-        .unwrap();
-    count > 0
+        .unwrap()
 }
 
 async fn decision_state(repo: &Repository, decision_id: &str) -> String {
-    sqlx::query_scalar("SELECT state FROM execution_decisions WHERE decision_id=?")
-        .bind(decision_id)
-        .fetch_one(repo.pool())
+    queries::execution_decisions::decision_state(repo, decision_id)
         .await
         .unwrap()
+        .expect("decision exists")
 }
 
 /// Records a manifest-only artifact (no content uploaded) with `created_at`
@@ -311,12 +298,12 @@ async fn seed_stale_manifest_only_artifact(
     )
     .await
     .expect("record manifest-only artifact");
-    sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = ?")
-        .bind((Utc::now() - Duration::days(days_ago)).to_rfc3339())
-        .bind(row_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    seed::execution_artifact_created_at(
+        repo,
+        row_id,
+        &(Utc::now() - Duration::days(days_ago)).to_rfc3339(),
+    )
+    .await;
 }
 
 /// Starts an `ExecutionRuntime` with retention on `storage_dir`, a 1-second

@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use serde_json::json;
+use tack_db::queries;
 use tracing::{info, instrument};
 
 use crate::router::AppState;
@@ -15,8 +16,7 @@ use crate::router::AppState;
 )]
 #[instrument(skip(state))]
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
-    let migrations_applied: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-        .fetch_one(state.repo.pool())
+    let migrations_applied = queries::database::migrations_applied(&state.repo)
         .await
         .unwrap_or(0);
 
@@ -85,12 +85,9 @@ pub async fn db_stats(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 async fn get_db_size(state: &AppState) -> i64 {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()",
-    )
-    .fetch_one(state.repo.pool())
-    .await
-    .unwrap_or(0)
+    queries::database::size_bytes(&state.repo)
+        .await
+        .unwrap_or(0)
 }
 
 async fn get_table_counts(state: &AppState) -> serde_json::Value {
@@ -106,9 +103,7 @@ async fn get_table_counts(state: &AppState) -> serde_json::Value {
     let mut counts = serde_json::Map::new();
 
     for table in tables {
-        let query = format!("SELECT COUNT(*) FROM {table}");
-        let count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(query))
-            .fetch_one(state.repo.pool())
+        let count = queries::database::row_count(&state.repo, table)
             .await
             .unwrap_or(0);
         counts.insert(table.to_string(), json!(count));

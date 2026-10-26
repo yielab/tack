@@ -7,7 +7,6 @@ use std::time::Duration;
 use chrono::Utc;
 use tokio::sync::oneshot;
 use tracing::{info, warn};
-use uuid::Uuid;
 
 use crate::config::AppConfig;
 use crate::handlers::local_runner::effective_local_runner_enabled;
@@ -103,19 +102,6 @@ pub async fn serve(
             }
         });
         info!(interval_secs, "Remote backup scheduler enabled");
-    }
-
-    // Spawn background task: fire "item.due_soon" webhook for items due within the next hour
-    if state.webhook.is_some() {
-        let bg_state = state.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(3600));
-            interval.tick().await; // skip the first immediate tick
-            loop {
-                interval.tick().await;
-                check_due_soon(&bg_state).await;
-            }
-        });
     }
 
     // Start the execution-domain retention sweep (artifact/event + decision-
@@ -301,29 +287,6 @@ fn tracing_subscriber_for(config: &AppConfig) -> Box<dyn tracing::Subscriber + S
                         .with_writer(file_writer(t))
                 })),
         )
-    }
-}
-
-/// The id of the one workspace this server runs, created on a first boot.
-pub async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uuid> {
-    let existing: Option<String> = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
-        .fetch_optional(pool)
-        .await?;
-
-    if let Some(id_str) = existing {
-        Ok(Uuid::parse_str(&id_str)?)
-    } else {
-        let id = Uuid::new_v4();
-        let vocab = serde_json::to_string(&tack_core::vocabulary::default_vocabulary())?;
-        sqlx::query(
-            "INSERT INTO workspaces (id, name, description, default_vocabulary) VALUES (?, 'Default Workspace', 'Auto-created workspace', ?)"
-        )
-        .bind(id.to_string())
-        .bind(&vocab)
-        .execute(pool)
-        .await?;
-        info!(%id, "Created default workspace");
-        Ok(id)
     }
 }
 
@@ -523,31 +486,6 @@ async fn run_scheduled_backup(state: &AppState) {
             );
         }
         Err(e) => warn!(error = %e, "Scheduled backup failed"),
-    }
-}
-
-/// Query for items due within the next hour and fire `item.due_soon` webhooks.
-async fn check_due_soon(state: &AppState) {
-    let Some(wh) = &state.webhook else { return };
-
-    let now = Utc::now();
-    let window_end = now + chrono::Duration::hours(1);
-
-    match state.repo.list_items_due_soon(now, window_end).await {
-        Ok(items) => {
-            for item in items {
-                let payload = serde_json::json!({
-                    "event": "item.due_soon",
-                    "timestamp": now.to_rfc3339(),
-                    "project_id": item.project_id,
-                    "item": item,
-                });
-                wh.fire("item.due_soon", payload);
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error=%e, "Failed to query due-soon items for webhook");
-        }
     }
 }
 

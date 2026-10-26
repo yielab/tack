@@ -93,6 +93,12 @@ impl WebhookClient {
     }
 }
 
+impl tack_app::due_soon::DueSoonSink for WebhookClient {
+    fn fire(&self, event: &str, payload: serde_json::Value) {
+        WebhookClient::fire(self, event, payload);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

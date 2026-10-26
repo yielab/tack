@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tack_db::queries;
 use tokio::io::AsyncReadExt;
 
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
@@ -39,26 +40,16 @@ pub fn store_path(storage_dir: &str, repo: &str) -> Option<PathBuf> {
 }
 
 async fn recorded(app: &AppState, attempt_id: &str, kind: &str) -> bool {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM prill_records WHERE attempt_id = ? AND kind = ?",
-    )
-    .bind(attempt_id)
-    .bind(kind)
-    .fetch_one(app.pool())
-    .await
-    .unwrap_or(0)
-        > 0
+    queries::prill_records::is_recorded(&app.repo, attempt_id, kind)
+        .await
+        .unwrap_or(false)
 }
 
 async fn mark_recorded(app: &AppState, attempt_id: &str, kind: &str) {
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO prill_records (attempt_id, kind, recorded_at) VALUES (?, ?, ?)",
-    )
-    .bind(attempt_id)
-    .bind(kind)
-    .bind(chrono::Utc::now().to_rfc3339())
-    .execute(app.pool())
-    .await;
+    let result = app
+        .repo
+        .mark_prill_recorded(attempt_id, kind, &chrono::Utc::now().to_rfc3339())
+        .await;
     if let Err(error) = result {
         tracing::warn!(attempt_id, kind, %error, "prill record: could not mark it recorded");
     }
@@ -82,26 +73,17 @@ async fn record(app: &AppState, attempt_id: &str, kind: &str, args: Vec<String>)
 
 /// The repository (`owner/repo`) of the GitHub issue an attempt's item is linked to.
 async fn repository_of(app: &AppState, attempt_id: &str) -> Option<String> {
-    let item: String = sqlx::query_scalar(
-        "SELECT r.item_id FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id WHERE a.id = ?",
-    )
-    .bind(attempt_id)
-    .fetch_optional(app.pool())
-    .await
-    .ok()??;
+    let item = queries::execution_attempts::item_id_of_attempt(&app.repo, attempt_id)
+        .await
+        .ok()??;
     let (repo, _) = app.repo.get_github_link(item.parse().ok()?).await.ok()??;
     Some(repo)
 }
 
 async fn artifact_bytes(app: &AppState, attempt_id: &str, media_type: &str) -> Option<Vec<u8>> {
-    let reference: String = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts \
-         WHERE attempt_id = ? AND media_type = ? AND content_reference IS NOT NULL \
-         ORDER BY created_at DESC LIMIT 1",
+    let reference = queries::execution_artifacts::content_reference_of_media_type(
+        &app.repo, attempt_id, media_type,
     )
-    .bind(attempt_id)
-    .bind(media_type)
-    .fetch_optional(app.pool())
     .await
     .ok()??;
     let storage = ArtifactStorage::new(format!("{}/execution-artifacts", app.config.storage_dir));
@@ -164,14 +146,7 @@ pub async fn record_mrp(app: &AppState, attempt_id: &str) {
 /// (a retry of [`record_mrp`]), then each outcome Tack has seen (merged,
 /// closed, reverted, red CI) that prill was not told yet.
 pub async fn observed(app: &AppState, repo: &str, number: i64) {
-    let Ok(Some(row)) = sqlx::query_as::<_, tack_db::repo::pull_requests::PullRequestRow>(
-        "SELECT * FROM pull_requests WHERE repo = ? AND number = ?",
-    )
-    .bind(repo)
-    .bind(number)
-    .fetch_optional(app.pool())
-    .await
-    else {
+    let Ok(Some(row)) = queries::pull_requests::pull_request(&app.repo, repo, number).await else {
         return;
     };
     record_mrp(app, &row.attempt_id).await;
@@ -241,12 +216,9 @@ pub async fn observed(app: &AppState, repo: &str, number: i64) {
 }
 
 async fn head_commit(app: &AppState, attempt_id: &str) -> Option<String> {
-    let raw: String =
-        sqlx::query_scalar("SELECT actual_execution FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_optional(app.pool())
-            .await
-            .ok()??;
+    let raw = queries::execution_attempts::actual_execution_of_attempt(&app.repo, attempt_id)
+        .await
+        .ok()??;
     serde_json::from_str::<Value>(&raw)
         .ok()?
         .pointer("/git/head_commit")?

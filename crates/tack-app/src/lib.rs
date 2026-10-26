@@ -26,6 +26,7 @@
 //! `run` owns the timing and the logging of a failed pass and nothing else; `tick` owns the
 //! rule. `tack-cli`'s `serve.rs` does the `tokio::spawn(tack_app::<module>::run(..))`.
 
+pub mod due_soon;
 mod error;
 pub mod runs;
 

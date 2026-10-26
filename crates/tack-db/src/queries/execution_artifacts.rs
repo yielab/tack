@@ -158,3 +158,30 @@ pub async fn upload_facts(
     )
     .transpose()
 }
+
+/// The content reference of the newest artifact of `media_type` the attempt uploaded, or
+/// `None` when it uploaded none.
+pub async fn content_reference_of_media_type(
+    repo: &Repository,
+    attempt_id: &str,
+    media_type: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT content_reference FROM execution_artifacts \
+         WHERE attempt_id = ? AND media_type = ? AND content_reference IS NOT NULL \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(attempt_id)
+    .bind(media_type)
+    .fetch_optional(repo.pool())
+    .await?)
+}
+
+/// Whether an artifact manifest row with this row id exists.
+pub async fn artifact_row_exists(repo: &Repository, row_id: &str) -> Result<bool, StoreError> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE id=?")
+        .bind(row_id)
+        .fetch_one(repo.pool())
+        .await?;
+    Ok(count > 0)
+}

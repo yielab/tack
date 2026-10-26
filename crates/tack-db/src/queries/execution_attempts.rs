@@ -203,3 +203,30 @@ pub async fn git_branch_of_attempt(
     .await?;
     Ok(branch.flatten())
 }
+
+/// The item an attempt's request was made for, or `None` when no such attempt exists.
+pub async fn item_id_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT r.item_id FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id WHERE a.id = ?",
+    )
+    .bind(attempt_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}
+
+/// The JSON the attempt reported about how it ran, or `None` when it reported nothing or no
+/// such attempt exists.
+pub async fn actual_execution_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<Option<String>, StoreError> {
+    let raw: Option<Option<String>> =
+        sqlx::query_scalar("SELECT actual_execution FROM execution_attempts WHERE id = ?")
+            .bind(attempt_id)
+            .fetch_optional(repo.pool())
+            .await?;
+    Ok(raw.flatten())
+}

@@ -3661,6 +3661,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tack-api",
+ "tack-app",
  "tack-db",
  "tack-orch",
  "tack-protocol",
