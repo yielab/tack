@@ -220,6 +220,12 @@ pub struct Script {
     pub failure_kind: Option<String>,
     /// The sentence docket's task record carries in `reason`.
     pub reason: String,
+    /// When the question or approval the gate holds expires (RFC 3339), as docket's `expiresAt`.
+    /// An approval with none expires a day after it is read; a question with none never expires,
+    /// as in every capture.
+    pub expires_at: Option<String>,
+    /// Why a `blocked` task is blocked, as docket's `blockedReason` (proposed: `input_expired`).
+    pub blocked_reason: Option<String>,
     /// A file docket commits on the task's branch: `(path, content)`.
     pub commit: Option<(String, String)>,
     pub untracked: Vec<String>,
@@ -235,6 +241,8 @@ impl Default for Script {
             status: "done".to_owned(),
             failure_kind: None,
             reason: String::new(),
+            expires_at: None,
+            blocked_reason: None,
             commit: None,
             untracked: Vec::new(),
             usage: json!({"input": 0, "output": 0, "byModel": {}}),
@@ -850,6 +858,7 @@ fn task_record(task: &Task) -> Value {
     let mut record = fixture(match task.status.as_str() {
         _ if parked => "task-waiting-input-options",
         "done" => "task-done",
+        "blocked" if task.script.blocked_reason.is_some() => "task-blocked-input-expired",
         _ => "task-failed-pipeline",
     });
     record["id"] = json!(task.id);
@@ -891,6 +900,11 @@ fn task_record(task: &Task) -> Value {
         record["usage"] = task.script.usage.clone();
     }
     let object = record.as_object_mut().expect("record");
+    if task.status == "blocked"
+        && let Some(reason) = &task.script.blocked_reason
+    {
+        object.insert("blockedReason".to_owned(), json!(reason));
+    }
     match &task.script.failure_kind {
         Some(kind) if matches!(task.status.as_str(), "failed" | "blocked") => {
             object.insert("failureKind".to_owned(), json!(kind));
@@ -929,6 +943,9 @@ fn consult_question(task: &Task) -> Value {
     asked["taskId"] = json!(task.id);
     asked["pod"] = json!(task.pod);
     asked["message"] = json!(question);
+    if let Some(at) = &task.script.expires_at {
+        asked["expiresAt"] = json!(at);
+    }
     asked["requestedSchema"] = consult_schema(property, options);
     if options.is_empty() {
         asked["kind"] = json!("clarification");
@@ -1094,6 +1111,9 @@ fn inbox(state: &World) -> Response {
                 item["taskId"] = json!(task.id);
                 item["tool"] = json!(tool);
                 item["action"] = json!(action);
+                if let Some(at) = &task.script.expires_at {
+                    item["expiresAt"] = json!(at);
+                }
                 needs_you.push(item);
             }
             (
@@ -1113,6 +1133,9 @@ fn inbox(state: &World) -> Response {
                 item["question"]["taskId"] = json!(task.id);
                 item["question"]["pod"] = json!(task.pod);
                 item["question"]["message"] = json!(question);
+                if let Some(at) = &task.script.expires_at {
+                    item["question"]["expiresAt"] = json!(at);
+                }
                 item["question"]["requestedSchema"] = consult_schema(property, options);
                 needs_you.push(item);
             }
@@ -1150,6 +1173,9 @@ fn approvals(state: &World) -> Response {
             record["project"] = json!(task.pod);
             record["action"] = json!(action);
             record["context"]["tool"] = json!(tool);
+            record["expiresAt"] = json!(task.script.expires_at.clone().unwrap_or_else(|| {
+                (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339()
+            }));
             if matches!(task.script.gate, Gate::UnboundApproval { .. }) {
                 record["context"]["taskId"] = Value::Null;
             } else {

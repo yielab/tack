@@ -1,0 +1,60 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
+  "priority": "normal",
+  "status": "blocked",
+  "created": "2026-01-01T00:00:00Z",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "source": "operator",
+  "channel": "http",
+  "hops": [],
+  "reason": "the question expired with no answer",
+  "costUsd": 0.0,
+  "claimId": null,
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "brief": {
+    "objective": "Capture only",
+    "acceptance": [
+      "nothing"
+    ],
+    "context": [],
+    "constraints": [
+      "nothing"
+    ],
+    "assumptions": [],
+    "questions": [],
+    "resources": [],
+    "expectedRiskyActions": [],
+    "answers": []
+  },
+  "externalRef": "capture-item/attempt-1",
+  "idempotencyKey": "capture-attempt-1",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline",
+  "gate": {
+    "command": "true",
+    "timeoutS": 600
+  },
+  "maxTokens": 1000,
+  "restrictions": {
+    "deniedTools": [
+      "bash"
+    ],
+    "network": "none"
+  },
+  "approvalToken": null,
+  "pendingApprovalIndex": null,
+  "pregrants": [],
+  "worktree": {
+    "dir": "/scratch/home/.docket/workspaces/projects/fab-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/fab-dev/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "baseRef": "main",
+    "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo/.git"
+  },
+  "gateOverridePipelineIndex": null,
+  "tokenBudget": 1000,
+  "blockedReason": "input_expired"
+}

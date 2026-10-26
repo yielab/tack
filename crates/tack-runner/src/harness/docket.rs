@@ -66,6 +66,19 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 /// How often a running task's trace, inbox and record are read.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
+/// The task states in which docket waits for a person and the agent does no work.
+fn waiting_on_a_person(status: &str) -> bool {
+    matches!(status, "waiting_input" | "waiting_approval")
+}
+
+/// When docket says a question or an approval stops being open: its `expiresAt`, which docket
+/// leaves null for a question it never expires.
+fn expiry(record: &Value) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(record["expiresAt"].as_str()?)
+        .ok()
+        .map(|at| at.with_timezone(&Utc))
+}
+
 /// Progress lines the engine has not yet taken, before more are dropped.
 const PROGRESS_BUFFER: usize = 256;
 
@@ -166,6 +179,7 @@ struct Live {
 enum Pending {
     Approval {
         token: String,
+        expires_at: Option<DateTime<Utc>>,
     },
     Consult {
         task: String,
@@ -176,6 +190,7 @@ enum Pending {
         required: bool,
         /// The ids of docket's own options; none when the question has none.
         options: Vec<String>,
+        expires_at: Option<DateTime<Utc>>,
     },
 }
 
@@ -183,8 +198,15 @@ impl Pending {
     /// docket's id for what is asked: the approval's token or the question's id.
     fn docket_id(&self) -> &str {
         match self {
-            Self::Approval { token } => token,
+            Self::Approval { token, .. } => token,
             Self::Consult { question, .. } => question,
+        }
+    }
+
+    /// When docket stops holding the question open, if it said.
+    fn expires_at(&self) -> Option<DateTime<Utc>> {
+        match self {
+            Self::Approval { expires_at, .. } | Self::Consult { expires_at, .. } => *expires_at,
         }
     }
 }
@@ -754,6 +776,7 @@ fn consult_question(task: &str, question: &Value) -> Option<(Question, Pending)>
             property,
             required,
             options: docket_ids,
+            expires_at: expiry(question),
         },
     ))
 }
@@ -776,7 +799,13 @@ impl DocketAdapter {
                     && !asked.contains(&question.vendor_id)
                 {
                     let token = question.vendor_id.clone();
-                    return Some((question, Pending::Approval { token }));
+                    return Some((
+                        question,
+                        Pending::Approval {
+                            token,
+                            expires_at: expiry(item),
+                        },
+                    ));
                 }
             } else if item["id"] != json!(info.task) {
                 continue;
@@ -794,6 +823,7 @@ impl DocketAdapter {
                     question,
                     Pending::Approval {
                         token: token.to_owned(),
+                        expires_at: record.as_ref().and_then(expiry),
                     },
                 ));
             } else if item["status"] == json!("waiting_input")
@@ -848,7 +878,7 @@ impl DocketAdapter {
         answer: &DecisionAnswer,
     ) -> Option<String> {
         let reply = match pending {
-            Pending::Approval { token } => {
+            Pending::Approval { token, .. } => {
                 let reason = answer.text.clone().unwrap_or_default();
                 let body = match answer.option_id.as_deref() {
                     Some(option @ ("approve_once" | "approve_task")) => {
@@ -979,6 +1009,7 @@ impl DocketAdapter {
         task: &Value,
         model: Option<String>,
         progress: &mpsc::Sender<Progress>,
+        unanswered_until: Option<DateTime<Utc>>,
     ) -> HarnessOutcome {
         let status = task["status"].as_str().unwrap_or_default();
         // docket's task record says why it ended in `reason`, for a failed and a blocked task
@@ -1032,6 +1063,13 @@ impl DocketAdapter {
             "cancelled" => (
                 AttemptState::Cancelled,
                 json!({"code": "cancelled", "task": info.task}),
+            ),
+            // docket's own sweep ended a question nobody answered in time.
+            "blocked" if task["blockedReason"] == "input_expired" => (
+                AttemptState::Failed,
+                json!({"code": "not_answered",
+                       "message": super::not_answered(unanswered_until),
+                       "task": info.task}),
             ),
             "blocked" => (
                 AttemptState::Failed,
@@ -1332,7 +1370,11 @@ impl DocketAdapter {
                 None,
             ));
         }
-        let deadline = tokio::time::Instant::now() + info.timeout;
+        // The attempt's clock bounds the agent's work; a task docket holds for a person is not
+        // working, so the time between two polls that both saw it waiting is not counted.
+        let mut deadline = tokio::time::Instant::now() + info.timeout;
+        let mut last_poll = tokio::time::Instant::now();
+        let mut was_waiting = false;
         let mut cursor = self.read_cursor(&info.attempt_id);
         let mut served_model: Option<String> = None;
         // docket's ids of what was asked, and how often docket refused the answer.
@@ -1414,9 +1456,50 @@ impl DocketAdapter {
                         .and_then(|hop| hop["model"].as_str())
                         .map(str::to_owned)
                 });
-                return Ok(self.finish(info, &task, model, &side.progress).await);
+                return Ok(self
+                    .finish(
+                        info,
+                        &task,
+                        model,
+                        &side.progress,
+                        pending.as_ref().and_then(Pending::expires_at),
+                    )
+                    .await);
             }
-            if tokio::time::Instant::now() >= deadline {
+            let now = tokio::time::Instant::now();
+            let waiting = waiting_on_a_person(task["status"].as_str().unwrap_or_default());
+            if waiting && was_waiting {
+                deadline += now - last_poll;
+            }
+            (last_poll, was_waiting) = (now, waiting);
+            // Still waiting after the question's own expiry, which docket's sweep has not
+            // resolved: nobody answered. With no `expiresAt` only an answer, docket or Stop
+            // ends the wait.
+            if waiting
+                && let Some(expired) = pending
+                    .as_ref()
+                    .and_then(Pending::expires_at)
+                    .filter(|at| *at <= Utc::now())
+            {
+                let _ = self
+                    .client
+                    .cancel_task(
+                        &info.pod,
+                        &info.task,
+                        "nobody answered before the question expired",
+                    )
+                    .await;
+                return Ok(self.outcome(
+                    info,
+                    AttemptState::Failed,
+                    json!({"code": "not_answered",
+                           "message": super::not_answered(Some(expired)),
+                           "task": info.task}),
+                    &task,
+                    served_model,
+                ));
+            }
+            if now >= deadline {
                 let _ = self
                     .client
                     .cancel_task(&info.pod, &info.task, "the attempt's time ran out")

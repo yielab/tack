@@ -1630,25 +1630,73 @@ async fn an_approval_docket_refuses_is_asked_again() {
     assert_eq!(fake.requests_to("POST", "/approvals/apr-9").len(), 2);
 }
 
-/// A run whose time runs out says so, and says when it was waiting on a person.
+/// A run whose time runs out says so. A task docket holds for a person is not running, so it
+/// is not this: see the tests below.
 #[tokio::test]
 async fn a_run_whose_time_ran_out_ends_with_a_message_naming_the_wait() {
-    let approval = || Gate::Approval {
-        token: "apr-t".into(),
-        tool: "bash".into(),
-        action: "tool call 'bash'".into(),
-    };
-    let rows = [
-        (Gate::Hold, "The run's time ran out after 1 second"),
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::Hold,
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = Arc::new(adapter(&fake, &scene));
+    let mut attempt = spec(&scene, "attempt-1", 1);
+    attempt.work.request.timeout_seconds = 1;
+    let handle = adapter.start(&attempt).await.expect("starts");
+    let (_questions, _answers) = adapter.decision_channels(&handle).await.expect("channels");
+    let outcome = tokio::time::timeout(Duration::from_secs(20), adapter.wait(&handle))
+        .await
+        .expect("finishes")
+        .expect("outcome");
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("timeout"));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!("The run's time ran out after 1 second")
+    );
+}
+
+/// The two kinds of question a task waits on, each with an answer that lets it finish.
+fn the_two_waits() -> [(Gate, &'static str); 2] {
+    [
         (
-            approval(),
-            "The run's time ran out after 1 second while it waited for an answer",
+            Gate::Consult {
+                question: "Please approve the changelog.".into(),
+                property: "note".into(),
+                options: vec!["approve".into(), "modify".into()],
+            },
+            "approve",
         ),
-    ];
-    for (gate, message) in rows {
+        (
+            Gate::Approval {
+                token: "apr-w".into(),
+                tool: "bash".into(),
+                action: "tool call 'bash'".into(),
+            },
+            "approve_once",
+        ),
+    ]
+}
+
+/// An RFC 3339 time this many seconds from now, as docket's `expiresAt` writes it.
+fn in_seconds(seconds: i64) -> String {
+    (chrono::Utc::now() + chrono::Duration::seconds(seconds)).to_rfc3339()
+}
+
+/// How many times the adapter has read the task so far.
+fn task_reads(fake: &FakeDocket) -> usize {
+    fake.requests_to("GET", &format!("/tasks/{POD}/task-"))
+        .len()
+}
+
+#[tokio::test]
+async fn a_question_pending_longer_than_the_attempt_timeout_keeps_the_attempt_alive() {
+    for (gate, option) in the_two_waits() {
         let fake = pods_fake().await;
         fake.script(Script {
             gate,
+            expires_at: Some(in_seconds(3600)),
             ..Script::default()
         });
         let scene = scene();
@@ -1656,14 +1704,181 @@ async fn a_run_whose_time_ran_out_ends_with_a_message_naming_the_wait() {
         let mut attempt = spec(&scene, "attempt-1", 1);
         attempt.work.request.timeout_seconds = 1;
         let handle = adapter.start(&attempt).await.expect("starts");
-        let (_questions, _answers) = adapter.decision_channels(&handle).await.expect("channels");
+        let (mut questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
+        let waiting = tokio::spawn({
+            let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+            async move { adapter.wait(&handle).await }
+        });
+        tokio::time::timeout(Duration::from_secs(20), questions.recv())
+            .await
+            .expect("a question in time")
+            .expect("a question");
+        // Open for at least three polls, each longer than the attempt's timeout.
+        let first = task_reads(&fake);
+        tokio::time::timeout(Duration::from_secs(20), async {
+            while task_reads(&fake) < first + 3 {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .expect("three more polls");
+        assert!(
+            !waiting.is_finished(),
+            "the wait ended while a person had not answered"
+        );
+        assert!(
+            fake.requests_to("POST", &format!("/tasks/{POD}/"))
+                .iter()
+                .all(|request| !request.path.ends_with("/cancel"))
+        );
+        answers.send(choosing(option, None)).await.expect("answer");
+        let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
+            .await
+            .expect("finishes")
+            .expect("joins")
+            .expect("outcome");
+        assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+        assert!(
+            fake.requests_to("POST", &format!("/tasks/{POD}/"))
+                .iter()
+                .all(|request| !request.path.ends_with("/cancel"))
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_expired_question_ends_with_not_answered() {
+    for (gate, _) in the_two_waits() {
+        let fake = pods_fake().await;
+        let expires = in_seconds(3);
+        fake.script(Script {
+            gate,
+            expires_at: Some(expires.clone()),
+            ..Script::default()
+        });
+        let scene = scene();
+        let adapter = Arc::new(adapter(&fake, &scene));
+        let handle = adapter
+            .start(&spec(&scene, "attempt-1", 1))
+            .await
+            .expect("starts");
+        let (mut questions, _answers) = adapter.decision_channels(&handle).await.expect("channels");
+        let waiting = tokio::spawn({
+            let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+            async move { adapter.wait(&handle).await }
+        });
+        tokio::time::timeout(Duration::from_secs(20), questions.recv())
+            .await
+            .expect("a question in time")
+            .expect("a question");
+        let outcome = tokio::time::timeout(Duration::from_secs(30), waiting)
+            .await
+            .expect("finishes")
+            .expect("joins")
+            .expect("outcome");
+        assert_eq!(outcome.terminal_state, AttemptState::Failed);
+        assert_eq!(outcome.terminal_reason["code"], json!("not_answered"));
+        let message = outcome.terminal_reason["message"]
+            .as_str()
+            .expect("a message");
+        assert!(message.contains("Nobody answered"), "{message}");
+        assert!(!message.contains("time ran out"), "{message}");
+        let expired = chrono::DateTime::parse_from_rfc3339(&expires)
+            .expect("a time")
+            .format("%Y-%m-%d %H:%M UTC")
+            .to_string();
+        assert!(message.contains(&expired), "{message}");
+        let task = fake.task_ids()[0].clone();
+        let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
+        assert_eq!(cancels.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn a_question_with_no_expiry_is_never_ended_by_the_clock() {
+    let fake = pods_fake().await;
+    let [(consult, _), _] = the_two_waits();
+    fake.script(Script {
+        gate: consult,
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = Arc::new(adapter(&fake, &scene));
+    let mut attempt = spec(&scene, "attempt-1", 1);
+    attempt.work.request.timeout_seconds = 1;
+    let handle = adapter.start(&attempt).await.expect("starts");
+    let (mut questions, _answers) = adapter.decision_channels(&handle).await.expect("channels");
+    let waiting = tokio::spawn({
+        let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
+        async move { adapter.wait(&handle).await }
+    });
+    tokio::time::timeout(Duration::from_secs(20), questions.recv())
+        .await
+        .expect("a question in time")
+        .expect("a question");
+    let first = task_reads(&fake);
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while task_reads(&fake) < first + 3 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("three more polls");
+    assert!(!waiting.is_finished());
+    // Stop is the way out.
+    adapter.cancel(&handle).await.expect("cancels");
+    let outcome = tokio::time::timeout(Duration::from_secs(20), waiting)
+        .await
+        .expect("finishes")
+        .expect("joins")
+        .expect("outcome");
+    assert_eq!(outcome.terminal_state, AttemptState::Cancelled);
+}
+
+#[tokio::test]
+async fn docket_blocking_an_expired_question_ends_with_not_answered() {
+    let rows = [
+        (
+            Some("input_expired"),
+            "not_answered",
+            "the question expired",
+        ),
+        (None, "blocked", "the approval was denied"),
+        (Some("something_else"), "blocked", "docket's own sentence"),
+    ];
+    for (blocked_reason, code, reason) in rows {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            status: "blocked".into(),
+            reason: reason.into(),
+            blocked_reason: blocked_reason.map(str::to_owned),
+            ..Script::default()
+        });
+        let scene = scene();
+        let adapter = Arc::new(adapter(&fake, &scene));
+        let handle = adapter
+            .start(&spec(&scene, "attempt-1", 1))
+            .await
+            .expect("starts");
         let outcome = tokio::time::timeout(Duration::from_secs(20), adapter.wait(&handle))
             .await
             .expect("finishes")
             .expect("outcome");
-        assert_eq!(outcome.terminal_state, AttemptState::Failed, "{message}");
-        assert_eq!(outcome.terminal_reason["code"], json!("timeout"));
-        assert_eq!(outcome.terminal_reason["message"], json!(message));
+        assert_eq!(outcome.terminal_state, AttemptState::Failed, "{code}");
+        assert_eq!(
+            outcome.terminal_reason["code"],
+            json!(code),
+            "{blocked_reason:?}"
+        );
+        if code == "blocked" {
+            assert_eq!(outcome.terminal_reason["message"], json!(reason));
+        } else {
+            let message = outcome.terminal_reason["message"]
+                .as_str()
+                .expect("message");
+            assert!(message.contains("Nobody answered"), "{message}");
+            assert!(!message.contains("time ran out"), "{message}");
+        }
     }
 }
 

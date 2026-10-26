@@ -1,0 +1,7 @@
+constructed
+route: GET /tasks/<pod>/<id>
+status: 200
+built-from: task-failed-pipeline.json with status blocked, a reason sentence of the fake's own and blockedReason set to input_expired
+docket: 0.2.0b6 (API 5), docket's code read at develop, not run
+date: 2026-10-25
+note: PROPOSED, not accepted by docket. The key blockedReason and the value input_expired are the names docket's maintainers drafted for a task whose open question passed its expiresAt; no capture has either, and the code it gives Tack, not_answered, is Tack's own. Replace this file with a capture once a docket that accepts the name is available.

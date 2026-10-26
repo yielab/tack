@@ -75,6 +75,17 @@ one (`operator_contract.validate_answer_v11`), and `POST /tasks/<id>/answer` rea
 `action`, `content` and `actor`: the id goes inside `content.optionId`, which `answers.py` takes out
 before it checks the rest of `content` against `requestedSchema`. Every refusal is a `422`.
 
+## When a question expires
+
+Proposed, not accepted by docket. Tack reads `expiresAt` from the record that made the question:
+the task view's `question` for a consult, the `GET /approvals` record for an approval a task holds,
+the inbox item for one no task holds. The approval record is captured with a real `expiresAt`
+(`approvals-pending.json`); every consult is captured with `expiresAt: null`, so a consult has no
+deadline unless docket sends one, and then only an answer, docket's own resolution or Stop ends the
+wait. A task docket blocks because its question expired is `task-blocked-input-expired.json`,
+`constructed`: the key `blockedReason` and the value `input_expired` are drafted names no capture
+has. The attempt code `not_answered` is Tack's own and equally proposed.
+
 ## What it leaves out
 
 - `GET /tasks/<pod>` and its `externalRef`/`status` filters, `POST .../retry`,

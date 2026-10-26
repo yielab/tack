@@ -219,6 +219,18 @@ pub(crate) fn time_ran_out(timeout: std::time::Duration, waiting_for_an_answer: 
     )
 }
 
+/// The reason a run ends with when a question went unanswered until it expired: when, if docket
+/// said, and that a person did not answer. Never "time ran out", which is about the agent's work.
+pub(crate) fn not_answered(expired: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    match expired {
+        Some(at) => format!(
+            "Nobody answered the question before it expired at {}",
+            at.format("%Y-%m-%d %H:%M UTC")
+        ),
+        None => "Nobody answered the question before it expired".to_owned(),
+    }
+}
+
 pub fn descriptor(kind: &str) -> Option<&'static local_process::HarnessDescriptor> {
     DESCRIPTORS
         .into_iter()
