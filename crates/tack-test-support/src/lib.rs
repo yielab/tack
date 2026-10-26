@@ -136,3 +136,13 @@ pub fn read_fixture(manifest_dir: &str, relative: &str) -> Vec<u8> {
     let path = Path::new(manifest_dir).join("tests").join(relative);
     fs::read(&path).unwrap_or_else(|error| panic!("fixture {} not found: {error}", path.display()))
 }
+
+/// Create a file-backed SQLite store at `path` with all migrations applied, for a test that
+/// needs real write contention between connections, which `sqlite::memory:` cannot give.
+pub async fn setup_file_test_db(path: &Path) -> Repository {
+    let pool = init_pool(&format!("sqlite://{}?mode=rwc", path.display()))
+        .await
+        .expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    Repository::new(pool)
+}

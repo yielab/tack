@@ -344,7 +344,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResolveDecisionResponseSchema"
+                  "$ref": "#/components/schemas/ResolveDecisionResponse"
                 }
               }
             }
@@ -9777,9 +9777,9 @@
           }
         }
       },
-      "DecisionResolvedBySchema": {
+      "DecisionResolvedBy": {
         "type": "object",
-        "description": "Schema-only mirror of `resolved_by`'s two observed shapes:\n`{\"kind\": \"operator\", \"subject_id\": <x-tack-principal>}` for a live\nresolve, or `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a\nfail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing\nin `docs/contracts/runner-v1/` fixes this shape (decision resolution has\nno runner-v1 fixture at all; see `handlers::decisions`'s own module doc,\n\"No item-status mapping\"), so this stays an open two-field object rather\nthan an invented contract.",
+        "description": "The `resolved_by` of a settled decision: `{\"kind\": \"operator\", \"subject_id\": <principal>}`\nfor an operator's answer, `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a decision that\npassed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`\nfixes this shape, so it stays an open two-field object.",
         "required": [
           "kind",
           "subject_id"
@@ -12126,9 +12126,9 @@
           }
         }
       },
-      "ResolveDecisionResponseSchema": {
+      "ResolveDecisionResponse": {
         "type": "object",
-        "description": "`POST .../decisions/{decision_id}/resolve` response body — mirrors\n`handlers::decisions::ResolveDecisionResponse` exactly.",
+        "description": "`POST .../decisions/{decision_id}/resolve` response body.",
         "required": [
           "protocol_version",
           "decision_id",
@@ -12140,7 +12140,8 @@
         ],
         "properties": {
           "answer": {
-            "$ref": "#/components/schemas/DecisionAnswerSchema"
+            "$ref": "#/components/schemas/DecisionAnswerSchema",
+            "description": "The answer as submitted (or as stored, on a replay), echoed back as\nthe operator sent it, extra keys included."
           },
           "decision_id": {
             "type": "string"
@@ -12152,17 +12153,18 @@
           },
           "replayed": {
             "type": "boolean",
-            "description": "`true` when this response is a byte-identical idempotent replay of\nan already-committed resolution rather than a fresh write."
+            "description": "`true` when this response is a byte-identical idempotent replay of an\nalready-committed resolution rather than a fresh write."
           },
           "resolved_at": {
             "type": "string"
           },
           "resolved_by": {
-            "$ref": "#/components/schemas/DecisionResolvedBySchema"
+            "$ref": "#/components/schemas/DecisionResolvedBy",
+            "description": "Who resolved the decision."
           },
           "state": {
             "type": "string",
-            "description": "Always `\"resolved\"` on a 200 — an expired/not-found/conflicting\ndecision is a distinct error response, never a 200 with a different\nstate string.",
+            "description": "Always `\"resolved\"` on a 200 — an expired/not-found/conflicting\ndecision is a distinct error response, never a 200 with a different\nstate string, so a caller need not switch on this field.",
             "example": "resolved"
           }
         }

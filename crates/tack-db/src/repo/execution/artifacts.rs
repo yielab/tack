@@ -27,7 +27,7 @@ pub struct NewArtifact<'a> {
 /// commits a verified upload — its presence, not a separate status column
 /// (none exists: that would just duplicate this field), is
 /// the manifest-vs-content-verified distinction this crate exposes.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct ExecutionArtifactRow {
     pub id: String,
     pub attempt_id: String,
@@ -181,55 +181,17 @@ impl Repository {
         self.get_execution_artifact(&attempt_id, artifact_id).await
     }
 
-    /// Every artifact manifested for one specific attempt (identified by its
-    /// parent request id + 1-based attempt number, matching how
-    /// [`Repository::list_events_for_attempt_number`] resolves the same
-    /// pair), oldest first. `Ok(None)` means no attempt with that number
-    /// exists for this request — distinct from `Ok(Some(vec![]))`, an
-    /// attempt that has manifested no artifacts yet. Backs `GET
-    /// /api/executions/{request_id}/attempts/{attempt_number}/artifacts`.
+    /// Every artifact manifested for one specific attempt, as
+    /// [`crate::queries::execution_artifacts::artifacts_of_attempt`] answers it.
+    /// Kept under this name for the callers that already use it.
     #[instrument(skip(self))]
     pub async fn list_execution_artifacts_for_attempt_number(
         &self,
         request_id: &str,
         attempt_number: i64,
-    ) -> Result<Option<Vec<ExecutionArtifactRow>>, sqlx::Error> {
-        let attempt_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM execution_attempts WHERE request_id = ? AND attempt_number = ?",
-        )
-        .bind(request_id)
-        .bind(attempt_number)
-        .fetch_optional(self.pool())
-        .await?;
-        let Some(attempt_id) = attempt_id else {
-            return Ok(None);
-        };
-        let rows = sqlx::query(
-            "SELECT id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, \
-             content_disposition, content_reference, metadata, created_at \
-             FROM execution_artifacts WHERE attempt_id = ? ORDER BY created_at",
-        )
-        .bind(&attempt_id)
-        .fetch_all(self.pool())
-        .await?;
-        Ok(Some(
-            rows.into_iter()
-                .map(|row| ExecutionArtifactRow {
-                    id: row.get("id"),
-                    attempt_id: row.get("attempt_id"),
-                    artifact_id: row.get("artifact_id"),
-                    kind: row.get("kind"),
-                    name: row.get("name"),
-                    media_type: row.get("media_type"),
-                    size_bytes: row.get("size_bytes"),
-                    sha256: row.get("sha256"),
-                    content_disposition: row.get("content_disposition"),
-                    content_reference: row.get("content_reference"),
-                    metadata: row.get("metadata"),
-                    created_at: row.get("created_at"),
-                })
-                .collect(),
-        ))
+    ) -> Result<Option<Vec<ExecutionArtifactRow>>, crate::StoreError> {
+        crate::queries::execution_artifacts::artifacts_of_attempt(self, request_id, attempt_number)
+            .await
     }
 
     /// Commits a verified artifact's storage reference. Mirrors

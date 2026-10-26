@@ -472,3 +472,139 @@ pub async fn tack_merge_auto(repo: &Repository, attempt_id: &str, project_id: &s
         .await
         .expect("seed tack_merges");
 }
+
+/// Registers one runner and one agent profile, the two rows a request needs before
+/// [`running_attempt`] can claim it.
+pub async fn runner_with_profile(
+    repo: &Repository,
+    clock: &dyn tack_protocol::Clock,
+    runner_id: &str,
+    profile_id: &str,
+    credential_hash: &str,
+    capacity: i64,
+) {
+    use tack_db::repo::execution::{NewAgentProfile, NewRunner};
+    repo.register_runner(
+        NewRunner {
+            id: runner_id,
+            name: "Seeded runner",
+            credential_hash,
+            labels: "{}",
+            total_capacity: capacity,
+            available_capacity: capacity,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        clock,
+    )
+    .await
+    .expect("seed runner");
+    repo.create_agent_profile(
+        NewAgentProfile {
+            id: profile_id,
+            name: "Seeded profile",
+            instructions: "work",
+            tool_policy: r#"{"mode":"safe"}"#,
+            limits: "{}",
+        },
+        clock,
+    )
+    .await
+    .expect("seed profile");
+}
+
+/// Enqueues a request for `item_id` pinned to `runner_id`, claims it through the real claim path
+/// and puts the attempt in `running`. The request is `req-<tag>`, the attempt `att-<tag>`
+/// (returned). The runner and profile come from [`runner_with_profile`].
+pub async fn running_attempt(
+    repo: &Repository,
+    clock: &dyn tack_protocol::Clock,
+    runner_id: &str,
+    profile_id: &str,
+    item_id: &str,
+    tag: &str,
+) -> String {
+    use chrono::Duration;
+    use tack_db::repo::execution::{NewExecutionRequest, RequestSelection};
+
+    let request_id = format!("req-{tag}");
+    let snapshot = format!(
+        r#"{{"request_id":"{request_id}","item_id":"{item_id}","idempotency_key":"{request_id}","created_by":{{"source":"test","subject_id":"seed"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{runner_id}"}},"agent_profile_id":"{profile_id}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/seed.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
+    );
+    repo.enqueue_execution(
+        NewExecutionRequest {
+            id: &request_id,
+            item_id,
+            idempotency_scope: "item",
+            idempotency_key: &request_id,
+            request_fingerprint: &request_id,
+            selector_kind: "exact_runner",
+            selector_id: runner_id,
+            agent_profile_id: Some(profile_id),
+            agent_profile_snapshot: r#"{"name":"P","instructions":"work","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{}}"#,
+            requested_harness_kind: Some("codex"),
+            requested_model: None,
+            repository_snapshot: r#"{"kind":"git","remote":"https://example.test/seed.git","base_revision":"abc123","subdirectory":null}"#,
+            permission_policy: r#"{"tools":[],"network":false}"#,
+            timeout_seconds: Some(60),
+            budgets: "{}",
+            status_map_policy_id: None,
+            environment: "{}",
+            metadata: "{}",
+            request_snapshot: &snapshot,
+        },
+        clock,
+    )
+    .await
+    .expect("seed enqueue");
+    let attempt_id = format!("att-{tag}");
+    let claim = repo
+        .claim_execution_idempotent_with_snapshot(
+            runner_id,
+            &attempt_id,
+            &attempt_id,
+            Duration::seconds(300),
+            clock,
+            RequestSelection::Naive,
+        )
+        .await
+        .expect("seed claim")
+        .expect("work available");
+    execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
+    claim.lease.attempt_id
+}
+
+/// Raises a pending decision against a running attempt through the real insert path (which also
+/// parks the attempt in `waiting_decision`). `options` is JSON text.
+pub async fn pending_decision(
+    repo: &Repository,
+    clock: &dyn tack_protocol::Clock,
+    runner_id: &str,
+    attempt_id: &str,
+    decision_id: &str,
+    options: &str,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+) {
+    use tack_db::repo::execution::NewDecision;
+    let row_id = format!("row-{}", Uuid::new_v4());
+    let written = repo
+        .create_execution_decision(
+            runner_id,
+            attempt_id,
+            1,
+            NewDecision {
+                id: &row_id,
+                decision_id,
+                kind: "tool_permission",
+                prompt: "Allow the harness to run the focused test suite?",
+                options,
+                metadata: "{}",
+                expires_at,
+                recommendation: None,
+            },
+            clock,
+        )
+        .await
+        .expect("seed decision insert");
+    assert!(written, "the seeded decision must land");
+}

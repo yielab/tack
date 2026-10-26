@@ -3640,6 +3640,7 @@ dependencies = [
  "tack-orch",
  "tack-protocol",
  "tack-test-support",
+ "tempfile",
  "thiserror",
  "tokio",
  "tracing",

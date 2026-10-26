@@ -10,9 +10,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::Repository;
+use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
-use uuid::Uuid;
 
 const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
 pub(crate) const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -29,17 +29,8 @@ async fn setup(
     String,
     tokio::sync::broadcast::Receiver<tack_api::handlers::websocket::BoardEvent>,
 ) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'E2 mrp review', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("workspace");
-    let repo = Repository::new(pool);
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, events) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),

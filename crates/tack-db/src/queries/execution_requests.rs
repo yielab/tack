@@ -57,3 +57,26 @@ pub async fn request_snapshot(
             .await?,
     )
 }
+
+/// The item a request was made for and the status-map policy its snapshot
+/// names, if any.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct RequestItemPolicy {
+    pub item_id: String,
+    pub status_map_policy_id: Option<String>,
+}
+
+/// The item and status-map policy of one request, or `None` when no request
+/// has this id.
+pub async fn item_and_status_map_policy(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<RequestItemPolicy>, StoreError> {
+    Ok(sqlx::query_as::<_, RequestItemPolicy>(
+        "SELECT item_id, json_extract(request_snapshot, '$.status_map_policy_id') AS status_map_policy_id \
+         FROM execution_requests WHERE id = ?",
+    )
+    .bind(request_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}

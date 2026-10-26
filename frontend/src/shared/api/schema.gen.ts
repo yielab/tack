@@ -117,7 +117,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ResolveDecisionResponseSchema"];
+                        "application/json": components["schemas"]["ResolveDecisionResponse"];
                     };
                 };
                 /** @description invalid_request (missing/malformed answer, or answer.option_id is not one of this decision's own recorded options) */
@@ -3866,16 +3866,12 @@ export interface components {
             risks?: string[] | null;
         };
         /**
-         * @description Schema-only mirror of `resolved_by`'s two observed shapes:
-         *     `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
-         *     resolve, or `{"kind": "system", "subject_id": "expiry"}` for a
-         *     fail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing
-         *     in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
-         *     no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
-         *     "No item-status mapping"), so this stays an open two-field object rather
-         *     than an invented contract.
+         * @description The `resolved_by` of a settled decision: `{"kind": "operator", "subject_id": <principal>}`
+         *     for an operator's answer, `{"kind": "system", "subject_id": "expiry"}` for a decision that
+         *     passed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`
+         *     fixes this shape, so it stays an open two-field object.
          */
-        DecisionResolvedBySchema: {
+        DecisionResolvedBy: {
             /** @example operator */
             kind: string;
             subject_id: string;
@@ -4735,26 +4731,28 @@ export interface components {
         ResolveDecisionRequest: {
             answer: components["schemas"]["DecisionAnswerSchema"];
         };
-        /**
-         * @description `POST .../decisions/{decision_id}/resolve` response body — mirrors
-         *     `handlers::decisions::ResolveDecisionResponse` exactly.
-         */
-        ResolveDecisionResponseSchema: {
+        /** @description `POST .../decisions/{decision_id}/resolve` response body. */
+        ResolveDecisionResponse: {
+            /**
+             * @description The answer as submitted (or as stored, on a replay), echoed back as
+             *     the operator sent it, extra keys included.
+             */
             answer: components["schemas"]["DecisionAnswerSchema"];
             decision_id: string;
             /** Format: int32 */
             protocol_version: number;
             /**
-             * @description `true` when this response is a byte-identical idempotent replay of
-             *     an already-committed resolution rather than a fresh write.
+             * @description `true` when this response is a byte-identical idempotent replay of an
+             *     already-committed resolution rather than a fresh write.
              */
             replayed: boolean;
             resolved_at: string;
-            resolved_by: components["schemas"]["DecisionResolvedBySchema"];
+            /** @description Who resolved the decision. */
+            resolved_by: components["schemas"]["DecisionResolvedBy"];
             /**
              * @description Always `"resolved"` on a 200 — an expired/not-found/conflicting
              *     decision is a distinct error response, never a 200 with a different
-             *     state string.
+             *     state string, so a caller need not switch on this field.
              * @example resolved
              */
             state: string;

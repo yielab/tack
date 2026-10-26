@@ -26,7 +26,7 @@ reqwest = { workspace = true }
 
 [dev-dependencies]
 tack-test-support = { path = "../tack-test-support" }
-serde_json = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 
 [lints]

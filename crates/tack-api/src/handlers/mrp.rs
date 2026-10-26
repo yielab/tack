@@ -14,6 +14,8 @@ use tracing::instrument;
 use utoipa::ToSchema;
 
 use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
+use tack_db::queries::execution_requests::RequestItemPolicy;
+use tack_db::queries::{execution_artifacts, execution_requests};
 use tack_db::repo::execution::ExecutionArtifactRow;
 use tack_protocol::mrp::MergeReadinessPack;
 
@@ -56,10 +58,8 @@ async fn newest_mrp_artifact(
     request_id: &str,
     attempt_number: i64,
 ) -> ApiResult<ExecutionArtifactRow> {
-    let artifacts = state
-        .repo
-        .list_execution_artifacts_for_attempt_number(request_id, attempt_number)
-        .await?;
+    let artifacts =
+        execution_artifacts::artifacts_of_attempt(&state.repo, request_id, attempt_number).await?;
     artifacts
         .unwrap_or_default()
         .into_iter()
@@ -208,14 +208,12 @@ pub async fn review_mrp(
 /// Moves the request's item to the first Done status when the request's
 /// `status_map_policy_id` is `done_on_mrp_accepted`; any other policy leaves it.
 pub(crate) async fn apply_mrp_accepted(state: &AppState, request_id: &str) -> ApiResult<()> {
-    let row: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT item_id, json_extract(request_snapshot, '$.status_map_policy_id') \
-         FROM execution_requests WHERE id = ?",
-    )
-    .bind(request_id)
-    .fetch_optional(state.repo.pool())
-    .await?;
-    let Some((item_id, Some(policy_id))) = row else {
+    let row = execution_requests::item_and_status_map_policy(&state.repo, request_id).await?;
+    let Some(RequestItemPolicy {
+        item_id,
+        status_map_policy_id: Some(policy_id),
+    }) = row
+    else {
         return Ok(());
     };
     let Ok(policy) = policy_id.parse::<StatusMapPolicy>() else {

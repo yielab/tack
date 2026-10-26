@@ -24,7 +24,6 @@ use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use crate::config::AppConfig;
-use crate::handlers::decisions;
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use crate::handlers::runner_protocol::retention::{
     self as artifact_event_retention, RetentionPolicy,
@@ -219,7 +218,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 
 /// Spawns the recurring caller `sweep_events`/`sweep_artifacts`
 /// (`handlers/runner_protocol/retention.rs`) and
-/// `expire_overdue_decisions` (`handlers/decisions.rs`) otherwise lack.
+/// `tack_app::runs::expire_decisions` otherwise lack.
 /// Returns `None` (spawns nothing) when `enabled` is `false`, exactly like
 /// `execution_retention::spawn_execution_retention_sweep`.
 ///
@@ -294,7 +293,12 @@ fn spawn_artifact_and_decision_sweep(
                 ),
             }
 
-            match decisions::expire_overdue_decisions(repo.pool(), now).await {
+            match tack_app::runs::expire_decisions::expire_decisions(
+                &repo,
+                &tack_protocol::SystemClock,
+            )
+            .await
+            {
                 Ok(n) if n > 0 => info!(
                     decisions_expired = n,
                     "execution retention: overdue decisions expired"

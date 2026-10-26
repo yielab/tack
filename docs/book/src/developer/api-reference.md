@@ -1338,7 +1338,7 @@ Resolve a pending decision with an operator-supplied answer
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Decision resolved — either a fresh write or a byte-identical idempotent replay of one (`replayed` distinguishes the two). | `ResolveDecisionResponseSchema` |
+| 200 | Decision resolved — either a fresh write or a byte-identical idempotent replay of one (`replayed` distinguishes the two). | `ResolveDecisionResponse` |
 | 400 | invalid_request (missing/malformed answer, or answer.option_id is not one of this decision's own recorded options) | `RunnerV1ErrorEnvelope` |
 | 401 | unauthorized — no x-tack-principal; a runner bearer credential never satisfies this, by construction | `RunnerV1ErrorEnvelope` |
 | 403 | forbidden — x-tack-decision-token missing, unconfigured server-side, or mismatched (details.required_scope = "operator:decisions") | `RunnerV1ErrorEnvelope` |

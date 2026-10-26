@@ -537,13 +537,17 @@ impl OpenApi for RunnerProtocolApiDoc {
 // `RunnerProtocolApiDoc`
 // above for its un-annotated `Json<Value>` handlers — this is a
 // hand-built `OpenApi` fragment, not a `#[utoipa::path(...)]` annotation on
-// the real handler function. Every request/response shape below is a
-// schema-only mirror, hand-verified against `handlers::decisions::
-// resolve_decision`/`ResolveDecisionResponse` and `handlers::
-// runner_protocol::artifact_download::download_artifact_content`'s actual
-// source — never generated from them, and never constructed by real code
-// (see `RunnerV1ErrorEnvelope`'s doc comment above for the identical,
-// already-established precedent).
+// the real handler function. The artifact-download shapes and the decision
+// request body and `answer` object below are schema-only mirrors,
+// hand-verified against `handlers::decisions::resolve_decision`/
+// `validate_answer` and `handlers::runner_protocol::artifact_download::
+// download_artifact_content`'s actual source — never generated from them,
+// and never constructed by real code (see `RunnerV1ErrorEnvelope`'s doc
+// comment above for the identical, already-established precedent). The
+// decision answer cannot be a typed struct: the handler echoes the operator's
+// JSON back as sent (extra keys, an explicit `null` `text`), which a struct
+// would change on the wire. The response itself is the real
+// `handlers::decisions::ResolveDecisionResponse`.
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Schema-only mirror of the `answer` object `POST
@@ -566,42 +570,6 @@ pub struct DecisionAnswerSchema {
 #[allow(dead_code)]
 pub struct ResolveDecisionRequest {
     pub answer: DecisionAnswerSchema,
-}
-
-/// Schema-only mirror of `resolved_by`'s two observed shapes:
-/// `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
-/// resolve, or `{"kind": "system", "subject_id": "expiry"}` for a
-/// fail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing
-/// in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
-/// no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
-/// "No item-status mapping"), so this stays an open two-field object rather
-/// than an invented contract.
-#[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
-pub struct DecisionResolvedBySchema {
-    #[schema(example = "operator")]
-    pub kind: String,
-    pub subject_id: String,
-}
-
-/// `POST .../decisions/{decision_id}/resolve` response body — mirrors
-/// `handlers::decisions::ResolveDecisionResponse` exactly.
-#[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
-pub struct ResolveDecisionResponseSchema {
-    pub protocol_version: u32,
-    pub decision_id: String,
-    /// Always `"resolved"` on a 200 — an expired/not-found/conflicting
-    /// decision is a distinct error response, never a 200 with a different
-    /// state string.
-    #[schema(example = "resolved")]
-    pub state: String,
-    pub answer: DecisionAnswerSchema,
-    pub resolved_at: String,
-    pub resolved_by: DecisionResolvedBySchema,
-    /// `true` when this response is a byte-identical idempotent replay of
-    /// an already-committed resolution rather than a fresh write.
-    pub replayed: bool,
 }
 
 /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`.
@@ -673,7 +641,7 @@ fn resolve_decision_operation() -> OperationBuilder {
                 .content(
                     "application/json",
                     ContentBuilder::new()
-                        .schema(Some(Ref::from_schema_name("ResolveDecisionResponseSchema")))
+                        .schema(Some(Ref::from_schema_name("ResolveDecisionResponse")))
                         .build(),
                 )
                 .build(),
@@ -1047,8 +1015,8 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // own doc comment above. ────────────────────────────────────────
         DecisionAnswerSchema,
         ResolveDecisionRequest,
-        DecisionResolvedBySchema,
-        ResolveDecisionResponseSchema,
+        tack_core::decision::DecisionResolvedBy,
+        handlers::decisions::ResolveDecisionResponse,
         // ── Harness-agnostic runner fleet: operator fleet/runner/profile API
         // DTOs ───────────────────────────────────────────────────────────
         handlers::runner_admin::CreateFleet,

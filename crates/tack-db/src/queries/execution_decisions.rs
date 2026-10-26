@@ -53,3 +53,21 @@ pub async fn decisions_of_attempt(
     .await?;
     Ok(Some(rows))
 }
+
+/// One decision of an attempt, identified by the attempt's id and the decision's own id, or
+/// `None` when the attempt has no such decision.
+pub async fn decision_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+    decision_id: &str,
+) -> Result<Option<DecisionRow>, StoreError> {
+    Ok(sqlx::query_as::<_, DecisionRow>(
+        "SELECT id, attempt_id, decision_id, kind, state, prompt, options, metadata, \
+         answer, expires_at, resolved_at, resolved_by, recommendation, viewed_at, created_at, updated_at \
+         FROM execution_decisions WHERE attempt_id = ? AND decision_id = ?",
+    )
+    .bind(attempt_id)
+    .bind(decision_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}
