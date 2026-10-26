@@ -50,14 +50,7 @@ pub async fn test_app_with_local_runner(
 ) -> (Router, Uuid) {
     let repo = tack_test_support::setup_test_db().await;
 
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'CI Workspace', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(repo.pool())
-    .await
-    .expect("insert workspace");
+    let workspace_id = tack_test_support::seed::workspace(&repo, "CI Workspace", "{}").await;
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     // Keep config.database_url in sync with the actual pool so backup/restore
@@ -85,15 +78,9 @@ pub async fn test_app_with_local_runner(
 pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
     let pool = init_pool(db_url).await.expect("file-based pool");
     migrations::run_all(&pool).await.expect("migrations");
+    let repo = Repository::new(pool);
 
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'File Workspace', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
+    let workspace_id = tack_test_support::seed::workspace(&repo, "File Workspace", "{}").await;
 
     let config = AppConfig {
         database_url: db_url.to_string(),
@@ -102,7 +89,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     let state = AppState {
-        repo: Repository::new(pool),
+        repo,
         config,
         workspace_id,
         broadcast_tx: tx,

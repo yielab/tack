@@ -19,6 +19,7 @@ pub mod execution_claim_replays;
 pub mod execution_completion_replays;
 pub mod execution_decisions;
 pub mod execution_events;
+pub mod execution_heartbeat_replays;
 pub mod execution_recovery_audits;
 pub mod execution_request_rows;
 pub mod execution_requests;

@@ -23,3 +23,13 @@ pub async fn latest_token_hash_of_runner(
     .fetch_optional(repo.pool())
     .await?)
 }
+
+/// How many enrollment tokens are stored under this hash.
+pub async fn count_with_hash(repo: &Repository, token_hash: &str) -> Result<i64, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT COUNT(*) FROM agent_enrollment_tokens WHERE token_hash = ?")
+            .bind(token_hash)
+            .fetch_one(repo.pool())
+            .await?,
+    )
+}

@@ -256,3 +256,31 @@ pub async fn item_of_attempt(
     .fetch_optional(repo.pool())
     .await?)
 }
+
+/// The completion id that ended an attempt, or `None` while it has none. An id no attempt has is
+/// `StoreError::NotFound`.
+pub async fn completion_id_of_attempt(
+    repo: &Repository,
+    attempt_id: &str,
+) -> Result<Option<String>, StoreError> {
+    sqlx::query_scalar("SELECT completion_id FROM execution_attempts WHERE id = ?")
+        .bind(attempt_id)
+        .fetch_optional(repo.pool())
+        .await?
+        .ok_or(StoreError::NotFound)
+}
+
+/// How many attempts were ended by this completion id and sit in `state`.
+pub async fn count_completed_with(
+    repo: &Repository,
+    completion_id: &str,
+    state: ExecutionState,
+) -> Result<i64, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_attempts WHERE completion_id = ? AND state = ?",
+    )
+    .bind(completion_id)
+    .bind(state::text(state))
+    .fetch_one(repo.pool())
+    .await?)
+}

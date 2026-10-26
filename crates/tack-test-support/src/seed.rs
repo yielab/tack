@@ -1018,3 +1018,49 @@ pub async fn statement(repo: &Repository, sql: &'static str, binds: &[&str]) {
         .await
         .unwrap_or_else(|e| panic!("seed statement {sql}: {e}"));
 }
+
+/// Plants a workspace named `name` whose `default_vocabulary` column holds `default_vocabulary`
+/// verbatim, for a fixture that needs a vocabulary other than the standard one.
+pub async fn workspace(repo: &Repository, name: &str, default_vocabulary: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, ?, ?)")
+        .bind(id.to_string())
+        .bind(name)
+        .bind(default_vocabulary)
+        .execute(repo.pool())
+        .await
+        .expect("seed workspaces");
+    id
+}
+
+/// Installs a trigger named `trigger` that aborts the statement with `message` before `event`
+/// (`INSERT`, `UPDATE`, `UPDATE OF <column>`) on `table`, optionally only `when` the condition
+/// holds, so a test can crash a store command at an exact write and check that nothing stayed.
+/// The names are the test's own constants: DDL takes no bind parameters.
+pub async fn failure_trigger(
+    repo: &Repository,
+    trigger: &str,
+    table: &str,
+    event: &str,
+    when: Option<&str>,
+    message: &str,
+) {
+    assert!(!message.contains('\''), "the failure message is quoted SQL");
+    let condition = when.map(|cond| format!("WHEN {cond} ")).unwrap_or_default();
+    let ddl = format!(
+        "CREATE TRIGGER {trigger} BEFORE {event} ON {table} {condition}\
+         BEGIN SELECT RAISE(ABORT, '{message}'); END"
+    );
+    sqlx::query(sqlx::AssertSqlSafe(ddl))
+        .execute(repo.pool())
+        .await
+        .unwrap_or_else(|e| panic!("install trigger {trigger}: {e}"));
+}
+
+/// Removes a trigger installed by [`failure_trigger`], so the next call goes through.
+pub async fn drop_trigger(repo: &Repository, trigger: &str) {
+    sqlx::query(sqlx::AssertSqlSafe(format!("DROP TRIGGER {trigger}")))
+        .execute(repo.pool())
+        .await
+        .unwrap_or_else(|e| panic!("drop trigger {trigger}: {e}"));
+}
