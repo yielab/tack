@@ -25,6 +25,11 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 # The ticks that talk to GitHub and the backup store need an HTTP client.
 reqwest = { workspace = true }
+# The remote backup: S3-compatible object storage and the `.tar.zst` bundle.
+object_store = { workspace = true }
+futures = { workspace = true }
+tar = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 tack-test-support = { path = "../tack-test-support" }

@@ -32,6 +32,7 @@ mod error;
 pub mod github_sync;
 pub mod host;
 pub mod merge;
+pub mod remote_backup;
 pub mod runs;
 
 pub use error::AppError;

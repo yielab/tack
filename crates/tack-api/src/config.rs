@@ -415,6 +415,21 @@ impl AppConfig {
         Ok(())
     }
 
+    /// The backup settings the environment configured, as the backup module takes them.
+    pub fn backup_config(&self) -> tack_app::remote_backup::BackupConfig {
+        tack_app::remote_backup::BackupConfig {
+            endpoint: self.backup_endpoint.clone(),
+            bucket: self.backup_bucket.clone(),
+            region: self.backup_region.clone(),
+            access_key: self.backup_access_key.clone(),
+            secret_key: self.backup_secret_key.clone(),
+            prefix: self.backup_prefix.clone(),
+            retention: self.backup_retention,
+            db_file: self.db_file_path(),
+            storage_dir: self.storage_dir.clone(),
+        }
+    }
+
     /// Returns true when all three required remote-backup fields are set.
     pub fn remote_backup_enabled(&self) -> bool {
         self.backup_bucket.is_some()

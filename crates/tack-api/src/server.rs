@@ -11,7 +11,6 @@ use uuid::Uuid;
 
 use crate::config::AppConfig;
 use crate::handlers::local_runner::effective_local_runner_enabled;
-use crate::remote_backup;
 use crate::router::{AppState, build_router};
 
 /// Everything that happens before the database opens: the tracing subscriber, the
@@ -68,37 +67,6 @@ pub async fn serve(
 ) -> anyhow::Result<()> {
     let config = state.config.clone();
     let local_runner = state.local_runner.clone();
-
-    // Automatic remote backup on a configured interval, clamped to a 60s floor
-    // (`tokio::time::interval` panics on zero, and anything faster would hammer
-    // the object store). The interval is env-only (`TACK_BACKUP_INTERVAL_SECS`),
-    // but the destination can come from UI-saved settings too, so this spawns
-    // whenever an interval is set and re-checks the effective config each tick.
-
-    if let Some(interval_secs) = config.backup_interval_secs {
-        const MIN_BACKUP_INTERVAL_SECS: u64 = 60;
-        let interval_secs = if interval_secs < MIN_BACKUP_INTERVAL_SECS {
-            warn!(
-                requested = interval_secs,
-                clamped_to = MIN_BACKUP_INTERVAL_SECS,
-                "TACK_BACKUP_INTERVAL_SECS is below the 60s minimum; clamping"
-            );
-            MIN_BACKUP_INTERVAL_SECS
-        } else {
-            interval_secs
-        };
-        let bg_state = state.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            interval.tick().await; // skip the first immediate tick
-            loop {
-                interval.tick().await;
-                run_scheduled_backup(&bg_state).await;
-            }
-        });
-        info!(interval_secs, "Remote backup scheduler enabled");
-    }
 
     // Spawn background task: fire "item.due_soon" webhook for items due within the next hour
     if state.webhook.is_some() {
@@ -483,42 +451,6 @@ async fn shutdown_signal() {
         .await
         .expect("Failed to install CTRL+C handler");
     warn!("Shutdown signal received");
-}
-
-/// Run a scheduled remote backup. Reads the *effective* config each tick so
-/// UI-saved settings (bucket/prefix/creds/retention) are honored, and runs
-/// the conflict-safe upload path — on a cross-device conflict it warns and
-/// skips rather than clobbering another device's newer work.
-async fn run_scheduled_backup(state: &AppState) {
-    let cfg = crate::handlers::settings::effective_backup_config(state).await;
-    if !cfg.remote_backup_enabled() {
-        // A UI-only config may not be set yet; nothing to do this tick.
-        tracing::debug!("Scheduled backup skipped: remote backup not configured");
-        return;
-    }
-
-    let store = match remote_backup::store_from_config(&cfg) {
-        Ok(store) => store,
-        Err(e) => {
-            warn!(error = %e, "Scheduled backup store init failed");
-            return;
-        }
-    };
-
-    // Scheduled backups never force: a conflict means another device is ahead,
-    // so we skip and let the user restore/resolve.
-    match remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), false).await {
-        Ok(manifest) => info!(key = %manifest.object_key, "Scheduled backup complete"),
-        Err(remote_backup::BackupError::GenerationConflict {
-            remote_generation, ..
-        }) => {
-            warn!(
-                remote_generation,
-                "Scheduled backup skipped: another device has newer work (restore to resolve)"
-            );
-        }
-        Err(e) => warn!(error = %e, "Scheduled backup failed"),
-    }
 }
 
 /// Query for items due within the next hour and fire `item.due_soon` webhooks.

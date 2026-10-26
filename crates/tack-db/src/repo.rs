@@ -1,5 +1,6 @@
 pub mod attachments;
 pub mod autonomy;
+pub mod backup;
 pub mod boards;
 pub mod briefs;
 pub mod budgets;

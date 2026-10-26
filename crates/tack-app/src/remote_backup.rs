@@ -14,7 +14,6 @@ use std::io::{Cursor, Read as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chrono::Utc;
 use object_store::ObjectStore;
 // object_store 0.13 moved the put/get/delete convenience methods to this extension trait.
 use object_store::ObjectStoreExt;
@@ -22,12 +21,14 @@ use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as OsPath;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use tack_db::queries::backup::item_count;
+use tack_db::queries::migrations::applied_migration_count;
+use tack_db::repo::backup::scrub_snapshot_secrets;
+use tack_db::{Repository, StoreError};
+use tack_protocol::Clock;
 use thiserror::Error;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
-
-use crate::config::AppConfig;
 
 // ── Error ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ pub enum BackupError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("database error: {0}")]
-    Db(#[from] sqlx::Error),
+    Store(#[from] StoreError),
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("zstd error: {0}")]
@@ -108,25 +109,114 @@ pub struct BackupManifest {
     pub generation: u64,
 }
 
+// ── Settings ──────────────────────────────────────────────────────────────────
+
+/// Where a backup goes and what it covers: the object-store destination, how many bundles to
+/// keep, and the local files a bundle is made from.
+#[derive(Debug, Clone)]
+pub struct BackupConfig {
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub region: String,
+    pub access_key: Option<String>,
+    /// Never logged.
+    pub secret_key: Option<String>,
+    pub prefix: String,
+    /// How many bundles stay in the bucket after each upload.
+    pub retention: usize,
+    /// The database file, `None` for an in-memory database (which cannot be backed up).
+    pub db_file: Option<PathBuf>,
+    /// The attachments directory a bundle carries along with the database.
+    pub storage_dir: String,
+}
+
+impl BackupConfig {
+    /// True when the three fields a destination cannot do without are set.
+    pub fn enabled(&self) -> bool {
+        self.bucket.is_some() && self.access_key.is_some() && self.secret_key.is_some()
+    }
+}
+
+/// The destination saved from the UI (`app_meta`, key `backup_config`). Every field is
+/// optional so a partially configured destination round-trips.
+#[derive(Debug, Default, Deserialize)]
+struct SavedDestination {
+    #[serde(default)]
+    endpoint: Option<String>,
+    #[serde(default)]
+    bucket: Option<String>,
+    #[serde(default)]
+    region: Option<String>,
+    #[serde(default)]
+    access_key: Option<String>,
+    #[serde(default)]
+    secret_key: Option<String>,
+    #[serde(default)]
+    prefix: Option<String>,
+    #[serde(default)]
+    retention: Option<usize>,
+}
+
+const SAVED_DESTINATION_KEY: &str = "backup_config";
+
+/// The settings a backup should actually use: `base` (what the environment configured) with
+/// any destination saved from the UI laid over it. A blank saved string leaves the base value
+/// alone; an unreadable saved value counts as none.
+pub async fn effective_config(repo: &Repository, base: &BackupConfig) -> BackupConfig {
+    let saved: SavedDestination =
+        tack_db::queries::app_meta::app_meta_value(repo, SAVED_DESTINATION_KEY)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+
+    let mut cfg = base.clone();
+    let nonempty = |o: Option<String>| o.filter(|v| !v.trim().is_empty());
+
+    if let Some(v) = nonempty(saved.endpoint) {
+        cfg.endpoint = Some(v);
+    }
+    if let Some(v) = nonempty(saved.bucket) {
+        cfg.bucket = Some(v);
+    }
+    if let Some(v) = nonempty(saved.region) {
+        cfg.region = v;
+    }
+    if let Some(v) = nonempty(saved.access_key) {
+        cfg.access_key = Some(v);
+    }
+    if let Some(v) = nonempty(saved.secret_key) {
+        cfg.secret_key = Some(v);
+    }
+    if let Some(v) = nonempty(saved.prefix) {
+        cfg.prefix = v;
+    }
+    if let Some(rt) = saved.retention {
+        cfg.retention = rt;
+    }
+    cfg
+}
+
 // ── Store construction ────────────────────────────────────────────────────────
 
-/// Build an S3-compatible `ObjectStore` from application config.
-pub fn store_from_config(cfg: &AppConfig) -> Result<Arc<dyn ObjectStore>, BackupError> {
-    if !cfg.remote_backup_enabled() {
+/// Build an S3-compatible `ObjectStore` from the backup settings.
+pub fn store_from_config(cfg: &BackupConfig) -> Result<Arc<dyn ObjectStore>, BackupError> {
+    if !cfg.enabled() {
         return Err(BackupError::NotConfigured);
     }
 
-    let bucket = cfg.backup_bucket.as_deref().unwrap();
-    let access_key = cfg.backup_access_key.as_deref().unwrap();
-    let secret_key = cfg.backup_secret_key.as_deref().unwrap();
+    let bucket = cfg.bucket.as_deref().unwrap();
+    let access_key = cfg.access_key.as_deref().unwrap();
+    let secret_key = cfg.secret_key.as_deref().unwrap();
 
     let mut builder = AmazonS3Builder::new()
         .with_bucket_name(bucket)
-        .with_region(&cfg.backup_region)
+        .with_region(&cfg.region)
         .with_access_key_id(access_key)
         .with_secret_access_key(secret_key);
 
-    if let Some(endpoint) = &cfg.backup_endpoint {
+    if let Some(endpoint) = &cfg.endpoint {
         builder = builder.with_endpoint(endpoint);
         // Allow plain HTTP for local MinIO / test setups
         if endpoint.starts_with("http://") {
@@ -136,82 +226,6 @@ pub fn store_from_config(cfg: &AppConfig) -> Result<Arc<dyn ObjectStore>, Backup
 
     let store = builder.build()?;
     Ok(Arc::new(store))
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Query the current migration version (count of applied rows in `_migrations`).
-async fn migration_version(pool: &SqlitePool) -> Result<u32, BackupError> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-        .fetch_one(pool)
-        .await?;
-    Ok(count as u32)
-}
-
-/// Query the total item count.
-async fn item_count(pool: &SqlitePool) -> Result<u64, BackupError> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items")
-        .fetch_one(pool)
-        .await?;
-    Ok(count as u64)
-}
-
-/// Get or create a stable install ID stored in the `app_meta` table.
-pub async fn install_id(pool: &SqlitePool) -> Result<String, BackupError> {
-    // Create the table if it doesn't exist (idempotent).
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
-    )
-    .execute(pool)
-    .await?;
-
-    let existing: Option<String> =
-        sqlx::query_scalar("SELECT value FROM app_meta WHERE key = 'install_id'")
-            .fetch_optional(pool)
-            .await?;
-
-    if let Some(id) = existing {
-        return Ok(id);
-    }
-
-    let id = Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO app_meta (key, value) VALUES ('install_id', ?)")
-        .bind(&id)
-        .execute(pool)
-        .await?;
-    Ok(id)
-}
-
-/// Read the monotonic sync generation counter (`app_meta.generation`).
-///
-/// Defaults to 0 when the row is absent — a brand-new install. This value is
-/// carried inside the DB snapshot (it is *not* scrubbed), so a device that
-/// restores another device's bundle adopts that bundle's generation.
-pub async fn generation(pool: &SqlitePool) -> Result<u64, BackupError> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
-    )
-    .execute(pool)
-    .await?;
-
-    let existing: Option<String> =
-        sqlx::query_scalar("SELECT value FROM app_meta WHERE key = 'generation'")
-            .fetch_optional(pool)
-            .await?;
-
-    Ok(existing.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0))
-}
-
-/// Persist the sync generation counter.
-pub async fn set_generation(pool: &SqlitePool, value: u64) -> Result<(), BackupError> {
-    sqlx::query(
-        "INSERT INTO app_meta (key, value) VALUES ('generation', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .bind(value.to_string())
-    .execute(pool)
-    .await?;
-    Ok(())
 }
 
 /// The remote head: the manifest with the highest generation (ties broken by
@@ -249,97 +263,14 @@ pub fn restore_conflicts(local_generation: u64, snapshot_generation: u64, force:
     !force && local_generation > snapshot_generation
 }
 
-/// `app_meta` keys that must never leave the machine inside a backup: the S3
-/// secret key is stored (JSON-encoded) under `backup_config`, and `install_id`
-/// is this install's identity — restoring it elsewhere would clone the identity.
-///
-/// This list only covers `app_meta`. **This is not the only thing
-/// [`scrub_snapshot_secrets`] scrubs** — any other table that grows a
-/// secret-bearing column needs its own dedicated block in that function,
-/// following the same null-before-VACUUM shape. Read that function's doc
-/// comment before adding a new secret column anywhere in the schema.
-const SENSITIVE_META_KEYS: &[&str] = &["backup_config", "install_id"];
-
-/// Strip machine-local secrets/identity from a freshly-created snapshot DB
-/// file so they never ship inside a downloadable or uploadable bundle.
-///
-/// The single chokepoint for scrubbing backup secrets — every table with a
-/// secret-bearing column must be handled here: today that is `app_meta`'s
-/// [`SENSITIVE_META_KEYS`], deleted outright, and `projects.github_token_ref`
-/// (a secret *reference*, never the token value, but still install-local —
-/// see `tack_core::models::Project::github_token_ref`), nulled outright.
-/// Removing `install_id` means a restore regenerates a fresh one via
-/// [`install_id`] on first use, never adopting the source install's
-/// identity.
-///
-/// **Add new secret columns here, not just to this doc comment**, and
-/// before the trailing `VACUUM` so the freed bytes actually drop from the
-/// file rather than sitting unreferenced in the freelist.
-pub async fn scrub_snapshot_secrets(db_file: &Path) -> Result<(), BackupError> {
-    use sqlx::ConnectOptions;
-    use sqlx::sqlite::SqliteConnectOptions;
-
-    let mut conn = SqliteConnectOptions::new()
-        .filename(db_file)
-        .create_if_missing(false)
-        .connect()
-        .await?;
-
-    // The table may be absent on a brand-new DB — create defensively so the
-    // DELETE below is always valid.
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)",
-    )
-    .execute(&mut conn)
-    .await?;
-
-    for key in SENSITIVE_META_KEYS {
-        sqlx::query("DELETE FROM app_meta WHERE key = ?")
-            .bind(key)
-            .execute(&mut conn)
-            .await?;
-    }
-
-    // Unlike `app_meta` above, `projects` is a core table present in every
-    // schema this binary understands, so a defensive `CREATE TABLE IF NOT
-    // EXISTS` would be the wrong guard here (it would silently paper over a
-    // snapshot missing a table it should always have). Instead this
-    // tolerates its own query error — the smaller of the two guards the
-    // doc comment above allows — and logs rather than fails the scrub.
-    if let Err(error) = sqlx::query("UPDATE projects SET github_token_ref = NULL")
-        .execute(&mut conn)
-        .await
-    {
-        warn!(%error, "scrubbing projects.github_token_ref failed (table may be absent)");
-    }
-
-    // A plain DELETE/UPDATE leaves the secret bytes in freed/overwritten
-    // pages (the SQLite freelist), so a hex-dump of the snapshot would still
-    // reveal them. VACUUM rewrites the file and physically drops that
-    // content — it must run after every scrub step above, not before.
-    sqlx::query("VACUUM").execute(&mut conn).await?;
-
-    use sqlx::Connection;
-    conn.close().await?;
-    Ok(())
-}
-
 /// Create a VACUUM INTO snapshot and return the raw bytes of the DB file.
-async fn snapshot_db(pool: &SqlitePool, db_path: &Path) -> Result<Vec<u8>, BackupError> {
-    // Checkpoint WAL into the main file first.
-    sqlx::query("PRAGMA wal_checkpoint(FULL)")
-        .execute(pool)
-        .await?;
-
+async fn snapshot_db(repo: &Repository, db_path: &Path) -> Result<Vec<u8>, BackupError> {
     // A VACUUM INTO target the caller reads back and removes — not a test
     // artifact, so no `tempfile` guard.
     #[allow(clippy::disallowed_methods)]
     let temp = std::env::temp_dir().join(format!("tack-snap-{}.db", Uuid::new_v4()));
-    let temp_str = temp.to_string_lossy().replace('\'', "''");
 
-    sqlx::query(sqlx::AssertSqlSafe(format!("VACUUM INTO '{temp_str}'")))
-        .execute(pool)
-        .await?;
+    repo.snapshot_into(&temp).await?;
 
     // From here the snapshot file exists and still holds every secret the live
     // database does, so no path may return without removing it: a `?` between
@@ -361,21 +292,22 @@ async fn snapshot_db(pool: &SqlitePool, db_path: &Path) -> Result<Vec<u8>, Backu
 
 /// Build the full `.tar.zst` bundle in memory and return it together with its manifest.
 pub async fn create_bundle(
-    pool: &SqlitePool,
-    cfg: &AppConfig,
+    repo: &Repository,
+    clock: &dyn Clock,
+    cfg: &BackupConfig,
 ) -> Result<(Vec<u8>, BackupManifest), BackupError> {
-    let db_path = cfg.db_file_path().ok_or(BackupError::InMemoryDb)?;
+    let db_path = cfg.db_file.as_deref().ok_or(BackupError::InMemoryDb)?;
 
-    let db_bytes = snapshot_db(pool, &db_path).await?;
+    let db_bytes = snapshot_db(repo, db_path).await?;
     let db_sha256 = hex::encode(Sha256::digest(&db_bytes));
 
-    let mig_version = migration_version(pool).await?;
-    let items = item_count(pool).await?;
-    let install = install_id(pool).await?;
+    let mig_version = applied_migration_count(repo).await?;
+    let items = item_count(repo).await?;
+    let install = repo.install_id().await?;
     // The generation is expected to already be bumped/persisted by the caller
     // (so the DB snapshot above carries the same value the manifest records).
-    let gen_val = generation(pool).await?;
-    let created_at = Utc::now().to_rfc3339();
+    let gen_val = repo.backup_generation().await?;
+    let created_at = clock.now().to_rfc3339();
 
     // Build tar in memory, then compress.
     let tar_bytes = build_tar(
@@ -399,7 +331,7 @@ pub async fn create_bundle(
         .map_err(|e| BackupError::Zstd(e.to_string()))?;
 
     let ts = created_at.replace(':', "-").replace('+', "Z");
-    let object_key = format!("{}/tack-backup-{}.tar.zst", cfg.backup_prefix, ts);
+    let object_key = format!("{}/tack-backup-{}.tar.zst", cfg.prefix, ts);
 
     let manifest = BackupManifest {
         format_version: 1,
@@ -538,18 +470,18 @@ pub async fn upload(
 ///
 /// Returns [`BackupError::GenerationConflict`] when another device is ahead.
 pub async fn perform_backup(
-    pool: &SqlitePool,
-    cfg: &AppConfig,
+    repo: &Repository,
+    clock: &dyn Clock,
+    cfg: &BackupConfig,
     store: &dyn ObjectStore,
     force: bool,
 ) -> Result<BackupManifest, BackupError> {
-    let local_gen = generation(pool).await?;
+    let local_gen = repo.backup_generation().await?;
     let prospective = local_gen + 1;
-    let my_install = install_id(pool).await?;
+    let my_install = repo.install_id().await?;
 
     if !force
-        && let Some(remote) =
-            upload_conflict(store, &cfg.backup_prefix, prospective, &my_install).await?
+        && let Some(remote) = upload_conflict(store, &cfg.prefix, prospective, &my_install).await?
     {
         return Err(BackupError::GenerationConflict {
             local_generation: local_gen,
@@ -560,12 +492,12 @@ pub async fn perform_backup(
 
     // Persist the bump BEFORE snapshotting so the DB snapshot's app_meta carries
     // the same generation the manifest records (restores adopt it).
-    set_generation(pool, prospective).await?;
+    repo.set_backup_generation(prospective).await?;
 
     let outcome = async {
-        let (bundle, manifest) = create_bundle(pool, cfg).await?;
+        let (bundle, manifest) = create_bundle(repo, clock, cfg).await?;
         upload(store, &manifest, bundle).await?;
-        prune(store, &cfg.backup_prefix, cfg.backup_retention).await?;
+        prune(store, &cfg.prefix, cfg.retention).await?;
         Ok::<_, BackupError>(manifest)
     }
     .await;
@@ -573,7 +505,7 @@ pub async fn perform_backup(
     match outcome {
         Ok(m) => Ok(m),
         Err(e) => {
-            let _ = set_generation(pool, local_gen).await;
+            let _ = repo.set_backup_generation(local_gen).await;
             Err(e)
         }
     }
@@ -849,6 +781,88 @@ fn parse_bundle(
 
     let db = db_bytes.ok_or(BackupError::CorruptBundle)?;
     Ok((db, attachments))
+}
+
+// ── The scheduled backup ──────────────────────────────────────────────────────
+
+/// What one scheduled pass did.
+#[derive(Debug)]
+pub enum Outcome {
+    /// No destination is configured yet (a UI-only configuration may not be saved).
+    NotConfigured,
+    /// A bundle went up.
+    Uploaded(Box<BackupManifest>),
+    /// Another device holds newer work; nothing was uploaded.
+    AnotherDeviceAhead { remote_generation: u64 },
+}
+
+/// Why a scheduled pass failed, and at which step.
+#[derive(Debug, Error)]
+pub enum TickError {
+    #[error("{0}")]
+    StoreInit(BackupError),
+    #[error("{0}")]
+    Backup(BackupError),
+}
+
+/// One scheduled remote backup. Reads the *effective* settings each pass so UI-saved ones
+/// (bucket/prefix/creds/retention) are honored, and runs the conflict-safe upload path: on a
+/// cross-device conflict it skips rather than clobbering another device's newer work, and
+/// never forces.
+pub async fn tick(
+    repo: &Repository,
+    clock: &dyn Clock,
+    base: &BackupConfig,
+) -> Result<Outcome, TickError> {
+    let cfg = effective_config(repo, base).await;
+    if !cfg.enabled() {
+        return Ok(Outcome::NotConfigured);
+    }
+
+    let store = store_from_config(&cfg).map_err(TickError::StoreInit)?;
+
+    match perform_backup(repo, clock, &cfg, store.as_ref(), false).await {
+        Ok(manifest) => Ok(Outcome::Uploaded(Box::new(manifest))),
+        Err(BackupError::GenerationConflict {
+            remote_generation, ..
+        }) => Ok(Outcome::AnotherDeviceAhead { remote_generation }),
+        Err(e) => Err(TickError::Backup(e)),
+    }
+}
+
+/// The loop `tack serve` spawns: wait `interval`, run [`tick`], log what it did, repeat. The
+/// first pass comes one `interval` after the start, not at it. `interval` must not be zero.
+pub async fn run(
+    repo: Repository,
+    clock: Arc<dyn Clock>,
+    base: BackupConfig,
+    interval: std::time::Duration,
+) {
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // skip the first immediate tick
+    loop {
+        ticker.tick().await;
+        match tick(&repo, clock.as_ref(), &base).await {
+            Ok(Outcome::NotConfigured) => {
+                // A UI-only config may not be set yet; nothing to do this tick.
+                debug!("Scheduled backup skipped: remote backup not configured");
+            }
+            Ok(Outcome::Uploaded(manifest)) => {
+                info!(key = %manifest.object_key, "Scheduled backup complete");
+            }
+            Ok(Outcome::AnotherDeviceAhead { remote_generation }) => {
+                warn!(
+                    remote_generation,
+                    "Scheduled backup skipped: another device has newer work (restore to resolve)"
+                );
+            }
+            Err(TickError::StoreInit(e)) => {
+                warn!(error = %e, "Scheduled backup store init failed");
+            }
+            Err(TickError::Backup(e)) => warn!(error = %e, "Scheduled backup failed"),
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

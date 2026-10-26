@@ -3594,7 +3594,6 @@ dependencies = [
  "futures",
  "hex",
  "hmac",
- "object_store",
  "reqwest 0.12.28",
  "rust-embed",
  "serde",
@@ -3608,7 +3607,6 @@ dependencies = [
  "tack-orch",
  "tack-protocol",
  "tack-test-support",
- "tar",
  "tempfile",
  "thiserror",
  "tokio",
@@ -3622,7 +3620,6 @@ dependencies = [
  "uuid",
  "validator",
  "wiremock",
- "zstd",
 ]
 
 [[package]]
@@ -3632,7 +3629,9 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "futures",
  "hex",
+ "object_store",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -3642,12 +3641,14 @@ dependencies = [
  "tack-orch",
  "tack-protocol",
  "tack-test-support",
+ "tar",
  "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "uuid",
  "wiremock",
+ "zstd",
 ]
 
 [[package]]

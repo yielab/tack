@@ -7,11 +7,14 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use tack_app::remote_backup;
+use tack_db::queries::migrations::applied_migration_count;
+use tack_db::repo::backup::{migration_count_of_file, scrub_snapshot_secrets};
+use tack_protocol::SystemClock;
 use tracing::instrument;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
-use crate::remote_backup;
 use crate::router::AppState;
 
 /// GET /api/backup — VACUUM INTO snapshot streamed as application/octet-stream.
@@ -31,27 +34,20 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
         .db_file_path()
         .ok_or_else(|| ApiError::BadRequest("backup requires a file-based database".into()))?;
 
-    // Checkpoint WAL into the main file so the snapshot is current.
-    sqlx::query("PRAGMA wal_checkpoint(FULL)")
-        .execute(state.pool())
-        .await?;
-
     // A VACUUM INTO target this handler removes itself before returning on
     // every path below — not a test artifact, so no `tempfile` guard.
     #[allow(clippy::disallowed_methods)]
     let temp_path = std::env::temp_dir().join(format!("tack-backup-{}.db", Uuid::new_v4()));
-    let path_str = temp_path.to_string_lossy().replace('\'', "''");
 
-    sqlx::query(sqlx::AssertSqlSafe(format!("VACUUM INTO '{path_str}'")))
-        .execute(state.pool())
-        .await?;
+    // Checkpoints the WAL into the main file so the snapshot is current.
+    state.repo.snapshot_into(&temp_path).await?;
 
     // From here the snapshot exists and still holds every secret the live
     // database does, so no path may return without removing it. Strip the S3
     // secret and install identity so they never leave the machine inside a
     // backup file.
     let scrubbed: Result<Vec<u8>, ApiError> = async {
-        remote_backup::scrub_snapshot_secrets(&temp_path)
+        scrub_snapshot_secrets(&temp_path)
             .await
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("{e}")))?;
         tokio::fs::read(&temp_path)
@@ -134,21 +130,20 @@ pub async fn post_restore(
     let uploaded_version = migration_count_of_bytes(&body)
         .await
         .map_err(|e| ApiError::BadRequest(format!("could not read uploaded database: {e}")))?;
-    let local_version: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-        .fetch_one(state.pool())
-        .await?;
-    if uploaded_version > local_version as u32 {
+    let local_version = applied_migration_count(&state.repo).await?;
+    if uploaded_version > local_version {
         return Err(ApiError::Conflict(format!(
             "restore rejected: uploaded database schema ({uploaded_version}) is ahead of the running binary ({local_version}); upgrade Tack before restoring"
         )));
     }
 
     // Backup before restore: best-effort remote snapshot of the current state.
-    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
-    if cfg.remote_backup_enabled()
+    let cfg = effective_config(&state).await;
+    if cfg.enabled()
         && let Ok(store) = remote_backup::store_from_config(&cfg)
         && let Err(e) =
-            remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), true).await
+            remote_backup::perform_backup(&state.repo, &SystemClock, &cfg, store.as_ref(), true)
+                .await
     {
         tracing::warn!(error = %e, "backup-before-restore failed; continuing with local restore");
     }
@@ -169,10 +164,6 @@ pub async fn post_restore(
 /// Count `_migrations` rows in a raw SQLite database byte buffer by opening it
 /// read-only from a temp file. Used to guard local restores against a newer schema.
 async fn migration_count_of_bytes(bytes: &[u8]) -> Result<u32, String> {
-    use sqlx::ConnectOptions;
-    use sqlx::Connection;
-    use sqlx::sqlite::SqliteConnectOptions;
-
     // A scratch file this function reads back once and discards — not a test
     // artifact, so no `tempfile` guard.
     #[allow(clippy::disallowed_methods)]
@@ -181,25 +172,17 @@ async fn migration_count_of_bytes(bytes: &[u8]) -> Result<u32, String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    let result = async {
-        let mut conn = SqliteConnectOptions::new()
-            .filename(&tmp)
-            .create_if_missing(false)
-            .read_only(true)
-            .connect()
-            .await
-            .map_err(|e| e.to_string())?;
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-            .fetch_one(&mut conn)
-            .await
-            .map_err(|e| e.to_string())?;
-        conn.close().await.ok();
-        Ok::<u32, String>(count as u32)
-    }
-    .await;
-
+    let result = migration_count_of_file(&tmp)
+        .await
+        .map_err(|e| e.to_string());
     let _ = tokio::fs::remove_file(&tmp).await;
     result
+}
+
+/// The backup settings the server should actually use: the startup configuration with any
+/// destination saved from the UI laid over it.
+async fn effective_config(state: &AppState) -> remote_backup::BackupConfig {
+    remote_backup::effective_config(&state.repo, &state.config.backup_config()).await
 }
 
 // ── Remote backup endpoints ────────────────────────────────────────────────────
@@ -261,17 +244,18 @@ pub async fn post_remote_backup(
     State(state): State<AppState>,
     raw_body: Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
-    if !cfg.remote_backup_enabled() {
+    let cfg = effective_config(&state).await;
+    if !cfg.enabled() {
         return Err(remote_not_configured());
     }
 
     let force = parse_force(&raw_body);
     let store = remote_backup::store_from_config(&cfg).map_err(backup_err)?;
 
-    let manifest = remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), force)
-        .await
-        .map_err(backup_err)?;
+    let manifest =
+        remote_backup::perform_backup(&state.repo, &SystemClock, &cfg, store.as_ref(), force)
+            .await
+            .map_err(backup_err)?;
 
     Ok(Json(serde_json::to_value(&manifest).unwrap()))
 }
@@ -290,13 +274,13 @@ pub async fn post_remote_backup(
 pub async fn get_remote_backups(
     State(state): State<AppState>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
-    if !cfg.remote_backup_enabled() {
+    let cfg = effective_config(&state).await;
+    if !cfg.enabled() {
         return Err(remote_not_configured());
     }
 
     let store = remote_backup::store_from_config(&cfg).map_err(backup_err)?;
-    let manifests = remote_backup::list(store.as_ref(), &cfg.backup_prefix)
+    let manifests = remote_backup::list(store.as_ref(), &cfg.prefix)
         .await
         .map_err(backup_err)?;
 
@@ -330,8 +314,8 @@ pub async fn post_remote_restore(
     State(state): State<AppState>,
     raw_body: Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
-    if !cfg.remote_backup_enabled() {
+    let cfg = effective_config(&state).await;
+    if !cfg.enabled() {
         return Err(remote_not_configured());
     }
 
@@ -348,7 +332,7 @@ pub async fn post_remote_restore(
     let key = if let Some(k) = req.key.clone() {
         k
     } else {
-        let manifests = remote_backup::list(store.as_ref(), &cfg.backup_prefix)
+        let manifests = remote_backup::list(store.as_ref(), &cfg.prefix)
             .await
             .map_err(backup_err)?;
         manifests
@@ -371,9 +355,11 @@ pub async fn post_remote_restore(
         serde_json::from_slice(&sidecar_bytes).map_err(|e| backup_err(e.into()))?;
 
     // Conflict guard: refuse to clobber newer local work unless forced.
-    let local_gen = remote_backup::generation(state.pool())
+    let local_gen = state
+        .repo
+        .backup_generation()
         .await
-        .map_err(backup_err)?;
+        .map_err(|e| backup_err(e.into()))?;
     if remote_backup::restore_conflicts(local_gen, manifest.generation, force) {
         return Err(backup_err(
             remote_backup::BackupError::RestoreWouldLoseWork {
@@ -384,25 +370,27 @@ pub async fn post_remote_restore(
     }
 
     // Get the current local migration version.
-    let local_version: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-        .fetch_one(state.pool())
+    let local_version = applied_migration_count(&state.repo)
         .await
         .map_err(|e| backup_err(e.into()))?;
 
     let db_path = cfg
-        .db_file_path()
+        .db_file
+        .clone()
         .ok_or_else(|| ApiError::BadRequest("restore requires a file-based database".into()))?;
 
     // Backup before restore: best-effort snapshot of the *current* state to the
     // remote so a mistaken restore is recoverable. Never blocks the restore.
-    if let Err(e) = remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), true).await {
+    if let Err(e) =
+        remote_backup::perform_backup(&state.repo, &SystemClock, &cfg, store.as_ref(), true).await
+    {
         tracing::warn!(error = %e, "backup-before-restore failed; continuing with restore");
     }
 
     remote_backup::stage_restore(
         bundle_bytes,
         &manifest,
-        local_version as u32,
+        local_version,
         &db_path,
         &cfg.storage_dir,
     )
@@ -436,8 +424,8 @@ pub async fn post_remote_verify(
     State(state): State<AppState>,
     raw_body: Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let cfg = crate::handlers::settings::effective_backup_config(&state).await;
-    if !cfg.remote_backup_enabled() {
+    let cfg = effective_config(&state).await;
+    if !cfg.enabled() {
         return Err(remote_not_configured());
     }
 
@@ -454,7 +442,7 @@ pub async fn post_remote_verify(
     let key = if let Some(k) = req_key {
         k
     } else {
-        let manifests = remote_backup::list(store.as_ref(), &cfg.backup_prefix)
+        let manifests = remote_backup::list(store.as_ref(), &cfg.prefix)
             .await
             .map_err(backup_err)?;
         manifests
@@ -475,12 +463,11 @@ pub async fn post_remote_verify(
         .await
         .map_err(backup_err)?;
 
-    let local_version: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _migrations")
-        .fetch_one(state.pool())
+    let local_version = applied_migration_count(&state.repo)
         .await
         .map_err(|e| backup_err(e.into()))?;
 
-    match remote_backup::verify_bundle(bundle_bytes, &manifest, local_version as u32).await {
+    match remote_backup::verify_bundle(bundle_bytes, &manifest, local_version).await {
         Ok(()) => Ok(Json(json!({
             "ok": true,
             "object_key": key,

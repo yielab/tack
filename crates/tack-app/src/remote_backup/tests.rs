@@ -1,5 +1,7 @@
 use super::*;
 use object_store::memory::InMemory;
+use tack_db::queries::app_meta::app_meta_value;
+use tack_protocol::SystemClock;
 
 fn make_store() -> Arc<InMemory> {
     Arc::new(InMemory::new())
@@ -281,55 +283,32 @@ async fn stage_restore_rejects_wrong_format_version() {
 // ── 27.6: snapshots ship no secrets or install identity ────────────────────
 #[tokio::test]
 async fn scrub_removes_secrets_from_snapshot() {
-    use sqlx::ConnectOptions;
-    use sqlx::Connection;
-    use sqlx::sqlite::SqliteConnectOptions;
-
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let path = dir.path().join("scrub.db");
+    let (repo, _cfg, dir) = file_backed().await;
     let secret = "SUPER-SECRET-S3-KEY-9f8e7d6c5b4a";
 
-    {
-        let mut conn = SqliteConnectOptions::new()
-            .filename(&path)
-            .create_if_missing(true)
-            .connect()
-            .await
-            .unwrap();
-        sqlx::query("CREATE TABLE app_meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)")
-            .execute(&mut conn)
-            .await
-            .unwrap();
-        sqlx::query(
-            "INSERT INTO app_meta (key, value) VALUES ('install_id', 'source-install-uuid')",
-        )
-        .execute(&mut conn)
+    repo.set_app_meta("install_id", "source-install-uuid")
         .await
         .unwrap();
-        sqlx::query("INSERT INTO app_meta (key, value) VALUES ('backup_config', ?)")
-            .bind(format!(r#"{{"secret_key":"{secret}"}}"#))
-            .execute(&mut conn)
-            .await
-            .unwrap();
-        conn.close().await.unwrap();
-    }
+    repo.set_app_meta("backup_config", &format!(r#"{{"secret_key":"{secret}"}}"#))
+        .await
+        .unwrap();
 
+    let path = dir.path().join("scrub.db");
+    repo.snapshot_into(&path).await.unwrap();
     scrub_snapshot_secrets(&path).await.unwrap();
 
-    // The sensitive rows are gone.
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&path)
-        .connect()
-        .await
-        .unwrap();
-    let remaining: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM app_meta WHERE key IN ('install_id', 'backup_config')",
-    )
-    .fetch_one(&mut conn)
-    .await
-    .unwrap();
-    conn.close().await.unwrap();
-    assert_eq!(remaining, 0, "sensitive app_meta rows survived scrub");
+    // The sensitive rows are gone from the snapshot; the live database keeps them.
+    let url = format!("sqlite:{}", path.to_string_lossy());
+    let snapshot = Repository::new(tack_db::init_pool(&url).await.unwrap());
+    for key in ["install_id", "backup_config"] {
+        assert_eq!(
+            app_meta_value(&snapshot, key).await.unwrap(),
+            None,
+            "sensitive app_meta row {key} survived scrub"
+        );
+    }
+    assert!(app_meta_value(&repo, "install_id").await.unwrap().is_some());
+    snapshot.pool().close().await;
 
     // And the secret bytes are physically absent from the file (post-VACUUM).
     let bytes = std::fs::read(&path).unwrap();
@@ -337,8 +316,6 @@ async fn scrub_removes_secrets_from_snapshot() {
         !bytes.windows(secret.len()).any(|w| w == secret.as_bytes()),
         "secret string still present in snapshot bytes"
     );
-
-    std::fs::remove_file(&path).ok();
 }
 
 // ── prune is a no-op when below retention ─────────────────────────────────
@@ -425,38 +402,42 @@ async fn upload_conflict_only_for_other_device_that_is_ahead() {
     assert!(c.is_none(), "our own backups never conflict with us");
 }
 
-// Build a file-backed pool + config for full backup-path tests.
-async fn file_backed() -> (SqlitePool, AppConfig, tempfile::TempDir) {
+// Build a file-backed repository + settings for full backup-path tests.
+async fn file_backed() -> (Repository, BackupConfig, tempfile::TempDir) {
     let temp = tempfile::tempdir().expect("temporary directory");
     let dir = temp.path();
     let db_path = dir.join("tack.db");
     let db_url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
     let pool = tack_db::init_pool(&db_url).await.unwrap();
     tack_db::migrations::run_all(&pool).await.unwrap();
-    let cfg = AppConfig {
-        database_url: db_url,
+    let cfg = BackupConfig {
+        endpoint: None,
+        bucket: None,
+        region: "auto".into(),
+        access_key: None,
+        secret_key: None,
+        prefix: "tack".into(),
+        retention: 10,
+        db_file: Some(db_path),
         storage_dir: dir.join("storage").to_string_lossy().into_owned(),
-        backup_prefix: "tack".into(),
-        backup_retention: 10,
-        ..AppConfig::default()
     };
-    (pool, cfg, temp)
+    (Repository::new(pool), cfg, temp)
 }
 
 #[tokio::test]
 async fn perform_backup_bumps_generation_and_enforces_conflict() {
     let store = make_store();
-    let (pool, cfg, _dir) = file_backed().await;
+    let (repo, cfg, _dir) = file_backed().await;
 
     // First backup: generation 0 → 1.
-    let m1 = perform_backup(&pool, &cfg, store.as_ref(), false)
+    let m1 = perform_backup(&repo, &SystemClock, &cfg, store.as_ref(), false)
         .await
         .unwrap();
     assert_eq!(m1.generation, 1);
-    assert_eq!(generation(&pool).await.unwrap(), 1);
+    assert_eq!(repo.backup_generation().await.unwrap(), 1);
 
     // Second backup from the same device: 1 → 2, no conflict.
-    let m2 = perform_backup(&pool, &cfg, store.as_ref(), false)
+    let m2 = perform_backup(&repo, &SystemClock, &cfg, store.as_ref(), false)
         .await
         .unwrap();
     assert_eq!(m2.generation, 2);
@@ -471,7 +452,7 @@ async fn perform_backup_bumps_generation_and_enforces_conflict() {
     .unwrap();
 
     // Non-forced backup must be rejected and must NOT advance our generation.
-    let err = perform_backup(&pool, &cfg, store.as_ref(), false)
+    let err = perform_backup(&repo, &SystemClock, &cfg, store.as_ref(), false)
         .await
         .unwrap_err();
     assert!(
@@ -485,19 +466,19 @@ async fn perform_backup_bumps_generation_and_enforces_conflict() {
         "expected GenerationConflict, got {err:?}"
     );
     assert_eq!(
-        generation(&pool).await.unwrap(),
+        repo.backup_generation().await.unwrap(),
         2,
         "conflict must not bump generation"
     );
 
     // Forcing overrides the conflict and proceeds.
-    let forced = perform_backup(&pool, &cfg, store.as_ref(), true)
+    let forced = perform_backup(&repo, &SystemClock, &cfg, store.as_ref(), true)
         .await
         .unwrap();
     assert_eq!(forced.generation, 3);
-    assert_eq!(generation(&pool).await.unwrap(), 3);
+    assert_eq!(repo.backup_generation().await.unwrap(), 3);
 
-    pool.close().await;
+    repo.pool().close().await;
 }
 
 // ── 28.5: verify_bundle validates without staging ─────────────────────────
@@ -600,4 +581,41 @@ async fn upload_multipart_roundtrips_large_bundle() {
         got, big,
         "multipart-uploaded bundle must round-trip byte-for-byte"
     );
+}
+
+// ── the scheduled pass ─────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn tick_without_a_destination_does_nothing() {
+    let (repo, cfg, _dir) = file_backed().await;
+
+    let outcome = tick(&repo, &SystemClock, &cfg).await.unwrap();
+
+    assert!(matches!(outcome, Outcome::NotConfigured), "got {outcome:?}");
+    assert_eq!(repo.backup_generation().await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn effective_config_lays_the_saved_destination_over_the_environment() {
+    let (repo, mut cfg, _dir) = file_backed().await;
+    cfg.bucket = Some("env-bucket".into());
+    cfg.retention = 10;
+    repo.set_app_meta(
+        "backup_config",
+        r#"{"bucket":"saved-bucket","access_key":"  ","secret_key":"s","prefix":"saved","retention":3}"#,
+    )
+    .await
+    .unwrap();
+
+    let effective = effective_config(&repo, &cfg).await;
+
+    assert_eq!(effective.bucket.as_deref(), Some("saved-bucket"));
+    assert_eq!(
+        effective.access_key, None,
+        "a blank saved field keeps the environment's"
+    );
+    assert_eq!(effective.secret_key.as_deref(), Some("s"));
+    assert_eq!(effective.prefix, "saved");
+    assert_eq!(effective.retention, 3);
+    assert!(!effective.enabled(), "no access key, so not enabled");
 }
