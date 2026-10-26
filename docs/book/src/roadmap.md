@@ -63,7 +63,7 @@ plan or the page named beside it.
   run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
   ADR 0029, and Tack sends it the command from docket's API 6 on; a change that touches its own check asks a person. What is left is the proof: Fabulada's code card through a team, with a real install. The
   end-to-end scenario with two teams and a rework is still to write.
-- Phase 80, built 2026-10-26 on branch `phase-80-impl` (not merged): a docket run waits on a person
+- Phase 80, built 2026-10-26 (not yet in `develop`): a docket run waits on a person
   without burning its time, and Tack follows docket's one escalation record. What is open: the live
   proof (`scripts/docket-prill-e2e.sh`) against docket's `develop`, and the three decisions the plan
   lists.
@@ -167,7 +167,7 @@ last run).
 
 ## Phase 80 — a run that waits on a person, and one record for every wait
 
-**Status:** built 2026-10-26 on branch `phase-80-impl`, on top of Phase 79; not merged. **Plan:**
+**Status:** built 2026-10-26, on top of Phase 79; not yet in `develop`. **Plan:**
 [`docs/plans/phase-80.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-80.md).
 
 A docket run parked on a question was cancelled when the attempt's own time passed, and the run read

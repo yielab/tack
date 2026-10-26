@@ -1,11 +1,11 @@
 # Phase 80: a run that waits on a person, and one record for every wait
 
-**Status: built 2026-10-26 on branch `phase-80-impl`, on top of Phase 79; not merged. docket closed its Phase 51 that day (next section), so cards A, C, D, F and G were all built, G folded into D, through the tasks R, RS1, RS2 and BS. B is deferred and E is cut. Proposed 2026-10-25 with one card ready.**
+**Status: built 2026-10-26, on top of Phase 79; not yet in `develop`. docket closed its Phase 51 that day (next section), so cards A, C, D, F and G were all built, G folded into D, through the tasks R, RS1, RS2 and BS. B is deferred and E is cut. Proposed 2026-10-25 with one card ready.**
 
 ## What changed on 2026-10-26: docket closed its Phase 51
 
 **Read this section first; where it disagrees with the text below, it wins.** docket's `develop`
-(`/home/ox/Sites/rack-cli`, version 0.2.0-beta.6, unreleased, commits `2d42ed50`..`9954b4f8`) closed
+(its checkout, `DOCKET_SRC` of the e2e script; version 0.2.0-beta.6, unreleased, commits `2d42ed50`..`9954b4f8`) closed
 its Phase 51: every pause is one durable *escalation* record, `POST /escalations/<id>` is the only
 route that settles one, and the retired routes now answer `404`. `specs/api/operator-api.spec.md`
 (sections "Escalations", "Re-attaching after a restart", "Check changed") is the contract; read it,
@@ -239,7 +239,7 @@ task body can therefore not be `level_for`'s; the path-derived level stays a mer
    docket's own concept and Tack does not second-guess it. The task body sends it only when docket says
    it accepts the field.
 2. A `422` above the ceiling is still docket's text and the attempt fails with it (the existing
-   rule); it also marks the probe stale and asks for a fresh one.
+   rule); the probe is live, so there is no cache to mark stale.
 3. `failureKind: needs_human` is its own outcome, not a plain failure: the attempt ends `failed`
    with code `needs_human` and docket's sentence, and the run card offers "Run again at L3" (an
    attended run), disabled with its reason when the run did not use docket or already ran at L3. It never

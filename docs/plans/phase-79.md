@@ -11,7 +11,7 @@ no file under `crates/tack-api/src`, `crates/tack-orch/src` or `crates/tack-app/
 `.githooks/pre-push`; the full suite passes once, on the merged tree, with no test duplicated
 across old and new locations.
 
-**Status (2026-10-26):** built, every task of §5 committed on `phase-79-impl`; the full suite
+**Status (2026-10-26):** built, every task of §5 committed; the full suite
 (1 505 tests) and `.githooks/pre-push` pass on the merged tree. What the execution found is in §8.
 What the audit changed is in §7; the two companion guides in Spanish
 ([`phase-79-guia.md`](phase-79-guia.md), [`phase-79-desde-cero.md`](phase-79-desde-cero.md))
