@@ -340,6 +340,20 @@ pub async fn execution_attempt(repo: &Repository, attempt: AttemptSeed<'_>) {
     .expect("seed execution_attempts");
 }
 
+/// Sets when an `execution_attempts` row's lease expires, apart from when it was issued.
+pub async fn execution_attempt_lease_expires_at(
+    repo: &Repository,
+    attempt_id: &str,
+    lease_expires_at: &str,
+) {
+    sqlx::query("UPDATE execution_attempts SET lease_expires_at = ? WHERE id = ?")
+        .bind(lease_expires_at)
+        .bind(attempt_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_attempts lease_expires_at");
+}
+
 /// Puts an `execution_attempts` row in `state`.
 pub async fn execution_attempt_state(repo: &Repository, attempt_id: &str, state: ExecutionState) {
     sqlx::query("UPDATE execution_attempts SET state = ? WHERE id = ?")

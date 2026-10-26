@@ -17,6 +17,9 @@ tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
 thiserror = { workspace = true }
 # The ticks that talk to GitHub and the backup store need an HTTP client.
 reqwest = { workspace = true }

@@ -28,3 +28,32 @@ pub async fn request_state(
             .await?;
     text.map(|text| state::parse(&text)).transpose()
 }
+
+/// The stored snapshot of the request an operator already created under this idempotency key,
+/// or `None` when the key is new.
+pub async fn snapshot_of_idempotency_key(
+    repo: &Repository,
+    scope: &str,
+    key: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT request_snapshot FROM execution_requests WHERE idempotency_scope=? AND idempotency_key=?",
+    )
+    .bind(scope)
+    .bind(key)
+    .fetch_optional(repo.pool())
+    .await?)
+}
+
+/// The snapshot a request was stored with, or `None` when no request has this id.
+pub async fn request_snapshot(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id = ?")
+            .bind(request_id)
+            .fetch_optional(repo.pool())
+            .await?,
+    )
+}

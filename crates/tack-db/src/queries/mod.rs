@@ -7,6 +7,8 @@ pub mod agent_enrollment_tokens;
 pub mod agent_fleets;
 pub mod agent_profiles;
 pub mod agent_runners;
+pub mod autonomy;
+pub mod budgets;
 pub mod execution_attempts;
 pub mod execution_decisions;
 pub mod execution_recovery_audits;

@@ -57,3 +57,30 @@ pub async fn successful_run_tokens(
 ) -> Result<Vec<i64>, StoreError> {
     Ok(crate::repo::metrics::profile_successful_run_tokens(repo.pool(), profile_id, limit).await?)
 }
+
+/// An agent profile as the profile resolver reads it: the columns that decide which profile a
+/// run gets and which fleet it names.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct ProfileCandidateRow {
+    pub id: String,
+    pub fleet_id: Option<String>,
+    pub tool_policy: String,
+}
+
+/// The id of the implementer profile, when one exists.
+pub async fn implementer_profile_id(repo: &Repository) -> Result<Option<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT id FROM agent_profiles WHERE kind = 'implementer'")
+            .fetch_optional(repo.pool())
+            .await?,
+    )
+}
+
+/// Every agent profile, with its fleet and tool policy.
+pub async fn profile_candidates(repo: &Repository) -> Result<Vec<ProfileCandidateRow>, StoreError> {
+    Ok(
+        sqlx::query_as("SELECT id, fleet_id, tool_policy FROM agent_profiles")
+            .fetch_all(repo.pool())
+            .await?,
+    )
+}
