@@ -3,6 +3,10 @@
 //! returns `Result<_, StoreError>`, and answers with a row struct whose fields
 //! are the columns, under the columns' names.
 
+pub mod agent_profiles;
+pub mod agent_runners;
+pub mod autonomy;
+pub mod budgets;
 pub mod execution_attempts;
 pub mod execution_decisions;
 pub mod execution_requests;

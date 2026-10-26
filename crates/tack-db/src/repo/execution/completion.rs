@@ -7,7 +7,9 @@ use tracing::instrument;
 
 use super::decisions::end_attempt_decisions;
 use super::shared::{canonical_json, mirror_request_state, stamp, terminal};
-use crate::Repository;
+use super::state;
+use crate::{Repository, StoreError};
+use tack_protocol::execution::ExecutionState;
 
 #[derive(Debug, Clone)]
 pub struct Completion<'a> {
@@ -583,42 +585,89 @@ impl Repository {
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let result = sqlx::query("UPDATE execution_requests SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?), updated_at = ? WHERE id = ? AND state NOT IN ('succeeded','failed','cancelled')")
-            .bind(&now).bind(&now).bind(request_id).execute(&mut *tx).await?;
-        if result.rows_affected() != 1 {
-            tx.commit().await?;
-            return Ok(false);
-        }
-        let latest = sqlx::query("SELECT id,runner_id,state,lease_expires_at FROM execution_attempts WHERE request_id=? ORDER BY attempt_number DESC LIMIT 1")
-            .bind(request_id).fetch_optional(&mut *tx).await?;
-        if let Some(latest) = latest {
-            let state: String = latest.get("state");
-            let expired = latest.get::<String, _>("lease_expires_at") <= now;
-            let active = matches!(
-                state.as_str(),
-                "leased" | "preparing" | "running" | "waiting_decision"
-            );
-            if state == "needs_operator" || (active && expired) {
-                let attempt: String = latest.get("id");
-                sqlx::query("UPDATE execution_attempts SET state='cancelled',ended_at=?,updated_at=? WHERE id=?")
-                    .bind(&now).bind(&now).bind(&attempt).execute(&mut *tx).await?;
-                end_attempt_decisions(&mut tx, &attempt, &now).await?;
-                sqlx::query(
-                    "UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?",
-                )
-                .bind(&now)
+        let applied = apply_cancellation(&mut tx, request_id, &now).await?;
+        tx.commit().await?;
+        Ok(applied)
+    }
+
+    /// [`Self::request_execution_cancellation`], answering what became of the request in the
+    /// same transaction: ended at once, waiting for its runner, already terminal, or unknown.
+    #[instrument(skip(self, clock))]
+    pub async fn cancel_execution_request(
+        &self,
+        request_id: &str,
+        clock: &dyn Clock,
+    ) -> Result<CancellationOutcome, StoreError> {
+        let now = stamp(clock);
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
+        let applied = apply_cancellation(&mut tx, request_id, &now).await?;
+        let state: Option<String> =
+            sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
+                .bind(request_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        tx.commit().await?;
+        Ok(match (applied, state) {
+            (_, None) => CancellationOutcome::NotFound,
+            (false, Some(_)) => CancellationOutcome::AlreadyTerminal,
+            (true, Some(state)) if state::parse(&state)? == ExecutionState::Cancelled => {
+                CancellationOutcome::Ended
+            }
+            (true, Some(_)) => CancellationOutcome::Requested,
+        })
+    }
+}
+
+/// What a cancellation request did to an execution request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancellationOutcome {
+    /// Nobody held the run: it ended `cancelled` at once.
+    Ended,
+    /// A runner holds the run: the request is recorded and the runner reports the outcome.
+    Requested,
+    /// The request had already reached a terminal state.
+    AlreadyTerminal,
+    NotFound,
+}
+
+/// Marks the request for cancellation and ends it at once when nobody holds it. `false` when the
+/// request is unknown or already terminal.
+async fn apply_cancellation(
+    tx: &mut sqlx::SqliteConnection,
+    request_id: &str,
+    now: &str,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query("UPDATE execution_requests SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?), updated_at = ? WHERE id = ? AND state NOT IN ('succeeded','failed','cancelled')")
+        .bind(now).bind(now).bind(request_id).execute(&mut *tx).await?;
+    if result.rows_affected() != 1 {
+        return Ok(false);
+    }
+    let latest = sqlx::query("SELECT id,runner_id,state,lease_expires_at FROM execution_attempts WHERE request_id=? ORDER BY attempt_number DESC LIMIT 1")
+        .bind(request_id).fetch_optional(&mut *tx).await?;
+    if let Some(latest) = latest {
+        let state: String = latest.get("state");
+        let expired = latest.get::<String, _>("lease_expires_at").as_str() <= now;
+        let active = matches!(
+            state.as_str(),
+            "leased" | "preparing" | "running" | "waiting_decision"
+        );
+        if state == "needs_operator" || (active && expired) {
+            let attempt: String = latest.get("id");
+            sqlx::query("UPDATE execution_attempts SET state='cancelled',ended_at=?,updated_at=? WHERE id=?")
+                .bind(now).bind(now).bind(&attempt).execute(&mut *tx).await?;
+            end_attempt_decisions(tx, &attempt, now).await?;
+            sqlx::query("UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?")
+                .bind(now)
                 .bind(request_id)
                 .execute(&mut *tx)
                 .await?;
-                // A `needs_operator` attempt already gave its slot back.
-                if active {
-                    let runner: String = latest.get("runner_id");
-                    sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?")
-                        .bind(&now).bind(&runner).execute(&mut *tx).await?;
-                }
+            // A `needs_operator` attempt already gave its slot back.
+            if active {
+                let runner: String = latest.get("runner_id");
+                sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?")
+                    .bind(now).bind(&runner).execute(&mut *tx).await?;
             }
         }
-        tx.commit().await?;
-        Ok(true)
     }
+    Ok(true)
 }

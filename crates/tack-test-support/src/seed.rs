@@ -77,3 +77,84 @@ pub async fn execution_attempt_usage(repo: &Repository, attempt_id: &str, usage:
         .await
         .expect("seed execution_attempts usage");
 }
+
+/// Sets the state an `execution_requests` row is in.
+pub async fn execution_request_state(repo: &Repository, request_id: &str, state: ExecutionState) {
+    sqlx::query("UPDATE execution_requests SET state = ? WHERE id = ?")
+        .bind(state::text(state))
+        .bind(request_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_requests state");
+}
+
+/// One `execution_attempts` row, number 1 of `request_id`, held by `runner_id` in `state`, whose
+/// lease was issued at `now` and expires at `lease_expires_at`.
+pub async fn execution_attempt(
+    repo: &Repository,
+    request_id: &str,
+    attempt_id: &str,
+    runner_id: &str,
+    state: ExecutionState,
+    now: &str,
+    lease_expires_at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_attempts \
+         (id, request_id, attempt_number, runner_id, fencing_token, state, lease_issued_at, \
+          lease_expires_at, created_at, updated_at) \
+         VALUES (?, ?, 1, ?, 1, ?, ?, ?, ?, ?)",
+    )
+    .bind(attempt_id)
+    .bind(request_id)
+    .bind(runner_id)
+    .bind(state::text(state))
+    .bind(now)
+    .bind(lease_expires_at)
+    .bind(now)
+    .bind(now)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_attempts");
+}
+
+/// Moves an `execution_attempts` row to `state`.
+pub async fn execution_attempt_state(repo: &Repository, attempt_id: &str, state: ExecutionState) {
+    sqlx::query("UPDATE execution_attempts SET state = ? WHERE id = ?")
+        .bind(state::text(state))
+        .bind(attempt_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_attempts state");
+}
+
+/// The `needs_operator` recovery audit a runner's authoritative report leaves for `attempt_id`,
+/// which an operator's requeue requires.
+pub async fn authoritative_recovery_audit(
+    repo: &Repository,
+    attempt_id: &str,
+    recovery_key: &str,
+    created_at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_recovery_audits \
+         (attempt_id, recovery_key, classification, details, fingerprint, response, created_at) \
+         VALUES (?, ?, 'needs_operator', '{}', 'fingerprint', '{}', ?)",
+    )
+    .bind(attempt_id)
+    .bind(recovery_key)
+    .bind(created_at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_recovery_audits");
+}
+
+/// Stamps the last heartbeat of an `agent_runners` row.
+pub async fn runner_heartbeat(repo: &Repository, runner_id: &str, at: &str) {
+    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
+        .bind(at)
+        .bind(runner_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed agent_runners heartbeat");
+}

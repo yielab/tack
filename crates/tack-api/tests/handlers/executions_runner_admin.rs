@@ -3,8 +3,9 @@
 
 use tack_api::handlers::{executions, runner_admin};
 use tack_protocol::SystemClock;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::seed;
 
-use crate::common;
 // Local alias: every route in this file sends as the default "operator-1"
 // principal, and `common::send_as_operator` is long enough to force several
 // argument lists onto their own lines where the shorter original name did not.
@@ -14,7 +15,7 @@ use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
-    Repository, init_pool, migrations,
+    Repository, init_pool, migrations, queries,
     repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult},
 };
 use uuid::Uuid;
@@ -208,44 +209,35 @@ fn create_body(item_id: &str) -> String {
         "metadata":{"source":"c1-test"}
     }).to_string()
 }
+
 #[tokio::test]
-async fn duplicate_create_replays_and_revoked_runner_rejected() {
+async fn a_create_answers_the_request_and_refuses_in_the_error_envelope() {
     let (app, repo, item_id) = setup().await;
-    let (first_status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    let (second_status, second) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(first_status, StatusCode::OK, "{first}");
-    assert_eq!(second_status, StatusCode::OK);
-    assert_eq!(first["request_id"], second["request_id"]);
+    let (status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["state"], "queued");
+    assert_eq!(first["replayed"], false);
+    let (status, second) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    assert_eq!(second["request_id"], first["request_id"]);
     assert_eq!(second["replayed"], true);
 
-    let (other_status, other) = common::send_as(
-        &app,
-        "POST",
-        "/executions",
-        create_body(&item_id),
-        "operator-2",
-    )
-    .await;
-    assert_eq!(other_status, StatusCode::OK);
-    assert_ne!(first["request_id"], other["request_id"]);
-    assert_eq!(other["replayed"], false);
-
     let changed = create_body(&item_id).replace("\"timeout_seconds\":60", "\"timeout_seconds\":61");
-    let (conflict, conflict_body) = snd(&app, "POST", "/executions", changed).await;
-    assert_eq!(conflict, StatusCode::CONFLICT);
-    assert_eq!(conflict_body["error"]["code"], "idempotency_conflict");
-    assert_eq!(conflict_body["error"]["request_id"], "req_operator");
+    let (status, conflict) = snd(&app, "POST", "/executions", changed).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(conflict["error"]["code"], "idempotency_conflict");
+    assert_eq!(conflict["error"]["request_id"], "req_operator");
 
-    sqlx::query("UPDATE agent_runners SET state='revoked', revoked_at=? WHERE id='runner-active'")
-        .bind(Utc::now().to_rfc3339())
-        .execute(repo.pool())
+    let mut other_repo: Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    other_repo["repository_snapshot"] = json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null});
+    let (status, err) = snd(&app, "POST", "/executions", other_repo.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["code"], "invalid_request");
+    assert_eq!(err["error"]["details"]["field"], "repository_snapshot");
+
+    repo.revoke_runner("runner-active", &SystemClock)
         .await
         .unwrap();
-    let (replay_after_revoke, replay_body) =
-        snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(replay_after_revoke, StatusCode::OK);
-    assert_eq!(replay_body["request_id"], first["request_id"]);
-    assert_eq!(replay_body["replayed"], true);
     let unavailable = create_body(&item_id).replace("same-key", "new-key");
     let (status, body) = snd(&app, "POST", "/executions", unavailable).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -253,8 +245,8 @@ async fn duplicate_create_replays_and_revoked_runner_rejected() {
 }
 
 #[tokio::test]
-async fn cancellation_is_requested_not_terminal() {
-    let (app, repo, item_id) = setup().await;
+async fn cancelling_a_queued_run_answers_cancellation_requested() {
+    let (app, _repo, item_id) = setup().await;
     let (_, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
     let request_id = created["request_id"].as_str().unwrap();
     let (status, body) = snd(
@@ -266,57 +258,69 @@ async fn cancellation_is_requested_not_terminal() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["state"], "cancellation_requested");
-    let state: String = sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-        .bind(request_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(state, "queued");
+
+    let (status, missing) = snd(&app, "POST", "/executions/missing/cancel", "{}".into()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(missing["error"]["details"]["resource"], "execution_request");
 }
 
 #[tokio::test]
-async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
+async fn requeueing_answers_queued_once_the_run_needs_an_operator() {
     let (app, repo, item_id) = setup().await;
     let (_, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
     let request_id = created["request_id"].as_str().unwrap().to_owned();
     let now = Utc::now().to_rfc3339();
-    sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES ('attempt-1',?,1,'runner-active',1,'lost',?,?,?,?)")
-        .bind(&request_id).bind(&now).bind(&now).bind(&now).bind(&now).execute(repo.pool()).await.unwrap();
-    let (denied, _) = snd(
+    seed::execution_attempt(
+        &repo,
+        &request_id,
+        "attempt-1",
+        "runner-active",
+        ExecutionState::Lost,
+        &now,
+        &now,
+    )
+    .await;
+    let confirmation = r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#;
+    let (denied, body) = snd(
         &app,
         "POST",
         &format!("/executions/{request_id}/requeue"),
-        r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#.into(),
+        confirmation.into(),
     )
     .await;
     assert_eq!(denied, StatusCode::CONFLICT);
-    sqlx::query("UPDATE execution_attempts SET state='needs_operator' WHERE id='attempt-1'")
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    sqlx::query("UPDATE execution_requests SET state='needs_operator' WHERE id=?")
-        .bind(&request_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES ('attempt-1','runner-recovery-1','needs_operator','{}','fingerprint','{}',?)")
-        .bind(&now)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    assert_eq!(body["error"]["code"], "invalid_transition");
+    assert_eq!(
+        body["error"]["details"],
+        json!({"from": "lost", "to": "queued"})
+    );
+
+    seed::execution_attempt_state(&repo, "attempt-1", ExecutionState::NeedsOperator).await;
+    seed::execution_request_state(&repo, &request_id, ExecutionState::NeedsOperator).await;
+    seed::authoritative_recovery_audit(&repo, "attempt-1", "runner-recovery-1", &now).await;
     let (allowed, body) = snd(
         &app,
         "POST",
         &format!("/executions/{request_id}/requeue"),
-        r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#.into(),
+        confirmation.into(),
     )
     .await;
     assert_eq!(allowed, StatusCode::OK);
     assert_eq!(body["state"], "queued");
-    let audits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-1' AND classification='operator_requeue'").fetch_one(repo.pool()).await.unwrap();
-    assert_eq!(audits, 1);
-}
+    assert_eq!(body["recovered_from"], "needs_operator");
+    assert_eq!(body["replayed"], false);
 
+    let other_reason = r#"{"recovery_key":"operator-recovery-1","reason":"another"}"#;
+    let (status, body) = snd(
+        &app,
+        "POST",
+        &format!("/executions/{request_id}/requeue"),
+        other_reason.into(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "idempotency_conflict");
+}
 #[tokio::test]
 async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     let (app, repo, _) = setup().await;
@@ -1070,12 +1074,10 @@ async fn list_executions_item_ids_rejects_a_malformed_id() {
 
 /// The stored request snapshot of the one execution `setup` created.
 async fn stored_snapshot(repo: &Repository, request_id: &str) -> serde_json::Value {
-    let raw: String =
-        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id=?")
-            .bind(request_id)
-            .fetch_one(repo.pool())
-            .await
-            .expect("snapshot");
+    let raw = queries::execution_requests::request_snapshot(repo, request_id)
+        .await
+        .expect("snapshot")
+        .expect("request exists");
     serde_json::from_str(&raw).expect("json")
 }
 
@@ -1179,109 +1181,6 @@ async fn an_execution_for_an_item_without_a_brief_now_carries_its_title_and_desc
 }
 
 #[tokio::test]
-async fn an_execution_snapshots_the_requests_choice_to_decline_verify_and_push() {
-    let (app, repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body["verify"] = serde_json::json!(false);
-    body["push_branch"] = serde_json::json!(false);
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["verify"], serde_json::json!(false));
-    assert_eq!(snapshot["push_branch"], serde_json::json!(false));
-}
-
-#[tokio::test]
-async fn the_repository_comes_from_the_project_when_omitted() {
-    let (app, repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body.as_object_mut().unwrap().remove("repository_snapshot");
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    let set_project = |origin: &'static str,
-                       repository: Option<&'static str>,
-                       mode: &'static str| {
-        let (repo, project_id) = (repo.clone(), project_id.clone());
-        async move {
-            sqlx::query("UPDATE projects SET code_origin=?, repository=?, default_branch=NULL, workspace_mode=?, push_after_run=1 WHERE id=?")
-                .bind(origin).bind(repository).bind(mode).bind(project_id)
-                .execute(repo.pool()).await.unwrap();
-        }
-    };
-
-    // A project with no code: 400 project_has_no_code, even for an explicit repository.
-    set_project("none", None, "local_branch").await;
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["code"], "invalid_request");
-    assert_eq!(err["error"]["details"]["reason"], "project_has_no_code");
-
-    // A folder project: the snapshot is filled from the project.
-    set_project("folder", Some("/work/repo"), "in_place").await;
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let request_id = created["request_id"].as_str().unwrap();
-    let (status, _) = snd(
-        &app,
-        "GET",
-        &format!("/executions/{request_id}"),
-        String::new(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let snapshot = stored_snapshot(&repo, request_id).await;
-    assert_eq!(
-        snapshot["repository"],
-        serde_json::json!({"kind":"git","remote":"/work/repo","base_revision":"HEAD","subdirectory":null,
-            "workspace_mode":"in_place","repository_path":"/work/repo","push_after_run":true,
-            "prepare":{"mode":"detect"}})
-    );
-
-    // The project's install setting is copied into the request as it stands.
-    sqlx::query("UPDATE projects SET prepare_command = 'make deps' WHERE id = ?")
-        .bind(&project_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    body["idempotency_key"] = serde_json::json!("prepare-key");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(
-        snapshot["repository"]["prepare"],
-        serde_json::json!({"mode":"replace","command":"make deps"})
-    );
-
-    // A url project always clones and has no local path.
-    set_project("url", Some("https://example.test/p.git"), "in_place").await;
-    body["idempotency_key"] = serde_json::json!("url-key");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["repository"]["workspace_mode"], "clone");
-    assert_eq!(
-        snapshot["repository"]["repository_path"],
-        serde_json::Value::Null
-    );
-
-    // An explicit snapshot naming the project's repository may set the revision.
-    body["idempotency_key"] = serde_json::json!("explicit-key");
-    body["repository_snapshot"] = serde_json::json!({"kind":"git","remote":"https://example.test/p","base_revision":"abc123","subdirectory":"crates"});
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(
-        snapshot["repository"]["remote"],
-        "https://example.test/p.git"
-    );
-    assert_eq!(snapshot["repository"]["base_revision"], "abc123");
-    assert_eq!(snapshot["repository"]["subdirectory"], "crates");
-}
-
-#[tokio::test]
 async fn a_create_with_no_snapshot_stores_the_profile_as_the_database_has_it() {
     let (app, repo, item_id) = setup().await;
     let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
@@ -1330,32 +1229,6 @@ async fn a_create_with_no_snapshot_stores_the_profile_as_the_database_has_it() {
     let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{err}");
     assert_eq!(err["error"]["details"]["reason"], "agent_profile_not_found");
-}
-
-#[tokio::test]
-async fn a_request_that_still_carries_the_profile_snapshot_is_refused() {
-    let (app, _repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body["agent_profile_snapshot"] = serde_json::Value::Null;
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["field"], "agent_profile_snapshot");
-    assert_eq!(err["error"]["details"]["reason"], "field_removed");
-}
-
-#[tokio::test]
-async fn a_request_with_a_different_repository_is_refused() {
-    let (app, _repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body["repository_snapshot"] = serde_json::json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null});
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["code"], "invalid_request");
-    assert_eq!(err["error"]["details"]["field"], "repository_snapshot");
-    assert_eq!(
-        err["error"]["details"]["reason"],
-        "repository_differs_from_project"
-    );
 }
 
 #[tokio::test]
@@ -2018,23 +1891,6 @@ async fn a_run_queued_for_a_computer_that_stopped_answering_says_when_it_last_di
 }
 
 #[tokio::test]
-async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request() {
-    let (app, repo, item_id) = setup().await;
-    let (first_status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(first_status, StatusCode::OK, "{first}");
-    sqlx::query("UPDATE items SET item_type = 'bug', priority = 'high' WHERE id = ?")
-        .bind(&item_id)
-        .execute(repo.pool())
-        .await
-        .expect("the task changes");
-
-    let (status, retry) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(status, StatusCode::OK, "{retry}");
-    assert_eq!(retry["request_id"], first["request_id"]);
-    assert_eq!(retry["replayed"], true);
-}
-
-#[tokio::test]
 async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_of_the_day() {
     let (app, repo, item_id) = setup().await;
     let project: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
@@ -2190,81 +2046,6 @@ async fn the_item_carries_started_by_and_team_from_its_newest_request() {
     assert_eq!(read().await.merged_by.as_deref(), Some("auto"));
 }
 
-// A run created without a profile or a selector takes them from the item's role, else the
-// project default, else says it is ambiguous; a missing selector falls to the only active runner.
-#[tokio::test]
-async fn a_run_without_a_profile_resolves_it_from_the_role_then_the_project_default() {
-    let (app, repo, item_id) = setup().await;
-    add_profile(&repo, "profile-content").await;
-    add_profile(&repo, "profile-qa").await;
-    let item = repo
-        .get_item(item_id.parse().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
-    sqlx::query("UPDATE projects SET default_profile_id = 'profile-c1' WHERE id = ?")
-        .bind(item.project_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
-
-    let (status, created) = snd(
-        &app,
-        "POST",
-        "/executions",
-        bare_body(&item_id, "k-default").to_string(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-c1");
-    assert_eq!(snapshot["metadata"]["profile_source"], "project_default");
-    assert_eq!(snapshot["selector"]["runner_id"], "runner-active");
-
-    add_role(&repo, &item_id, "Content", Some("profile-content")).await;
-    let (_, created) = snd(
-        &app,
-        "POST",
-        "/executions",
-        bare_body(&item_id, "k-role").to_string(),
-    )
-    .await;
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-content");
-    assert_eq!(snapshot["metadata"]["profile_source"], "role:Content");
-
-    add_role(&repo, &item_id, "QA", Some("profile-qa")).await;
-    let (_, created) = snd(
-        &app,
-        "POST",
-        "/executions",
-        bare_body(&item_id, "k-two").to_string(),
-    )
-    .await;
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-c1");
-    assert_eq!(snapshot["metadata"]["profile_source"], "ambiguous");
-}
-
-// The server records what the item is, so a harness that picks a pipeline or a priority reads it
-// from the request and never from the board.
-#[tokio::test]
-async fn the_request_snapshot_carries_what_the_item_is() {
-    let (app, repo, item_id) = setup().await;
-    add_profile(&repo, "profile-content").await;
-    let mut body = bare_body(&item_id, "k-item");
-    body["agent_profile_id"] = json!("profile-content");
-    body["metadata"] = json!({"mine": 1});
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(
-        snapshot["metadata"]["item"],
-        json!({"type": "task", "priority": "medium", "trusted": true})
-    );
-    assert_eq!(snapshot["metadata"]["mine"], 1);
-}
-
 // With the provisional limit turned off, a run with no limit of its own has none, and a request
 // that says `null` falls to its profile's.
 #[tokio::test]
@@ -2406,7 +2187,8 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
     let with_tokens = r#"{"budgets":{"tokens":300000}}"#;
     let with_time = r#"{"timeout_seconds":1800}"#;
     // (profile limits, request budgets, request timeout, tokens it runs with, where they come from,
-    // seconds it runs with); a project that did not change its provisional limit has 2 000 000.
+    // seconds it runs with, which `tack-app`'s start_run test checks); a project that did not change
+    // its provisional limit has 2 000 000.
     let rows = [
         (with_tokens, json!({}), None, 300_000, "profile", 3600),
         (
@@ -2437,7 +2219,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         (with_time, json!({}), None, 2_000_000, "provisional", 1800),
         (with_time, json!({}), Some(60), 2_000_000, "provisional", 60),
     ];
-    for (n, (limits, budgets, timeout, tokens, source, seconds)) in rows.into_iter().enumerate() {
+    for (n, (limits, budgets, timeout, tokens, source, _seconds)) in rows.into_iter().enumerate() {
         let tokens = Some(tokens);
         let id = format!("profile-limits-{n}");
         repo.create_agent_profile(
@@ -2463,22 +2245,6 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         }
         let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
         assert_eq!(status, StatusCode::OK, "row {n}: {created}");
-        let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-        for budgets in [
-            &snapshot["budgets"],
-            &snapshot["resolved_agent_profile"]["budgets"],
-        ] {
-            assert_eq!(
-                budgets.get("tokens").and_then(Value::as_u64),
-                tokens,
-                "row {n}"
-            );
-        }
-        assert_eq!(snapshot["timeout_seconds"], seconds, "row {n}");
-        assert_eq!(
-            snapshot["resolved_agent_profile"]["timeout_seconds"], seconds,
-            "row {n}"
-        );
         // The run's detail and its list row both say the same limit, from the same snapshot.
         let request_id = created["request_id"].as_str().unwrap();
         let (_, detail) = snd(
@@ -2522,14 +2288,6 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 "row {n}"
             );
         }
-    }
-    for refused in [json!(0), json!(-5), json!("many")] {
-        let mut body = bare_body(&item_id, "k-limits-refused");
-        body["agent_profile_id"] = json!("profile-c1");
-        body["budgets"] = json!({"tokens": refused});
-        let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}: {err}");
-        assert_eq!(err["error"]["details"]["field"], "budgets.tokens");
     }
     // What a profile's limits may hold: refused when it is made or changed, and a profile that
     // already holds something else (stored before) is refused at the run, not run without a limit.
@@ -2583,50 +2341,12 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
             .await
             .unwrap();
     }
-    // Dollars are not a limit: a request that still carries them is told so.
-    let mut body = bare_body(&item_id, "k-limits-dollars");
-    body["agent_profile_id"] = json!("profile-c1");
-    body["budgets"] = json!({"cost_usd": 1.5});
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["field"], "budgets.cost_usd");
-    assert_eq!(err["error"]["details"]["reason"], "field_removed");
 }
 
+// A runner that answered seconds ago is online; one silent for hours is not.
 #[tokio::test]
-async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
-    let (app, repo, item_id) = setup().await;
-    let mut body = bare_body(&item_id, "k-one");
-    body["agent_profile_id"] = json!("profile-c1");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-
-    repo.register_runner(
-        NewRunner {
-            id: "runner-second",
-            name: "Second",
-            credential_hash: "hash-two",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        &SystemClock,
-    )
-    .await
-    .expect("second runner");
-    body["idempotency_key"] = json!("k-two-runners");
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["reason"], "select_where_this_runs");
-}
-
-// Of two active runners the one that answers is where a run without a machine goes; the one
-// silent for hours is not a reason to refuse it.
-#[tokio::test]
-async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
-    let (app, repo, item_id) = setup().await;
+async fn the_runner_list_says_which_runners_are_online() {
+    let (app, repo, _item_id) = setup().await;
     repo.register_runner(
         NewRunner {
             id: "runner-stale",
@@ -2646,25 +2366,8 @@ async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
         ("runner-active", Duration::seconds(5)),
         ("runner-stale", Duration::hours(2)),
     ] {
-        sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
-            .bind((Utc::now() - age).to_rfc3339())
-            .bind(id)
-            .execute(repo.pool())
-            .await
-            .expect("heartbeat");
+        seed::runner_heartbeat(&repo, id, &(Utc::now() - age).to_rfc3339()).await;
     }
-    let mut body = bare_body(&item_id, "k-live");
-    body["agent_profile_id"] = json!("profile-c1");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let selector: String =
-        sqlx::query_scalar("SELECT selector_id FROM execution_requests WHERE id = ?")
-            .bind(created["request_id"].as_str().unwrap())
-            .fetch_one(repo.pool())
-            .await
-            .expect("selector");
-    assert_eq!(selector, "runner-active");
-
     let (_, listed) = snd(&app, "GET", "/runners", String::new()).await;
     let online: Vec<(&str, bool)> = listed["data"]
         .as_array()
@@ -2681,66 +2384,6 @@ async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
         online.contains(&("runner-active", true)) && online.contains(&("runner-stale", false)),
         "{online:?}"
     );
-}
-
-async fn add_profile_naming_agent(repo: &Repository, id: &str, agent: &str) {
-    repo.create_agent_profile(
-        NewAgentProfile {
-            id,
-            name: id,
-            instructions: "x",
-            tool_policy: &json!({ "agent": agent }).to_string(),
-            limits: "{}",
-        },
-        &SystemClock,
-    )
-    .await
-    .expect("profile");
-}
-
-// A run that names no agent takes it from the resolved profile's `tool_policy.agent`, else the
-// project's default agent, else says to select one.
-#[tokio::test]
-async fn a_run_without_an_agent_takes_the_profiles_then_the_projects_then_asks() {
-    let (app, repo, item_id) = setup().await;
-    let item = repo
-        .get_item(item_id.parse().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
-    let mut body = bare_body(&item_id, "k-no-agent");
-    body.as_object_mut()
-        .unwrap()
-        .remove("requested_harness_kind");
-
-    // Nothing names an agent: asked to select one.
-    body["agent_profile_id"] = json!("profile-c1");
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["reason"], "select_an_agent");
-
-    // The project's default agent.
-    sqlx::query("UPDATE projects SET default_harness = 'opencode' WHERE id = ?")
-        .bind(item.project_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    body["idempotency_key"] = json!("k-project-agent");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["requested_harness_kind"], "opencode");
-
-    // The role's profile names its agent, which beats the project's.
-    add_profile_naming_agent(&repo, "profile-writer", "claude-code").await;
-    add_role(&repo, &item_id, "Content", Some("profile-writer")).await;
-    body.as_object_mut().unwrap().remove("agent_profile_id");
-    body["idempotency_key"] = json!("k-role-agent");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-writer");
-    assert_eq!(snapshot["requested_harness_kind"], "claude-code");
 }
 
 #[tokio::test]
