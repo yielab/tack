@@ -210,6 +210,11 @@ pub struct CreateExecution {
     /// configuration decides whether a push exists; `true` never enables one.
     #[serde(default)]
     pub push_branch: Option<bool>,
+    /// The most autonomy this run may have: `L3`, `L4` or `L5`. The board lowers it further to the
+    /// project's level and the team's ceiling when a docket runner claims the run, and never raises
+    /// it; absent, those two decide. `L3` is "Run again at L3". Any other value is `invalid_request`.
+    #[serde(default)]
+    pub autonomy: Option<String>,
     /// `mcp` marks a run an agent started through `tack mcp`: it is never merged
     /// automatically or by a move to Done, only by the Merge button. Any other
     /// value, or none, means a person started it.
@@ -457,6 +462,17 @@ pub struct AttemptSummary {
     pub review: Option<AttemptReview>,
     /// Whether the Merge button may be pressed, and why not.
     pub merge: AttemptMerge,
+    /// The "Run again at L3" button's state; present only on an attempt that ended asking for a
+    /// person (`terminal_reason.code` of `needs_human`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rerun_at_l3: Option<AttemptRerun>,
+}
+
+/// The "Run again at L3" button's state: `reason` says why it is disabled, `null` when enabled.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AttemptRerun {
+    pub enabled: bool,
+    pub reason: Option<String>,
 }
 
 /// The Merge button's state: `reason` says why it is disabled, `null` when enabled.
@@ -750,6 +766,7 @@ impl From<CreateExecution> for RunRequest {
             status_map_policy_id: input.status_map_policy_id,
             verify: input.verify,
             push_branch: input.push_branch,
+            autonomy: input.autonomy,
             origin: input.origin,
         }
     }
@@ -1159,6 +1176,18 @@ pub async fn list_execution_attempts(
             },
         );
     }
+    let mut reruns = std::collections::HashMap::new();
+    for attempt in &attempts {
+        let needs_human = attempt
+            .terminal_reason
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+            .is_some_and(|reason| reason["code"] == "needs_human");
+        if needs_human {
+            let (enabled, reason) = tack_app::autonomy::rerun_at_l3(&state.repo, &attempt.id).await;
+            reruns.insert(attempt.id.clone(), AttemptRerun { enabled, reason });
+        }
+    }
     let data: Vec<AttemptSummary> = attempts
         .into_iter()
         .map(|attempt| {
@@ -1211,6 +1240,7 @@ pub async fn list_execution_attempts(
                 merge: merges
                     .remove(&attempt.id)
                     .expect("one merge state per attempt"),
+                rerun_at_l3: reruns.remove(&attempt.id),
                 attempt_id: attempt.id,
                 request_id: attempt.request_id,
                 attempt_number: attempt.attempt_number,

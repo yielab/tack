@@ -12,7 +12,7 @@ use crate::scheduler_wiring::choose_request_for_runner;
 /// is nothing this runner may take. Idempotent on `claim_request_id`: a replay returns the
 /// lease the first call issued. The scheduler only chooses; the claim itself re-checks that the
 /// choice is still queued and eligible, so a choice that lost a race yields `None`, never a
-/// second lease.
+/// second lease. A docket task's snapshot carries the autonomy level it may run at, or none.
 pub async fn claim(
     repo: &Repository,
     clock: &dyn Clock,
@@ -24,7 +24,7 @@ pub async fn claim(
         choose_request_for_runner(repo, runner_id, clock.now(), &SchedulingPolicy::default())
             .await?;
     let attempt_id = format!("att_{}", Uuid::new_v4());
-    Ok(repo
+    let claimed = repo
         .claim_execution_idempotent_with_snapshot(
             runner_id,
             claim_request_id,
@@ -33,5 +33,20 @@ pub async fn claim(
             clock,
             RequestSelection::Scheduled(scheduled_request_id.as_deref()),
         )
-        .await?)
+        .await?;
+    let Some(mut claimed) = claimed else {
+        return Ok(None);
+    };
+    // The level a docket task may run at is read now, from the project and the runner that
+    // took it; the request keeps only the cap a person asked for.
+    let level =
+        crate::autonomy::level_to_send(repo, &claimed.lease.attempt_id, &claimed.request_snapshot)
+            .await;
+    if let Some(object) = claimed.request_snapshot.as_object_mut() {
+        match level {
+            Some(level) => object.insert("autonomy".to_owned(), level.to_string().into()),
+            None => object.remove("autonomy"),
+        };
+    }
+    Ok(Some(claimed))
 }

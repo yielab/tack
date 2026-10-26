@@ -988,6 +988,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::ExecutionDetailResponse,
         handlers::executions::AttemptSummary,
         handlers::executions::AttemptMerge,
+        handlers::executions::AttemptRerun,
         handlers::executions::MergedBy,
         handlers::executions::AttemptListResponse,
         handlers::executions::EventSummary,

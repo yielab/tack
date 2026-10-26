@@ -41,6 +41,9 @@ pub struct RunRequest {
     pub status_map_policy_id: Option<String>,
     pub verify: Option<bool>,
     pub push_branch: Option<bool>,
+    /// The most autonomy this run may have (`L3`, `L4` or `L5`): a cap the board lowers further
+    /// at claim, never raises. "Run again at L3" sets `L3`.
+    pub autonomy: Option<String>,
     /// `mcp` marks a run an agent started through `tack mcp`.
     pub origin: Option<String>,
 }
@@ -865,6 +868,19 @@ pub async fn enqueue_run(
     }
     if let Some(push_branch) = input.push_branch {
         snapshot_value["push_branch"] = json!(push_branch);
+    }
+    if let Some(autonomy) = &input.autonomy {
+        let level = autonomy
+            .parse::<tack_core::autonomy::Level>()
+            .map_err(|_| {
+                error(
+                    status::BAD_REQUEST,
+                    StableErrorCode::InvalidRequest,
+                    "autonomy must be L3, L4 or L5",
+                    json!({"field": "autonomy"}),
+                )
+            })?;
+        snapshot_value["autonomy"] = json!(level.to_string());
     }
     if input.origin.as_deref() == Some("mcp") {
         snapshot_value["origin"] = json!("mcp");

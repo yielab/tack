@@ -250,6 +250,7 @@ async fn start(
         status_map_policy_id: None,
         verify: None,
         push_branch: None,
+        autonomy: None,
         origin: None,
     };
     match start_run(repo, clock, PRINCIPAL, input).await {

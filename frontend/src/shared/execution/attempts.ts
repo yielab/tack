@@ -126,6 +126,8 @@ export interface AttemptSummary {
   pull_request: AttemptPullRequest | null;
   /** The Merge button's state. Absent from a server that predates it. */
   merge?: AttemptMerge;
+  /** The "Run again at L3" button's state; present only on an attempt that ended asking for a person. */
+  rerun_at_l3?: { enabled: boolean; reason: string | null };
   /** Names (never values) of the environment variables the runner gave the harness, as it reported at start. */
   environment_names?: string[];
   /** What the harness ran inside, as the runner reported at start; `null` when it did not say. */

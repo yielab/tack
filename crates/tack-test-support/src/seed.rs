@@ -684,6 +684,30 @@ pub async fn execution_request_team(repo: &Repository, request_id: &str, team: &
     .expect("seed execution_requests team");
 }
 
+/// Names the harness a request asks for, in its column and in its snapshot.
+pub async fn execution_request_harness(repo: &Repository, request_id: &str, harness: &str) {
+    sqlx::query(
+        "UPDATE execution_requests SET requested_harness_kind = ?1, request_snapshot = json_set(request_snapshot, '$.requested_harness_kind', ?1) WHERE id = ?2",
+    )
+    .bind(harness)
+    .bind(request_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_requests harness");
+}
+
+/// Gives a request's snapshot the autonomy cap "Run again at L3" would have set.
+pub async fn execution_request_autonomy(repo: &Repository, request_id: &str, level: &str) {
+    sqlx::query(
+        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.autonomy', ?) WHERE id = ?",
+    )
+    .bind(level)
+    .bind(request_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_requests autonomy");
+}
+
 /// Marks a request's snapshot as started over MCP.
 pub async fn execution_request_origin(repo: &Repository, request_id: &str, origin: &str) {
     sqlx::query(
@@ -912,6 +936,30 @@ pub async fn execution_event(
     .execute(repo.pool())
     .await
     .expect("seed execution_events");
+}
+
+/// Plants a timeline event of `kind` and `sequence` on `attempt_id`, occurred at `at`.
+pub async fn execution_event_of_kind(
+    repo: &Repository,
+    attempt_id: &str,
+    kind: &str,
+    sequence: i64,
+    at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) \
+         VALUES(?,?,?,?,'runner',?,'{}',?,?)",
+    )
+    .bind(format!("row-{attempt_id}-{sequence}"))
+    .bind(attempt_id)
+    .bind(format!("evt-{attempt_id}-{sequence}"))
+    .bind(sequence)
+    .bind(kind)
+    .bind(at)
+    .bind(at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_events of a kind");
 }
 
 /// Removes one `execution_events` row.

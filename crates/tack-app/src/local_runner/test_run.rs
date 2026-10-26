@@ -103,6 +103,7 @@ pub async fn start_test_run(
         status_map_policy_id: None,
         verify: None,
         push_branch: None,
+        autonomy: None,
         origin: None,
     };
     let resolved_profile = json!({

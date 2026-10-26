@@ -8,6 +8,7 @@ import RunWithAgentModal from './RunWithAgentModal';
 import { describeAttemptStatus } from './attemptFormat';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
+import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
 import { stoppedByLimit } from './runLimit';
 
@@ -305,6 +306,10 @@ const RequestRow: Component<{
             projectId={props.projectId}
           />
         )}
+      </Show>
+
+      <Show when={needsAPerson(latestAttempt())}>
+        <RerunAtL3 attempt={latestAttempt()!} itemId={props.itemId} itemTitle={props.itemTitle} projectId={props.projectId} />
       </Show>
 
       <Show when={props.record.error}>

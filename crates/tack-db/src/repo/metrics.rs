@@ -24,6 +24,8 @@ pub struct TokenSplit {
 pub struct AttemptTotals {
     pub attempts: i64,
     pub decisions: i64,
+    /// Attempts with at least one escalation the agent's own policy settled, which no person saw.
+    pub decided_alone: i64,
     pub implementation: TokenSplit,
     pub rework: TokenSplit,
 }
@@ -53,7 +55,7 @@ pub struct PullRequestTotals {
     pub reverted: i64,
 }
 
-/// Attempts and decisions in the window, and the token split. An attempt is
+/// Attempts, decisions and attempts that decided alone in the window, and the token split. An attempt is
 /// rework when its request's `metadata.rework_of` names another request, or when
 /// it is not the request's first attempt; every other attempt is implementation.
 pub async fn attempt_totals(
@@ -102,6 +104,19 @@ pub async fn attempt_totals(
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
          WHERE i.project_id = ? AND (? IS NULL OR julianday(d.created_at) >= julianday(?))",
+    )
+    .bind(project_id)
+    .bind(since)
+    .bind(since)
+    .fetch_one(repo.pool())
+    .await?;
+    totals.decided_alone = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id
+         WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
+           AND EXISTS (SELECT 1 FROM execution_events e
+                       WHERE e.attempt_id = a.id AND e.kind = 'escalation.decided')",
     )
     .bind(project_id)
     .bind(since)

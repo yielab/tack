@@ -13,6 +13,7 @@ use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
+use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
 use tower::ServiceExt;
 use wiremock::matchers::{body_json, method, path, path_regex};
@@ -869,4 +870,126 @@ async fn a_demotion_to_l3_switches_auto_start_off() {
             .await
             .contains("Auto-start is off: the project dropped to L3")
     );
+}
+
+/// "Run again at L3" is offered on an attempt that ended asking for a person, enabled for a
+/// docket run whose team can be narrowed and disabled, with its reason, otherwise; no other
+/// attempt carries it. The run it creates carries the L3 cap, and any other level name is refused.
+#[tokio::test]
+async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_cannot() {
+    // (project level, team, the button's reason, or none when it is enabled)
+    let cases = [
+        ("L4", Some("writers"), None),
+        ("L4", Some("reviewers"), Some("already attended")),
+        ("L3", Some("writers"), Some("This project is already at L3")),
+        (
+            "L4",
+            Some("fab-dev"),
+            Some("Team fab-dev is not reported yet"),
+        ),
+    ];
+    for (level, team, reason) in cases {
+        let root = tempfile::tempdir().unwrap();
+        let prill = fake_prill(root.path());
+        let b = board(root.path(), None, &prill).await;
+        let repo = &b.state.repo;
+        let a = request_and_claim(&b.app, &b.item_id, "rerun", None).await;
+        seed::project_autonomy_level(repo, &b.project_id, level).await;
+        seed::execution_request_harness(repo, &a.request_id, "docket").await;
+        seed::agent_runner_capabilities(repo, &a.runner_id, &reviewers_snapshot("docket")).await;
+        if let Some(team) = team {
+            seed::execution_request_team(repo, &a.request_id, team).await;
+        }
+        let needs_human =
+            r#"{"code":"needs_human","message":"docket needs a person to approve a tool call"}"#;
+        seed::execution_attempt_ended(repo, &a.attempt_id, ExecutionState::Failed, needs_human)
+            .await;
+
+        let (status, list) = common::send(
+            &b.app,
+            "GET",
+            &format!("/api/executions/{}/attempts", a.request_id),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{list}");
+        let button = &list["data"][0]["rerun_at_l3"];
+        assert_eq!(
+            button["enabled"],
+            reason.is_none(),
+            "{level} {team:?}: {list}"
+        );
+        match reason {
+            Some(words) => {
+                let said = button["reason"].as_str().unwrap_or_default();
+                assert!(said.contains(words), "{level} {team:?}: {said:?}");
+            }
+            None => assert!(button["reason"].is_null(), "{list}"),
+        }
+
+        // Another way of failing carries no button.
+        seed::execution_attempt_ended(
+            repo,
+            &a.attempt_id,
+            ExecutionState::Failed,
+            r#"{"code":"token_limit"}"#,
+        )
+        .await;
+        let (_, list) = common::send(
+            &b.app,
+            "GET",
+            &format!("/api/executions/{}/attempts", a.request_id),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert!(list["data"][0].get("rerun_at_l3").is_none(), "{list}");
+    }
+}
+
+#[tokio::test]
+async fn a_run_created_at_l3_keeps_that_cap_and_another_level_name_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let a = request_and_claim(&b.app, &b.item_id, "cap", None).await;
+    let profile =
+        tack_db::queries::execution_requests::request_snapshot(&b.state.repo, &a.request_id)
+            .await
+            .unwrap()
+            .map(|raw| serde_json::from_str::<Value>(&raw).unwrap()["agent_profile_id"].clone())
+            .unwrap();
+    for (autonomy, key) in [("L3", "again"), ("L9", "refused")] {
+        let mut body = crate::mrp::execution_request_body(
+            &b.item_id,
+            key,
+            &a.runner_id,
+            profile.as_str().unwrap(),
+            None,
+        );
+        body["autonomy"] = json!(autonomy);
+        let (status, created) =
+            common::send(&b.app, "POST", "/api/executions", body, &operator_headers()).await;
+        if autonomy == "L9" {
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{created}");
+            assert_eq!(
+                created["error"]["details"]["field"], "autonomy",
+                "{created}"
+            );
+            continue;
+        }
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let stored = tack_db::queries::execution_requests::request_snapshot(
+            &b.state.repo,
+            created["request_id"].as_str().unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored).unwrap()["autonomy"],
+            "L3"
+        );
+    }
 }

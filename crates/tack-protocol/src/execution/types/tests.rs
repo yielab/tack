@@ -624,3 +624,23 @@ fn execution_state_and_recovery_disposition_names_round_trip() {
     }
     assert!(RecoveryDisposition::from_str("requeue").is_err());
 }
+
+#[test]
+fn the_autonomy_a_request_carries_reads_back_and_a_stranger_reads_as_absent() {
+    let mut request = request_for("docket", &[], serde_json::json!({}), None);
+    assert_eq!(request.autonomy(), None, "the claim fixture names none");
+    for level in [AutonomyLevel::L3, AutonomyLevel::L4, AutonomyLevel::L5] {
+        request
+            .additional
+            .insert("autonomy".to_owned(), level.as_str().into());
+        assert_eq!(request.autonomy(), Some(level));
+        let wire = serde_json::to_value(&request).expect("request");
+        assert_eq!(wire["autonomy"], level.as_str());
+        let again: ExecutionRequestSnapshot = serde_json::from_value(wire).expect("request");
+        assert_eq!(again.autonomy(), Some(level), "it survives the wire");
+    }
+    request
+        .additional
+        .insert("autonomy".to_owned(), "L9".into());
+    assert_eq!(request.autonomy(), None);
+}

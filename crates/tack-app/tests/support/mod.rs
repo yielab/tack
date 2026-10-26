@@ -114,6 +114,7 @@ pub fn full_request(item_id: Uuid) -> RunRequest {
         status_map_policy_id: None,
         verify: None,
         push_branch: None,
+        autonomy: None,
         origin: None,
     }
 }
