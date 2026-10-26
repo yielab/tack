@@ -104,8 +104,8 @@ separate in effect and can be built alone, in this order: 7, 4, 3, 2, 5, 1, 6, b
 | Review reasons are stored and shown once on the pack panel; nothing groups, counts or reuses them (the "corrections ledger" of ADR 0071 decision 7) | `frontend/src/shared/runWithAgent/MrpPanel.tsx:258`; `rg mrp_reviews crates` outside tests: only `repo/execution.rs` and `repo/metrics.rs` (waits) |
 | The MCP server has 16 tools; it can create and cancel runs and cannot review, merge or read metrics | `crates/tack-cli/src/mcp.rs:589-828` |
 | One shared bearer token; every caller is one principal | ADR 0059; `crates/tack-api/src/middleware.rs:269-309` |
-| prill: `verify` takes `--sign FILE` and `--db FILE`; `attest verify --key FILE [--commit SHA] ENVELOPE` refuses an envelope about another commit (`subject_mismatch`); `record outcome` takes `outcome/v1`; `poll github` records `merged`, `closed`, `reverted`, `red_ci`; `metrics` prints `metrics/v1` | `/home/ox/Sites/prill/docs/guide/commands.md`, `signing.md`, `metrics.md`; `contracts/{metrics-v1,outcome-v1,envelope-v1}/` |
-| prill treats an unconfigured stage as `not_applicable`, which blocks nothing, so an unconfigured run can be `auto-merge-eligible` | `/home/ox/Sites/prill/docs/adr/0014-integration-by-contract-and-autonomy-by-policy.md` (Context) |
+| prill: `verify` takes `--sign FILE` and `--db FILE`; `attest verify --key FILE [--commit SHA] ENVELOPE` refuses an envelope about another commit (`subject_mismatch`); `record outcome` takes `outcome/v1`; `poll github` records `merged`, `closed`, `reverted`, `red_ci`; `metrics` prints `metrics/v1` | `prill/docs/guide/commands.md`, `signing.md`, `metrics.md`; `contracts/{metrics-v1,outcome-v1,envelope-v1}/` |
+| prill treats an unconfigured stage as `not_applicable`, which blocks nothing, so an unconfigured run can be `auto-merge-eligible` | `prill/docs/adr/0014-integration-by-contract-and-autonomy-by-policy.md` (Context) |
 | Next migration number | `087` (`rg -o '"[0-9]{3}_[a-z_]+"' crates/tack-db/src/migrations.rs \| sort -u \| tail -1` gives `086_one_model_string`, re-read 2026-10-13 at `11de5f2e`) |
 
 ## Alternatives not taken
@@ -188,7 +188,7 @@ None of these is made by this ADR. Each is a defect or a stale statement found w
 - **The `metric` criterion is dropped and described wrongly.** `prill.rs:433-436` turns every
   `metric` criterion into a `riskHint` that says it "has no prill equivalent and was not checked".
   `briefing/v1` has one: `MetricCriterion` (`$defs/MetricCriterion` in
-  `/home/ox/Sites/prill/contracts/briefing-v1/schema.json`) with required `id`, `type: "metric"`,
+  `prill/contracts/briefing-v1/schema.json`) with required `id`, `type: "metric"`,
   `command`, `pattern` (a regular expression with exactly one capture group), `op`
   (`>=`, `<=`, `>`, `<`, `==`) and `threshold`, and optional `description` and `timeoutS`. The
   mapping is `id` to `id`, `title` to `description`, `op` `gte` to `>=`, `lte` to `<=`, `eq` to

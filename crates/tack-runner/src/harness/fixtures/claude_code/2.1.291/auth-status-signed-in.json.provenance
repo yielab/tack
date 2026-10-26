@@ -3,4 +3,4 @@ claude auth status
 env: the maintainer's own HOME and PATH
 2026-10-13
 
-Offline: no network call. Exit status 0. Email, org id and org name redacted; /home/ox rewritten to /home/person.
+Offline: no network call. Exit status 0. Email, org id and org name redacted; the home folder rewritten to /home/person.

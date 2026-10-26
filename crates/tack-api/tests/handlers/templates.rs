@@ -740,6 +740,6 @@ async fn templates_carry_roles_profiles_and_automation() {
     assert_eq!(saved["profiles"].as_array().unwrap().len(), 6);
     assert_eq!(
         saved["automation"]["repository"],
-        "/home/ox/Sites/localtales"
+        "/home/person/Sites/localtales"
     );
 }

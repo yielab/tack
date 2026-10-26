@@ -100,7 +100,7 @@ async fn the_fixture_makes_a_whole_project() {
     assert_eq!(project["workflow"]["statuses"].as_array().unwrap().len(), 5);
     assert_eq!(project["vocabulary"]["epic"], "Colección");
     for (key, value) in [
-        ("repository", "/home/ox/Sites/localtales"),
+        ("repository", "/home/person/Sites/localtales"),
         ("on_finish_status", "En revisión"),
     ] {
         assert_eq!(project[key], value, "{key}");

@@ -102,7 +102,7 @@ sprints:                          # status: planning (the default) or closed; an
 
 automation:
   code_origin: folder             # folder|new_folder|url|none
-  repository: /home/ox/Sites/localtales
+  repository: /home/person/Sites/localtales
   default_branch: main
   workspace_mode: local_branch    # local_branch|in_place|clone
   push_after_run: true

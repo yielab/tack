@@ -143,7 +143,7 @@ fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
             r#"
                 [verify]
                 enabled = true
-                sign_key = "/home/ox/.config/prill/prill.key"
+                sign_key = "/home/person/.config/prill/prill.key"
             "#,
         ),
         ..RunnerConfigSources::default()
@@ -151,7 +151,7 @@ fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
     .expect("a [verify] table may name a signing key");
     assert_eq!(
         config.verify.sign_key.as_deref(),
-        Some("/home/ox/.config/prill/prill.key")
+        Some("/home/person/.config/prill/prill.key")
     );
 
     let config = RunnerConfig::from_sources(RunnerConfigSources {

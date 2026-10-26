@@ -31,8 +31,8 @@ fill); **2** = P, then K when docket's fields land. Each task writes its own gui
 
 ## Rules every task carries
 
-- Worktree from `develop`, never from `main`; `PATH=/home/ox/.cargo/bin:$PATH` and `rustc 1.98.1`;
-  `CARGO_TARGET_DIR` under `/home/ox/tack-agent-targets/<id>`; `--build-jobs 4 --test-threads 4`.
+- Worktree from `develop`, never from `main`; `PATH=$HOME/.cargo/bin:$PATH` and `rustc 1.98.1`;
+  `CARGO_TARGET_DIR` under `/var/tmp/tack-agent-targets/<id>`; `--build-jobs 4 --test-threads 4`.
 - No GUI, no headed browser; never the live board, `~/.docket`, `~/.config/tack/runner.toml` or a
   `tack.db`.
 - No `Co-Authored-By`; the change writes its own `CHANGELOG.md` line; code comments carry no phase,
