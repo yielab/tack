@@ -83,7 +83,7 @@ pub async fn run(
             github_token: state.config.github_token.clone(),
             api_base: state.config.github_api_base.clone(),
         },
-        Arc::new(state.clone()),
+        Arc::new(state.host()),
         Duration::from_secs(state.config.github_poll_seconds),
     ));
 

@@ -2166,7 +2166,7 @@ async fn poll_once(
         &state.repo,
         &tack_protocol::SystemClock,
         &settings,
-        state,
+        &state.host(),
         &tack_app::github_sync::client().expect("client"),
         etags,
     )

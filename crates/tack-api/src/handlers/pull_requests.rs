@@ -14,38 +14,11 @@ pub(crate) async fn github_token_for_project(
 ) -> Option<String> {
     tack_app::github_sync::github_token_for_project(
         &state.repo,
-        state,
+        &state.host(),
         state.config.github_token.as_deref(),
         project_id,
     )
     .await
-}
-
-/// What the inbound GitHub poll asks of the board: the embedded runner's secret store, prill's
-/// hand-off for a pull request just observed, and the merge autonomy pass that follows a poll.
-#[async_trait::async_trait]
-impl tack_app::github_sync::Hooks for crate::router::AppState {
-    async fn resolve_secret(&self, reference: &str) -> Option<Result<String, String>> {
-        let local_runner = self.local_runner.as_ref()?;
-        Some(
-            local_runner
-                .resolve_secret(reference)
-                .await
-                .map_err(|error| error.to_string()),
-        )
-    }
-
-    async fn pull_request_observed(&self, repo: &str, number: i64) {
-        crate::prill_store::observed(self, repo, number).await;
-    }
-
-    async fn after_pass(&self) {
-        if let Err(error) =
-            tack_app::autonomy::tick(&self.repo, &tack_protocol::SystemClock, &self.host()).await
-        {
-            tracing::warn!(%error, "autonomy pass failed");
-        }
-    }
 }
 
 /// When an accepted attempt pushed its branch and its item is linked to a

@@ -1,6 +1,6 @@
 //! What the loops and the merge need from the part of Tack that still serves HTTP: the GitHub
-//! calls, the prill that checks a signature, the stored files of an attempt and the board's live
-//! event channel. `tack-api` implements it over its own state; a method goes away from here when
+//! calls, the embedded runner's secret store, the prill that checks a signature and receives a
+//! pull request, the stored files of an attempt and the board's live event channel. `tack-api` implements it over its own state; a method goes away from here when
 //! the thing it reaches moves into this crate.
 
 use async_trait::async_trait;
@@ -21,6 +21,14 @@ pub trait Host: Send + Sync {
         repo: &str,
         sha: &str,
     ) -> Result<CiState, String>;
+
+    /// Read-only resolution of a stored `secret_reference` (`store:<name>` or
+    /// `env:<VARIABLE>`). `None` when nothing is wired in to resolve one; `Err` carries the
+    /// failure, never the value.
+    async fn resolve_secret(&self, reference: &str) -> Option<Result<String, String>>;
+
+    /// Called once GitHub's report on pull request `number` of `repo` is stored.
+    async fn pull_request_observed(&self, repo: &str, number: i64);
 
     /// Merge pull request `number` only if its head is still `sha`; the merge commit's sha, or
     /// the sentence that says why GitHub refused.

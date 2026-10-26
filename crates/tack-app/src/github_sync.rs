@@ -26,24 +26,7 @@ use tack_db::queries::{github_links, pull_requests};
 use tack_protocol::Clock;
 
 use crate::AppError;
-
-/// What the poll needs from whoever composes it and the store cannot give: the secret behind
-/// a project's token reference (the embedded runner's secret store) and the hand-off of a
-/// pull request GitHub just reported on (the board's prill store).
-#[async_trait::async_trait]
-pub trait Hooks: Send + Sync {
-    /// Read-only resolution of a stored `secret_reference` (`store:<name>` or
-    /// `env:<VARIABLE>`). `None` when nothing is wired in to resolve one; `Err` carries the
-    /// failure, never the value.
-    async fn resolve_secret(&self, reference: &str) -> Option<Result<String, String>>;
-
-    /// Called once GitHub's report on pull request `number` of `repo` is stored.
-    async fn pull_request_observed(&self, repo: &str, number: i64);
-
-    /// Called by [`run`] after every pass, whatever its outcome: the board's merge autonomy
-    /// looks at what the pass learnt here.
-    async fn after_pass(&self);
-}
+use crate::host::Host;
 
 /// What the inbound poll is configured with.
 #[derive(Debug, Clone)]
@@ -65,7 +48,7 @@ pub fn client() -> reqwest::Result<reqwest::Client> {
 }
 
 /// The single place the token-resolution order lives: a project's own
-/// `github_token_ref` (resolved through [`Hooks::resolve_secret`], when one is wired in),
+/// `github_token_ref` (resolved through [`Host::resolve_secret`], when one is wired in),
 /// falling through to the environment's `TACK_GITHUB_TOKEN` (`env_token`) when the project has
 /// no reference, nothing is wired in, or the reference fails to resolve. A resolution failure
 /// logs the reference *name* — never the value — at `warn` and falls through rather than
@@ -73,14 +56,14 @@ pub fn client() -> reqwest::Result<reqwest::Client> {
 /// environment token directly; so does the inbound poll's `poll_repo`.
 pub async fn github_token_for_project(
     repo: &Repository,
-    hooks: &dyn Hooks,
+    host: &dyn Host,
     env_token: Option<&str>,
     project_id: uuid::Uuid,
 ) -> Option<String> {
     if let Ok(Some(project)) = repo.get_project(project_id).await
         && let Some(reference) = project.github_token_ref.as_deref()
     {
-        match hooks.resolve_secret(reference).await {
+        match host.resolve_secret(reference).await {
             Some(Ok(value)) => return Some(value),
             Some(Err(error)) => {
                 tracing::warn!(
@@ -321,14 +304,15 @@ pub struct PollSummary {
     pub issues_updated: usize,
 }
 
-/// The loop `tack serve` spawns: every `interval`, one [`tick`], a failed pass logged and the
-/// next one awaited. Returns at once when polling is off (`interval` is zero) or no
+/// The loop `tack serve` spawns: every `interval`, one [`tick`] and then one pass of the merge
+/// autonomy (`autonomy::tick`, which looks at what the poll just learnt), a failed pass logged
+/// and the next one awaited. Returns at once when polling is off (`interval` is zero) or no
 /// `github_token` is configured — [`tick`] re-checks the token every pass too.
 pub async fn run(
     repo: Repository,
     clock: Arc<dyn Clock>,
     settings: Settings,
-    hooks: Arc<dyn Hooks>,
+    host: Arc<dyn Host>,
     interval: Duration,
 ) {
     if interval.is_zero() || settings.github_token.is_none() {
@@ -351,7 +335,7 @@ pub async fn run(
             &repo,
             clock.as_ref(),
             &settings,
-            hooks.as_ref(),
+            host.as_ref(),
             &client,
             &mut etags,
         )
@@ -366,7 +350,9 @@ pub async fn run(
             }
             Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
         }
-        hooks.after_pass().await;
+        if let Err(error) = crate::autonomy::tick(&repo, clock.as_ref(), host.as_ref()).await {
+            tracing::warn!(%error, "autonomy pass failed");
+        }
     }
 }
 
@@ -385,7 +371,7 @@ pub async fn tick(
     repo: &Repository,
     clock: &dyn Clock,
     settings: &Settings,
-    hooks: &dyn Hooks,
+    host: &dyn Host,
     client: &reqwest::Client,
     etags: &mut HashMap<String, String>,
 ) -> Result<PollSummary, AppError> {
@@ -400,7 +386,7 @@ pub async fn tick(
     let ctx = Ctx {
         store: repo,
         clock,
-        hooks,
+        host,
         env_token: settings.github_token.as_deref(),
     };
     for github_repo in repos {
@@ -420,7 +406,7 @@ pub async fn tick(
 struct Ctx<'a> {
     store: &'a Repository,
     clock: &'a dyn Clock,
-    hooks: &'a dyn Hooks,
+    host: &'a dyn Host,
     env_token: Option<&'a str>,
 }
 
@@ -445,7 +431,7 @@ async fn poll_repo(
     // resolve — see `github_token_for_project`.
     let project_token = match ctx.store.get_item(links[0].0).await {
         Ok(Some(item)) => {
-            github_token_for_project(ctx.store, ctx.hooks, ctx.env_token, item.project_id).await
+            github_token_for_project(ctx.store, ctx.host, ctx.env_token, item.project_id).await
         }
         _ => None,
     };
@@ -598,10 +584,10 @@ async fn follow_pull_request(ctx: &Ctx<'_>, repo: &str, pr: &GithubIssue) -> any
             ctx.store
                 .mark_pull_request_reverted(repo, cited, Some(pr.number))
                 .await?;
-            ctx.hooks.pull_request_observed(repo, cited).await;
+            ctx.host.pull_request_observed(repo, cited).await;
         }
     }
-    ctx.hooks.pull_request_observed(repo, pr.number).await;
+    ctx.host.pull_request_observed(repo, pr.number).await;
     Ok(())
 }
 
@@ -843,7 +829,7 @@ async fn follow_merged_inner(
                 .set_pull_request_red_ci_at(repo, row.number, &at)
                 .await?;
         }
-        ctx.hooks.pull_request_observed(repo, row.number).await;
+        ctx.host.pull_request_observed(repo, row.number).await;
     }
     Ok(())
 }

@@ -65,6 +65,20 @@ impl Host for AppHost {
             .map_err(|refused| refused.0)
     }
 
+    async fn resolve_secret(&self, reference: &str) -> Option<Result<String, String>> {
+        let local_runner = self.0.local_runner.as_ref()?;
+        Some(
+            local_runner
+                .resolve_secret(reference)
+                .await
+                .map_err(|error| error.to_string()),
+        )
+    }
+
+    async fn pull_request_observed(&self, repo: &str, number: i64) {
+        crate::prill_store::observed(&self.0, repo, number).await;
+    }
+
     async fn open_pull_request(&self, attempt_id: &str) {
         crate::handlers::pull_requests::open_pull_request_for_attempt(
             self.0.clone(),
