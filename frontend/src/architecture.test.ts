@@ -56,4 +56,40 @@ describe('architecture boundaries', () => {
       []
     );
   });
+
+  // shared/* is the layer features build on; a shared file reaching back into
+  // features/ would make the dependency circular. Two cases because a relative
+  // path and the `@/` alias are different spellings of the same import.
+  describe('shared/* never imports from features/*', () => {
+    const sharedDir = join(srcDir, 'shared');
+
+    it('through a relative path', () => {
+      const violations: string[] = [];
+      for (const file of walk(sharedDir)) {
+        const code = readFileSync(file, 'utf8');
+        for (const match of code.matchAll(IMPORT_RE)) {
+          const spec = match[1] ?? match[2];
+          if (!spec || !spec.startsWith('.')) continue;
+          if (featureOf(resolve(dirname(file), spec))) {
+            violations.push(`${relative(srcDir, file)} imports '${spec}'`);
+          }
+        }
+      }
+      expect(violations, `shared/* imports features/*:\n${violations.join('\n')}`).toEqual([]);
+    });
+
+    it('through the @/features alias', () => {
+      const violations: string[] = [];
+      for (const file of walk(sharedDir)) {
+        const code = readFileSync(file, 'utf8');
+        for (const match of code.matchAll(IMPORT_RE)) {
+          const spec = match[1] ?? match[2];
+          if (spec && /^@\/features(\/|$)/.test(spec)) {
+            violations.push(`${relative(srcDir, file)} imports '${spec}'`);
+          }
+        }
+      }
+      expect(violations, `shared/* imports @/features/*:\n${violations.join('\n')}`).toEqual([]);
+    });
+  });
 });
