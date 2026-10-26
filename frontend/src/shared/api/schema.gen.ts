@@ -944,16 +944,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * GET /api/local-runner — the persisted preference, the live runtime
-         *     state. Only mounted on a loopback bind
-         *     with a control actually wired in — see `router.rs`'s `local_runner_routes`.
+         * GET /api/local-runner — the persisted preference, the live runtime state. Only mounted on a
+         *     loopback bind with a control actually wired in — see `router.rs`'s `local_runner_routes`.
          */
         get: operations["get_local_runner"];
         /**
-         * PUT /api/local-runner — save the preference and start/stop the embedded
-         *     runner to match, immediately, with no restart. Persist first, then
-         *     reconcile the runtime: a crash between the two still boots correctly
-         *     next time.
+         * PUT /api/local-runner — save the preference and start/stop the embedded runner to match,
+         *     immediately, with no restart. Persist first, then reconcile the runtime: a crash between the
+         *     two still boots correctly next time.
          */
         put: operations["put_local_runner"];
         post?: never;
@@ -990,8 +988,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * POST /api/local-runner/init-folder — creates `path` and runs `git init`.
-         *     An existing non-empty directory (or a file) is a 409.
+         * POST /api/local-runner/init-folder — creates `path` and runs `git init`. An existing
+         *     non-empty directory (or a file) is a 409.
          */
         post: operations["init_local_runner_folder"];
         delete?: never;
@@ -1010,10 +1008,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * POST /api/local-runner/test-run — runs the harness once on this machine
-         *     from an empty scratch directory: no remote, no typed model. It files the
-         *     run under an archived `Agent tests` project (created on first use, so it
-         *     never shows in the project list) and answers the new request's id.
+         * POST /api/local-runner/test-run — runs the harness once on this machine from an empty
+         *     scratch directory: no remote, no typed model. It files the run under an archived
+         *     `Agent tests` project (created on first use, so it never shows in the project list) and
+         *     answers the new request's id.
          */
         post: operations["post_test_run"];
         delete?: never;

@@ -3047,7 +3047,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "GET /api/local-runner — the persisted preference, the live runtime\nstate. Only mounted on a loopback bind\nwith a control actually wired in — see `router.rs`'s `local_runner_routes`.",
+        "summary": "GET /api/local-runner — the persisted preference, the live runtime state. Only mounted on a\nloopback bind with a control actually wired in — see `router.rs`'s `local_runner_routes`.",
         "operationId": "get_local_runner",
         "responses": {
           "200": {
@@ -3064,7 +3064,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded\nrunner to match, immediately, with no restart. Persist first, then\nreconcile the runtime: a crash between the two still boots correctly\nnext time.",
+        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded runner to match,\nimmediately, with no restart. Persist first, then reconcile the runtime: a crash between the\ntwo still boots correctly next time.",
         "operationId": "put_local_runner",
         "requestBody": {
           "content": {
@@ -3125,7 +3125,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "POST /api/local-runner/init-folder — creates `path` and runs `git init`.\nAn existing non-empty directory (or a file) is a 409.",
+        "summary": "POST /api/local-runner/init-folder — creates `path` and runs `git init`. An existing\nnon-empty directory (or a file) is a 409.",
         "operationId": "init_local_runner_folder",
         "requestBody": {
           "content": {
@@ -3160,7 +3160,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "POST /api/local-runner/test-run — runs the harness once on this machine\nfrom an empty scratch directory: no remote, no typed model. It files the\nrun under an archived `Agent tests` project (created on first use, so it\nnever shows in the project list) and answers the new request's id.",
+        "summary": "POST /api/local-runner/test-run — runs the harness once on this machine from an empty\nscratch directory: no remote, no typed model. It files the run under an archived\n`Agent tests` project (created on first use, so it never shows in the project list) and\nanswers the new request's id.",
         "operationId": "post_test_run",
         "requestBody": {
           "content": {

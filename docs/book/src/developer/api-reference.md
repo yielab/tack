@@ -1826,7 +1826,7 @@ Refresh reported capabilities and optionally rotate the runner's bearer credenti
 
 #### `GET /api/local-runner`
 
-the persisted preference, the live runtime
+the persisted preference, the live runtime state. Only mounted on a
 
 | Status | Meaning | Schema |
 |---|---|---|
@@ -1834,7 +1834,7 @@ the persisted preference, the live runtime
 
 #### `PUT /api/local-runner`
 
-save the preference and start/stop the embedded
+save the preference and start/stop the embedded runner to match,
 
 **Request body:** `UpdateLocalRunner`
 
@@ -1856,7 +1856,7 @@ what is at `path`; writes nothing.
 
 #### `POST /api/local-runner/init-folder`
 
-creates `path` and runs `git init`.
+creates `path` and runs `git init`. An existing
 
 **Request body:** `FolderPath`
 
@@ -1868,7 +1868,7 @@ creates `path` and runs `git init`.
 
 #### `POST /api/local-runner/test-run`
 
-runs the harness once on this machine
+runs the harness once on this machine from an empty
 
 **Request body:** `TestRun`
 
