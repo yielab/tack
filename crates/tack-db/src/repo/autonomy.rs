@@ -460,3 +460,20 @@ pub async fn newest_artifact_of_media_type(
     .fetch_optional(pool)
     .await
 }
+
+impl crate::Repository {
+    /// Write the attempt's ledger row, replacing the earlier check.
+    pub async fn record_merge(&self, row: &MergeRow) -> Result<(), crate::StoreError> {
+        Ok(record_merge(self.pool(), row).await?)
+    }
+
+    /// Take the merge's domain (the project, when it had none) one level down and stamp
+    /// `demoted_at`. The levels before and after, `None` when the domain no longer exists.
+    pub async fn demote_after_revert(
+        &self,
+        pending: &PendingDemotion,
+        now: DateTime<Utc>,
+    ) -> Result<Option<(Level, Level)>, crate::StoreError> {
+        Ok(demote(self.pool(), pending, now).await?)
+    }
+}

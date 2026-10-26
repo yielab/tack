@@ -5,9 +5,8 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tack_protocol::SystemClock;
+use std::time::Duration;
 
-use chrono::Utc;
 use serde_json::{Value, json};
 use tack_core::auto_start::{Candidate, Limits, pick};
 use tack_core::dependency::{DependencyEdge, DependencyGraph};
@@ -15,82 +14,78 @@ use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
 use tack_core::run_defaults::Source;
 use tack_core::workflow::StatusCategory;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
+use tack_db::{Repository, StoreError, queries};
+use tack_protocol::Clock;
 use uuid::Uuid;
 
-use crate::handlers::executions::{
-    CreateExecution, OperatorExecutionState, create_as, default_selector, resolve_profile,
-};
-use crate::handlers::websocket::{self, BoardEvent};
-use crate::router::AppState;
+use crate::host::Host;
+use crate::runs::start_run::{RunRequest, default_selector, resolve_profile, start_run};
+use crate::{AppError, merge};
 
 /// The principal a run started by the board itself is recorded under.
 const PRINCIPAL: &str = "auto_start";
 
-/// The states of a request that still occupies a run.
-const OPEN_STATES: &str = "('queued','leased','preparing','running','waiting_decision')";
+/// What one pass did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Outcome {
+    /// Runs the pass started.
+    pub started: usize,
+}
 
-/// Background task: `tick` every `config.auto_start_seconds`. Returns at once when that is 0.
-pub async fn run_auto_start_task(state: AppState) {
-    if state.config.auto_start_seconds == 0 {
-        return;
-    }
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(
-        state.config.auto_start_seconds,
-    ));
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    interval.tick().await; // skip the first immediate tick
+/// The loop `tack serve` spawns: `tick` every `interval`, the first pass one interval after
+/// the start, a failed pass logged. The caller does not spawn it when auto-start is off
+/// (`auto_start_seconds` is 0).
+pub async fn run(repo: Repository, clock: Arc<dyn Clock>, host: Arc<dyn Host>, interval: Duration) {
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await; // skip the first immediate tick
     loop {
-        interval.tick().await;
-        tick(&state).await;
+        ticker.tick().await;
+        if let Err(error) = tick(&repo, clock.as_ref(), host.as_ref()).await {
+            tracing::warn!(%error, "auto-start: could not list projects");
+        }
     }
 }
 
 /// One pass over every project with auto-start on.
-pub async fn tick(state: &AppState) {
-    let ids: Vec<String> = match sqlx::query_scalar(
-        "SELECT id FROM projects WHERE auto_start_enabled = 1 AND archived = 0 AND auto_start_status IS NOT NULL",
-    )
-    .fetch_all(state.repo.pool())
-    .await
-    {
-        Ok(ids) => ids,
-        Err(error) => {
-            tracing::warn!(%error, "auto-start: could not list projects");
-            return;
-        }
-    };
+pub async fn tick(
+    repo: &Repository,
+    clock: &dyn Clock,
+    host: &dyn Host,
+) -> Result<Outcome, AppError> {
+    let ids = queries::projects::auto_start_project_ids(repo).await?;
+    let mut outcome = Outcome::default();
     for id in ids.iter().filter_map(|id| id.parse::<Uuid>().ok()) {
-        match state.repo.get_project(id).await {
-            Ok(Some(project)) => {
-                if let Err(error) = project_tick(state, &project).await {
+        match repo.get_project(id).await {
+            Ok(Some(project)) => match project_tick(repo, clock, host, &project).await {
+                Ok(started) => outcome.started += started,
+                Err(error) => {
                     tracing::warn!(project_id = %id, %error, "auto-start: project pass failed");
                 }
-            }
+            },
             Ok(None) => {}
             Err(error) => {
                 tracing::warn!(project_id = %id, %error, "auto-start: could not load project")
             }
         }
     }
+    Ok(outcome)
 }
 
-async fn project_tick(state: &AppState, project: &Project) -> Result<(), sqlx::Error> {
+/// The tasks of one project to start now. How many runs it started.
+async fn project_tick(
+    repo: &Repository,
+    clock: &dyn Clock,
+    host: &dyn Host,
+    project: &Project,
+) -> Result<usize, AppError> {
     let Some(waiting_in) = project.auto_start_status.as_deref() else {
-        return Ok(());
+        return Ok(0);
     };
-    let pool = state.repo.pool();
     let project_id = project.id.to_string();
-    let rows: Vec<(String, String, i32, i64)> = sqlx::query_as(
-        "SELECT id, priority, sort_order, version FROM items
-         WHERE project_id = ? AND status = ?
-           AND EXISTS (SELECT 1 FROM item_roles ir WHERE ir.item_id = items.id)",
-    )
-    .bind(&project_id)
-    .bind(waiting_in)
-    .fetch_all(pool)
-    .await?;
+    let rows = queries::items::waiting_with_a_role(repo, &project_id, waiting_in).await?;
     if rows.is_empty() {
-        return Ok(());
+        return Ok(0);
     }
     let Some(started) = project
         .workflow
@@ -100,35 +95,30 @@ async fn project_tick(state: &AppState, project: &Project) -> Result<(), sqlx::E
         .min_by_key(|status| status.order)
     else {
         tracing::debug!(project_id = %project.id, "auto-start: the workflow has no in-progress status");
-        return Ok(());
+        return Ok(0);
     };
     let wip_room = match started.wip_limit {
         Some(limit) => {
-            let taken = state
-                .repo
+            let taken = repo
                 .count_items_by_status(project.id, &started.name)
-                .await?;
+                .await
+                .map_err(StoreError::from)?;
             Some(limit.saturating_sub(usize::try_from(taken).unwrap_or(usize::MAX)))
         }
         None => None,
     };
-    let open: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-        "SELECT r.item_id FROM execution_requests r JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? AND r.state IN {OPEN_STATES}"
-    )))
-    .bind(&project_id)
-    .fetch_all(pool)
-    .await?;
+    let open = queries::execution_requests::items_with_an_open_request(repo, &project_id).await?;
     let budget_reached =
-        tack_orch::scheduler::wiring::budget_reached(&state.repo, &project_id, Utc::now())
-            .await?
+        tack_orch::scheduler::wiring::budget_reached(repo, &project_id, clock.now())
+            .await
+            .map_err(StoreError::from)?
             .is_some();
 
-    let item_ids: Vec<Uuid> = rows.iter().filter_map(|(id, ..)| id.parse().ok()).collect();
-    let edges: Vec<DependencyEdge> = state
-        .repo
+    let item_ids: Vec<Uuid> = rows.iter().filter_map(|row| row.id.parse().ok()).collect();
+    let edges: Vec<DependencyEdge> = repo
         .list_dependencies_for_items(&item_ids)
-        .await?
+        .await
+        .map_err(StoreError::from)?
         .into_iter()
         .filter(|d| {
             matches!(
@@ -143,43 +133,40 @@ async fn project_tick(state: &AppState, project: &Project) -> Result<(), sqlx::E
         })
         .collect();
     let graph = DependencyGraph::from_edges(&edges);
-    let statuses: HashMap<Uuid, String> =
-        sqlx::query_as::<_, (String, String)>("SELECT id, status FROM items WHERE project_id = ?")
-            .bind(&project_id)
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .filter_map(|(id, status)| Some((id.parse().ok()?, status)))
-            .collect();
+    let statuses: HashMap<Uuid, String> = queries::items::statuses_of_project(repo, &project_id)
+        .await?
+        .into_iter()
+        .filter_map(|row| Some((row.id.parse().ok()?, row.status)))
+        .collect();
     let status_of = |id: Uuid| statuses.get(&id).cloned();
 
     let mut candidates = Vec::new();
-    for (id, priority, sort_order, version) in rows {
-        let Ok(item_id) = id.parse::<Uuid>() else {
+    for row in rows {
+        let Ok(item_id) = row.id.parse::<Uuid>() else {
             continue;
         };
-        let Some(item) = state.repo.get_item(item_id).await? else {
+        let Some(item) = repo.get_item(item_id).await.map_err(StoreError::from)? else {
             continue;
         };
         // Without an agent to name, the run could not be created at all.
-        let profile = resolve_profile(&state.repo, &item, project, None)
+        let profile = resolve_profile(repo, &item, project, None)
             .await
             .ok()
             .flatten()
             .filter(|resolved| resolved.harness.is_some() || project.default_harness.is_some());
         let has_machine = match &profile {
-            Some(resolved) => default_selector(&state.repo, resolved.fleet_id.clone())
+            Some(resolved) => default_selector(repo, resolved.fleet_id.clone())
                 .await
                 .is_ok(),
             None => false,
         };
         candidates.push(Candidate {
             item_id,
-            priority: serde_json::from_value::<Priority>(Value::String(priority))
+            priority: serde_json::from_value::<Priority>(Value::String(row.priority))
                 .unwrap_or_default(),
-            sort_order,
-            version,
-            has_open_request: open.contains(&id),
+            sort_order: row.sort_order,
+            version: row.version,
+            has_open_request: open.contains(&row.id),
             unfinished_blockers: graph
                 .unfinished_blockers(item_id, &status_of, &project.workflow)
                 .len(),
@@ -197,18 +184,29 @@ async fn project_tick(state: &AppState, project: &Project) -> Result<(), sqlx::E
     for (item_id, why) in skipped {
         tracing::debug!(%item_id, ?why, "auto-start: skipped");
     }
+    let mut count = 0;
     for item_id in picked {
-        if let Some(candidate) = candidates.iter().find(|c| c.item_id == item_id) {
-            start(state, project, candidate, &started.name).await;
+        if let Some(candidate) = candidates.iter().find(|c| c.item_id == item_id)
+            && start(repo, clock, host, project, candidate, &started.name).await
+        {
+            count += 1;
         }
     }
-    Ok(())
+    Ok(count)
 }
 
-/// Enqueue the run of one picked task, then move it to the in-progress status.
-async fn start(state: &AppState, project: &Project, candidate: &Candidate, started: &str) {
+/// Enqueue the run of one picked task, then move it to the in-progress status. Whether the run
+/// was started by this pass.
+async fn start(
+    repo: &Repository,
+    clock: &dyn Clock,
+    host: &dyn Host,
+    project: &Project,
+    candidate: &Candidate,
+    started: &str,
+) -> bool {
     let Some(resolved) = &candidate.profile else {
-        return;
+        return false;
     };
     let harness = resolved
         .harness
@@ -216,13 +214,10 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
         .or_else(|| project.default_harness.clone())
         .unwrap_or_default();
     // The profile's tools for this agent, as the Run dialog sends them.
-    let policy: Option<String> =
-        sqlx::query_scalar("SELECT tool_policy FROM agent_profiles WHERE id = ?")
-            .bind(&resolved.profile_id)
-            .fetch_optional(state.repo.pool())
-            .await
-            .ok()
-            .flatten();
+    let policy: Option<String> = queries::agent_profiles::tool_policy(repo, &resolved.profile_id)
+        .await
+        .ok()
+        .flatten();
     let policy = policy.and_then(|text| serde_json::from_str::<Value>(&text).ok());
     let tools = policy
         .as_ref()
@@ -236,12 +231,12 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
     // The Run dialog's rule: auto where the machine sandboxes this agent, ask
     // where it does not. Absent `approvals` means auto, so it is set only when
     // some eligible machine reports no sandbox for the agent.
-    let approvals = if sandboxed_everywhere(state, resolved.fleet_id.as_deref(), &harness).await {
+    let approvals = if sandboxed_everywhere(repo, resolved.fleet_id.as_deref(), &harness).await {
         json!({ "tools": tools, "network": network })
     } else {
         json!({ "tools": tools, "network": network, "approvals": "ask" })
     };
-    let input = CreateExecution {
+    let input = RunRequest {
         item_id: candidate.item_id,
         idempotency_key: format!("auto-start:{}:{}", candidate.item_id, candidate.version),
         selector_kind: None,
@@ -261,17 +256,21 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
         push_branch: None,
         origin: None,
     };
-    let operator = OperatorExecutionState::with_clock(state.repo.clone(), Arc::new(SystemClock));
-    match create_as(operator, PRINCIPAL.to_owned(), input).await {
-        Ok(axum::Json(created)) if !created.replayed => {}
-        Ok(_) => return,
-        Err((status, body)) => {
-            tracing::warn!(item_id = %candidate.item_id, %status, body = %body.0, "auto-start: could not create the run");
-            return;
+    match start_run(repo, clock, PRINCIPAL, input).await {
+        Ok(created) if !created.replayed => {}
+        Ok(_) => return false,
+        Err(refusal) => {
+            tracing::warn!(
+                item_id = %candidate.item_id,
+                status = refusal.status,
+                code = ?refusal.code,
+                message = %refusal.message,
+                "auto-start: could not create the run"
+            );
+            return false;
         }
     }
-    let moved = state
-        .repo
+    let moved = repo
         .update_item_atomically(
             candidate.item_id,
             UpdateItem {
@@ -288,29 +287,25 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
         }) => (*item, old_status),
         other => {
             tracing::warn!(item_id = %candidate.item_id, outcome = ?other, "auto-start: could not move the task");
-            return;
+            return true;
         }
     };
-    websocket::broadcast_event(
-        state,
-        BoardEvent::ItemUpdated {
-            project_id: item.project_id,
-            item_id: item.id,
-            old_status: Some(old_status.clone()),
-            new_status: item.status.clone(),
-        },
+    host.item_moved(
+        item.project_id,
+        item.id,
+        old_status.clone(),
+        item.status.clone(),
     );
     let role = match &resolved.source {
         Source::Role(name) => Some(name.clone()),
-        _ => state
-            .repo
+        _ => repo
             .profiles_for_item(item.id)
             .await
             .ok()
             .and_then(|roles| roles.into_iter().next().map(|(name, _)| name)),
     };
-    crate::merge::tell(
-        state,
+    merge::tell(
+        repo,
         &item.id.to_string(),
         format!(
             "Started by itself: it reached {old_status} with the role {}",
@@ -318,25 +313,13 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
         ),
     )
     .await;
+    true
 }
 
 /// Whether every machine the run may land on (the profile's fleet, else the only
 /// active runner) reports the agent as sandboxed, by bwrap or by its own jail.
-async fn sandboxed_everywhere(state: &AppState, fleet_id: Option<&str>, harness: &str) -> bool {
-    let sql = match fleet_id {
-        Some(_) => {
-            "SELECT r.capability_snapshot FROM agent_runners r \
-             JOIN agent_fleet_members m ON m.runner_id = r.id \
-             WHERE m.fleet_id = ? AND r.state = 'active' AND r.revoked_at IS NULL"
-        }
-        None => {
-            "SELECT capability_snapshot FROM agent_runners \
-             WHERE ? IS NULL AND state = 'active' AND revoked_at IS NULL"
-        }
-    };
-    let snapshots: Vec<String> = sqlx::query_scalar(sql)
-        .bind(fleet_id)
-        .fetch_all(state.repo.pool())
+async fn sandboxed_everywhere(repo: &Repository, fleet_id: Option<&str>, harness: &str) -> bool {
+    let snapshots = queries::agent_runners::capability_snapshots_of_active_runners(repo, fleet_id)
         .await
         .unwrap_or_default();
     !snapshots.is_empty()

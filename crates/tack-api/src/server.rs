@@ -76,9 +76,6 @@ pub async fn serve(
     // whenever an interval is set and re-checks the effective config each tick.
     // Inbound GitHub poll: returns at once when polling is off or no token is set.
     tokio::spawn(crate::run_github_poll_task(state.clone()));
-    // Tasks a project starts by itself; its own interval, since the poll above
-    // does not run without a token.
-    tokio::spawn(crate::auto_start::run_auto_start_task(state.clone()));
 
     if let Some(interval_secs) = config.backup_interval_secs {
         const MIN_BACKUP_INTERVAL_SECS: u64 = 60;

@@ -1,5 +1,3 @@
-pub mod auto_start;
-pub mod autonomy;
 pub mod config;
 pub mod debug;
 pub mod error;
@@ -8,7 +6,7 @@ pub mod error;
 pub mod execution_runtime;
 pub mod github_sync;
 pub mod handlers;
-pub mod merge;
+pub mod host;
 pub mod middleware;
 pub mod openapi;
 pub mod prill;
@@ -58,6 +56,10 @@ pub async fn run_github_poll_task(state: AppState) {
             }
             Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
         }
-        autonomy::tick(&state).await;
+        if let Err(error) =
+            tack_app::autonomy::tick(&state.repo, &tack_protocol::SystemClock, &state.host()).await
+        {
+            tracing::warn!(%error, "autonomy pass failed");
+        }
     }
 }

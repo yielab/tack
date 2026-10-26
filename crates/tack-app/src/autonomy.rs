@@ -1,51 +1,87 @@
-//! The automatic merge's turn in the GitHub poll loop (ADR 0079): after the poll
+//! The automatic merge's turn in the GitHub poll loop: after the poll
 //! has told the board what happened on GitHub, take a level off any domain whose
 //! automatic merge was reverted, then try every change that may merge by itself.
 
-use chrono::Utc;
 use serde_json::{Value, json};
 use tack_core::autonomy::{Check, Level, Trigger, level_for};
 use tack_db::repo::autonomy as store;
-use tack_db::repo::budgets;
+use tack_db::{Repository, queries};
+use tack_protocol::Clock;
 use tack_protocol::execution::{HarnessCapability, TeamReport};
 use tack_protocol::mrp::{MergeDecision, MergeReadinessPack};
-use tokio::io::AsyncReadExt;
 
-use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
+use crate::AppError;
+use crate::host::Host;
 use crate::merge::{self, FactsExtra};
-use crate::router::AppState;
 
 const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 
+/// What one pass did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Outcome {
+    /// Domains (or projects) that lost a level.
+    pub demoted: usize,
+    /// Changes merged, by a held `done` trigger or by themselves.
+    pub merged: usize,
+}
+
 /// One pass: demotions first, so a revert costs its domain the level before the
 /// next change in it is tried, then the held `done` merges, then the candidates.
-pub async fn tick(state: &AppState) {
-    let pool = state.repo.pool();
-    match store::pending_demotions(pool).await {
+/// A phase that cannot read its rows does not stop the next; the first such failure is
+/// returned after the pass.
+pub async fn tick(
+    repo: &Repository,
+    clock: &dyn Clock,
+    host: &dyn Host,
+) -> Result<Outcome, AppError> {
+    let mut outcome = Outcome::default();
+    let mut failure = None;
+    match queries::autonomy::pending_demotions(repo).await {
         Ok(pending) => {
             for demotion in pending {
-                demote(state, &demotion).await;
-            }
-        }
-        Err(error) => tracing::warn!(%error, "autonomy: could not read pending demotions"),
-    }
-    for attempt_id in store::held_done_candidates(pool).await.unwrap_or_default() {
-        let _ = merge::attempt(state, &attempt_id, Trigger::Done, FactsExtra::default()).await;
-    }
-    match store::auto_candidates(pool).await {
-        Ok(candidates) => {
-            for attempt_id in candidates {
-                if let Some(extra) = gather(state, &attempt_id).await {
-                    let _ = merge::attempt(state, &attempt_id, Trigger::Auto, extra).await;
+                if demote(repo, clock, &demotion).await {
+                    outcome.demoted += 1;
                 }
             }
         }
-        Err(error) => tracing::warn!(%error, "autonomy: could not read candidates"),
+        Err(error) => failure = failure.or(Some(error)),
+    }
+    for attempt_id in queries::autonomy::held_done_candidates(repo)
+        .await
+        .unwrap_or_default()
+    {
+        let merged = merge::attempt(
+            repo,
+            clock,
+            host,
+            &attempt_id,
+            Trigger::Done,
+            FactsExtra::default(),
+        )
+        .await;
+        outcome.merged += usize::from(merged.is_ok());
+    }
+    match queries::autonomy::auto_candidates(repo).await {
+        Ok(candidates) => {
+            for attempt_id in candidates {
+                if let Some(extra) = gather(repo, clock, host, &attempt_id).await {
+                    let merged =
+                        merge::attempt(repo, clock, host, &attempt_id, Trigger::Auto, extra).await;
+                    outcome.merged += usize::from(merged.is_ok());
+                }
+            }
+        }
+        Err(error) => failure = failure.or(Some(error)),
+    }
+    match failure {
+        Some(error) => Err(error.into()),
+        None => Ok(outcome),
     }
 }
 
-async fn demote(state: &AppState, pending: &store::PendingDemotion) {
-    match store::demote(state.repo.pool(), pending, Utc::now()).await {
+/// Take the level off the domain a reverted merge belonged to. Whether it was taken.
+async fn demote(repo: &Repository, clock: &dyn Clock, pending: &store::PendingDemotion) -> bool {
+    match repo.demote_after_revert(pending, clock.now()).await {
         Ok(Some((from, to))) => {
             let scope = pending
                 .domain
@@ -57,7 +93,7 @@ async fn demote(state: &AppState, pending: &store::PendingDemotion) {
                 "went red on its merge commit"
             };
             merge::tell(
-                state,
+                repo,
                 &pending.item_id,
                 format!(
                     "Tack took {scope} from {from} to {to}: pull request #{} (merged automatically) {why}",
@@ -68,38 +104,31 @@ async fn demote(state: &AppState, pending: &store::PendingDemotion) {
             // A project that drops to L3 no longer starts its own work.
             if pending.domain.is_none()
                 && to == Level::L3
-                && sqlx::query(
-                    "UPDATE projects SET auto_start_enabled = 0 WHERE id = ? AND auto_start_enabled = 1",
-                )
-                .bind(&pending.project_id)
-                .execute(state.repo.pool())
-                .await
-                .is_ok_and(|done| done.rows_affected() > 0)
+                && repo
+                    .disable_auto_start(&pending.project_id)
+                    .await
+                    .unwrap_or(false)
             {
                 merge::tell(
-                    state,
+                    repo,
                     &pending.item_id,
                     tack_core::auto_start::DROPPED_TO_L3.to_owned(),
                 )
                 .await;
             }
+            true
         }
-        Ok(None) => {}
-        Err(error) => tracing::warn!(%error, "autonomy: demotion failed"),
+        Ok(None) => false,
+        Err(error) => {
+            tracing::warn!(%error, "autonomy: demotion failed");
+            false
+        }
     }
-}
-
-async fn read_artifact(state: &AppState, reference: &str) -> Option<Vec<u8>> {
-    let storage = ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
-    let mut file = storage.open_for_read(reference).await.ok()?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).await.ok()?;
-    Some(bytes)
 }
 
 /// The harnesses a stored capability snapshot reports; an entry or a snapshot
 /// that does not parse (an old or sparse one) reports nothing.
-pub(crate) fn harnesses_of(snapshot: &str) -> Vec<HarnessCapability> {
+pub fn harnesses_of(snapshot: &str) -> Vec<HarnessCapability> {
     serde_json::from_str::<Value>(snapshot)
         .ok()
         .and_then(|value| value.get("harnesses").and_then(Value::as_array).cloned())
@@ -109,7 +138,7 @@ pub(crate) fn harnesses_of(snapshot: &str) -> Vec<HarnessCapability> {
         .collect()
 }
 
-pub(crate) fn kind_is(harness: &HarnessCapability, kind: &str) -> bool {
+pub fn kind_is(harness: &HarnessCapability, kind: &str) -> bool {
     serde_json::to_value(&harness.harness_kind)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
@@ -118,7 +147,7 @@ pub(crate) fn kind_is(harness: &HarnessCapability, kind: &str) -> bool {
 
 /// A team that needs a person during a run: its profile is not lights-out, or it
 /// reports a violation of the one it names.
-pub(crate) fn is_attended(team: &TeamReport) -> bool {
+pub fn is_attended(team: &TeamReport) -> bool {
     team.profile != "lights-out" || !team.violations.is_empty()
 }
 
@@ -151,40 +180,48 @@ fn fail(reason: &str) -> Check {
 
 /// The facts an automatic merge needs from the board. `None` when the pack does
 /// not say `merge` (nothing for Tack to decide) or cannot be read.
-async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
-    let pool = state.repo.pool();
-    let context = store::attempt_context(pool, attempt_id).await.ok()??;
-    let settings = store::get_settings(pool, &context.project_id)
+async fn gather(
+    repo: &Repository,
+    clock: &dyn Clock,
+    host: &dyn Host,
+    attempt_id: &str,
+) -> Option<FactsExtra> {
+    let context = queries::autonomy::attempt_context(repo, attempt_id)
+        .await
+        .ok()??;
+    let settings = queries::autonomy::project_settings(repo, &context.project_id)
         .await
         .ok()??;
     let (pack_id, pack_ref) =
-        store::newest_artifact_of_media_type(pool, attempt_id, MRP_MEDIA_TYPE)
+        queries::autonomy::newest_artifact_of_media_type(repo, attempt_id, MRP_MEDIA_TYPE)
             .await
             .ok()??;
     let pack: MergeReadinessPack =
-        serde_json::from_slice(&read_artifact(state, &pack_ref).await?).ok()?;
+        serde_json::from_slice(&host.read_artifact(&pack_ref).await?).ok()?;
     if pack.recommendation.decision != MergeDecision::Merge {
         return None;
     }
 
-    let paths: Vec<String> = match store::newest_artifact_of_kind(pool, attempt_id, "evidence")
-        .await
-        .ok()?
-    {
-        Some((_, reference)) => read_artifact(state, &reference)
+    let paths: Vec<String> =
+        match queries::autonomy::newest_artifact_of_kind(repo, attempt_id, "evidence")
             .await
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            .and_then(|evidence| {
-                evidence["files"].as_array().map(|files| {
-                    files
-                        .iter()
-                        .filter_map(|f| f["path"].as_str().map(str::to_owned))
-                        .collect()
+            .ok()?
+        {
+            Some((_, reference)) => host
+                .read_artifact(&reference)
+                .await
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .and_then(|evidence| {
+                    evidence["files"].as_array().map(|files| {
+                        files
+                            .iter()
+                            .filter_map(|f| f["path"].as_str().map(str::to_owned))
+                            .collect()
+                    })
                 })
-            })
-            .unwrap_or_default(),
-        None => Vec::new(),
-    };
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
     let (level, domain) = level_for(
         settings.level,
         &settings.domains,
@@ -236,10 +273,12 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
     };
 
     let head = actual["git"]["head_commit"].as_str().unwrap_or_default();
-    let envelope = match store::newest_artifact_of_kind(pool, attempt_id, "mrp_attestation").await {
-        Ok(Some((_, reference))) => read_artifact(state, &reference).await,
-        _ => None,
-    };
+    let envelope =
+        match queries::autonomy::newest_artifact_of_kind(repo, attempt_id, "mrp_attestation").await
+        {
+            Ok(Some((_, reference))) => host.read_artifact(&reference).await,
+            _ => None,
+        };
     extra.attestation = match (envelope, settings.attestation_public_key.as_deref()) {
         (None, _) => fail("The merge-readiness pack is not signed"),
         (Some(_), None) => {
@@ -252,17 +291,14 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
             // The envelope and the head commit of an attempt never change, so a
             // signature verified on an earlier tick still holds; saving the
             // project's settings clears it (`put_settings`).
-            let verified = store::get_merge(pool, attempt_id)
+            let verified = queries::autonomy::merge_of_attempt(repo, attempt_id)
                 .await
                 .ok()
                 .flatten()
                 .and_then(|row| row.attestation_keyid);
             let checked = match verified {
                 Some(keyid) => Ok(keyid),
-                None => {
-                    crate::prill::attest_verify(&state.prill_program().await, &envelope, key, head)
-                        .await
-                }
+                None => host.verify_attestation(&envelope, key, head).await,
             };
             match checked {
                 Ok(keyid) => {
@@ -274,8 +310,8 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
         }
     };
 
-    extra.budget = budget(state, &context.project_id, &settings).await;
-    if let Ok(Some(inputs)) = store::attempt_ceiling_inputs(pool, attempt_id).await {
+    extra.budget = budget(repo, clock, &context.project_id, &settings).await;
+    if let Ok(Some(inputs)) = queries::autonomy::attempt_ceiling_inputs(repo, attempt_id).await {
         extra.ceiling = ceiling_of(
             &inputs.capability_snapshot,
             inputs.harness_kind.as_deref(),
@@ -285,16 +321,20 @@ async fn gather(state: &AppState, attempt_id: &str) -> Option<FactsExtra> {
     Some(extra)
 }
 
-async fn budget(state: &AppState, project_id: &str, settings: &store::Settings) -> Check {
-    let pool = state.repo.pool();
-    let now = Utc::now();
-    if let Ok(Some(day)) = budgets::day_room(pool, project_id, now).await
+async fn budget(
+    repo: &Repository,
+    clock: &dyn Clock,
+    project_id: &str,
+    settings: &store::Settings,
+) -> Check {
+    let now = clock.now();
+    if let Ok(Some(day)) = queries::budgets::day_room(repo, project_id, now).await
         && day.counted >= day.limit
     {
         return fail("This project used its tokens for today");
     }
     if let Some(limit) = settings.budgets.auto_merges_per_day
-        && budgets::auto_merges_today(pool, project_id, now)
+        && queries::budgets::auto_merges_today(repo, project_id, now)
             .await
             .unwrap_or(0)
             >= limit

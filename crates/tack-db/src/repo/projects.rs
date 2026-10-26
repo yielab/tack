@@ -347,3 +347,16 @@ impl ProjectRow {
         })
     }
 }
+
+impl Repository {
+    /// Turn the project's auto-start off. Whether it was on.
+    pub async fn disable_auto_start(&self, project_id: &str) -> Result<bool, crate::StoreError> {
+        let done = sqlx::query(
+            "UPDATE projects SET auto_start_enabled = 0 WHERE id = ? AND auto_start_enabled = 1",
+        )
+        .bind(project_id)
+        .execute(self.pool())
+        .await?;
+        Ok(done.rows_affected() > 0)
+    }
+}

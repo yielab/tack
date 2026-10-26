@@ -154,3 +154,28 @@ pub async fn set_red_ci_at(
     .await?;
     Ok(result.rows_affected() > 0)
 }
+
+impl crate::Repository {
+    /// Record that GitHub merged the pull request at `merged_at` into `merge_sha`: its state and
+    /// times, then its merge commit. A reverted pull request and a merge commit already stored
+    /// are left alone.
+    pub async fn record_pull_request_merged(
+        &self,
+        repo: &str,
+        number: i64,
+        merged_at: &str,
+        merge_sha: &str,
+    ) -> Result<(), crate::StoreError> {
+        observe(
+            self.pool(),
+            repo,
+            number,
+            "merged",
+            Some(merged_at),
+            Some(merged_at),
+        )
+        .await?;
+        set_merge_sha(self.pool(), repo, number, merge_sha).await?;
+        Ok(())
+    }
+}

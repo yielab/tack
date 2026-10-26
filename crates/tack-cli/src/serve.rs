@@ -5,6 +5,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tack_api::LocalRunnerControl;
 use tack_api::config::AppConfig;
@@ -12,6 +13,7 @@ use tack_api::router::AppState;
 use tack_api::server::{ensure_default_workspace, prepare};
 use tack_api::webhook::WebhookClient;
 use tack_db::{Repository, init_pool, migrations, repo};
+use tack_protocol::SystemClock;
 use tokio::sync::oneshot;
 use tracing::info;
 
@@ -60,6 +62,16 @@ pub async fn run(
         webhook,
         local_runner,
     };
+
+    // Tasks a project starts by itself; off when its interval is 0.
+    if state.config.auto_start_seconds > 0 {
+        tokio::spawn(tack_app::auto_start::run(
+            state.repo.clone(),
+            Arc::new(SystemClock),
+            Arc::new(state.host()),
+            Duration::from_secs(state.config.auto_start_seconds),
+        ));
+    }
 
     tack_api::serve(state, ready_tx).await
 }

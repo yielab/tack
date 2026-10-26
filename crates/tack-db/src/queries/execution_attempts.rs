@@ -55,3 +55,21 @@ pub async fn operator_requeues_of_attempt(
     .fetch_one(repo.pool())
     .await?)
 }
+
+/// The newest succeeded attempt of the task that pushed a branch, `None` when it has none.
+pub async fn newest_pushed_attempt_of_item(
+    repo: &Repository,
+    item_id: &str,
+) -> Result<Option<String>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT a.id FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         WHERE r.item_id = ? AND a.state = 'succeeded'
+           AND json_extract(a.actual_execution, '$.git.pushed') = 1
+           AND json_extract(a.actual_execution, '$.git.head_commit') IS NOT NULL
+         ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1",
+    )
+    .bind(item_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}

@@ -14,3 +14,7 @@ pub mod execution_decisions;
 pub mod execution_recovery_audits;
 pub mod execution_request_rows;
 pub mod execution_requests;
+pub mod items;
+pub mod projects;
+pub mod pull_requests;
+pub mod rate_card;

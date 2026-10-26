@@ -310,7 +310,15 @@ pub async fn update_item(
             item.project_id.to_string(),
         );
         tokio::spawn(async move {
-            crate::merge::on_done(&app, &item_id, &project_id, over_mcp).await;
+            tack_app::merge::on_done(
+                &app.repo,
+                &tack_protocol::SystemClock,
+                &app.host(),
+                &item_id,
+                &project_id,
+                over_mcp,
+            )
+            .await;
         });
     }
 

@@ -86,3 +86,26 @@ pub async fn runner_is_active(repo: &Repository, runner_id: &str) -> Result<bool
     .fetch_one(repo.pool())
     .await?)
 }
+
+/// The capability snapshots of the active runners a run may land on: the fleet's members when
+/// a fleet is named, else every active runner.
+pub async fn capability_snapshots_of_active_runners(
+    repo: &Repository,
+    fleet_id: Option<&str>,
+) -> Result<Vec<String>, StoreError> {
+    let sql = match fleet_id {
+        Some(_) => {
+            "SELECT r.capability_snapshot FROM agent_runners r \
+             JOIN agent_fleet_members m ON m.runner_id = r.id \
+             WHERE m.fleet_id = ? AND r.state = 'active' AND r.revoked_at IS NULL"
+        }
+        None => {
+            "SELECT capability_snapshot FROM agent_runners \
+             WHERE ? IS NULL AND state = 'active' AND revoked_at IS NULL"
+        }
+    };
+    Ok(sqlx::query_scalar(sql)
+        .bind(fleet_id)
+        .fetch_all(repo.pool())
+        .await?)
+}

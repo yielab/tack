@@ -440,7 +440,7 @@ pub async fn factory_metrics(
             DENOMINATOR_ZERO
         };
 
-    let card = crate::rate_card::load(pool).await;
+    let card = crate::rate_card::load(&state.repo).await;
     let spend = tack_db::repo::rate_card::spend_by_model(pool, &project, since).await?;
     let (mut cost, mut unpriced) = (0.0, 0);
     let mut repo_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
