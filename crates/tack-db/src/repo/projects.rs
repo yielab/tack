@@ -360,3 +360,31 @@ impl Repository {
         Ok(done.rows_affected() > 0)
     }
 }
+
+impl Repository {
+    /// The id of the board's first workspace, made (named "Default Workspace") when there is none.
+    pub async fn first_workspace_or_create(&self) -> Result<Uuid, crate::StoreError> {
+        let existing: Option<String> = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
+            .fetch_optional(self.pool())
+            .await?;
+        if let Some(id) = existing {
+            return Uuid::parse_str(&id)
+                .map_err(|e| crate::StoreError::Sql(sqlx::Error::Decode(Box::new(e))));
+        }
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        sqlx::query(
+            "INSERT INTO workspaces (id, name, description, default_vocabulary, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id.to_string())
+        .bind("Default Workspace")
+        .bind("Auto-created default workspace")
+        .bind("{}")
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(self.pool())
+        .await?;
+        Ok(id)
+    }
+}

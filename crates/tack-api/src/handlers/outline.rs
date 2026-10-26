@@ -436,7 +436,7 @@ async fn into_existing_project(
         .collect();
     let profiles = state.repo.list_agent_profile_rows().await?;
     let fleets = state.repo.fleet_names().await?;
-    let level = store::get_settings(state.repo.pool(), &project_id.to_string())
+    let level = tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string())
         .await?
         .map_or(Level::L3, |s| s.level);
     let board = Board {
@@ -531,7 +531,7 @@ async fn write_profiles(
 ) -> ApiResult<HashMap<String, String>> {
     let repo = &state.repo;
     let at = |section: &'static str| {
-        move |source: sqlx::Error| ApiError::SectionFailed {
+        move |source| ApiError::SectionFailed {
             section,
             kept: true,
             source,
@@ -610,7 +610,7 @@ async fn write_automation(
 ) -> ApiResult<()> {
     let repo = &state.repo;
     let at = |section: &'static str| {
-        move |source: sqlx::Error| ApiError::SectionFailed {
+        move |source| ApiError::SectionFailed {
             section,
             kept: true,
             source,
@@ -711,7 +711,7 @@ async fn write(
     let repo = &state.repo;
     let project_id = project.id;
     let at = |section: &'static str| {
-        move |source: sqlx::Error| ApiError::SectionFailed {
+        move |source| ApiError::SectionFailed {
             section,
             kept: true,
             source,

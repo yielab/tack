@@ -45,3 +45,16 @@ pub async fn statuses_of_project(
             .await?,
     )
 }
+
+/// The status of every task that recurs from `item_id`.
+pub async fn statuses_of_recurrences(
+    repo: &Repository,
+    item_id: &str,
+) -> Result<Vec<String>, StoreError> {
+    Ok(
+        sqlx::query_scalar("SELECT status FROM items WHERE recurrence_of = ?")
+            .bind(item_id)
+            .fetch_all(repo.pool())
+            .await?,
+    )
+}

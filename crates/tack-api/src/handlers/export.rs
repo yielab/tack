@@ -16,7 +16,6 @@ use tack_core::models::{
 };
 use tack_core::outline::bundle::{Parts, to_bundle};
 use tack_core::outline::{BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain};
-use tack_db::repo::autonomy as store;
 
 use crate::error::ApiError;
 use crate::router::AppState;
@@ -191,7 +190,8 @@ async fn bundle_response(
     let item_fields = state.repo.field_values_for_project(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
     let fleets = state.repo.fleet_names().await?;
-    let settings = store::get_settings(state.repo.pool(), &project_id.to_string()).await?;
+    let settings =
+        tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string()).await?;
     let autonomy = settings.map(|s| BundleAutonomy {
         level: Some(s.level.to_string()),
         domains: s
@@ -473,10 +473,9 @@ async fn run_import(
             && let (Some(&new_id), Some(&new_parent)) =
                 (item_id_map.get(&item.id), item_id_map.get(&old_parent))
         {
-            sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
-                .bind(new_parent.to_string())
-                .bind(new_id.to_string())
-                .execute(state.repo.pool())
+            state
+                .repo
+                .set_item_parent(new_id, new_parent)
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
         }

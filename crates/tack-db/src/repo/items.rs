@@ -1131,6 +1131,18 @@ async fn insert_item(
     })
 }
 
+impl Repository {
+    /// Point `item` at `parent` as its parent, touching nothing else of the row.
+    pub async fn set_item_parent(&self, item: Uuid, parent: Uuid) -> Result<(), crate::StoreError> {
+        sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
+            .bind(parent.to_string())
+            .bind(item.to_string())
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{Arc, Mutex};

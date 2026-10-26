@@ -13,7 +13,6 @@ use tack_core::outline::{
 };
 use tack_core::workflow::{StatusCategory, StatusDef};
 use tack_db::repo;
-use tack_db::repo::autonomy as store;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -238,7 +237,10 @@ pub(crate) async fn build_project_from_template(
         items: Vec::new(),
     };
     // The first workspace of the board (made when there is none) owns it.
-    let workspace_id = get_or_create_default_workspace(state.pool()).await?;
+    let workspace_id = state.repo.first_workspace_or_create().await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to resolve the default workspace");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let scoped = AppState {
         workspace_id,
         ..state.clone()
@@ -422,47 +424,52 @@ pub async fn save_project_as_template(
 
     // The project's roles, the profiles they use and its automation settings,
     // written the way an export writes them.
-    let internal = |e: sqlx::Error| {
-        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
     let profiles: Vec<ProfileRow> = state
         .repo
         .list_agent_profile_rows()
         .await
-        .map_err(internal)?;
-    let roles = state.repo.list_roles(project_id).await.map_err(internal)?;
+        .map_err(read_failed(project_id))?;
+    let roles = state
+        .repo
+        .list_roles(project_id)
+        .await
+        .map_err(read_failed(project_id))?;
     let sprints = state
         .repo
         .list_sprints(project_id)
         .await
-        .map_err(internal)?;
-    let fleets = state.repo.fleet_names().await.map_err(internal)?;
-    let autonomy = store::get_settings(state.pool(), &project_id.to_string())
+        .map_err(read_failed(project_id))?;
+    let fleets = state
+        .repo
+        .fleet_names()
         .await
-        .map_err(internal)?
-        .map(|s| BundleAutonomy {
-            level: Some(s.level.to_string()),
-            domains: s
-                .domains
-                .into_iter()
-                .map(|d| BundleDomain {
-                    name: d.name,
-                    paths: d.path_globs,
-                    item_types: d.item_types,
-                    level: d.level.to_string(),
-                })
-                .collect(),
-            verify_require: Some(s.verify_require),
-            verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
-            budgets: Some(BundleBudgets {
-                tokens_per_day: s.budgets.tokens_per_day,
-                auto_merges_per_day: s.budgets.auto_merges_per_day,
-                queue_items_max: s.budgets.queue_items_max,
-                ..Default::default()
-            }),
-            merge_on_done: Some(s.merge_on_done),
-        });
+        .map_err(read_failed(project_id))?;
+    let autonomy =
+        tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string())
+            .await
+            .map_err(read_failed(project_id))?
+            .map(|s| BundleAutonomy {
+                level: Some(s.level.to_string()),
+                domains: s
+                    .domains
+                    .into_iter()
+                    .map(|d| BundleDomain {
+                        name: d.name,
+                        paths: d.path_globs,
+                        item_types: d.item_types,
+                        level: d.level.to_string(),
+                    })
+                    .collect(),
+                verify_require: Some(s.verify_require),
+                verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
+                budgets: Some(BundleBudgets {
+                    tokens_per_day: s.budgets.tokens_per_day,
+                    auto_merges_per_day: s.budgets.auto_merges_per_day,
+                    queue_items_max: s.budgets.queue_items_max,
+                    ..Default::default()
+                }),
+                merge_on_done: Some(s.merge_on_done),
+            });
     let bundle = to_bundle(&Parts {
         project: &project,
         fields: &[],
@@ -523,47 +530,11 @@ fn grouping_to_string(g: BoardGrouping) -> String {
     }
 }
 
-/// Helper: Get or create default workspace
-async fn get_or_create_default_workspace(pool: &sqlx::SqlitePool) -> Result<Uuid, StatusCode> {
-    // Try to get first workspace
-    #[derive(sqlx::FromRow)]
-    struct WorkspaceId {
-        id: String,
-    }
-
-    let existing = sqlx::query_as::<_, WorkspaceId>("SELECT id FROM workspaces LIMIT 1")
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to query workspaces");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    if let Some(row) = existing {
-        Ok(Uuid::parse_str(&row.id).unwrap())
-    } else {
-        // Create default workspace
-        let id = Uuid::new_v4();
-        let now = chrono::Utc::now();
-
-        sqlx::query(
-            "INSERT INTO workspaces (id, name, description, default_vocabulary, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)"
-        )
-        .bind(id.to_string())
-        .bind("Default Workspace")
-        .bind("Auto-created default workspace")
-        .bind("{}")
-        .bind(now.to_rfc3339())
-        .bind(now.to_rfc3339())
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create default workspace");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        Ok(id)
+/// Logs a failed read of the project for a template and answers 500.
+fn read_failed<E: std::fmt::Display>(project_id: Uuid) -> impl Fn(E) -> StatusCode {
+    move |e| {
+        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
+        StatusCode::INTERNAL_SERVER_ERROR
     }
 }
 
