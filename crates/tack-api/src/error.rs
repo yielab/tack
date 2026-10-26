@@ -167,6 +167,20 @@ impl IntoResponse for ApiError {
     }
 }
 
+impl From<tack_app::AppError> for ApiError {
+    fn from(error: tack_app::AppError) -> Self {
+        use tack_app::AppError;
+        match error {
+            AppError::NotFound => ApiError::Store(StoreError::NotFound),
+            AppError::Conflict(message) => ApiError::Conflict(message),
+            error @ AppError::InvalidTransition { .. } => ApiError::BadRequest(error.to_string()),
+            error @ AppError::StaleLease { .. } => ApiError::Conflict(error.to_string()),
+            AppError::Store(error) => ApiError::Store(error),
+            AppError::Core(error) => ApiError::Core(error),
+        }
+    }
+}
+
 pub type ApiResult<T> = Result<T, ApiError>;
 
 #[cfg(test)]
@@ -223,6 +237,37 @@ mod tests {
         assert_eq!(
             (status, message.as_str()),
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+        );
+    }
+
+    #[tokio::test]
+    async fn an_app_error_maps_to_the_status_its_kind_names() {
+        use tack_app::AppError;
+        let status_of = |error: AppError| async move { message_of(error.into()).await.0 };
+        assert_eq!(status_of(AppError::NotFound).await, StatusCode::NOT_FOUND);
+        assert_eq!(
+            status_of(AppError::Conflict("x".into())).await,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            status_of(AppError::InvalidTransition {
+                from: "a".into(),
+                to: "b".into()
+            })
+            .await,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status_of(AppError::StaleLease {
+                attempt_id: "att".into(),
+                fence: 1
+            })
+            .await,
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            status_of(AppError::Store(StoreError::Sql(sqlx::Error::RowNotFound))).await,
+            StatusCode::INTERNAL_SERVER_ERROR
         );
     }
 }

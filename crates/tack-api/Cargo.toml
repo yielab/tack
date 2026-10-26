@@ -20,6 +20,8 @@ tack-db = { path = "../tack-db" }
 # spawn in execution_runtime.rs, and the request/attempt types the execution
 # and runner-protocol handlers build on.
 tack-orch = { path = "../tack-orch" }
+# The use cases the handlers call; `From<AppError> for ApiError` lives in error.rs.
+tack-app = { path = "../tack-app" }
 async-trait = { workspace = true }
 axum = { workspace = true }
 utoipa = { workspace = true }

@@ -7,6 +7,7 @@ members = [
     "crates/tack-api",
     "crates/tack-cli",
     "crates/tack-orch",
+    "crates/tack-app",
     "crates/tack-runner",
     "crates/tack-test-support",
 ]

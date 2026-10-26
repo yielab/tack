@@ -17,7 +17,7 @@
 //! always wires an [`EmbeddedRunnerControl`] into `AppState`, whether or not
 //! `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` says to start it immediately —
 //! that flag only decides `AppConfig::local_runner_enable`'s startup value.
-//! `serve_inner`'s own auto-start check and `PUT /api/local-runner` both
+//! `serve`'s own auto-start check and `PUT /api/local-runner` both
 //! call the same [`EmbeddedRunnerControl::start`]: one code path in, never a
 //! boot-time one and a UI-triggered one.
 
@@ -474,7 +474,7 @@ impl EmbeddedRunnerControl {
 /// invariant, not a startup nicety): this function refuses to boot only when
 /// *this boot's own* flag or environment variable explicitly asked for
 /// `--with-runner` on a non-loopback bind ([`ensure_loopback`]);
-/// `tack_api::server::serve_inner` separately re-checks loopback against the
+/// `serve::run` separately re-checks loopback against the
 /// *persisted* preference once the database is open, before calling
 /// [`EmbeddedRunnerControl::start`] — so a stale "enabled" row saved from an
 /// earlier loopback session can never auto-start a runner on a
@@ -492,16 +492,13 @@ pub async fn serve() -> anyhow::Result<()> {
     let local_runner: Arc<dyn tack_api::LocalRunnerControl> = control.clone();
 
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-    let server_task = tokio::spawn(tack_api::serve_with_ready_and_local_runner(
-        ready_tx,
-        local_runner,
-    ));
+    let server_task = tokio::spawn(crate::serve::run(Some(ready_tx), Some(local_runner)));
 
     let bound_addr = match ready_rx.await {
         Ok(addr) => addr,
         Err(_) => {
             // The sender was dropped without sending, which only happens when
-            // `serve_with_ready_and_local_runner` returned before opening its
+            // `serve::run` returned before opening its
             // listener; that task's own result is the error worth
             // surfacing, not the closed channel.
             return match server_task.await {
@@ -514,7 +511,7 @@ pub async fn serve() -> anyhow::Result<()> {
     control.set_bound_addr(bound_addr).await;
 
     // Everything past this point — the auto-start decision, ctrl-c
-    // handling, graceful shutdown — is `tack_api::server::serve_inner`'s
+    // handling, graceful shutdown — is `serve::run`'s
     // own job; this function's only remaining job is to react honestly if
     // that task ends.
     match server_task.await {

@@ -24,7 +24,7 @@ pub use handlers::local_runner::{
     LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
 };
 pub use router::AppState;
-pub use server::{serve, serve_with_ready, serve_with_ready_and_local_runner};
+pub use server::serve;
 
 /// Background task: poll linked GitHub repos for inbound issue-state changes
 /// on `config.github_poll_seconds`, the same interval/skip-first-tick shape

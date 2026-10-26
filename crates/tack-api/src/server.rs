@@ -2,7 +2,6 @@
 //! binary (in the `tack-cli` crate) can start the HTTP server in-process.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -11,65 +10,19 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
-use crate::handlers::local_runner::{LocalRunnerControl, effective_local_runner_enabled};
+use crate::handlers::local_runner::effective_local_runner_enabled;
 use crate::remote_backup;
 use crate::router::{AppState, build_router};
-use crate::webhook::WebhookClient;
-use tack_db::{Repository, init_pool, migrations, repo};
 
-/// Boot the Tack HTTP server: load config, run migrations, start background
-/// tasks, and serve until a shutdown signal is received. No embedded runner
-/// is ever wired in — `AppState::local_runner` is `None` and the routes in
-/// `handlers::local_runner` are absent regardless of bind address. Use
-/// [`serve_with_ready_and_local_runner`] to wire one in.
-pub async fn serve() -> anyhow::Result<()> {
-    serve_inner(None, None).await
-}
-
-/// Like [`serve`], but sends the real bound [`SocketAddr`] over `ready_tx`
-/// once the listener is open and accepting connections, before this
-/// function blocks on `axum::serve`. An in-process embedder can wait on the
-/// receiving end to learn the exact address instead of polling a guessed
-/// one — the only way to know it for certain when the configured port is
-/// `0` and the OS picks the real one.
-///
-/// If the receiver has already been dropped, the send is a no-op: the
-/// server still starts and runs normally, it just has nobody to tell.
-/// No embedded runner is wired in — see [`serve`]'s doc comment.
-pub async fn serve_with_ready(ready_tx: oneshot::Sender<SocketAddr>) -> anyhow::Result<()> {
-    serve_inner(Some(ready_tx), None).await
-}
-
-/// Like [`serve_with_ready`], additionally wiring `local_runner` into
-/// `AppState` so `handlers::local_runner`'s routes exist (still only on a
-/// loopback bind — `router::build_router`'s own gate). `local_runner`'s
-/// preference (`app_meta`, falling back to `AppConfig::local_runner_enable`
-/// — `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) is checked once the
-/// listener is bound and, if on, started before this function blocks on
-/// `axum::serve` — the exact same [`LocalRunnerControl::start`] call
-/// `PUT /api/local-runner` makes later, so there is only ever one code path
-/// into the runtime, not a boot-time one and a UI-triggered one. A start
-/// failure at boot takes the whole process down (returned as an error)
-/// rather than leaving a server running with the preference on but nothing
-/// actually started; the caller of `PUT /api/local-runner` gets the same
-/// error back instead, since starting the server itself never failed.
-pub async fn serve_with_ready_and_local_runner(
-    ready_tx: oneshot::Sender<SocketAddr>,
-    local_runner: Arc<dyn LocalRunnerControl>,
-) -> anyhow::Result<()> {
-    serve_inner(Some(ready_tx), Some(local_runner)).await
-}
-
-async fn serve_inner(
-    ready_tx: Option<oneshot::Sender<SocketAddr>>,
-    local_runner: Option<Arc<dyn LocalRunnerControl>>,
-) -> anyhow::Result<()> {
-    let mut config = AppConfig::load();
-
-    init_tracing(&config);
+/// Everything that happens before the database opens: the tracing subscriber, the
+/// security preflight, the API and decision tokens, and a staged restore. The binary that
+/// composes the server calls this once with the configuration it loaded, then builds the
+/// store and the [`AppState`] and hands them to [`serve`].
+pub fn prepare(config: &mut AppConfig) -> anyhow::Result<()> {
+    init_tracing(config);
 
     // Reject unsafe exposure before opening a database or listener.
-    security_preflight(&config)?;
+    security_preflight(config)?;
     config.ensure_api_token()?;
     config.ensure_decision_token()?;
     if config.api_token.as_deref().is_none_or(str::is_empty) {
@@ -96,43 +49,25 @@ async fn serve_inner(
     info!("This build serves the API only; the web UI is in the release build or `npm run dev`.");
 
     // Apply any staged restore before opening the pool.
-    apply_staged_restore(&config);
+    apply_staged_restore(config);
+    Ok(())
+}
 
-    let pool = init_pool(&config.database_url).await?;
-    migrations::run_all(&pool).await?;
-    repo::templates::seed_builtin_templates(&pool).await?;
-    repo::execution::seed_builtin_profiles(&pool).await?;
-
-    let workspace_id = ensure_default_workspace(&pool).await?;
-    let repo = Repository::new(pool);
-
-    // A board from before a decision ended with its run left questions nobody can answer.
-    let closed = repo
-        .expire_decisions_of_ended_attempts(&tack_protocol::SystemClock)
-        .await?;
-    if closed > 0 {
-        info!(
-            closed,
-            "closed the questions of runs that had already ended"
-        );
-    }
-
-    // WebSocket update fan-out; capacity 100 messages.
-    let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
-
-    let webhook = config.webhook_url.clone().map(|url| {
-        info!(url=%url, "Webhook delivery enabled");
-        WebhookClient::new(url, config.webhook_secret.clone())
-    });
-
-    let state = AppState {
-        repo,
-        config: config.clone(),
-        workspace_id,
-        broadcast_tx,
-        webhook,
-        local_runner: local_runner.clone(),
-    };
+/// Serve `state` until a shutdown signal is received: start the background tasks, bind the
+/// listener, bring up the embedded runner named by `state.local_runner` (when it is on and
+/// the bind is loopback) and answer requests. Sends the real bound [`SocketAddr`] over
+/// `ready_tx` once the listener is open, before blocking on `axum::serve`; a dropped receiver
+/// is a no-op. When `state.local_runner` is `None` the routes in `handlers::local_runner` are
+/// absent regardless of bind address.
+///
+/// A start failure of the embedded runner on a loopback bind takes the whole server down
+/// rather than leaving one running with the preference on and nothing started.
+pub async fn serve(
+    state: AppState,
+    ready_tx: Option<oneshot::Sender<SocketAddr>>,
+) -> anyhow::Result<()> {
+    let config = state.config.clone();
+    let local_runner = state.local_runner.clone();
 
     // Automatic remote backup on a configured interval, clamped to a 60s floor
     // (`tokio::time::interval` panics on zero, and anything faster would hammer
@@ -300,7 +235,7 @@ fn log_file_target(path: &str) -> Option<(std::path::PathBuf, std::ffi::OsString
 fn init_tracing(config: &AppConfig) {
     use tracing_subscriber::util::SubscriberInitExt;
 
-    // `try_init` rather than `init`: this process may call `serve_inner` more
+    // `try_init` rather than `init`: this process may call `serve` more
     // than once (multiple in-process servers under one test binary, e.g. under
     // `cargo llvm-cov`, which runs all tests as one process rather than
     // nextest's one-process-per-test). Only the first call can ever install
@@ -369,7 +304,8 @@ fn tracing_subscriber_for(config: &AppConfig) -> Box<dyn tracing::Subscriber + S
     }
 }
 
-async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uuid> {
+/// The id of the one workspace this server runs, created on a first boot.
+pub async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uuid> {
     let existing: Option<String> = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
         .fetch_optional(pool)
         .await?;
