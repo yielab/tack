@@ -1,3 +1,4 @@
+pub mod app_meta;
 pub mod attachments;
 pub mod autonomy;
 pub mod boards;

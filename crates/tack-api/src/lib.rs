@@ -20,11 +20,11 @@ pub mod server;
 pub mod webhook;
 
 // Re-export commonly used items
-pub use handlers::local_runner::{
-    LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
-};
 pub use router::AppState;
 pub use server::serve;
+pub use tack_app::local_runner::{
+    LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus,
+};
 
 /// Background task: poll linked GitHub repos for inbound issue-state changes
 /// on `config.github_poll_seconds`, the same interval/skip-first-tick shape

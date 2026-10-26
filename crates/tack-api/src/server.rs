@@ -10,7 +10,6 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
-use crate::handlers::local_runner::effective_local_runner_enabled;
 use crate::remote_backup;
 use crate::router::{AppState, build_router};
 
@@ -172,7 +171,11 @@ pub async fn serve(
     // posture of `--with-runner` itself.
     if let Some(control) = &local_runner
         && state_for_local_runner.config.binds_loopback()
-        && effective_local_runner_enabled(&state_for_local_runner).await
+        && tack_app::local_runner::effective_enabled(
+            &state_for_local_runner.repo,
+            state_for_local_runner.config.local_runner_enable,
+        )
+        .await
     {
         control.start().await?;
     }

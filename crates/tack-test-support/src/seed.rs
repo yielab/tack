@@ -705,3 +705,23 @@ pub async fn project_verify_loop_max_attempts(repo: &Repository, project_id: &st
         .await
         .expect("seed projects verify_loop_max_attempts");
 }
+
+/// A runner registered under `runner_id` through the store's own command: active, one slot, no
+/// labels. The row a request pinned to that runner needs before it can be queued.
+pub async fn registered_runner(repo: &Repository, runner_id: &str) {
+    repo.register_runner(
+        tack_db::repo::execution::NewRunner {
+            id: runner_id,
+            name: "local-1",
+            credential_hash: "h",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        &tack_protocol::SystemClock,
+    )
+    .await
+    .expect("seed registered runner");
+}

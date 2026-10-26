@@ -22,7 +22,6 @@ tack-db = { path = "../tack-db" }
 tack-orch = { path = "../tack-orch" }
 # The use cases the handlers call; `From<AppError> for ApiError` lives in error.rs.
 tack-app = { path = "../tack-app" }
-async-trait = { workspace = true }
 axum = { workspace = true }
 utoipa = { workspace = true }
 tower = { workspace = true }
@@ -51,6 +50,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 
 [dev-dependencies]
+async-trait = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }

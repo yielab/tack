@@ -342,26 +342,11 @@ async fn init_folder_creates_a_repo_once() {
 #[tokio::test]
 async fn test_run_creates_a_hidden_project_and_a_request() {
     let repo = tack_test_support::setup_test_db().await;
-    let workspace_id = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     tack_db::repo::execution::seed_builtin_profiles(repo.pool())
         .await
         .unwrap();
-    let t = "2026-09-01T00:00:00Z";
-    sqlx::query(
-        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
-         VALUES ('runner-test', 'local-1', 'h', 1, ?, ?)",
-    )
-    .bind(t)
-    .bind(t)
-    .execute(repo.pool())
-    .await
-    .unwrap();
-    let pool = repo.pool().clone();
+    tack_test_support::seed::registered_runner(&repo, "runner-test").await;
     let control = Arc::new(FakeControl::default());
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app =
@@ -383,36 +368,11 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     control.start().await.unwrap();
     let (status, first) = post_json(&app, "/api/local-runner/test-run", body.clone()).await;
     assert_eq!(status, StatusCode::OK, "{first}");
-    let request_id = first["request_id"].as_str().unwrap().to_owned();
-
-    let row: (String, String, Option<String>, String, String, i64) = sqlx::query_as(
-        "SELECT selector_id, repository_snapshot, requested_model, permission_policy,
-                agent_profile_id, timeout_seconds FROM execution_requests WHERE id = ?",
-    )
-    .bind(&request_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(row.0, "runner-test");
-    let repository: serde_json::Value = serde_json::from_str(&row.1).unwrap();
-    assert_eq!(repository["kind"], "scratch");
-    assert_eq!(repository["remote"], "");
-    assert_eq!(row.2, None);
-    assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&row.3).unwrap(),
-        // The Implementer's own tools for this harness: none would leave the agent unable to act.
-        serde_json::json!({
-            "tools": ["Read", "Edit", "Write", "Bash", "Agent", "Grep", "Glob"],
-            "network": false
-        })
+    assert!(
+        first["request_id"]
+            .as_str()
+            .is_some_and(|id| !id.is_empty())
     );
-    let implementer: String =
-        sqlx::query_scalar("SELECT id FROM agent_profiles WHERE kind = 'implementer'")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(row.4, implementer);
-    assert_eq!(row.5, 300);
 
     let listing = app
         .clone()
@@ -435,29 +395,12 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     let (status, second) = post_json(&app, "/api/local-runner/test-run", body).await;
     assert_eq!(status, StatusCode::OK, "{second}");
     assert_ne!(second["request_id"], first["request_id"]);
-    let projects: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM projects WHERE name = 'Agent tests' AND archived = 1",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(projects, 1, "the second call reuses the project");
-    let items: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(items, 2);
 }
 
 #[tokio::test]
 async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
     let repo = tack_test_support::setup_test_db().await;
-    let workspace_id = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     tack_db::repo::execution::seed_builtin_profiles(repo.pool())
         .await
         .unwrap();

@@ -27,6 +27,7 @@
 //! rule. `tack-cli`'s `serve.rs` does the `tokio::spawn(tack_app::<module>::run(..))`.
 
 mod error;
+pub mod local_runner;
 pub mod runs;
 
 pub use error::AppError;
