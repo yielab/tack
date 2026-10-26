@@ -78,3 +78,4 @@ mutants.out*/
 
 # The local server writes its API token beside its database.
 api-token
+/decision-token
