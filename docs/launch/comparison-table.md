@@ -55,8 +55,8 @@ real, checked against the code, not softened:
 
 - **No accounts.** One optional shared Bearer token (`TACK_API_TOKEN`); no per-user
   identity, roles, or permissions. Every operator with the token can do everything.
-  (ADR 0059 documents this as a deliberate posture for a single-operator tool, not an
-  oversight — see `docs/adr/0059-single-operator-identity-posture.md`.)
+  (ADR 0004 documents this as a deliberate posture for a single-operator tool, not an
+  oversight — see `docs/adr/0004-single-operator-identity-posture.md`.)
 - **No outbound notifications.** Zero SMTP/email code anywhere in the tree —
   `grep -rn 'smtp\|email' crates/` turns up only a custom-field *type* named `email`
   and test fixtures setting `git config user.email`, nothing that sends mail. If you

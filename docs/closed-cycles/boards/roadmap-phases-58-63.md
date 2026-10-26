@@ -3,7 +3,7 @@
 # Standalone Single-Binary Operation (Phase 58)
 
 **Status:** delivered. Decided in
-[`docs/adr/0058-standalone-single-binary-runner.md`](../../adr/0058-standalone-single-binary-runner.md).
+[`docs/adr/0003-standalone-single-binary-runner.md`](../../adr/0003-standalone-single-binary-runner.md).
 Execution is tracked card-by-card on the **Part IV board** in `TODO.md` (§IV.0–§IV.6), which is
 the authority for wave status, card ownership and accepted integration SHAs. This section
 records architectural intent; the board records what actually shipped.
@@ -25,7 +25,7 @@ The feedback that opened this phase was blunt: the split is "totalmente antiintu
 
 ## The observation that resolves it
 
-**ADR 0050 separates roles, not binaries.** Its rules are about who schedules work, who owns
+**ADR 0002 separates roles, not binaries.** Its rules are about who schedules work, who owns
 processes, who holds credentials, and which direction connections open. None of them say
 anything about how many executables ship. The `tack` binary already hosts two distinct roles —
 HTTP server and API client — chosen by subcommand. A third is consistent with that design
@@ -50,7 +50,7 @@ has no server.
   exist to prevent — and a path `scripts/smoke.sh` does not exercise, making the mode most
   users run the mode least proven.
 - **`tack-api` never depends on `tack-runner`.** The composition root is `tack-cli`, which
-  already depends on `tack-api`. ADR 0050's "the Tack API never starts a coding harness" stays
+  already depends on `tack-api`. ADR 0002's "the Tack API never starts a coding harness" stays
   literally true of the API crate.
 - **Off by default; loud on failure.** An embedded runner executes arbitrary coding-agent
   processes on the host serving the UI — strictly more dangerous than anything Tack currently
@@ -194,7 +194,7 @@ That is a defensible design for a single operator. It is not "self-hosted for a 
 the documentation does not distinguish them — a reader who sees "self-hosted" reasonably
 assumes accounts exist. The posture also aged badly: Phase 27.2 made a non-loopback bind with
 no token a **warning**, which was proportionate when the product stored task text and is not
-now that the same server schedules agents that execute code. ADR 0058 already chose a startup
+now that the same server schedules agents that execute code. ADR 0003 already chose a startup
 **error** for that shape of risk. Card **V-B1** decides and records the posture; it does not
 build identity.
 
@@ -320,14 +320,14 @@ and **VI-D1** (after the product changes).
 
 ### The provider answer is a negation
 
-ADR 0050 keeps the API server out of the model-calling business; ADR 0058 says "vendor
+ADR 0002 keeps the API server out of the model-calling business; ADR 0003 says "vendor
 credentials remain outside Tack". Both are statements about the API server and both are
 correct. Both are cited — in `docs/CONFIG.md`, in `tack runner doctor`'s own output — as if
 they meant "Tack cannot help you configure a provider". The runner side of the boundary was
 never decided: the runner already owns its own credential, owns the harness subprocess and
 its environment, and accepts `secret_reference` environment entries that every adapter warns
 about and skips because "no secret-store client exists in tack-runner yet". Card **VI-A2**
-writes ADR 0061 (see `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`,
+writes ADR 0005 (see `docs/adr/0005-provider-credentials-at-the-runner-boundary.md`,
 accepted 2026-09-03) and decides that side; cards **VI-B1** through **VI-B3** implement it.
 
 ### The docs contradict the code in four places
@@ -391,7 +391,7 @@ once.
 | See what an attempt produced, answer a decision | UI with a typed id | UI lists | — |
 
 The last column is closed. A step that cannot move to the UI for a reason not in this table
-is an amendment to ADR 0061, not a card's judgement.
+is an amendment to ADR 0005, not a card's judgement.
 
 ## Vercel AI Gateway, and why it is the one provider this phase adds
 
@@ -409,7 +409,7 @@ catalog into the capability snapshot the scheduler already intersects against, a
 adapters inject the vendor-documented environment only for attempts whose resolved model
 names the gateway. The Tack API still makes zero model-provider calls. The single exception
 — a loopback-only, embedded-runner-only, write-once route that hands a pasted key to the
-co-located runner without persisting it — is what ADR 0061 exists to bound. OpenRouter,
+co-located runner without persisting it — is what ADR 0005 exists to bound. OpenRouter,
 direct vendor keys and local endpoints stay in each harness's own configuration until the
 gateway path is proven live and a second gateway measurably differs from it.
 
@@ -436,7 +436,7 @@ view that attaches to it over loopback and fetches the current state when it com
 back. The runner is also the component that holds credentials and touches code, so it
 must be able to live wherever those are; in the normal case that is the same machine,
 the same process. The split costs the normal case one flag (or the UI switch decision 6
-of ADR 0061 adds) and is what makes the other two shapes possible without a redesign.
+of ADR 0005 adds) and is what makes the other two shapes possible without a redesign.
 
 ### Three kinds of secret, three different owners
 
@@ -446,7 +446,7 @@ of ADR 0061 adds) and is what makes the other two shapes possible without a rede
 | A provider API key injected into the harness's environment | a Vercel AI Gateway key | **the runner**, on the machine that launches the harness | OS keychain first, owner-only file second — what `gh` and `docker` do. Never the shared board database. |
 | Tack's own secrets | operator token, runner enrollment credential, S3 backup key | already settled | hashed on the server; owner-only and `[REDACTED]` on the runner |
 
-Only the second row was undecided. ADR 0061 decides where it lives; this section fixes
+Only the second row was undecided. ADR 0005 decides where it lives; this section fixes
 *how*.
 
 ### How the runner keeps a provider key
@@ -481,7 +481,7 @@ headless deployment that wants the UI paste route actually exists.
 
 Rejected outright, because they look convenient and are not standard: a provider key in
 `tack.db` or `app_meta`, encrypted or not (it turns the S3 backup into a container of
-vendor credentials and the server into the holder ADR 0050 forbids); reading or copying
+vendor credentials and the server into the holder ADR 0002 forbids); reading or copying
 the harnesses' own auth files (no contract, formats change, and it breaks the user's
 login); any home-grown encryption.
 
@@ -495,14 +495,14 @@ that model can use.
 
 They become necessary the day a second person shares a board — to say who created a
 request, which runners they may dispatch to, and to give the audit trail a real actor
-instead of a hash of the one shared token. That is the demand ADR 0059 asked to see
+instead of a hash of the one shared token. That is the demand ADR 0004 asked to see
 before being reopened. When it appears, the shape is the ordinary one for a self-hosted
 service, recorded here so it is not re-derived: a users table (Argon2id), opaque
 sessions in an `httpOnly` cookie, per-user hashed API tokens, two roles (owner, member),
 `runners.owner_user_id` and `execution_requests.created_by`, then OIDC. A runner holding
 several people's keys (a shared CI box) is a further step — per-user envelope encryption
 at the runner — and is not designed until such a runner exists. That work is a Part of
-its own, with a new ADR that supersedes 0059; nothing in Part VI depends on it, and
+its own, with a new ADR that supersedes 0004; nothing in Part VI depends on it, and
 nothing in Part VI is built in a way it would have to undo.
 
 ## The two-component story
@@ -547,7 +547,7 @@ the item, done — is the hero, and VI-D2 records it from a release build with a
   validation — the runner's probe does that.
 - **Broker a vendor OAuth login.** Those stay in the terminal and are rendered, step by
   step, in the UI.
-- **Touch docket** (ADR 0060), **build identity** (ADR 0059; the trigger and the shape it will take are
+- **Touch docket** (ADR 0060), **build identity** (ADR 0004; the trigger and the shape it will take are
   recorded above, under "Identity and a second person"), or pick up the features Phase
   59 deferred — notifications, i18n, time tracking, in-UI diff review. Listing an attempt's
   artifacts (VI-C4) is not reviewing a diff; that stays a later card.
@@ -579,7 +579,7 @@ own window and icon, like Docker Desktop, that starts and supervises the Tack se
 `tack` binary stays what it is for servers and the terminal, and gets the same daemon
 through `tack service install`.
 
-The decision record is [ADR 0062](https://github.com/yielab/tack/blob/develop/docs/adr/0062-desktop-app-and-background-service.md)
+The decision record is [ADR 0006](https://github.com/yielab/tack/blob/develop/docs/adr/0006-desktop-app-and-background-service.md)
 — eight decisions in one table, **accepted 2026-09-03**. The board is Part VII in
 `TODO.md` (top of the file) and the dispatch plan is
 `docs/agent-handoffs/part-vii/README.md`; both were created from this section. **Wave 18
@@ -611,7 +611,7 @@ promise visible instead of implied.
 
 | Card | Scope | Needs |
 |---|---|---|
-| VII-A1 | ADR 0062 accepted (decision card; the user accepts) | — |
+| VII-A1 | ADR 0006 accepted (decision card; the user accepts) | — |
 | VII-A2 | `tack service install \| uninstall \| status`: systemd user unit, launchd plist, typed unsupported on Windows; uses the OS data folders; docs | A1 |
 | VII-B1 | `crates/tack-desktop` skeleton: Tauri 2, sidecar `tack`, supervisor start / attach / stop with version check, window loads the local URL, single instance; `.deb` and `.AppImage` built on the dev machine | A1 |
 | VII-B2 | Tray and lifecycle: close hides, tray menu, Quit warns on in-flight attempts, launch-at-login toggle on by default | B1 |
@@ -632,7 +632,7 @@ README and `docs/screenshots/**` follow the conflict rules in `TODO.md` §V.3 an
   warnings documented until that decision is made separately.
 - **A second frontend, or an app-only API.** The window shows the served UI, full stop.
 - **Turn the runner on by itself.** Installing the app is not consent to run agents; the
-  UI switch from ADR 0061 stays the only way.
+  UI switch from ADR 0005 stays the only way.
 - **A Windows service.** `tack service` returns a typed unsupported there; the app is the
   Windows path.
 

@@ -57,7 +57,7 @@ plan or the page named beside it.
   `develop` (its Phase 44): a rerun of Fabulada's first steps counted at most 59 575 tokens a task,
   and no step reached docket's own per-step limit. The live run of `scripts/docket-prill-e2e.sh`
   passes against it (2026-10-18), inside docket's sandbox with a read-only grant for the
-  toolchain. Fabulada's code runs through a team wait on docket installing their dependencies: ADR 0086
+  toolchain. Fabulada's code runs through a team wait on docket installing their dependencies: ADR 0027
   (accepted 2026-10-19) has whoever makes the agent's copy install them from the lockfile. Tack's
   side is in `develop` (Phase 77: the runner installs for Claude Code, Codex and opencode, a docket
   run makes no runner copy, and every run has a limit learnt from its profile); docket's side is its
@@ -139,7 +139,7 @@ time each group of steps took (a step has no time).
 
 **Status:** built 2026-10-26 (proposed 2026-10-20 from an architecture audit of `develop`, revised
 2026-10-25 after an audit of the plan itself); the full suite and the pre-push gate pass; not yet in
-`develop`. **ADR:** 0087, accepted 2026-10-26.
+`develop`. **ADR:** 0028, accepted 2026-10-26.
 **Plan:** [`docs/plans/phase-79.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md).
 
 The runner, the process that holds credentials, compiles SQLite because the types it shares with
@@ -227,10 +227,10 @@ once per round on the merged tree, and the local suite of the three after Round 
 
 ## Phase 76 — the project file is kept in sync
 
-**Status:** proposed 2026-10-18; ADR 0084 proposed the same day, with its four defaults. Checked
+**Status:** proposed 2026-10-18; ADR 0025 proposed the same day, with its four defaults. Checked
 against Phase 75's Rounds 1 and 2 the same day: nothing in Phase 75 changes; Phase 76 takes
-migrations 093 and 094, and an older file's dollars-per-day warning reaches its preview.
-**ADR:** 0084 (amends 0081 §2 and §6). **Plan:**
+the next two free migration numbers, and an older file's dollars-per-day warning reaches its preview.
+**ADR:** 0025 (amends 0022 §2 and §6). **Plan:**
 [`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md).
 
 The project file of Phase 73 is a one-way door: it creates and updates by name and never
@@ -273,13 +273,13 @@ the file.
 
 ## Phase 75 — limits in tokens, and a lean context
 
-**Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0083 accepted
+**Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0024 accepted
 the same day. Every round is in `develop` the same day, with the guides: Round 4 on one capture
 of Claude Code's and opencode's live usage (four short paid calls), so Tack now stops both at a
 run's token limit and counts docket's cache reads as docket does; Round 5's screens print the
 attempt's counted tokens and the run dialog's limit line. Fabulada's runs wait on docket's context
 and count. What is left is in Open above.
-**ADR:** 0083 (amends 0079 §5, 0080 §7 and 0070 §6). **Plan:**
+**ADR:** 0024 (amends 0020 §5, 0021 §7 and 0012 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
 Dollars are a token count multiplied by a price list someone typed. A model with no price
@@ -323,11 +323,11 @@ provider. Tokens are what every agent measures. So:
 
 ## Phase 74 — what the first real project found
 
-**Status:** opened 2026-10-17; ADR 0082 accepted the same day, with its three defaults. Rounds 1
+**Status:** opened 2026-10-17; ADR 0023 accepted the same day, with its three defaults. Rounds 1
 to 3 landed in `develop` on 2026-10-18, with Round 4's pages in the book. The first runs on the
 real board reached their teams the same day and ended on docket's per-step token limit; the
 next ones, on paid models, wait on docket's context and token count (Phase 75).
-**ADR:** 0082 (inside ADRs 0050, 0062 §5 and 0080). **Plan:**
+**ADR:** 0023 (inside ADRs 0002, 0006 §5 and 0021). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
 On 2026-10-17 Fabulada went into Tack and docket end to end, on the maintainer's own board: 86
@@ -362,10 +362,10 @@ each fact is owned, so no rule is computed twice:
 ## Phase 73 — every run goes to a team, and automation is one ladder
 
 **Status:** opened 2026-10-14 and built: the six waves landed in `develop` on 2026-10-14, the
-seventh, a whole project in and out through one file (ADR 0081), on 2026-10-17, followed the
+seventh, a whole project in and out through one file (ADR 0022), on 2026-10-17, followed the
 same day by the book's three guides. The live proof, `scripts/docket-prill-e2e.sh`, passes on
 docket's `develop` since 2026-10-18; Fabulada's runs through its teams are Phase 74's last round.
-**ADRs:** 0080 (amends 0078 decision 7 and 0074 decision 1), 0081 (extends 0076). **Plan:**
+**ADRs:** 0021 (amends 0019 decision 7 and 0015 decision 1), 0022 (extends 0017). **Plan:**
 [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
 
 Every run of the docket agent goes to a team that already exists and keeps existing, over

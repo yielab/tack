@@ -1,6 +1,6 @@
 import { test, expect, waitForApp } from './helpers';
 
-// ADR 0061 decision 6 — a UI-only user turns the embedded runner on/off,
+// ADR 0005 decision 6 — a UI-only user turns the embedded runner on/off,
 // with no restart. The e2e webServer runs a plain `cargo run -p tack-cli --
 // serve` (no `--with-runner`) on loopback (`playwright.config.ts`), so
 // `/api/local-runner` is genuinely mounted and this exercises the real

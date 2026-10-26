@@ -31,7 +31,7 @@ it. So:
 - **Budget.** Read only the files the card names before starting (about 25k tokens). Stop and
   report at about 150k tokens with what is done and what is left, rather than pressing on.
 - **Tests while working: only what the card touched.** Each crate has one integration-test binary,
-  `it`, and each file under its `tests/` is a module of it (ADR 0088), so a file is selected by its
+  `it`, and each file under its `tests/` is a module of it (ADR 0029), so a file is selected by its
   module: `cargo nextest run --workspace -E 'package(<crate>) & test(/^<module>::/)'`; unit tests by
   name, `-E 'package(<crate>) & test(/<name>/)'`. Always `--workspace` with a filterset, never `-p`
   (it builds every crate a second time), and always `--build-jobs 4 --test-threads 4` (two
@@ -419,7 +419,7 @@ twice in production code. `canonical_json` exists twice with different key order
 `list_execution_attempts` builds its read model in the handler with one query per attempt and
 swallows errors.
 
-**Read first:** ADR 0087 decision 3, `tack-protocol/src/execution/lifecycle.rs`,
+**Read first:** ADR 0028 decision 3, `tack-protocol/src/execution/lifecycle.rs`,
 `tack-db/src/repo/execution/`, `tack-db/src/queries/execution_*`, `tack-app/src/runs/`,
 `tack-api/src/handlers/executions.rs`.
 
@@ -440,7 +440,7 @@ swallows errors.
 **Tests.** `cargo nextest run --workspace -E 'package(tack-db) | package(tack-app) | package(tack-protocol) | (package(tack-api) & test(/execution|^runner_protocol::/))'`.
 
 **Done when:** outside tests, no SQL string in `crates/` spells an execution state; the guards come
-from `lifecycle`; and ADR 0087 decision 3 holds.
+from `lifecycle`; and ADR 0028 decision 3 holds.
 
 ---
 

@@ -464,7 +464,7 @@ jobs:
       #
       # Re-baselined 2026-09-04: the runner measured 6.20 MB, over the 5 MB budget, and
       # the gate caught it. Not drift — the secret store resolves a claim's
-      # `secret_reference` from the OS keychain (ADR 0061 decision 1), which pulls
+      # `secret_reference` from the OS keychain (ADR 0005 decision 1), which pulls
       # secret-service, zbus and a crypto stack: 12 crates that were not in this binary
       # before. Deliberate and accepted, so the budget moves to 8 MB — 35% over the new
       # measurement, the same headroom rule as before. If the runner ever has to be small

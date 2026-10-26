@@ -3781,7 +3781,7 @@
           {
             "name": "scope",
             "in": "query",
-            "description": "`snapshot` (the default) is the database dump `POST /api/projects/import`\nreads; `bundle` is the project file of ADR 0081 (JSON or YAML).",
+            "description": "`snapshot` (the default) is the database dump `POST /api/projects/import`\nreads; `bundle` is the project file of ADR 0022 (JSON or YAML).",
             "required": false,
             "schema": {
               "type": "string"
@@ -11321,7 +11321,7 @@
             "items": {
               "$ref": "#/components/schemas/BundleField"
             },
-            "description": "Custom fields of the project, by name (ADR 0081)."
+            "description": "Custom fields of the project, by name (ADR 0022)."
           },
           "items": {
             "type": "array",

@@ -336,7 +336,7 @@ jobs:
             ${{ env.RUNNER_ASSET }}
           if-no-files-found: error
 
-  # ADR 0062 decision 7: the app ships for all three desktop OSes next to the
+  # ADR 0006 decision 7: the app ships for all three desktop OSes next to the
   # server/CLI archives `build` produces above, unsigned. `ci.yml`'s `desktop`
   # job only checks the crate compiles (no system libs for bundling there);
   # this one installs them and actually runs `cargo tauri build`.
@@ -498,7 +498,7 @@ jobs:
       - name: Render release notes from CHANGELOG.md
         run: |
           set -euo pipefail
-          # ADR 0062 decision 7: desktop bundles are unsigned (signing needs a
+          # ADR 0006 decision 7: desktop bundles are unsigned (signing needs a
           # paid certificate, a separate decision) — the fixed warning comes
           # first, the changelog section after it.
           cat > release-notes.md <<'EOF'

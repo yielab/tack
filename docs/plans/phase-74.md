@@ -1,7 +1,7 @@
 # Plan: Phase 74 — what the first real project found
 
-**Status: opened 2026-10-17.** Serves ADR 0082
-(`docs/adr/0082-what-the-first-real-project-found.md`). Written against `develop` at `d99503dd`.
+**Status: opened 2026-10-17.** Serves ADR 0023
+(`docs/adr/0023-what-the-first-real-project-found.md`). Written against `develop` at `d99503dd`.
 Every path and line below was read that day; re-run `rg -n` before trusting a line number.
 
 What this phase does, in one paragraph. The Fabulada onboarding put a real project into Tack and
@@ -40,7 +40,7 @@ No task adds a layer, a trait, a loop, a table or a setting the task does not na
 
 ## Decided — not re-opened by any task
 
-Every row of ADR 0082's table and its three defaults, plus:
+Every row of ADR 0023's table and its three defaults, plus:
 
 | Question | Decision |
 |---|---|
@@ -64,7 +64,7 @@ beside them. Worktrees under `/var/tmp/tack-worktrees/p74-<id>` cut from `develo
 
 | Round | Tasks | Needs | Defects |
 |---|---|---|---|
-| 0 | ADR 0082, this plan, the roadmap section (integrator) | the maintainer's approval | — |
+| 0 | ADR 0023, this plan, the roadmap section (integrator) | the maintainer's approval | — |
 | 1 | F (a run that cannot start ends), I (one name, one liveness rule); W (screens) beside | — | T19; T14, T17, T3, T4; T5, T9, T11, T12 |
 | 2 | C (current capabilities, per-team ceiling), L (logs, messages, the file's switch) | I (C touches `transport.rs` after it) | T13, T6, T10, T15, T16; T18, T7, T2, T1, T8 |
 | 3 | X (the docket contract from captures) | docket's answer on K7 | T20 |
@@ -80,7 +80,7 @@ the task's section of this file plus these lines, and nothing else:
 
 ```
 Task <id> from docs/plans/phase-74.md. Read that section, its "The rule for every task" table, and the files it lists, nothing wider.
-The ADR is docs/adr/0082-what-the-first-real-project-found.md; its table and this plan's "Decided" table are the decision, do not re-open them.
+The ADR is docs/adr/0023-what-the-first-real-project-found.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Fix the fact in its owner and make the other callers read it; never add a second copy of a rule.
 Add only the tests the task names, RED first. Prefer a row in an existing table test over a new function.
@@ -307,7 +307,7 @@ only, from the same capture), `docs/TESTING.md` (the docket row).
   more lenient than docket.
 - `docket_v5.rs`: one test reads every `.provenance` and fails if a route the client sends has
   no `captured` file.
-- If docket fixes K7 as ADR 0082 defaults, the client does not change; if it decides the other
+- If docket fixes K7 as ADR 0023 defaults, the client does not change; if it decides the other
   way, the client, the e2e body and the capture change in this task, with no alias.
 
 **Tests:** the provenance test above; every existing `docket_v5.rs` test still passes against the
@@ -318,7 +318,7 @@ and the capture script ran once against docket with K7 fixed.
 
 ### Z — docs, the gate, and R0 on the real board (integrator)
 
-- `CHANGELOG.md` `[Unreleased]`, by hand, one line per decision of ADR 0082 that landed.
+- `CHANGELOG.md` `[Unreleased]`, by hand, one line per decision of ADR 0023 that landed.
 - The book: the troubleshooting page gains "A run says the computer stopped answering" and
   "The board's log", in the Administrator guide's words (no paths, no ids).
 - `CLAUDE.md` "What's next" and the roadmap's Phase 74 status.
@@ -331,7 +331,7 @@ and the capture script ran once against docket with K7 fixed.
 
 ### R — a docket task that outlives the runner is followed again (Sonnet, two layers)
 
-ADR 0082's amendment, decision 1. Found in R0 on 2026-10-18: a restart of `tack serve` left two
+ADR 0023's amendment, decision 1. Found in R0 on 2026-10-18: a restart of `tack serve` left two
 docket tasks that were waiting on an approval in `needs_operator`, and an operator had to requeue
 them by hand.
 
@@ -377,7 +377,7 @@ the gate are green.
 
 ### T — the board makes its decision token, and the desktop app hands it over (Sonnet, two layers)
 
-ADR 0082's amendment, decision 2. Found in R0 on 2026-10-18: a new `tack serve` had no
+ADR 0023's amendment, decision 2. Found in R0 on 2026-10-18: a new `tack serve` had no
 `TACK_EXECUTION_DECISION_TOKEN`, so every answer from the Inbox was a 403 and the run waited.
 
 **Files:** `crates/tack-api/src/config.rs` (`decision_token_file` and `ensure_decision_token`
@@ -490,12 +490,12 @@ so the spec stops before Run when `TUTORIAL_STOP_BEFORE_RUN=1`; only files 10 an
 
 ## Open questions
 
-Blocking: none. Not blocking: ADR 0082's three defaults. X waits on docket's answer to K7, which
+Blocking: none. Not blocking: ADR 0023's three defaults. X waits on docket's answer to K7, which
 is docket's decision (`docket-triage.md` recommends the same default).
 
 ## Status
 
-- **Round 0** done 2026-10-17: ADR 0082 accepted with its three defaults, this plan, the roadmap section.
+- **Round 0** done 2026-10-17: ADR 0023 accepted with its three defaults, this plan, the roadmap section.
 - **Round 1** done 2026-10-17: F, I and W.
   - F merged (`92dc79c8`). As built: one private `apply_recovery` holds the transition after
     the attempt row is read; `recover_attempt` (the runner's own report, with its runner check)
@@ -537,7 +537,7 @@ is docket's decision (`docket-triage.md` recommends the same default).
   doctor printed an empty version for docket. Paid runs pause on docket's K8, since its dollar budget
   counts an unpriced model as free. Open, not in this phase: a heartbeat whose capacity disagrees
   is answered as an idempotency conflict, once per runner start.
-- **Round 5** opened 2026-10-18, from R0's runs on the real board (ADR 0082's amendment): R (a
+- **Round 5** opened 2026-10-18, from R0's runs on the real board (ADR 0023's amendment): R (a
   docket task that outlives the runner is followed again) and T (the board makes its decision
   token), side by side. Both merged the same day.
   - T merged (`fa3617f0`). As built: `ensure_decision_token` reuses `ensure_api_token`'s rules and

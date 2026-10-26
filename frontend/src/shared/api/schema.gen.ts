@@ -4457,7 +4457,7 @@ export interface components {
          */
         Outline: {
             automation?: null | components["schemas"]["BundleAutomation"];
-            /** @description Custom fields of the project, by name (ADR 0081). */
+            /** @description Custom fields of the project, by name (ADR 0022). */
             fields?: components["schemas"]["BundleField"][];
             items?: components["schemas"]["OutlineItem"][];
             /** @description Agent profiles, by name; shared by every project of the board. */
@@ -7952,7 +7952,7 @@ export interface operations {
                 format?: string;
                 /**
                  * @description `snapshot` (the default) is the database dump `POST /api/projects/import`
-                 *     reads; `bundle` is the project file of ADR 0081 (JSON or YAML).
+                 *     reads; `bundle` is the project file of ADR 0022 (JSON or YAML).
                  */
                 scope?: string;
             };

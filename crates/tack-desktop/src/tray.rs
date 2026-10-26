@@ -1,4 +1,4 @@
-//! System tray icon and menu (ADR 0062 decision 3): *Open Tack*, the agent
+//! System tray icon and menu (ADR 0006 decision 3): *Open Tack*, the agent
 //! execution status, *Launch at login*, and *Quit*. Tauri's tray icon does
 //! not emit click events on Linux, so every action lives in the menu —
 //! nothing here depends on clicking the icon itself.

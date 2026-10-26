@@ -18,26 +18,26 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 - **Released:** `v0.1.0-beta.9` (2026-09-21). `v0.1.0-beta.10` (Phases 66–72) is tagged
   2026-10-14 but its GitHub release is not published, so the README's install commands 404
   until the maintainer publishes it (`docs/LAUNCH-CHECKLIST.md`).
-- **In `develop`, unreleased:** Phase 73 (`docs/plans/phase-73.md`, ADRs 0080 and 0081) — every
+- **In `develop`, unreleased:** Phase 73 (`docs/plans/phase-73.md`, ADRs 0021 and 0022) — every
   docket run goes to a long-lived team over docket's HTTP API version 5, a role chooses the
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
   ceiling, usage is kept per model, Settings → Automation is a ladder of four rungs, and a
   whole project goes in and out through one file (a template is that file without items).
-- **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0082, accepted) — the twenty
+- **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0023, accepted) — the twenty
   Tack defects the Fabulada onboarding found, fixed where each fact is owned, ending with
   Fabulada's first runs through its teams as Phase 73's live proof. Tasks F, I, W, C, L and X are in
   `develop` (2026-10-18); Fabulada's runs on paid models wait on docket's context and token count.
-- **Opened 2026-10-18:** Phase 75 (`docs/plans/phase-75.md`, ADR 0083, accepted) — limits in
+- **Opened 2026-10-18:** Phase 75 (`docs/plans/phase-75.md`, ADR 0024, accepted) — limits in
   tokens with no default and no dollars per day, cache reads never counted, every limit naming who
   applies it, and nothing sent to an agent twice. every round (A, G, B, D, E, V, L, CT, Z's screens) is in `develop`; left is
   Z's run of Fabulada, end to end through docket and prill.
-- **Proposed 2026-10-18:** Phase 76 (`docs/plans/phase-76.md`, ADR 0084, proposed) — the project
+- **Proposed 2026-10-18:** Phase 76 (`docs/plans/phase-76.md`, ADR 0025, proposed) — the project
   file kept in sync like Drupal's configuration: a key on every role, field, sprint and profile, an
   import that is a three-way comparison against the last revision (removes what the file removed,
   keeps what the board changed, stops on a conflict, shows every removal's cost), revisions to go
   back to, and every import in one transaction. Waits on the maintainer's "continúa".
-- **Accepted 2026-10-19, from the Fabulada rerun:** ADR 0085 (built: the runner's default settings
-  file, and a card with no check says so) and ADR 0086 (whoever makes the agent's copy installs its
+- **Accepted 2026-10-19, from the Fabulada rerun:** ADR 0026 (built: the runner's default settings
+  file, and a card with no check says so) and ADR 0027 (whoever makes the agent's copy installs its
   dependencies from the lockfile; Tack makes no copy of its own for a docket run; decision 5, a
   limit per profile learnt from its runs). Phase 77 (`docs/plans/phase-77.md`) built tasks S, L, N
   and P in `develop` (2026-10-19); and K (docket API 6, `check_changed`): Phase 77 is built, its proof is Fabulada's code card through a team.

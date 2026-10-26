@@ -80,7 +80,7 @@ with a one-line reason instead of being exempted by scope.
 
 ## Where the tests live, and how each crate is tested
 
-A behaviour is tested once, at the lowest layer that can express it (ADR 0068 decisions 5
+A behaviour is tested once, at the lowest layer that can express it (ADR 0010 decisions 5
 and 6): pure unit tests in `tack-core`, repository tests against SQLite in `tack-db`, one
 HTTP test per route outcome in `tack-api`, contract tests for runner-v1 and the OpenAPI
 spec, fake-harness tests in the runner, Playwright for critical journeys. An invariant is
@@ -100,7 +100,7 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 | `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. docket is a daemon and not a process: its adapter is proved against `tests/fake_docket/`, an in-process fake of API 5 that answers each route from a file under `fixtures/docket/v5/` (a capture from a real docket, or an answer marked `constructed` because a model would have to run for docket to send it) and answers `400` to a request key no captured request has; `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway home with no model (rerun it when docket changes, and commit the diff), `tests/docket_v5.rs` fails when a route the client sends has no capture, and the daemon's supervision is proved against a shell script on a scratch path that serves `/health`; no real docket and no model is ever run by a test. Vendor output of the other harnesses is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
 | `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
 
-Each crate has **one integration-test binary**, `it` (ADR 0088): `tests/it.rs` declares every
+Each crate has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
 file under `tests/` as a module, so the dependency graph is linked once per crate, not once per
 file. A file is selected by its module, `-E 'test(/^<module>::/)'`. **Add a test to the existing
 module whose subject fits; a new subject is a new `mod` line in `tests/it.rs`.** Helpers shared by
@@ -126,7 +126,7 @@ An integration test imports the crate (`use tack_api::handlers::decisions;`). It
 a source file in with `#[path]`: that compiles a second copy of the module into the test
 binary, the tests pass against the copy, and coverage counts nothing for the real one.
 
-Size rules are standard lints, not a custom ratchet (ADR 0068 decision 11): `cargo clippy
+Size rules are standard lints, not a custom ratchet (ADR 0010 decision 11): `cargo clippy
 --workspace --all-targets -- -D warnings` catches an oversized function against
 `clippy.toml`'s `too-many-lines-threshold` and a disallowed hand-built temp path; rustfmt
 carries formatting. Review carries the rest — a test file, a name, a preamble that has grown
@@ -191,7 +191,7 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` (ADR 0068 decision 9) runs in three tiers, by trigger, in the same
+`.github/workflows/ci.yml` (ADR 0010 decision 9) runs in three tiers, by trigger, in the same
 file — no separate workflow per tier:
 
 | Tier | Trigger | Jobs |

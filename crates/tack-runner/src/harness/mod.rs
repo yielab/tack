@@ -139,7 +139,7 @@ pub(crate) fn resolve_environment(
 /// Harness discovery/capability reporting, independent of any specific
 /// claimed attempt — needed because `engine::HarnessAdapter`'s methods all
 /// take an `ExecutionSpec`/`LocalRunHandle`, which only exist once a request
-/// is claimed (ADR 0066 has the full rationale).
+/// is claimed (ADR 0008 has the full rationale).
 ///
 /// Capability honesty is inherited from the frozen
 /// `tack_protocol::execution::capabilities` types this trait returns:

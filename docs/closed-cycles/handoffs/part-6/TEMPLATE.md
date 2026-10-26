@@ -37,7 +37,7 @@ arriving from outside this repository would try, and fail at, after this card la
 
 Which rows of §VI.0's surface map this card moved from console to UI, or proved cannot
 move — with the reason, and whether that reason is already in the table's last column. If
-it is not, that is an escalation for ADR 0061, not a new row.
+it is not, that is an escalation for ADR 0005, not a new row.
 
 ## Secret-path proof
 

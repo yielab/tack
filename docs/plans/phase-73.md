@@ -1,7 +1,7 @@
 # Plan: Phase 73 — every run goes to a team, and automation is one ladder
 
-**Status: opened 2026-10-14.** Serves ADR 0080
-(`docs/adr/0080-every-run-goes-to-a-team-and-automation-is-one-ladder.md`). Written against
+**Status: opened 2026-10-14.** Serves ADR 0021
+(`docs/adr/0021-every-run-goes-to-a-team-and-automation-is-one-ladder.md`). Written against
 `develop` at `6565415f` and docket at `e880bbfd` (ADR 0027 accepted, Phase 43 planned, API
 version 5 specified and not yet implemented). Re-run `rg -n` before trusting a line number.
 
@@ -32,7 +32,7 @@ the spec key by key. Settings → Automation becomes a ladder of four rungs on o
 
 ## Decided — not re-opened by any task
 
-Every row of ADR 0080's table and its "Questions for the maintainer, with the default built",
+Every row of ADR 0021's table and its "Questions for the maintainer, with the default built",
 plus:
 
 | Question | Decision |
@@ -51,7 +51,7 @@ plus:
 | Recurrence | Columns on `items`; the next task is created in `update_item` when a task with `recurrence` enters Done from a status that was not Done, and no open task has `recurrence_of = this id`. `next_due` is the end of the next period (month end, leap years) from the task's `due_date`, or from today when it has none. |
 | The e2e script | `scripts/docket-prill-e2e.sh` checks `apiVersion == "5"` and dies naming `docket 0.2.0-beta.6`. Until beta.6 exists it is not run; the fake docket is the proof. |
 | Generated files | Each task regenerates and stages them (`./scripts/regen-generated.sh`); on a conflict the integrator regenerates. |
-| The project file (wave 7) | Every row of ADR 0081's table and its questions. The file is `tack_core::outline::Outline` with six optional sections; the check is pure (`outline::bundle::check`) and the export is pure (`outline::bundle::to_bundle`); the routes gather rows and write them. Items are never updated by a file. A file never raises a level or switches auto-start on. Profiles match by name across the board. Migration `091_template_bundle` adds `roles`, `profiles`, `automation` to `project_templates`. `tack template create-from` keeps its meaning; `tack template save` stores one. |
+| The project file (wave 7) | Every row of ADR 0022's table and its questions. The file is `tack_core::outline::Outline` with six optional sections; the check is pure (`outline::bundle::check`) and the export is pure (`outline::bundle::to_bundle`); the routes gather rows and write them. Items are never updated by a file. A file never raises a level or switches auto-start on. Profiles match by name across the board. Migration `091_template_bundle` adds `roles`, `profiles`, `automation` to `project_templates`. `tack template create-from` keeps its meaning; `tack template save` stores one. |
 
 ## Rounds
 
@@ -68,7 +68,7 @@ runs beside them. Worktrees under `/var/tmp/tack-worktrees/p73-<id>` from `devel
 | 4 | D1 (fake docket + adapter); U (the ladder) beside | T, C, R (D1); T, C, A (U) |
 | 5 | D2 (daemon, config, doctor, deletions, e2e) | D1 |
 | 6 | Z (integrator) | everything |
-| 7 | B1 (the bundle in core and the database) — wave 7, ADR 0081 | the owner's approval of the file (given 2026-10-17) |
+| 7 | B1 (the bundle in core and the database) — wave 7, ADR 0022 | the owner's approval of the file (given 2026-10-17) |
 | 8 | B2 (the routes read and write the bundle) | B1 |
 | 9 | B3 (CLI, MCP, the Data panel, the book); then Z2 | B2 |
 
@@ -83,7 +83,7 @@ these lines, and nothing else:
 
 ```
 Task <id> from docs/plans/phase-73.md. Read that section and the files it lists, nothing wider.
-The ADR is docs/adr/0080-every-run-goes-to-a-team-and-automation-is-one-ladder.md; its table and this plan's "Decided" table are the decision, do not re-open them.
+The ADR is docs/adr/0021-every-run-goes-to-a-team-and-automation-is-one-ladder.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Add only the tests the task names. Prefer a row in an existing table test over a new function.
 Do not add a type, trait, option, flag or helper the task does not name.
@@ -522,7 +522,7 @@ and the source), `frontend/src/features/board/Board.tsx`, `features/list/List.ts
 (one step), `docs/book/src/user-guide/merging.md` (a short "The ladder" section at the top, or
 a new `automation.md` page linked from `SUMMARY.md` if `merging.md` is the wrong home).
 
-**Do:** the screen of ADR 0080 decision 8, with these rules:
+**Do:** the screen of ADR 0021 decision 8, with these rules:
 
 - The ladder sits under the three existing sections, which collapse into `<details>` with a
   one-line summary each.
@@ -588,7 +588,7 @@ enabled when the capability reports `repoConfigDir`, posts, and shows the review
 - `tack runner doctor` prints, under docket: `api: 5`, `daemon: running on 127.0.0.1:7399`
   (or why not), and one line per team: `team fab-content: lights-out` / `team fab-research:
   attended (fix: docket pod set network none)`.
-- The apply route, as ADR 0080 decision 2 and the spec's `POST /pods/<p>/apply`: the runner
+- The apply route, as ADR 0021 decision 2 and the spec's `POST /pods/<p>/apply`: the runner
   exposes it through its protocol as a runner-admin action (`/api/runner/v1` gains nothing: the
   board asks the runner over the existing admin channel, or, if none exists, the task reports
   it as a finding and the button stays disabled with "Apply from the terminal: docket init
@@ -623,7 +623,7 @@ and the gate are green; `scripts/docket-prill-e2e.sh` exits early naming beta.6 
 
 ### B1 — the bundle in core and the database (Sonnet, two layers)
 
-Wave 7, ADR 0081 (`docs/adr/0081-a-whole-project-goes-in-and-out-through-one-file.md`); the
+Wave 7, ADR 0022 (`docs/adr/0022-a-whole-project-goes-in-and-out-through-one-file.md`); the
 file is `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`, every rule commented. Read
 both before anything else.
 
@@ -685,7 +685,7 @@ whatever `rg -n "CreateProjectTemplate \{|ProjectTemplate \{" crates/ frontend/s
   pub fn to_bundle(parts: &Parts<'_>) -> Outline;
   ```
 
-  `check` rules, in this order, every problem collected before returning (ADR 0081 §1–§5):
+  `check` rules, in this order, every problem collected before returning (ADR 0022 §1–§5):
   a vocabulary key not in `vocabulary::validate` → problem; `preset` and `statuses` both or
   neither-when-`workflow`-given → problem; unknown preset → problem naming the seven; a status
   category not todo/in_progress/done → problem; a field type not one of the nine → problem; a
@@ -779,7 +779,7 @@ and the gate are green.
 
 ### B2 — the routes: import, export and templates read the bundle (Sonnet, one layer)
 
-Needs B1 merged. Read ADR 0081, `bundle.rs` and the fixture first.
+Needs B1 merged. Read ADR 0022, `bundle.rs` and the fixture first.
 
 **Files:** `crates/tack-api/src/handlers/outline.rs`, `crates/tack-api/src/handlers/export.rs`,
 `crates/tack-api/src/handlers/templates.rs`, `crates/tack-api/src/handlers/autonomy.rs` (only
@@ -858,7 +858,7 @@ and the gate are green.
 
 ### B3 — the doors: the CLI, the MCP tool, the Data panel, the book (Sonnet)
 
-Needs B2 merged (the generated types). Read ADR 0081 and `docs/book/src/user-guide/import-export.md` first.
+Needs B2 merged (the generated types). Read ADR 0022 and `docs/book/src/user-guide/import-export.md` first.
 
 **Files:** `crates/tack-cli/src/main.rs` (a new `Export` command, `Init --template`,
 `TemplateAction::Save`, `cmd_import`'s output), `crates/tack-cli/src/mcp.rs` (`create_outline`),
@@ -922,14 +922,14 @@ type-check && npm test && npm run lint:tokens && npm run build`, and the gate ar
 
 Blocking: none.
 
-Not blocking, decided by the defaults in ADR 0080's last section. One more found while
+Not blocking, decided by the defaults in ADR 0021's last section. One more found while
 writing: the apply-team route (D2) needs the board to reach the runner; if no admin channel
 exists, D2 reports it and the button stays disabled with the terminal command, which is
 still a control shown with its reason.
 
 ## Status
 
-- **Round 0** closed 2026-10-14: ADR 0080, this plan, the roadmap section.
+- **Round 0** closed 2026-10-14: ADR 0021, this plan, the roadmap section.
 - **Round 1**, 2026-10-14, first pass. R and T each stopped at files the task list missed and
   were finished by a second agent on the same worktree (R2, T2), not resumed.
   - T's calls, kept: `tack role create --profile` is a POST then a PATCH (`CreateRole` carries no
@@ -1044,7 +1044,7 @@ still a control shown with its reason.
     it. Known: `metadata.item` is part of the request fingerprint, so an idempotent replay after
     the item's type or priority changed answers 409.
 - **Round 7** opened 2026-10-17: the owner answered "continua" to the file schema shown
-  2026-10-14; ADR 0081 written, the fixture `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`
+  2026-10-14; ADR 0022 written, the fixture `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`
   is the specification, B1 cut from develop at `cff502aa`.
   - **B1 closed** 2026-10-17 in `f5999a88`: gate green in the worktree; core and db 283 passed,
     1 skipped; handlers 232 passed. B1's calls, kept: `serde-saphyr` as a dev-dependency of

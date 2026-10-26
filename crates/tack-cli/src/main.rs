@@ -568,7 +568,7 @@ fn main() -> anyhow::Result<()> {
 
 /// Start the in-process HTTP server (the app + embedded web UI) with an
 /// embedded runner always wired in — see `local_runner::serve`'s own doc
-/// comment for why even a plain `tack serve` needs one (ADR 0061 decisions
+/// comment for why even a plain `tack serve` needs one (ADR 0005 decisions
 /// 2 and 6: the UI can turn it on later, with no restart). `with_runner`
 /// only decides whether it also starts immediately at boot, folded into
 /// `TACK_LOCAL_RUNNER_ENABLE` here so `AppConfig::load()` (inside

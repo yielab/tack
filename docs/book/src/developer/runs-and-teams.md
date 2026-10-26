@@ -2,7 +2,7 @@
 
 This page is for contributors who change how a run starts, which agent profile and team take it, or when Tack merges the result. It follows one automatic run from the moment a task waits in the trigger status to the merge, and names the function that does each step. After reading it you can find the code behind any rung of the Automation ladder and extend it.
 
-People use the same features through [Automating a Project](../user-guide/automation.md); operators set up the machine side in [Installing and Operating Runners](../admin-guide/runners.md). The decisions are ADR 0080 (teams, ladder) and ADR 0079 (merge authority); see [Architecture Decisions](decisions.md).
+People use the same features through [Automating a Project](../user-guide/automation.md); operators set up the machine side in [Installing and Operating Runners](../admin-guide/runners.md). The decisions are ADR 0021 (teams, ladder) and ADR 0020 (merge authority); see [Architecture Decisions](decisions.md).
 
 ## Who owns what
 
@@ -84,7 +84,7 @@ From API 6, the task body carries `prepare` from the request's `repository.prepa
 - `externalRef` is `<item id>/attempt-<n>`.
 - `description` is the instructions the server already composed. `brief` carries the objective, acceptance criteria and constraints. `gate` is the first acceptance criterion docket can run as a command (a `command` criterion, else a `test` or file check); a `metric` is never a gate.
 - `baseRef` is the commit the request's base revision names in the repository, or the `rework_base` branch for a rework.
-- `maxTokens` comes from the request's token budget. `restrictions` carries `deniedTools` from `tool_policy.docket.denied_tools` and `network: "none"` when the run has the network off. A restriction can only narrow what the team already has (ADR 0077).
+- `maxTokens` comes from the request's token budget. `restrictions` carries `deniedTools` from `tool_policy.docket.denied_tools` and `network: "none"` when the run has the network off. A restriction can only narrow what the team already has (ADR 0018).
 - `pipeline` is read from `tool_policy.docket.pipeline_by_type` by item type. `priority` and `trusted` are sent when the request's metadata carries them.
 - `autonomy` is sent exactly as the request snapshot carries it (`ExecutionRequestSnapshot::autonomy`), and only then. The board puts it in the snapshot only when the run was created with an explicit level (`POST /api/executions {autonomy}`, the "Run again at L3" action): `tack_app::autonomy::level_to_send` never derives it from the project's merge level, the team's ceiling or the profile, and a non-docket harness gets none. A snapshot with no level sends no key, and docket decides from the pod's profile and its requirements, since lights-out is docket's own concept. The runner reads no team's profile to narrow it; a level above what the team admits is answered with a `422`, which fails the attempt (below).
 

@@ -162,7 +162,7 @@ back to "unconfigured" once saved — both are pre-existing gaps this card did n
   project setting, chosen from a **measured catalog**," and there is no catalog to choose
   from yet in this branch's base (VI-B2, not landed here). The reason is sequencing, already
   covered by the wave table ("C3 ∥ C4 ... ; C1 after B2+B3"), not a structural block, so this
-  is not an escalation to ADR 0061 — just a note that the row is not fully closed until a
+  is not an escalation to ADR 0005 — just a note that the row is not fully closed until a
   catalog-backed picker (likely VI-C1 or a later revisit of this panel) replaces the two
   free-text fields.
 - **"Create a fleet / add a member"**: unchanged by this card. Re-confirmed while reading
@@ -191,7 +191,7 @@ back to "unconfigured" once saved — both are pre-existing gaps this card did n
   - `crates/tack-db/src/repo/items.rs` (one function, `get_item`) — needed to know `Item`
     carries `project_id` so the new test and the handler could both derive a project id
     without inventing a second lookup path.
-  - `docs/adr/0061-provider-credentials-at-the-runner-boundary.md` §4 (Vocabulary) — named
+  - `docs/adr/0005-provider-credentials-at-the-runner-boundary.md` §4 (Vocabulary) — named
     by the block ("the ADR's vocabulary decision (~1k)"); read as instructed, not extra.
   - Two real `.db` files were read (via `sqlite3`, not opened as source) to find upgrade
     fixtures — not source files, but recorded here since the block didn't name a fixture

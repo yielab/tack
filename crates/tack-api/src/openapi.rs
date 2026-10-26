@@ -898,7 +898,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::settings::put_backup_settings,
         crate::rate_card::get_rate_card,
         crate::rate_card::put_rate_card,
-        // ── Embedded runner control (ADR 0061 decisions 2 and 6) ────────────
+        // ── Embedded runner control (ADR 0005 decisions 2 and 6) ────────────
         handlers::local_runner::get_local_runner,
         handlers::local_runner::put_local_runner,
         handlers::local_runner::check_local_runner_folder,

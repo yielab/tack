@@ -1,4 +1,4 @@
-# A Tack project bundle: the outline of ADR 0076 with six more sections (ADR 0081).
+# A Tack project bundle: the outline of ADR 0017 with six more sections (ADR 0022).
 # Applied in this order: project, fields, profiles, roles, sprints, automation, items.
 # The whole file is checked before anything is written; every problem is reported at
 # once; an unknown key anywhere is refused. Names are the references: `profile: X`
@@ -85,7 +85,7 @@ profiles:                         # agent profiles are shared by every project; 
     tool_policy: { agent: claude-code, tools: { claude-code: [Read, Grep, Glob] } }
   # Planner is a built-in profile, named by a role below; nothing to declare here.
   # A profile may name a `fleet` (a fleet's name); one the board does not have is a warning.
-  # No `harness` or `model` on a profile: the agent is tool_policy.agent; a model belongs to a run or to the project (ADR 0078).
+  # No `harness` or `model` on a profile: the agent is tool_policy.agent; a model belongs to a run or to the project (ADR 0019).
 
 roles:                            # project roles; `profile` is a name from `profiles` or an existing profile
   - { name: Contenido, color: "#f59e0b", profile: Fabulada content writer }
@@ -127,7 +127,7 @@ automation:
     status: Por hacer
     max_open: 3
 
-items:                            # the outline of ADR 0076, plus roles, sprint, fields, recurrence and estimate_unit
+items:                            # the outline of ADR 0017, plus roles, sprint, fields, recurrence and estimate_unit
   - { ref: C1, title: Colección rioplatense, type: epic, priority: high, roles: [Contenido], fields: { Dialecto: rioplatense } }
   - ref: S1
     title: El zorro que no podía dormir

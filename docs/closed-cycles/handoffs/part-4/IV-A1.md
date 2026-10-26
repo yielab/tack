@@ -5,7 +5,7 @@ compose a working `tack-runner` — the adapter registry, capability reporting,
 the real HTTP protocol client, the engine, the journal, the workspace
 provisioner — lived only in the `tack-runner` binary's own `main.rs`. Nothing
 outside that binary could reach any of it; a future embedder (a later card,
-per ADR 0058) would have had to copy the wiring, and a copied composition
+per ADR 0003) would have had to copy the wiring, and a copied composition
 root is a copy that drifts from `docs/contracts/runner-v1/`. After it, that
 same wiring lives in a public library function,
 `tack_runner::bootstrap::run`, taking an existing `RunnerConfig`, the
@@ -118,7 +118,7 @@ pure extraction, proved below.
 - **Known limitations or `not_measured` fields:**
   - `tack_runner::bootstrap` has no caller outside this crate yet — that is
     the expected state this card leaves for the embedding card (per ADR
-    0058, not part of IV-A1's scope), not a defect. Confirmed via
+    0003, not part of IV-A1's scope), not a defect. Confirmed via
     `grep -rn 'tack_runner::' crates/ --include=*.rs`: no hits outside
     `crates/tack-runner/` before or after this change.
   - Binary-size delta: **not measured** — this card changes nothing that
@@ -155,14 +155,14 @@ pure extraction, proved below.
 - **Binary-size delta:** not applicable. This card does not change what
   `tack` (or any binary other than `tack-runner` itself) links — it moves
   code within `tack-runner`. The embedding card that adds `tack runner
-  start` / `tack serve --with-runner` is the one ADR 0058 asks to measure and
+  start` / `tack serve --with-runner` is the one ADR 0003 asks to measure and
   record this number.
 - **Which role executed what (for the live runs below):** both smoke runs
   used the **standalone `tack-runner` binary** role exclusively — no
   embedded role exists yet, that is a later card. In each run, `tack-runner`
   enrolled, claimed, and completed every attempt against a real `tack serve`
   over loopback HTTP at `http://127.0.0.1:$PORT/api/runner/v1`, exactly the
-  two-process shape ADR 0050 already established; this card changes only how
+  two-process shape ADR 0002 already established; this card changes only how
   that binary's own `main.rs` assembles itself internally.
 - **Loopback/gating proof:** does not apply to this card, as anticipated by
   the Part IV README. IV-A1 makes the composition root callable from outside

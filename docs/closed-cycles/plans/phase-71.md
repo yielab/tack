@@ -1,6 +1,6 @@
 # Plan: Phase 71 — the agent brings its own model
 
-**Status: opened 2026-10-13. ADR 0078 (`docs/adr/0078-the-agent-brings-its-own-model.md`)
+**Status: opened 2026-10-13. ADR 0019 (`docs/adr/0019-the-agent-brings-its-own-model.md`)
 carries the decisions; this file carries the work.**
 Written against `develop` at `5db03ff2`. Re-run `rg -n` before trusting a line number.
 
@@ -16,16 +16,16 @@ compatibility with the provider layer.
 
 ## Decided — not re-opened by any task
 
-Every row of ADR 0078's table, plus:
+Every row of ADR 0019's table, plus:
 
 | Question | Decision |
 |---|---|
-| The HTTP secrets routes (`/api/local-runner/secrets`) | Removed with the key panel: their only caller was the panel (ADR 0061 decision 2). `tack runner secret set\|list\|remove` stays and reaches the store directly. |
+| The HTTP secrets routes (`/api/local-runner/secrets`) | Removed with the key panel: their only caller was the panel (ADR 0005 decision 2). `tack runner secret set\|list\|remove` stays and reaches the store directly. |
 | `ModelSelectionReport` / `model_selection` | Replaced in C by `requires_model: bool` and a reason; B keeps it as is so the wire changes once per field. |
 | `model_passthrough` | Removed in B: every model string is passed through, so the field says nothing. |
 | An agent's listing or sign-in command | Runs at probe time, as the runner's user, with only `HOME` and `PATH`, a 20-second timeout each, in parallel, never inside the sandbox. A failure reports the reason and no list; it never fails the probe. |
 | The intermediate state | After A, opencode and docket do not run until D and E. `develop` is not pushed during the phase. |
-| docket before 0.2.0-beta.5 | Does not run (ADR 0078 decision 7). E waits for that docket; the prompt that builds it was handed to the maintainer on 2026-10-13. |
+| docket before 0.2.0-beta.5 | Does not run (ADR 0019 decision 7). E waits for that docket; the prompt that builds it was handed to the maintainer on 2026-10-13. |
 
 ## Rounds
 
@@ -47,7 +47,7 @@ As `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent",
 line of the brief, the three lines Phase 69 added, and these:
 
 ```
-The ADR is docs/adr/0078-the-agent-brings-its-own-model.md; its table is the decision, do not re-open it.
+The ADR is docs/adr/0019-the-agent-brings-its-own-model.md; its table is the decision, do not re-open it.
 Delete, do not deprecate: no shim, no alias, no "legacy" branch, no serde rename kept for old input.
 Every harness output in a test comes from a fixture under crates/tack-runner/src/harness/fixtures/, printed by a fake binary.
 ```
@@ -402,8 +402,8 @@ Redact emails, org ids and every key value. No agent runs these commands.
 
 **Do:**
 1. ADRs:
-   - 0061, 0063, 0067, 0074 and 0075 each gain one dated line naming what ADR 0078 superseded.
-   - 0078 records the phase's merges.
+   - 0005, 0063, 0009, 0015 and 0016 each gain one dated line naming what ADR 0019 superseded.
+   - 0019 records the phase's merges.
 2. Configuration and the book:
    - `docs/CONFIG.md` loses the provider sections.
    - `agent-runners.md`, `cli.md`, `tutorial.md` and `quick-start.md` follow the new model field and the Sign in step. One writer, pasted.

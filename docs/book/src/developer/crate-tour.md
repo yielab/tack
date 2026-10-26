@@ -245,7 +245,7 @@ migrations are checked at every startup against the binary's own ordered list by
 rather than running silently. A small subset (037/038, a table
 copy/verify/swap rebuild predating Part III) additionally takes an automatic
 `VACUUM INTO` snapshot before its first attempt. See `docs/MIGRATION-GUIDE.md` for the
-operator-facing version of this and `docs/adr/0008-transactional-migration-rebuild-recovery.md`
+operator-facing version of this and `docs/adr/0001-transactional-migration-rebuild-recovery.md`
 for the design rationale.
 
 ---

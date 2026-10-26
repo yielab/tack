@@ -35,7 +35,7 @@
     has not landed) — no second switch was built; a separator; *Launch at login*, a
     `CheckMenuItem` whose initial checked state reads `app.autolaunch().is_enabled()`, →
     `lifecycle::toggle_launch_at_login`; a separator; *Quit* → `lifecycle::quit`.
-    `ensure_launch_at_login_default_on_first_run` applies ADR 0062 decision 3's "on by
+    `ensure_launch_at_login_default_on_first_run` applies ADR 0006 decision 3's "on by
     default": on the very first run (no `.autostart-initialized` marker next to B1's
     temporary data root) it calls `.enable()` once and writes the marker; every later run
     leaves the user's own toggle alone. The marker is self-contained under `tray.rs`
@@ -99,7 +99,7 @@
     exists; the Acceptance text's exact casing is wrong and should be corrected on the
     board, not chased in code.
   - **The tray icon itself does not receive simulated clicks in this environment** — not
-    a new limitation; ADR 0062 §3's "Known limit" already states Tauri's tray icon emits
+    a new limitation; ADR 0006 §3's "Known limit" already states Tauri's tray icon emits
     no click events on Linux at all, by design, for anyone. This session found a different
     route to the *menu* (see Daemon/Process proof and Context spent):
     `org.kde.StatusNotifierWatcher`'s `RegisteredStatusNotifierItems` names this app's
@@ -209,7 +209,7 @@
 Turn agent execution on or off from the tray — the menu item is present but disabled and
 says so, because `GET /api/local-runner` (Part VI's VI-B3) does not exist yet. Quit or
 reopen the app any way other than the tray menu — there is still no keyboard shortcut and
-no window-chrome button for either, matching ADR 0062 by design, but worth stating for
+no window-chrome button for either, matching ADR 0006 by design, but worth stating for
 whoever expects one. Trust the tray on Wayland, or on macOS/Windows at all — every claim
 above was proven on X11/GNOME/Ubuntu only, the same single platform B1 measured. Rely on
 the app surviving an external `kill` of its own process — only closing the window (which
@@ -330,7 +330,7 @@ entirely, never something Quit itself does.
 ## Context spent
 
 - Tokens read before the first edit (cold start): followed the block's read list exactly
-  — README header + VII-B2 block; ADR 0062's decision table row 3 and section 3;
+  — README header + VII-B2 block; ADR 0006's decision table row 3 and section 3;
   `VII-B1.md` whole (409 lines — larger than the block's "~2k" estimate, closer to ~6-7k
   tokens, but still small); `main.rs` (178) and `supervisor.rs` (450) whole; the
   `list_executions` handler range (adjusted from the block's `800,860` to the function's

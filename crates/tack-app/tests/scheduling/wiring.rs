@@ -759,7 +759,7 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     assert_eq!(running, Some(ExecutionState::Leased));
 }
 
-// ADR 0083 decision 5: the day's limit is reserved when a run is admitted.
+// ADR 0024 decision 5: the day's limit is reserved when a run is admitted.
 #[tokio::test]
 async fn the_days_tokens_are_reserved_by_open_runs() {
     let (repo, item_id) = setup_repo().await;

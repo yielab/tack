@@ -1,6 +1,6 @@
 # Regroup tack-api's orchestration test binaries
 
-ADR 0064, rollout step 4, `tack-api`'s orchestration slice. Base: `develop` at `db113b8`.
+ADR 0007, rollout step 4, `tack-api`'s orchestration slice. Base: `develop` at `db113b8`.
 Branch: `agent/regroup-api-orchestration`.
 
 ## Scope

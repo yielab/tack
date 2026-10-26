@@ -1,4 +1,4 @@
-//! Window and app lifecycle (ADR 0062 decision 3): closing the window hides
+//! Window and app lifecycle (ADR 0006 decision 3): closing the window hides
 //! it instead of quitting, *Open Tack* shows and focuses it again, and Quit
 //! is the only way to actually stop the app — warning first when an agent
 //! attempt is in flight.

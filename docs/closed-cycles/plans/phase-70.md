@@ -24,7 +24,7 @@ panel offers "Through the gateway" when a gateway key is set.
 | K3 | Phase 68 K2, D4 | `crates/tack-db/src/repo/items.rs` row conversion reads `run_settings` with `.ok()`; `crates/tack-cli/src/local_runner.rs:422` has no test against a real enrolment |
 | C4 | Phase 69 Status | `crates/tack-runner/tests/agent_boundaries.rs:556-561` prints "skipped" and passes when `bwrap` is absent; `.github/workflows/ci.yml:543-562` never installs it |
 | G1 | Phase 68 D1 | `frontend/src/features/settings/panels/AutomationPanel.tsx` has no gateway choice |
-| D (integrator) | this inventory | ADRs 0075, 0076, 0077 still read PROPOSED; `roadmap.md` says Phase 69 dispatched no round; Known gaps lists the branch push, which Phase 69 R2/R3 closed |
+| D (integrator) | this inventory | ADRs 0016, 0017, 0018 still read PROPOSED; `roadmap.md` says Phase 69 dispatched no round; Known gaps lists the branch push, which Phase 69 R2/R3 closed |
 
 ## Decided — not re-opened by any task
 
@@ -179,7 +179,7 @@ that failed with `no_runner_can_claim` shows the reason as its failure, in the e
 
 ### D — the integrator's
 
-After every task merges: ADRs 0075, 0076 and 0077 read ACCEPTED with the date and the phase that
+After every task merges: ADRs 0016, 0017 and 0018 read ACCEPTED with the date and the phase that
 executed them; `roadmap.md` says Phase 69 closed and adds Phase 70; the book's Known gaps lose the
 branch push (Phase 69 R2/R3) and, if K1 proved it, the docket timeout, and the doctor line if K2
 closed it; `CHANGELOG.md`'s `[0.1.0-beta.10]` gains this phase's lines; `CLAUDE.md`'s pointer

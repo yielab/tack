@@ -1,4 +1,4 @@
-//! Merge policy (ADR 0079, decision 1) as a pure function: facts in, `Ok` or the
+//! Merge policy (ADR 0020, decision 1) as a pure function: facts in, `Ok` or the
 //! first failing condition out. No I/O, no clock, no GitHub.
 
 use std::fmt;

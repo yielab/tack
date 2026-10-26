@@ -1,4 +1,4 @@
-# Regroup tack-orch's test binaries — ADR 0064 rollout step 4
+# Regroup tack-orch's test binaries — ADR 0007 rollout step 4
 
 Branch: `agent/regroup-orch`, based on `develop` at `db113b8`.
 
@@ -178,7 +178,7 @@ read by hand since the ADR's own grep pattern — see finding below — misses f
 
 `retention.rs` already has the *right* pattern twice (lines 184 and 294): a bounded
 `for _ in 0..300 { if <condition> { break; } sleep(10ms) }` loop with a real timeout and a
-message naming what was waited for. That's the shape ADR 0064 step 5 should turn the
+message naming what was waited for. That's the shape ADR 0007 step 5 should turn the
 eight `runs.rs`/`traces.rs` waits above into — most of them wait for one row to appear,
 which is a direct fit; the four marked "prove nothing changed"/"across N ticks" are
 proving an *absence* or a *repeated* poll's idempotency, which don't reduce to "poll until

@@ -263,7 +263,7 @@ never spawned anything to leave behind. Neither mode produced a visible window.
 ## Context spent
 
 - Tokens read before the first edit (cold start): dispatch README header + VII-C1 block,
-  the Part VII board prelude + VII-C1 card, ADR 0062 decision 7, three handoffs' Claim →
+  the Part VII board prelude + VII-C1 card, ADR 0006 decision 7, three handoffs' Claim →
   evidence tables, `release.yml` lines 1–391 (read in full rather than the suggested
   100–200 range — needed the trigger block, `check-version`, and the `release`/`container`
   jobs to wire `workflow_dispatch` safely), `ci.yml` lines 1–40 and 90–175 (the desktop

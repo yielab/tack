@@ -442,7 +442,7 @@ wait_for "attempts_json '$REQ9B' | jq -r '.data[] | select(.state==\"succeeded\"
   || bad "the queued-while-saturated request never completed"
 
 step 10 "Standalone mode: 'tack serve --with-runner' reaches a completed attempt with zero manual enrollment"
-# The point of ADR 0058: one binary, one command, no separate runner process,
+# The point of ADR 0003: one binary, one command, no separate runner process,
 # no operator-issued token ever copied anywhere. Fresh state dir, fresh
 # database — nothing here is inherited from steps 3-9's separately-enrolled
 # runner.

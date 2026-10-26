@@ -4,7 +4,7 @@ import { toast } from '../../shared/ui/toast';
 import { isLocalRunnerUnavailable, localRunnerApi } from './api';
 
 /**
- * One switch — *Agent execution on this machine* (ADR 0061 decision 6). No
+ * One switch — *Agent execution on this machine* (ADR 0005 decision 6). No
  * flag, no restart: `PUT /api/local-runner` starts or stops the embedded
  * runner immediately, and the choice survives the next `tack serve` because
  * the server persists it (`app_meta`) rather than only holding it in

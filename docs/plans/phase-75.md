@@ -1,6 +1,6 @@
 # Plan: Phase 75 — limits in tokens, and a lean context
 
-**Status: opened 2026-10-18; Rounds 1 to 3 (A, G, B, D, E, V, L) in `develop` the same day.** Serves ADR 0083 (`docs/adr/0083-limits-in-tokens-and-a-lean-context.md`).
+**Status: opened 2026-10-18; Rounds 1 to 3 (A, G, B, D, E, V, L) in `develop` the same day.** Serves ADR 0024 (`docs/adr/0024-limits-in-tokens-and-a-lean-context.md`).
 Written against `develop` at `973dcd33`. Every path and line below was read that day; re-run
 `rg -n` before trusting a line number.
 
@@ -32,7 +32,7 @@ is a named constant beside the code that reads it, never a config key.
 
 ## Decided — not re-opened by any task
 
-Every row of ADR 0083's table and its three defaults, plus:
+Every row of ADR 0024's table and its three defaults, plus:
 
 | Question | Decision |
 |---|---|
@@ -56,7 +56,7 @@ cut from `develop`, `CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>
 
 | Round | Tasks | Needs |
 |---|---|---|
-| 0 | ADR 0083, this plan (integrator) | the maintainer's go (2026-10-18) |
+| 0 | ADR 0024, this plan (integrator) | the maintainer's go (2026-10-18) |
 | 1 | A (a run's limit), G (nothing twice); then B (one count) | — |
 | 2 | D (the daily limit, dollars per day removed), E (dollars as an estimate, who applies a limit), side by side: D alone touches `Merge.tsx`, E alone the execution responses | A, B |
 | 3 | V (integrator, no agent: what a profile's limits may hold, and the limit before a run starts), L (usage while a run runs, from docket's steps, which report it today) | V before Phase 76's Round 2, whose task A edits the same `create_profile` and `check` |
@@ -78,7 +78,7 @@ section of this file plus these lines, and nothing else:
 
 ```
 Task <id> from docs/plans/phase-75.md. Read that section, its "The rule for every task" table, and the files it lists, nothing wider.
-The ADR is docs/adr/0083-limits-in-tokens-and-a-lean-context.md; its table and this plan's "Decided" table are the decision, do not re-open them.
+The ADR is docs/adr/0024-limits-in-tokens-and-a-lean-context.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Fix the fact in its owner and make the other callers read it; never add a second copy of a rule.
 Add only the tests the task names, RED first. Prefer a row in an existing table test over a new function.

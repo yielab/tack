@@ -26,7 +26,7 @@ pub struct ExportQuery {
     #[serde(default = "default_format")]
     format: String,
     /// `snapshot` (the default) is the database dump `POST /api/projects/import`
-    /// reads; `bundle` is the project file of ADR 0081 (JSON or YAML).
+    /// reads; `bundle` is the project file of ADR 0022 (JSON or YAML).
     scope: Option<String>,
 }
 
@@ -172,7 +172,7 @@ pub async fn export_project(
     }
 }
 
-/// The project as one project file (ADR 0081), written the way `import` reads it.
+/// The project as one project file (ADR 0022), written the way `import` reads it.
 async fn bundle_response(
     state: &AppState,
     project: &Project,

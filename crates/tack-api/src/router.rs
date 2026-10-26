@@ -76,7 +76,7 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
     HeaderValue::from_str(&policy).expect("configured CSP must be a valid header value")
 }
 
-/// Embedded-runner control routes (ADR 0061 decisions 2 and 6) — turn the
+/// Embedded-runner control routes (ADR 0005 decisions 2 and 6) — turn the
 /// in-process runner on/off. Callers merge
 /// this only when both a [`LocalRunnerControl`] was actually wired into
 /// `AppState` and the server is bound to loopback
@@ -227,7 +227,7 @@ pub fn build_router(state: AppState) -> Router {
     // processes on this host, so its control routes must not even be
     // *discoverable* unless both conditions hold — a control was actually
     // wired into this `AppState` (see `AppState::local_runner`'s doc
-    // comment) and the server is bound to loopback (ADR 0061 decision 6).
+    // comment) and the server is bound to loopback (ADR 0005 decision 6).
     // Checked here, not inside a middleware layer, so failing it means the
     // routes are never merged at all — a genuine 404, not a gate that still
     // had to route the request to refuse it. See `local_runner_routes`'s

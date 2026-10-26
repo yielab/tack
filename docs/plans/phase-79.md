@@ -1,6 +1,6 @@
 # Phase 79: the crates say what depends on what, and the SQL lives in one place
 
-**Executes:** [ADR 0087](../adr/0087-the-protocol-is-a-crate-and-the-sql-has-one-home.md)
+**Executes:** [ADR 0028](../adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md)
 (accepted 2026-10-26; proposed 2026-10-20, revised 2026-10-25). **Built 2026-10-26**; waits on the
 maintainer's merge into `develop`.
 
@@ -631,7 +631,7 @@ costs a full build of the workspace before its first edit.
   against a fake"; every test already runs on in-memory SQLite and the slowest binary takes ~6 s.
   A fake over a `BTreeMap` would also hide what the store is for here: `BEGIN IMMEDIATE`, fencing,
   races. Two implementations plus a suite proving they agree is the same behaviour tested twice,
-  which ADR 0068 decision 5 forbids. Use cases take `&Repository`.
+  which ADR 0010 decision 5 forbids. Use cases take `&Repository`.
 - **`tack-api` → `tack-db` is an allowed edge.** The draft's table forbade it while its own
   handlers called `state.repo` and its `ApiError` wrapped `StoreError`.
 - **`tack-orch` is made pure, not left "unchanged".** Its two `wiring.rs` named `sqlx` and

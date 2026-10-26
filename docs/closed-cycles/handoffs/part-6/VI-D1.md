@@ -157,7 +157,7 @@ HTTP_STATUS:200
 This is by design, not a regression: `crates/tack-cli/src/local_runner.rs::serve`'s own
 doc comment states it plainly — an `EmbeddedRunnerControl` is wired into **every**
 `tack serve`, with or without `--with-runner`, precisely so `PUT /api/local-runner` can
-turn it on later with no restart (ADR 0061 decision 6). `router.rs`'s own gate is
+turn it on later with no restart (ADR 0005 decision 6). `router.rs`'s own gate is
 `state.local_runner.is_some() && state.config.binds_loopback()` — bind mode, never the
 flag. `docs/CONFIG.md` (VI-B3's own section) already said this correctly; the card's
 own premise, and the older claim in `agent-runners.md`, had not caught up. This is
@@ -271,7 +271,7 @@ before editing, not assumed from a card title:
 
 | Stale claim (as VI-A1 left it) | What actually shipped, and how it was checked |
 |---|---|
-| "Tack never holds a provider credential — no `TACK_*` variable... ever" (§"Choosing a model and a provider" opening) | The **runner** now can, in its own secret store (ADR 0061). Read literally, a stranger takes "Tack" to mean the whole product, which VI-A2 already fixed in `docs/CONFIG.md` but this page still asserted in its own words. Rewritten to name which half of the product each rule binds. |
+| "Tack never holds a provider credential — no `TACK_*` variable... ever" (§"Choosing a model and a provider" opening) | The **runner** now can, in its own secret store (ADR 0005). Read literally, a stranger takes "Tack" to mean the whole product, which VI-A2 already fixed in `docs/CONFIG.md` but this page still asserted in its own words. Rewritten to name which half of the product each rule binds. |
 | Modal row: "Five hand-typed fields today... no memory between runs" | VI-C2's combined picker + VI-C3's project defaults + VI-C9's working submit gate. Checked live in this card's own smoke step 13 (a real dispatch through the scheduler with the runner auto-selected) and against `RunWithAgentModal.tsx` directly. |
 | Tier 3: "Project default — *no storage exists for this today*... a column that has not been added yet" | `projects.default_model`, migration 062, confirmed with `grep -n '"0[0-9][0-9]_' crates/tack-db/src/migrations.rs` (`062_project_default_model`) and `crates/tack-orch/src/model_policy/wiring.rs` reading it as this tier, not always `None`. |
 | Known gaps: "No decision- or artifact-discovery/list endpoint exists" | `crates/tack-api/src/router.rs:233-234` merges `attempt_lists::artifact_routes`/`decision_routes` (VI-C4); `ArtifactDownloadPanel.tsx`/`DecisionInbox.tsx` now call `GET .../artifacts`/`.../decisions`, confirmed by reading both files directly. |
@@ -281,7 +281,7 @@ Two more sections amended, not because a claim was false but because they unders
 what shipped: "Local credential handling" now names the runner-local secret store and
 `tack runner secret set`'s stdin/env-var-only input (it used to describe vendor
 credentials only as "the runner operator's own local environment," true for a harness's
-own login, silent about the store ADR 0061 added); "Running an item with an agent"'s
+own login, silent about the store ADR 0005 added); "Running an item with an agent"'s
 opening now points a UI-only reader at the Agents page first, with the CLI walkthrough
 kept as the second path, matching the same restructuring in `quick-start.md`. The
 "agent_fleet_members has a write route; nothing calls it" bullet was **re-verified, not
@@ -292,12 +292,12 @@ generated `schema.gen.ts`, no real caller — still true, so left as written.
 
 Wave 14's integration note (`TODO.md`, Part VI status board) recorded: *"One
 non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward
-reference to ADR 0061 once accepted."* Required anyway, structurally: the line quoted
-ADR 0050 verbatim ("never becomes a model proxy"), which the acceptance grep would
+reference to ADR 0005 once accepted."* Required anyway, structurally: the line quoted
+ADR 0002 verbatim ("never becomes a model proxy"), which the acceptance grep would
 otherwise have flagged as a non-ADR, non-VI-A2 hit. Paraphrased the quote (kept the
 claim, dropped the literal string) and added the forward reference the finding asked
 for, pointing at the ADR's real path and its recorded acceptance date. `roadmap.md`'s
-own many other ADR 0061 references (decision-level detail throughout the rest of the
+own many other ADR 0005 references (decision-level detail throughout the rest of the
 file) were left untouched — this was the one paragraph the finding named.
 
 ## Claim → evidence
@@ -377,7 +377,7 @@ $ TACK_RUNNER_SECRET_VALUE="secret-path-proof-marker-9f3e7a" tack runner secret 
     vercel-ai-gateway/default --state-dir <scratch-state-dir>
 stored "vercel-ai-gateway/default" in the keychain backend
 ```
-(Decision 1 of ADR 0061 in practice on this machine: the **platform keychain**, not the
+(Decision 1 of ADR 0005 in practice on this machine: the **platform keychain**, not the
 owner-only-file fallback — the runner picked the real backend, not the degraded one.)
 
 Against a second, fresh server (`tack serve`, no flag, its own scratch `tack.db`):

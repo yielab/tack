@@ -382,7 +382,7 @@ impl Repository {
     /// whatever state its runner is in (the runner's authentication guards
     /// only the runner's own report), exactly as a recovery that cannot prove
     /// the agent absent does (a lease expiry alone
-    /// never starts another process, ADR 0050). The request keeps `code` and
+    /// never starts another process, ADR 0002). The request keeps `code` and
     /// `sentence` for a person to read. Returns how many it closed; a second
     /// call finds nothing.
     pub async fn expire_unheld_leases(

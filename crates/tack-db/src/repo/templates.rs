@@ -470,7 +470,7 @@ pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError>
             "Blank template — minimal workflow with no domain-specific vocabulary.",
             ProjectType::Custom,
         ),
-        // ── Templates that come with their roles and profiles (ADR 0081) ──
+        // ── Templates that come with their roles and profiles (ADR 0022) ──
         BuiltinSpec {
             name: "Web product with content",
             description: "A web product with content: roles for content, development, growth, security, legal and ops, each with a profile; the reviewers only read.",

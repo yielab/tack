@@ -11,10 +11,10 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
-Phase 73 (ADR 0080): every run of the docket agent goes to a team that already exists and keeps
+Phase 73 (ADR 0021): every run of the docket agent goes to a team that already exists and keeps
 existing, a role chooses who takes its tasks, a task can start by itself and repeat, and a
 project's automation is set on one screen. Then a whole project goes in and out through one file,
-and a template is that file without items (ADR 0081). Beside them: Settings → Display &
+and a template is that file without items (ADR 0022). Beside them: Settings → Display &
 accessibility and the fixes from an accessibility audit, and the documentation split into a
 User, an Administrator and a Developer Guide.
 
@@ -162,7 +162,7 @@ automation a template carries, and the removal of dollars per day.
   be used is shown disabled with its reason. The board, the list and the table carry
   "Started by itself", "Team: …" and "Merged by itself"; the task drawer has an Automation
   row; the run dialog says "Chosen by the role …".
-- **A whole project goes in and out through one file** (ADR 0081). The outline of ADR 0076
+- **A whole project goes in and out through one file** (ADR 0022). The outline of ADR 0017
   may carry `fields`, `profiles`, `roles`, `sprints` and `automation` beside its items, and
   the project's vocabulary and workflow; items may name their roles, sprint, fields,
   recurrence and estimate unit. The file is checked whole, every problem reported at once,
@@ -194,7 +194,7 @@ automation a template carries, and the removal of dollars per day.
 
 - **A build of the tests takes a third of the disk.** Each crate's integration tests are one binary, `it`,
   with each file under `tests/` a module of it, and dependencies carry no debug info: a clean build of
-  every test went from 7.6 GB to 2.4 GB and from 107 s to 91 s (ADR 0088). Select a file of tests with
+  every test went from 7.6 GB to 2.4 GB and from 107 s to 91 s (ADR 0029). Select a file of tests with
   `cargo nextest run --workspace -E 'test(/^<module>::/)'`; `binary(<file>)` filters no longer match.
 - **The docket agent reads every question and approval from docket's one escalation record.** A tool call docket's policy holds, a step's question, an `input` step, a gate and a change to the files that check it are each an escalation: the runner reads them from `GET /escalations`, builds one question from the record with docket's own options, recommendation and expiry, and answers through `POST /escalations/<id>`. The runner needs a docket that keeps the record (`0.2.0-beta.6` with the escalation record; a docket without it reads "needs docket 0.2.0-beta.6 with the escalation record"), and no longer reads the inbox, `GET /approvals` or the task's question. A question's deadline is the escalation's own `expiresAt`; one docket marks expired ends the run like one that passed it. A runner restarted with a question open asks it again.
 - **The runner no longer compiles the board's database code.** The runner-v1 contract (the types the board
@@ -230,12 +230,12 @@ automation a template carries, and the removal of dollars per day.
   with no limit of its own, in a project with a daily limit, runs with what is left of the day.
   While a docket run runs, the tokens each step reports count toward the day and the run reserves
   only what is left of its limit. Settings → Automation shows the day as a bar (counted, reserved, room), amber at 80%
-  (ADR 0083 decision 5).
+  (ADR 0024 decision 5).
 - **Every run says its token limit and who applies it,** in one sentence the server writes:
   "300 000 tokens · from the profile Implementer · docket stops the task there", "No limit set
   in Tack · docket stops each step at its own limit (docket's setting)", or "measured, not
   enforced" for an agent Tack cannot stop. Dollars read "≈ $0.42 (estimated)" or "not priced",
-  and the Factory page says how many of the models used have a price (ADR 0083 decisions 3–4).
+  and the Factory page says how many of the models used have a price (ADR 0024 decisions 3–4).
 - **The run dialog says the token limit before you start.** Under the Token limit field it prints
   the same sentence the run will carry, and it changes as you edit the limit, clear it or choose
   another agent; an invalid value shows none. `GET /api/items/{id}/agent-context` takes the
@@ -254,12 +254,12 @@ automation a template carries, and the removal of dollars per day.
   Claude Code's run there". opencode's cache reads and writes are now named instead of dropped, and an error it
   prints (an expired key) fails the attempt with its own message instead of "malformed output".
   A profile's tools for Claude Code (`tool_policy.tools`) are used when a run names none, and
-  Claude Code no longer reads its auto-memory index into the prompt (ADR 0083).
+  Claude Code no longer reads its auto-memory index into the prompt (ADR 0024).
 - **A token counted is a new one.** The day's token limit, a run's summary and the Factory page
   count uncached input, cache writes and output; what the cache served is shown beside it and
   never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not
   reported" for an agent that does not say). Dollars still price every kind at its own rate
-  (ADR 0083 decision 2).
+  (ADR 0024 decision 2).
 - **A run's usage leads with the tokens that were counted.** The attempt's panel prints
   "289 710 tokens counted" with the input and output beside it in smaller text and the cache
   reads named as not counted; the server does the arithmetic, so the screen and the limit never
@@ -273,7 +273,7 @@ automation a template carries, and the removal of dollars per day.
   structured brief docket renders, not again in the description; a rework replaces the previous
   round's fix section instead of adding one; a card's comments go newest first up to 4 000
   characters, with a line counting the ones left out; the sentence saying a card's text is data
-  is said once (ADR 0083).
+  is said once (ADR 0024).
 - **Headings use Bricolage Grotesque** instead of Caprasimo. All text is sized in rem, so it
   follows the text size; `npm run lint:tokens` fails on a new px font size.
 - **The palette moved from the sidebar to Settings.** The sidebar keeps the light/dark button and
@@ -312,7 +312,7 @@ automation a template carries, and the removal of dollars per day.
   `usd_per_day` are gone (migration 092 drops the column); a project file that still has it
   imports without it, with a warning in the preview. A request whose `budgets` carries
   `cost_usd` is refused `field_removed`, and Claude Code is no longer given `--max-budget-usd`:
-  a dollar limit stopped only the models that had a price (ADR 0083 decision 3).
+  a dollar limit stopped only the models that had a price (ADR 0024 decision 3).
 - `make changelog`, `make changelog-release` and `cliff.toml`. The changelog is written by hand
   in each change, and a release's notes are its section here.
 
@@ -383,7 +383,7 @@ automation a template carries, and the removal of dollars per day.
   project file's check names the profile, and a profile stored that way before is refused at
   the run instead of running with no limit. `timeout_seconds` is optional on the API, MCP and `tack execution
   create`: absent, the profile's time limit applies, else one hour. The run dialog pre-fills
-  both from the profile (ADR 0083 decision 1).
+  both from the profile (ADR 0024 decision 1).
 - **A run that cannot start ends Failed with the reason**, whether the folder could not be
   prepared or the agent refused the run at validation or at start (for docket: "docket did not
   accept the team"). Before, it stayed in "Preparing" with no reason anywhere.
@@ -463,22 +463,22 @@ verifier you run yourself can judge the work and Tack shows its merge-readiness 
 to accept or reject; the branch can be pushed and its pull request followed; and a Factory
 metrics page per project measures the loop.
 
-A run a normal person can start (Phases 67 and 68, ADR 0074): a project knows where its code
+A run a normal person can start (Phases 67 and 68, ADR 0015): a project knows where its code
 is, the agent works on a branch of that folder or in the folder itself, its own model is the
 default, and a finished run hands over what it did for review. Then the first live run of
 the whole workflow, with docket as the agent and prill as the verifier, and what it found
-(ADR 0075). And a project with all its items from one outline or CSV (ADR 0076).
+(ADR 0016). And a project with all its items from one outline or CSV (ADR 0017).
 
 A tag `v0.1.0-beta.10` was pushed on 2026-10-12 and withdrawn the same day: a security audit
 found that the board answered anyone without a token, a web page could post to it, an agent
 ran with permissions off and Tack's own file access, and the evidence was computed from names
-the agent could move. Phase 69 (ADR 0077) closes those before the release is cut again; see
+the agent could move. Phase 69 (ADR 0018) closes those before the release is cut again; see
 **Security** below. Phase 70 then finished what earlier phases had written down, the weightiest
 a run that waited in Queued without a word. Two behaviours change for everyone: the API always requires a token
 (the board's page holds it as a cookie it cannot read, the CLI finds it beside the
 database), and a pull request opens when you accept the run, not when it finishes.
 
-Phase 72 (ADR 0079) lets Tack merge: a **Merge** button on a finished task, a project option
+Phase 72 (ADR 0020) lets Tack merge: a **Merge** button on a finished task, a project option
 that merges when you move the task to Done, and, for a project that allows it, a merge Tack
 makes by itself inside the parts of the code you authorise (L4) or everywhere (L5), only when
 the verifier said merge, its pack shows every stage you require as passed, the pack is signed for that exact
@@ -770,9 +770,9 @@ GitHub sync in both directions.
   each bundled harness through the gateway's own per-harness endpoint and exposes
   its model catalog — price, context window and modality per model — to the model
   picker. The key lives only in the runner's own secret store; the board and its
-  database never see it. `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`
+  database never see it. `docs/adr/0005-provider-credentials-at-the-runner-boundary.md`
   records the boundary this draws and why: the API server still never holds, forwards,
-  or proxies a credential (ADR 0050, ADR 0058 stand) — only the runner may, on its own
+  or proxies a credential (ADR 0002, ADR 0003 stand) — only the runner may, on its own
   machine, opt in.
 - **Turn the embedded runner on from the UI.** `PUT /api/local-runner` starts or stops
   the runner that `tack serve --with-runner` used to require a restart to reach —
@@ -865,7 +865,7 @@ GitHub sync in both directions.
   subsets of the same suite; coverage and the embedded-SPA release build run on pull
   requests and `main` rather than on every push; and the dev profile keeps line tables
   instead of full debuginfo, so a test binary drops from 344 MB to 139 MB. Select tests
-  with `-E 'package(...)'`, never `-p`, which builds a second copy of every crate. ADR 0064.
+  with `-E 'package(...)'`, never `-p`, which builds a second copy of every crate. ADR 0007.
 
 - **Minimum supported Rust version is now 1.89** (was 1.85). Edition 2024 still only needs
   1.85, but the dependency graph does not: `object_store` pulls `crc-fast` (1.89),

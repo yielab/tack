@@ -2505,7 +2505,7 @@ migration and router/OpenAPI file has one named integration owner; no Phase 51+ 
 allowed to invent a field or lifecycle state independently.
 
 **Delivered** (Wave 0, `f042085`): 42 frozen fixtures under `docs/contracts/runner-v1/`, ADR
-0050, and the trust-boundary/atomicity/migration-recovery repairs. Later grown to 46 fixtures
+0002, and the trust-boundary/atomicity/migration-recovery repairs. Later grown to 46 fixtures
 when Wave 3 evidence showed `accept`/`start` had been omitted.
 
 ### Phase 51 — Durable Execution Domain & Schema

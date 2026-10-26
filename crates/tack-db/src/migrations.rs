@@ -1864,7 +1864,7 @@ const MIGRATION_091: [&str; 3] = [
     "ALTER TABLE project_templates ADD COLUMN automation TEXT",
 ];
 
-// 092: dollars per day is no longer a limit (ADR 0083): every limit is in tokens.
+// 092: dollars per day is no longer a limit (ADR 0024): every limit is in tokens.
 const MIGRATION_092: [&str; 1] = ["ALTER TABLE project_budgets DROP COLUMN usd_per_day"];
 
 // 093: how a run installs the project's dependencies: NULL detects the command from the lockfile,

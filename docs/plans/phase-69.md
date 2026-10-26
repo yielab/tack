@@ -3,7 +3,7 @@
 **Status: opened 2026-10-12 by the maintainer after the security audit of the same day. Wave 0
 (the maintainer's) is done except the GitHub settings; all four rounds closed 2026-10-12;
 the GitHub settings, the workstation items and the re-cut tag are the maintainer's — see Status.**
-Serves ADR 0077 (proposed): every task here executes one or more of its eighteen decisions, and
+Serves ADR 0018 (proposed): every task here executes one or more of its eighteen decisions, and
 the two boundary suites (decision 17) are the proof that they hold. Written against `develop` at
 `722269e8` (the hashes change when the history is rewritten in Wave 0; the trees do not). Every
 locator was read on that commit by the audit; re-run `rg -n` before trusting a line number.
@@ -55,7 +55,7 @@ Each row was read in the source by the audit and re-read by the planning session
 
 ## Decided — not re-opened by any task
 
-ADR 0077's table stands in full. Added here, each one line to reverse:
+ADR 0018's table stands in full. Added here, each one line to reverse:
 
 - **The token file is `<data root>/api-token`**, one line, no trailing newline, mode 0600, created
   with `create_new`; a file that exists but is empty or unreadable fails startup with its path.
@@ -173,7 +173,7 @@ phase 67: Haiku 60 calls, Sonnet one layer 100, two layers 150.
 
 ### S1 — a request must name this server
 
-**Decision served:** ADR 0077 decision 2 (Host and cross-site).
+**Decision served:** ADR 0018 decision 2 (Host and cross-site).
 **Files:** `crates/tack-api/src/middleware.rs` (new `require_host`, new `refuse_cross_site`),
 `crates/tack-api/src/router.rs` (layer them before `require_token`), `crates/tack-api/src/config.rs`
 only if `allowed_origins` needs a host-only accessor, `crates/tack-api/src/error.rs` (two codes),
@@ -199,7 +199,7 @@ the gate green.
 
 ### S2 — a raw body states its type, and an import is never trusted
 
-**Decision served:** ADR 0077 decision 2 (content type), decision 3 (import source).
+**Decision served:** ADR 0018 decision 2 (content type), decision 3 (import source).
 **Files:** `crates/tack-api/src/handlers/export.rs` (`structured_body`, the import's `source`),
 `crates/tack-api/src/handlers/outline.rs` (`read_outline`, `read_csv` callers), 
 `crates/tack-api/src/handlers/backup.rs` (`post_restore`), new
@@ -224,7 +224,7 @@ gate green.
 
 ### S3 — an attachment stays in the storage directory and is a download
 
-**Decision served:** ADR 0077 decision 3.
+**Decision served:** ADR 0018 decision 3.
 **Files:** `crates/tack-api/src/handlers/attachments.rs` and its tests.
 **Do:** a function `contained_path(storage_dir, storage_path) -> Result<PathBuf, ApiError>`:
 refuse an absolute `storage_path`, any `..` component, and a resolved path whose canonical form
@@ -241,7 +241,7 @@ the gate green.
 
 ### S4 — a credential never reaches a log; the backup endpoint is validated
 
-**Decision served:** ADR 0077 decision 14.
+**Decision served:** ADR 0018 decision 14.
 **Files:** `crates/tack-api/src/handlers/import_github.rs`, `import_linear.rs` (`skip(state, input)`
 plus an explicit `repo`/`team` field on the span), `crates/tack-api/src/handlers/settings.rs`
 (`put_backup_settings`), new `crates/tack-api/tests/security/log_redaction.rs`.
@@ -261,7 +261,7 @@ the gate green.
 
 ### R1 — the run's environment is the runner's to grant
 
-**Decision served:** ADR 0077 decision 4.
+**Decision served:** ADR 0018 decision 4.
 **Files:** `crates/tack-runner/src/harness/mod.rs` (`resolve_environment`), new
 `crates/tack-runner/src/harness/env_policy.rs` (the denied names), `crates/tack-runner/src/secrets.rs`
 (`resolve` no longer accepts `env:` from a request path; a second entry point resolves the
@@ -288,7 +288,7 @@ green; the gate green.
 
 ### R2 — the runner's git never runs the repository's code
 
-**Decision served:** ADR 0077 decision 7.
+**Decision served:** ADR 0018 decision 7.
 **Files:** `crates/tack-runner/src/git.rs` (the `Command` builder at `:112-130`, the diff call
 sites, `publish_branch`), `crates/tack-runner/src/engine.rs` (hash before start, compare at the
 terminal transition), the typed terminal reason (`rg -n 'enum TerminalReason|terminal_reason'
@@ -313,7 +313,7 @@ recorded URL (assert the bare remote received the branch and a second bare "evil
 
 ### R4a — a harness ends when its process ends
 
-**Decision served:** ADR 0077 decision 10 (lifecycle and outcome).
+**Decision served:** ADR 0018 decision 10 (lifecycle and outcome).
 **Files:** `crates/tack-runner/src/harness/process.rs` (`:288-304` the exit path; the reader),
 `crates/tack-runner/src/harness/claude_code.rs` (`:100-108`, `:229`),
 `crates/tack-runner/src/harness/docket.rs` (`:453-462`), `crates/tack-runner/src/harness/opencode.rs`
@@ -334,7 +334,7 @@ three times in a row (this file has raced before); the gate green.
 
 ### H1 — `/api/health` echoes the launch nonce
 
-**Decision served:** ADR 0077 decision 15 (the supervisor's attach check).
+**Decision served:** ADR 0018 decision 15 (the supervisor's attach check).
 **Files:** the health handler (`rg -n '"/health"' crates/tack-api/src/router.rs` and follow it),
 its test.
 **Do:** when `TACK_LAUNCH_NONCE` is set in the server's environment, the health body gains
@@ -346,7 +346,7 @@ absent.
 
 ### T1 — the desktop window trusts one origin
 
-**Decision served:** ADR 0077 decision 15.
+**Decision served:** ADR 0018 decision 15.
 **Files:** under `crates/tack-desktop/` only: `tauri.conf.json`, `capabilities/default.json`,
 `capabilities/server-page.json`, `Cargo.toml` (add `tauri-plugin-opener`, keep `shell` only for
 the sidecar), `src/main.rs` (`on_navigation`, the `open_folder` command, the window CSP),
@@ -376,7 +376,7 @@ crates/tack-desktop/Cargo.toml -- -D warnings` green; the gate green.
 
 ### C1 — a release is built from nothing restored
 
-**Decision served:** ADR 0077 decision 16 (workflows, installers, image, audit config).
+**Decision served:** ADR 0018 decision 16 (workflows, installers, image, audit config).
 **Files:** `.github/workflows/release.yml`, `.github/workflows/dependabot-auto-merge.yml`,
 `.github/workflows/pages.yml` (permissions to the `deploy` job only), `install.sh`, `install.ps1`,
 `Dockerfile`, new `.dockerignore`, `.cargo/audit.toml`, `frontend/package.json` (+ lockfile: pin
@@ -407,7 +407,7 @@ exists; `docker build --target builder .` **is not run** (no Docker on the agent
 
 ### S5 — the API always has a token
 
-**Decision served:** ADR 0077 decision 1.
+**Decision served:** ADR 0018 decision 1.
 **Files:** `crates/tack-api/src/config.rs` (`api_token_file`, generation), `crates/tack-api/src/server.rs`
 (create or read the file at start; `warn!` on the unauthenticated opt-out), `crates/tack-api/src/middleware.rs`
 (accept the `tack_session` cookie beside Bearer, including on the WebSocket upgrade),
@@ -435,7 +435,7 @@ report which; F2 finishes the browser side); the gate green.
 
 ### A1 — the server records the profile and the repository
 
-**Decision served:** ADR 0077 decision 5.
+**Decision served:** ADR 0018 decision 5.
 **Files:** `crates/tack-api/src/handlers/executions.rs` (`:699-705`, `:940-964`), the request
 type (`rg -n 'struct CreateExecution' crates`), `crates/tack-cli/src/execution.rs`
 (`CreateExecutionValues` drops `agent_profile_snapshot` and `repository_snapshot`),
@@ -456,7 +456,7 @@ package(tack-cli)'` green; the gate green.
 
 ### A2 — the pull request opens when you accept
 
-**Decision served:** ADR 0077 decision 9.
+**Decision served:** ADR 0018 decision 9.
 **Files:** `crates/tack-api/src/handlers/runner_protocol.rs` (`:2156-2166` the call goes;
 `:2334-2460` the function moves), new `crates/tack-api/src/handlers/pull_requests.rs`,
 `crates/tack-api/src/handlers/attempt_lists.rs` (`review_execution_attempt`), `handlers/mod.rs`,
@@ -474,7 +474,7 @@ the gate green.
 
 ### R3 — the evidence is the base you chose and the tree that was verified
 
-**Decision served:** ADR 0077 decision 8.
+**Decision served:** ADR 0018 decision 8.
 **Files:** `crates/tack-runner/src/git.rs` (`resolve_revision` used once, at provisioning; capture
 takes a commit id), `crates/tack-runner/src/engine.rs` (`:756-768` the capture → verify → publish
 order gains the two comparisons; `:1407-1410` the assertion becomes a check),
@@ -500,7 +500,7 @@ the gate green.
 
 ### R4b — the run log and the working directory
 
-**Decision served:** ADR 0077 decision 10 (log path, cwd).
+**Decision served:** ADR 0018 decision 10 (log path, cwd).
 **Files:** `crates/tack-runner/src/harness/local_process.rs` (`:829-836`),
 `crates/tack-runner/src/harness/process.rs` (expose the confinement check as `confined_cwd(root,
 subdirectory) -> Result<PathBuf>`), `crates/tack-runner/src/harness/codex.rs` (`:333-336`),
@@ -518,7 +518,7 @@ the gate green.
 
 ### C2 — `serde_yaml` becomes `serde-saphyr`
 
-**Decision served:** ADR 0077 decision 16 (the advisory).
+**Decision served:** ADR 0018 decision 16 (the advisory).
 **Files:** `Cargo.toml:56`, every file `rg -l serde_yaml crates` lists, `Cargo.lock`, `deny.toml`
 if an ignore mentions the advisory.
 **Do:** swap the dependency and the `use` lines; nothing else. `cargo deny --locked check
@@ -529,7 +529,7 @@ advisories` passes with no ignore for RUSTSEC-2024-0449.
 
 ### M1 — MCP: ids are checked, a run always asks, card text is fenced
 
-**Decision served:** ADR 0077 decision 6.
+**Decision served:** ADR 0018 decision 6.
 **Files:** `crates/tack-cli/src/mcp.rs`, its tests (`crates/tack-cli/src/mcp/tests.rs` if present,
 else `crates/tack-cli/tests/mcp.rs`), `docs/MCP.md`.
 **Do:** `require_id(args, key)` accepts `^[A-Za-z0-9_-]{1,64}$` and is used for every id that
@@ -551,7 +551,7 @@ the gate green.
 
 ### A3 — untrusted text is fenced, and the prompt you see is the prompt that runs
 
-**Decision served:** ADR 0077 decision 13.
+**Decision served:** ADR 0018 decision 13.
 **Files:** `crates/tack-api/src/handlers/executions.rs` (`compose_instructions` at `:603-634`;
 the preview at `:1598-1600`), its tests.
 **Do:** `compose_instructions` wraps the title, the description, each comment and the imported
@@ -569,7 +569,7 @@ the gate green.
 
 ### R5 — sandboxed where the machine allows it, honest where it does not
 
-**Decision served:** ADR 0077 decision 11.
+**Decision served:** ADR 0018 decision 11.
 **Files:** new `crates/tack-runner/src/harness/sandbox.rs`, `crates/tack-runner/src/harness/local_process.rs`
 (the spawn wraps the program when `sandbox` is available; `HarnessDescriptor.sandbox_binds`), the
 four descriptors (`claude_code.rs`: `&[".claude"]`; `codex.rs`: `&[".codex"]`; `opencode.rs`: the
@@ -598,7 +598,7 @@ hands off with the descriptor change merged first.
 
 ### F2 — the browser holds a token it cannot read
 
-**Decision served:** ADR 0077 decision 1 (the browser side).
+**Decision served:** ADR 0018 decision 1 (the browser side).
 **Files:** `frontend/src/shared/api/client.ts`, `frontend/src/shared/execution/decisions.ts`, the
 WebSocket client (`rg -n 'tack.v1|subprotocol' frontend/src`), the token prompt screen
 (`rg -n 'TACK_API_TOKEN|Enter.*token' frontend/src`), their vitest files, `frontend/e2e/*.spec.ts`
@@ -617,7 +617,7 @@ the environment.
 
 ### F1a — the dialog tells the truth
 
-**Decision served:** ADR 0077 decisions 5, 11, 12.
+**Decision served:** ADR 0018 decisions 5, 11, 12.
 **Files:** `frontend/src/shared/runWithAgent/RunWithAgentModal.tsx`, `frontend/src/shared/help/texts.ts`,
 `frontend/src/shared/runWithAgent/RunWithAgentModal.test.tsx`, the book page the help links
 (`docs/book/src/user-guide/run-dialog.md` or where `BOOK.runDialog` points — one paragraph).
@@ -635,7 +635,7 @@ green; the gate green.
 
 ### F1b — the run page shows what the agent got
 
-**Decision served:** ADR 0077 decisions 4, 10, 11, 13, 15.
+**Decision served:** ADR 0018 decisions 4, 10, 11, 13, 15.
 **Files:** `frontend/src/shared/runWithAgent/AttemptList.tsx` (`:142-170` the folder opener),
 the run page (`rg -n 'request_snapshot' frontend/src` — the component that renders an execution),
 their tests, `frontend/e2e/execution-attempt-detail.spec.ts`.
@@ -654,7 +654,7 @@ green.
 
 ### C3 — the suites are required, in CI and in the gate
 
-**Decision served:** ADR 0077 decision 17.
+**Decision served:** ADR 0018 decision 17.
 **Files:** `.github/workflows/ci.yml` (new job `security-boundaries`; delete the floating
 `@vitest/coverage-v8` install C1 reported), `.githooks/pre-push`, `scripts/regen-generated.sh`
 (`cargo metadata --locked`, fail instead of re-resolving), `docs/TESTING.md` (one section).
@@ -668,7 +668,7 @@ the rule *a rule without a test in one of them is not a rule*.
 
 ### D1 — `SECURITY.md` says what the agent can reach
 
-**Decision served:** ADR 0077 decision 18.
+**Decision served:** ADR 0018 decision 18.
 **Files:** `SECURITY.md`, new `docs/book/src/user-guide/what-the-agent-can-reach.md`,
 `docs/book/src/SUMMARY.md`, `docs/CONFIG.md` (consolidate the paragraphs R1, R5 and S5 added),
 `docs/book/src/user-guide/agent-runners.md` (one link).
@@ -692,7 +692,7 @@ docs). `mdbook build docs/book` passes with no broken link (`lychee` as CI runs 
 | Attachments on a separate origin | `octet-stream` + `attachment` (S3) closes the script-src path; a second origin is a deployment change |
 | A network namespace for "Web tools off" | the harness needs the model's API; see the ADR's alternatives |
 | 256-bit runner and enrollment tokens (UUIDv4 today) | 122 bits is enough; change when the protocol version changes |
-| Approval prompts a quoted command can disguise (docket `:613,629`) | docket's question now names the command (ADR 0075); a rendering fix belongs with the next docket contract |
+| Approval prompts a quoted command can disguise (docket `:613,629`) | docket's question now names the command (ADR 0016); a rendering fix belongs with the next docket contract |
 | Model id passed to argv unvalidated | every harness is invoked with explicit flags; a value starting with `-` is refused by R1's request validation if it reaches the environment, and by the dialog's measured list otherwise; revisit if a free-text model id is ever accepted on the wire |
 | Redaction undone by base64 in transcripts | the sandbox (R5) is the boundary; redaction stays best effort and the book says so |
 | Rewriting the `Co-Authored-By` trailers | done in Wave 0 |
@@ -754,7 +754,7 @@ the gate on the merge. Pushing and the release are the maintainer's.
   | That probe ran on every catalog read and made the agents page queue behind it | cached per process under the program, its mtime and the machine's sandbox |
   | A relative `TACK_STORAGE_DIR` made every sandboxed run fail: bwrap resolves binds from the workspace | every bind path is made absolute; found only by Playwright |
   | No operator route returned the composed prompt | `GET /api/executions/{id}` returns `instructions` |
-  | A harness that cannot ask (no `decisions` support) still defaults to `auto` when unsandboxed | decided by the maintainer: it does not run. The runner refuses it before spawn and its probe says why, so nothing schedules it; the Agents page, the run dialog and the Automation panel show the rule (ADR 0077 decision 11) |
+  | A harness that cannot ask (no `decisions` support) still defaults to `auto` when unsandboxed | decided by the maintainer: it does not run. The runner refuses it before spawn and its probe says why, so nothing schedules it; the Agents page, the run dialog and the Automation panel show the rule (ADR 0018 decision 11) |
   | `regen-generated.sh --locked` would break the script's own purpose (re-resolving a stale lockfile) | not changed; the gate's check is already `--locked` |
   | Whether `ubuntu-latest` has `bwrap` for the real-bwrap test | unverified until CI runs; the test skips when `bwrap` is absent |
   | The book's install one-liners name `v0.1.0-beta.10`, which is withdrawn until re-cut | intended: they resolve once the tag exists again |

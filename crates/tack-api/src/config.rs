@@ -112,7 +112,7 @@ pub struct AppConfig {
     #[serde(default = "default_prill_program")]
     pub prill_program: String,
 
-    // ── Embedded runner (ADR 0061 decisions 2 and 6) ───────────────────────
+    // ── Embedded runner (ADR 0005 decisions 2 and 6) ───────────────────────
     /// The env/CLI-flag default for whether the in-process embedded runner
     /// starts. `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` set this; the UI
     /// toggle (`PUT /api/local-runner`) overrides it in `app_meta` from

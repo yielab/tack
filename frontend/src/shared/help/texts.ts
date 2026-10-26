@@ -42,7 +42,7 @@ export interface AgentSafetyReport {
 }
 
 /** Whether an agent runs sandboxed, runs unsandboxed and asks first, or does not run at all —
- *  the runner refuses an agent with no sandbox that cannot ask (ADR 0077). Across several
+ *  the runner refuses an agent with no sandbox that cannot ask (ADR 0018). Across several
  *  runners the least safe report decides; `null` when no runner says. */
 export function agentSafety(reports: readonly AgentSafetyReport[]): { text: string; tone: 'ok' | 'asks' | 'blocked' } | null {
   const known = reports.filter((r) => r.sandbox === 'bwrap' || r.sandbox === 'none' || r.sandbox === 'harness');

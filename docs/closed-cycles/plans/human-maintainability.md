@@ -62,7 +62,7 @@ crates/<crate>/
                                (`#[cfg(test)] mod tests;` — private access via `use super::*` unchanged)
   tests/
     common/mod.rs              the crate's shared fixtures — the ONLY place a helper lives
-    <subject>.rs + <subject>/  one binary per subject (ADR 0064's grouping, unchanged)
+    <subject>.rs + <subject>/  one binary per subject (ADR 0007's grouping, unchanged)
     contract/                  byte-pinned: runner-v1 fixtures, OpenAPI drift, golden files
     live/                      anything that runs a real binary or bills — every test #[ignore]
     scratch_*.rs               gitignored; an agent's local proof; never tracked

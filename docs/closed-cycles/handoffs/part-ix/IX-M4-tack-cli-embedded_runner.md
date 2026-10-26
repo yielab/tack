@@ -44,7 +44,7 @@
 | Claim (user-visible, added or kept) | Evidence — command, test name, or transcript |
 |---|---|
 | All behavior in the 3 files is unchanged | `cargo nextest run --workspace -E 'binary(~embedded_runner)'` — 3/3 pass, same assertions per test as before |
-| No `sleep(` ≥200ms remains in any of the 3 files (ADR-0064 threshold) | `python3 scripts/list-fixed-waits.py \| grep embedded_runner` — no hits (was 3 hits in `embedded_runner_live_secret.rs` at 200/200/250ms before this card) |
+| No `sleep(` ≥200ms remains in any of the 3 files (ADR-0007 threshold) | `python3 scripts/list-fixed-waits.py \| grep embedded_runner` — no hits (was 3 hits in `embedded_runner_live_secret.rs` at 200/200/250ms before this card) |
 | Every remaining `sleep(` sits behind a bounded, condition-checked poll, never a blind wait | `grep -n 'sleep(' crates/tack-cli/tests/embedded_runner_*.rs` — exactly one hit per file, each a 50ms interval inside that file's own private `poll_until(timeout, attempt)`, which re-checks `attempt()` and a deadline every iteration |
 | Every test name in this binary is ≤60 chars | `measure`'s `name` column: 46, 50, 47 (was 69, 70, 70) |
 | Every file's preamble is ≤10 lines | `measure`'s `mdoc` column: 10, 10, 10 (was 20, 16, 14) |

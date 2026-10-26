@@ -1,4 +1,4 @@
-//! HTTP-level proof for `handlers::local_runner` (ADR 0061 decisions 2 and
+//! HTTP-level proof for `handlers::local_runner` (ADR 0005 decisions 2 and
 //! 6): the routes exist only on a loopback bind with a control actually
 //! wired in, they are a genuine 404 otherwise (never present-and-refusing),
 //! and the on/off preference persists in `app_meta` and nowhere else. A fake

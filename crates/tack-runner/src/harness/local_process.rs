@@ -716,7 +716,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
 
     /// The rules every harness is held to before anything is spawned.
     /// Why this harness does not run here at all: an agent without a
-    /// sandbox must be able to ask before it acts (ADR 0077), and this one
+    /// sandbox must be able to ask before it acts (ADR 0018), and this one
     /// cannot. `None` when it is sandboxed or can ask.
     fn unconfined_and_cannot_ask(&self) -> Option<String> {
         let can_ask =

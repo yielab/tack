@@ -669,7 +669,7 @@ async fn builtin_template_id(repo: &Repository) -> Uuid {
         .id
 }
 
-// ─── The project file through templates (ADR 0081) ───────────────────────────
+// ─── The project file through templates (ADR 0022) ───────────────────────────
 
 /// A built-in template comes with its roles, and the reviewer profiles those
 /// roles name are made by name; a project saved as a template keeps its roles,

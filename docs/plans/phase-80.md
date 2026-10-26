@@ -175,7 +175,7 @@ Run: `PATH=$HOME/.cargo/bin:$PATH cargo nextest run -p tack-runner --test docket
 
 **Status: DEFERRED 2026-10-25.** The measurement answers "keep polling or replace it", and nothing
 can replace it today: docket's `webhook` channel needs an inbound endpoint, and Tack has none on
-the runner's side nor on the board's (ADR 0071). With E cut, no card proposes a replacement. The
+the runner's side nor on the board's (ADR 0013). With E cut, no card proposes a replacement. The
 measurement is run the day one is proposed, as that proposal's first step, with the threshold
 below written before the numbers. Until then the real docket run it needs (N = 20 concurrent
 attempts in a throwaway home) is cost without a decision behind it. **Depends on:** a proposal.
@@ -187,7 +187,7 @@ minute, and two while a question is open, about 60; a new question adds one `GET
 task view. N attempts make N identical global `GET /inbox` reads. docket's maintainers say their
 `webhook` channel already sends CloudEvents with Standard Webhooks signatures for `needs_you`; Tack
 does not use it. A subscription also needs an inbound endpoint, and Tack has none on the runner side
-(it runs near credentials) and none on the board's (ADR 0071: "no webhook receiver"), so the price of
+(it runs near credentials) and none on the board's (ADR 0013: "no webhook receiver"), so the price of
 the alternative is not only docket's.
 
 **Goal.** A number and a decision, in `docs/plans/measurements/docket-polling.md`, which is written
