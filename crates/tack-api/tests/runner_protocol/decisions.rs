@@ -5,6 +5,7 @@
 //! production `router.rs`/`require_token` layering.
 
 use tack_api::handlers::decisions;
+use tack_protocol::Clock;
 
 use std::sync::{Arc, Mutex};
 
@@ -20,8 +21,7 @@ use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        ExecutionClock, NewAgentProfile, NewDecision, NewExecutionRequest, NewRunner,
-        RequestSelection,
+        NewAgentProfile, NewDecision, NewExecutionRequest, NewRunner, RequestSelection,
     },
 };
 use uuid::Uuid;
@@ -54,7 +54,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -161,7 +161,7 @@ async fn seed_workspace(pool: sqlx::SqlitePool) -> (Repository, FakeClock, Strin
 /// not touch scheduling).
 fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionRequest<'a> {
     // `claim_execution_idempotent_with_snapshot` deserializes
-    // `request_snapshot` into `tack_orch::execution::ExecutionRequestSnapshot`
+    // `request_snapshot` into `tack_protocol::execution::ExecutionRequestSnapshot`
     // and fails the claim if it doesn't round-trip, so this must be a fully
     // well-formed snapshot — mirrors
     // `crates/tack-db/tests/common/execution_fixture.rs`'s own `request()`

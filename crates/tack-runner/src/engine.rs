@@ -7,7 +7,7 @@
 use async_trait::async_trait;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, FencingToken as DomainFencingToken, ProtocolVersion,
     RecoveryDetails as DomainRecoveryDetails, RecoveryDisposition, RecoveryJournalState,
     RecoveryKey, RecoveryObservation, RecoveryObservationRequest, RecoveryObservationResponse,
@@ -59,7 +59,7 @@ pub struct Progress {
     pub kind: String,
     pub text: String,
     /// What this step used, when it says; the shape of the completion's usage.
-    pub usage: Option<tack_orch::execution::Usage>,
+    pub usage: Option<tack_protocol::execution::Usage>,
 }
 
 /// What one line of a harness's stdout means to the core, when the run is
@@ -160,7 +160,7 @@ async fn next_step(progress: &mut Option<mpsc::Receiver<Progress>>) -> Option<Op
 /// (`run_limits` in the server wrote it), unless docket is the agent, which stops its own
 /// task there (`maxTokens` in its task body). A harness that reports no usage while it runs
 /// is never stopped by it: its tokens are measured, not enforced.
-fn runner_token_limit(request: &tack_orch::execution::ExecutionRequestSnapshot) -> Option<u64> {
+fn runner_token_limit(request: &tack_protocol::execution::ExecutionRequestSnapshot) -> Option<u64> {
     if request.requested_harness_kind.as_str() == crate::harness::docket::DESCRIPTOR.kind {
         return None;
     }
@@ -378,8 +378,8 @@ pub struct HarnessOutcome {
     pub terminal_state: AttemptState,
     pub terminal_reason: serde_json::Value,
     pub final_checkpoint: Option<super::Checkpoint>,
-    pub actual_execution: tack_orch::execution::ActualExecution,
-    pub usage: tack_orch::execution::Usage,
+    pub actual_execution: tack_protocol::execution::ActualExecution,
+    pub usage: tack_protocol::execution::Usage,
 }
 
 impl HarnessOutcome {
@@ -406,7 +406,7 @@ impl HarnessOutcome {
     /// report has exactly one source for actual execution and usage facts.
     fn normalize_workspace_facts(mut self, workspace: &Workspace) -> Self {
         self.actual_execution.workspace_id =
-            tack_orch::execution::WorkspaceId::new(workspace.id.as_str());
+            tack_protocol::execution::WorkspaceId::new(workspace.id.as_str());
         self.actual_execution.base_revision = workspace.base_revision.clone();
         self
     }
@@ -1389,7 +1389,7 @@ where
                 }
                 Some(step) = next_step(&mut progress) => match step {
                     Some(step) => {
-                        counted += step.usage.as_ref().and_then(tack_orch::execution::Usage::counted).unwrap_or(0);
+                        counted += step.usage.as_ref().and_then(tack_protocol::execution::Usage::counted).unwrap_or(0);
                         steps.push(step);
                         if limit.is_some_and(|limit| counted >= limit)
                             && !stopped_by_limit
@@ -2350,7 +2350,7 @@ where
         spec: &ExecutionSpec,
         error: HarnessError,
     ) -> Result<RunCycle, EngineError> {
-        use tack_orch::execution as domain;
+        use tack_protocol::execution as domain;
 
         // A refusal's own words; any other error's text, which never carries
         // a secret.

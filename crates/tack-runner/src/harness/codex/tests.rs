@@ -5,7 +5,7 @@ use super::*;
 use crate::client::AttemptState;
 use crate::harness::HarnessAdapter;
 use crate::harness::test_support::{finished, harness_for, scratch, script, spec};
-use tack_orch::execution::Approvals;
+use tack_protocol::execution::Approvals;
 
 #[test]
 fn a_direct_request_passes_only_the_model() {

@@ -8,14 +8,12 @@
 //! Depends inward on `tack-core`/`tack-db` only, never on `tack-api` (which
 //! depends on it instead) — a `tack-api` type needed here belongs in this crate.
 
-pub mod execution;
 // A sibling of `execution`, not a submodule, since both are I/O-bearing
 // background tasks — see `execution_retention`'s module doc.
 pub mod execution_observability;
 pub mod execution_retention;
 pub mod model_policy;
 pub mod scheduler;
-pub mod usage_provenance;
 
 /// Everything that can go wrong in a background task talking to the
 /// repository behind it.

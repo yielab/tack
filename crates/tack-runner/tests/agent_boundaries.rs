@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
     RunnerId as DomainRunnerId,
 };
@@ -61,7 +61,7 @@ impl HarnessGrammar for MarkerGrammar {
         &FAKE
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         unreachable!("the capability table is not read by this test")
     }
 
@@ -98,7 +98,7 @@ fn spec(workspace: PathBuf, environment: &[(&str, EnvironmentValue)]) -> Executi
         serde_json::from_value(fixture["request"].clone()).expect("request snapshot");
     let mut attempt: AttemptSnapshot =
         serde_json::from_value(fixture["attempt"].clone()).expect("attempt snapshot");
-    request.requested_harness_kind = tack_orch::execution::HarnessKind::new(FAKE.kind);
+    request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(FAKE.kind);
     request.repository.base_revision = "0123456789abcdef".into();
     request.environment = environment
         .iter()
@@ -303,14 +303,14 @@ impl HarnessGrammar for RunGrammar {
         &RUN_FAKE
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         let value = || {
             tack_runner::harness::local_process::capability(
-                tack_orch::execution::CapabilitySupport::Unsupported,
+                tack_protocol::execution::CapabilitySupport::Unsupported,
                 "not read by this test",
             )
         };
-        tack_orch::execution::FeatureCapabilities {
+        tack_protocol::execution::FeatureCapabilities {
             cancel: value(),
             resume: value(),
             decisions: value(),
@@ -349,7 +349,7 @@ async fn a_run_log_never_follows_a_workspace_symlink() {
     .expect("the fake harness script is locatable");
     let mut spec = spec(workspace, &[]);
     spec.work.request.requested_harness_kind =
-        tack_orch::execution::HarnessKind::new("claude-code");
+        tack_protocol::execution::HarnessKind::new("claude-code");
 
     let handle = harness.start(&spec).await.expect("the run starts");
     let outcome = harness.wait(&handle).await.expect("the run finishes");
@@ -401,7 +401,7 @@ impl HarnessGrammar for ModeGrammar {
         &RUN_FAKE
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         RunGrammar.capabilities()
     }
 
@@ -427,7 +427,7 @@ impl HarnessGrammar for ModeGrammar {
 fn claude_spec(workspace: PathBuf) -> ExecutionSpec {
     let mut spec = spec(workspace, &[]);
     spec.work.request.requested_harness_kind =
-        tack_orch::execution::HarnessKind::new("claude-code");
+        tack_protocol::execution::HarnessKind::new("claude-code");
     spec
 }
 
@@ -629,11 +629,11 @@ impl HarnessGrammar for DescriptorGrammar {
         self.0
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         let mut capabilities = RunGrammar.capabilities();
         if self.1 {
             capabilities.decisions = tack_runner::harness::local_process::capability(
-                tack_orch::execution::CapabilitySupport::Supported,
+                tack_protocol::execution::CapabilitySupport::Supported,
                 "asks in this test",
             );
         }
@@ -721,7 +721,7 @@ async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason
     let calls_before = std::fs::read_to_string(&log).expect("bwrap was probed");
     let mut spec = spec(workspace, &[]);
     spec.work.request.requested_harness_kind =
-        tack_orch::execution::HarnessKind::new("breaks-in-bwrap");
+        tack_protocol::execution::HarnessKind::new("breaks-in-bwrap");
     let handle = broken_harness.start(&spec).await.expect("the run starts");
     assert_eq!(
         broken_harness.sandbox(&handle).await.as_deref(),
@@ -790,7 +790,8 @@ async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
         "{reason}"
     );
     let mut spec = spec(workspace, &[]);
-    spec.work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("cannot-ask");
+    spec.work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new("cannot-ask");
     match silent.start(&spec).await {
         Err(HarnessError::Rejected { reason: refused }) => assert_eq!(refused, reason),
         other => panic!("expected a refusal before spawn, got {other:?}"),
@@ -815,7 +816,7 @@ impl HarnessGrammar for EchoGrammar {
         self.0
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         RunGrammar.capabilities()
     }
 
@@ -878,7 +879,7 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
         .expect("the fake harness script is locatable");
         let mut spec = spec(workspace.clone(), &[]);
         spec.work.request.requested_harness_kind =
-            tack_orch::execution::HarnessKind::new(real.kind);
+            tack_protocol::execution::HarnessKind::new(real.kind);
 
         let handle = harness.start(&spec).await.expect("the run starts");
         let outcome = harness.wait(&handle).await.expect("the run finishes");
@@ -927,7 +928,7 @@ impl HarnessGrammar for LoginGrammar {
         self.0
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         RunGrammar.capabilities()
     }
 
@@ -997,7 +998,8 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
     }
 
     let mut spec = spec(workspace.clone(), &[]);
-    spec.work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("opencode");
+    spec.work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new("opencode");
     spec.work.request.permission_policy.network = true;
     spec.work.request.permission_policy.approvals = None;
     spec.work.request.requested_model = Some("llamacpp/chosen".to_owned());

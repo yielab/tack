@@ -29,7 +29,7 @@ use axum::{
 use futures::Stream;
 use serde_json::{Value, json};
 use tack_db::Repository;
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use tokio::io::AsyncReadExt;
 
 use super::artifact_storage::ArtifactStorage;

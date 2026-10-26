@@ -2,6 +2,7 @@
 //! global-router registration is proven separately (`production_router.rs`).
 
 use tack_api::handlers::{executions, runner_admin};
+use tack_protocol::SystemClock;
 
 use crate::common;
 // Local alias: every route in this file sends as the default "operator-1"
@@ -14,7 +15,7 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult, SystemExecutionClock},
+    repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult},
 };
 use uuid::Uuid;
 
@@ -67,7 +68,7 @@ async fn setup() -> (axum::Router, Repository, String) {
         )
         .await
         .expect("item");
-    let clock = SystemExecutionClock;
+    let clock = SystemClock;
     repo.register_runner(
         NewRunner {
             id: "runner-active",
@@ -97,7 +98,7 @@ async fn setup() -> (axum::Router, Repository, String) {
     .expect("profile");
     let state = executions::OperatorExecutionState::with_clock(
         repo.clone(),
-        std::sync::Arc::new(SystemExecutionClock),
+        std::sync::Arc::new(SystemClock),
     );
     let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
     (app, repo, item.id.to_string())
@@ -357,7 +358,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     assert_ne!(stored_hash, raw_token);
     assert!(!created.to_string().contains(&stored_hash));
 
-    let clock = SystemExecutionClock;
+    let clock = SystemClock;
     let redeemed = repo
         .redeem_enrollment_token(
             &stored_hash,
@@ -439,7 +440,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     );
 }
 
-/// `tack_orch::execution::ProtocolErrorEnvelope::new` sets `retryable` from
+/// `tack_protocol::execution::ProtocolErrorEnvelope::new` sets `retryable` from
 /// `StableErrorCode::retryable`, which the frozen fixtures classify `true`
 /// for `conflict`. This drives a real duplicate-name request through
 /// `create_fleet` and inspects the actual response body, not the envelope
@@ -1553,7 +1554,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     // Create an app for create_execution
     let state = executions::OperatorExecutionState::with_clock(
         repo.clone(),
-        std::sync::Arc::new(tack_db::repo::execution::SystemExecutionClock),
+        std::sync::Arc::new(tack_protocol::SystemClock),
     );
     let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
 
@@ -1650,7 +1651,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
             tool_policy: "{}",
             limits: r#"{"budgets":{"tokens":300000}}"#,
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile b");
@@ -1767,7 +1768,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
             tool_policy: "{}",
             limits: r#"{"budgets":{"tokens":300000}}"#,
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile b");
@@ -2060,7 +2061,7 @@ async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_o
             tool_policy: "{}",
             limits: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile");
@@ -2108,7 +2109,7 @@ async fn add_profile(repo: &Repository, id: &str) {
             tool_policy: "{}",
             limits: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile");
@@ -2305,7 +2306,7 @@ async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_s
                 tool_policy: "{}",
                 limits,
             },
-            &SystemExecutionClock,
+            &SystemClock,
         )
         .await
         .expect("profile");
@@ -2447,7 +2448,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 tool_policy: "{}",
                 limits,
             },
-            &SystemExecutionClock,
+            &SystemClock,
         )
         .await
         .expect("profile");
@@ -2568,7 +2569,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 tool_policy: "{}",
                 limits: &limits.to_string(),
             },
-            &SystemExecutionClock,
+            &SystemClock,
         )
         .await
         .ok();
@@ -2611,7 +2612,7 @@ async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("second runner");
@@ -2637,7 +2638,7 @@ async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("second runner");
@@ -2691,7 +2692,7 @@ async fn add_profile_naming_agent(repo: &Repository, id: &str, agent: &str) {
             tool_policy: &json!({ "agent": agent }).to_string(),
             limits: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile");
@@ -2836,7 +2837,7 @@ async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Valu
             tool_policy: &tool_policy.to_string(),
             limits: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile");

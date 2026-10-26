@@ -4,22 +4,10 @@
 
 use chrono::{DateTime, Duration, Utc};
 use sqlx::{AssertSqlSafe, Row, SqliteConnection};
+use tack_protocol::Clock;
 use tracing::instrument;
 
 use super::Repository;
-
-pub trait ExecutionClock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
-}
-
-#[derive(Debug, Default)]
-pub struct SystemExecutionClock;
-
-impl ExecutionClock for SystemExecutionClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct NewRunner<'a> {
@@ -326,7 +314,7 @@ pub struct RunnerSchedulingSnapshot {
     pub available_capacity: i64,
     pub last_heartbeat_at: Option<String>,
     /// JSON string, validated at enroll/refresh time to parse as
-    /// `tack_orch::execution::EmbeddedCapabilitySnapshot` — see
+    /// `tack_protocol::execution::EmbeddedCapabilitySnapshot` — see
     /// `crates/tack-api/src/handlers/runner_protocol.rs`'s
     /// `validate_capability_payload`. A runner that has never enrolled
     /// carries the column default `'{}'`, which does *not* parse as that
@@ -757,7 +745,7 @@ pub enum CompletionResult {
     Stale,
 }
 
-fn stamp(clock: &dyn ExecutionClock) -> String {
+fn stamp(clock: &dyn Clock) -> String {
     clock.now().to_rfc3339()
 }
 
@@ -1644,7 +1632,7 @@ impl Repository {
     pub async fn complete_execution_result(
         &self,
         completion: Completion<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<CompletionResult, sqlx::Error> {
         if !terminal(completion.terminal_state) {
             return Ok(CompletionResult::Conflict);
@@ -1743,7 +1731,7 @@ impl Repository {
         &self,
         runner: NewRunner<'_>,
         token: EnrollmentToken<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<(), sqlx::Error> {
         if token.runner_id != runner.id
             || token.expires_at <= clock.now()
@@ -1771,7 +1759,7 @@ impl Repository {
         &self,
         runner_id: &str,
         name: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let result = sqlx::query(
             "UPDATE agent_runners SET name = ?, updated_at = ? WHERE id = ? \
@@ -1797,7 +1785,7 @@ impl Repository {
         &self,
         runner_id: &str,
         token_id: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let r=sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE runner_id=? AND id=? AND consumed_at IS NULL").bind(stamp(clock)).bind(runner_id).bind(token_id).execute(self.pool()).await?;
         Ok(r.rows_affected() == 1)
@@ -1806,7 +1794,7 @@ impl Repository {
     pub async fn revoke_runner(
         &self,
         runner_id: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
         let mut tx = self.pool().begin().await?;
@@ -1831,7 +1819,7 @@ impl Repository {
         &self,
         fleet_id: &str,
         runner_id: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<AddFleetMemberOutcome, sqlx::Error> {
         let fleet_exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_fleets WHERE id = ?)")
@@ -1899,7 +1887,7 @@ impl Repository {
         expected_credential_hash: &str,
         new_credential_hash: &str,
         credential_expires_at: DateTime<Utc>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<CredentialRotationResult, sqlx::Error> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
@@ -1933,7 +1921,7 @@ impl Repository {
         recovery_key: &str,
         actor: &str,
         reason_fingerprint: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<OperatorRequeueResult, sqlx::Error> {
         let now = stamp(clock);
         // Serialize duplicate operator requeues for the same request (e.g. a
@@ -1987,7 +1975,7 @@ impl Repository {
     pub async fn transition_attempt_with_facts(
         &self,
         input: AttemptTransitionInput<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<AttemptTransitionResult, sqlx::Error> {
         if input.workspace_id.is_empty()
             || input.base_revision.is_empty()
@@ -2140,7 +2128,7 @@ impl Repository {
         available_capacity: i64,
         leases: &[HeartbeatLease<'_>],
         lease_duration: Duration,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<HeartbeatBatchResult, sqlx::Error> {
         let now = clock.now();
         let now_s = now.to_rfc3339();
@@ -2246,7 +2234,7 @@ impl Repository {
     pub async fn recover_attempt(
         &self,
         input: RecoveryObservationInput<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<RecoveryObservationResult, sqlx::Error> {
         let now = stamp(clock);
         let details = recovery_details(input.details)?;
@@ -2270,7 +2258,7 @@ impl Repository {
     pub async fn observe_cancellation(
         &self,
         input: CancellationObservationInput<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<CancellationObservation, sqlx::Error> {
         let now = stamp(clock);
         let fingerprint = cancellation_fingerprint(&input)?;
@@ -2359,7 +2347,7 @@ impl Repository {
     pub async fn issue_enrollment_token(
         &self,
         token: EnrollmentToken<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<(), sqlx::Error> {
         sqlx::query("INSERT INTO agent_enrollment_tokens (id, runner_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)")
             .bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(stamp(clock))
@@ -2370,7 +2358,7 @@ impl Repository {
     pub async fn revoke_enrollment_token(
         &self,
         token_hash: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let result = sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE token_hash = ? AND consumed_at IS NULL")
             .bind(stamp(clock)).bind(token_hash).execute(self.pool()).await?;
@@ -2404,7 +2392,7 @@ impl Repository {
         available_capacity: i64,
         capability_snapshot: &str,
         protocol_version: i64,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<RedeemEnrollmentResult, sqlx::Error> {
         let now = stamp(clock);
         // Serialize token consumers before either transaction reads the
@@ -2448,7 +2436,7 @@ impl Repository {
         claim_request_id: &str,
         attempt_id: &str,
         lease_duration: Duration,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
         selection: RequestSelection<'_>,
     ) -> Result<Option<ClaimedExecution>, sqlx::Error> {
         let now = clock.now();
@@ -2887,7 +2875,7 @@ impl Repository {
     pub async fn register_runner(
         &self,
         input: NewRunner<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<(), sqlx::Error> {
         let now = stamp(clock);
         sqlx::query(
@@ -2914,7 +2902,7 @@ impl Repository {
     pub async fn create_agent_profile(
         &self,
         input: NewAgentProfile<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<(), sqlx::Error> {
         let now = stamp(clock);
         sqlx::query(
@@ -2970,7 +2958,7 @@ impl Repository {
     pub async fn write_agent_profile(
         &self,
         row: &tack_core::outline::bundle::ProfileRow,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<(), sqlx::Error> {
         let now = stamp(clock);
         sqlx::query(
@@ -3002,7 +2990,7 @@ impl Repository {
     pub async fn enqueue_execution(
         &self,
         input: NewExecutionRequest<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<EnqueueResult, sqlx::Error> {
         let now = stamp(clock);
         let request_snapshot = validate_execution_request_snapshot(&input)?;
@@ -3060,7 +3048,7 @@ impl Repository {
         &self,
         batch: EventBatch<'_>,
         events: &[NewEvent<'_>],
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<EventApplyResult, sqlx::Error> {
         let now = stamp(clock);
         let fingerprint = event_batch_fingerprint(&batch, events)?;
@@ -3181,7 +3169,7 @@ impl Repository {
     pub async fn complete_execution(
         &self,
         completion: Completion<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         Ok(matches!(
             self.complete_execution_result(completion, clock).await?,
@@ -3199,7 +3187,7 @@ impl Repository {
     pub async fn request_execution_cancellation(
         &self,
         request_id: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
@@ -3249,7 +3237,7 @@ impl Repository {
     /// many it closed.
     pub async fn expire_decisions_of_ended_attempts(
         &self,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<u64, sqlx::Error> {
         let now = stamp(clock);
         let closed = sqlx::query(
@@ -3280,7 +3268,7 @@ impl Repository {
         expired_before: DateTime<Utc>,
         code: &str,
         sentence: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<u64, sqlx::Error> {
         let candidates = sqlx::query_scalar::<_, String>("SELECT id FROM execution_attempts WHERE state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
             .bind(expired_before.to_rfc3339()).fetch_all(self.pool()).await?;
@@ -3329,7 +3317,7 @@ impl Repository {
         attempt_id: &str,
         fence: i64,
         artifact: NewArtifact<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
         // Serialize the eligibility check and the insert against a concurrent
@@ -3488,7 +3476,7 @@ impl Repository {
         artifact_id: &str,
         fence: i64,
         content_reference: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<ArtifactContentCommitResult, sqlx::Error> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
@@ -3661,7 +3649,7 @@ impl Repository {
         attempt_id: &str,
         fence: i64,
         decision: NewDecision<'_>,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<bool, sqlx::Error> {
         let now = stamp(clock);
         // Serialize the eligibility check and the insert against a concurrent
@@ -3693,7 +3681,7 @@ impl Repository {
         &self,
         attempt_id: &str,
         decision_id: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<Option<String>, sqlx::Error> {
         let now = stamp(clock);
         sqlx::query_scalar(
@@ -4036,7 +4024,7 @@ impl Repository {
         &self,
         attempt_id: &str,
         artifact_id: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<MrpReviewRow, sqlx::Error> {
         let row = sqlx::query(AssertSqlSafe(format!(
             "INSERT INTO mrp_reviews (attempt_id, artifact_id, viewed_at) VALUES (?, ?, ?) \
@@ -4061,7 +4049,7 @@ impl Repository {
         verdict: &str,
         reason: &str,
         reviewed_by: &str,
-        clock: &dyn ExecutionClock,
+        clock: &dyn Clock,
     ) -> Result<Option<MrpReviewRow>, sqlx::Error> {
         let now = stamp(clock);
         let row = sqlx::query(AssertSqlSafe(format!(

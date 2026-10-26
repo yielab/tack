@@ -130,6 +130,55 @@ impl ExecutionState {
     pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
+
+    /// The name this state has on the wire and in storage.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Leased => "leased",
+            Self::Preparing => "preparing",
+            Self::Running => "running",
+            Self::WaitingDecision => "waiting_decision",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Lost => "lost",
+            Self::NeedsOperator => "needs_operator",
+        }
+    }
+}
+
+/// A name that is none of an enum's variants.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("unknown {kind} `{value}`")]
+pub struct UnknownVariant {
+    pub kind: &'static str,
+    pub value: String,
+}
+
+impl std::str::FromStr for ExecutionState {
+    type Err = UnknownVariant;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(match value {
+            "queued" => Self::Queued,
+            "leased" => Self::Leased,
+            "preparing" => Self::Preparing,
+            "running" => Self::Running,
+            "waiting_decision" => Self::WaitingDecision,
+            "succeeded" => Self::Succeeded,
+            "failed" => Self::Failed,
+            "cancelled" => Self::Cancelled,
+            "lost" => Self::Lost,
+            "needs_operator" => Self::NeedsOperator,
+            _ => {
+                return Err(UnknownVariant {
+                    kind: "execution state",
+                    value: value.to_owned(),
+                });
+            }
+        })
+    }
 }
 
 /// The non-secret local journal state a runner may attach as recovery evidence.
@@ -176,6 +225,15 @@ pub enum RecoveryDisposition {
 }
 
 impl RecoveryDisposition {
+    /// The name this disposition has on the wire and in storage.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SafePreSpawnRequeue => "safe_pre_spawn_requeue",
+            Self::NeedsOperator => "needs_operator",
+            Self::AlreadyTerminal => "already_terminal",
+        }
+    }
+
     /// The attempt transition implied by this disposition, if it is not a
     /// terminal acknowledgement.
     pub const fn attempt_transition(self) -> Option<ExecutionState> {
@@ -218,6 +276,24 @@ impl RecoveryDisposition {
             Self::NeedsOperator => active,
             Self::AlreadyTerminal => state.is_terminal(),
         }
+    }
+}
+
+impl std::str::FromStr for RecoveryDisposition {
+    type Err = UnknownVariant;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Ok(match value {
+            "safe_pre_spawn_requeue" => Self::SafePreSpawnRequeue,
+            "needs_operator" => Self::NeedsOperator,
+            "already_terminal" => Self::AlreadyTerminal,
+            _ => {
+                return Err(UnknownVariant {
+                    kind: "recovery disposition",
+                    value: value.to_owned(),
+                });
+            }
+        })
     }
 }
 
@@ -280,7 +356,7 @@ pub struct RepositorySnapshot {
     /// How the project installs its dependencies, as it stood when the request was made. Absent
     /// means detect from the lockfile, as it does for a runner that predates the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prepare: Option<tack_core::prepare::PrepareSetting>,
+    pub prepare: Option<crate::prepare::PrepareSetting>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }
@@ -473,6 +549,7 @@ pub struct AttemptSnapshot {
 /// How a numeric usage figure was obtained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum MeasurementSource {
     Measured,
     Estimated,
@@ -481,7 +558,9 @@ pub enum MeasurementSource {
 
 /// A nullable metric paired with its provenance, avoiding fabricated zeros.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Measurement<T> {
+    /// `null` whenever `source` is `not_measured` — never a number defaulting to `0`.
     pub value: Option<T>,
     pub source: MeasurementSource,
     #[serde(flatten, default)]

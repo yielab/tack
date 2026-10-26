@@ -1,9 +1,9 @@
 //! Cancellable retention sweep for the execution domain.
 //!
-//! A sibling of `execution/`, not part of it: `crate::execution` deliberately
+//! A sibling of `execution/`, not part of it: `tack_protocol::execution` deliberately
 //! has no transport/persistence/vendor dependencies, while this module is
 //! nothing but persistence and a spawned background task.
-//! [`RetentionClock`] makes "now" injectable, and
+//! [`Clock`] makes "now" injectable, and
 //! [`spawn_execution_retention_sweep`] races a `stop_rx` against its
 //! inter-sweep sleep instead of only stopping via a dropped `JoinHandle`.
 //!
@@ -15,6 +15,7 @@ use std::time::Duration as StdDuration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use tack_protocol::Clock;
 use tokio::sync::watch;
 use tracing::{debug, info, warn};
 
@@ -112,23 +113,6 @@ pub const DEFAULT_EXECUTION_RETENTION_DAYS: u32 = 90;
 /// why this is bounded rather than one transaction for the whole backlog.
 pub const DEFAULT_EXECUTION_RETENTION_BATCH_SIZE: i64 = 500;
 
-/// A clock the retention sweep asks for "now" every tick, so tests can
-/// inject a fixed instant instead of depending on real wall-clock time to
-/// decide what counts as stale (CLAUDE.md: "inject time"). Production uses
-/// [`SystemClock`].
-pub trait RetentionClock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
-}
-
-#[derive(Debug, Default)]
-pub struct SystemClock;
-
-impl RetentionClock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct ExecutionRetentionConfig {
     pub retention_days: u32,
@@ -175,7 +159,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 pub fn spawn_execution_retention_sweep(
     enabled: bool,
     store: Arc<dyn ExecutionRetentionStore>,
-    clock: Arc<dyn RetentionClock>,
+    clock: Arc<dyn Clock>,
     config: ExecutionRetentionConfig,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Option<tokio::task::JoinHandle<()>> {

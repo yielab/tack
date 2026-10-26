@@ -26,7 +26,7 @@ use std::{
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use tack_orch::execution::{
+use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, CapabilityValue, DocsLinks, FeatureCapabilities,
     HarnessCapability, HarnessKind as DomainHarnessKind, Measurement, MeasurementSource,
     ModelListSource, ModelsReport, SignInReport, SignInState, Usage,

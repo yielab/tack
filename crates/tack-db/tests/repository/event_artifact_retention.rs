@@ -13,10 +13,11 @@ use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
         ArtifactContentCommitResult, AttemptTransitionInput, AttemptTransitionPhase,
-        EventApplyResult, EventBatch, ExecutionClock, NewAgentProfile, NewArtifact, NewEvent,
-        NewExecutionRequest, NewRunner, RequestSelection,
+        EventApplyResult, EventBatch, NewAgentProfile, NewArtifact, NewEvent, NewExecutionRequest,
+        NewRunner, RequestSelection,
     },
 };
+use tack_protocol::Clock;
 
 struct FakeClock(Mutex<DateTime<Utc>>);
 
@@ -30,7 +31,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }

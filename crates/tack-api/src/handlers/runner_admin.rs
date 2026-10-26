@@ -13,10 +13,10 @@ use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tack_db::Repository;
 use tack_db::repo::execution::{
-    AddFleetMemberOutcome, EnrollmentToken, ExecutionClock, NewAgentProfile, NewRunner,
-    SystemExecutionClock,
+    AddFleetMemberOutcome, EnrollmentToken, NewAgentProfile, NewRunner,
 };
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::{Clock, SystemClock};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -708,7 +708,7 @@ pub enum ProvisionError {
 /// result is reported back.
 pub async fn provision_pending_runner(
     repo: &Repository,
-    clock: &dyn ExecutionClock,
+    clock: &dyn Clock,
     input: CreatePendingRunner,
 ) -> Result<CreatePendingRunnerResponse, ProvisionError> {
     if input.enrollment_lifetime_seconds <= 0 {
@@ -821,7 +821,7 @@ pub async fn provision_local_runner(
             protocol_version: protocol_v1(),
             enrollment_lifetime_seconds: default_enrollment_lifetime_seconds(),
         };
-        match provision_pending_runner(&repo, &SystemExecutionClock, input).await {
+        match provision_pending_runner(&repo, &SystemClock, input).await {
             Err(ProvisionError::NameConflict) if attempt < LOCAL_NAME_ATTEMPTS => attempt += 1,
             result => return Ok(result?),
         }
@@ -846,7 +846,7 @@ pub async fn name_local_runner_after_host(
             .rename_generated_local_runner(
                 runner_id,
                 &this_computer_name(host, attempt),
-                &SystemExecutionClock,
+                &SystemClock,
             )
             .await
         {

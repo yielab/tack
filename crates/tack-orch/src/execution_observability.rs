@@ -3,7 +3,7 @@
 //! Computes a periodic, id-free snapshot of runner/queue/lease/event counts
 //! and logs stuck/ambiguous alerts from it. See `execution_retention.rs`'s
 //! module doc for why this lives here (a `tack-db`-backed background task)
-//! rather than inside `crate::execution` (deliberately I/O-free).
+//! rather than inside `tack_protocol::execution` (deliberately I/O-free).
 //!
 //! # Cardinality is the whole point
 //!
@@ -22,6 +22,7 @@ use std::time::Duration as StdDuration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use tack_protocol::Clock;
 use tokio::sync::watch;
 use tracing::{debug, info, warn};
 
@@ -118,22 +119,6 @@ pub fn evaluate_alerts(snapshot: &ExecutionFleetSnapshot) -> AlertSummary {
     }
 }
 
-/// A clock the health watch asks for "now" every tick — see
-/// `execution_retention::RetentionClock`'s doc comment for the identical
-/// "inject time" rationale.
-pub trait ObservabilityClock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
-}
-
-#[derive(Debug, Default)]
-pub struct SystemClock;
-
-impl ObservabilityClock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-}
-
 /// Trailing window used for `events_ingested_in_window` — a coarse
 /// ingestion-rate signal, not a precise metric. One hour by default.
 pub const DEFAULT_EVENT_WINDOW_SECS: i64 = 3600;
@@ -180,7 +165,7 @@ async fn wait_until_stopped(rx: &mut watch::Receiver<bool>) {
 pub fn spawn_execution_health_watch(
     enabled: bool,
     store: Arc<dyn ExecutionObservabilityStore>,
-    clock: Arc<dyn ObservabilityClock>,
+    clock: Arc<dyn Clock>,
     config: ExecutionObservabilityConfig,
     mut stop_rx: watch::Receiver<bool>,
 ) -> Option<tokio::task::JoinHandle<()>> {

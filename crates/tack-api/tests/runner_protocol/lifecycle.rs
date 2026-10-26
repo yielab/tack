@@ -8,6 +8,7 @@
 //! router.
 
 use tack_api::handlers::runner_protocol;
+use tack_protocol::Clock;
 
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +21,7 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{ExecutionClock, NewAgentProfile, NewExecutionRequest, NewRunner},
+    repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner},
 };
 use uuid::Uuid;
 
@@ -50,7 +51,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }

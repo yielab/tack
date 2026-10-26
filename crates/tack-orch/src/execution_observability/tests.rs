@@ -94,7 +94,7 @@ impl FakeClock {
         Self(Mutex::new(now))
     }
 }
-impl ObservabilityClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -129,7 +129,7 @@ async fn wait_for(mut condition: impl FnMut() -> bool) {
 #[tokio::test]
 async fn disabled_health_watch_never_queries_the_store() {
     let store = Arc::new(FakeStore::default());
-    let clock: Arc<dyn ObservabilityClock> = Arc::new(FakeClock::new(Utc::now()));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Utc::now()));
     let (_tx, rx) = watch::channel(false);
 
     let handle = spawn_execution_health_watch(
@@ -149,7 +149,7 @@ async fn disabled_health_watch_never_queries_the_store() {
 #[tokio::test]
 async fn health_watch_shutdown_joins_task_with_no_snapshot_after() {
     let store = Arc::new(FakeStore::default());
-    let clock: Arc<dyn ObservabilityClock> = Arc::new(FakeClock::new(Utc::now()));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Utc::now()));
     let (tx, rx) = watch::channel(false);
     let config = ExecutionObservabilityConfig {
         check_interval_secs: 1,
@@ -185,7 +185,7 @@ async fn stale_lease_alert_logs_once_on_transition_not_every_tick() {
     // panic or stop the loop.
     let store = Arc::new(FakeStore::default());
     *store.snapshot.lock().unwrap() = snapshot_with(2, 0);
-    let clock: Arc<dyn ObservabilityClock> = Arc::new(FakeClock::new(Utc::now()));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Utc::now()));
     let (tx, rx) = watch::channel(false);
     let config = ExecutionObservabilityConfig {
         check_interval_secs: 1,

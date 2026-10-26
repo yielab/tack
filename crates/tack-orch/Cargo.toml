@@ -11,6 +11,7 @@ license.workspace = true
 # `tack-api = { path = "../tack-api" }` line here, stop — you have the
 # dependency arrow backwards.
 [dependencies]
+tack-protocol = { path = "../tack-protocol" }
 tack-core = { path = "../tack-core" }
 tack-db = { path = "../tack-db" }
 tokio = { workspace = true }

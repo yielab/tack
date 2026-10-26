@@ -1,7 +1,7 @@
 use std::{fmt, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, ProtocolVersion,
     RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
     Usage,
@@ -26,7 +26,7 @@ pub use journal::{
     AttemptJournal, JournalError, JournalState, OwnerOnlyJournal, PendingTerminalReport,
     PendingTerminalReportKind, WorkspaceJournal,
 };
-pub use tack_orch::execution::RecoveryObservation;
+pub use tack_protocol::execution::RecoveryObservation;
 pub use transport::{
     ArtifactManifestItem, ArtifactManifestReport, ArtifactUploadGrant, AttemptDataProtocol,
     DecisionAnswer, DecisionCreateReport, DecisionCreateResponse, DecisionOption,

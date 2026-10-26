@@ -3151,7 +3151,7 @@ export interface components {
          */
         AttemptSummary: {
             /**
-             * @description `tack_orch::execution::ActualExecution` once the attempt has
+             * @description `tack_protocol::execution::ActualExecution` once the attempt has
              *     reported one, else `null`.
              */
             actual_execution?: unknown;
@@ -3182,7 +3182,7 @@ export interface components {
             lease_issued_at: string;
             /** @description Whether the Merge button may be pressed, and why not. */
             merge: components["schemas"]["AttemptMerge"];
-            model_provenance?: null | components["schemas"]["ModelProvenanceSchema"];
+            model_provenance?: null | components["schemas"]["ModelProvenance"];
             pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
             review?: null | components["schemas"]["AttemptReview"];
@@ -3197,22 +3197,22 @@ export interface components {
             terminal_reason?: null | components["schemas"]["TerminalReason"];
             updated_at: string;
             /**
-             * @description `tack_orch::execution::Usage` once reported, else `null` — never a
+             * @description `tack_protocol::execution::Usage` once reported, else `null` — never a
              *     fabricated zero.
              */
             usage?: unknown;
             /**
-             * @description `tack_orch::usage_provenance::UsageEconomics` — two
+             * @description `tack_protocol::usage_provenance::UsageEconomics` — two
              *     independently-provenanced dollar dimensions, never summed. Absent
              *     usage/timestamps serialize as `{"value": null, "source":
              *     "not_measured"}`, never a structural zero; no runner infra cost-rate
              *     is stored anywhere in this schema today, so
              *     `runner_time_cost.cost_usd_estimated` is always `not_measured` in
              *     every real response from this endpoint. `#[schema(...)]` below
-             *     points the generated document at `UsageEconomicsSchema`, the same
-             *     fix as `model_provenance` above.
+             *     points the generated document at the real type, the same fix as
+             *     `model_provenance` above.
              */
-            usage_economics: components["schemas"]["UsageEconomicsSchema"];
+            usage_economics: components["schemas"]["UsageEconomics"];
             workspace_id?: string | null;
         };
         AutonomySettings: {
@@ -3609,7 +3609,7 @@ export interface components {
              */
             origin?: string | null;
             /**
-             * @description `tack_orch::execution::PermissionPolicy` (`{tools, network,
+             * @description `tack_protocol::execution::PermissionPolicy` (`{tools, network,
              *     approvals}`). `network` absent: the resolved profile's `tool_policy.network`, else
              *     off; `true` or `false` is kept as sent. `approvals` is `"auto"` or `"ask"`; absent means
              *     `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
@@ -3622,7 +3622,7 @@ export interface components {
              */
             push_branch?: boolean | null;
             /**
-             * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
+             * @description `tack_protocol::execution::RepositorySnapshot` (`{kind, remote,
              *     base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
              *     from the item's project. An explicit one must name the project's own
              *     repository (`details.reason = "repository_differs_from_project"`) and
@@ -4346,16 +4346,18 @@ export interface components {
             team_id?: string | null;
         };
         /**
-         * @description Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-         *     used by `AttemptSummary.usage_economics`. Defined here, not in
-         *     `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.
-         *     `tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module
-         *     doc), so this is a hand-verified mirror, never constructed or serialized
-         *     by real code. `not_measured` is the honest value whenever a figure
-         *     genuinely is not known — never a fabricated zero.
+         * @description How a numeric usage figure was obtained.
          * @enum {string}
          */
-        MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
+        MeasurementSource: "measured" | "estimated" | "not_measured";
+        /** @description A nullable metric paired with its provenance, avoiding fabricated zeros. */
+        Measurement_f64: {
+            source: components["schemas"]["MeasurementSource"];
+            /** Format: double */
+            value?: number;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * @description The merge that happened for an attempt: `trigger` is what asked for it
          *     (`button`, `done`, `auto`), `merge_sha` the commit it landed on.
@@ -4387,13 +4389,11 @@ export interface components {
             output_per_mtok: number;
         };
         /**
-         * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
-         *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
-         *     has not yet reported `actual_execution`). Both model strings are carried
-         *     in full, never reconciled, so a caller can show a request and a served
-         *     model that differ.
+         * @description What an execution request asked for vs. what an attempt ran on: both
+         *     model strings in full, and who named the served one (`reported`,
+         *     `requested` or `agent_default`).
          */
-        ModelProvenanceSchema: {
+        ModelProvenance: {
             /** @description The model the request named; `null` when it named none. */
             requested?: string | null;
             /** @description The model the attempt ran on; `null` when nothing named one. */
@@ -4889,17 +4889,15 @@ export interface components {
             updated_at: string;
         };
         /**
-         * @description Documents `tack_orch::usage_provenance::RunnerTimeCost`.
-         *     `cost_usd_estimated` is `{"value": null, "source": "not_measured"}` in
-         *     every real response today — no runner infra cost-rate is stored anywhere
-         *     in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);
-         *     `runner_rate_usd_per_hour` must be supplied by the caller for a real
-         *     dollar figure to appear. `wall_clock_ms` is a plain derivable fact, not
-         *     itself a `Measurement` — `null` only until both the attempt's
-         *     `started_at`/`ended_at` are known.
+         * @description Runner-observed wall-clock time cost — entirely different provenance
+         *     from the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the
+         *     runner/API directly witnesses (attempt start/end), never wrapped in a
+         *     [`Measurement`] since there is no "estimated" wall clock. No infra rate
+         *     is stored anywhere in this schema today, so `cost_usd_estimated` stays
+         *     `not_measured` unless a caller supplies `runner_rate_usd_per_hour`.
          */
-        RunnerTimeCostSchema: {
-            cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
+        RunnerTimeCost: {
+            cost_usd_estimated: components["schemas"]["Measurement_f64"];
             /** Format: int64 */
             wall_clock_ms?: number | null;
         };
@@ -4926,7 +4924,7 @@ export interface components {
             retryable: boolean;
         };
         /**
-         * @description Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
+         * @description Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape
          *     (`docs/contracts/runner-v1/errors/*.json`) for every operator
          *     execution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,
          *     a different, incompatible shape. A doc-only mirror, not a second runtime
@@ -5185,28 +5183,18 @@ export interface components {
             risk?: null | components["schemas"]["Risk"];
         };
         /**
-         * @description Documents `tack_orch::usage_provenance::UsageEconomics` —
-         *     `AttemptSummary.usage_economics`'s real shape. Always present (never
-         *     `null`), unlike `ModelProvenanceSchema` below: two
-         *     independently-provenanced dollar dimensions, deliberately never summed
-         *     into one figure.
+         * @description Two independently-provenanced dollar dimensions, deliberately never
+         *     summed into one figure — see this module's doc comment.
          */
-        UsageEconomicsSchema: {
-            model_token_cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
-            runner_time_cost: components["schemas"]["RunnerTimeCostSchema"];
-        };
-        /**
-         * @description Documents `tack_orch::execution::Measurement<f64>` — every dollar figure
-         *     in this API (`*_usd_estimated`) uses this shape. `value` is `null`
-         *     whenever `source` is `not_measured`; `tack-orch`'s own
-         *     `absent_usage_never_serializes_as_zero` test asserts the literal JSON,
-         *     not just the Rust type: unmeasured is documented as genuinely nullable,
-         *     never a number defaulting to `0`.
-         */
-        UsdMeasurementSchema: {
-            source: components["schemas"]["MeasurementSourceSchema"];
-            /** Format: double */
-            value?: number | null;
+        UsageEconomics: {
+            /**
+             * @description Pass-through of `Usage.cost_usd` — the harness/vendor's own
+             *     self-reported dollar figure, provenance (`measured` / `estimated` /
+             *     `not_measured`) preserved verbatim, never reinterpreted.
+             */
+            model_token_cost_usd_estimated: components["schemas"]["Measurement_f64"];
+            /** @description This module's own derived dimension — see [`RunnerTimeCost`]. */
+            runner_time_cost: components["schemas"]["RunnerTimeCost"];
         };
         VerificationTax: {
             /**

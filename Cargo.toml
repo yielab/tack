@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/tack-protocol",
     "crates/tack-core",
     "crates/tack-db",
     "crates/tack-api",

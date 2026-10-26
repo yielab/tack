@@ -5,10 +5,10 @@
 use chrono::Utc;
 use serde_json::{Value, json};
 use tack_core::autonomy::{Check, Level, Trigger, level_for};
-use tack_core::mrp::{MergeDecision, MergeReadinessPack};
 use tack_db::repo::autonomy as store;
 use tack_db::repo::budgets;
-use tack_orch::execution::{HarnessCapability, TeamReport};
+use tack_protocol::execution::{HarnessCapability, TeamReport};
+use tack_protocol::mrp::{MergeDecision, MergeReadinessPack};
 use tokio::io::AsyncReadExt;
 
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;

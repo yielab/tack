@@ -346,7 +346,7 @@ pub async fn check_local_runner_folder(
             .await
             .unwrap_or_default();
         let root_files: Vec<&str> = root_files.lines().collect();
-        install = tack_core::prepare::detect(&root_files).map(|found| DetectedInstall {
+        install = tack_protocol::prepare::detect(&root_files).map(|found| DetectedInstall {
             command: found.command.to_owned(),
             lockfile: found.lockfile.to_owned(),
         });
@@ -580,7 +580,7 @@ pub async fn post_test_run(
     };
     let operator = crate::handlers::executions::OperatorExecutionState::with_clock(
         state.repo.clone(),
-        Arc::new(tack_db::repo::execution::SystemExecutionClock),
+        Arc::new(tack_protocol::SystemClock),
     );
     let profile = json!({
         "name": name,

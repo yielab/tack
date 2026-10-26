@@ -11,7 +11,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
-use tack_orch::execution::CapabilityValue;
+use tack_protocol::execution::CapabilityValue;
 
 /// A trivial trait-level fake — deliberately not the fake *binary*: this
 /// module tests dispatch/routing logic, which does not need a real
@@ -70,7 +70,7 @@ impl HarnessAdapter for TaggedFakeAdapter {
     }
 }
 
-fn actual_execution(tag: &str) -> tack_orch::execution::ActualExecution {
+fn actual_execution(tag: &str) -> tack_protocol::execution::ActualExecution {
     serde_json::from_value(serde_json::json!({
         "harness_kind": tag,
         "harness_version": "1.0.0",
@@ -91,7 +91,7 @@ fn actual_execution(tag: &str) -> tack_orch::execution::ActualExecution {
     .expect("actual execution fixture")
 }
 
-fn usage() -> tack_orch::execution::Usage {
+fn usage() -> tack_protocol::execution::Usage {
     serde_json::from_value(serde_json::json!({
         "tokens_in": {"value": 1, "source": "measured"},
         "tokens_out": {"value": 2, "source": "measured"},
@@ -106,10 +106,10 @@ fn spec_requesting(kind: &str) -> ExecutionSpec {
         "../../../../docs/contracts/runner-v1/claim.response.json"
     ))
     .expect("claim fixture");
-    let mut request: tack_orch::execution::ExecutionRequestSnapshot =
+    let mut request: tack_protocol::execution::ExecutionRequestSnapshot =
         serde_json::from_value(claim["request"].clone()).expect("request fixture");
     request.requested_harness_kind = DomainHarnessKind::new(kind);
-    let attempt: tack_orch::execution::AttemptSnapshot =
+    let attempt: tack_protocol::execution::AttemptSnapshot =
         serde_json::from_value(claim["attempt"].clone()).expect("attempt fixture");
     ExecutionSpec {
         work: crate::client::ClaimedWork {
@@ -539,9 +539,9 @@ impl local_process::HarnessGrammar for ConfiguredGrammar {
         &CONFIGURED
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         let advisory = || local_process::capability(CapabilitySupport::Advisory, "test");
-        tack_orch::execution::FeatureCapabilities {
+        tack_protocol::execution::FeatureCapabilities {
             cancel: advisory(),
             resume: advisory(),
             decisions: advisory(),
@@ -649,7 +649,10 @@ async fn a_failed_model_listing_leaves_the_probe_whole() {
     assert_eq!(probe.probe_error, None);
     assert_eq!(probe.installed_version, "1.18.30");
     let models = probe.models.expect("models are reported");
-    assert_eq!(models.source, tack_orch::execution::ModelListSource::None);
+    assert_eq!(
+        models.source,
+        tack_protocol::execution::ModelListSource::None
+    );
     assert!(models.ids.is_empty());
     assert!(
         models.reason.as_deref().unwrap_or("").contains("status 1"),
@@ -657,7 +660,7 @@ async fn a_failed_model_listing_leaves_the_probe_whole() {
     );
     assert_eq!(
         probe.sign_in.expect("sign-in is reported").state,
-        tack_orch::execution::SignInState::SignedIn
+        tack_protocol::execution::SignInState::SignedIn
     );
     assert_eq!(
         probe.default_model.as_deref(),

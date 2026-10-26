@@ -12,17 +12,18 @@ use tack_db::repo::execution::{
     AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult,
     CancellationObservation, CancellationObservationInput, ClaimedExecution, Completion,
     CompletionResult, CredentialRotationResult, EnqueueResult, EnrollmentToken, EventApplyResult,
-    EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease, Lease, NewAgentProfile,
-    NewArtifact, NewDecision, NewEvent, NewExecutionRequest, NewRunner, OperatorRequeueResult,
+    EventBatch, HeartbeatBatchResult, HeartbeatLease, Lease, NewAgentProfile, NewArtifact,
+    NewDecision, NewEvent, NewExecutionRequest, NewRunner, OperatorRequeueResult,
     RecoveryObservation, RecoveryObservationInput, RecoveryObservationResult,
     RedeemEnrollmentResult, RequestSelection, resume_attempt_after_decisions,
 };
 use tack_db::{Repository, init_pool, migrations};
+use tack_protocol::Clock;
 
 use super::{create_test_workspace, make_item, make_project, setup_test_db};
 
-/// A shared, settable point in time implementing [`ExecutionClock`] — this
-/// crate's execution repository takes its clock as `&dyn ExecutionClock`, so
+/// A shared, settable point in time implementing [`Clock`] — this
+/// crate's execution repository takes its clock as `&dyn Clock`, so
 /// the domain-agnostic `tack_test_support::ControllableClock` can't stand in
 /// for it directly.
 pub struct FakeClock(Mutex<DateTime<Utc>>);
@@ -46,7 +47,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }

@@ -16,7 +16,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ProtocolVersion,
     RecoveryObservationRequest, RecoveryObservationResponse, RunnerId as DomainRunnerId,
 };
@@ -297,7 +297,7 @@ impl PullProtocol for FakeProtocol {
     }
 }
 
-fn actual_execution() -> tack_orch::execution::ActualExecution {
+fn actual_execution() -> tack_protocol::execution::ActualExecution {
     serde_json::from_str(
         r#"{
             "harness_kind":"fake", "harness_version":"1.0.0",
@@ -1379,7 +1379,7 @@ fn tree_state(repository: &Path) -> Vec<String> {
 /// The frozen claim, as the board makes one for a docket team on a local repository.
 fn docket_work(attempt: &str, repository: &Path, revision: &str) -> ClaimedWork {
     let mut claimed = work(attempt, repository, revision);
-    claimed.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("docket");
+    claimed.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new("docket");
     claimed.request.requested_model = None;
     claimed.request.resolved_agent_profile.tool_policy =
         serde_json::json!({"docket": {"team": "fab-dev"}});

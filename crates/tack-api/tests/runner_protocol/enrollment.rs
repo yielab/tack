@@ -10,6 +10,7 @@
 // `executions` is used read-only here so the operator/runner auth
 // non-substitution test below can exercise the real operator router.
 use tack_api::handlers::{executions, runner_protocol};
+use tack_protocol::Clock;
 
 use std::sync::{Arc, Mutex};
 
@@ -21,7 +22,7 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{EnrollmentToken, ExecutionClock, NewRunner},
+    repo::execution::{EnrollmentToken, NewRunner},
 };
 use uuid::Uuid;
 
@@ -37,7 +38,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use tack_protocol::Clock;
 
 use axum::{
     Json, Router,
@@ -18,13 +19,13 @@ use sqlx::Row;
 use tack_db::{
     Repository,
     repo::execution::{
-        EnqueueResult, ExecutionClock, NewExecutionRequest, OperatorRequeueResult, RunnerListingRow,
+        EnqueueResult, NewExecutionRequest, OperatorRequeueResult, RunnerListingRow,
     },
 };
-use tack_orch::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
 use tack_orch::model_policy::wiring::resolve_request_model_policy;
 use tack_orch::scheduler::select::SchedulingPolicy;
-use tack_orch::usage_provenance::derive_attempt_facts;
+use tack_protocol::execution::{ExecutionRequestSnapshot, ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -32,7 +33,7 @@ use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
 
 use crate::AppState;
 
-/// Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
+/// Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape
 /// (`docs/contracts/runner-v1/errors/*.json`) for every operator
 /// execution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,
 /// a different, incompatible shape. A doc-only mirror, not a second runtime
@@ -66,87 +67,19 @@ pub struct RunnerV1Error {
     pub details: Value,
 }
 
-/// Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-/// used by `AttemptSummary.usage_economics`. Defined here, not in
-/// `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.
-/// `tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module
-/// doc), so this is a hand-verified mirror, never constructed or serialized
-/// by real code. `not_measured` is the honest value whenever a figure
-/// genuinely is not known — never a fabricated zero.
-#[derive(Debug, Serialize, ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MeasurementSourceSchema {
-    Measured,
-    Estimated,
-    NotMeasured,
-}
-
-/// Documents `tack_orch::execution::Measurement<f64>` — every dollar figure
-/// in this API (`*_usd_estimated`) uses this shape. `value` is `null`
-/// whenever `source` is `not_measured`; `tack-orch`'s own
-/// `absent_usage_never_serializes_as_zero` test asserts the literal JSON,
-/// not just the Rust type: unmeasured is documented as genuinely nullable,
-/// never a number defaulting to `0`.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct UsdMeasurementSchema {
-    pub value: Option<f64>,
-    pub source: MeasurementSourceSchema,
-}
-
-/// Documents `tack_orch::usage_provenance::RunnerTimeCost`.
-/// `cost_usd_estimated` is `{"value": null, "source": "not_measured"}` in
-/// every real response today — no runner infra cost-rate is stored anywhere
-/// in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);
-/// `runner_rate_usd_per_hour` must be supplied by the caller for a real
-/// dollar figure to appear. `wall_clock_ms` is a plain derivable fact, not
-/// itself a `Measurement` — `null` only until both the attempt's
-/// `started_at`/`ended_at` are known.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct RunnerTimeCostSchema {
-    pub wall_clock_ms: Option<u64>,
-    pub cost_usd_estimated: UsdMeasurementSchema,
-}
-
-/// Documents `tack_orch::usage_provenance::UsageEconomics` —
-/// `AttemptSummary.usage_economics`'s real shape. Always present (never
-/// `null`), unlike `ModelProvenanceSchema` below: two
-/// independently-provenanced dollar dimensions, deliberately never summed
-/// into one figure.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct UsageEconomicsSchema {
-    pub model_token_cost_usd_estimated: UsdMeasurementSchema,
-    pub runner_time_cost: RunnerTimeCostSchema,
-}
-
-/// Documents `tack_orch::usage_provenance::ModelProvenance` —
-/// `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
-/// has not yet reported `actual_execution`). Both model strings are carried
-/// in full, never reconciled, so a caller can show a request and a served
-/// model that differ.
-#[derive(Debug, Serialize, ToSchema)]
-pub struct ModelProvenanceSchema {
-    /// The model the request named; `null` when it named none.
-    pub requested: Option<String>,
-    /// The model the attempt ran on; `null` when nothing named one.
-    pub served: Option<String>,
-    /// Who named `served`: `reported` (the agent's own output), `requested`
-    /// (only the request) or `agent_default` (neither).
-    pub source: String,
-}
-
 /// State for the operator execution router — constructed from the shared
 /// API state's repository and clock when mounted in `router.rs`.
 #[derive(Clone)]
 pub struct OperatorExecutionState {
     pub repo: Repository,
-    pub clock: Arc<dyn ExecutionClock>,
+    pub clock: Arc<dyn Clock>,
     /// The shared API state, when production wires it in: accepting an attempt
     /// that pushed a branch uses it to open the pull request.
     pub app: Option<crate::router::AppState>,
 }
 
 impl OperatorExecutionState {
-    pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
+    pub fn with_clock(repo: Repository, clock: Arc<dyn Clock>) -> Self {
         Self {
             repo,
             clock,
@@ -186,7 +119,7 @@ fn error(
 #[derive(Clone)]
 pub(crate) struct FixedExecutionClock(pub(crate) DateTime<Utc>);
 
-impl ExecutionClock for FixedExecutionClock {
+impl Clock for FixedExecutionClock {
     fn now(&self) -> DateTime<Utc> {
         self.0
     }
@@ -312,7 +245,7 @@ pub struct CreateExecution {
     #[serde(default, deserialize_with = "present", skip_serializing)]
     #[schema(ignore)]
     pub agent_profile_snapshot: Option<Value>,
-    /// `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
+    /// `tack_protocol::execution::RepositorySnapshot` (`{kind, remote,
     /// base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
     /// from the item's project. An explicit one must name the project's own
     /// repository (`details.reason = "repository_differs_from_project"`) and
@@ -320,7 +253,7 @@ pub struct CreateExecution {
     /// is `invalid_request` (`details.reason = "project_has_no_code"`).
     #[serde(default)]
     pub repository_snapshot: Option<Value>,
-    /// `tack_orch::execution::PermissionPolicy` (`{tools, network,
+    /// `tack_protocol::execution::PermissionPolicy` (`{tools, network,
     /// approvals}`). `network` absent: the resolved profile's `tool_policy.network`, else
     /// off; `true` or `false` is kept as sent. `approvals` is `"auto"` or `"ask"`; absent means
     /// `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
@@ -554,11 +487,11 @@ pub struct AttemptSummary {
     /// What the harness ran inside, as the runner reported at start: `bwrap`
     /// or `none`; `null` when it did not say.
     pub sandbox: Option<String>,
-    /// `tack_orch::execution::ActualExecution` once the attempt has
+    /// `tack_protocol::execution::ActualExecution` once the attempt has
     /// reported one, else `null`.
     pub actual_execution: Option<Value>,
     pub terminal_reason: Option<TerminalReason>,
-    /// `tack_orch::execution::Usage` once reported, else `null` — never a
+    /// `tack_protocol::execution::Usage` once reported, else `null` — never a
     /// fabricated zero.
     pub usage: Option<Value>,
     /// The tokens counted against a limit: new input plus output, cache reads
@@ -569,28 +502,25 @@ pub struct AttemptSummary {
     pub ended_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-    /// `tack_orch::usage_provenance::ModelProvenance` (`matched` /
+    /// `tack_protocol::usage_provenance::ModelProvenance` (`matched` /
     /// `auto_select_observed` / `mismatched`), or `null` when the attempt
     /// has not yet reported `actual_execution` — populated by
-    /// `derive_attempt_facts`. Runtime type stays untyped `Value` (the real
-    /// type lives in `tack-orch`, which does not depend on `utoipa`);
-    /// `#[schema(...)]` below points the *generated OpenAPI document* at
-    /// `ModelProvenanceSchema`, this file's hand-verified mirror, instead of
-    /// the untyped-`Value` default — an untyped default would generate an
-    /// empty `{}` schema, the same spec-drift problem this API avoids
-    /// elsewhere.
-    #[schema(value_type = Option<ModelProvenanceSchema>, nullable)]
+    /// `derive_attempt_facts`. Runtime type stays untyped `Value`;
+    /// `#[schema(...)]` below points the *generated OpenAPI document* at the
+    /// real type instead of the untyped-`Value` default, which would
+    /// generate an empty `{}` schema.
+    #[schema(value_type = Option<ModelProvenance>, nullable)]
     pub model_provenance: Option<Value>,
-    /// `tack_orch::usage_provenance::UsageEconomics` — two
+    /// `tack_protocol::usage_provenance::UsageEconomics` — two
     /// independently-provenanced dollar dimensions, never summed. Absent
     /// usage/timestamps serialize as `{"value": null, "source":
     /// "not_measured"}`, never a structural zero; no runner infra cost-rate
     /// is stored anywhere in this schema today, so
     /// `runner_time_cost.cost_usd_estimated` is always `not_measured` in
     /// every real response from this endpoint. `#[schema(...)]` below
-    /// points the generated document at `UsageEconomicsSchema`, the same
-    /// fix as `model_provenance` above.
-    #[schema(value_type = UsageEconomicsSchema)]
+    /// points the generated document at the real type, the same fix as
+    /// `model_provenance` above.
+    #[schema(value_type = UsageEconomics)]
     pub usage_economics: Value,
     /// The pull request this attempt opened on GitHub, or `null`.
     pub pull_request: Option<AttemptPullRequest>,
@@ -935,7 +865,7 @@ fn project_repository(
         "workspace_mode": mode.to_string(),
         "repository_path": local.then_some(repository),
         "push_after_run": project.push_after_run,
-        "prepare": tack_core::prepare::PrepareSetting::from_stored(project.prepare_command.as_deref()),
+        "prepare": tack_protocol::prepare::PrepareSetting::from_stored(project.prepare_command.as_deref()),
     }))
 }
 
@@ -2250,7 +2180,7 @@ pub async fn list_execution_attempts(
             let counted_tokens = attempt
                 .usage
                 .as_deref()
-                .and_then(|raw| serde_json::from_str::<tack_orch::execution::Usage>(raw).ok())
+                .and_then(|raw| serde_json::from_str::<tack_protocol::execution::Usage>(raw).ok())
                 .and_then(|usage| usage.counted());
             let start_report = attempt
                 .start_report

@@ -6,6 +6,7 @@
 //! created without writing.
 
 use std::collections::HashMap;
+use tack_protocol::SystemClock;
 
 use axum::Json;
 use axum::body::Bytes;
@@ -32,7 +33,6 @@ use tack_core::outline::{
 };
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_db::repo::autonomy as store;
-use tack_db::repo::execution::SystemExecutionClock;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::export::structured_body;
@@ -593,7 +593,7 @@ async fn write_profiles(
                 .or_else(|| old.and_then(|o| o.delivers.clone())),
             builtin: false,
         };
-        repo.write_agent_profile(&profile, &SystemExecutionClock)
+        repo.write_agent_profile(&profile, &SystemClock)
             .await
             .map_err(at("profiles"))?;
         profile_ids.insert(profile.name.clone(), id);

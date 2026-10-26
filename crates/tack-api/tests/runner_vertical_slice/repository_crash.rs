@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use tack_protocol::Clock;
 
 use crate::common;
 use chrono::{DateTime, Duration, Utc};
@@ -12,10 +13,9 @@ use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
         ClaimedExecution, Completion, EnrollmentToken, EventApplyResult, EventBatch,
-        ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent,
-        NewExecutionRequest, NewRunner, RecoveryDisposition, RecoveryObservation,
-        RecoveryObservationInput, RecoveryObservationResult, RedeemEnrollmentResult,
-        RequestSelection,
+        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
+        NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
+        RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
 use uuid::Uuid;
@@ -32,7 +32,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().expect("clock lock")
     }

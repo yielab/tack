@@ -13,7 +13,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ProtocolVersion,
     RecoveryObservationRequest, RecoveryObservationResponse, RunnerId as DomainRunnerId,
 };
@@ -401,7 +401,7 @@ impl WorktreeProvisioner for FakeWorktree {
     }
 }
 
-fn actual_execution() -> tack_orch::execution::ActualExecution {
+fn actual_execution() -> tack_protocol::execution::ActualExecution {
     serde_json::from_str(
         r#"{
             "harness_kind":"fake", "harness_version":"1.0.0",
@@ -933,7 +933,7 @@ impl tack_runner::harness::local_process::HarnessGrammar for DetachingGrammar {
         }
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         tack_runner::harness::local_process::HarnessGrammar::capabilities(
             &tack_runner::harness::claude_code::ClaudeCodeGrammar,
         )
@@ -1009,7 +1009,8 @@ async fn cancel_with_a_detached_grandchild(announces: bool) -> (CancellationEvid
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).expect("workspace");
     let mut work = work();
-    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(DETACHING.kind);
+    work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new(DETACHING.kind);
     let spec = ExecutionSpec {
         work,
         workspace: Workspace {
@@ -1088,7 +1089,8 @@ async fn time_out_with_an_announced_detached_group(
     } else {
         &DETACHING
     };
-    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(descriptor.kind);
+    work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new(descriptor.kind);
     work.request.timeout_seconds = 3;
     let spec = ExecutionSpec {
         work,
@@ -1213,7 +1215,7 @@ impl tack_runner::harness::local_process::HarnessGrammar for ShellGrammar {
         &SHELL
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         tack_runner::harness::local_process::HarnessGrammar::capabilities(
             &tack_runner::harness::claude_code::ClaudeCodeGrammar,
         )
@@ -1269,7 +1271,7 @@ async fn run_shell_harness(script: &'static str) -> (HarnessOutcome, Option<u32>
     let workspace = dir.path().join("workspace");
     std::fs::create_dir_all(&workspace).expect("workspace");
     let mut work = work();
-    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(SHELL.kind);
+    work.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(SHELL.kind);
     let spec = ExecutionSpec {
         work,
         workspace: Workspace {

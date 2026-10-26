@@ -25,5 +25,5 @@ pub use types::{
     MeasurementSource, PermissionPolicy, ProtocolError, ProtocolErrorEnvelope, ProtocolVersion,
     RecoveryDetails, RecoveryDisposition, RecoveryJournalState, RecoveryKey, RecoveryObservation,
     RecoveryObservationRequest, RecoveryObservationResponse, RepositorySnapshot, RunnerId,
-    RunnerSelector, StableErrorCode, Usage, WorkspaceId,
+    RunnerSelector, StableErrorCode, UnknownVariant, Usage, WorkspaceId,
 };

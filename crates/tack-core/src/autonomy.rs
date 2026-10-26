@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use globset::GlobBuilder;
 
-use crate::mrp::MergeDecision;
+use tack_protocol::mrp::MergeDecision;
 
 /// Merge authority a project or a domain grants. Declaration order is the
 /// order of authority, so `L3 < L4 < L5`.

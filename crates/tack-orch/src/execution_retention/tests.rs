@@ -9,7 +9,7 @@ impl FakeClock {
     }
 }
 
-impl RetentionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -62,7 +62,7 @@ async fn wait_for(mut condition: impl FnMut() -> bool) {
 #[tokio::test]
 async fn execution_retention_sweep_is_a_noop_when_disabled() {
     let store = Arc::new(FakeStore::default());
-    let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Utc::now()));
     let (_tx, rx) = watch::channel(false);
 
     let handle = spawn_execution_retention_sweep(
@@ -86,7 +86,7 @@ async fn enabled_sweep_calls_both_purges_with_the_configured_cutoff() {
         .unwrap()
         .with_timezone(&Utc);
     let store = Arc::new(FakeStore::default());
-    let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(now));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(now));
     let (tx, rx) = watch::channel(false);
     let config = ExecutionRetentionConfig {
         retention_days: 90,
@@ -122,7 +122,7 @@ async fn retention_sweep_shutdown_joins_task_with_no_purge_after() {
     // shutdown" a real assertion instead of a vacuous one (the sweep
     // never got a second chance to write regardless).
     let store = Arc::new(FakeStore::default());
-    let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Utc::now()));
     let (tx, rx) = watch::channel(false);
     let config = ExecutionRetentionConfig {
         retention_days: 90,
@@ -154,7 +154,7 @@ async fn retention_sweep_shutdown_joins_task_with_no_purge_after() {
 async fn a_failing_purge_is_retried_next_cycle_not_panicked() {
     let store = Arc::new(FakeStore::default());
     *store.fail_replays.lock().unwrap() = true;
-    let clock: Arc<dyn RetentionClock> = Arc::new(FakeClock::new(Utc::now()));
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock::new(Utc::now()));
     let (tx, rx) = watch::channel(false);
     let config = ExecutionRetentionConfig {
         retention_days: 90,

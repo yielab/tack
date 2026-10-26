@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::execution::{
+use tack_protocol::execution::{
     Approvals, ExecutionRequestId, HarnessCapability, HarnessKind, RunnerId, RunnerSelector,
 };
 

@@ -3605,6 +3605,7 @@ dependencies = [
  "tack-core",
  "tack-db",
  "tack-orch",
+ "tack-protocol",
  "tack-test-support",
  "tar",
  "tempfile",
@@ -3638,6 +3639,7 @@ dependencies = [
  "serde_json",
  "tack-api",
  "tack-orch",
+ "tack-protocol",
  "tack-runner",
  "tack-test-support",
  "tempfile",
@@ -3659,6 +3661,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "serde_with",
+ "tack-protocol",
  "thiserror",
  "tracing",
  "utoipa",
@@ -3676,6 +3679,7 @@ dependencies = [
  "sha2 0.11.0",
  "sqlx",
  "tack-core",
+ "tack-protocol",
  "tack-test-support",
  "tempfile",
  "thiserror",
@@ -3695,11 +3699,24 @@ dependencies = [
  "sqlx",
  "tack-core",
  "tack-db",
+ "tack-protocol",
  "tack-test-support",
  "tempfile",
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "tack-protocol"
+version = "0.1.0-beta.10"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "utoipa",
  "uuid",
 ]
 
@@ -3718,7 +3735,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tack-core",
- "tack-orch",
+ "tack-protocol",
  "tack-test-support",
  "tempfile",
  "thiserror",
@@ -3740,6 +3757,7 @@ dependencies = [
  "sqlx",
  "tack-core",
  "tack-db",
+ "tack-protocol",
  "tokio",
  "uuid",
 ]

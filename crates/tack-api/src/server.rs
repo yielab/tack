@@ -108,7 +108,7 @@ async fn serve_inner(
 
     // A board from before a decision ended with its run left questions nobody can answer.
     let closed = repo
-        .expire_decisions_of_ended_attempts(&repo::execution::SystemExecutionClock)
+        .expire_decisions_of_ended_attempts(&tack_protocol::SystemClock)
         .await?;
     if closed > 0 {
         info!(

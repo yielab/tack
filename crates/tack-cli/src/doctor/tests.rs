@@ -1,5 +1,5 @@
 use super::*;
-use tack_orch::execution::{HarnessKind, ModelListSource, ModelsReport, SignInReport};
+use tack_protocol::execution::{HarnessKind, ModelListSource, ModelsReport, SignInReport};
 
 fn fixed_timestamp() -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
@@ -65,18 +65,18 @@ fn classify_separates_present_probe_error_and_absent() {
 /// realistic shape without panicking.
 fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::DiscoveryReport {
     bootstrap::DiscoveryReport {
-        capabilities: tack_orch::execution::RunnerCapabilities {
+        capabilities: tack_protocol::execution::RunnerCapabilities {
             protocol_version: None,
             runner_version: "0.0.0-test".to_owned(),
             reported_at: fixed_timestamp(),
             labels: Default::default(),
-            concurrency: tack_orch::execution::Concurrency {
+            concurrency: tack_protocol::execution::Concurrency {
                 total: 1,
                 available: 1,
                 additional: Default::default(),
             },
             harnesses,
-            features: tack_orch::execution::FeatureCapabilities {
+            features: tack_protocol::execution::FeatureCapabilities {
                 cancel: CapabilityValue {
                     support: CapabilitySupport::Advisory,
                     reason: None,
@@ -104,7 +104,7 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
                 },
                 additional: Default::default(),
             },
-            limits: tack_orch::execution::CapabilityLimits {
+            limits: tack_protocol::execution::CapabilityLimits {
                 event_payload_bytes_max: 1,
                 artifact_content_bytes_max: 1,
                 additional: Default::default(),
@@ -271,7 +271,7 @@ fn readiness_lines_say_who_is_signed_in_and_which_models_exist() {
 /// one line per team with what keeps it from running lights-out.
 #[test]
 fn docket_lines_state_the_api_the_daemon_and_each_team() {
-    use tack_orch::execution::{TeamReport, TeamViolation};
+    use tack_protocol::execution::{TeamReport, TeamViolation};
     let mut docket = capability("docket", "", None);
     docket.set_api_version("5");
     docket.teams = Some(vec![

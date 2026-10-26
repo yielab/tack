@@ -32,11 +32,9 @@ use serde_json::{Value, json};
 use sqlx::{Row, SqlitePool};
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use tack_db::{
-    Repository,
-    repo::execution::{ExecutionClock, resume_attempt_after_decisions},
-};
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_db::{Repository, repo::execution::resume_attempt_after_decisions};
+use tack_protocol::Clock;
+use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
 use crate::handlers::executions::canonical_json;
 use crate::middleware::constant_time_eq;
@@ -56,7 +54,7 @@ const DECISION_ANSWER_BYTES_MAX: u64 = 32_768;
 #[derive(Clone)]
 pub struct DecisionOperatorState {
     pub repo: Repository,
-    pub clock: Arc<dyn ExecutionClock>,
+    pub clock: Arc<dyn Clock>,
     /// `TACK_EXECUTION_DECISION_TOKEN`. `None` means
     /// "not configured on this server" — the fail-closed default: nothing
     /// is ever compared against an unset token. See
@@ -68,7 +66,7 @@ impl DecisionOperatorState {
     /// `decision_token` defaults to `None` (fail-closed) — a caller must
     /// opt in via [`Self::with_decision_token`] to ever allow a resolve
     /// through.
-    pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
+    pub fn with_clock(repo: Repository, clock: Arc<dyn Clock>) -> Self {
         Self {
             repo,
             clock,
@@ -674,7 +672,7 @@ mod tests {
     /// frozen lifecycle, not an invention of the decision code.
     #[test]
     fn decision_state_moves_are_lease_owner_lifecycle_edges() {
-        use tack_orch::execution::{ExecutionState, TransitionActor, validate_transition};
+        use tack_protocol::execution::{ExecutionState, TransitionActor, validate_transition};
         assert!(
             validate_transition(
                 ExecutionState::Running,

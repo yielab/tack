@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, TimeZone, Utc};
 
-use tack_orch::execution::{
-    ExecutionRequestId, HarnessCapability, HarnessKind, RunnerId, RunnerSelector,
-};
 use tack_orch::scheduler::{
     Priority, RunnerCandidate, RunnerState, SchedulingPolicy, SchedulingRequest, Selection,
     SelectionOutcome, schedule, select_runner,
+};
+use tack_protocol::execution::{
+    ExecutionRequestId, HarnessCapability, HarnessKind, RunnerId, RunnerSelector,
 };
 
 fn now() -> DateTime<Utc> {

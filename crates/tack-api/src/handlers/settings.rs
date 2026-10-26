@@ -12,7 +12,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use tracing::instrument;
 use validator::Validate;
 

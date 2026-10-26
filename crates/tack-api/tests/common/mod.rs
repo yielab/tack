@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use tack_protocol::Clock;
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -6,7 +7,7 @@ use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::handlers::websocket::BoardEvent;
 use tack_api::{AppState, LocalRunnerControl, config::AppConfig, router::build_router};
-use tack_db::repo::execution::{ExecutionClock, RequestSelection};
+use tack_db::repo::execution::RequestSelection;
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
@@ -376,7 +377,7 @@ pub async fn claim_runner(
 /// repository layer, bypassing HTTP — the runner-vertical-slice crash matrix's own subject
 /// under test is the repository method, not a route.
 #[allow(dead_code)] // only the runner-vertical-slice crash matrix claims at the repo layer
-pub async fn claim_execution_for_test(repo: &Repository, clock: &dyn ExecutionClock) {
+pub async fn claim_execution_for_test(repo: &Repository, clock: &dyn Clock) {
     repo.claim_execution_idempotent_with_snapshot(
         "runner-crash",
         "claim-crash",

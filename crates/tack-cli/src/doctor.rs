@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability, ModelListSource,
     SignInState,
 };
@@ -30,7 +30,7 @@ const PROCESS_LIMITS: ProcessLimits =
     ProcessLimits::new(4 * 1024 * 1024, 1024 * 1024, Duration::from_secs(3_600));
 
 /// Runs the probe and prints the report; `as_json` switches to the raw
-/// [`tack_orch::execution::RunnerCapabilities`] snapshot instead of the
+/// [`tack_protocol::execution::RunnerCapabilities`] snapshot instead of the
 /// human-readable rendering, so it can be diffed byte-for-byte against
 /// whatever a real enrollment or refresh sent a server.
 pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {

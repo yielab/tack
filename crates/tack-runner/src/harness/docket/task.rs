@@ -1,8 +1,8 @@
 //! The body of `POST /tasks/<pod>`, built from the claimed request.
 
 use serde_json::{Map, Value, json};
-use tack_core::prepare::PrepareSetting;
-use tack_orch::execution::ExecutionRequestSnapshot;
+use tack_protocol::execution::ExecutionRequestSnapshot;
+use tack_protocol::prepare::PrepareSetting;
 
 /// What docket's `gate` gets when a criterion does not say how long.
 const GATE_TIMEOUT_SECONDS: u64 = 600;

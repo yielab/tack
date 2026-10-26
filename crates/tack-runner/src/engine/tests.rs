@@ -15,7 +15,7 @@ use crate::client::{
     DecisionPollReport, DecisionPollResponse, EventBatchResponse, FencingToken, LeaseResult,
     ProtocolClientError, ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
 };
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, RecoveryDisposition,
     RecoveryJournalState, RecoveryObservationRequest, RecoveryObservationResponse,
     RunnerId as DomainRunnerId,
@@ -409,7 +409,7 @@ struct FakeAdapter {
     /// Whether `resume` hands back the running task, as docket's does; every
     /// other harness answers `Unsupported`.
     resumable: bool,
-    completion_actual_execution: tack_orch::execution::ActualExecution,
+    completion_actual_execution: tack_protocol::execution::ActualExecution,
     // Overridable so a test can prove the engine reads a real
     // `terminal_reason.artifact` object (the exact shape the real
     // harness adapters already stage) without touching any other test's fixed
@@ -583,7 +583,7 @@ fn session() -> RunnerSession {
     )
 }
 
-fn capabilities() -> tack_orch::execution::RunnerCapabilities {
+fn capabilities() -> tack_protocol::execution::RunnerCapabilities {
     serde_json::from_str(
         r#"{
             "runner_version":"test-runner",
@@ -604,7 +604,7 @@ fn capabilities() -> tack_orch::execution::RunnerCapabilities {
     .expect("capabilities fixture")
 }
 
-fn actual_execution() -> tack_orch::execution::ActualExecution {
+fn actual_execution() -> tack_protocol::execution::ActualExecution {
     serde_json::from_str(
         r#"{
             "harness_kind":"fake",
@@ -626,7 +626,7 @@ fn actual_execution() -> tack_orch::execution::ActualExecution {
     .expect("actual execution fixture")
 }
 
-fn usage() -> tack_orch::execution::Usage {
+fn usage() -> tack_protocol::execution::Usage {
     serde_json::from_str(
         r#"{
             "tokens_in":{"value":1,"source":"measured"},
@@ -638,9 +638,9 @@ fn usage() -> tack_orch::execution::Usage {
     .expect("usage fixture")
 }
 
-fn mismatched_actual_execution() -> tack_orch::execution::ActualExecution {
+fn mismatched_actual_execution() -> tack_protocol::execution::ActualExecution {
     let mut actual = actual_execution();
-    actual.workspace_id = tack_orch::execution::WorkspaceId::new("ws_adapter_mismatch");
+    actual.workspace_id = tack_protocol::execution::WorkspaceId::new("ws_adapter_mismatch");
     actual.base_revision = "adapter-mismatch".into();
     actual
 }
@@ -1141,7 +1141,7 @@ async fn assert_tampered_binding_rejected(tamper: &str) {
                 "completion_id" => report.completion_id = CompletionId::new("wrong"),
                 "workspace" => {
                     report.actual_execution.workspace_id =
-                        tack_orch::execution::WorkspaceId::new("ws_wrong")
+                        tack_protocol::execution::WorkspaceId::new("ws_wrong")
                 }
                 _ => unreachable!(),
             }
@@ -1292,7 +1292,7 @@ async fn cancellation_is_coordinated_after_journal_precedes_spawn() {
     let mut claimed = work();
     claimed.request.environment.insert(
         "K".to_owned(),
-        tack_orch::execution::EnvironmentValue {
+        tack_protocol::execution::EnvironmentValue {
             value: Some("secret-looking-value".to_owned()),
             secret_reference: None,
             additional: std::collections::BTreeMap::new(),
@@ -1525,7 +1525,7 @@ fn single_completion_report(protocol: &FakeProtocol) -> CompletionReport {
 /// A rejection at `validate` never spawns a process, so the reported
 /// `ActualExecution` carries only what the *request* asked for
 /// (never confirmed) and no harness-observed fact.
-fn assert_pre_spawn_rejection_actual_execution(actual: &tack_orch::execution::ActualExecution) {
+fn assert_pre_spawn_rejection_actual_execution(actual: &tack_protocol::execution::ActualExecution) {
     assert_eq!(actual.harness_version, "");
     assert_eq!(actual.model.as_deref(), Some("opaque/model-alpha"));
     assert_eq!(actual.model_source, "requested");
@@ -3460,7 +3460,7 @@ const NO_CHANGE: &str =
     "The agent reported success but delivered no change to review (the branch equals its base)";
 
 fn tools(work: &mut ClaimedWork, harness: &str, tools: &[&str]) {
-    work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(harness);
+    work.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(harness);
     work.request.permission_policy.tools = tools.iter().map(|t| (*t).to_owned()).collect();
 }
 
@@ -4324,7 +4324,7 @@ async fn a_run_that_counts_its_token_limit_is_stopped_and_fails() {
     for (kind, budgets, stops, state) in rows {
         let (root_dir, journal) = fresh_journal("token-limit");
         let mut claimed = work();
-        claimed.request.requested_harness_kind = tack_orch::execution::HarnessKind::new(kind);
+        claimed.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(kind);
         claimed.request.budgets = budgets.clone();
         let (steps_tx, steps_rx) = mpsc::channel(8);
         for usage in [step(300, 0, 0), step(5_600, 5_000, 0), step(500, 0, 0)] {
@@ -4393,7 +4393,7 @@ fn the_evidence_usage_names_the_agent_version_and_model() {
 const FAILING_INSTALL: &str = "echo oops >&2; exit 3";
 
 fn replacing_install(work: &mut ClaimedWork, command: &str) {
-    work.request.repository.prepare = Some(tack_core::prepare::PrepareSetting::Replace {
+    work.request.repository.prepare = Some(tack_protocol::prepare::PrepareSetting::Replace {
         command: command.to_owned(),
     });
 }
@@ -4467,7 +4467,7 @@ async fn a_docket_run_installs_nothing() {
         let repository = root.join("repository");
         std::fs::create_dir_all(&repository).expect("repository");
         work.request.requested_harness_kind =
-            tack_orch::execution::HarnessKind::new(crate::harness::docket::DESCRIPTOR.kind);
+            tack_protocol::execution::HarnessKind::new(crate::harness::docket::DESCRIPTOR.kind);
         let additional = &mut work.request.repository.additional;
         additional.insert("workspace_mode".into(), "local_branch".into());
         additional.insert(

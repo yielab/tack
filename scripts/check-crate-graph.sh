@@ -4,13 +4,14 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
 declare -A ALLOW=(
-  [tack-core]=""
-  [tack-db]="tack-core"
-  [tack-orch]="tack-core tack-db"
-  [tack-api]="tack-core tack-db tack-orch"
-  [tack-runner]="tack-core tack-orch"
-  [tack-cli]="tack-api tack-runner tack-orch"
-  [tack-test-support]="tack-core tack-db"
+  [tack-protocol]=""
+  [tack-core]="tack-protocol"
+  [tack-db]="tack-core tack-protocol"
+  [tack-orch]="tack-core tack-db tack-protocol"
+  [tack-api]="tack-core tack-db tack-orch tack-protocol"
+  [tack-runner]="tack-core tack-protocol"
+  [tack-cli]="tack-api tack-runner tack-orch tack-protocol"
+  [tack-test-support]="tack-core tack-db tack-protocol"
 )
 if [ "${1:-}" = "--print" ]; then for k in "${!ALLOW[@]}"; do echo "$k -> ${ALLOW[$k]:-(none)}"; done | sort; exit 0; fi
 fail=0

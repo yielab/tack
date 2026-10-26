@@ -12,7 +12,7 @@
 //!
 //! - `command`: `<program> <args…> --evidence <scratch>/evidence --workspace
 //!   <workspace> --output <scratch>/evidence/mrp.json`, and the pack it
-//!   writes is read through [`tack_core::mrp`] as it is.
+//!   writes is read through [`tack_protocol::mrp`] as it is.
 //! - `prill`: the program is prill, whose command line, input documents and
 //!   pack are all its own; [`prill`] is the seam that snapshots the
 //!   workspace, writes prill's documents, runs `<program> verify …` and
@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 
-use tack_core::mrp::MergeReadinessPack;
+use tack_protocol::mrp::MergeReadinessPack;
 
 use crate::{
     client::workspace::Workspace,

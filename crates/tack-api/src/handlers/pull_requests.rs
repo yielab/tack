@@ -98,9 +98,10 @@ pub(crate) async fn open_pull_request_for_attempt(
         if tokio::io::AsyncReadExt::read_to_end(&mut file, &mut bytes)
             .await
             .is_ok()
-            && let Ok(pack) = serde_json::from_slice::<tack_core::mrp::MergeReadinessPack>(&bytes)
+            && let Ok(pack) =
+                serde_json::from_slice::<tack_protocol::mrp::MergeReadinessPack>(&bytes)
         {
-            pack_body = Some(tack_core::mrp::render_markdown(&pack));
+            pack_body = Some(tack_protocol::mrp::render_markdown(&pack));
         }
     }
     let body = pack_body.unwrap_or_else(|| {

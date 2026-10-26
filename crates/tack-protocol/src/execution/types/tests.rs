@@ -582,3 +582,45 @@ fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_no
         );
     }
 }
+
+#[test]
+fn execution_state_and_recovery_disposition_names_round_trip() {
+    use std::str::FromStr;
+
+    for state in [
+        ExecutionState::Queued,
+        ExecutionState::Leased,
+        ExecutionState::Preparing,
+        ExecutionState::Running,
+        ExecutionState::WaitingDecision,
+        ExecutionState::Succeeded,
+        ExecutionState::Failed,
+        ExecutionState::Cancelled,
+        ExecutionState::Lost,
+        ExecutionState::NeedsOperator,
+    ] {
+        assert_eq!(ExecutionState::from_str(state.as_str()), Ok(state));
+        assert_eq!(
+            serde_json::to_value(state).unwrap(),
+            serde_json::Value::String(state.as_str().to_owned()),
+            "as_str must be the serde name"
+        );
+    }
+    assert!(ExecutionState::from_str("done").is_err());
+
+    for disposition in [
+        RecoveryDisposition::SafePreSpawnRequeue,
+        RecoveryDisposition::NeedsOperator,
+        RecoveryDisposition::AlreadyTerminal,
+    ] {
+        assert_eq!(
+            RecoveryDisposition::from_str(disposition.as_str()),
+            Ok(disposition)
+        );
+        assert_eq!(
+            serde_json::to_value(disposition).unwrap(),
+            serde_json::Value::String(disposition.as_str().to_owned()),
+        );
+    }
+    assert!(RecoveryDisposition::from_str("requeue").is_err());
+}

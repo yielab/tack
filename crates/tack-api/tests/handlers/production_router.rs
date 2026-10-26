@@ -132,7 +132,7 @@ fn bearer(token: &str) -> String {
 /// body in this file names one (see `requested_harness_kind`
 /// call sites) — and uses the *real* current wall-clock time as
 /// `reported_at`/`probed_at`, not a frozen fixture date: this file drives
-/// the real production router (`SystemExecutionClock`), and
+/// the real production router (`SystemClock`), and
 /// `tack_orch::scheduler::wiring` falls back to a capability report's own
 /// `reported_at` as a liveness signal for a runner that has never sent a
 /// `/heartbeat` yet (true of every runner here). A hardcoded past date
@@ -568,7 +568,7 @@ async fn production_router_rejects_substituted_credentials() {
     // runner bearer value — the strongest version of this test uses a real
     // credential, not a guess, so the negative results below cannot be
     // explained away as "it was just an unrecognized token either way".
-    let clock = tack_db::repo::execution::SystemExecutionClock;
+    let clock = tack_protocol::SystemClock;
     let credential_hash = hex::encode(sha2::Sha256::digest(b"c5-real-runner-credential"));
     repo.register_runner(
         tack_db::repo::execution::NewRunner {

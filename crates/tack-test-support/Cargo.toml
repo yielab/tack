@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+tack-protocol = { path = "../tack-protocol" }
 tack-core = { path = "../tack-core" }
 tack-db = { path = "../tack-db" }
 sqlx = { workspace = true }

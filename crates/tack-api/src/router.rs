@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
+use tack_protocol::{Clock, SystemClock};
 
 use axum::extract::DefaultBodyLimit;
 use axum::handler::Handler;
@@ -13,7 +14,6 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use tack_db::Repository;
-use tack_db::repo::execution::{ExecutionClock, SystemExecutionClock};
 
 use crate::config::AppConfig;
 use crate::debug;
@@ -122,10 +122,10 @@ fn local_runner_routes() -> Router<AppState> {
 /// `"separately_scoped_operator_credential"` per `protocol.json`. Artifact
 /// download shares `runner_protocol_routes`'s storage root.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
-    let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock)
         .with_app_state(state.clone());
-    let decision_clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let decision_clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let decision_state =
         decisions::DecisionOperatorState::with_clock(state.repo.clone(), decision_clock)
             .with_decision_token(state.config.execution_decision_token.clone());
@@ -167,7 +167,7 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
 /// limit is closest to the handler, so `outer`'s global layer never binds
 /// here. Artifact storage sits one level under `TACK_STORAGE_DIR`.
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
-    let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock)
         .with_artifact_storage_root(format!("{}/execution-artifacts", state.config.storage_dir))
         .with_app_state(state.clone());

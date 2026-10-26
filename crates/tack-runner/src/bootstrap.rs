@@ -7,7 +7,7 @@
 
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities, ProtocolVersion,
     RunnerCapabilities,
 };
@@ -239,7 +239,7 @@ pub struct DiscoveryReport {
     /// What each registered harness declares per feature, keyed by kind —
     /// the values the runner-wide summary cannot state because they differ
     /// per harness. Not sent to the server.
-    pub declared: BTreeMap<String, tack_orch::execution::FeatureCapabilities>,
+    pub declared: BTreeMap<String, tack_protocol::execution::FeatureCapabilities>,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
@@ -318,27 +318,27 @@ async fn report_capabilities<C: Clock>(
         harnesses,
         features: FeatureCapabilities {
             cancel: feature(
-                tack_orch::execution::CapabilitySupport::Advisory,
+                tack_protocol::execution::CapabilitySupport::Advisory,
                 Some(
                     "a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability",
                 ),
             ),
             resume: feature(
-                tack_orch::execution::CapabilitySupport::Unsupported,
+                tack_protocol::execution::CapabilitySupport::Unsupported,
                 Some("no resumable session contract"),
             ),
             decisions: feature(
-                tack_orch::execution::CapabilitySupport::Supported,
+                tack_protocol::execution::CapabilitySupport::Supported,
                 Some(
                     "at least one harness adapter opens a decision; see each harness's own decisions capability for which one",
                 ),
             ),
             artifacts: feature(
-                tack_orch::execution::CapabilitySupport::Advisory,
+                tack_protocol::execution::CapabilitySupport::Advisory,
                 Some("uploaded when an adapter stages one; best-effort, not replayed on restart"),
             ),
             usage: feature(
-                tack_orch::execution::CapabilitySupport::Advisory,
+                tack_protocol::execution::CapabilitySupport::Advisory,
                 Some("usage is reported only when a harness emits it"),
             ),
             additional: BTreeMap::new(),

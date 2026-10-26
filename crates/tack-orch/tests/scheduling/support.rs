@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::common::setup_test_db;
 
 pub(crate) struct FixedClock(pub(crate) chrono::DateTime<Utc>);
-impl tack_db::repo::execution::ExecutionClock for FixedClock {
+impl tack_protocol::Clock for FixedClock {
     fn now(&self) -> chrono::DateTime<Utc> {
         self.0
     }

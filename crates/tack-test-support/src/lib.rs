@@ -97,9 +97,9 @@ pub async fn make_item(
 }
 
 /// A shared, settable point in time for tests that must control "now" instead of reading
-/// the real clock. Crate-local fake-clock types — each implementing that crate's own clock
-/// trait (`tack-orch`'s `RetentionClock`, `tack-runner`'s `Clock`, ...) — wrap one of these
-/// in a newtype rather than hand-rolling the `Arc<Mutex<_>>` storage again.
+/// the real clock. Fake-clock types — each implementing `tack-protocol`'s `Clock` or
+/// `tack-runner`'s own — wrap one of these in a newtype rather than hand-rolling the
+/// `Arc<Mutex<_>>` storage again.
 #[derive(Clone)]
 pub struct ControllableClock(Arc<Mutex<DateTime<Utc>>>);
 

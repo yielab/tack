@@ -119,7 +119,7 @@ impl ExecutionRuntime {
         let (stop_tx, stop_rx) = watch::channel(false);
 
         let retention_store = Arc::new(RepoExecutionRetentionStore(repo.clone()));
-        let retention_clock = Arc::new(execution_retention::SystemClock);
+        let retention_clock = Arc::new(tack_protocol::SystemClock);
         let retention_handle = execution_retention::spawn_execution_retention_sweep(
             config.retention_enable,
             retention_store,
@@ -152,7 +152,7 @@ impl ExecutionRuntime {
         );
 
         let health_store = Arc::new(RepoExecutionObservabilityStore(repo));
-        let health_clock = Arc::new(execution_observability::SystemClock);
+        let health_clock = Arc::new(tack_protocol::SystemClock);
         let health_handle = execution_observability::spawn_execution_health_watch(
             config.health_enable,
             health_store,

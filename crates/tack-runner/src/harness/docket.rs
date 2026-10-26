@@ -20,7 +20,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
-use tack_orch::execution::{
+use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, Usage,
     WorkspaceId as DomainWorkspaceId,

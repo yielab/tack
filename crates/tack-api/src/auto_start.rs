@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use tack_protocol::SystemClock;
 
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -13,7 +14,6 @@ use tack_core::dependency::{DependencyEdge, DependencyGraph};
 use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
 use tack_core::run_defaults::Source;
 use tack_core::workflow::StatusCategory;
-use tack_db::repo::execution::SystemExecutionClock;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 use uuid::Uuid;
 
@@ -261,8 +261,7 @@ async fn start(state: &AppState, project: &Project, candidate: &Candidate, start
         push_branch: None,
         origin: None,
     };
-    let operator =
-        OperatorExecutionState::with_clock(state.repo.clone(), Arc::new(SystemExecutionClock));
+    let operator = OperatorExecutionState::with_clock(state.repo.clone(), Arc::new(SystemClock));
     match create_as(operator, PRINCIPAL.to_owned(), input).await {
         Ok(axum::Json(created)) if !created.replayed => {}
         Ok(_) => return,

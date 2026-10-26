@@ -10,7 +10,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AgentProfileSnapshot, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
     ExecutionState, HarnessKind as DomainHarnessKindType, PermissionPolicy, RepositorySnapshot,
     RunnerSelector,
@@ -77,15 +77,15 @@ fn spec_with(
     workspace_path: PathBuf,
 ) -> ExecutionSpec {
     let request = ExecutionRequestSnapshot {
-        request_id: tack_orch::execution::ExecutionRequestId::new("exec_live_test"),
-        item_id: tack_orch::execution::ItemId::new("item_live_test"),
-        idempotency_key: tack_orch::execution::IdempotencyKey::new("idem_live_test"),
+        request_id: tack_protocol::execution::ExecutionRequestId::new("exec_live_test"),
+        item_id: tack_protocol::execution::ItemId::new("item_live_test"),
+        idempotency_key: tack_protocol::execution::IdempotencyKey::new("idem_live_test"),
         created_by: serde_json::json!({"source": "operator", "subject_id": "live-test"}),
         created_at: chrono::Utc::now(),
         selector: RunnerSelector::ExactRunner {
-            runner_id: tack_orch::execution::RunnerId::new("runr_live_test"),
+            runner_id: tack_protocol::execution::RunnerId::new("runr_live_test"),
         },
-        agent_profile_id: tack_orch::execution::AgentProfileId::new("ap_live_test"),
+        agent_profile_id: tack_protocol::execution::AgentProfileId::new("ap_live_test"),
         resolved_agent_profile: AgentProfileSnapshot {
             name: "Live test profile".to_string(),
             instructions: "Print exactly: ok".to_string(),
@@ -116,11 +116,11 @@ fn spec_with(
         additional: Default::default(),
     };
     let attempt = AttemptSnapshot {
-        attempt_id: tack_orch::execution::AttemptId::new("att_live_test"),
+        attempt_id: tack_protocol::execution::AttemptId::new("att_live_test"),
         request_id: request.request_id.clone(),
         attempt_number: 1,
-        runner_id: tack_orch::execution::RunnerId::new("runr_live_test"),
-        fencing_token: tack_orch::execution::FencingToken(1),
+        runner_id: tack_protocol::execution::RunnerId::new("runr_live_test"),
+        fencing_token: tack_protocol::execution::FencingToken(1),
         state: ExecutionState::Leased,
         workspace_id: None,
         base_revision: request.repository.base_revision.clone(),

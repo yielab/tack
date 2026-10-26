@@ -45,7 +45,7 @@ use async_trait::async_trait;
 use reqwest::{Client, Method, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use tack_orch::execution::{
+use tack_protocol::execution::{
     ProtocolErrorEnvelope, ProtocolVersion, RecoveryObservationRequest,
     RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
 };

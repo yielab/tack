@@ -38,11 +38,11 @@ fn create_execution_body_matches_handler_struct_exact_runner() {
 }
 
 /// `permission_policy` is re-validated server-side against
-/// `tack_orch::execution::PermissionPolicy`; `{}` fails it (`network` has no
+/// `tack_protocol::execution::PermissionPolicy`; `{}` fails it (`network` has no
 /// default), so the example JSON must satisfy it and the CLI must require it.
 #[test]
 fn create_execution_permission_policy_satisfies_deeper_type() {
-    use tack_orch::execution::PermissionPolicy;
+    use tack_protocol::execution::PermissionPolicy;
 
     let _: PermissionPolicy = serde_json::from_str(PERMISSION_POLICY_JSON)
         .expect("example permission_policy must satisfy PermissionPolicy");

@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use chrono::Utc;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
     SignInReport, SignInState, TeamReport, TeamViolation,
 };
@@ -130,7 +130,7 @@ fn capped(team: &TeamReport) -> bool {
 
 pub(super) async fn probe(
     client: &Client,
-    decisions: tack_orch::execution::CapabilityValue,
+    decisions: tack_protocol::execution::CapabilityValue,
 ) -> HarnessCapability {
     let mut capability = HarnessCapability {
         harness_kind: DomainHarnessKind::new(super::DESCRIPTOR.kind),

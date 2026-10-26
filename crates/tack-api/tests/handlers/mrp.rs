@@ -528,7 +528,7 @@ pub(crate) async fn fake_github(posts: u64) -> wiremock::MockServer {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let gh = MockServer::start().await;
-    let pack: tack_core::mrp::MergeReadinessPack = serde_json::from_str(READY).unwrap();
+    let pack: tack_protocol::mrp::MergeReadinessPack = serde_json::from_str(READY).unwrap();
     Mock::given(method("GET"))
         .and(path("/repos/acme/widgets"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch": "trunk"})))
@@ -541,7 +541,7 @@ pub(crate) async fn fake_github(posts: u64) -> wiremock::MockServer {
             "title": "Tack: attempt 1 for #3",
             "head": "tack/attempt-1",
             "base": "trunk",
-            "body": tack_core::mrp::render_markdown(&pack),
+            "body": tack_protocol::mrp::render_markdown(&pack),
         })))
         .respond_with(ResponseTemplate::new(201).set_body_json(
             json!({"number": 7, "html_url": "https://github.com/acme/widgets/pull/7"}),

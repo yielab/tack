@@ -7,6 +7,7 @@
 
 use std::future::Future;
 use std::time::Duration as StdDuration;
+use tack_protocol::SystemClock;
 
 use chrono::{Duration, Utc};
 use tack_api::execution_runtime::{ExecutionRuntime, ExecutionRuntimeConfig};
@@ -15,8 +16,7 @@ use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
-        NewAgentProfile, NewArtifact, NewDecision, NewExecutionRequest, NewRunner,
-        RequestSelection, SystemExecutionClock,
+        NewAgentProfile, NewArtifact, NewDecision, NewExecutionRequest, NewRunner, RequestSelection,
     },
 };
 use uuid::Uuid;
@@ -84,7 +84,7 @@ async fn setup() -> (Repository, String) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("runner");
@@ -96,7 +96,7 @@ async fn setup() -> (Repository, String) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("profile");
@@ -110,7 +110,7 @@ async fn setup() -> (Repository, String) {
 /// not be two separate `Utc::now()` reads.
 struct FixedExecutionClock(chrono::DateTime<Utc>);
 
-impl tack_db::repo::execution::ExecutionClock for FixedExecutionClock {
+impl tack_protocol::Clock for FixedExecutionClock {
     fn now(&self) -> chrono::DateTime<Utc> {
         self.0
     }
@@ -172,7 +172,7 @@ async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String
             &attempt_id,
             &attempt_id,
             Duration::minutes(10),
-            &SystemExecutionClock,
+            &SystemClock,
             RequestSelection::Naive,
         )
         .await
@@ -247,7 +247,7 @@ async fn seed_real_artifact(
             content_reference: Some(&stored.content_reference),
             metadata: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("record artifact");
@@ -307,7 +307,7 @@ async fn seed_stale_manifest_only_artifact(
             content_reference: None,
             metadata: "{}",
         },
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await
     .expect("record manifest-only artifact");
@@ -535,7 +535,7 @@ async fn create_decision(
                 expires_at: Some(expires_at),
                 recommendation: None,
             },
-            &SystemExecutionClock,
+            &SystemClock,
         )
         .await
         .expect("create decision");

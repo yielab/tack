@@ -21,16 +21,15 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use tack_db::Repository;
-use tack_db::repo::execution::{
-    FleetConcurrencySnapshot, QueuedRequestForScheduling, SystemExecutionClock,
-};
+use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForScheduling};
+use tack_protocol::SystemClock;
 
 use super::select::{EXPIRED_LEASE_GRACE, SchedulingPolicy, select_runner};
 use super::types::{
     BudgetKind, IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
     SelectionOutcome,
 };
-use crate::execution::{
+use tack_protocol::execution::{
     Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RunnerId,
 };
 
@@ -114,10 +113,10 @@ fn build_scheduling_request(
 ) -> Option<SchedulingRequest> {
     let harness_kind = row.requested_harness_kind.as_deref()?;
     let selector = match row.selector_kind.as_str() {
-        "exact_runner" => crate::execution::RunnerSelector::ExactRunner {
+        "exact_runner" => tack_protocol::execution::RunnerSelector::ExactRunner {
             runner_id: RunnerId::new(row.selector_id.clone()),
         },
-        "fleet" => crate::execution::RunnerSelector::Fleet {
+        "fleet" => tack_protocol::execution::RunnerSelector::Fleet {
             fleet_id: row.selector_id.clone(),
         },
         _ => return None,
@@ -383,7 +382,7 @@ pub async fn choose_request_for_runner(
         now - EXPIRED_LEASE_GRACE,
         LEASE_EXPIRED,
         LEASE_EXPIRED_SENTENCE,
-        &SystemExecutionClock,
+        &SystemClock,
     )
     .await?;
     let Some(runner) = repo.fetch_runner_scheduling_snapshot(runner_id).await? else {
@@ -598,7 +597,7 @@ mod tests {
 
     #[test]
     fn every_ineligible_reason_reads_as_a_sentence_not_its_name() {
-        use crate::execution::HarnessKind;
+        use tack_protocol::execution::HarnessKind;
         let harness = || HarnessKind::new("codex");
         let reasons = vec![
             IneligibleReason::NotRequestedRunner,

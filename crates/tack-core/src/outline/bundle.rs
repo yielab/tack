@@ -670,7 +670,7 @@ fn check_automation(
         }
     }
     if let Some(prepare) = auto.prepare.as_deref() {
-        match crate::prepare::clean_command(prepare) {
+        match tack_protocol::prepare::clean_command(prepare) {
             Ok(command) => auto.prepare = Some(command),
             Err(_) => problems.push("automation.prepare must be a single line".into()),
         }

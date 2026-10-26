@@ -2,7 +2,7 @@
 //! byte-for-byte, their bytes are pinned, and the pull-request rendering of
 //! `ready.json` is a fixed string.
 
-use tack_core::mrp::{MergeReadinessPack, render_markdown, summary_line};
+use tack_protocol::mrp::{MergeReadinessPack, render_markdown, summary_line};
 
 /// (fixture, its bytes, FNV-1a 64 of those bytes, `summary_line`)
 const FIXTURES: [(&str, &str, u64, &str); 5] = [
@@ -149,7 +149,7 @@ fn required_stages_are_read_off_the_pack() {
         ready.required_stage_missing(&required).as_deref(),
         Some("The required stage criteria is not in the pack")
     );
-    let stage = |name: &str, status: &str, reason: Option<&str>| tack_core::mrp::StageRun {
+    let stage = |name: &str, status: &str, reason: Option<&str>| tack_protocol::mrp::StageRun {
         name: name.to_owned(),
         status: status.to_owned(),
         reason: reason.map(str::to_owned),
@@ -182,12 +182,12 @@ fn what_to_fix_falls_back_to_the_failures() {
     let mut bare = with_steps;
     bare.next_steps = None;
     bare.stages = Some(vec![
-        tack_core::mrp::StageRun {
+        tack_protocol::mrp::StageRun {
             name: "criteria".to_owned(),
             status: "failed".to_owned(),
             reason: None,
         },
-        tack_core::mrp::StageRun {
+        tack_protocol::mrp::StageRun {
             name: "static_analysis".to_owned(),
             status: "failed".to_owned(),
             reason: Some("2 new findings".to_owned()),

@@ -18,9 +18,14 @@ use crate::execution::{ActualExecution, Measurement, MeasurementSource, Usage};
 /// model strings in full, and who named the served one (`reported`,
 /// `requested` or `agent_default`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ModelProvenance {
+    /// The model the request named; `null` when it named none.
     pub requested: Option<String>,
+    /// The model the attempt ran on; `null` when nothing named one.
     pub served: Option<String>,
+    /// Who named `served`: `reported` (the agent's own output), `requested`
+    /// (only the request) or `agent_default` (neither).
     pub source: String,
 }
 
@@ -48,6 +53,7 @@ fn not_measured() -> Measurement<f64> {
 /// is stored anywhere in this schema today, so `cost_usd_estimated` stays
 /// `not_measured` unless a caller supplies `runner_rate_usd_per_hour`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RunnerTimeCost {
     pub wall_clock_ms: Option<u64>,
     pub cost_usd_estimated: Measurement<f64>,
@@ -90,6 +96,7 @@ pub fn compute_runner_time_cost(
 /// Two independently-provenanced dollar dimensions, deliberately never
 /// summed into one figure — see this module's doc comment.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UsageEconomics {
     /// Pass-through of `Usage.cost_usd` — the harness/vendor's own
     /// self-reported dollar figure, provenance (`measured` / `estimated` /

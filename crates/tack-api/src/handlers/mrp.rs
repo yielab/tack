@@ -1,6 +1,6 @@
 //! The operator's view of an attempt's Merge-Readiness Pack and the human
 //! verdict on it. The pack is the newest artifact of the attempt whose media
-//! type is `application/vnd.tack.mrp+json`; `tack_core::mrp` is its wire shape.
+//! type is `application/vnd.tack.mrp+json`; `tack_protocol::mrp` is its wire shape.
 //! The first review is the record, a second one is a 409. Accepting under the
 //! `done_on_mrp_accepted` status-map policy is the only thing here that moves
 //! an item.
@@ -8,13 +8,14 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
+use tack_protocol::SystemClock;
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
 
-use tack_core::mrp::MergeReadinessPack;
 use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
-use tack_db::repo::execution::{ExecutionArtifactRow, SystemExecutionClock};
+use tack_db::repo::execution::ExecutionArtifactRow;
+use tack_protocol::mrp::MergeReadinessPack;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
@@ -134,11 +135,7 @@ pub async fn mark_viewed(
     let artifact = newest_mrp_artifact(&state, &request_id, attempt_number).await?;
     let review = state
         .repo
-        .mark_mrp_viewed(
-            &artifact.attempt_id,
-            &artifact.artifact_id,
-            &SystemExecutionClock,
-        )
+        .mark_mrp_viewed(&artifact.attempt_id, &artifact.artifact_id, &SystemClock)
         .await?;
     Ok(Json(review))
 }
@@ -183,7 +180,7 @@ pub async fn review_mrp(
             verdict,
             reason,
             REVIEWER,
-            &SystemExecutionClock,
+            &SystemClock,
         )
         .await?
         .ok_or_else(|| ApiError::Conflict("This pack was already reviewed".into()))?;

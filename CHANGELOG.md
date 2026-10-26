@@ -174,6 +174,9 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The runner no longer compiles the board's database code.** The runner-v1 contract (the types the board
+  and a runner exchange, the attempt lifecycle, the merge-readiness pack and the prepare step) is its own
+  crate, `tack-protocol`, and the runner builds on that and on `tack-core` only.
 - A docket run makes one copy of the code, docket's own: the runner no longer checks out a second one, and reads the base commit and the task's branch from the project's repository, whose working tree, index and `HEAD` it never changes. A command verifier (`kind = "command"`) has no working copy to read for such a run and records `attempt.verify_failed`; use `kind = "prill"`.
 - **"prill is not installed on the board" names both ways to fix it:** a `[verify]` table naming
   prill in the runner's settings file, or `TACK_PRILL_PROGRAM`.

@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, sync::Mutex, time::UNIX_EPOCH};
 
-use tack_orch::execution::{CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities};
+use tack_protocol::execution::{
+    CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -999,7 +1001,7 @@ mod slot_loop {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
-    use tack_orch::execution::{ActualExecution, Usage, WorkspaceId as DomainWorkspaceId};
+    use tack_protocol::execution::{ActualExecution, Usage, WorkspaceId as DomainWorkspaceId};
     use tokio::sync::{Semaphore, mpsc};
     use wiremock::{Mock, MockServer, Request, ResponseTemplate, matchers::any};
 

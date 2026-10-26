@@ -20,6 +20,7 @@
 //! `tests/runner_protocol/lifecycle.rs`).
 
 use std::sync::Arc;
+use tack_protocol::Clock;
 
 use axum::{
     Json, Router,
@@ -37,19 +38,19 @@ use tack_db::{
         ArtifactContentCommitResult, AttemptTransitionInput, AttemptTransitionPhase,
         AttemptTransitionResult, CancellationObservation, CancellationObservationInput,
         ClaimedExecution, Completion, CompletionResult, CredentialRotationResult, EventApplyResult,
-        EventBatch, ExecutionClock, HeartbeatBatchResult, HeartbeatLease, NewArtifact, NewDecision,
-        NewEvent, NewExecutionRequest, RecoveryDisposition as DbRecoveryDisposition,
+        EventBatch, HeartbeatBatchResult, HeartbeatLease, NewArtifact, NewDecision, NewEvent,
+        NewExecutionRequest, RecoveryDisposition as DbRecoveryDisposition,
         RecoveryObservation as DbRecoveryObservation, RecoveryObservationInput,
         RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
-use tack_orch::execution::{
+use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
+use tack_protocol::execution::{
     ActualExecution, AttemptId, EmbeddedCapabilitySnapshot, ExecutionState, ProtocolVersion,
     RecoveryDisposition as TackRecoveryDisposition, RecoveryKey,
     RecoveryObservation as TackRecoveryObservation, RecoveryObservationRequest,
     RecoveryObservationResponse, StableErrorCode, TransitionActor, Usage, validate_transition,
 };
-use tack_orch::scheduler::{SchedulingPolicy, choose_request_for_runner};
 use uuid::Uuid;
 
 pub mod runner_auth;
@@ -87,7 +88,7 @@ const DEFAULT_ARTIFACT_STORAGE_ROOT: &str = "./storage/execution-artifacts";
 #[derive(Clone)]
 pub struct RunnerProtocolState {
     pub repo: Repository,
-    pub clock: Arc<dyn ExecutionClock>,
+    pub clock: Arc<dyn Clock>,
     pub artifact_storage: Arc<ArtifactStorage>,
     /// The shared API state, when production wires it in: a succeeded
     /// completion that pushed a branch uses it to open the pull request.
@@ -95,7 +96,7 @@ pub struct RunnerProtocolState {
 }
 
 impl RunnerProtocolState {
-    pub fn new(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
+    pub fn new(repo: Repository, clock: Arc<dyn Clock>) -> Self {
         Self {
             repo,
             clock,
@@ -2162,7 +2163,7 @@ pub async fn submit_completion(
             "terminal_reason must be an object",
         ));
     }
-    // Reused directly from the frozen domain (`tack_orch::execution`) —
+    // Reused directly from the frozen domain (`tack_protocol::execution`) —
     // both shapes match `completion.request.json`'s `actual_execution` and
     // `usage` exactly, so parsing into these typed values (rather than a
     // parallel DTO) is the strongest
@@ -2266,7 +2267,7 @@ pub async fn submit_completion(
 async fn pack_of(
     state: &RunnerProtocolState,
     attempt_id: &str,
-) -> Option<tack_core::mrp::MergeReadinessPack> {
+) -> Option<tack_protocol::mrp::MergeReadinessPack> {
     use tokio::io::AsyncReadExt;
     let reference: String = sqlx::query_scalar(
         "SELECT content_reference FROM execution_artifacts \
@@ -2300,7 +2301,7 @@ const FIX_HEADING: &str = "\n\n## What the verifier asks you to fix\n\nWhat foll
 async fn enqueue_rework(state: &RunnerProtocolState, attempt_id: &str) -> Result<(), sqlx::Error> {
     use sha2::{Digest, Sha256};
     use std::collections::BTreeSet;
-    use tack_core::mrp::MergeDecision;
+    use tack_protocol::mrp::MergeDecision;
     let pool = state.repo.pool();
     let Some(pack) = pack_of(state, attempt_id).await else {
         return Ok(());
@@ -2356,7 +2357,7 @@ async fn enqueue_rework(state: &RunnerProtocolState, attempt_id: &str) -> Result
         .bind(previous_id)
         .fetch_optional(pool)
         .await?;
-        let codes = |steps: &[tack_core::mrp::NextStep]| {
+        let codes = |steps: &[tack_protocol::mrp::NextStep]| {
             steps
                 .iter()
                 .map(|s| s.code.clone())

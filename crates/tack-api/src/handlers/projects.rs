@@ -3,7 +3,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -134,7 +134,7 @@ pub async fn update_project(
         return ApiError::BadRequest(e.to_string()).into_response();
     }
     if let Some(Some(command)) = &mut input.prepare_command {
-        match tack_core::prepare::clean_command(command) {
+        match tack_protocol::prepare::clean_command(command) {
             Ok(clean) => *command = clean,
             Err(message) => return ApiError::BadRequest(message.to_owned()).into_response(),
         }

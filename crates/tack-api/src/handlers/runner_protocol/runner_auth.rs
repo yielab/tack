@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 use tack_db::Repository;
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 
 /// A runner identity resolved from an authenticated bearer credential. This
 /// type can only be constructed by [`authenticate`]; handlers must never

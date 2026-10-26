@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::fs;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
     ProtocolErrorEnvelope, RecoveryDisposition, RecoveryObservation, RecoveryObservationRequest,
     RecoveryObservationResponse, RunnerCapabilities, TransitionActor, Usage, validate_transition,

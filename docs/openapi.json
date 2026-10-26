@@ -7592,7 +7592,7 @@
         ],
         "properties": {
           "actual_execution": {
-            "description": "`tack_orch::execution::ActualExecution` once the attempt has\nreported one, else `null`."
+            "description": "`tack_protocol::execution::ActualExecution` once the attempt has\nreported one, else `null`."
           },
           "attempt_id": {
             "type": "string"
@@ -7670,8 +7670,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ModelProvenanceSchema",
-                "description": "`tack_orch::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value` (the real\ntype lives in `tack-orch`, which does not depend on `utoipa`);\n`#[schema(...)]` below points the *generated OpenAPI document* at\n`ModelProvenanceSchema`, this file's hand-verified mirror, instead of\nthe untyped-`Value` default — an untyped default would generate an\nempty `{}` schema, the same spec-drift problem this API avoids\nelsewhere."
+                "$ref": "#/components/schemas/ModelProvenance",
+                "description": "`tack_protocol::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value`;\n`#[schema(...)]` below points the *generated OpenAPI document* at the\nreal type instead of the untyped-`Value` default, which would\ngenerate an empty `{}` schema."
               }
             ]
           },
@@ -7733,11 +7733,11 @@
             "type": "string"
           },
           "usage": {
-            "description": "`tack_orch::execution::Usage` once reported, else `null` — never a\nfabricated zero."
+            "description": "`tack_protocol::execution::Usage` once reported, else `null` — never a\nfabricated zero."
           },
           "usage_economics": {
-            "$ref": "#/components/schemas/UsageEconomicsSchema",
-            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero; no runner infra cost-rate\nis stored anywhere in this schema today, so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema`, the same\nfix as `model_provenance` above."
+            "$ref": "#/components/schemas/UsageEconomics",
+            "description": "`tack_protocol::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero; no runner infra cost-rate\nis stored anywhere in this schema today, so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at the real type, the same fix as\n`model_provenance` above."
           },
           "workspace_id": {
             "type": [
@@ -8967,7 +8967,7 @@
             "description": "`mcp` marks a run an agent started through `tack mcp`: it is never merged\nautomatically or by a move to Done, only by the Merge button. Any other\nvalue, or none, means a person started it."
           },
           "permission_policy": {
-            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `network` absent: the resolved profile's `tool_policy.network`, else\noff; `true` or `false` is kept as sent. `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
+            "description": "`tack_protocol::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `network` absent: the resolved profile's `tool_policy.network`, else\noff; `true` or `false` is kept as sent. `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
           },
           "push_branch": {
             "type": [
@@ -8977,7 +8977,7 @@
             "description": "`false` declines the runner's branch push for this run. The runner's own\nconfiguration decides whether a push exists; `true` never enables one."
           },
           "repository_snapshot": {
-            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project. An explicit one must name the project's own\nrepository (`details.reason = \"repository_differs_from_project\"`) and\nmay only add `base_revision` and `subdirectory`; a project with no code\nis `invalid_request` (`details.reason = \"project_has_no_code\"`)."
+            "description": "`tack_protocol::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project. An explicit one must name the project's own\nrepository (`details.reason = \"repository_differs_from_project\"`) and\nmay only add `base_revision` and `subdirectory`; a project with no code\nis `invalid_request` (`details.reason = \"project_has_no_code\"`)."
           },
           "requested_harness_kind": {
             "type": [
@@ -11041,14 +11041,31 @@
           }
         }
       },
-      "MeasurementSourceSchema": {
+      "MeasurementSource": {
         "type": "string",
-        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here, not in\n`crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.\n`tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module\ndoc), so this is a hand-verified mirror, never constructed or serialized\nby real code. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero.",
+        "description": "How a numeric usage figure was obtained.",
         "enum": [
           "measured",
           "estimated",
           "not_measured"
         ]
+      },
+      "Measurement_f64": {
+        "type": "object",
+        "description": "A nullable metric paired with its provenance, avoiding fabricated zeros.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/MeasurementSource"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": {}
       },
       "MergedBy": {
         "type": "object",
@@ -11134,9 +11151,9 @@
           }
         }
       },
-      "ModelProvenanceSchema": {
+      "ModelProvenance": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). Both model strings are carried\nin full, never reconciled, so a caller can show a request and a served\nmodel that differ.",
+        "description": "What an execution request asked for vs. what an attempt ran on: both\nmodel strings in full, and who named the served one (`reported`,\n`requested` or `agent_default`).",
         "required": [
           "source"
         ],
@@ -12504,15 +12521,15 @@
           }
         }
       },
-      "RunnerTimeCostSchema": {
+      "RunnerTimeCost": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::RunnerTimeCost`.\n`cost_usd_estimated` is `{\"value\": null, \"source\": \"not_measured\"}` in\nevery real response today — no runner infra cost-rate is stored anywhere\nin this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);\n`runner_rate_usd_per_hour` must be supplied by the caller for a real\ndollar figure to appear. `wall_clock_ms` is a plain derivable fact, not\nitself a `Measurement` — `null` only until both the attempt's\n`started_at`/`ended_at` are known.",
+        "description": "Runner-observed wall-clock time cost — entirely different provenance\nfrom the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the\nrunner/API directly witnesses (attempt start/end), never wrapped in a\n[`Measurement`] since there is no \"estimated\" wall clock. No infra rate\nis stored anywhere in this schema today, so `cost_usd_estimated` stays\n`not_measured` unless a caller supplies `runner_rate_usd_per_hour`.",
         "required": [
           "cost_usd_estimated"
         ],
         "properties": {
           "cost_usd_estimated": {
-            "$ref": "#/components/schemas/UsdMeasurementSchema"
+            "$ref": "#/components/schemas/Measurement_f64"
           },
           "wall_clock_ms": {
             "type": [
@@ -12556,7 +12573,7 @@
       },
       "RunnerV1ErrorEnvelope": {
         "type": "object",
-        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator\nexecution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,\na different, incompatible shape. A doc-only mirror, not a second runtime\nauthority: `tack-orch` must stay free of an OpenAPI dependency, so the\nreal type cannot derive `ToSchema` itself. Defined here rather than in\n`crate::openapi` so this stays colocated with the routes it documents.\n`code` is a free string, not an enum, for the same reason — its fifteen\nfrozen values are enumerated in `docs/contracts/runner-v1/README.md`.\nReferenced only by *type* (utoipa's `ToSchema`), never constructed as a\nvalue — real responses build the runtime type instead.",
+        "description": "Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator\nexecution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,\na different, incompatible shape. A doc-only mirror, not a second runtime\nauthority: `tack-orch` must stay free of an OpenAPI dependency, so the\nreal type cannot derive `ToSchema` itself. Defined here rather than in\n`crate::openapi` so this stays colocated with the routes it documents.\n`code` is a free string, not an enum, for the same reason — its fifteen\nfrozen values are enumerated in `docs/contracts/runner-v1/README.md`.\nReferenced only by *type* (utoipa's `ToSchema`), never constructed as a\nvalue — real responses build the runtime type instead.",
         "required": [
           "error"
         ],
@@ -13407,38 +13424,21 @@
           }
         }
       },
-      "UsageEconomicsSchema": {
+      "UsageEconomics": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::UsageEconomics` —\n`AttemptSummary.usage_economics`'s real shape. Always present (never\n`null`), unlike `ModelProvenanceSchema` below: two\nindependently-provenanced dollar dimensions, deliberately never summed\ninto one figure.",
+        "description": "Two independently-provenanced dollar dimensions, deliberately never\nsummed into one figure — see this module's doc comment.",
         "required": [
           "model_token_cost_usd_estimated",
           "runner_time_cost"
         ],
         "properties": {
           "model_token_cost_usd_estimated": {
-            "$ref": "#/components/schemas/UsdMeasurementSchema"
+            "$ref": "#/components/schemas/Measurement_f64",
+            "description": "Pass-through of `Usage.cost_usd` — the harness/vendor's own\nself-reported dollar figure, provenance (`measured` / `estimated` /\n`not_measured`) preserved verbatim, never reinterpreted."
           },
           "runner_time_cost": {
-            "$ref": "#/components/schemas/RunnerTimeCostSchema"
-          }
-        }
-      },
-      "UsdMeasurementSchema": {
-        "type": "object",
-        "description": "Documents `tack_orch::execution::Measurement<f64>` — every dollar figure\nin this API (`*_usd_estimated`) uses this shape. `value` is `null`\nwhenever `source` is `not_measured`; `tack-orch`'s own\n`absent_usage_never_serializes_as_zero` test asserts the literal JSON,\nnot just the Rust type: unmeasured is documented as genuinely nullable,\nnever a number defaulting to `0`.",
-        "required": [
-          "source"
-        ],
-        "properties": {
-          "source": {
-            "$ref": "#/components/schemas/MeasurementSourceSchema"
-          },
-          "value": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
+            "$ref": "#/components/schemas/RunnerTimeCost",
+            "description": "This module's own derived dimension — see [`RunnerTimeCost`]."
           }
         }
       },

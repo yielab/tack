@@ -11,7 +11,7 @@ pub fn temp_dir(label: &str) -> tempfile::TempDir {
 
 /// The frozen usage fixture shared by execution tests that don't vary it.
 #[allow(dead_code)] // not every binary that includes this module calls it
-pub fn usage() -> tack_orch::execution::Usage {
+pub fn usage() -> tack_protocol::execution::Usage {
     serde_json::from_str(
         r#"{
             "tokens_in":{"value":1,"source":"measured"},

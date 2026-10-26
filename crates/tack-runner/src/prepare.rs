@@ -1,7 +1,7 @@
 //! Installing a project's dependencies in the copy of the code an agent works in.
 //!
 //! The command comes from the repository's lockfile unless the project replaced or turned off the
-//! install (`tack_core::prepare`). It runs in the checkout with the runner's own environment,
+//! install (`tack_protocol::prepare`). It runs in the checkout with the runner's own environment,
 //! network included; the agent's sandbox is not involved. What npm, pnpm and yarn install into
 //! `node_modules` is kept once, under the runner's state directory, and each checkout gets its own
 //! tree of directories whose files are hard links to the kept ones, so the next attempt with the
@@ -14,8 +14,8 @@ use std::{
     time::Duration,
 };
 
-use tack_core::prepare::{PrepareSetting, Resolution, Why};
-use tack_orch::execution::ExecutionRequestSnapshot;
+use tack_protocol::execution::ExecutionRequestSnapshot;
+use tack_protocol::prepare::{PrepareSetting, Resolution, Why};
 
 use crate::harness::{
     process::{ProcessExit, ProcessLimits, ProcessSpec},

@@ -1094,7 +1094,7 @@ async fn outline_batch_failing_midway_writes_nothing() {
 #[tokio::test]
 async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_place() {
     use tack_core::outline::bundle::ProfileRow;
-    use tack_db::repo::execution::SystemExecutionClock;
+    use tack_protocol::SystemClock;
 
     let repo = setup_test_db().await;
     let ws_id = create_test_workspace(&repo).await;
@@ -1170,13 +1170,9 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
         delivers: Some("an answer".into()),
         builtin: true,
     };
-    repo.write_agent_profile(&row, &SystemExecutionClock)
-        .await
-        .unwrap();
+    repo.write_agent_profile(&row, &SystemClock).await.unwrap();
     row.name = "Second".into();
-    repo.write_agent_profile(&row, &SystemExecutionClock)
-        .await
-        .unwrap();
+    repo.write_agent_profile(&row, &SystemClock).await.unwrap();
     let rows = repo.list_agent_profile_rows().await.unwrap();
     let mine: Vec<_> = rows.iter().filter(|r| r.id == "ap_mine").collect();
     assert_eq!(mine.len(), 1);

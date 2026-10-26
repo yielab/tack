@@ -11,17 +11,13 @@
 // in `executions.rs`), the same hand-typed-from-Rust convention `api.ts`'s
 // header comment documents for this whole domain (this domain's OpenAPI
 // schemas type `model_provenance`/`usage_economics` via
-// `#[schema(value_type = ...)]` mirrors defined in `executions.rs` itself,
-// not surfaced as reusable named schemas in `schema.gen.ts`).
+// `#[schema(value_type = ...)]`, pointing at the real `tack-protocol` types).
 //
 // `model_provenance` (nullable — `null` until the attempt reports
 // `actual_execution`) and `usage_economics` (always present) on
-// `AttemptSummary` wire `tack_orch::usage_provenance`'s pure resolution into
-// this handler. Both are typed here from
-// `tack_orch::usage_provenance::{ModelProvenance, UsageEconomics,
-// RunnerTimeCost}` (via `executions.rs`'s own
-// `ModelProvenanceSchema`/`UsageEconomicsSchema`/`RunnerTimeCostSchema`
-// OpenAPI mirrors, which this file matches byte-for-byte).
+// `AttemptSummary` carry `tack_protocol::usage_provenance::{ModelProvenance,
+// UsageEconomics, RunnerTimeCost}`; the generated document describes them
+// straight from those types.
 
 import { requestWithHeaders } from '../api/client';
 import type { components } from '../api/schema.gen';
@@ -37,7 +33,7 @@ export type TerminalReason = components['schemas']['TerminalReason'];
  * never reconciled; `source` says who named the served one (`reported`,
  * `requested` or `agent_default`).
  */
-export type ModelProvenance = components['schemas']['ModelProvenanceSchema'];
+export type ModelProvenance = components['schemas']['ModelProvenance'];
 
 // ─── Pull request (`executions.rs::AttemptPullRequest`) ────────────────────
 

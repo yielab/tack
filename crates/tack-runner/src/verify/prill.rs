@@ -33,7 +33,7 @@
 use std::{fs, path::Path, process::Stdio, time::Duration};
 
 use serde_json::{Value, json};
-use tack_core::mrp::{
+use tack_protocol::mrp::{
     Criterion, CriterionStatus, JudgeRubricEntry, JudgeSection, JudgeVerdict, MergeDecision,
     MergeReadinessPack, MutationSection, NextStep, ProducedBySection, RecommendationSection,
     RiskSection, RiskTier, SignatureSection, StageRun, UsageSection, VerifySection,

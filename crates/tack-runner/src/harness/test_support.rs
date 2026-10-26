@@ -8,7 +8,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot, HarnessKind,
 };
 

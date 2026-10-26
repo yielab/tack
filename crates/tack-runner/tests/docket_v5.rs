@@ -10,11 +10,11 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use tack_core::prepare::PrepareSetting;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, CapabilitySupport, ExecutionRequestSnapshot,
     HarnessKind, RunnerId as DomainRunnerId,
 };
+use tack_protocol::prepare::PrepareSetting;
 use tack_runner::{
     client::{
         AttemptId, AttemptLease, AttemptState, ClaimRequestId, ClaimedWork, DecisionAnswer,
@@ -134,8 +134,8 @@ fn spec(scene: &Scene, attempt: &str, number: u32) -> ExecutionSpec {
     attempt_snapshot.attempt_id = DomainAttemptId::new(attempt);
     attempt_snapshot.runner_id = DomainRunnerId::new("runner-docket");
     attempt_snapshot.attempt_number = number;
-    attempt_snapshot.fencing_token = tack_orch::execution::FencingToken(1);
-    attempt_snapshot.state = tack_orch::execution::ExecutionState::Leased;
+    attempt_snapshot.fencing_token = tack_protocol::execution::FencingToken(1);
+    attempt_snapshot.state = tack_protocol::execution::ExecutionState::Leased;
     attempt_snapshot.base_revision = request.repository.base_revision.clone();
     ExecutionSpec {
         work: ClaimedWork {
@@ -736,7 +736,7 @@ async fn run_with_usage(
     hop_usage: Value,
     task_usage: Value,
 ) -> (
-    Option<tack_orch::execution::Usage>,
+    Option<tack_protocol::execution::Usage>,
     tack_runner::harness::HarnessOutcome,
 ) {
     let fake = pods_fake().await;
@@ -763,7 +763,7 @@ async fn run_with_usage(
     (hop, outcome)
 }
 
-fn cache_of(usage: &tack_orch::execution::Usage) -> (Option<u64>, Option<u64>) {
+fn cache_of(usage: &tack_protocol::execution::Usage) -> (Option<u64>, Option<u64>) {
     (
         usage
             .additional
@@ -1942,9 +1942,9 @@ fn tack_server() -> (String, Arc<std::sync::Mutex<Vec<(String, Value)>>>) {
 
 /// What the runner reports with the given harnesses, as `build_runtime` would send it.
 fn report(
-    harnesses: Vec<tack_orch::execution::HarnessCapability>,
-) -> tack_orch::execution::RunnerCapabilities {
-    use tack_orch::execution::{
+    harnesses: Vec<tack_protocol::execution::HarnessCapability>,
+) -> tack_protocol::execution::RunnerCapabilities {
+    use tack_protocol::execution::{
         CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities, ProtocolVersion,
         RunnerCapabilities,
     };

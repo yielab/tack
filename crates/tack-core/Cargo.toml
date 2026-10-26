@@ -12,6 +12,7 @@ license.workspace = true
 openapi = ["dep:utoipa"]
 
 [dependencies]
+tack-protocol = { path = "../tack-protocol" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }

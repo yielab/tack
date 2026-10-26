@@ -90,7 +90,7 @@ async fn put_content(
 }
 
 /// Real current wall-clock time, not a frozen fixture date — the production
-/// router hard-codes `SystemExecutionClock`, so a hand-picked past/future
+/// router hard-codes `SystemClock`, so a hand-picked past/future
 /// timestamp would drift out of the enrollment token's expiry window and
 /// the scheduler's liveness fallback.
 fn full_capabilities() -> Value {

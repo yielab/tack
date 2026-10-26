@@ -7,9 +7,9 @@
 use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
 use tack_core::autonomy::{Check, CiState, Facts, Level, Trigger, evaluate};
-use tack_core::mrp::MergeDecision;
 use tack_db::repo::autonomy::{self as ledger, MergeRow};
 use tack_db::repo::pull_requests;
+use tack_protocol::mrp::MergeDecision;
 
 use crate::github_sync::{ci_state, github_token_for_project, merge_pull_request};
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;

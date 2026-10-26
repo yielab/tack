@@ -10,16 +10,16 @@
 
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
+use tack_protocol::Clock;
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::{Repository, init_pool, migrations};
 use tack_orch::execution_observability::{
     ExecutionFleetSnapshot, ExecutionObservabilityConfig, ExecutionObservabilityStore,
-    ObservabilityClock, RepoExecutionObservabilityStore, spawn_execution_health_watch,
+    RepoExecutionObservabilityStore, spawn_execution_health_watch,
 };
 use tack_orch::execution_retention::{
-    ExecutionRetentionConfig, RepoExecutionRetentionStore, RetentionClock,
-    spawn_execution_retention_sweep,
+    ExecutionRetentionConfig, RepoExecutionRetentionStore, spawn_execution_retention_sweep,
 };
 use tokio::sync::{Mutex as AsyncMutex, watch};
 
@@ -28,12 +28,7 @@ fn rfc(dt: DateTime<Utc>) -> String {
 }
 
 struct FixedClock(DateTime<Utc>);
-impl RetentionClock for FixedClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.0
-    }
-}
-impl ObservabilityClock for FixedClock {
+impl Clock for FixedClock {
     fn now(&self) -> DateTime<Utc> {
         self.0
     }
@@ -246,7 +241,7 @@ async fn spawned_retention_sweep_purges_stale_rows_and_joins_on_stop() {
     );
 
     let store = Arc::new(RepoExecutionRetentionStore(repo.clone()));
-    let clock: Arc<dyn RetentionClock> = Arc::new(FixedClock(now));
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now));
     let (stop_tx, stop_rx) = watch::channel(false);
     let handle =
         spawn_execution_retention_sweep(true, store, clock, fast_retention_config(), stop_rx)
@@ -316,7 +311,7 @@ async fn spawned_health_watch_reports_stale_lease_and_needs_operator() {
         inner: RepoExecutionObservabilityStore(repo.clone()),
         last_snapshot: AsyncMutex::new(None),
     });
-    let clock: Arc<dyn ObservabilityClock> = Arc::new(FixedClock(now));
+    let clock: Arc<dyn Clock> = Arc::new(FixedClock(now));
     let (stop_tx, stop_rx) = watch::channel(false);
     let config = ExecutionObservabilityConfig {
         check_interval_secs: 3600,

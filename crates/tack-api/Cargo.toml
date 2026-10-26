@@ -11,6 +11,7 @@ license.workspace = true
 embed-spa = ["dep:rust-embed"]
 
 [dependencies]
+tack-protocol = { path = "../tack-protocol", features = ["openapi"] }
 # Optional: embed frontend/dist/ into the binary at compile time
 rust-embed = { version = "8", optional = true }
 tack-core = { path = "../tack-core", features = ["openapi"] }

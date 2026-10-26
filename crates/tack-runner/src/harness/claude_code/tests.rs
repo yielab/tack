@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::harness::test_support::{finished, spec};
-use tack_orch::execution::Approvals;
+use tack_protocol::execution::Approvals;
 
 fn request(tools: &[&str], network: bool) -> crate::harness::ExecutionSpec {
     let mut request = spec(DESCRIPTOR.kind, std::path::Path::new("/unused"));

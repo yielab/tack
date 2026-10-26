@@ -30,7 +30,7 @@ pub(crate) mod test_support;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use async_trait::async_trait;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     CapabilitySupport, ExecutionRequestSnapshot, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind,
 };
@@ -142,7 +142,7 @@ pub(crate) fn resolve_environment(
 /// is claimed (ADR 0066 has the full rationale).
 ///
 /// Capability honesty is inherited from the frozen
-/// `tack_orch::execution::capabilities` types this trait returns:
+/// `tack_protocol::execution::capabilities` types this trait returns:
 /// [`HarnessCapability`] carries a nullable `probe_error` (a probe failure
 /// is not this runner's own bug), and every `FeatureCapabilities` entry is a
 /// `CapabilityValue { support, reason }` with three explicit levels, never a
@@ -318,7 +318,7 @@ fn install<G: local_process::HarnessGrammar>(
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. Keys
-/// on `tack_orch::execution::HarnessKind`.
+/// on `tack_protocol::execution::HarnessKind`.
 ///
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(...)` is a
 /// complete, multi-harness runner with no `engine.rs` changes: adding a

@@ -136,7 +136,7 @@ fn json_content() -> utoipa::openapi::Content {
 
 /// Every operation this is used by (`RunnerProtocolApiDoc`'s
 /// runner-protocol-v1 exchanges, plus `ExecutionOperatorExtrasApiDoc` below)
-/// returns `tack_orch::execution::ProtocolErrorEnvelope` on failure — never
+/// returns `tack_protocol::execution::ProtocolErrorEnvelope` on failure — never
 /// `ErrorEnvelope`, the ordinary `{status, message, code?}` shape
 /// `crate::error::ApiError` maps every plain `/api` handler's failure to.
 /// `RunnerV1ErrorEnvelope`
@@ -1036,15 +1036,12 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::CancellationRequestedResponse,
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,
-        // ── AttemptSummary.model_provenance/usage_economics real shape
-        // — schema-only mirrors of `tack_orch::
-        // usage_provenance`, which has no `ToSchema`; see their doc
-        // comments in `handlers::executions` for why they live there. ──────
-        handlers::executions::ModelProvenanceSchema,
-        handlers::executions::MeasurementSourceSchema,
-        handlers::executions::UsdMeasurementSchema,
-        handlers::executions::RunnerTimeCostSchema,
-        handlers::executions::UsageEconomicsSchema,
+        // ── AttemptSummary.model_provenance/usage_economics real shape ──────
+        tack_protocol::usage_provenance::ModelProvenance,
+        tack_protocol::execution::MeasurementSource,
+        tack_protocol::execution::Measurement<f64>,
+        tack_protocol::usage_provenance::RunnerTimeCost,
+        tack_protocol::usage_provenance::UsageEconomics,
         // ── Operator-scoped decision resolution — schema-only mirrors of
         // `handlers::decisions`; see `ExecutionOperatorExtrasApiDoc`'s
         // own doc comment above. ────────────────────────────────────────
