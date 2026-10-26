@@ -32,7 +32,7 @@
 #   DOCKET_PRILL_DOCKET_PORT     the docket daemon's port (default 7399)
 #   DOCKET_PRILL_SHOTS           where the screenshots go (default frontend/test-results/docket-prill)
 #   DOCKET_PRILL_SKIP_BUILD=1    reuse the last build of this script and frontend/dist as they are
-#   DOCKET_PRILL_TARGET_DIR      where tack is built (default /var/tmp/tack-docket-prill-e2e-target: its own, so
+#   DOCKET_PRILL_TARGET_DIR      where tack is built (default $HOME/Sites/.cargo-targets/tack-docket-prill-e2e: its own, so
 #                                another build of the checkout cannot replace the SPA-embedded binary)
 set -euo pipefail
 
@@ -160,7 +160,7 @@ for POD in fab-code fab-content; do
 done
 
 # ── Build ─────────────────────────────────────────────────────────────────────
-E2E_TARGET=${DOCKET_PRILL_TARGET_DIR:-/var/tmp/tack-docket-prill-e2e-target}
+E2E_TARGET=${DOCKET_PRILL_TARGET_DIR:-$HOME/Sites/.cargo-targets/tack-docket-prill-e2e}
 if [ "${DOCKET_PRILL_SKIP_BUILD:-0}" != "1" ]; then
   say "building the SPA and the tack binary with it embedded"
   (cd "$ROOT/frontend" && npm run build >"$WORK/build-frontend.log" 2>&1) || die "frontend build failed — see $WORK/build-frontend.log"

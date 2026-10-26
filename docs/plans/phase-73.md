@@ -57,7 +57,7 @@ plus:
 
 At most two agents building cargo at once (`feedback_agent_load_caps`); a frontend-only task
 runs beside them. Worktrees under `/var/tmp/tack-worktrees/p73-<id>` from `develop`,
-`CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>` (`/home` is at 96 %, `/` has 81 G).
+`CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>`. (`/` filled up with the old `/var/tmp` targets; `/home` has the room.)
 
 | Round | Tasks | Needs |
 |---|---|---|

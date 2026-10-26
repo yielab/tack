@@ -52,7 +52,7 @@ Every row of ADR 0083's table and its three defaults, plus:
 ## Rounds
 
 At most two agents building cargo at once; worktrees under `/var/tmp/tack-worktrees/p75-<id>`
-cut from `develop`, `CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>`.
+cut from `develop`, `CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>`.
 
 | Round | Tasks | Needs |
 |---|---|---|

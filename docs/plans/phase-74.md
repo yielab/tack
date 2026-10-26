@@ -60,7 +60,7 @@ Every row of ADR 0082's table and its three defaults, plus:
 
 At most two agents building cargo at once (`feedback_agent_load_caps`); the frontend task runs
 beside them. Worktrees under `/var/tmp/tack-worktrees/p74-<id>` cut from `develop`,
-`CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>`.
+`CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>`.
 
 | Round | Tasks | Needs | Defects |
 |---|---|---|---|
