@@ -119,3 +119,45 @@ fn claim_heartbeat_event_batch_and_completion_fixtures_round_trip_through_the_st
     round_trips::<CompletionRequest>("completion.request.json");
     round_trips::<CompletionResponse>("completion.response.json");
 }
+
+/// The enrollment, refresh, accept and start, decision, artifact manifest and cancellation
+/// fixtures parse into the protocol's own structs and serialize back to the same JSON value.
+#[test]
+fn enrollment_refresh_attempt_decision_artifact_and_cancellation_fixtures_round_trip_through_the_structs()
+ {
+    use tack_protocol::execution::{
+        ArtifactManifestRequest, ArtifactManifestResponse, AttemptTransitionRequest,
+        AttemptTransitionResponse, CancellationObservationRequest,
+        CancellationObservationResponse, DecisionCreateRequest, DecisionCreateResponse,
+        DecisionPollRequest, DecisionPollResponse, EnrollmentRequest, EnrollmentResponse,
+        RefreshRequest, RefreshResponse,
+    };
+
+    fn round_trips<T: serde::Serialize + serde::de::DeserializeOwned>(name: &str) {
+        let fixture = load_value(name);
+        let typed: T = serde_json::from_value(fixture.clone())
+            .unwrap_or_else(|error| panic!("{name} does not fit its struct: {error}"));
+        assert_eq!(
+            serde_json::to_value(&typed).expect("struct serializes"),
+            fixture,
+            "{name} changed when it went through its struct"
+        );
+    }
+
+    round_trips::<EnrollmentRequest>("enrollment.request.json");
+    round_trips::<EnrollmentResponse>("enrollment.response.json");
+    round_trips::<RefreshRequest>("refresh.request.json");
+    round_trips::<RefreshResponse>("refresh.response.json");
+    round_trips::<AttemptTransitionRequest>("accept.request.json");
+    round_trips::<AttemptTransitionResponse>("accept.response.json");
+    round_trips::<AttemptTransitionRequest>("start.request.json");
+    round_trips::<AttemptTransitionResponse>("start.response.json");
+    round_trips::<DecisionCreateRequest>("decision.create.request.json");
+    round_trips::<DecisionCreateResponse>("decision.create.response.json");
+    round_trips::<DecisionPollRequest>("decision.poll.request.json");
+    round_trips::<DecisionPollResponse>("decision.poll.response.json");
+    round_trips::<ArtifactManifestRequest>("artifact.request.json");
+    round_trips::<ArtifactManifestResponse>("artifact.response.json");
+    round_trips::<CancellationObservationRequest>("cancellation.request.json");
+    round_trips::<CancellationObservationResponse>("cancellation.response.json");
+}

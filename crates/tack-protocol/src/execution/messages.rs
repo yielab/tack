@@ -1,7 +1,9 @@
-//! The four exchanges a runner repeats for every attempt: claim, heartbeat, event batch and
-//! completion. The board and the runner both serialize and deserialize these structs, so the
-//! shape of `docs/contracts/runner-v1/{claim,heartbeat,event-batch,completion}.*.json` is
-//! written once, here, and checked against those fixtures by the contract tests.
+//! Every request and response of the runner protocol: enrollment, refresh, claim, heartbeat,
+//! accept and start, event batch, decision create and poll, artifact manifest, cancellation
+//! observation and completion (the recovery observation lives in `types`). The board and the
+//! runner both serialize and deserialize these structs, so the shape of
+//! `docs/contracts/runner-v1/*.json` is written once, here, and checked against those fixtures
+//! by the contract tests.
 //!
 //! None of them denies unknown fields: `protocol.json` says an unknown optional field is
 //! ignored (and kept when a value is round-tripped), so a later additive field never turns an
@@ -9,12 +11,58 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
+use super::capabilities::EmbeddedCapabilitySnapshot;
 use super::types::{
-    ActualExecution, AttemptId, AttemptSnapshot, Checkpoint, ClaimRequestId, CompletionId,
-    ExecutionRequestSnapshot, ExecutionState, FencingToken, ProtocolVersion, RecoveryJournalState,
-    RunnerId, Usage,
+    ActualExecution, AttemptId, AttemptSnapshot, CancellationRequestId, Checkpoint, ClaimRequestId,
+    CompletionId, ExecutionRequestSnapshot, ExecutionState, FencingToken, ProtocolVersion,
+    RecoveryJournalState, RunnerId, Usage, WorkspaceId,
 };
+
+/// `POST /enroll`: a runner redeems the single-use enrollment token and reports what it can do.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnrollmentRequest {
+    pub protocol_version: ProtocolVersion,
+    pub enrollment_token: String,
+    pub runner_name: String,
+    pub runner_version: String,
+    pub capabilities: EmbeddedCapabilitySnapshot,
+}
+
+/// The runner's identity and its credential, shown once, with the cadence the board expects.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnrollmentResponse {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub runner_credential: String,
+    pub credential_expires_at: DateTime<Utc>,
+    pub heartbeat_interval_seconds: u64,
+    pub lease_duration_seconds: u64,
+    pub server_time: DateTime<Utc>,
+}
+
+/// `POST /refresh`: the runner's current capabilities, and optionally a new credential.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RefreshRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub runner_name: String,
+    pub runner_version: String,
+    #[serde(default)]
+    pub rotate_credential: bool,
+    pub capabilities: EmbeddedCapabilitySnapshot,
+}
+
+/// `runner_credential` is `null` unless the request asked for a rotation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RefreshResponse {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub runner_credential: Option<String>,
+    pub credential_expires_at: DateTime<Utc>,
+    pub accepted_at: DateTime<Utc>,
+}
 
 /// `POST /claim`: a runner with free capacity asks for work, waiting up to `wait_ms` for some.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -161,6 +209,205 @@ pub struct CompletionResponse {
     pub protocol_version: ProtocolVersion,
     pub attempt_id: AttemptId,
     pub completion_id: CompletionId,
+    pub state: ExecutionState,
+    pub replayed: bool,
+    pub committed_at: DateTime<Utc>,
+}
+
+/// `POST /attempts/{id}/accept` (to `preparing`) and `POST /attempts/{id}/start` (to
+/// `running`): the workspace the attempt works in and, once a process runs, which one.
+/// `process_id` is required by `start` and absent from `accept`; the names (never the values)
+/// of the variables the request set and the sandbox are what the board shows about a start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttemptTransitionRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub workspace_id: WorkspaceId,
+    pub base_revision: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub process_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub environment_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttemptTransitionResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub state: ExecutionState,
+    pub replayed: bool,
+    pub committed_at: DateTime<Utc>,
+}
+
+/// One choice a decision offers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionOption {
+    pub option_id: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risks: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_tokens: Option<u64>,
+}
+
+/// The option the harness would pick; `option_id` must name one of the request's options.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionRecommendation {
+    pub option_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rationale: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_refs: Option<Vec<String>>,
+}
+
+/// `POST /attempts/{id}/decisions`: a question the attempt needs a person to answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DecisionCreateRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub decision_id: String,
+    pub kind: String,
+    pub prompt: String,
+    pub options: Vec<DecisionOption>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recommendation: Option<DecisionRecommendation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+    /// What the harness says about the question; the board shows it and never branches on it.
+    #[serde(default)]
+    pub metadata: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionCreateResponse {
+    pub protocol_version: ProtocolVersion,
+    pub decision_id: String,
+    pub state: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// `POST /attempts/{id}/decisions/poll`: the decisions that changed after `after`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionPollRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub after: DateTime<Utc>,
+}
+
+/// What a person answered: an option, free text, or both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionAnswer {
+    #[serde(default)]
+    pub option_id: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+}
+
+/// One decision of a poll. `resolved_by` is whoever the board recorded (`kind`, `subject_id`);
+/// it is shown, never branched on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionUpdate {
+    pub decision_id: String,
+    pub state: String,
+    pub answer: Option<DecisionAnswer>,
+    pub resolved_at: Option<DateTime<Utc>>,
+    pub resolved_by: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionPollResponse {
+    pub protocol_version: ProtocolVersion,
+    pub decisions: Vec<DecisionUpdate>,
+    pub next_after: DateTime<Utc>,
+}
+
+/// One artifact an attempt announces; its bytes follow in a `PUT` to the grant's path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactManifestEntry {
+    pub artifact_id: String,
+    pub kind: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    pub size_bytes: u64,
+    pub sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_disposition: Option<String>,
+    /// What the producer says about the artifact (such as its base revision); stored verbatim.
+    #[serde(default)]
+    pub metadata: Map<String, Value>,
+}
+
+/// `POST /attempts/{id}/artifacts`: the manifest of what the attempt produced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactManifestRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub artifacts: Vec<ArtifactManifestEntry>,
+}
+
+/// Where and until when an accepted artifact's bytes may be uploaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactUpload {
+    pub method: String,
+    pub path: String,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactGrant {
+    pub artifact_id: String,
+    pub state: String,
+    pub upload: ArtifactUpload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactManifestResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub artifacts: Vec<ArtifactGrant>,
+}
+
+/// What a runner saw after the board asked an attempt to stop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CancelObservation {
+    ProcessStopped,
+    AlreadyTerminal,
+    Ambiguous,
+}
+
+/// `POST /attempts/{id}/cancellation-observation`. The adapter owns `observed_at` and
+/// `details` (non-secret evidence); the board stores both as given.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancellationObservationRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub cancellation_request_id: CancellationRequestId,
+    pub observation: CancelObservation,
+    pub observed_at: DateTime<Utc>,
+    pub details: Map<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CancellationObservationResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub cancellation_request_id: CancellationRequestId,
     pub state: ExecutionState,
     pub replayed: bool,
     pub committed_at: DateTime<Utc>,
