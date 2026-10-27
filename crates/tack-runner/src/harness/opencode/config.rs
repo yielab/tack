@@ -59,8 +59,10 @@ pub(super) fn read(
     home: &Path,
 ) -> Result<Login, String> {
     let config = run(program, &["debug", "config"], path, home)?;
-    let config: Value = serde_json::from_str(&config)
-        .map_err(|_| "`opencode debug config` did not print JSON".to_owned())?;
+    let config: Value = serde_json::from_str(&config).map_err(|error| {
+        tracing::warn!(category = ?error.classify(), "opencode debug config is not JSON");
+        "`opencode debug config` did not print JSON".to_owned()
+    })?;
     let copied = ["provider", "model", "small_model"]
         .into_iter()
         .filter_map(|key| Some((key.to_owned(), config.get(key)?.clone())))

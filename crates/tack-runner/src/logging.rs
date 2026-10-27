@@ -11,9 +11,18 @@ const DEFAULT_FILTER: &str = "warn,tack_runner=info";
 /// Installs the process-wide subscriber, writing to stderr. A subscriber already installed stays;
 /// that is the outcome this call wants, so the `Err` is not propagated.
 pub fn init() {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER));
+    // A `RUST_LOG` that is set but is not a valid filter is named once the subscriber is up.
+    let (filter, rejected) = match EnvFilter::try_from_default_env() {
+        Ok(filter) => (filter, false),
+        Err(_) => (
+            EnvFilter::new(DEFAULT_FILTER),
+            std::env::var_os(EnvFilter::DEFAULT_ENV).is_some(),
+        ),
+    };
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    if rejected {
+        tracing::warn!("RUST_LOG is not a valid log filter; the default filter is used");
+    }
 }
 
 #[cfg(test)]
