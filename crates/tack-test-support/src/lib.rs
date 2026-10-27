@@ -74,6 +74,33 @@ pub async fn make_project(repo: &Repository, workspace_id: Uuid) -> tack_core::m
     .expect("create project")
 }
 
+/// Apply `input` to the item the way the update path does, under its project's own workflow, and
+/// return the updated item. Panics when the item is missing or the update is rejected.
+pub async fn update_item(
+    repo: &Repository,
+    id: Uuid,
+    input: tack_core::models::UpdateItem,
+) -> tack_core::models::Item {
+    let item = repo
+        .get_item(id)
+        .await
+        .expect("read item")
+        .expect("item exists");
+    let project = repo
+        .get_project(item.project_id)
+        .await
+        .expect("read project")
+        .expect("project exists");
+    match repo
+        .update_item_atomically(id, input, &project.workflow, None)
+        .await
+        .expect("update item")
+    {
+        tack_db::repo::items::AtomicItemUpdateOutcome::Updated { item, .. } => item.item,
+        other => panic!("the update was not applied: {other:?}"),
+    }
+}
+
 /// Create a minimal task item in the project's initial workflow status.
 pub async fn make_item(
     repo: &Repository,

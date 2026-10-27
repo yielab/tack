@@ -1,5 +1,5 @@
 //! `items.version` (migration 034) backs `handlers::items`'s `ETag`/`If-Match`
-//! support. `update_item` and `check_and_update_parent_status` are the write
+//! support. `update_item_atomically` and `check_and_update_parent_status` are the write
 //! paths that must bump it.
 
 use crate::common::{self, create_test_workspace, make_item, make_project};
@@ -21,27 +21,26 @@ async fn fresh_item_starts_at_version_one() {
 }
 
 #[tokio::test]
-async fn update_item_bumps_version() {
+async fn an_item_update_bumps_version() {
     let repo = common::setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = make_project(&repo, ws).await;
     let item = make_item(&repo, &project).await;
 
     let before = repo.get_item_version(item.id).await.unwrap().unwrap();
-    repo.update_item(
+    common::update_item(
+        &repo,
         item.id,
         UpdateItem {
             title: Some("Renamed".into()),
             ..Default::default()
         },
     )
-    .await
-    .expect("db call")
-    .expect("item exists");
+    .await;
     let after = repo.get_item_version(item.id).await.unwrap().unwrap();
     assert!(
         after > before,
-        "update_item must bump version: {before} -> {after}"
+        "an item update must bump version: {before} -> {after}"
     );
 }
 

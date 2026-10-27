@@ -3293,7 +3293,7 @@ export interface components {
             wip_limit?: number | null;
         };
         BoardColumnWithItems: {
-            items: components["schemas"]["Item"][];
+            items: components["schemas"]["ItemCard"][];
             name: string;
             wip_exceeded: boolean;
             wip_limit?: number | null;
@@ -4244,15 +4244,6 @@ export interface components {
             /** Format: uuid */
             id: string;
             item_type: components["schemas"]["ItemType"];
-            /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
-            merge_note?: string | null;
-            /** @description How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged. */
-            merged_by?: string | null;
-            /**
-             * @description True when the latest finished attempt left a patch or a kept
-             *     workspace that nobody has reviewed yet.
-             */
-            needs_review?: boolean;
             /** Format: uuid */
             parent_id?: string | null;
             priority: components["schemas"]["Priority"];
@@ -4271,7 +4262,7 @@ export interface components {
              * @description Sticky provenance marker for the prompt-injection
              *     trust boundary: set once at creation time by whichever handler
              *     created the item, and never mutated afterward — `UpdateItem` has no
-             *     `source` field, and the repository's `update_item` has no code path
+             *     `source` field, and the repository's item update has no code path
              *     that writes this column, so an item's source can never change once
              *     set. `#[serde(default)]` matters here: any JSON that predates this
              *     field (an old export, or a hand-built import payload) deserializes
@@ -4286,12 +4277,8 @@ export interface components {
             sprint_id?: string | null;
             /** Format: date-time */
             started_at?: string | null;
-            /** @description `auto_start` when the newest request was started by the project's own rule, else `None`. */
-            started_by?: string | null;
             status: string;
             tags: string[];
-            /** @description The docket team named by the newest request's resolved profile, else `None`. */
-            team?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -4331,12 +4318,32 @@ export interface components {
             version: number;
         };
         /**
+         * @description An item as the board and the item page show it: the [`Item`] plus what the run history says
+         *     about it. The extra fields are derived on read from executions and merges, never stored on the
+         *     item and never written back, which is why they are not part of the aggregate.
+         */
+        ItemCard: components["schemas"]["Item"] & {
+            /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
+            merge_note?: string | null;
+            /** @description How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged. */
+            merged_by?: string | null;
+            /**
+             * @description True when the latest finished attempt left a patch or a kept
+             *     workspace that nobody has reviewed yet.
+             */
+            needs_review?: boolean;
+            /** @description `auto_start` when the newest request was started by the project's own rule, else `None`. */
+            started_by?: string | null;
+            /** @description The docket team named by the newest request's resolved profile, else `None`. */
+            team?: string | null;
+        };
+        /**
          * @description Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
          *     and dependency edges.
          */
         ItemDetail: {
             dependencies: components["schemas"]["Dependency"][];
-            item: components["schemas"]["Item"];
+            item: components["schemas"]["ItemCard"];
             roles: components["schemas"]["Role"][];
         };
         ItemRole: {
@@ -4583,7 +4590,7 @@ export interface components {
          *     unpaginated match count so clients can render "N of M".
          */
         PaginatedItems: {
-            data: components["schemas"]["Item"][];
+            data: components["schemas"]["ItemCard"][];
             /** Format: int32 */
             page: number;
             /** Format: int32 */
@@ -6641,7 +6648,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Item"];
+                    "application/json": components["schemas"]["ItemCard"];
                 };
             };
             /** @description Invalid transition / validation error */
@@ -8454,7 +8461,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Item"];
+                    "application/json": components["schemas"]["ItemCard"];
                 };
             };
             /** @description Validation error */

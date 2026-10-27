@@ -8,7 +8,7 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
+use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_protocol::execution::StableErrorCode;
 
@@ -69,7 +69,7 @@ fn expected_version_from_if_match(
     ),
     request_body = tack_core::models::CreateItem,
     responses(
-        (status = 200, description = "Item created", body = tack_core::models::Item),
+        (status = 200, description = "Item created", body = tack_core::models::ItemCard),
         (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
     ),
@@ -92,10 +92,13 @@ pub async fn create_item(
 
     let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
 
-    let item = state
-        .repo
-        .create_item(project_id, &initial_status, input)
-        .await?;
+    // A new task has no run history yet, so its card is the bare item.
+    let item = ItemCard::from(
+        state
+            .repo
+            .create_item(project_id, &initial_status, input)
+            .await?,
+    );
 
     // Broadcast WebSocket event
     websocket::broadcast_event(
@@ -200,7 +203,7 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
     ),
     request_body = tack_core::models::UpdateItem,
     responses(
-        (status = 200, description = "Updated item; carries the ETag for the exact returned snapshot", body = tack_core::models::Item,
+        (status = 200, description = "Updated item; carries the ETag for the exact returned snapshot", body = tack_core::models::ItemCard,
             headers(("ETag" = String, description = "Version-derived entity tag for the returned item snapshot"))
         ),
         (status = 400, description = "Invalid transition / validation error", body = crate::openapi::ErrorEnvelope),

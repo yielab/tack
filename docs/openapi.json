@@ -1961,7 +1961,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Item"
+                  "$ref": "#/components/schemas/ItemCard"
                 }
               }
             }
@@ -4538,7 +4538,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Item"
+                  "$ref": "#/components/schemas/ItemCard"
                 }
               }
             }
@@ -7987,7 +7987,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Item"
+              "$ref": "#/components/schemas/ItemCard"
             }
           },
           "name": {
@@ -10757,24 +10757,6 @@
           "item_type": {
             "$ref": "#/components/schemas/ItemType"
           },
-          "merge_note": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why the task's last merge did not happen, while it has not; `None` once merged or never tried."
-          },
-          "merged_by": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged."
-          },
-          "needs_review": {
-            "type": "boolean",
-            "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
-          },
           "parent_id": {
             "type": [
               "string",
@@ -10825,7 +10807,7 @@
           },
           "source": {
             "$ref": "#/components/schemas/ItemSource",
-            "description": "Sticky provenance marker for the prompt-injection\ntrust boundary: set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's `update_item` has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
+            "description": "Sticky provenance marker for the prompt-injection\ntrust boundary: set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's item update has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
           },
           "source_artifact_id": {
             "type": [
@@ -10848,13 +10830,6 @@
             ],
             "format": "date-time"
           },
-          "started_by": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`auto_start` when the newest request was started by the project's own rule, else `None`."
-          },
           "status": {
             "type": "string"
           },
@@ -10863,13 +10838,6 @@
             "items": {
               "type": "string"
             }
-          },
-          "team": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The docket team named by the newest request's resolved profile, else `None`."
           },
           "title": {
             "type": "string"
@@ -10990,6 +10958,51 @@
           }
         }
       },
+      "ItemCard": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Item"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "merge_note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the task's last merge did not happen, while it has not; `None` once merged or never tried."
+              },
+              "merged_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged."
+              },
+              "needs_review": {
+                "type": "boolean",
+                "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
+              },
+              "started_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`auto_start` when the newest request was started by the project's own rule, else `None`."
+              },
+              "team": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The docket team named by the newest request's resolved profile, else `None`."
+              }
+            }
+          }
+        ],
+        "description": "An item as the board and the item page show it: the [`Item`] plus what the run history says\nabout it. The extra fields are derived on read from executions and merges, never stored on the\nitem and never written back, which is why they are not part of the aggregate."
+      },
       "ItemDetail": {
         "type": "object",
         "description": "Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles\nand dependency edges.",
@@ -11006,7 +11019,7 @@
             }
           },
           "item": {
-            "$ref": "#/components/schemas/Item"
+            "$ref": "#/components/schemas/ItemCard"
           },
           "roles": {
             "type": "array",
@@ -11691,7 +11704,7 @@
           "data": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Item"
+              "$ref": "#/components/schemas/ItemCard"
             }
           },
           "page": {

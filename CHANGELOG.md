@@ -11,6 +11,8 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+- Internal: an item and its run history are two types. `Item` is the stored row, read through one column list; `ItemCard` (the item plus `needs_review`, `merge_note`, `started_by`, `team` and `merged_by`) is what the board, the item page and a PATCH answer return, and the HTTP shape of those answers is unchanged. The workflow and WIP rules of a move are `tack-core`'s `StatusGate`, which the store consults inside its transaction instead of holding them. A task whose stored run settings no longer fit is now a corrupt-row error naming the column, instead of reading as having none. A project export no longer carries the five derived fields on its items.
+
 - Internal: `Host` is gone. `tack-app` owns the GitHub calls, the pull request an accepted attempt opens and the move an accepted pack makes; what it still needs from `tack-api` is three small traits with typed errors (the prill check, stored artifacts, board events). `tack serve --with-runner` reaches the server as a value instead of through a process-wide environment variable, and the server reads its configuration once.
 
 Phase 73 (ADR 0021): every run of the docket agent goes to a team that already exists and keeps

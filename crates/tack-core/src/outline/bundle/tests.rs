@@ -361,11 +361,6 @@ fn synthetic_item(project: &Project, title: &str, parent: Option<Uuid>) -> Item 
         source: ItemSource::Manual,
         source_artifact_id: None,
         run_settings: None,
-        needs_review: false,
-        merge_note: None,
-        started_by: None,
-        team: None,
-        merged_by: None,
         created_at: now,
         updated_at: now,
     }

@@ -52,12 +52,6 @@ impl Repository {
         require_row(&mut conn, Parent::Item, id).await
     }
 
-    /// The sprint a write names must be there (see [`Repository::require_project`]).
-    pub(crate) async fn require_sprint(&self, id: Uuid) -> Result<(), StoreError> {
-        let mut conn = self.pool.acquire().await?;
-        require_row(&mut conn, Parent::Sprint, id).await
-    }
-
     /// The raw connection pool, for the seeds and assertions of `tack-test-support`.
     /// Only that crate turns the `raw-pool` feature on; cargo unifies features across a
     /// build, so the feature alone does not keep other crates out, and the real gate is

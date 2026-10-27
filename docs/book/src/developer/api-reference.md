@@ -132,7 +132,7 @@ Items: the universal work unit (epics, tasks, bugs, …).
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Updated item; carries the ETag for the exact returned snapshot | `Item` |
+| 200 | Updated item; carries the ETag for the exact returned snapshot | `ItemCard` |
 | 400 | Invalid transition / validation error | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
 | 412 | If-Match did not match the current item version — nothing was written | `ErrorEnvelope` |
@@ -238,7 +238,7 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Item created | `Item` |
+| 200 | Item created | `ItemCard` |
 | 400 | Validation error | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
 

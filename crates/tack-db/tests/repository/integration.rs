@@ -99,9 +99,9 @@ fn board_input(name: &str, grouping: BoardGrouping, is_default: bool) -> CreateB
 }
 
 /// Applies `input` and returns the updated item — panics on a missing item,
-/// which none of this file's `update_item` tests exercise.
+/// which none of this file's update tests exercise.
 async fn set_item(repo: &tack_db::Repository, id: uuid::Uuid, input: UpdateItem) -> Item {
-    repo.update_item(id, input).await.unwrap().unwrap()
+    common::update_item(repo, id, input).await
 }
 
 /// Re-fetches an item, panicking if it no longer exists.
@@ -129,11 +129,10 @@ async fn assert_sprint_id(
     assert_eq!(item_now(repo, item_id).await.sprint_id, expected, "{msg}");
 }
 
-/// An `UpdateItem` moving to `status`/`category`, nothing else changed.
-fn status_update(status: &str, category: workflow::StatusCategory) -> UpdateItem {
+/// An `UpdateItem` moving to `status`, nothing else changed.
+fn status_update(status: &str) -> UpdateItem {
     UpdateItem {
         status: Some(status.into()),
-        status_category: Some(category),
         ..Default::default()
     }
 }
@@ -351,17 +350,7 @@ async fn update_item_status() {
 
     assert_eq!(item.status, "Backlog");
 
-    let updated = repo
-        .update_item(
-            item.id,
-            UpdateItem {
-                status: Some("In Progress".into()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let updated = set_item(&repo, item.id, status_update("In Progress")).await;
 
     assert_eq!(updated.status, "In Progress");
 }
@@ -847,7 +836,7 @@ async fn board_grouping_types() {
 
 // ─── Correctness hotfix regressions ─────────────────
 
-/// `update_item` must persist a sprint assignment and later clear it when
+/// an item update must persist a sprint assignment and later clear it when
 /// the PATCH sends `null` (double-`Option` `Some(None)`), while an absent field
 /// (outer `None`) leaves the value untouched.
 #[tokio::test]
@@ -927,8 +916,6 @@ async fn update_item_persists_and_clears_due_date() {
 /// completed_at; leave done → clear completed_at (keeping started_at).
 #[tokio::test]
 async fn status_transition_timestamps() {
-    use tack_core::workflow::StatusCategory;
-
     let repo = setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = common::make_project(&repo, ws).await;
@@ -937,20 +924,20 @@ async fn status_transition_timestamps() {
     assert!(item.completed_at.is_none());
 
     // → In Progress: started_at stamped, completed_at still empty.
-    let in_progress = status_update("In Progress", StatusCategory::InProgress);
+    let in_progress = status_update("In Progress");
     let updated = set_item(&repo, item.id, in_progress).await;
     assert!(updated.started_at.is_some(), "started_at must stamp");
     assert!(updated.completed_at.is_none());
     let started = updated.started_at;
 
     // → Done: completed_at stamped, started_at preserved.
-    let done = status_update("Done", StatusCategory::Done);
+    let done = status_update("Done");
     let updated = set_item(&repo, item.id, done).await;
     assert!(updated.completed_at.is_some(), "completed_at must stamp");
     assert_eq!(updated.started_at, started, "started_at preserved");
 
     // → back to a Todo column: completed_at cleared, started_at preserved.
-    let todo = status_update("To Do", StatusCategory::Todo);
+    let todo = status_update("To Do");
     let updated = set_item(&repo, item.id, todo).await;
     assert!(
         updated.completed_at.is_none(),

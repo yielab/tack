@@ -105,18 +105,16 @@ async fn a_revoked_runner_still_replays_but_takes_no_new_run() {
 async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request() {
     let board = board().await;
     let first = start(&board, full_request(board.item_id)).await.unwrap();
-    board
-        .repo
-        .update_item(
-            board.item_id,
-            tack_core::models::UpdateItem {
-                item_type: Some(tack_core::models::ItemType::Bug),
-                priority: Some(tack_core::models::Priority::High),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+    tack_test_support::update_item(
+        &board.repo,
+        board.item_id,
+        tack_core::models::UpdateItem {
+            item_type: Some(tack_core::models::ItemType::Bug),
+            priority: Some(tack_core::models::Priority::High),
+            ..Default::default()
+        },
+    )
+    .await;
     let retry = start(&board, full_request(board.item_id)).await.unwrap();
     assert!(retry.replayed);
     assert_eq!(retry.request_id, first.request_id);
@@ -126,17 +124,15 @@ async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request
 async fn a_retry_after_the_title_was_edited_replays_the_request() {
     let board = board().await;
     let first = start(&board, full_request(board.item_id)).await.unwrap();
-    board
-        .repo
-        .update_item(
-            board.item_id,
-            tack_core::models::UpdateItem {
-                title: Some("A title edited between the two tries".into()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
+    tack_test_support::update_item(
+        &board.repo,
+        board.item_id,
+        tack_core::models::UpdateItem {
+            title: Some("A title edited between the two tries".into()),
+            ..Default::default()
+        },
+    )
+    .await;
     let retry = start(&board, full_request(board.item_id)).await.unwrap();
     assert!(
         retry.replayed,

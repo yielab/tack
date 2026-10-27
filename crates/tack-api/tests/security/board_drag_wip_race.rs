@@ -168,8 +168,7 @@ async fn dragging_many_cards_at_once_never_exceeds_the_wip_cap() {
 
 /// A `PATCH` that only touches non-status fields (title here) must not pay
 /// for the WIP-checked transaction path at all — it should behave exactly
-/// as it did before, going straight through the ordinary field-by-field
-/// `Repository::update_item`.
+/// as it did before.
 #[tokio::test]
 async fn patch_without_status_change_is_unaffected() {
     let (app, _state) = app_with_state().await;

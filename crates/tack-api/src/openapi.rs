@@ -42,9 +42,10 @@ use tack_core::models::{
     Attachment, Board, BoardColumn, BoardGrouping, BoardView, Comment, CommentType, CreateBoard,
     CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
     CreateProjectTemplate, CreateRole, CreateSprint, CustomFieldDefinition, CustomFieldType,
-    CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemRole, ItemSource,
-    ItemType, Priority, Project, ProjectTemplate, ProjectType, Role, SetCustomFieldValue, Sprint,
-    SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
+    CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemCard, ItemRole,
+    ItemSource, ItemType, Priority, Project, ProjectTemplate, ProjectType, Role,
+    SetCustomFieldValue, Sprint, SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem,
+    UpdateProject, Workspace,
 };
 use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig, WorkflowType};
 
@@ -92,7 +93,7 @@ pub struct ErrorDetails {
 /// unpaginated match count so clients can render "N of M".
 #[derive(Serialize, ToSchema)]
 pub struct PaginatedItems {
-    pub data: Vec<Item>,
+    pub data: Vec<ItemCard>,
     pub total: i64,
     pub page: u32,
     pub per_page: u32,
@@ -102,7 +103,7 @@ pub struct PaginatedItems {
 /// and dependency edges.
 #[derive(Serialize, ToSchema)]
 pub struct ItemDetail {
-    pub item: Item,
+    pub item: ItemCard,
     pub roles: Vec<Role>,
     pub dependencies: Vec<Dependency>,
 }
@@ -1058,6 +1059,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         Project,
         ProjectType,
         Item,
+        ItemCard,
         ItemType,
         ItemSource,
         Priority,

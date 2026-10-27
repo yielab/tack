@@ -175,7 +175,7 @@ pub struct BoardViewResponse {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct BoardColumnWithItems {
     pub name: String,
-    pub items: Vec<Item>,
+    pub items: Vec<ItemCard>,
     pub wip_limit: Option<usize>,
     pub wip_exceeded: bool,
 }
@@ -267,11 +267,11 @@ pub async fn get_board_view(
 }
 
 /// Helper: Group items by status
-fn group_by_status(items: Vec<Item>, workflow: &WorkflowConfig) -> Vec<BoardColumnWithItems> {
+fn group_by_status(items: Vec<ItemCard>, workflow: &WorkflowConfig) -> Vec<BoardColumnWithItems> {
     let mut columns = Vec::new();
 
     for status in &workflow.statuses {
-        let status_items: Vec<Item> = items
+        let status_items: Vec<ItemCard> = items
             .iter()
             .filter(|item| item.status == status.name)
             .cloned()
@@ -295,12 +295,12 @@ fn group_by_status(items: Vec<Item>, workflow: &WorkflowConfig) -> Vec<BoardColu
 }
 
 /// Helper: Group items by priority
-fn group_by_priority(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
+fn group_by_priority(items: Vec<ItemCard>) -> Vec<BoardColumnWithItems> {
     let priorities = vec!["critical", "high", "medium", "low", "none"];
     let mut columns = Vec::new();
 
     for priority in priorities {
-        let priority_items: Vec<Item> = items
+        let priority_items: Vec<ItemCard> = items
             .iter()
             .filter(|item| item.priority.to_string() == priority)
             .cloned()
@@ -318,12 +318,12 @@ fn group_by_priority(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
 }
 
 /// Helper: Group items by item type
-fn group_by_item_type(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
+fn group_by_item_type(items: Vec<ItemCard>) -> Vec<BoardColumnWithItems> {
     let types = vec!["epic", "feature", "task", "subtask", "bug", "requirement"];
     let mut columns = Vec::new();
 
     for item_type in types {
-        let type_items: Vec<Item> = items
+        let type_items: Vec<ItemCard> = items
             .iter()
             .filter(|item| item.item_type.to_string() == item_type)
             .cloned()
@@ -343,8 +343,8 @@ fn group_by_item_type(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
 }
 
 /// Helper: Group items by assignee (free-text field; None → "Unassigned")
-fn group_by_assignee(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
-    let mut groups: std::collections::BTreeMap<String, Vec<Item>> =
+fn group_by_assignee(items: Vec<ItemCard>) -> Vec<BoardColumnWithItems> {
+    let mut groups: std::collections::BTreeMap<String, Vec<ItemCard>> =
         std::collections::BTreeMap::new();
 
     for item in items {
@@ -370,7 +370,7 @@ fn group_by_assignee(items: Vec<Item>) -> Vec<BoardColumnWithItems> {
 async fn group_by_sprint(
     state: &AppState,
     project_id: Uuid,
-    items: Vec<Item>,
+    items: Vec<ItemCard>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
     let sprints = state.repo.list_sprints(project_id).await.map_err(|e| {
         tracing::error!(error = %e, "Failed to fetch sprints");
@@ -380,7 +380,7 @@ async fn group_by_sprint(
     let mut columns = Vec::new();
 
     // Add backlog (no sprint)
-    let backlog_items: Vec<Item> = items
+    let backlog_items: Vec<ItemCard> = items
         .iter()
         .filter(|item| item.sprint_id.is_none())
         .cloned()
@@ -395,7 +395,7 @@ async fn group_by_sprint(
 
     // Add columns for each sprint
     for sprint in sprints {
-        let sprint_items: Vec<Item> = items
+        let sprint_items: Vec<ItemCard> = items
             .iter()
             .filter(|item| item.sprint_id == Some(sprint.id))
             .cloned()
@@ -416,7 +416,7 @@ async fn group_by_sprint(
 async fn group_by_custom_field(
     state: &AppState,
     field_id: Uuid,
-    items: Vec<Item>,
+    items: Vec<ItemCard>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
     // Get the field definition
     let _field = state
@@ -426,7 +426,7 @@ async fn group_by_custom_field(
         .map_err(|e| crate::error::status_of_store_failure(&e))?;
 
     // Get all values for this field across all items
-    let mut value_groups: std::collections::HashMap<String, Vec<Item>> =
+    let mut value_groups: std::collections::HashMap<String, Vec<ItemCard>> =
         std::collections::HashMap::new();
 
     for item in items {

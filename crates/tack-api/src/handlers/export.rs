@@ -77,10 +77,14 @@ pub async fn export_project(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
 
-    let items = state
+    // The export carries the items themselves, not the run-history projections of their cards.
+    let items: Vec<Item> = state
         .repo
         .list_items(project_id, &Default::default())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|card| card.item)
+        .collect();
     if bundle {
         return bundle_response(&state, &project, &items, &query.format).await;
     }

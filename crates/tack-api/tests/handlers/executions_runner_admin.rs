@@ -1905,10 +1905,11 @@ async fn add_role(repo: &Repository, item_id: &str, name: &str, profile: Option<
 async fn the_item_carries_started_by_and_team_from_its_newest_request() {
     let (app, repo, item_id) = setup().await;
     let read = || async {
-        repo.get_item(item_id.parse().unwrap())
+        repo.get_item_snapshot(item_id.parse().unwrap())
             .await
             .unwrap()
             .unwrap()
+            .item
     };
     let item = read().await;
     assert_eq!((&item.started_by, &item.team), (&None, &None));
