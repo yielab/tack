@@ -106,6 +106,7 @@ pub fn run_standalone(
         config_path.as_deref(),
     )?;
 
+    tack_runner::logging::init();
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(run_to_shutdown(config))
 }

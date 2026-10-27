@@ -322,6 +322,14 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A runner that is only waiting for work is no longer refused its heartbeat.** The runner took the
+  slots that were asking the server for work as busy, reported less capacity than the server held
+  against it, and the server answered a conflict, so a runner started on its own stayed "not answering"
+  and the Run dialog would not offer it. It now reports its total less the attempts it holds, as the
+  contract says.
+- **`tack runner start` writes a log.** It installed none, so a runner on a machine of its own said
+  nothing, not even why it had stopped heartbeating. It logs its own events from `info`, and `RUST_LOG`
+  sets any other level, as it already did for `tack-runner`.
 - **A run waiting for your answer is no longer cancelled by its time limit.** With the docket agent, the attempt's time limit counted the minutes a question sat open, so a person who stepped away came back to a cancelled run that read as a timeout. The clock now stops while docket holds the task for a person. A question ends the run only when docket itself says it expired: the run then fails with "Nobody answered the question before it expired" and the time. A question docket gives no expiry (every consult so far) waits until it is answered or you stop the run.
 - **A project you just made is named in the sidebar's switcher.** The switcher read the project list once,
   so a project created from the board stayed out of it and the switcher showed no name until a reload.

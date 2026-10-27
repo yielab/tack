@@ -1340,6 +1340,83 @@ mod slot_loop {
             .expect("serve task")
             .expect("serve result");
     }
+
+    /// A slot asking the server for work holds no attempt, so the heartbeat of an idle runner
+    /// reports every slot free: the server answers a conflict to any other number (the runner
+    /// contract's `available_capacity`), and a runner it cannot hear counts as offline.
+    #[tokio::test]
+    async fn an_idle_runner_with_a_claim_open_reports_all_its_capacity_free() {
+        // Past the two claims `respond` hands out, so every claim is the empty answer, held open.
+        let claims = Arc::new(AtomicUsize::new(2));
+        let heartbeats = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let unexpected = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        {
+            let (claims, heartbeats, unexpected) = (
+                Arc::clone(&claims),
+                Arc::clone(&heartbeats),
+                Arc::clone(&unexpected),
+            );
+            Mock::given(any())
+                .respond_with(move |request: &Request| {
+                    let reply = respond(request, &claims, &heartbeats, &unexpected);
+                    if request.url.path().ends_with("/claim") {
+                        reply.set_delay(Duration::from_secs(30))
+                    } else {
+                        reply
+                    }
+                })
+                .mount(&server)
+                .await;
+        }
+
+        let root = tempfile::tempdir().expect("state dir");
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let engine = RunnerEngine::new(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::new(Semaphore::new(0)),
+                running: Arc::new(AtomicUsize::new(0)),
+            },
+            crate::client::journal::OwnerOnlyJournal::new(root.path().join("journal")),
+            WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
+        )
+        .with_concurrency(2);
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.path().join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        config.enrollment_credential = Some(EnrollmentCredential::new(SECRET_ENROLLMENT));
+        config.max_concurrent_attempts = 2;
+        let runner =
+            HttpRunnerClient::new(protocol, engine, config, crate::SystemClock, capabilities())
+                .with_renewal_interval(Duration::from_millis(50));
+        let (shutdown, shutdown_handle) = Shutdown::channel();
+        let serving = tokio::spawn(async move { runner.serve(shutdown).await });
+
+        let enough = tack_test_support::poll_until(Duration::from_secs(30), async || {
+            (heartbeats.lock().expect("heartbeats").len() >= 3).then_some(())
+        })
+        .await;
+        assert!(
+            enough.is_some(),
+            "the runner heartbeats while its claims are open"
+        );
+        for heartbeat in heartbeats.lock().expect("heartbeats").iter() {
+            assert_eq!(lease_count(heartbeat), 0, "no attempt is held");
+            assert_eq!(
+                heartbeat["available_capacity"], 2,
+                "a claim that is only asking for work takes no capacity: {heartbeat}"
+            );
+        }
+
+        shutdown_handle.request();
+        tokio::time::timeout(Duration::from_secs(30), serving)
+            .await
+            .expect("serve stops on shutdown")
+            .expect("serve task")
+            .expect("serve result");
+    }
+
     /// A restart finds one agent still running and one journal behind it. The
     /// running one is followed in a slot of its own: the ticker heartbeats its
     /// lease with every other while it runs, and the journal behind it is

@@ -1273,19 +1273,16 @@ where
     /// capacity as it has slots free. It also keeps
     /// `agent_runners.last_heartbeat_at` fresh while no attempt runs, and
     /// carries each cancellation the answer names to the attempt it names.
-    async fn heartbeat_all(
-        &self,
-        session: &RunnerSession,
-        slots_taken: usize,
-    ) -> Result<(), ProtocolClientError> {
+    async fn heartbeat_all(&self, session: &RunnerSession) -> Result<(), ProtocolClientError> {
         let active = self.engine.active();
-        let taken = u32::try_from(slots_taken).unwrap_or(u32::MAX);
         let request = HeartbeatRequest {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
             heartbeat_id: self.next_id("hb"),
             sent_at: Timestamp::new(self.now_rfc3339()),
-            available_capacity: active.total().saturating_sub(taken),
+            // The capacity the server holds against this runner: its total less the attempts it
+            // leased, which a slot still asking for work is not.
+            available_capacity: active.free(),
             active_attempts: active.snapshot(),
         };
         let response = self.protocol.heartbeat(session, request).await?;
@@ -1378,7 +1375,7 @@ where
                 biased;
                 () = shutdown.requested() => return Ok(()),
                 _ = ticker.tick() => {
-                    if let Err(error) = self.heartbeat_all(&session, taken).await {
+                    if let Err(error) = self.heartbeat_all(&session).await {
                         tracing::warn!(%error, "heartbeat failed");
                     }
                 }

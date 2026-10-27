@@ -13,6 +13,7 @@ pub mod error;
 pub mod evidence;
 pub mod filesystem;
 pub mod harness;
+pub mod logging;
 pub mod prepare;
 pub mod process;
 pub mod runtime;

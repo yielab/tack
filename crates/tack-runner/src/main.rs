@@ -68,7 +68,7 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
         },
     })?;
 
-    init_tracing();
+    tack_runner::logging::init();
 
     let limits = RunnerLimits {
         harness_process: HARNESS_PROCESS_LIMITS,
@@ -92,10 +92,4 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
 fn read_config(path: Option<&std::path::Path>) -> Result<Option<String>, ConfigError> {
     path.map(|path| std::fs::read_to_string(path).map_err(|_| ConfigError::Unreadable))
         .transpose()
-}
-
-fn init_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .try_init();
 }
