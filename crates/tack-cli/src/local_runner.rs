@@ -129,8 +129,8 @@ async fn run_to_shutdown(config: RunnerConfig) -> anyhow::Result<()> {
 
 /// Makes sure `runner_config` carries something the embedded runner can redeem: an explicit
 /// credential wins; otherwise a durable session on disk, reused as-is if its runner id still
-/// resolves in this database (a placeholder credential, because `build_runtime` requires some
-/// value up front); otherwise a fresh one-time token, self-provisioned in-process. An orphaned
+/// resolves in this database (no credential is set: the runner starts from the session);
+/// otherwise a fresh one-time token, self-provisioned in-process. An orphaned
 /// session file is left untouched: `establish_session` is refused on `refresh` and falls through
 /// to the fresh token.
 async fn ensure_runner_credential(
@@ -154,8 +154,6 @@ async fn ensure_runner_credential(
                 database_url,
             )
             .await;
-            runner_config.enrollment_credential =
-                Some(crate::local_enrollment::stored_session_placeholder());
             return Ok(());
         }
     }

@@ -351,6 +351,20 @@ impl RunnerConfig {
         overrides
     }
 
+    /// A runner starts from a session it already holds, or else from an enrollment
+    /// credential; with neither it has no way to identify itself to the server.
+    pub fn require_session_or_enrollment_credential(&self) -> Result<(), RunnerError> {
+        if self.enrollment_credential.is_some()
+            || crate::client::persisted_session_runner_id(&self.state_dir).is_some()
+        {
+            Ok(())
+        } else {
+            Err(RunnerError::MissingEnrollmentCredential)
+        }
+    }
+
+    /// The credential to enroll with: needed only when the runner holds no session, or the
+    /// server refused the one it holds.
     pub fn require_enrollment_credential(&self) -> Result<&EnrollmentCredential, RunnerError> {
         self.enrollment_credential
             .as_ref()

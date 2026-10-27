@@ -57,6 +57,39 @@ fn credentials_are_redacted_from_debug_and_missing_error() {
 }
 
 #[test]
+fn a_saved_session_or_a_credential_lets_the_runner_start_and_neither_does_not() {
+    let directory = tempfile::tempdir().expect("state dir");
+    let mut config = RunnerConfig::defaults();
+    config.state_dir = directory.path().to_path_buf();
+
+    assert!(matches!(
+        config.require_session_or_enrollment_credential(),
+        Err(RunnerError::MissingEnrollmentCredential)
+    ));
+
+    config.enrollment_credential = Some(EnrollmentCredential::new("a-credential"));
+    config
+        .require_session_or_enrollment_credential()
+        .expect("a credential is enough");
+
+    config.enrollment_credential = None;
+    std::fs::write(
+        directory.path().join("session.json"),
+        r#"{"runner_id":"runr_1","runner_credential":"c","credential_expires_at":"2026-11-04T12:00:00Z"}"#,
+    )
+    .expect("session is written");
+    config
+        .require_session_or_enrollment_credential()
+        .expect("a saved session is enough");
+
+    std::fs::write(directory.path().join("session.json"), "{}").expect("session is damaged");
+    assert!(
+        config.require_session_or_enrollment_credential().is_err(),
+        "a session that cannot be read is no session"
+    );
+}
+
+#[test]
 fn invalid_toml_does_not_echo_credential_like_source_text() {
     let secret = "do-not-echo-this-credential";
     let error = RunnerConfig::from_sources(RunnerConfigSources {

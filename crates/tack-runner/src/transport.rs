@@ -1212,6 +1212,7 @@ where
         let name = self.config.runner_id.clone();
         let version = env!("CARGO_PKG_VERSION").to_owned();
 
+        let mut session_refused = false;
         if let Some(persisted) = load_session(&self.config.state_dir) {
             match self
                 .engine
@@ -1243,6 +1244,7 @@ where
                     tracing::warn!(
                         "persisted runner session was refused; falling back to enrollment"
                     );
+                    session_refused = true;
                 }
                 Err(error) => {
                     tracing::warn!(%error, "persisted runner session could not be refreshed");
@@ -1251,7 +1253,11 @@ where
             }
         }
 
-        let credential = self.config.require_enrollment_credential()?;
+        let credential = match self.config.require_enrollment_credential() {
+            Ok(credential) => credential,
+            Err(_) if session_refused => return Err(RunnerError::SessionRefused),
+            Err(error) => return Err(error),
+        };
         let enrolled = self
             .engine
             .enroll(

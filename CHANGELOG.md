@@ -375,6 +375,11 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A restarted runner starts from its saved session.** With a valid `session.json` in its state folder the runner stopped
+  with "runner enrollment credential is required", so the spent single-use token had to be supplied again. The
+  credential is now needed only when there is no saved session; if the server refuses the saved session (expired or
+  revoked) and there is no credential, the runner says that the session was refused. `tack serve --with-runner` no
+  longer hands the runner a placeholder credential to get past the check.
 - **The last hop of a docket run no longer goes missing from the attempt's timeline.** docket holds back the newest
   second of its trace, and the runner ended the attempt the moment the task was done, so a run's final
   `agent.hop_finished` could be left out. After the task ends, the runner reads the trace again until every hop
