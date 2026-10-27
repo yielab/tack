@@ -79,3 +79,43 @@ fn stable_error_code_mutation_is_detected() {
     assert_eq!(removed, "internal_error");
     assert!(!protocol.stable_error_codes.contains(&removed));
 }
+
+/// Each claim, heartbeat, event-batch and completion fixture parses into the protocol's own
+/// struct and serializes back to the same JSON value, so the structs and the contract cannot
+/// drift apart.
+#[test]
+fn claim_heartbeat_event_batch_and_completion_fixtures_round_trip_through_the_structs() {
+    use tack_protocol::execution::{
+        ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, EventBatchRequest,
+        EventBatchResponse, HeartbeatRequest, HeartbeatResponse,
+    };
+
+    fn round_trips<T: serde::Serialize + serde::de::DeserializeOwned>(name: &str) -> T {
+        let fixture = load_value(name);
+        let typed: T = serde_json::from_value(fixture.clone())
+            .unwrap_or_else(|error| panic!("{name} does not fit its struct: {error}"));
+        assert_eq!(
+            serde_json::to_value(&typed).expect("struct serializes"),
+            fixture,
+            "{name} changed when it went through its struct"
+        );
+        typed
+    }
+
+    round_trips::<ClaimRequest>("claim.request.json");
+    assert!(matches!(
+        round_trips::<ClaimResponse>("claim.response.json"),
+        ClaimResponse::Work(_)
+    ));
+    assert!(matches!(
+        round_trips::<ClaimResponse>("claim.no-work.response.json"),
+        ClaimResponse::Idle(_)
+    ));
+    round_trips::<HeartbeatRequest>("heartbeat.request.json");
+    round_trips::<HeartbeatRequest>("heartbeat.request.two-active.json");
+    round_trips::<HeartbeatResponse>("heartbeat.response.json");
+    round_trips::<EventBatchRequest>("event-batch.request.json");
+    round_trips::<EventBatchResponse>("event-batch.response.json");
+    round_trips::<CompletionRequest>("completion.request.json");
+    round_trips::<CompletionResponse>("completion.response.json");
+}

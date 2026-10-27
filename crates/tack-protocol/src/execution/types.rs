@@ -213,6 +213,8 @@ pub enum RecoveryJournalState {
     Prepared,
     ProcessObservedRunning,
     CancellationRequested,
+    /// The attempt ended locally and its terminal report has not been acknowledged yet.
+    TerminalReportPending,
     RecoveryObserved,
     Reported,
     Quarantined,

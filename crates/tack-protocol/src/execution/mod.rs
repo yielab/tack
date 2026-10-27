@@ -7,6 +7,7 @@
 
 mod capabilities;
 mod lifecycle;
+mod messages;
 mod types;
 
 // `CapabilityLimits` is exported here since it's the type of the public
@@ -18,6 +19,11 @@ pub use capabilities::{
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,
+};
+pub use messages::{
+    ActiveAttempt, ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest, ClaimResponse,
+    CompletionRequest, CompletionResponse, EventBatchRequest, EventBatchResponse, EventRecord,
+    HeartbeatRequest, HeartbeatResponse, LeaseResult,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,
