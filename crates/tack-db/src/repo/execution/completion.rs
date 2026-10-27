@@ -10,8 +10,9 @@ use super::decisions::end_attempt_decisions;
 use super::enqueue::{
     EnqueueResult, NewExecutionRequest, enqueue_in, validate_execution_request_snapshot,
 };
-use super::shared::{canonical_json, mirror_request_state, stamp, terminal};
+use super::shared::{mirror_request_state, stamp, terminal};
 use super::state::{self, Move};
+use crate::canonical_json;
 use crate::{Repository, StoreError};
 use tack_core::models::UpdateItem;
 use tack_core::workflow::WorkflowConfig;

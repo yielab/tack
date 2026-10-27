@@ -137,7 +137,7 @@ async fn ready_running_attempt(
     request_id: &str,
     attempt_id: &str,
 ) -> i64 {
-    repo.enqueue_execution(request(request_id, item_id, request_id), clock)
+    repo.enqueue_execution(request(request_id, item_id, request_id), clock.now())
         .await
         .unwrap();
     let claim = repo

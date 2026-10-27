@@ -5,7 +5,7 @@ use tack_db::repo::execution::DecisionSettlement;
 use tack_protocol::Clock;
 
 use crate::AppError;
-use crate::runs::start_run::canonical_json;
+use tack_db::canonical_json;
 
 /// What came of an answer to a decision. A rejection is a value, not an error: the caller maps
 /// each to its own response.

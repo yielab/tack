@@ -148,7 +148,7 @@ async fn foreign_keys_and_expiry_recovery_fail_closed() {
         .repo
         .enqueue_execution(
             request("orphan", "missing-item", "orphan-key", "x"),
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
     assert!(orphan.is_err(), "request item FK is enforced");
@@ -428,7 +428,10 @@ async fn expired_unrecovered_attempt_blocks_capacity_and_claims() {
             .replace("2026-08-07T12:00:00Z", &fx.clock.now().to_rfc3339())
             .into_boxed_str(),
     );
-    fx.repo.enqueue_execution(blocked, &fx.clock).await.unwrap();
+    fx.repo
+        .enqueue_execution(blocked, fx.clock.now())
+        .await
+        .unwrap();
     assert!(
         fx.claim("attempt-heartbeat-blocked", Duration::seconds(60))
             .await

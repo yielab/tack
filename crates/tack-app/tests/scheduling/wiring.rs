@@ -17,7 +17,8 @@ use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
 
-use crate::scheduling::support::{FixedClock, codex_capability_snapshot, setup_repo};
+use crate::scheduling::support::{codex_capability_snapshot, setup_repo};
+use tack_test_support::FixedClock;
 
 const ALPHA_MODEL: Option<&str> = Some("opaque/model-alpha");
 
@@ -165,7 +166,7 @@ async fn enqueue(
             metadata,
             request_snapshot: &snapshot,
         },
-        &FixedClock(created_at),
+        created_at,
     )
     .await
     .expect("enqueue")

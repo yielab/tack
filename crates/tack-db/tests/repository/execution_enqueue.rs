@@ -21,13 +21,18 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
             .replace(",}", "}")
             .into_boxed_str(),
     );
-    assert!(fx.repo.enqueue_execution(missing, &fx.clock).await.is_err());
+    assert!(
+        fx.repo
+            .enqueue_execution(missing, fx.clock.now())
+            .await
+            .is_err()
+    );
 
     let mut malformed = fx.request("snapshot-malformed", "snapshot-malformed", "same");
     malformed.request_snapshot = "{not-json";
     assert!(
         fx.repo
-            .enqueue_execution(malformed, &fx.clock)
+            .enqueue_execution(malformed, fx.clock.now())
             .await
             .is_err()
     );
@@ -44,7 +49,7 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
     );
     assert!(
         fx.repo
-            .enqueue_execution(contradictory, &fx.clock)
+            .enqueue_execution(contradictory, fx.clock.now())
             .await
             .is_err()
     );
@@ -58,7 +63,7 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
     );
     assert!(
         fx.repo
-            .enqueue_execution(wrong_created_at, &fx.clock)
+            .enqueue_execution(wrong_created_at, fx.clock.now())
             .await
             .is_err()
     );
@@ -92,7 +97,10 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
         invalid.request_snapshot =
             Box::leak(invalid.request_snapshot.replace(from, to).into_boxed_str());
         assert!(
-            fx.repo.enqueue_execution(invalid, &fx.clock).await.is_err(),
+            fx.repo
+                .enqueue_execution(invalid, fx.clock.now())
+                .await
+                .is_err(),
             "{suffix}"
         );
     }
@@ -350,7 +358,7 @@ async fn enqueue_replay_compares_frozen_snapshot_before_current_time() {
     );
     assert_eq!(
         fx.repo
-            .enqueue_execution(changed_timestamp, &fx.clock)
+            .enqueue_execution(changed_timestamp, fx.clock.now())
             .await
             .unwrap(),
         EnqueueResult::Conflict,

@@ -82,7 +82,7 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
             metadata: "{}",
             request_snapshot: &snapshot,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("enqueue");

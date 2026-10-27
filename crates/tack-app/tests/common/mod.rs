@@ -139,7 +139,7 @@ pub async fn enqueue(world: &World, key: &str) -> String {
                 metadata: &field("metadata"),
                 request_snapshot: &snapshot_string,
             },
-            &world.clock,
+            world.clock.now(),
         )
         .await
         .expect("enqueue");

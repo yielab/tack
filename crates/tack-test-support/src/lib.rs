@@ -19,7 +19,9 @@ use uuid::Uuid;
 
 pub mod seed;
 
+mod clock;
 mod poll;
+pub use clock::FixedClock;
 pub use poll::{poll_until, poll_until_sync};
 
 /// Create an in-memory SQLite pool with all migrations applied.

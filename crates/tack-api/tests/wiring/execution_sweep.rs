@@ -96,19 +96,6 @@ async fn setup() -> (Repository, String) {
     (repo, item.id.to_string())
 }
 
-/// A single fixed instant, used both as the snapshot's own declared
-/// `created_at` field below and as the clock `enqueue_execution` is called
-/// with in `running_attempt` — `enqueue_execution` rejects a snapshot whose
-/// `created_at` does not match the clock's `now()` *exactly*, so this must
-/// not be two separate `Utc::now()` reads.
-struct FixedExecutionClock(chrono::DateTime<Utc>);
-
-impl tack_protocol::Clock for FixedExecutionClock {
-    fn now(&self) -> chrono::DateTime<Utc> {
-        self.0
-    }
-}
-
 fn new_request<'a>(
     id: &'a str,
     item_id: &'a str,
@@ -152,12 +139,9 @@ fn new_request<'a>(
 async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, i64) {
     let request_id = format!("req-{tag}");
     let now = Utc::now();
-    repo.enqueue_execution(
-        new_request(&request_id, item_id, &request_id, now),
-        &FixedExecutionClock(now),
-    )
-    .await
-    .expect("enqueue");
+    repo.enqueue_execution(new_request(&request_id, item_id, &request_id, now), now)
+        .await
+        .expect("enqueue");
     let attempt_id = format!("att-{tag}");
     let claim = repo
         .claim_execution_idempotent_with_snapshot(

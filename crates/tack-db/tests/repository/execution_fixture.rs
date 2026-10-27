@@ -145,7 +145,7 @@ impl Fixture {
         fingerprint: &str,
     ) -> Result<EnqueueResult, tack_db::StoreError> {
         self.repo
-            .enqueue_execution(self.request(id, key, fingerprint), &self.clock)
+            .enqueue_execution(self.request(id, key, fingerprint), self.clock.now())
             .await
     }
 

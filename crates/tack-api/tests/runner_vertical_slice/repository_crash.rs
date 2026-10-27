@@ -177,7 +177,7 @@ async fn enqueue(fixture: &Fixture) {
     let snapshot = request_snapshot(&fixture.item_id, &fixture.clock);
     fixture
         .repo
-        .enqueue_execution(request(&fixture.item_id, &snapshot), &fixture.clock)
+        .enqueue_execution(request(&fixture.item_id, &snapshot), fixture.clock.now())
         .await
         .expect("enqueue");
 }

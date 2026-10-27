@@ -18,7 +18,8 @@ use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
 use uuid::Uuid;
 
-use crate::scheduling::support::{FixedClock, codex_capability_snapshot, setup_repo};
+use crate::scheduling::support::{codex_capability_snapshot, setup_repo};
+use tack_test_support::FixedClock;
 
 async fn register_active_runner(
     repo: &Repository,
@@ -125,7 +126,7 @@ async fn enqueue_via_fleet(
             metadata: "{}",
             request_snapshot: &snapshot,
         },
-        &FixedClock(created_at),
+        created_at,
     )
     .await
     .expect("enqueue");

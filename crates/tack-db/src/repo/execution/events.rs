@@ -7,8 +7,9 @@ use sqlx::{AssertSqlSafe, Row};
 use tack_protocol::Clock;
 use tracing::instrument;
 
-use super::shared::{canonical_json, stamp};
+use super::shared::stamp;
 use crate::Repository;
+use crate::canonical_json;
 
 #[derive(Debug, Clone)]
 pub struct NewEvent<'a> {

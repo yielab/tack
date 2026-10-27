@@ -5,11 +5,10 @@ use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
-use tack_protocol::Clock;
 use tracing::instrument;
 
-use super::shared::{canonical_json, stamp};
 use crate::Repository;
+use crate::canonical_json;
 
 #[derive(Debug, Clone)]
 pub struct NewExecutionRequest<'a> {
@@ -167,14 +166,21 @@ pub struct AttemptListingRow {
     pub start_report: Option<String>,
 }
 
-/// A request snapshot as an idempotent retry is compared: the task's own metadata (its type,
-/// priority and trust, which the server writes into `metadata.item`) left out, so a retry after
-/// the task changed answers the request it made, not a conflict. Everything else the request says
-/// still counts.
-pub fn without_task_metadata(snapshot: &serde_json::Value) -> serde_json::Value {
+/// A request snapshot as an idempotent retry is compared: what the task is now left out. The
+/// task's own metadata (its type, priority and trust, which the server writes into
+/// `metadata.item`) and the instructions composed from its text (title, description, comments)
+/// change when the card does, so a retry after an edit answers the request it made, not a
+/// conflict. Everything else the request says still counts.
+pub fn as_compared(snapshot: &serde_json::Value) -> serde_json::Value {
     let mut value = snapshot.clone();
     if let Some(metadata) = value.get_mut("metadata").and_then(|m| m.as_object_mut()) {
         metadata.remove("item");
+    }
+    if let Some(profile) = value
+        .get_mut("resolved_agent_profile")
+        .and_then(|p| p.as_object_mut())
+    {
+        profile.remove("instructions");
     }
     value
 }
@@ -186,9 +192,7 @@ fn same_request(stored: &str, request: &str) -> bool {
         serde_json::from_str::<serde_json::Value>(stored),
         serde_json::from_str::<serde_json::Value>(request),
     ) {
-        (Ok(stored), Ok(request)) => {
-            without_task_metadata(&stored) == without_task_metadata(&request)
-        }
+        (Ok(stored), Ok(request)) => as_compared(&stored) == as_compared(&request),
         _ => false,
     }
 }
@@ -688,13 +692,13 @@ impl Repository {
             .collect())
     }
 
-    #[instrument(skip(self, input, clock))]
+    #[instrument(skip(self, input))]
     pub async fn enqueue_execution(
         &self,
         input: NewExecutionRequest<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<EnqueueResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let request_snapshot = validate_execution_request_snapshot(&input)?;
         // Serialize duplicate enqueue requests for the same idempotency key
         // (e.g. a client retrying an unacknowledged enqueue POST) before

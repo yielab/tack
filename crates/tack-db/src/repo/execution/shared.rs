@@ -33,22 +33,3 @@ pub(super) async fn mirror_request_state(
     .await?;
     Ok(())
 }
-
-pub(super) fn canonical_json(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(map) => {
-            let mut entries: Vec<_> = map.into_iter().collect();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
-            serde_json::Value::Object(
-                entries
-                    .into_iter()
-                    .map(|(k, v)| (k, canonical_json(v)))
-                    .collect(),
-            )
-        }
-        serde_json::Value::Array(v) => {
-            serde_json::Value::Array(v.into_iter().map(canonical_json).collect())
-        }
-        v => v,
-    }
-}

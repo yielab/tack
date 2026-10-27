@@ -417,7 +417,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     );
     assert_eq!(
         fx.request_state("request-cancellation-rollback").await,
-        "running"
+        "leased"
     );
     assert_eq!(fx.capacity().await, 0);
 }

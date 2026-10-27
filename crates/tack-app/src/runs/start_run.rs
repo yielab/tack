@@ -83,35 +83,11 @@ fn error(status: u16, code: StableErrorCode, message: &str, details: Value) -> R
     }
 }
 
-#[derive(Clone, Copy)]
-struct FixedClock(DateTime<Utc>);
-
-impl Clock for FixedClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.0
-    }
-}
-
-/// Rebuilds a `Value` so every object passes through `FromIterator`: key
-/// order can then never affect a serialized comparison.
-pub(crate) fn canonical_json(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonical_json).collect()),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, canonical_json(value)))
-                .collect(),
-        ),
-        value => value,
-    }
-}
-
 /// `field` names the request field being canonicalized, so a failure carries
 /// `invalid_request`'s contract-shaped `{"field": ...}` detail rather than an
 /// empty object.
 fn canonical_string(value: Value, field: &str) -> Result<String, Refusal> {
-    serde_json::to_string(&canonical_json(value)).map_err(|_| {
+    serde_json::to_string(&tack_db::canonical_json(value)).map_err(|_| {
         error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -142,23 +118,17 @@ fn stable_request_id(scope: &str, key: &str) -> String {
     format!("exec_{}", hex::encode(hasher.finalize()))
 }
 
-/// The fence id a composed prompt carries, if it carries one.
-fn fence_id(snapshot: &str) -> Option<&str> {
-    const MARK: &str = "<<<card-text id=";
-    let start = snapshot.find(MARK)? + MARK.len();
-    snapshot.get(start..start + 8)
-}
-
 pub(crate) fn fingerprint(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
 /// The fingerprint of a create request: what the request says, not what the task is now. A retry
-/// after the task's type or priority changed is the same request, so the task's metadata is left
-/// out (the replay check in tack-db compares the same way).
+/// after the task's type, priority or text changed is the same request, so what the task is now
+/// (its metadata and the instructions composed from its text) is left out; the replay check in
+/// tack-db compares the same way.
 fn request_fingerprint(snapshot: &Value) -> Result<String, Refusal> {
     let text = canonical_string(
-        tack_db::repo::execution::without_task_metadata(snapshot),
+        tack_db::repo::execution::as_compared(snapshot),
         "request_snapshot",
     )?;
     Ok(fingerprint(&text))
@@ -770,7 +740,6 @@ pub async fn enqueue_run(
         )
     })?
     .model;
-    let stored_snapshot_text = existing_snapshot.clone();
     let (request_id, created_at) = match existing_snapshot {
         Some(snapshot) => {
             // A stored replay row that fails to parse means the *persisted*
@@ -841,15 +810,8 @@ pub async fn enqueue_run(
         "fleet" => json!({"kind":"fleet","fleet_id":selector_id}),
         _ => unreachable!("selector kind was validated"),
     };
-    let (mut agent_profile_snapshot, brief) =
+    let (agent_profile_snapshot, brief) =
         with_item_context(repo, &item, profile, project.definition_of_done.as_deref()).await?;
-    // An exact retry draws a new fence id; it must still equal what it replays.
-    if let Some(stored) = stored_snapshot_text.as_deref().and_then(fence_id)
-        && let Some(Value::String(instructions)) = agent_profile_snapshot.get_mut("instructions")
-        && let Some(fresh) = fence_id(instructions).map(str::to_owned)
-    {
-        *instructions = instructions.replace(&fresh, stored);
-    }
     let mut snapshot_value = json!({
         "request_id": request_id,
         "item_id": item_id,
@@ -944,7 +906,6 @@ pub async fn enqueue_run(
             json!({"field": "timeout_seconds"}),
         )
     })?;
-    let request_clock = FixedClock(created_at);
     let result = repo
         .enqueue_execution(
             NewExecutionRequest {
@@ -968,7 +929,7 @@ pub async fn enqueue_run(
                 metadata: &metadata,
                 request_snapshot: &request_snapshot,
             },
-            &request_clock,
+            created_at,
         )
         .await
         .map_err(|err| {

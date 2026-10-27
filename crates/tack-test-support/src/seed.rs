@@ -505,7 +505,7 @@ pub async fn running_attempt(
             metadata: "{}",
             request_snapshot: &snapshot,
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("seed enqueue");

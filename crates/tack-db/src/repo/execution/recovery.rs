@@ -7,9 +7,10 @@ use tack_protocol::Clock;
 use tracing::instrument;
 
 use super::decisions::end_attempt_decisions;
-use super::shared::{canonical_json, stamp, terminal};
+use super::shared::{stamp, terminal};
 use super::state::{self, Move};
 use crate::Repository;
+use crate::canonical_json;
 use tack_protocol::execution::ExecutionState;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

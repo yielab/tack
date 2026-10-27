@@ -1,5 +1,6 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
+use tack_test_support::FixedClock;
 
 fn snapshot_with(stale_lease_count: i64, needs_operator_count: i64) -> ExecutionFleetSnapshot {
     ExecutionFleetSnapshot {
@@ -85,14 +86,6 @@ fn snapshot_label_set_is_bounded_and_id_free() {
             key.len() < 20 && key.matches('-').count() <= 1,
             "snapshot key {key:?} looks id-shaped, not state-shaped"
         );
-    }
-}
-
-struct FixedClock(DateTime<Utc>);
-
-impl Clock for FixedClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.0
     }
 }
 

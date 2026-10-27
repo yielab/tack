@@ -512,7 +512,7 @@ async fn enqueue_request(
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("enqueue");

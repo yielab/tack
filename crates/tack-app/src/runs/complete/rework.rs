@@ -12,7 +12,7 @@ use tack_protocol::mrp::{MergeDecision, MergeReadinessPack, NextStep};
 use uuid::Uuid;
 
 use crate::autonomy::MRP_MEDIA_TYPE;
-use crate::runs::start_run::canonical_json;
+use tack_db::canonical_json;
 
 /// How the section a rework appends to the instructions starts: its heading and the sentence
 /// after it, so a card that quotes the heading is never cut.
