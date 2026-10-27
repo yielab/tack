@@ -434,13 +434,14 @@ Four more files in the directory are recorders, not tests — `screenshots.spec.
 README's and the book's images and GIFs, each through its own config and its own header recipe.
 The default config ignores them and CI never runs them.
 
-`docket-prill.spec.ts` is a live test, not a CI one: `scripts/docket-prill-e2e.sh` builds `tack`
+`docket-prill.spec.ts` is a live test, not a CI one, and it is not versioned: it lives in the
+git-ignored `onboarding-lab/e2e/` with `docket-prill-e2e.sh`, which builds `tack`
 with the SPA embedded, runs docket (0.2.0-beta.6, API 5) and prill from their own source trees
 (`DOCKET_SRC`, `PRILL_SRC`), starts `docket start --dispatch` itself in a scratch `HOME` with an
 isolated `DOCKET_HOME` and two pods (`saas-code`, `saas-content`) over the fixture repository, and
 drives the whole workflow through the UI: a project, its runner enrolled on the Agents page, its
 settings, a code item and a content item added at once, a rejection with its rework, and a
-screenshot of the ladder, with a screenshot per step in `frontend/test-results/docket-prill/`. It
+screenshot of the ladder, with a screenshot per step in `onboarding-lab/results/docket-prill/`. It
 checks what a person would: every run's steps reach the timeline before it ends, in order; prill's
 pack comes back for each run and is reviewed. The script dies before building when
 `GET /status.json` does not answer `apiVersion` 5 or later. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1`

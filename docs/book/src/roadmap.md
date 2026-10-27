@@ -55,7 +55,7 @@ plan or the page named beside it.
   dead-code allowance. `cargo deny check advisories` also fails on advisories published since
   its last run (an unsound `AsyncFd::new`, certificate-trust issues); `bans`, `licenses` and
   `sources` pass.
-- Rerun `scripts/docket-prill-e2e.sh` against docket's `develop`. It passed on 2026-10-18, before
+- Rerun the local live suite (`onboarding-lab/e2e/docket-prill-e2e.sh`, not versioned) against docket's `develop`. It passed on 2026-10-18, before
   docket's escalation record; Phase 80 changed what it expects and
   [Phase 81](#phase-81--what-the-audit-found) card A makes it pass again.
 - Approve Phase 76 to start it. It is proposed and builds nothing until then.
@@ -202,7 +202,7 @@ structure, code design, screens, and the seams with docket and prill). No ADR. *
 
 **The rule it keeps:** CI never needs docket or prill. CI tests Tack's code with the fake docket,
 the fake prill and captured fixtures; everything that talks to the real programs is one local
-command, `scripts/docket-prill-e2e.sh`, with a `--check` mode that diffs the captures and prill's
+command, the local `onboarding-lab/e2e/docket-prill-e2e.sh`, with a `--check` mode that diffs the captures and prill's
 contracts. Today's live suite cannot pass: its question test expects a sentence Tack no longer
 writes and passes when nothing is asked, and its only check of docket is a version number docket
 kept through a breaking change.
@@ -383,7 +383,7 @@ each fact is owned, so no rule is computed twice:
 
 **Status:** opened 2026-10-14 and built: the six waves landed in `develop` on 2026-10-14, the
 seventh, a whole project in and out through one file (ADR 0022), on 2026-10-17, followed the
-same day by the book's three guides. The live proof, `scripts/docket-prill-e2e.sh`, passes on
+same day by the book's three guides. The live proof, the local `docket-prill-e2e.sh`, passes on
 docket's `develop` since 2026-10-18; My SaaS's runs through its teams are Phase 74's last round.
 **ADRs:** 0021 (amends 0019 decision 7 and 0015 decision 1), 0022 (extends 0017). **Plan:**
 [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).

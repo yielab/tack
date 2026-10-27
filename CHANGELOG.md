@@ -313,6 +313,10 @@ automation a template carries, and the removal of dollars per day.
   imports without it, with a warning in the preview. A request whose `budgets` carries
   `cost_usd` is refused `field_removed`, and Claude Code is no longer given `--max-budget-usd`:
   a dollar limit stopped only the models that had a price (ADR 0024 decision 3).
+- **The live Tack + docket + prill suite leaves the tree.** `scripts/docket-prill-e2e.sh`,
+  `frontend/e2e/docket-prill.spec.ts` and `frontend/playwright.docket-prill.config.ts` now live in
+  the git-ignored `onboarding-lab/e2e/`, since the suite needs real programs and spends model calls
+  and CI never runs it.
 - `make changelog`, `make changelog-release` and `cliff.toml`. The changelog is written by hand
   in each change, and a release's notes are its section here.
 
