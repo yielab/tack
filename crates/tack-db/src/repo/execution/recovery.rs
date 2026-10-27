@@ -11,7 +11,8 @@ use super::state::{self, Move};
 use crate::Repository;
 use crate::canonical_json;
 use tack_protocol::execution::{
-    AttemptId, ExecutionRequestId, ExecutionState, FencingToken, RecoveryKey, RunnerId,
+    AttemptId, ExecutionRequestId, ExecutionState, FencingToken, RecoveryDetails,
+    RecoveryJournalState, RecoveryKey, RunnerId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,7 +81,7 @@ pub struct RecoveryObservationInput<'a> {
     pub fencing_token: FencingToken,
     pub recovery_key: &'a RecoveryKey,
     pub observation: RecoveryObservation,
-    pub details: &'a str,
+    pub details: &'a RecoveryDetails,
 }
 
 pub use tack_protocol::execution::RecoveryDisposition;
@@ -101,30 +102,9 @@ pub enum RecoveryObservationResult {
     Stale,
 }
 
-struct RecoveryDetails {
-    journal_state: String,
-    process_observed: bool,
-}
-
-fn recovery_details(details: &str) -> Result<RecoveryDetails, StoreError> {
-    let value: serde_json::Value =
-        serde_json::from_str(details).map_err(|error| StoreError::malformed(error.to_string()))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| StoreError::malformed("invalid recovery details"))?;
-    let journal_state = object
-        .get("journal_state")
-        .and_then(serde_json::Value::as_str)
-        .map(str::to_owned)
-        .ok_or_else(|| StoreError::malformed("invalid recovery details journal_state"))?;
-    let process_observed = object
-        .get("process_observed")
-        .and_then(serde_json::Value::as_bool)
-        .ok_or_else(|| StoreError::malformed("invalid recovery details process_observed"))?;
-    Ok(RecoveryDetails {
-        journal_state,
-        process_observed,
-    })
+/// The details as the audit row stores them: the JSON the protocol's struct encodes to.
+fn recovery_details_json(details: &RecoveryDetails) -> Result<String, StoreError> {
+    serde_json::to_string(details).map_err(|error| StoreError::malformed(error.to_string()))
 }
 
 fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
@@ -136,7 +116,7 @@ fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
 }
 
 fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, StoreError> {
-    let details: serde_json::Value = serde_json::from_str(input.details)
+    let details = serde_json::to_value(input.details)
         .map_err(|error| StoreError::malformed(error.to_string()))?;
     serde_json::to_string(&serde_json::json!({
         "runner_id": input.runner_id.as_str(),
@@ -197,7 +177,7 @@ async fn apply_recovery(
         })
         .to_string();
         sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?, 'already_terminal',?,?,?,?)")
-            .bind(attempt).bind(key).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
+            .bind(attempt).bind(key).bind(recovery_details_json(input.details)?).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
         tx.commit().await?;
         return Ok(RecoveryObservationResult::Applied(response));
     }
@@ -209,7 +189,7 @@ async fn apply_recovery(
     let disposition = match input.observation {
         RecoveryObservation::ProcessStopped
             if started.is_none()
-                && details.journal_state == "prepared"
+                && details.journal_state == RecoveryJournalState::Prepared
                 && !details.process_observed =>
         {
             RecoveryDisposition::SafePreSpawnRequeue
@@ -273,7 +253,7 @@ async fn apply_recovery(
     })
     .to_string();
     sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?,?,?,?,?,?)")
-        .bind(attempt).bind(key).bind(classification).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
+        .bind(attempt).bind(key).bind(classification).bind(recovery_details_json(input.details)?).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(RecoveryObservationResult::Applied(response))
 }
@@ -366,7 +346,7 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<RecoveryObservationResult, StoreError> {
         let now = now.to_rfc3339();
-        let details = recovery_details(input.details)?;
+        let details = input.details;
         let fingerprint = recovery_fingerprint(&input)?;
         // Serialize duplicate recovery observations for the same attempt
         // (e.g. a runner or reconciler retrying an unacknowledged recovery
@@ -381,7 +361,7 @@ impl Repository {
             tx.commit().await?;
             return Ok(RecoveryObservationResult::Stale);
         };
-        apply_recovery(tx, &row, &input, &details, &fingerprint, &now, None).await
+        apply_recovery(tx, &row, &input, details, &fingerprint, &now, None).await
     }
 
     /// The claim poll's closing of a run nobody holds: every attempt in
@@ -407,8 +387,11 @@ impl Repository {
         .bind(expired_before.to_rfc3339())
         .fetch_all(self.pool())
         .await?;
-        let details =
-            serde_json::json!({"journal_state": code, "process_observed": false}).to_string();
+        let details = RecoveryDetails {
+            journal_state: RecoveryJournalState::LeaseExpired,
+            process_observed: false,
+            additional: Default::default(),
+        };
         let mut closed = 0;
         for attempt in candidates {
             let now = now.to_rfc3339();
@@ -434,11 +417,11 @@ impl Repository {
                 observation: RecoveryObservation::Ambiguous,
                 details: &details,
             };
-            let recovery = recovery_details(&details)?;
+            let recovery = &details;
             let fingerprint = recovery_fingerprint(&input)?;
             let waiting = Some((code, sentence));
             if matches!(
-                apply_recovery(tx, &row, &input, &recovery, &fingerprint, &now, waiting).await?,
+                apply_recovery(tx, &row, &input, recovery, &fingerprint, &now, waiting).await?,
                 RecoveryObservationResult::Applied(_)
             ) {
                 closed += 1;

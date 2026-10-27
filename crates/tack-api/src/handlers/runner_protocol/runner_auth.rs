@@ -20,13 +20,13 @@ use axum::extract::Request;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use tracing::Instrument;
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_db::Repository;
 use tack_db::queries::agent_runners;
 use tack_protocol::execution::{AttemptId, ProtocolErrorEnvelope, RunnerId, StableErrorCode};
+use tracing::Instrument;
 
 /// A runner identity resolved from an authenticated bearer credential. This
 /// type can only be constructed by [`authenticate`]; handlers must never

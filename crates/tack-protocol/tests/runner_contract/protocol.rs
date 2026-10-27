@@ -127,10 +127,9 @@ fn enrollment_refresh_attempt_decision_artifact_and_cancellation_fixtures_round_
  {
     use tack_protocol::execution::{
         ArtifactManifestRequest, ArtifactManifestResponse, AttemptTransitionRequest,
-        AttemptTransitionResponse, CancellationObservationRequest,
-        CancellationObservationResponse, DecisionCreateRequest, DecisionCreateResponse,
-        DecisionPollRequest, DecisionPollResponse, EnrollmentRequest, EnrollmentResponse,
-        RefreshRequest, RefreshResponse,
+        AttemptTransitionResponse, CancellationObservationRequest, CancellationObservationResponse,
+        DecisionCreateRequest, DecisionCreateResponse, DecisionPollRequest, DecisionPollResponse,
+        EnrollmentRequest, EnrollmentResponse, RefreshRequest, RefreshResponse,
     };
 
     fn round_trips<T: serde::Serialize + serde::de::DeserializeOwned>(name: &str) {

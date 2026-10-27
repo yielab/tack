@@ -28,8 +28,7 @@ pub use messages::{
     CompletionResponse, DecisionAnswer, DecisionCreateRequest, DecisionCreateResponse,
     DecisionOption, DecisionPollRequest, DecisionPollResponse, DecisionRecommendation,
     DecisionUpdate, EnrollmentRequest, EnrollmentResponse, EventBatchRequest, EventBatchResponse,
-    EventRecord, HeartbeatRequest, HeartbeatResponse, LeaseResult, RefreshRequest,
-    RefreshResponse,
+    EventRecord, HeartbeatRequest, HeartbeatResponse, LeaseResult, RefreshRequest, RefreshResponse,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

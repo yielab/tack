@@ -218,6 +218,9 @@ pub enum RecoveryJournalState {
     RecoveryObserved,
     Reported,
     Quarantined,
+    /// Written by the board, never by a runner: the lease ran out with no one holding it, and
+    /// the board asked about the attempt itself.
+    LeaseExpired,
 }
 
 impl RecoveryJournalState {
@@ -231,6 +234,7 @@ impl RecoveryJournalState {
             Self::RecoveryObserved => "recovery_observed",
             Self::Reported => "reported",
             Self::Quarantined => "quarantined",
+            Self::LeaseExpired => "lease_expired",
         }
     }
 }

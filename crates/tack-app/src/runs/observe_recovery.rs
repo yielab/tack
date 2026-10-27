@@ -4,7 +4,8 @@ use tack_db::repo::execution::{
     RecoveryObservation as StoredObservation, RecoveryObservationInput, RecoveryObservationResult,
 };
 use tack_protocol::execution::{
-    AttemptId, FencingToken, RecoveryDisposition, RecoveryKey, RecoveryObservation, RunnerId,
+    AttemptId, FencingToken, RecoveryDetails, RecoveryDisposition, RecoveryKey,
+    RecoveryObservation, RunnerId,
 };
 
 use crate::AppError;
@@ -16,8 +17,8 @@ pub struct Observation<'a> {
     pub fencing_token: FencingToken,
     pub recovery_key: &'a RecoveryKey,
     pub observation: RecoveryObservation,
-    /// The runner's details, already encoded as JSON.
-    pub details_json: &'a str,
+    /// The runner's details.
+    pub details: &'a RecoveryDetails,
 }
 
 /// What the board decided about the attempt after the observation.
@@ -63,7 +64,7 @@ pub async fn observe_recovery(
                 fencing_token: observation.fencing_token,
                 recovery_key: observation.recovery_key,
                 observation: stored,
-                details: observation.details_json,
+                details: observation.details,
             },
             now,
         )

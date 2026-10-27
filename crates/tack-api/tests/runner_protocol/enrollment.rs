@@ -638,9 +638,15 @@ async fn an_error_carries_the_request_id_the_runner_sent_and_each_request_has_it
 
     let (status, echoed, in_body) = rejected_claim(&fx.app, Some("req_runner_first")).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-    assert_eq!((echoed.as_str(), in_body.as_str()), ("req_runner_first", "req_runner_first"));
+    assert_eq!(
+        (echoed.as_str(), in_body.as_str()),
+        ("req_runner_first", "req_runner_first")
+    );
     let (_, echoed, in_body) = rejected_claim(&fx.app, Some("req_runner_second")).await;
-    assert_eq!((echoed.as_str(), in_body.as_str()), ("req_runner_second", "req_runner_second"));
+    assert_eq!(
+        (echoed.as_str(), in_body.as_str()),
+        ("req_runner_second", "req_runner_second")
+    );
 
     // A request without an id, or with one that is not safe in a log line, gets one the board
     // makes, and never the same twice.

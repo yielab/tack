@@ -11,9 +11,9 @@ use tack_db::{
     Repository, StoreError, queries,
     repo::execution::{
         AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult, ClaimedExecution,
-        Completion, EnrollmentToken, EventApplyResult, EventBatch,
-        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
-        NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
+        Completion, EnrollmentToken, EventApplyResult, EventBatch, HeartbeatBatchResult,
+        HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner,
+        RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
         RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
@@ -270,6 +270,8 @@ async fn recover(
     recovery_key: &'static str,
     details: &'static str,
 ) -> RecoveryObservationResult {
+    let details: tack_protocol::execution::RecoveryDetails =
+        serde_json::from_str(details).expect("details the protocol accepts");
     fixture
         .repo
         .recover_attempt(
@@ -279,7 +281,7 @@ async fn recover(
                 fencing_token: FencingToken::new(1),
                 recovery_key: &RecoveryKey::new(recovery_key),
                 observation,
-                details,
+                details: &details,
             },
             fixture.clock.now(),
         )
@@ -479,8 +481,8 @@ fn completion_crash() -> Completion<'static> {
 /// `running` and a completion is a transition the lifecycle table allows.
 async fn start_claimed_attempt(fixture: &Fixture) {
     let preparing = AttemptTransitionInput {
-        runner_id: &ids::runner("runner-crash"),
-        attempt_id: &ids::attempt("attempt-crash"),
+        runner_id: ids::runner("runner-crash"),
+        attempt_id: ids::attempt("attempt-crash"),
         fencing_token: FencingToken::new(1),
         phase: AttemptTransitionPhase::Preparing,
         workspace_id: &tack_protocol::execution::WorkspaceId::new("workspace-crash"),

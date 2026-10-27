@@ -773,6 +773,15 @@ pub fn expect_replayed_cancellation(
     }
 }
 
+/// Recovery details as a runner would send them, read through the protocol's own type so a
+/// state the protocol does not know cannot be written into a test. Leaked: a test's input
+/// borrows its details for the length of the test.
+pub fn recovery_details(json: &str) -> &'static tack_protocol::execution::RecoveryDetails {
+    Box::leak(Box::new(
+        serde_json::from_str(json).expect("details the protocol accepts"),
+    ))
+}
+
 /// A `RecoveryObservationInput` for "runner-a".
 pub fn recovery_input<'a>(
     attempt_id: &'a str,
@@ -786,7 +795,9 @@ pub fn recovery_input<'a>(
         fencing_token,
         recovery_key: ids::recovery_key(recovery_key),
         observation,
-        details: r#"{"journal_state":"prepared","process_observed":false,"observer":{"b":2,"a":1}}"#,
+        details: recovery_details(
+            r#"{"journal_state":"prepared","process_observed":false,"observer":{"b":2,"a":1}}"#,
+        ),
     }
 }
 

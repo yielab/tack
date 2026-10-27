@@ -207,6 +207,9 @@ automation a template carries, and the removal of dollars per day.
   field, such as `options[0].label` or `fencing_token`, where a few mistakes were named only as `body`. The runner now
   sends an `x-request-id` it makes anew for every request; the board puts it in the error body's `request_id` (it was
   always `req_runner`), echoes it in its answer and logs it.
+- **A recovery observation is stored as the protocol's type.** The store takes a runner's recovery details as the
+  protocol's `RecoveryDetails` and encodes them itself, and the lease sweep writes `lease_expired` as a real journal
+  state of the protocol (`RecoveryJournalState::LeaseExpired`) instead of a code string dressed as one.
 - **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
   the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
   the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as

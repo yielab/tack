@@ -57,13 +57,13 @@ use tack_protocol::execution::{
     ArtifactGrant, ArtifactManifestRequest, ArtifactManifestResponse, ArtifactUpload, AttemptId,
     AttemptSnapshot, AttemptTransitionRequest, AttemptTransitionResponse, CancelObservation,
     CancellationObservationRequest, CancellationObservationResponse, ClaimGranted, ClaimIdle,
-    ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse,
-    DecisionAnswer, DecisionCreateRequest, DecisionCreateResponse, DecisionOption,
-    DecisionPollRequest, DecisionPollResponse, DecisionRecommendation, DecisionUpdate,
-    EmbeddedCapabilitySnapshot, EnrollmentRequest, EnrollmentResponse, EventBatchRequest,
-    EventBatchResponse, ExecutionRequestSnapshot, ExecutionState, FencingToken, HeartbeatRequest,
-    HeartbeatResponse, LeaseResult, ProtocolVersion, RecoveryObservationRequest,
-    RecoveryObservationResponse, RefreshRequest, RefreshResponse, RunnerId, StableErrorCode,
+    ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer,
+    DecisionCreateRequest, DecisionCreateResponse, DecisionOption, DecisionPollRequest,
+    DecisionPollResponse, DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot,
+    EnrollmentRequest, EnrollmentResponse, EventBatchRequest, EventBatchResponse,
+    ExecutionRequestSnapshot, ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse,
+    LeaseResult, ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse,
+    RefreshRequest, RefreshResponse, RunnerId, StableErrorCode,
 };
 use uuid::Uuid;
 
@@ -1207,8 +1207,14 @@ fn bounded_string_list(items: &[String]) -> runner_auth::ProtocolResult<()> {
 /// Optional per-option fields are bounded: text by `decision_prompt_bytes_max`, list length by
 /// `decision_options_max`.
 fn validate_decision_option_extras(option: &DecisionOption) -> runner_auth::ProtocolResult<()> {
-    option.description.iter().try_for_each(|text| bounded_text(text))?;
-    option.risks.iter().try_for_each(|risks| bounded_string_list(risks))
+    option
+        .description
+        .iter()
+        .try_for_each(|text| bounded_text(text))?;
+    option
+        .risks
+        .iter()
+        .try_for_each(|risks| bounded_string_list(risks))
 }
 
 /// `recommendation.option_id` must name one of the request's `options`.
@@ -1261,7 +1267,9 @@ pub async fn create_decision(
             LIMITS.decision_options_max,
         ));
     }
-    options.iter().try_for_each(validate_decision_option_extras)?;
+    options
+        .iter()
+        .try_for_each(validate_decision_option_extras)?;
     if let Some(recommendation) = &recommendation {
         validate_decision_recommendation(recommendation, &options)?;
     }
@@ -1891,8 +1899,8 @@ pub async fn observe_cancellation_report(
             "observation must be process_stopped",
         ));
     }
-    let details_json = serde_json::to_string(&details)
-        .map_err(|_| internal_error("Could not encode details"))?;
+    let details_json =
+        serde_json::to_string(&details).map_err(|_| internal_error("Could not encode details"))?;
     let observation_json = serde_json::to_string(&observation)
         .map_err(|_| internal_error("Could not encode observation"))?;
 
@@ -1914,9 +1922,7 @@ pub async fn observe_cancellation_report(
         .map_err(|_| internal_error("Could not record cancellation observation"))?;
 
     match result {
-        CancellationObservation::Cancelled(resp) => {
-            cancellation_json(attempt_id, resp, false)
-        }
+        CancellationObservation::Cancelled(resp) => cancellation_json(attempt_id, resp, false),
         CancellationObservation::Replayed(resp) => cancellation_json(attempt_id, resp, true),
         CancellationObservation::Conflict => Err(protocol_error(
             StatusCode::CONFLICT,
@@ -1972,9 +1978,6 @@ pub async fn observe_recovery(
             "fencing_token must be a non-negative integer",
         )
     })?;
-    let details_json = serde_json::to_string(&request.details)
-        .map_err(|_| internal_error("Could not encode details"))?;
-
     let observed = tack_app::runs::observe_recovery::observe_recovery(
         &state.repo,
         state.clock.now(),
@@ -1984,7 +1987,7 @@ pub async fn observe_recovery(
             fencing_token,
             recovery_key: &request.recovery_key,
             observation: request.observation,
-            details_json: &details_json,
+            details: &request.details,
         },
     )
     .await
@@ -2115,7 +2118,11 @@ mod tests {
 
     #[test]
     fn normalize_datetime_makes_z_and_offset_suffixes_comparable() {
-        let instant = |raw: &str| DateTime::parse_from_rfc3339(raw).unwrap().with_timezone(&Utc);
+        let instant = |raw: &str| {
+            DateTime::parse_from_rfc3339(raw)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
         let z = normalize_datetime(instant("2026-08-06T12:20:59Z"));
         let offset = normalize_datetime(instant("2026-08-06T12:20:59+00:00"));
         assert_eq!(z, offset);
@@ -2137,8 +2144,8 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body.0["error"]["code"], "invalid_request");
         assert_eq!(body.0["error"]["details"]["field"], "options[0].label");
-        let (_, body) = parse_message::<EnrollmentRequest>(json!({"protocol_version": 1}))
-            .unwrap_err();
+        let (_, body) =
+            parse_message::<EnrollmentRequest>(json!({"protocol_version": 1})).unwrap_err();
         assert_eq!(body.0["error"]["details"]["field"], "enrollment_token");
         let (_, body) = parse_message::<DecisionPollRequest>(json!({
             "protocol_version": 1,
