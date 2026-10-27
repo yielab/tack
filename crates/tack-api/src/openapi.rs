@@ -51,7 +51,7 @@ use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig,
 use crate::handlers;
 
 /// Structured error envelope returned by every failing endpoint — see
-/// `crate::error::ApiError`. The body is always `{ "error": { status, message } }`.
+/// `crate::error::ApiError`. The body is always `{ "error": { status, message, code } }`.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorEnvelope {
     pub error: ErrorBody,
@@ -65,11 +65,9 @@ pub struct ErrorBody {
     /// Human-readable, end-user-facing message.
     #[schema(example = "Item not found")]
     pub message: String,
-    /// Stable, machine-readable error code. Present on a narrow set of
-    /// responses where a caller needs to branch on *why* without parsing
-    /// `message`. Absent on ordinary errors.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
+    /// Stable, machine-readable error code, on every error: a caller branches on *why* with it,
+    /// never by parsing `message`. The code decides `status`.
+    pub code: tack_protocol::execution::StableErrorCode,
 }
 
 /// Pagination envelope for the item-list endpoint. `total` is the
@@ -137,7 +135,7 @@ fn json_content() -> utoipa::openapi::Content {
 /// Every operation this is used by (`RunnerProtocolApiDoc`'s
 /// runner-protocol-v1 exchanges, plus `ExecutionOperatorExtrasApiDoc` below)
 /// returns `tack_protocol::execution::ProtocolErrorEnvelope` on failure — never
-/// `ErrorEnvelope`, the ordinary `{status, message, code?}` shape
+/// `ErrorEnvelope`, the ordinary `{status, message, code}` shape
 /// `crate::error::ApiError` maps every plain `/api` handler's failure to.
 /// `RunnerV1ErrorEnvelope`
 /// (`handlers::executions`) already exists as the correct, doc-only mirror

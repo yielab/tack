@@ -3954,11 +3954,10 @@ export interface components {
         };
         ErrorBody: {
             /**
-             * @description Stable, machine-readable error code. Present on a narrow set of
-             *     responses where a caller needs to branch on *why* without parsing
-             *     `message`. Absent on ordinary errors.
+             * @description Stable, machine-readable error code, on every error: a caller branches on *why* with it,
+             *     never by parsing `message`. The code decides `status`.
              */
-            code?: string | null;
+            code: components["schemas"]["StableErrorCode"];
             /**
              * @description Human-readable, end-user-facing message.
              * @example Item not found
@@ -3973,7 +3972,7 @@ export interface components {
         };
         /**
          * @description Structured error envelope returned by every failing endpoint — see
-         *     `crate::error::ApiError`. The body is always `{ "error": { status, message } }`.
+         *     `crate::error::ApiError`. The body is always `{ "error": { status, message, code } }`.
          */
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
@@ -5002,6 +5001,15 @@ export interface components {
         };
         /** @enum {string} */
         SprintStatus: "planning" | "active" | "review" | "closed";
+        /**
+         * @description Stable error codes: the only values a client may branch on; error text and `details` remain
+         *     display and diagnostic data. The first fifteen are the runner-v1 contract
+         *     (`docs/contracts/runner-v1/errors/*.json`); the rest are the operator API's own, which the
+         *     runner routes never answer: one per rule the board enforces and one per failure of the HTTP
+         *     layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
+         * @enum {string}
+         */
+        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty";
         /** @enum {string} */
         StatusCategory: "todo" | "in_progress" | "done";
         StatusDef: {
@@ -5676,6 +5684,15 @@ export interface operations {
             };
             /** @description Not configured, or restore would lose newer work */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The archive or its manifest cannot be read (`unreadable_archive`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

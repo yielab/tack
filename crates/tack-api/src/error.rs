@@ -6,6 +6,7 @@ use tracing::error;
 use tack_core::CoreError;
 use tack_db::StoreError;
 use tack_db::repo::dependencies::DependencyError;
+use tack_protocol::execution::StableErrorCode;
 
 /// Unified API error type that maps to HTTP status codes.
 #[derive(Debug, thiserror::Error)]
@@ -44,6 +45,14 @@ pub enum ApiError {
     #[error("{0}")]
     UnreadableArchive(String),
 
+    /// A failure of a use case that keeps the code it was raised with: an invalid lifecycle
+    /// transition, a stale lease, a run that was refused.
+    #[error("{message}")]
+    Coded {
+        code: StableErrorCode,
+        message: String,
+    },
+
     /// One section of a project file could not be written. `kept` says
     /// whether what the file wrote before it stays (an existing project) or
     /// went with the project (a new one).
@@ -68,97 +77,88 @@ pub enum ApiError {
     Dependency(#[from] DependencyError),
 }
 
+impl ApiError {
+    /// The code every answer of this error carries in its body; its
+    /// [`StableErrorCode::status`] is the HTTP status. A variant that names a kind of failure
+    /// has the code of that kind, a rule of the core has its own, and [`ApiError::Coded`] keeps
+    /// the one a use case raised.
+    pub fn code(&self) -> StableErrorCode {
+        match self {
+            ApiError::NotFound(_) => StableErrorCode::NotFound,
+            ApiError::BadRequest(_) => StableErrorCode::InvalidRequest,
+            ApiError::Unprocessable(_) => StableErrorCode::Unprocessable,
+            ApiError::Forbidden(_) => StableErrorCode::Forbidden,
+            ApiError::Conflict(_) => StableErrorCode::Conflict,
+            ApiError::MisdirectedHost(_) => StableErrorCode::MisdirectedHost,
+            ApiError::CrossSiteRequest(_) => StableErrorCode::CrossSiteRequest,
+            ApiError::UnsupportedMediaType(_) => StableErrorCode::UnsupportedMediaType,
+            ApiError::UnreadableArchive(_) => StableErrorCode::UnreadableArchive,
+            ApiError::Coded { code, .. } => *code,
+            ApiError::SectionFailed { .. } => StableErrorCode::SectionFailed,
+            ApiError::Internal(_) => StableErrorCode::InternalError,
+            ApiError::Store(failure) => failure.code(),
+            ApiError::Core(rule) => rule.code(),
+            ApiError::Dependency(DependencyError::Core(rule)) => rule.code(),
+            ApiError::Dependency(DependencyError::Db(_)) => StableErrorCode::InternalError,
+        }
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            ApiError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            ApiError::Unprocessable(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
-            ApiError::Forbidden(msg) => (StatusCode::FORBIDDEN, msg.clone()),
-            ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
-            ApiError::MisdirectedHost(msg) => (StatusCode::MISDIRECTED_REQUEST, msg.clone()),
-            ApiError::CrossSiteRequest(msg) => (StatusCode::FORBIDDEN, msg.clone()),
-            ApiError::UnsupportedMediaType(msg) => {
-                (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg.clone())
+        let code = self.code();
+        let message = match &self {
+            ApiError::NotFound(msg)
+            | ApiError::BadRequest(msg)
+            | ApiError::Unprocessable(msg)
+            | ApiError::Forbidden(msg)
+            | ApiError::Conflict(msg)
+            | ApiError::MisdirectedHost(msg)
+            | ApiError::CrossSiteRequest(msg)
+            | ApiError::UnsupportedMediaType(msg)
+            | ApiError::UnreadableArchive(msg)
+            | ApiError::Coded { message: msg, .. } => msg.clone(),
+            ApiError::Core(err) => err.to_string(),
+            ApiError::Dependency(err @ DependencyError::Core(_)) => err.to_string(),
+            ApiError::Dependency(err @ DependencyError::Db(_)) => {
+                error!(error = %err, "Database error in dependency operation");
+                "Internal server error".into()
             }
-            ApiError::UnreadableArchive(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
-            ApiError::Core(err) => match err {
-                CoreError::ItemNotFound(_)
-                | CoreError::ProjectNotFound(_)
-                | CoreError::SprintNotFound(_)
-                | CoreError::RoleNotFound(_) => (StatusCode::NOT_FOUND, err.to_string()),
-                CoreError::InvalidTransition { .. }
-                | CoreError::WipLimitExceeded { .. }
-                | CoreError::DependencyCycle(_)
-                | CoreError::DuplicateDependency { .. }
-                | CoreError::InvalidVocabularyKey(_)
-                | CoreError::EmptyWorkflow
-                | CoreError::HasChildren(_, _)
-                | CoreError::Validation(_)
-                | CoreError::InvalidWorkflow(_) => (StatusCode::BAD_REQUEST, err.to_string()),
-            },
-            ApiError::Dependency(err) => match err {
-                DependencyError::Core(_) => (StatusCode::BAD_REQUEST, err.to_string()),
-                DependencyError::Db(_) => {
-                    error!(error = %err, "Database error in dependency operation");
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Internal server error".into(),
-                    )
-                }
-            },
             ApiError::SectionFailed {
                 section,
                 kept,
                 source,
             } => {
                 error!(error = %source, section, "A project file section could not be written");
-                let message = if *kept {
+                if *kept {
                     format!(
                         "The {section} section could not be written. What the file wrote before \
                          it stays, so importing it again finishes the job."
                     )
                 } else {
                     format!("The {section} section could not be written, so nothing was created.")
-                };
-                (StatusCode::INTERNAL_SERVER_ERROR, message)
-            }
-            ApiError::Store(err) => match err {
-                StoreError::NotFound { .. } => (StatusCode::NOT_FOUND, err.to_string()),
-                StoreError::Conflict(_) => (StatusCode::CONFLICT, err.to_string()),
-                StoreError::Sql(_) | StoreError::Corrupt { .. } => {
-                    log_store_failure(err);
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Internal server error".into(),
-                    )
                 }
-            },
+            }
+            ApiError::Store(err @ (StoreError::NotFound { .. } | StoreError::Conflict(_))) => {
+                err.to_string()
+            }
+            ApiError::Store(err) => {
+                log_store_failure(err);
+                "Internal server error".into()
+            }
             ApiError::Internal(err) => {
                 error!(error = %err, "Internal error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal server error".into(),
-                )
+                "Internal server error".into()
             }
         };
 
-        let code = match &self {
-            ApiError::MisdirectedHost(_) => Some("misdirected_host"),
-            ApiError::CrossSiteRequest(_) => Some("cross_site_request"),
-            ApiError::UnsupportedMediaType(_) => Some("unsupported_media_type"),
-            ApiError::UnreadableArchive(_) => Some("unreadable_archive"),
-            _ => None,
-        };
-        let mut error_body = json!({
+        let status =
+            StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let body = json!({ "error": {
             "status": status.as_u16(),
             "message": message,
-        });
-        if let Some(code) = code {
-            error_body["code"] = json!(code);
-        }
-
-        let body = json!({ "error": error_body });
+            "code": code,
+        } });
 
         (status, axum::Json(body)).into_response()
     }
@@ -210,10 +210,14 @@ impl From<tack_app::AppError> for ApiError {
         match error {
             error @ AppError::NotFound => ApiError::NotFound(error.to_string()),
             AppError::Conflict(message) => ApiError::Conflict(message),
-            error @ AppError::InvalidTransition { .. } => ApiError::BadRequest(error.to_string()),
-            error @ AppError::StaleLease { .. } => ApiError::Conflict(error.to_string()),
             AppError::Store(error) => ApiError::Store(error),
             AppError::Core(error) => ApiError::Core(error),
+            error @ (AppError::InvalidTransition { .. }
+            | AppError::StaleLease { .. }
+            | AppError::Refused(_)) => ApiError::Coded {
+                code: error.code(),
+                message: error.to_string(),
+            },
         }
     }
 }
@@ -225,11 +229,15 @@ mod tests {
     use super::*;
     use axum::body::to_bytes;
 
-    async fn message_of(error: ApiError) -> (StatusCode, String) {
+    async fn body_of(error: ApiError) -> (StatusCode, serde_json::Value) {
         let response = error.into_response();
         let status = response.status();
         let bytes = to_bytes(response.into_body(), 1 << 16).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    async fn message_of(error: ApiError) -> (StatusCode, String) {
+        let (status, body) = body_of(error).await;
         (
             status,
             body["error"]["message"].as_str().unwrap().to_string(),
@@ -297,7 +305,7 @@ mod tests {
                 to: "b".into()
             })
             .await,
-            StatusCode::BAD_REQUEST
+            StatusCode::CONFLICT
         );
         assert_eq!(
             status_of(AppError::StaleLease {
@@ -307,5 +315,96 @@ mod tests {
             .await,
             StatusCode::CONFLICT
         );
+    }
+
+    #[tokio::test]
+    async fn every_error_body_has_a_code_and_the_code_decides_the_status() {
+        use tack_app::AppError;
+        use uuid::Uuid;
+        let cases: Vec<(ApiError, &str, StatusCode)> = vec![
+            (
+                ApiError::NotFound("x".into()),
+                "not_found",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                ApiError::BadRequest("x".into()),
+                "invalid_request",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                ApiError::Unprocessable("x".into()),
+                "unprocessable",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                ApiError::Forbidden("x".into()),
+                "forbidden",
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                ApiError::Conflict("x".into()),
+                "conflict",
+                StatusCode::CONFLICT,
+            ),
+            (
+                ApiError::MisdirectedHost("x".into()),
+                "misdirected_host",
+                StatusCode::MISDIRECTED_REQUEST,
+            ),
+            (
+                ApiError::Internal(anyhow::anyhow!("x")),
+                "internal_error",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            (
+                StoreError::not_found("item").into(),
+                "not_found",
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                CoreError::WipLimitExceeded {
+                    column: "doing".into(),
+                    limit: 1,
+                    current: 1,
+                }
+                .into(),
+                "wip_limit_exceeded",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                CoreError::DependencyCycle(Uuid::nil()).into(),
+                "dependency_cycle",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                CoreError::InvalidTransition {
+                    from: "a".into(),
+                    to: "b".into(),
+                }
+                .into(),
+                "invalid_status_transition",
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                AppError::StaleLease {
+                    attempt_id: "att".into(),
+                    fence: 1,
+                }
+                .into(),
+                "stale_lease",
+                StatusCode::CONFLICT,
+            ),
+        ];
+        for (error, code, status) in cases {
+            let label = error.to_string();
+            let (got, body) = body_of(error).await;
+            assert_eq!(
+                (got, body["error"]["code"].as_str()),
+                (status, Some(code)),
+                "{label}"
+            );
+            assert_eq!(body["error"]["status"], status.as_u16(), "{label}");
+        }
     }
 }

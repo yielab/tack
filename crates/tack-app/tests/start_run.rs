@@ -76,7 +76,7 @@ async fn a_key_reused_with_a_different_request_is_an_idempotency_conflict() {
     let mut changed = full_request(board.item_id);
     changed.timeout_seconds = Some(61);
     let refusal = start(&board, changed).await.unwrap_err();
-    assert_eq!(refusal.status, 409);
+    assert_eq!(refusal.status(), 409);
     assert_eq!(refusal.code, StableErrorCode::IdempotencyConflict);
     assert_eq!(refusal.details, json!({"idempotency_key": "same-key"}));
 }
@@ -97,8 +97,8 @@ async fn a_revoked_runner_still_replays_but_takes_no_new_run() {
     let mut fresh = full_request(board.item_id);
     fresh.idempotency_key = "new-key".into();
     let refusal = start(&board, fresh).await.unwrap_err();
-    assert_eq!(refusal.status, 409);
-    assert_eq!(refusal.code, StableErrorCode::RunnerRevoked);
+    assert_eq!(refusal.status(), 409);
+    assert_eq!(refusal.code, StableErrorCode::MachineRevoked);
 }
 
 #[tokio::test]
@@ -274,7 +274,7 @@ async fn a_token_limit_that_is_not_a_positive_whole_number_is_refused() {
         request.agent_profile_id = Some("profile-c1".into());
         request.budgets = json!({"tokens": refused});
         let refusal = start(&board, request).await.unwrap_err();
-        assert_eq!(refusal.status, 400, "{refused}");
+        assert_eq!(refusal.status(), 400, "{refused}");
         assert_eq!(refusal.details["field"], "budgets.tokens");
     }
 }
@@ -286,7 +286,7 @@ async fn dollars_are_not_a_limit() {
     request.agent_profile_id = Some("profile-c1".into());
     request.budgets = json!({"cost_usd": 1.5});
     let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.details["field"], "budgets.cost_usd");
     assert_eq!(refusal.details["reason"], "field_removed");
 }
@@ -301,7 +301,7 @@ async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
     add_runner(&board.repo, "runner-second").await;
     request.idempotency_key = "k-two-runners".into();
     let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.details["reason"], "select_where_this_runs");
 }
 
@@ -342,7 +342,7 @@ async fn a_run_without_an_agent_takes_the_profiles_then_the_projects_then_asks()
     // Nothing names an agent: asked to select one.
     request.agent_profile_id = Some("profile-c1".into());
     let refusal = start(&board, request.clone()).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.details["reason"], "select_an_agent");
 
     // The project's default agent.
@@ -391,7 +391,7 @@ async fn the_repository_comes_from_the_project_when_omitted() {
     )
     .await;
     let refusal = start(&board, request.clone()).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.code, StableErrorCode::InvalidRequest);
     assert_eq!(refusal.details["reason"], "project_has_no_code");
 
@@ -470,7 +470,7 @@ async fn a_request_with_a_different_repository_is_refused() {
         json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null}),
     );
     let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.code, StableErrorCode::InvalidRequest);
     assert_eq!(refusal.details["field"], "repository_snapshot");
     assert_eq!(refusal.details["reason"], "repository_differs_from_project");
@@ -482,7 +482,7 @@ async fn a_request_that_still_carries_the_profile_snapshot_is_refused() {
     let mut request = full_request(board.item_id);
     request.agent_profile_snapshot = Some(Value::Null);
     let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.details["field"], "agent_profile_snapshot");
     assert_eq!(refusal.details["reason"], "field_removed");
 }
@@ -493,13 +493,13 @@ async fn an_unknown_profile_is_not_found_and_an_unknown_item_too() {
     let mut request = full_request(board.item_id);
     request.agent_profile_id = Some("missing".into());
     let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status, 404);
+    assert_eq!(refusal.status(), 404);
     assert_eq!(refusal.details["reason"], "agent_profile_not_found");
 
     let refusal = start(&board, full_request(uuid::Uuid::new_v4()))
         .await
         .unwrap_err();
-    assert_eq!(refusal.status, 404);
+    assert_eq!(refusal.status(), 404);
     assert_eq!(refusal.details, json!({"resource": "item"}));
 }
 
@@ -532,7 +532,7 @@ async fn a_level_is_refused_for_an_agent_other_than_docket() {
     let mut request = full_request(board.item_id);
     request.autonomy = Some(AutonomyLevel::L3);
     let refusal = start(&board, request).await.unwrap_err();
-    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.status(), 400);
     assert_eq!(refusal.code, StableErrorCode::InvalidRequest);
     assert_eq!(refusal.message, "A level applies only to a docket run");
     assert_eq!(refusal.details["field"], "autonomy");
@@ -571,7 +571,7 @@ fn a_request_body_names_a_runner_or_a_fleet_or_nothing() {
         (None, Some("x")),
     ] {
         let refusal = selector_from(kind.map(Into::into), id.map(Into::into)).unwrap_err();
-        assert_eq!(refusal.status, 400);
+        assert_eq!(refusal.status(), 400);
         assert_eq!(refusal.details["field"], "selector_kind");
     }
     assert_eq!(

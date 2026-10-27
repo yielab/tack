@@ -336,7 +336,7 @@ One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, 
 
 ### `AppError`
 
-`NotFound`, `Conflict`, `InvalidTransition` and `StaleLease` are raised by a use case where it checks the rule; `Store(StoreError)` and `Core(CoreError)` come from the layers below through `?`. `AppError::code()` is the runner-v1 error code the failure carries on the wire. `tack-api` turns it into an `ApiError`.
+`NotFound`, `Conflict`, `InvalidTransition`, `StaleLease` and `Refused(Refusal)` (a run that was not started, with its code and structured details) are raised by a use case where it checks the rule; `Store(StoreError)` and `Core(CoreError)` come from the layers below through `?`. `AppError::code()` is the `StableErrorCode` the failure carries on the wire, and `StableErrorCode::status()` is the HTTP status of every answer with that code: one table in `tack-protocol`. `tack-api` turns it into an `ApiError` and keeps the code.
 
 ### Ticks
 
@@ -457,24 +457,27 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 
 ### `error.rs`
 
-`ApiError` is the unified error type for all handlers. It implements `IntoResponse` with this mapping:
+`ApiError` is the unified error type for all handlers. Every variant has a `code()`, a `StableErrorCode`, and the code decides the status (`StableErrorCode::status()`):
 
-| `ApiError` variant | HTTP status |
-|---|---|
-| `NotFound` | 404 |
-| `BadRequest` | 400 |
-| `Conflict` | 409 |
-| `SectionFailed` | 500, with a message that names the project-file section and says whether what came before stayed |
-| `Core(CoreError::*NotFound*)` | 404 |
-| `Core(CoreError::InvalidTransition \| WipLimitExceeded \| …)` | 400 |
-| `UnreadableArchive` | 422, with the code `unreadable_archive` (a restore whose archive or manifest cannot be read) |
-| `Store(StoreError::NotFound { entity })` | 404, "`<entity>` not found" |
-| `Store(StoreError::Conflict)` | 409 |
-| `Store(StoreError::Corrupt { table, column })` | 500, logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" |
-| `Store(StoreError::Sql)` | 500 |
-| `Internal` | 500 |
+| `ApiError` variant | Code | HTTP status |
+|---|---|---|
+| `NotFound` | `not_found` | 404 |
+| `BadRequest` | `invalid_request` | 400 |
+| `Unprocessable` | `unprocessable` | 422 |
+| `Forbidden` | `forbidden` | 403 |
+| `Conflict` | `conflict` | 409 |
+| `MisdirectedHost`, `CrossSiteRequest`, `UnsupportedMediaType` | `misdirected_host`, `cross_site_request`, `unsupported_media_type` | 421, 403, 415 |
+| `UnreadableArchive` | `unreadable_archive` (a restore whose archive or manifest cannot be read) | 422 |
+| `SectionFailed` | `section_failed`, with a message that names the project-file section and says whether what came before stayed | 500 |
+| `Coded { code, message }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
+| `Core(CoreError::*NotFound*)` | `not_found` | 404 |
+| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `validation_failed` (`CoreError::code()`) | 400 |
+| `Store(StoreError::NotFound { entity })` | `not_found`, "`<entity>` not found" | 404 |
+| `Store(StoreError::Conflict)` | `conflict` | 409 |
+| `Store(StoreError::Corrupt { table, column })` | `internal_error`; logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" | 500 |
+| `Store(StoreError::Sql)`, `Internal` | `internal_error` | 500 |
 
-The response body is always `{ "error": { "status": <code>, "message": "<text>" } }`.
+The response body is always `{ "error": { "status": <status>, "message": "<text>", "code": "<code>" } }`; the OpenAPI schema documents `code` as the `StableErrorCode` enum. The runner-v1 routes and the execution routes answer the same codes in the contract's envelope instead (`request_id`, `retryable`, `details`). A client matches `code`; `message` is plain words for people.
 
 ---
 

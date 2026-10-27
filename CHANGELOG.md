@@ -26,6 +26,20 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **Every error body has a `code` a client can match on.** `StableErrorCode` is the one enum of
+  codes, and it knows its HTTP status (`status()`), so no handler names a status beside a code.
+  `AppError` carries a code, a refused run (`Refusal`) is one of its variants, and turning it into
+  an `ApiError` keeps the code, where it used to be dropped. Each rule of the core answers a code of
+  its own instead of the shared 400: `wip_limit_exceeded`, `invalid_status_transition`,
+  `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`,
+  `has_children`, `invalid_workflow` and `validation_failed`; the HTTP layer's failures
+  (`misdirected_host`, `cross_site_request`, `unsupported_media_type`, `unreadable_archive`,
+  `precondition_failed`, `section_failed`) and the plain kinds (`not_found`, `conflict`,
+  `internal_error`, ...) are in the same enum, and the OpenAPI error envelope documents `code` as
+  that enum. The frontend's list of codes is the generated type. One status moved to the
+  code's: a lifecycle transition the board refuses (`AppError::InvalidTransition`) is 409 like the
+  runner routes, not 400. A run sent to a revoked machine keeps its 409 under the new code
+  `machine_revoked` (`runner_revoked` is the runner's own credential, 403).
 - **The store says what is wrong with a stored value.** `StoreError` gains `Corrupt { table, column }`
   for a value that cannot be read back and `NotFound { entity }` for a row of a named kind that is
   not there; row mapping returns them instead of panicking on a corrupt row or inventing a default

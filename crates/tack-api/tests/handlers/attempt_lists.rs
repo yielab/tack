@@ -708,10 +708,7 @@ async fn the_start_report_reads_back_on_the_attempt() {
 /// refused with 400 and the field it got wrong, as the contract fixture and every runner say.
 #[tokio::test]
 async fn a_start_report_whose_names_are_not_strings_is_refused() {
-    for (label, names) in [
-        ("mixed", json!(["B", 7, null])),
-        ("not a list", json!("A")),
-    ] {
+    for (label, names) in [("mixed", json!(["B", 7, null])), ("not a list", json!("A"))] {
         let (app, _repo, item_id) = setup().await;
         let claimed = claim_as_runner(&app, &item_id, "start-report-types").await;
         let (status, refused, _) = common::send_with_raw(

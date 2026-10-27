@@ -1,5 +1,7 @@
 use std::error::Error;
 
+use tack_protocol::execution::StableErrorCode;
+
 /// What a store call can fail with. `NotFound` and `Conflict` are raised by the
 /// store itself, where the rows are read; a caller never guesses them from a
 /// `sqlx::Error`.
@@ -27,6 +29,17 @@ pub enum StoreError {
 }
 
 impl StoreError {
+    /// The code this failure is answered with: the store's own `NotFound` and `Conflict`, and
+    /// `internal_error` for what the caller cannot act on (the database's error, a value that
+    /// cannot be decoded).
+    pub fn code(&self) -> StableErrorCode {
+        match self {
+            StoreError::NotFound { .. } => StableErrorCode::NotFound,
+            StoreError::Conflict(_) => StableErrorCode::Conflict,
+            StoreError::Sql(_) | StoreError::Corrupt { .. } => StableErrorCode::InternalError,
+        }
+    }
+
     /// The row of kind `entity` the call named is not there.
     pub fn not_found(entity: &'static str) -> Self {
         StoreError::NotFound { entity }

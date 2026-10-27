@@ -11,6 +11,7 @@ use validator::Validate;
 
 use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
+use tack_protocol::execution::StableErrorCode;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
@@ -27,19 +28,14 @@ fn item_etag(id: Uuid, version: i64) -> String {
     format!("\"{id}-{version}\"")
 }
 
-/// A stale `If-Match` never becomes an [`ApiError`] — this
-/// hand-builds the exact `{"error": {"status", "message"}}` envelope
-/// `ApiError`'s `IntoResponse` impl produces, rather than adding a new
-/// variant to `error.rs`. A client that already parses that
-/// shape for every other 4xx from this API needs no special case for 412.
+/// A stale `If-Match` answers 412 with the same `{"error": {status, message, code}}` envelope
+/// every other failure of this API has.
 fn precondition_failed(message: String) -> Response {
-    let body = serde_json::json!({
-        "error": {
-            "status": StatusCode::PRECONDITION_FAILED.as_u16(),
-            "message": message,
-        }
-    });
-    (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+    ApiError::Coded {
+        code: StableErrorCode::PreconditionFailed,
+        message,
+    }
+    .into_response()
 }
 
 /// Converts a matching `If-Match` into the version guarded by the repository

@@ -749,7 +749,7 @@ async fn run_limits_of(
 /// A refusal of the run use cases, as the operator API's error envelope.
 pub(crate) fn refused(refusal: Refusal) -> (StatusCode, Json<Value>) {
     error(
-        StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        StatusCode::from_u16(refusal.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         refusal.code,
         &refusal.message,
         refusal.details,

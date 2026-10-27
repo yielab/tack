@@ -255,7 +255,7 @@ async fn a_create_answers_the_request_and_refuses_in_the_error_envelope() {
     let unavailable = create_body(&item_id).replace("same-key", "new-key");
     let (status, body) = snd(&app, "POST", "/executions", unavailable).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["error"]["code"], "runner_revoked");
+    assert_eq!(body["error"]["code"], "machine_revoked");
 }
 
 #[tokio::test]
