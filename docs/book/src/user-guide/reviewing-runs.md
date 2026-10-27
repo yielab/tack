@@ -38,7 +38,7 @@ automation badges; the state chip is on the board only.
 
 | Badge | Meaning |
 |---|---|
-| A state chip on the card header (Queued, Starting, Running, Asking you, Finished, Failed, Cancelled) | Where the latest run is. Press it to open the task's Execution tab |
+| A state chip on the card header (Queued, Starting, Running, Needs a person, Finished, Failed, Cancelled) | Where the latest run is. Press it to open the task's Execution tab |
 | **Needs your review** | The latest run left changes and nobody has accepted or rejected them |
 | **Waiting for CI to merge**, **Not merged: …** | Tack tried to merge the change and could not. Press the badge for the reason and what to do |
 | **Started by itself** | The project started the run, not a person |

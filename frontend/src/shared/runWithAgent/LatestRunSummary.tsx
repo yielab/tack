@@ -1,5 +1,5 @@
 import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, onMount } from 'solid-js';
-import { Badge, Button } from '../ui';
+import { Badge, Button, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
@@ -140,6 +140,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     if (u.models.length > 0) parts.push(u.models[0]);
     return parts.length > 0 ? parts.join(' · ') : null;
   };
+  // The agent stopped to ask a person, or ended because it needed one: one state, with the question one press away.
+  const asking = () => (attempt()?.state ?? latest()?.state) === 'waiting_decision';
+  const needsPerson = () => asking() || needsAPerson(attempt());
   const failedReason = () => (latest()?.state === 'failed' ? latest()?.waiting_reason || null : null);
   const waitingReason = () => (latest()?.state === 'queued' ? latest()?.waiting_reason || null : null);
 
@@ -178,14 +181,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const live = () => kind() === 'running' && attempt() !== undefined;
   const [events, { refetch }] = createResource(
     () => (live() ? { id: attempt()!.request_id, n: attempt()!.attempt_number } : undefined),
-    ({ id, n }) => attemptsApi.events(id, n).then((r) => r.data.data).catch(() => []),
+    ({ id, n }) => attemptsApi.events(id, n).then((r) => r.data.data),
   );
   createEffect(() => {
     if (!live()) return;
     const timer = setInterval(() => void refetch(), LIVE_RELOAD_MS);
     onCleanup(() => clearInterval(timer));
   });
-  const steps = () => lastSteps(events.latest ?? []);
+  // A failed reload keeps the steps already read and says so; it never empties them.
+  const eventsFailed = () => events.state === 'errored';
+  const steps = () => lastSteps(events.state === 'errored' ? [] : (events.latest ?? []));
 
   const [stopping, setStopping] = createSignal(false);
   const stop = async () => {
@@ -225,11 +230,20 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
         >
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Last run</span>
-            <Badge tone={status().tone}>{status().label}</Badge>
+            <span role="status" aria-live="polite" class="inline-flex">
+              <Badge tone={status().tone}>{status().label}</Badge>
+            </span>
             <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               {relativeTimeFromIso(attempt()?.ended_at ?? attempt()?.started_at ?? run().created_at)}
             </span>
           </div>
+
+          <Show when={attempts().status === 'error'}>
+            {(() => {
+              const a = attempts();
+              return a.status === 'error' ? <LoadError what="the run's attempts" error={a.error} onRetry={reload} /> : null;
+            })()}
+          </Show>
 
           <Show when={kind() === 'queued'}>
             <p data-testid="latest-run-waiting" class="text-sm" style={muted()}>
@@ -240,12 +254,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             </p>
           </Show>
 
+          <Show when={kind() === 'running' && eventsFailed()}>
+            <LoadError what="the agent's last steps" error={events.error} onRetry={() => void refetch()} />
+          </Show>
+
           <Show when={kind() === 'running'}>
             <Show
               when={steps().length > 0}
               fallback={
                 <p class="text-sm" style={muted()}>
-                  {(attempt()?.state ?? run().state) === 'waiting_decision'
+                  {asking()
                     ? 'The agent is waiting for your answer.'
                     : 'The agent is working on it.'}
                 </p>
@@ -263,7 +281,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               fallback={<p class="text-sm" style={muted()}>The run did not finish.</p>}
             >
               {(why) => (
-                <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+                <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: needsAPerson(attempt()) ? 'var(--color-text-primary)' : 'var(--color-danger-600)' }}>
                   {why()}
                 </p>
               )}
@@ -331,7 +349,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
           <div class="flex flex-wrap items-center gap-2 pt-1">
             <Show when={kind() === 'running'}>
-              {open('Follow live')}
+              {open(asking() ? 'Open the question' : 'Follow live')}
               <Button size="sm" variant="secondary" disabled={stopping() || stopRequested()} loading={stopping()} onClick={() => void stop()}>
                 {stopRequested() ? 'Stopping…' : 'Stop'}
               </Button>
@@ -372,7 +390,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               />
             </Show>
             <Show when={kind() === 'review' || kind() === 'merged' || kind() === 'done' || kind() === 'failed'}>
-              {open('See what it did')}
+              {open(needsPerson() ? 'Open the question' : 'See what it did')}
             </Show>
           </div>
 

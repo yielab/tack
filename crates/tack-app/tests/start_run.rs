@@ -501,3 +501,22 @@ async fn the_principal_scopes_the_idempotency_key_and_names_the_creator() {
         json!({"source": "operator_api", "subject_id": OPERATOR})
     );
 }
+
+#[tokio::test]
+async fn a_level_is_refused_for_an_agent_other_than_docket() {
+    let board = board().await;
+    let mut request = full_request(board.item_id);
+    request.autonomy = Some("L3".into());
+    let refusal = start(&board, request).await.unwrap_err();
+    assert_eq!(refusal.status, 400);
+    assert_eq!(refusal.code, StableErrorCode::InvalidRequest);
+    assert_eq!(refusal.message, "A level applies only to a docket run");
+    assert_eq!(refusal.details["field"], "autonomy");
+
+    let mut request = full_request(board.item_id);
+    request.requested_harness_kind = Some("docket".into());
+    request.autonomy = Some("L3".into());
+    let started = start(&board, request).await.unwrap();
+    let stored = snapshot(&board.repo, &started).await;
+    assert_eq!(stored["autonomy"], "L3");
+}

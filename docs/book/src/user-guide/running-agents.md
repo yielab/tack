@@ -270,8 +270,16 @@ twice the old one. Change it or press **Run**.
 A docket run that ended because the agent needed a person shows "Needs a person" and the agent's own
 sentence, and offers **Run again at L3**: the same task, run attended from the start, started only when you
 press it. The button is disabled, with its reason, when the run did not use docket or already ran at L3.
-Whether the team may run attended or alone is docket's own decision, not the project's merge level; if docket
+A sentence beside it says what L3 means: you approve each step that needs it, and you merge every change
+yourself. The same sentence is in the dialog, where the other agents are disabled with "A level applies only
+to a docket run", because only docket takes a level. Where Tack merged a change by itself, the run says what
+its level, L4 or L5, allows: L4 merges by itself inside the domains you named, L5 anywhere in the repository once
+its checks pass. Whether the team may run attended or alone is docket's own decision, not the project's merge level; if docket
 refuses the level, the run fails with docket's sentence.
+
+From the moment a docket run stops to ask, and after one ended asking, the run shows the same state, **Needs a
+person**, in the same colour, and **Open the question** on the card and on the attempt goes to the question. A
+screen reader is told when a run changes state.
 
 Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 
@@ -279,7 +287,8 @@ Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (
 
 The run's **Timeline** (under **What the agent did** on the task's Execution tab) fills as the agent
 works: each call to the model with its tokens, each tool it ran (a shell command is shown as the command),
-and each call it was refused. It refreshes every couple of seconds until the run ends. Only docket reports
+and each call it was refused, and each question docket opened, who answered it, whether it expired and whether
+docket's own policy settled it. It refreshes every couple of seconds until the run ends. Only docket reports
 its steps while it works. With Claude Code, Codex and opencode the timeline holds the run's events (a
 question, a failure, the end) and the run's log has the rest once it ends.
 

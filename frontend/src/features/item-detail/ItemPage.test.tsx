@@ -162,4 +162,42 @@ describe('ItemPage', () => {
     expect(container.querySelector('[data-testid="execution-side"] [data-testid="attempt-ids"]')).not.toBeNull();
     dispose();
   });
+  it('?run= opens the Execution tab on that run, and picking a chip writes the run into the address', async () => {
+    const runs = [
+      { request_id: 'req-old', item_id: ITEM.id, state: 'failed', cancellation_requested_at: null, created_at: '2026-10-08T12:00:00Z' },
+      { request_id: 'req-new', item_id: ITEM.id, state: 'queued', cancellation_requested_at: null, created_at: '2026-10-09T12:00:00Z' },
+    ];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      let body: unknown;
+      if (url.includes('/attempts') || url.includes('/events') || url.includes('/artifacts')) body = { protocol_version: 1, data: [] };
+      else if (url.includes('/executions')) body = { protocol_version: 1, data: runs };
+      else body = jsonOf(url);
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json', ETag: '"1"' } }));
+    });
+    const history = createMemoryHistory();
+    history.set({ value: `/projects/p1/items/${ITEM.id}?tab=execution&run=req-old` });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(
+      () => (
+        <ExecutionStoreProvider>
+          <ProjectContext.Provider value={projectValue}>
+            <MemoryRouter history={history}>
+              <Route path="/projects/:id/items/:itemId" component={ItemPage} />
+            </MemoryRouter>
+          </ProjectContext.Provider>
+        </ExecutionStoreProvider>
+      ),
+      container,
+    );
+    for (let i = 0; i < 8; i++) await flush();
+    expect(container.querySelector('[data-testid="run"]')?.textContent).toContain('req-old');
+    const chips = [...container.querySelectorAll<HTMLButtonElement>('[data-testid="run-chip"]')];
+    chips.find((b) => b.textContent?.startsWith('Run 2'))!.click();
+    await flush();
+    expect(history.get()).toContain('run=req-new');
+    expect(history.get()).toContain('tab=execution');
+    dispose();
+  });
 });

@@ -192,6 +192,25 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **A level can only reach docket, and a run is a link.** `POST /api/executions` refuses an `autonomy` for any
+  agent but docket with `400` "A level applies only to a docket run", where the level used to be kept and then
+  dropped in silence. The dialog "Run again at L3" opens keeps docket and shows the other agents disabled with
+  that reason, and the run it starts is the one the tab shows. `?tab=execution&run=<id>` opens the Execution tab
+  on a given run, and picking a chip writes it into the address.
+- **A run that needs a person is one state.** "Needs a person" is the same word and the same colour while the
+  agent waits for an answer ("Asking you" is gone) and after it ended asking for one; it never shows the code
+  `needs_human`, and the card and the attempt both have **Open the question**. State changes of a run are
+  announced politely to a screen reader.
+- **The timeline reads in words.** The steps docket takes and every question it opens, has answered, lets
+  expire, settles alone or cannot put to a person have a label of their own, and a refused task, an answer docket
+  did not take and a question Tack cannot put to a person are drawn in the failure colour.
+- **A level says what it allows.** Wherever L3, L4 or L5 stands beside a run (the "Run again at L3" button, the
+  attended run's note, "Merged by Tack (L4, …)"), a sentence says what it means.
+- **The run surface says when it cannot load.** The run's events, attempts, files, questions, merge-readiness
+  pack, what the agent read, and the Run dialog's profiles, computers and groups say what could not load with
+  "Try again", instead of an empty list; the Run dialog cannot start a run meanwhile. The decision token's hint
+  no longer names an environment variable or a file; it links to the Administrator Guide.
+
 - **A screen that cannot load says so, with "Try again".** A failed load is no longer shown as "nothing
   here": the Automation ladder, the folder check, the runners and profiles, the roles, a task's Automation
   row, a profile's run history, the Timeline's blocked marks and a project's items each say what could not

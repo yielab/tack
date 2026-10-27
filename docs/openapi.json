@@ -8981,7 +8981,7 @@
               "string",
               "null"
             ],
-            "description": "The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.\nAbsent, docket decides from the team's profile; the project's level is never sent. `L3` is\n\"Run again at L3\". Any other value is `invalid_request`."
+            "description": "The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.\nAbsent, docket decides from the team's profile; the project's level is never sent. `L3` is\n\"Run again at L3\". Any other value, or a level for an agent other than docket, is\n`invalid_request`."
           },
           "budgets": {
             "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`)."

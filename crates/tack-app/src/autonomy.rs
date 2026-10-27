@@ -175,7 +175,7 @@ fn ceiling_of(
 }
 
 /// What the harness a request asked for is called when it is docket's.
-const DOCKET: &str = "docket";
+pub(crate) const DOCKET: &str = "docket";
 
 /// The level a run was asked to run at, when a person asked for one ("Run again at L3").
 fn requested_level(snapshot: &Value) -> Option<Level> {

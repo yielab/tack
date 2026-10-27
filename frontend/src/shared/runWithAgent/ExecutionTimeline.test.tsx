@@ -95,7 +95,7 @@ function mockFetch(): typeof fetch {
   }) as typeof fetch;
 }
 
-function mount(itemId = 'item-1', extra: { itemTitle?: string; projectId?: string; layout?: 'drawer' | 'page' } = {}) {
+function mount(itemId = 'item-1', extra: { itemTitle?: string; projectId?: string; layout?: 'drawer' | 'page'; runId?: string; onRunChange?: (id: string | undefined) => void } = {}) {
   cancelCalls = [];
   requeueBody = undefined;
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch());
@@ -146,6 +146,19 @@ describe('ExecutionTimeline', () => {
     expect(c.querySelector('[data-testid="run-chip"][aria-pressed="true"]')?.textContent).toContain('Run 4');
     expect((await pick(c, 'Run 1')).textContent).toContain('Running');
     expect((await pick(c, 'Run 3')).textContent).toContain('Needs operator');
+  });
+
+  it('a run is linked to: the run the address names is shown, a chip reports the run it picks, and its state is announced politely', async () => {
+    const picked: Array<string | undefined> = [];
+    const c = mount('item-1', { runId: 'req-running', onRunChange: (id) => picked.push(id) });
+    for (let i = 0; i < 4; i++) await flush();
+    expect(shownRun(c).textContent).toContain('req-running');
+    expect(c.querySelector('[data-testid="run-chip"][aria-pressed="true"]')?.textContent).toContain('Run 1');
+    const status = shownRun(c).querySelector('[role="status"]')!;
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent).toContain('Running');
+    await pick(c, 'Run 3');
+    expect(picked).toEqual(['req-needs-operator']);
   });
 
   it('an item with one run shows no chips, and Run again is offered', async () => {

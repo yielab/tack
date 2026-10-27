@@ -3597,7 +3597,8 @@ export interface components {
             /**
              * @description The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.
              *     Absent, docket decides from the team's profile; the project's level is never sent. `L3` is
-             *     "Run again at L3". Any other value is `invalid_request`.
+             *     "Run again at L3". Any other value, or a level for an agent other than docket, is
+             *     `invalid_request`.
              */
             autonomy?: string | null;
             /**

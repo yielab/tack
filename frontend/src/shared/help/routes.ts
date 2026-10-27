@@ -12,6 +12,7 @@ export const BOOK = {
   enrolling: `${BOOK_BASE}admin-guide/runners.html#redeeming-the-token-on-the-runner`,
   runnerSettings: `${BOOK_BASE}admin-guide/runners.html#standalone-mode-tack-serve---with-runner`,
   verifier: `${BOOK_BASE}admin-guide/runners.html#after-a-succeeded-attempt`,
+  decisionToken: `${BOOK_BASE}admin-guide/administration.html#authentication`,
   importFiles: `${BOOK_BASE}user-guide/import-export.html#the-project-file`,
 };
 

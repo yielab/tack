@@ -171,7 +171,8 @@ drawer and in the side column of the item's page, takes the colour and the butto
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
 On the tab, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest first, each with a dot in
-the colour of its state, and the latest is shown until you pick another. **Run again** starts a new
+the colour of its state, and the latest is shown until you pick another. The address names the run you picked (`?tab=execution&run=…` on the item's own page), so a run can be
+linked to and opened again. **Run again** starts a new
 run of the same task. A run that had several attempts has a second row of chips for them. The tab
 shows only the run you picked, in this order:
 
