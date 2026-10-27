@@ -1,6 +1,7 @@
 pub mod config;
 pub mod debug;
 pub mod error;
+pub mod extract;
 // Execution-domain retention sweep + health watch runtime wiring — see the
 // module's own doc comment.
 pub mod execution_runtime;
@@ -11,6 +12,7 @@ pub mod openapi;
 pub mod prill;
 pub mod prill_store;
 pub mod rate_card;
+pub mod request_id;
 pub mod router;
 pub mod server;
 pub mod webhook;

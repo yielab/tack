@@ -49,6 +49,8 @@ mod operator_read_routes;
 mod outline;
 #[path = "handlers/production_router.rs"]
 mod production_router;
+#[path = "handlers/rejections.rs"]
+mod rejections;
 #[path = "handlers/remote_backup.rs"]
 mod remote_backup;
 #[path = "handlers/rework.rs"]

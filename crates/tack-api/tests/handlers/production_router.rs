@@ -954,18 +954,15 @@ async fn runner_v1_router_enforces_configured_body_limit() {
             "{name}: {}",
             String::from_utf8_lossy(&body_bytes)
         );
-        // Genuine layer-level rejection, not merely a handler-level error:
-        // every error this handler itself produces (including its own
-        // `payload_too_large` for `json_body_bytes_max`) is a JSON envelope
-        // with an `error` object and a `request_id`
-        // (`runner_auth::protocol_error`). Axum's own body-extraction
-        // rejection is not that shape at all, proving the handler — and
-        // therefore `runner_auth::authenticate` — never ran.
-        let as_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
+        // The body extractor's rejection, not a handler-level error: the handler's own
+        // `payload_too_large` (for `json_body_bytes_max`) names the `limit` it enforced in
+        // `details`, and the extractor's does not. The state checks below are the direct proof
+        // that the handler body, and so `runner_auth::authenticate`, never ran.
+        let as_value: Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(as_value["error"]["code"], "payload_too_large", "{name}");
         assert!(
-            as_value.as_ref().and_then(|v| v.get("error")).is_none(),
-            "{name}: expected axum's own body-limit rejection, not the handler's JSON error envelope: {}",
-            String::from_utf8_lossy(&body_bytes)
+            as_value["error"]["details"].get("limit").is_none(),
+            "{name}: expected the body extractor's rejection, not the handler's: {as_value}"
         );
 
         // Wrote nothing: the request is still queued and no attempt/lease

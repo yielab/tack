@@ -5,12 +5,11 @@
 //! nothing behind. `?dry_run=true` runs every check and reports what would be
 //! created without writing.
 
+use crate::extract::{Json, Path, Query, RawBody};
 use std::collections::HashMap;
 use tack_protocol::{Clock, SystemClock};
 
-use axum::Json;
-use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::State;
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument};
@@ -173,7 +172,7 @@ pub async fn create_project_from_outline(
     State(state): State<AppState>,
     Query(query): Query<NewProjectOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_outline(&headers, &body)?;
     let project = new_project(&query, read.outline.project.clone().unwrap_or_default())?;
@@ -201,7 +200,7 @@ pub async fn add_outline_to_project(
     Path(project_id): Path<Uuid>,
     Query(query): Query<AddOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_outline(&headers, &body)?;
     into_existing_project(&state, project_id, read, ItemSource::Outline, query.dry_run).await
@@ -223,7 +222,7 @@ pub async fn create_project_from_csv(
     State(state): State<AppState>,
     Query(query): Query<NewProjectOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_csv(&headers, &body)?;
     let project = new_project(&query, Default::default())?;
@@ -254,7 +253,7 @@ pub async fn import_csv(
     Path(project_id): Path<Uuid>,
     Query(query): Query<AddOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_csv(&headers, &body)?;
     into_existing_project(

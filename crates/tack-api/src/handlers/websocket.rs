@@ -1,7 +1,8 @@
+use crate::extract::{Path, Upgrade};
 use axum::{
     extract::{
-        Path, State,
-        ws::{Message, WebSocket, WebSocketUpgrade},
+        State,
+        ws::{Message, WebSocket},
     },
     response::Response,
 };
@@ -52,7 +53,7 @@ const BOARD_SUBPROTOCOL: &str = "tack.v1";
 /// WebSocket handler for live board updates
 #[instrument(skip(ws, state))]
 pub async fn board_live(
-    ws: WebSocketUpgrade,
+    Upgrade(ws): Upgrade,
     Path(project_id): Path<Uuid>,
     State(state): State<AppState>,
 ) -> Result<Response, ApiError> {

@@ -26,6 +26,19 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **A request the server cannot read answers the same error body as any other failure.** A body
+  that is not JSON, a field that is missing, a wrong content type, a body over the limit, a path
+  or query parameter that is not valid, a route that is not there and a method a route does not
+  accept used to get axum's plain text (or nothing) with no code. Every handler now reads its
+  request through `tack_api::extract` (`Json`, `Path`, `Query`, `RawBody`, `Multipart`,
+  `Upgrade`), which refuses with `invalid_request` (400, `details.field` when the failing field is
+  known), `unsupported_media_type` (415), `payload_too_large` (413) or the new `method_not_allowed`
+  (405). A body whose shape is wrong answers 400, not axum's 422. Every error body, on the `/api`
+  routes and the runner routes alike, now carries `retryable`, `request_id` and `details` beside
+  `status`, `code` and `message`, and every request has a request id (the `x-request-id` it sent,
+  or one the board makes) that the body and the response header name; the four fixed
+  `req_operator...` ids are gone.
+
 - **Every error body has a `code` a client can match on.** `StableErrorCode` is the one enum of
   codes, and it knows its HTTP status (`status()`), so no handler names a status beside a code.
   `AppError` carries a code, a refused run (`Refusal`) is one of its variants, and turning it into

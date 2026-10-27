@@ -1,9 +1,6 @@
+use crate::extract::{Json, Path, Query};
 use axum::response::IntoResponse;
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode};
 use serde::Deserialize;
 use tack_core::models::*;
 use tack_core::outline::bundle::{Parts, ProfileRow, to_bundle};

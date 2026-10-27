@@ -1,12 +1,14 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use serde::Serialize;
 use tracing::error;
 
 use tack_core::CoreError;
 use tack_db::StoreError;
 use tack_db::repo::dependencies::DependencyError;
 use tack_protocol::execution::StableErrorCode;
+
+use crate::request_id::current_request_id;
 
 /// Unified API error type that maps to HTTP status codes.
 #[derive(Debug, thiserror::Error)]
@@ -51,6 +53,8 @@ pub enum ApiError {
     Coded {
         code: StableErrorCode,
         message: String,
+        /// The request field the answer blames, when it names one (`details.field`).
+        field: Option<String>,
     },
 
     /// One section of a project file could not be written. `kept` says
@@ -77,7 +81,44 @@ pub enum ApiError {
     Dependency(#[from] DependencyError),
 }
 
+/// What every answer of this API with an error status carries: the runner protocol's envelope
+/// (`code`, `message`, `retryable`, `request_id`, `details`) plus the status the answer has.
+#[derive(Serialize)]
+struct ErrorEnvelope {
+    error: ErrorBody,
+}
+
+#[derive(Serialize)]
+struct ErrorBody {
+    status: u16,
+    code: StableErrorCode,
+    message: String,
+    retryable: bool,
+    request_id: String,
+    details: ErrorDetails,
+}
+
+#[derive(Serialize)]
+struct ErrorDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    field: Option<String>,
+}
+
 impl ApiError {
+    /// An answer that blames one field of the request: its code, the words for a person, and the
+    /// field's name (`details.field`).
+    pub fn field(
+        code: StableErrorCode,
+        field: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        ApiError::Coded {
+            code,
+            message: message.into(),
+            field: Some(field.into()),
+        }
+    }
+
     /// The code every answer of this error carries in its body; its
     /// [`StableErrorCode::status`] is the HTTP status. A variant that names a kind of failure
     /// has the code of that kind, a rule of the core has its own, and [`ApiError::Coded`] keeps
@@ -155,13 +196,22 @@ impl IntoResponse for ApiError {
             }
         };
 
+        let field = match &self {
+            ApiError::Coded { field, .. } => field.clone(),
+            _ => None,
+        };
         let status =
             StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-        let body = json!({ "error": {
-            "status": status.as_u16(),
-            "message": message,
-            "code": code,
-        } });
+        let body = ErrorEnvelope {
+            error: ErrorBody {
+                status: status.as_u16(),
+                code,
+                message,
+                retryable: code.retryable(),
+                request_id: current_request_id(),
+                details: ErrorDetails { field },
+            },
+        };
 
         (status, axum::Json(body)).into_response()
     }
@@ -220,6 +270,7 @@ impl From<tack_app::AppError> for ApiError {
             | AppError::Refused(_)) => ApiError::Coded {
                 code: error.code(),
                 message: error.to_string(),
+                field: None,
             },
         }
     }

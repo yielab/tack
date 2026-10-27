@@ -112,7 +112,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity): they extract, call a `tack-app` use case or a `tack-db` method, map the error and respond
 - Config loading: TOML + env vars
-- Error mapping: `CoreError`, `StoreError` and `AppError` each have a `code()`, a `StableErrorCode` from `tack-protocol` that knows its HTTP status; `ApiError` keeps the code (`ApiError::code()`) and every error body carries it (`ApiError` wraps `StoreError`, which is why this crate names `tack-db`)
+- Error mapping: `CoreError`, `StoreError` and `AppError` each have a `code()`, a `StableErrorCode` from `tack-protocol` that knows its HTTP status; `ApiError` keeps the code (`ApiError::code()`) and every error body carries it, including the answer to a request no extractor could read (handlers use `extract::{Json, Path, Query, ...}`, never axum's, so a rejection is the same body) and a request id (`ApiError` wraps `StoreError`, which is why this crate names `tack-db`)
 - `host.rs` is the implementation of `tack_app::host::Host` over `AppState`
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)

@@ -467,9 +467,10 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `Forbidden` | `forbidden` | 403 |
 | `Conflict` | `conflict` | 409 |
 | `MisdirectedHost`, `CrossSiteRequest`, `UnsupportedMediaType` | `misdirected_host`, `cross_site_request`, `unsupported_media_type` | 421, 403, 415 |
+| `Coded { code: method_not_allowed }` | `method_not_allowed` (a path that exists for another method) | 405 |
 | `UnreadableArchive` | `unreadable_archive` (a restore whose archive or manifest cannot be read) | 422 |
 | `SectionFailed` | `section_failed`, with a message that names the project-file section and says whether what came before stayed | 500 |
-| `Coded { code, message }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
+| `Coded { code, message, field }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
 | `Core(CoreError::*NotFound*)` | `not_found` | 404 |
 | `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `validation_failed` (`CoreError::code()`) | 400 |
 | `Store(StoreError::NotFound { entity })` | `not_found`, "`<entity>` not found" | 404 |
@@ -477,7 +478,9 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `Store(StoreError::Corrupt { table, column })` | `internal_error`; logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" | 500 |
 | `Store(StoreError::Sql)`, `Internal` | `internal_error` | 500 |
 
-The response body is always `{ "error": { "status": <status>, "message": "<text>", "code": "<code>" } }`; the OpenAPI schema documents `code` as the `StableErrorCode` enum. The runner-v1 routes and the execution routes answer the same codes in the contract's envelope instead (`request_id`, `retryable`, `details`). A client matches `code`; `message` is plain words for people.
+The response body is always `{ "error": { "status", "code", "message", "retryable", "request_id", "details" } }`, on the `/api` routes and the runner-v1 routes alike (`details.field` names the field of the request the error blames, when one); the OpenAPI schema documents `code` as the `StableErrorCode` enum. A client matches `code`; `message` is plain words for people.
+
+A request an extractor cannot read gets that body too. Handlers take `tack_api::extract::{Json, Path, Query, RawBody, Multipart, Upgrade}` instead of axum's, which refuse with `ApiError` (`invalid_request`, `unsupported_media_type`, `payload_too_large`), and the router answers an unmatched path with `not_found` and a wrong method with `method_not_allowed`, so no answer of the API is plain text. Every request carries an id (`request_id.rs`): the `x-request-id` it sent when that is short and safe, one the board makes otherwise.
 
 ---
 

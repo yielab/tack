@@ -1,5 +1,5 @@
+use crate::extract::{Json, RawBody};
 use axum::{
-    Json,
     body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode, header},
@@ -94,7 +94,7 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
 pub async fn post_restore(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let media_type = headers
         .get(header::CONTENT_TYPE)
@@ -243,7 +243,7 @@ fn parse_force(raw_body: &Bytes) -> bool {
 )]
 pub async fn post_remote_backup(
     State(state): State<AppState>,
-    raw_body: Bytes,
+    RawBody(raw_body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let cfg = effective_config(&state).await;
     if !cfg.enabled() {
@@ -314,7 +314,7 @@ pub struct RestoreRemoteRequest {
 )]
 pub async fn post_remote_restore(
     State(state): State<AppState>,
-    raw_body: Bytes,
+    RawBody(raw_body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let cfg = effective_config(&state).await;
     if !cfg.enabled() {
@@ -428,7 +428,7 @@ pub async fn post_remote_restore(
 )]
 pub async fn post_remote_verify(
     State(state): State<AppState>,
-    raw_body: Bytes,
+    RawBody(raw_body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let cfg = effective_config(&state).await;
     if !cfg.enabled() {

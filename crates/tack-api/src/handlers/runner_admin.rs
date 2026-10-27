@@ -1,8 +1,9 @@
 //! Operator fleet, runner, and profile handlers, mounted into the global router.
 
+use crate::extract::{Json, Path, Query};
 use axum::{
-    Json, Router,
-    extract::{Path, Query, State},
+    Router,
+    extract::State,
     http::StatusCode,
     routing::{delete, get, patch, post},
 };
@@ -16,17 +17,13 @@ use tack_db::repo::execution::{
 };
 use tack_db::repo::execution::{AgentProfilePatch, pending_runner_input_is_valid};
 use tack_db::{Repository, StoreError};
-use tack_protocol::execution::{ProtocolErrorEnvelope, RunnerId, StableErrorCode};
+use tack_protocol::execution::{RunnerId, StableErrorCode};
 use tack_protocol::{Clock, SystemClock};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::executions::{OperatorExecutionState, RunnerV1ErrorEnvelope, runner_is_online};
 use crate::error::log_store_failure;
-
-/// Static request-correlation id placeholder. No per-request correlation
-/// id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator";
 
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
@@ -39,11 +36,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 pub fn routes(state: OperatorExecutionState) -> Router {

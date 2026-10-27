@@ -19,14 +19,15 @@
 //! notes below and the acceptance tests in
 //! `tests/runner_protocol/lifecycle.rs`).
 
+use crate::extract::{Json, Path, RawBody};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tack_protocol::Clock;
 
 use axum::{
-    Json, Router,
+    Router,
     body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode, header},
     routing::{post, put},
 };
@@ -209,7 +210,9 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
         .layer(DefaultBodyLimit::max(effective_body_limit_bytes(
             configured_max_body_size_bytes,
         )))
-        .layer(axum::middleware::from_fn(runner_auth::with_request_id))
+        .layer(axum::middleware::from_fn(
+            crate::request_id::with_request_id,
+        ))
         .with_state(state)
 }
 
@@ -516,7 +519,10 @@ fn validate_capability_payload(
 // the body, never a bearer header — there is no runner identity yet.
 // ---------------------------------------------------------------------
 
-pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> HandlerResult {
+pub async fn enroll(
+    State(state): State<RunnerProtocolState>,
+    RawBody(body): RawBody,
+) -> HandlerResult {
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     let EnrollmentRequest {
@@ -660,7 +666,7 @@ fn reclassify_refresh_auth_error(
 pub async fn refresh(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now)
@@ -753,7 +759,7 @@ pub async fn refresh(
 pub async fn claim(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
@@ -858,7 +864,7 @@ pub async fn claim(
 pub async fn heartbeat(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
@@ -941,7 +947,7 @@ pub async fn accept_attempt(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     transition_attempt(
         state,
@@ -957,7 +963,7 @@ pub async fn start_attempt(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     transition_attempt(
         state,
@@ -1106,7 +1112,7 @@ pub async fn submit_events(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     // `event_batch_bytes_max` (1 MiB) equals `json_body_bytes_max`, so
     // `parse_body` inside `authenticate_attempt_request` already enforces
@@ -1248,7 +1254,7 @@ pub async fn create_decision(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
@@ -1336,7 +1342,7 @@ pub async fn poll_decisions(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
@@ -1411,7 +1417,7 @@ pub async fn submit_artifacts(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
@@ -1729,7 +1735,7 @@ pub async fn submit_completion(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
@@ -1887,7 +1893,7 @@ pub async fn observe_cancellation_report(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
@@ -1969,7 +1975,7 @@ pub async fn observe_recovery(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;

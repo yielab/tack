@@ -19,10 +19,10 @@
 //! writes `items.status`, directly or indirectly: `resolve` never touches the
 //! `items` table.
 
+use crate::extract::{Json, Path, RawBody};
 use axum::{
-    Json, Router,
-    body::Bytes,
-    extract::{Path, State},
+    Router,
+    extract::State,
     http::{HeaderMap, StatusCode},
     routing::post,
 };
@@ -34,7 +34,7 @@ use tack_app::{AppError, runs};
 use tack_core::decision::DecisionResolvedBy;
 use tack_db::Repository;
 use tack_protocol::Clock;
-use tack_protocol::execution::{AttemptId, ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{AttemptId, StableErrorCode};
 use utoipa::ToSchema;
 
 use crate::middleware::constant_time_eq;
@@ -83,11 +83,6 @@ impl DecisionOperatorState {
     }
 }
 
-/// Static request-correlation id placeholder, matching
-/// `executions::OPERATOR_REQUEST_ID`'s own convention — no per-request
-/// correlation id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator_decisions";
-
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` so it can never drift from
 /// `docs/contracts/runner-v1/errors/*.json`. `details` follows the per-code
@@ -98,11 +93,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
@@ -307,7 +298,7 @@ pub async fn resolve_decision(
     State(state): State<DecisionOperatorState>,
     headers: HeaderMap,
     Path((attempt_id, decision_id)): Path<(AttemptId, String)>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> Result<Json<ResolveDecisionResponse>, (StatusCode, Json<Value>)> {
     require_decision_token(&state, &headers)?;
     let principal_id = principal(&headers)?;

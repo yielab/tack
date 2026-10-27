@@ -1,5 +1,5 @@
-use axum::Json;
-use axum::extract::{Multipart, Path, State};
+use crate::extract::{Json, Multipart, Path};
+use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use std::io::{ErrorKind, Write};
@@ -70,7 +70,7 @@ fn contained_path(storage_dir: &std::path::Path, storage_path: &str) -> Result<P
 pub async fn upload_attachment(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
-    mut multipart: Multipart,
+    Multipart(mut multipart): Multipart,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!(item_id = %item_id, "Uploading attachment");
 

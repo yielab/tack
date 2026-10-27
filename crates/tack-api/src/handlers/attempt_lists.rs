@@ -11,9 +11,10 @@
 //! write. Reading what decisions exist is an ordinary operator read, same
 //! gate as every other route merged in `router.rs#operator_execution_routes`.
 
+use crate::extract::{Json, Path};
 use axum::{
-    Json, Router,
-    extract::{Path, State},
+    Router,
+    extract::State,
     http::StatusCode,
     routing::{get, post},
 };
@@ -21,16 +22,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tack_db::StoreError;
 use tack_db::queries::{execution_decisions, execution_requests};
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::StableErrorCode;
 use utoipa::ToSchema;
 
 use super::executions::OperatorExecutionState;
 use crate::error::log_store_failure;
-
-/// Static request-correlation id placeholder, matching
-/// `executions::OPERATOR_REQUEST_ID`'s own convention — no per-request
-/// correlation id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator_attempt_lists";
 
 fn error(
     status: StatusCode,
@@ -38,11 +34,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 async fn execution_request_exists(

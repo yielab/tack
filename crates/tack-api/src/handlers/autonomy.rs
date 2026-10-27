@@ -1,8 +1,8 @@
 //! A project's autonomy settings: how far Tack may merge on its own, where, and
 //! under which checks (ADR 0020). Promotion is the PUT; demotion is the tick's.
 
-use axum::Json;
-use axum::extract::{Path, State};
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;

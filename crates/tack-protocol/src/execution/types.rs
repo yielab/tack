@@ -756,6 +756,8 @@ pub enum StableErrorCode {
     LocalRunnerUnavailable,
     /// The folder to create is not empty.
     FolderNotEmpty,
+    /// The path exists but not for the method the request used.
+    MethodNotAllowed,
 }
 
 impl StableErrorCode {
@@ -806,6 +808,7 @@ impl StableErrorCode {
             | Self::StaleLease
             | Self::DecisionExpired
             | Self::ArtifactChecksumMismatch => 409,
+            Self::MethodNotAllowed => 405,
             Self::PreconditionFailed => 412,
             Self::PayloadTooLarge => 413,
             Self::UnsupportedMediaType => 415,

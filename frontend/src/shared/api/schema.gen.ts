@@ -3959,10 +3959,23 @@ export interface components {
              */
             code: components["schemas"]["StableErrorCode"];
             /**
+             * @description What the error blames. `details.field` names the request field, path parameter or query
+             *     parameter that failed, when one did.
+             */
+            details: components["schemas"]["ErrorDetails"];
+            /**
              * @description Human-readable, end-user-facing message.
              * @example Item not found
              */
             message: string;
+            /**
+             * @description The id of the request this answers, the one the client sent in `x-request-id` when it was
+             *     usable; the response carries it in the same header.
+             * @example req_6f1c0d2a9b7e4c3f8a5d1e0b2c4a6f80
+             */
+            request_id: string;
+            /** @description Whether repeating the same request can succeed (`StableErrorCode::retryable`). */
+            retryable: boolean;
             /**
              * Format: int32
              * @description HTTP status code, duplicated in the body for convenience.
@@ -3970,9 +3983,17 @@ export interface components {
              */
             status: number;
         };
+        ErrorDetails: {
+            /**
+             * @description The request field the error blames.
+             * @example title
+             */
+            field?: string | null;
+        };
         /**
          * @description Structured error envelope returned by every failing endpoint — see
-         *     `crate::error::ApiError`. The body is always `{ "error": { status, message, code } }`.
+         *     `crate::error::ApiError`. The body is always
+         *     `{ "error": { status, code, message, retryable, request_id, details } }`.
          */
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
@@ -5009,7 +5030,7 @@ export interface components {
          *     layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
          * @enum {string}
          */
-        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty";
+        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
         /** @enum {string} */
         StatusCategory: "todo" | "in_progress" | "done";
         StatusDef: {

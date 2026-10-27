@@ -16,12 +16,13 @@
 //! whole-file read into memory) — the read-side half of the streaming design
 //! `artifact_storage.rs` uses on the write side.
 
+use crate::extract::Path;
 use std::sync::Arc;
 
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::{Path, State},
+    extract::State,
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
@@ -29,7 +30,7 @@ use axum::{
 use futures::Stream;
 use serde_json::{Value, json};
 use tack_db::Repository;
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::StableErrorCode;
 use tokio::io::AsyncReadExt;
 
 use super::artifact_storage::ArtifactStorage;
@@ -40,19 +41,8 @@ pub struct ArtifactDownloadState {
     pub artifact_storage: Arc<ArtifactStorage>,
 }
 
-/// Static request-correlation id placeholder, matching `executions.rs`'s
-/// own `OPERATOR_REQUEST_ID` convention. No per-request correlation id is
-/// wired into this envelope yet — every response returns this same literal
-/// string.
-const REQUEST_ID: &str = "req_operator_artifact_download";
-
 fn error(status: StatusCode, code: StableErrorCode, message: &str, details: Value) -> Response {
-    let envelope = ProtocolErrorEnvelope::new(code, message, REQUEST_ID, details);
-    (
-        status,
-        axum::Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
-        .into_response()
+    super::runner_auth::protocol_error(status, code, message, details).into_response()
 }
 
 /// Mirrors `executions.rs#principal` exactly: the real router's

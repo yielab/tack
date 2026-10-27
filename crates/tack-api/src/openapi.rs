@@ -51,7 +51,8 @@ use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig,
 use crate::handlers;
 
 /// Structured error envelope returned by every failing endpoint — see
-/// `crate::error::ApiError`. The body is always `{ "error": { status, message, code } }`.
+/// `crate::error::ApiError`. The body is always
+/// `{ "error": { status, code, message, retryable, request_id, details } }`.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorEnvelope {
     pub error: ErrorBody,
@@ -68,6 +69,23 @@ pub struct ErrorBody {
     /// Stable, machine-readable error code, on every error: a caller branches on *why* with it,
     /// never by parsing `message`. The code decides `status`.
     pub code: tack_protocol::execution::StableErrorCode,
+    /// Whether repeating the same request can succeed (`StableErrorCode::retryable`).
+    pub retryable: bool,
+    /// The id of the request this answers, the one the client sent in `x-request-id` when it was
+    /// usable; the response carries it in the same header.
+    #[schema(example = "req_6f1c0d2a9b7e4c3f8a5d1e0b2c4a6f80")]
+    pub request_id: String,
+    /// What the error blames. `details.field` names the request field, path parameter or query
+    /// parameter that failed, when one did.
+    pub details: ErrorDetails,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ErrorDetails {
+    /// The request field the error blames.
+    #[schema(example = "title")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
 
 /// Pagination envelope for the item-list endpoint. `total` is the
@@ -781,10 +799,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         description = "REST + WebSocket API for Tack, a lightweight, workflow-agnostic \
             project-management tool. This contract is generated from the Rust handlers \
             and domain models; it is the single source of truth for the wire format. \
-            All failing responses share the `{ \"error\": { \"status\", \"message\" } }` \
-            envelope, with an additional `code` field on a narrow set of responses \
-            (e.g. `stale_lease`) where a caller needs to branch on the \
-            reason without parsing `message`.",
+            Every failing response, including one for a request the server could not \
+            read, shares the `{ \"error\": { \"status\", \"code\", \"message\", \
+            \"retryable\", \"request_id\", \"details\" } }` envelope; a caller branches \
+            on `code`, never on `message`.",
         license(name = "MIT", identifier = "MIT"),
         contact(name = "Tack", email = "info@yielab.com"),
     ),
@@ -936,6 +954,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // Local response/request envelopes
         ErrorEnvelope,
         ErrorBody,
+        ErrorDetails,
         handlers::autonomy::AutonomySettings,
         handlers::autonomy::DomainSettings,
         handlers::autonomy::BudgetSettings,

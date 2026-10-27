@@ -1,6 +1,5 @@
-use axum::Json;
-use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, Query, State};
+use crate::extract::{Json, Path, Query};
+use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
@@ -34,6 +33,7 @@ fn precondition_failed(message: String) -> Response {
     ApiError::Coded {
         code: StableErrorCode::PreconditionFailed,
         message,
+        field: None,
     }
     .into_response()
 }
@@ -213,11 +213,8 @@ pub async fn update_item(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     from_mcp: Option<axum::Extension<crate::middleware::FromMcp>>,
-    input: Result<Json<UpdateItem>, JsonRejection>,
+    Json(input): Json<UpdateItem>,
 ) -> ApiResult<Response> {
-    // A body that is not an `UpdateItem` (a `run_settings` that is not an
-    // object or null, say) is a 400, not axum's default 422.
-    let Json(input) = input.map_err(|e| ApiError::BadRequest(e.body_text()))?;
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;

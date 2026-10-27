@@ -15,9 +15,11 @@ use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use tack_db::Repository;
+use tack_protocol::execution::StableErrorCode;
 
 use crate::config::AppConfig;
 use crate::debug;
+use crate::error::ApiError;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
@@ -174,6 +176,7 @@ fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
         .with_app_state(state.clone());
     runner_protocol::routes(runner_state, state.config.max_body_size_bytes)
         .with_state::<AppState>(())
+        .method_not_allowed_fallback(api_method_not_allowed)
         .fallback(api_not_found)
 }
 
@@ -184,8 +187,18 @@ fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
 /// two must stay structurally distinct: an operator or runner client that
 /// mistypes a route must see this, never the SPA's `index.html` with a
 /// misleading `200`.
-async fn api_not_found() -> axum::http::StatusCode {
-    axum::http::StatusCode::NOT_FOUND
+async fn api_not_found() -> ApiError {
+    ApiError::NotFound("There is no such route.".into())
+}
+
+/// The 405 for a path that exists but not for the method the request used: the standard error
+/// body with its code, not axum's empty one.
+async fn api_method_not_allowed() -> ApiError {
+    ApiError::Coded {
+        code: StableErrorCode::MethodNotAllowed,
+        message: "This route does not accept that method.".into(),
+        field: None,
+    }
 }
 
 /// Build the full Axum router with all routes, middleware, and state.
@@ -467,6 +480,7 @@ pub fn build_router(state: AppState) -> Router {
         // was never a real route to authenticate against). `nest` below
         // carries this fallback along scoped to `/api`, which is what
         // keeps it out of reach of `outer`'s own SPA fallback. ─────────
+        .method_not_allowed_fallback(api_method_not_allowed)
         .fallback(api_not_found);
 
     let outer = Router::new()
@@ -531,6 +545,8 @@ pub fn build_router(state: AppState) -> Router {
         ))
         // ── CORS ─────────────────────────────────────────────────────────
         .layer(cors)
+        // ── Request id: one for every request, named by every error body ─
+        .layer(middleware::from_fn(crate::request_id::with_request_id))
         // ── Request tracing ──────────────────────────────────────────────
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {

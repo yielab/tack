@@ -4,16 +4,15 @@
 //! `app_meta` overrides the `TACK_*` environment default. See
 //! [`remote_backup::effective_config`](tack_app::remote_backup::effective_config).
 
+use crate::extract::Json;
 use axum::{
-    Json,
     extract::State,
-    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tack_app::remote_backup::{self, BackupConfig};
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::StableErrorCode;
 use tracing::instrument;
 use validator::Validate;
 
@@ -141,17 +140,10 @@ pub async fn put_backup_settings(
     if let Some(url) = &endpoint
         && let Err(err) = crate::config::validate_outbound_url("endpoint", url)
     {
-        let envelope = ProtocolErrorEnvelope::new(
-            StableErrorCode::InvalidRequest,
-            err.to_string(),
-            "req_operator_settings",
-            json!({"field": "endpoint"}),
+        return Ok(
+            ApiError::field(StableErrorCode::InvalidRequest, "endpoint", err.to_string())
+                .into_response(),
         );
-        return Ok((
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::to_value(envelope).expect("envelope serializes")),
-        )
-            .into_response());
     }
 
     let mut current = load(&state).await;
