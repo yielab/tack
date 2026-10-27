@@ -76,7 +76,7 @@ pub async fn run(
             &mut loops,
             state.repo.clone(),
             Arc::new(SystemClock),
-            Arc::new(state.host()),
+            state.ports(),
             Duration::from_secs(state.config.auto_start_seconds),
         );
     }
@@ -86,11 +86,7 @@ pub async fn run(
         &mut loops,
         state.repo.clone(),
         Arc::new(tack_protocol::SystemClock),
-        tack_app::github_sync::Settings {
-            github_token: state.config.github_token.clone(),
-            api_base: state.config.github_api_base.clone(),
-        },
-        Arc::new(state.host()),
+        state.ports(),
         Duration::from_secs(state.config.github_poll_seconds),
     );
 

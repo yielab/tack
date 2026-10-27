@@ -28,16 +28,24 @@ use tokio::sync::Mutex;
 
 use crate::AppError;
 use crate::background::{Loops, Start};
-use crate::host::Host;
+use crate::local_runner::LocalRunnerControl;
+use crate::ports::Ports;
 
-/// What the inbound poll is configured with.
+/// The GitHub the board talks to: the API root (`https://api.github.com`, overridable for
+/// Enterprise or tests) and the environment's token. Everything that calls GitHub starts here, so
+/// the base URL is read once, by whoever builds this, and never again.
 #[derive(Debug, Clone)]
-pub struct Settings {
+pub struct GitHub {
     /// The environment's GitHub token; the poll does not start without one.
     pub github_token: Option<String>,
-    /// The API root (`https://api.github.com`, overridable for Enterprise or tests).
+    /// The API root.
     pub api_base: String,
 }
+
+/// Why GitHub's CI state could not be read.
+#[derive(Debug, thiserror::Error)]
+#[error("{0:#}")]
+pub struct CiUnreadable(#[from] anyhow::Error);
 
 /// The HTTP client every GitHub call of the poll goes through.
 pub fn client() -> reqwest::Result<reqwest::Client> {
@@ -49,36 +57,62 @@ pub fn client() -> reqwest::Result<reqwest::Client> {
         .build()
 }
 
-/// The single place the token-resolution order lives: a project's own
-/// `github_token_ref` (resolved through [`Host::resolve_secret`], when one is wired in),
-/// falling through to the environment's `TACK_GITHUB_TOKEN` (`env_token`) when the project has
-/// no reference, nothing is wired in, or the reference fails to resolve. A resolution failure
-/// logs the reference *name* — never the value — at `warn` and falls through rather than
-/// failing the caller. The item and comment pushes call this instead of reading the
-/// environment token directly; so does the inbound poll's `poll_repo`.
-pub async fn github_token_for_project(
-    repo: &Repository,
-    host: &dyn Host,
-    env_token: Option<&str>,
-    project_id: uuid::Uuid,
-) -> Option<String> {
-    if let Ok(Some(project)) = repo.get_project(project_id).await
-        && let Some(reference) = project.github_token_ref.as_deref()
-    {
-        match host.resolve_secret(reference).await {
-            Some(Ok(value)) => return Some(value),
-            Some(Err(error)) => {
-                tracing::warn!(
-                    project_id = %project_id,
-                    reference = %reference,
-                    %error,
-                    "GitHub token reference did not resolve"
-                );
+impl GitHub {
+    /// The single place the token-resolution order lives: a project's own
+    /// `github_token_ref` (resolved through the embedded runner's secret store, when one is
+    /// wired in), falling through to the environment's token when the project has no reference,
+    /// nothing is wired in, or the reference fails to resolve. A resolution failure logs the
+    /// reference *name* — never the value — at `warn` and falls through rather than failing the
+    /// caller. The item and comment pushes call this instead of reading the environment token
+    /// directly; so does the inbound poll's `poll_repo`.
+    pub async fn token_for_project(
+        &self,
+        repo: &Repository,
+        runner: Option<&dyn LocalRunnerControl>,
+        project_id: uuid::Uuid,
+    ) -> Option<String> {
+        if let Ok(Some(project)) = repo.get_project(project_id).await
+            && let Some(reference) = project.github_token_ref.as_deref()
+            && let Some(runner) = runner
+        {
+            match runner.resolve_secret(reference).await {
+                Ok(value) => return Some(value),
+                Err(error) => {
+                    tracing::warn!(
+                        project_id = %project_id,
+                        reference = %reference,
+                        %error,
+                        "GitHub token reference did not resolve"
+                    );
+                }
             }
-            None => {}
         }
+        self.github_token.clone()
     }
-    env_token.map(str::to_owned)
+
+    /// The CI state of commit `sha` in `repo` (see [`ci_state`]).
+    pub async fn ci_state(
+        &self,
+        token: &str,
+        repo: &str,
+        sha: &str,
+    ) -> Result<tack_core::autonomy::CiState, CiUnreadable> {
+        let client = client().map_err(anyhow::Error::from)?;
+        Ok(ci_state(&client, &self.api_base, token, repo, sha).await?)
+    }
+
+    /// Merge pull request `number` of `repo` only if its head is still `sha` (see
+    /// [`merge_pull_request`]).
+    pub async fn merge_pull_request(
+        &self,
+        token: &str,
+        repo: &str,
+        number: i64,
+        sha: &str,
+    ) -> Result<String, MergeRefused> {
+        let client = client().map_err(|error| MergeRefused(error.to_string()))?;
+        merge_pull_request(&client, &self.api_base, token, repo, number, sha).await
+    }
 }
 
 /// Decide whether a status change warrants a GitHub push, and in which direction.
@@ -314,11 +348,10 @@ pub fn spawn(
     loops: &mut Loops,
     repo: Repository,
     clock: Arc<dyn Clock>,
-    settings: Settings,
-    host: Arc<dyn Host>,
+    ports: Ports,
     interval: Duration,
 ) {
-    if interval.is_zero() || settings.github_token.is_none() {
+    if interval.is_zero() || ports.github.github_token.is_none() {
         return;
     }
     let client = match client() {
@@ -328,14 +361,13 @@ pub fn spawn(
             return;
         }
     };
-    let settings = Arc::new(settings);
+    let ports = Arc::new(ports);
     let etags = Arc::new(Mutex::new(HashMap::new()));
     loops.spawn_tick("github_sync", Start::AfterInterval, interval, move || {
-        let (repo, clock, settings, host, client, etags) = (
+        let (repo, clock, ports, client, etags) = (
             repo.clone(),
             clock.clone(),
-            settings.clone(),
-            host.clone(),
+            ports.clone(),
             client.clone(),
             etags.clone(),
         );
@@ -343,8 +375,7 @@ pub fn spawn(
             match tick(
                 &repo,
                 clock.as_ref(),
-                &settings,
-                host.as_ref(),
+                &ports,
                 &client,
                 &mut *etags.lock().await,
             )
@@ -359,7 +390,7 @@ pub fn spawn(
                 }
                 Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
             }
-            if let Err(error) = crate::autonomy::tick(&repo, clock.as_ref(), host.as_ref()).await {
+            if let Err(error) = crate::autonomy::tick(&repo, clock.as_ref(), &ports).await {
                 tracing::warn!(%error, "autonomy pass failed");
             }
         }
@@ -380,24 +411,22 @@ pub fn spawn(
 pub async fn tick(
     repo: &Repository,
     clock: &dyn Clock,
-    settings: &Settings,
-    host: &dyn Host,
+    ports: &Ports,
     client: &reqwest::Client,
     etags: &mut HashMap<String, String>,
 ) -> Result<PollSummary, AppError> {
     let mut summary = PollSummary::default();
-    let Some(token) = settings.github_token.as_deref() else {
+    let Some(token) = ports.github.github_token.as_deref() else {
         return Ok(summary);
     };
-    let base = settings.api_base.as_str();
+    let base = ports.github.api_base.as_str();
 
     let repos = github_links::linked_repos(repo).await?;
 
     let ctx = Ctx {
         store: repo,
         clock,
-        host,
-        env_token: settings.github_token.as_deref(),
+        ports,
     };
     for github_repo in repos {
         summary.repos_polled += 1;
@@ -416,8 +445,7 @@ pub async fn tick(
 struct Ctx<'a> {
     store: &'a Repository,
     clock: &'a dyn Clock,
-    host: &'a dyn Host,
-    env_token: Option<&'a str>,
+    ports: &'a Ports,
 }
 
 /// Poll one repo and return how many linked items it moved.
@@ -441,7 +469,10 @@ async fn poll_repo(
     // resolve — see `github_token_for_project`.
     let project_token = match ctx.store.get_item(links[0].0).await {
         Ok(Some(item)) => {
-            github_token_for_project(ctx.store, ctx.host, ctx.env_token, item.project_id).await
+            ctx.ports
+                .github
+                .token_for_project(ctx.store, ctx.ports.runner.as_deref(), item.project_id)
+                .await
         }
         _ => None,
     };
@@ -594,10 +625,13 @@ async fn follow_pull_request(ctx: &Ctx<'_>, repo: &str, pr: &GithubIssue) -> any
             ctx.store
                 .mark_pull_request_reverted(repo, cited, Some(pr.number))
                 .await?;
-            ctx.host.pull_request_observed(repo, cited).await;
+            ctx.ports.verifier.pull_request_observed(repo, cited).await;
         }
     }
-    ctx.host.pull_request_observed(repo, pr.number).await;
+    ctx.ports
+        .verifier
+        .pull_request_observed(repo, pr.number)
+        .await;
     Ok(())
 }
 
@@ -839,7 +873,10 @@ async fn follow_merged_inner(
                 .set_pull_request_red_ci_at(repo, row.number, &at)
                 .await?;
         }
-        ctx.host.pull_request_observed(repo, row.number).await;
+        ctx.ports
+            .verifier
+            .pull_request_observed(repo, row.number)
+            .await;
     }
     Ok(())
 }

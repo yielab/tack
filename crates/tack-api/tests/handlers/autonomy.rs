@@ -368,7 +368,7 @@ pub(crate) async fn comments(b: &Board) -> String {
 
 /// One pass of the automatic merge's turn, as the poll loop runs it.
 pub(crate) async fn tick(state: &AppState) {
-    tack_app::autonomy::tick(&state.repo, &tack_protocol::SystemClock, &state.host())
+    tack_app::autonomy::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
         .await
         .unwrap();
 }

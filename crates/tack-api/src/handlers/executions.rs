@@ -1121,7 +1121,7 @@ pub async fn list_execution_attempts(
     } in attempts
     {
         let (enabled, reason) = match &state.app {
-            Some(app) => tack_app::merge::button(&app.repo, &app.host(), &attempt.id).await,
+            Some(app) => tack_app::merge::button(&app.repo, &app.ports(), &attempt.id).await,
             None => (
                 false,
                 Some("Merging is not available on this board".to_owned()),
@@ -1307,7 +1307,7 @@ pub async fn merge_attempt(
     match tack_app::merge::attempt(
         &app.repo,
         state.clock.as_ref(),
-        &app.host(),
+        &app.ports(),
         &attempt_id,
         tack_core::autonomy::Trigger::Button,
         tack_app::merge::FactsExtra::default(),

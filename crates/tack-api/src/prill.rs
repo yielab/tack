@@ -20,8 +20,8 @@ pub struct Unavailable;
 /// Longest `attest verify` is given before the check fails.
 const ATTEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// What the board says when it cannot start prill; every caller reads it from here.
-pub const NOT_INSTALLED: &str = "The verifier is not installed on the board. An administrator sets it up: see the Administrator Guide";
+pub use tack_app::ports::NOT_INSTALLED;
+use tack_app::ports::VerifierError;
 
 /// Runs `program args…` with a null stdin and `PATH` as its only variable.
 /// A program that cannot start, or does not finish within `timeout`, is
@@ -52,16 +52,16 @@ pub async fn attest_verify(
     envelope: &[u8],
     public_key_pem: &str,
     commit: &str,
-) -> Result<String, String> {
+) -> Result<String, VerifierError> {
     let Some(scratch) = Scratch::new() else {
-        return Err("the board could not stage the attestation".to_owned());
+        return Err(VerifierError::CouldNotStage);
     };
     let key = scratch.0.join("prill.pub");
     let envelope_path = scratch.0.join("mrp.intoto.json");
     if write_private(&key, public_key_pem.as_bytes()).is_err()
         || write_private(&envelope_path, envelope).is_err()
     {
-        return Err("the board could not stage the attestation".to_owned());
+        return Err(VerifierError::CouldNotStage);
     }
     let args = [
         "attest".to_owned(),
@@ -88,13 +88,13 @@ pub async fn attest_verify(
             let reason = line
                 .split_once("attestation invalid: ")
                 .map_or(line.trim_start_matches("prill: "), |(_, reason)| reason);
-            Err(if reason.is_empty() {
+            Err(VerifierError::Refused(if reason.is_empty() {
                 format!("prill refused the attestation ({})", output.status)
             } else {
                 reason.to_owned()
-            })
+            }))
         }
-        Err(Unavailable) => Err(NOT_INSTALLED.to_owned()),
+        Err(Unavailable) => Err(VerifierError::NotInstalled),
     }
 }
 
@@ -193,9 +193,12 @@ mod tests {
         );
 
         let wrong = attest_verify(&program, ENVELOPE.as_bytes(), KEY, BASE).await;
-        assert_eq!(wrong, Err("subject_mismatch".to_owned()));
+        assert_eq!(
+            wrong,
+            Err(VerifierError::Refused("subject_mismatch".to_owned()))
+        );
 
         let missing = attest_verify("tack-no-such-prill", ENVELOPE.as_bytes(), KEY, HEAD).await;
-        assert_eq!(missing, Err(NOT_INSTALLED.to_owned()));
+        assert_eq!(missing, Err(VerifierError::NotInstalled));
     }
 }

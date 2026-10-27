@@ -2161,15 +2161,10 @@ async fn poll_once(
     state: &tack_api::AppState,
     etags: &mut std::collections::HashMap<String, String>,
 ) -> Result<tack_app::github_sync::PollSummary, tack_app::AppError> {
-    let settings = tack_app::github_sync::Settings {
-        github_token: state.config.github_token.clone(),
-        api_base: state.config.github_api_base.clone(),
-    };
     tack_app::github_sync::tick(
         &state.repo,
         &tack_protocol::SystemClock,
-        &settings,
-        &state.host(),
+        &state.ports(),
         &tack_app::github_sync::client().expect("client"),
         etags,
     )
