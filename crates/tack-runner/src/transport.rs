@@ -52,6 +52,7 @@ use tack_protocol::execution::{
 };
 use tokio::task::JoinSet;
 
+use crate::error::IoKind;
 use crate::{
     Clock, EnrollmentCredential, RunnerConfig, RunnerError, Shutdown,
     client::engine::{EngineError, LEASE_RENEWAL_INTERVAL, RunCycle, RunnerEngine},
@@ -1006,11 +1007,13 @@ fn store_session(state_dir: &Path, session: &RunnerSession) -> Result<(), Runner
         runner_credential: session.credential().expose().to_owned(),
         credential_expires_at: session.credential_expires_at().as_str().to_owned(),
     };
-    let encoded = serde_json::to_string(&persisted).map_err(|_| RunnerError::Filesystem)?;
+    let encoded = serde_json::to_string(&persisted)
+        .map_err(|failure| RunnerError::Filesystem(IoKind(std::io::Error::from(failure).kind())))?;
     let path = session_path(state_dir);
     let temporary = path.with_extension("json.tmp");
     write_owner_only(&temporary, encoded.as_bytes())?;
-    fs::rename(&temporary, &path).map_err(|_| RunnerError::Filesystem)?;
+    fs::rename(&temporary, &path)
+        .map_err(|failure| RunnerError::Filesystem(IoKind(failure.kind())))?;
     Ok(())
 }
 
@@ -1026,15 +1029,17 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), RunnerError> {
         .truncate(true)
         .mode(0o600)
         .open(path)
-        .map_err(|_| RunnerError::Filesystem)?;
-    file.write_all(bytes).map_err(|_| RunnerError::Filesystem)?;
-    file.sync_all().map_err(|_| RunnerError::Filesystem)?;
+        .map_err(|failure| RunnerError::Filesystem(IoKind(failure.kind())))?;
+    file.write_all(bytes)
+        .map_err(|failure| RunnerError::Filesystem(IoKind(failure.kind())))?;
+    file.sync_all()
+        .map_err(|failure| RunnerError::Filesystem(IoKind(failure.kind())))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
 fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), RunnerError> {
-    fs::write(path, bytes).map_err(|_| RunnerError::Filesystem)
+    fs::write(path, bytes).map_err(|failure| RunnerError::Filesystem(IoKind(failure.kind())))
 }
 
 // ---------------------------------------------------------------------

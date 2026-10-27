@@ -11,10 +11,10 @@ use std::{
 
 use thiserror::Error;
 
-use super::workspace::IoKind;
 use super::{
     AttemptId, AttemptLease, Checkpoint, ClaimedWork, FencingToken, RunnerId, WorkspaceId,
 };
+use crate::error::IoKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

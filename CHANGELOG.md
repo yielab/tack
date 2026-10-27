@@ -68,7 +68,10 @@ automation a template carries, and the removal of dollars per day.
 - **The runner's file failures keep their kind.** A workspace or journal operation that failed on a
   file now says how (`runner workspace operation failed: entity not found`) instead of a bare
   "failed", and a poisoned lock is logged; the operating system's own text, which can name a path,
-  is still never kept. About 50 of the `map_err(|_| …)` that dropped their cause are gone.
+  is still never kept. About 50 of the `map_err(|_| …)` that dropped their cause are gone, and the
+  runner's state-directory, session-file, config-file, client-task and shutdown-signal failures
+  (`RunnerError::Filesystem`, `ConfigError::Unreadable`, `ClientTaskJoin`, `ShutdownSignal`) now say
+  which kind of failure it was.
 - **The store says what is wrong with a stored value.** `StoreError` gains `Corrupt { table, column }`
   for a value that cannot be read back and `NotFound { entity }` for a row of a named kind that is
   not there; row mapping returns them instead of panicking on a corrupt row or inventing a default

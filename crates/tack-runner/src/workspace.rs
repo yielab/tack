@@ -9,6 +9,7 @@ use std::{
 use async_trait::async_trait;
 use thiserror::Error;
 
+use crate::error::IoKind;
 use crate::evidence::{GitEvidence, PublishedBranch};
 
 use super::{
@@ -37,16 +38,6 @@ impl Workspace {
 pub enum CleanupResult {
     Deleted,
     Refused,
-}
-
-/// The kind of an I/O failure, printed as the words the standard library uses for it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct IoKind(pub std::io::ErrorKind);
-
-impl std::fmt::Display for IoKind {
-    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(out, "{}", self.0)
-    }
 }
 
 /// A lock another thread poisoned by panicking while it held it: the panic is the cause and was

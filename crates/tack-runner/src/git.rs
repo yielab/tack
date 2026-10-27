@@ -36,8 +36,9 @@ use std::{
 use async_trait::async_trait;
 use tokio::process::Command;
 
-use super::{IoKind, Workspace, WorkspaceError, WorktreeProvisioner, poisoned};
+use super::{Workspace, WorkspaceError, WorktreeProvisioner, poisoned};
 use crate::client::WorkspaceMode;
+use crate::error::IoKind;
 use crate::evidence::{FileChange, FileOp, GitEvidence, PATCH_CAP_BYTES, PublishedBranch};
 use crate::{
     client::RepositorySpec,

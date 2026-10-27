@@ -55,7 +55,11 @@ pub(crate) fn load_runner_config(
     config_path: Option<&Path>,
 ) -> Result<RunnerConfig, ConfigError> {
     let file_toml = config_path
-        .map(|path| std::fs::read_to_string(path).map_err(|_| ConfigError::Unreadable))
+        .map(|path| {
+            std::fs::read_to_string(path).map_err(|failure| {
+                ConfigError::Unreadable(tack_runner::error::IoKind(failure.kind()))
+            })
+        })
         .transpose()?;
     RunnerConfig::from_sources(RunnerConfigSources {
         file_toml: file_toml.as_deref(),
