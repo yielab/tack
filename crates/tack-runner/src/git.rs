@@ -613,7 +613,7 @@ impl GitWorktreeProvisioner {
             .repository_path
             .as_deref()
             .ok_or(WorkspaceError::RepositoryUnreachable)?;
-        let metadata = fs::symlink_metadata(repo).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(repo).map_err(WorkspaceError::from)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() || repo != workspace.path {
             return Err(WorkspaceError::UnsafePath);
         }
@@ -642,7 +642,7 @@ impl GitWorktreeProvisioner {
             .repository_path
             .as_deref()
             .ok_or(WorkspaceError::RepositoryUnreachable)?;
-        let metadata = fs::symlink_metadata(folder).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(folder).map_err(WorkspaceError::from)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() || folder != workspace.path {
             return Err(WorkspaceError::UnsafePath);
         }
@@ -782,12 +782,11 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         // Independent of `WorkspaceManager`'s own guard on purpose: this impl
         // deletes files, so it re-proves for itself that the directory is a
         // real directory this runner stamped for this exact attempt.
-        let metadata = fs::symlink_metadata(path).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(path).map_err(WorkspaceError::from)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
             return Err(WorkspaceError::UnsafePath);
         }
-        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER))
-            .map_err(|_| WorkspaceError::UnsafePath)?;
+        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER)).map_err(WorkspaceError::from)?;
         if marker != workspace.attempt_id.as_str() {
             return Err(WorkspaceError::AttemptMismatch);
         }
@@ -889,12 +888,11 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
 
     async fn provision_scratch(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
         let path = workspace.path.as_path();
-        let metadata = fs::symlink_metadata(path).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(path).map_err(WorkspaceError::from)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
             return Err(WorkspaceError::UnsafePath);
         }
-        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER))
-            .map_err(|_| WorkspaceError::UnsafePath)?;
+        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER)).map_err(WorkspaceError::from)?;
         if marker != workspace.attempt_id.as_str() {
             return Err(WorkspaceError::AttemptMismatch);
         }
