@@ -2,7 +2,7 @@ import { createSignal, createResource, For, Show } from 'solid-js';
 import { useParams } from '@solidjs/router';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState } from '../../../shared/ui';
+import { Button, Field, FieldShell, Select, Modal, Badge, EmptyState, createConfirm } from '../../../shared/ui';
 import type { CustomField } from '../../../shared/types';
 
 export default function FieldsPanel() {
@@ -96,8 +96,10 @@ export default function FieldsPanel() {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const handleDelete = async (fieldId: string) => {
-    if (!confirm('Are you sure? This will delete all values for this field.')) return;
+    if (!(await ask({ title: 'Delete field?', message: 'Are you sure? This will delete all values for this field.', confirmLabel: 'Delete', danger: true }))) return;
 
     try {
       await api.customFields.remove(fieldId);
@@ -114,6 +116,7 @@ export default function FieldsPanel() {
 
   return (
     <div class="max-w-[560px]">
+      <ConfirmHost />
       <div>
         <div class="mb-2.5 flex items-center justify-end">
           <Button onClick={openCreateModal}>+ Add Field</Button>

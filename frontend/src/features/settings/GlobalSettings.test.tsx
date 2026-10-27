@@ -34,6 +34,13 @@ function mount() {
   return { container, dispose };
 }
 
+function confirmDialog(text: string) {
+  const btn = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(
+    (b) => b.textContent?.trim() === text,
+  )!;
+  btn.click();
+}
+
 const findButton = (c: HTMLElement, text: string) =>
   Array.from(c.querySelectorAll('button')).find((b) => b.textContent?.includes(text))!;
 
@@ -69,16 +76,18 @@ describe('GlobalSettings', () => {
     const file = new File(['db'], 'backup.db');
 
     // Declined → no POST.
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    confirmDialog('Cancel');
     await flush();
     expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/restore'))).toBe(false);
 
     // Accepted → POST /restore.
-    vi.spyOn(window, 'confirm').mockReturnValueOnce(true);
     Object.defineProperty(input, 'files', { value: [file], configurable: true });
     input.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    confirmDialog('Restore');
     await flush();
     const post = fetchMock.mock.calls.find(
       (c) => (c[1] as RequestInit)?.method === 'POST' && String(c[0]).endsWith('/api/restore'),

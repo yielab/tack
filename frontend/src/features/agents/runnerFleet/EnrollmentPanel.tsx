@@ -1,6 +1,6 @@
 import { type Component, For, Show, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Badge, Button, Field, Modal } from '../../../shared/ui';
+import { Badge, Button, Field, Modal, createConfirm } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { runnersApi, type EnrollRunnerResult } from '../../../shared/execution';
 import RunnerHealthCard, { type RunnerConnectionStatus } from './RunnerHealthCard';
@@ -144,8 +144,10 @@ const EnrollmentPanel: Component = () => {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const revokeRunner = async (runner: SessionRunner) => {
-    if (!confirm(`Revoke runner "${runner.name}" (${runner.runnerId})? This cannot be undone.`)) return;
+    if (!(await ask({ title: `Revoke "${runner.name}"?`, message: 'This runner can no longer claim work. This cannot be undone.', confirmLabel: 'Revoke', danger: true }))) return;
     setBusy(runner.runnerId, true);
     try {
       await runnersApi.revokeRunner(runner.runnerId);
@@ -168,7 +170,7 @@ const EnrollmentPanel: Component = () => {
     e.preventDefault();
     const id = revokeTargetId().trim();
     if (!id) return;
-    if (!confirm(`Revoke runner "${id}"? This cannot be undone.`)) return;
+    if (!(await ask({ title: `Revoke runner "${id}"?`, message: 'This runner can no longer claim work. This cannot be undone.', confirmLabel: 'Revoke', danger: true }))) return;
     setRevokingManual(true);
     try {
       await runnersApi.revokeRunner(id);
@@ -205,6 +207,7 @@ const EnrollmentPanel: Component = () => {
 
   return (
     <div class="space-y-3.5">
+      <ConfirmHost />
       <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
         Enroll issues a one-time token a runner exchanges for a durable credential. This page doesn't check back with the server, so it only shows runners
         enrolled or revoked from this browser this session, not whether they actually connected — see the{' '}

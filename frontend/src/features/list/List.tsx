@@ -16,7 +16,7 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item } from '../../shared/types';
-import { Button, Badge, EmptyState } from '../../shared/ui';
+import { Button, Badge, EmptyState, createConfirm } from '../../shared/ui';
 import { IconList } from '../../shared/ui/icons';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import { typeBadgeTone } from '../../shared/ui/TypeBadge';
@@ -168,8 +168,10 @@ export default function List() {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const handleDelete = async (item: Item) => {
-    if (!confirm(`Delete "${item.title}"?`)) return;
+    if (!(await ask({ title: 'Delete item?', message: `"${item.title}" will be deleted.`, confirmLabel: 'Delete', danger: true }))) return;
     try {
       await api.items.remove(item.id);
       toast.success('Deleted');
@@ -212,6 +214,7 @@ export default function List() {
 
   return (
     <div class="h-full flex flex-col">
+      <ConfirmHost />
       {/* Header */}
       <div class="sticky top-0 z-10 bg-app pb-4">
         <div class="flex items-end gap-2.5">

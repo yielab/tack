@@ -3,7 +3,7 @@ import { useNavigate } from '@solidjs/router';
 import { toast } from '../../shared/ui/toast';
 import { api } from '../../shared/api';
 import { FiTrash2 } from 'solid-icons/fi';
-import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton } from '../../shared/ui';
+import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton, createConfirm } from '../../shared/ui';
 import { IconTemplates } from '../../shared/ui/icons';
 import { projectTypePillStyle, projectTypeTone } from '../../shared/ui/projectTypeTone';
 import type { ProjectTemplate } from '../../shared/types';
@@ -127,8 +127,10 @@ export default function Templates() {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const handleDeleteTemplate = async (templateId: string) => {
-    if (!confirm('Are you sure you want to delete this template?')) return;
+    if (!(await ask({ title: 'Delete template?', message: 'Are you sure you want to delete this template?', confirmLabel: 'Delete', danger: true }))) return;
 
     try {
       await api.templates.remove(templateId);
@@ -141,6 +143,7 @@ export default function Templates() {
 
   return (
     <div class="flex flex-col gap-5 lg:px-6 lg:py-3">
+    <ConfirmHost />
         {/* Header */}
         <div class="flex flex-wrap items-end gap-3">
           <div>

@@ -10,7 +10,7 @@ import { FiUploadCloud, FiDownloadCloud, FiRefreshCw, FiCheckCircle } from 'soli
 import { api } from '../../shared/api';
 import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
-import { Button, Field, Badge } from '../../shared/ui';
+import { Button, Field, Badge, createConfirm } from '../../shared/ui';
 import { IconChevronDown, IconChevronRight } from '../../shared/ui/icons';
 import DisplaySettings from './DisplaySettings';
 
@@ -56,11 +56,16 @@ const GlobalSettings: Component = () => {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const restoreFrom = async (file: File) => {
     if (
-      !confirm(
-        'Restoring REPLACES the entire database with this file. This cannot be undone. Continue?',
-      )
+      !(await ask({
+        title: 'Replace the database?',
+        message: 'Restoring REPLACES the entire database with this file. This cannot be undone.',
+        confirmLabel: 'Restore',
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -151,9 +156,12 @@ const GlobalSettings: Component = () => {
 
   const restoreFromCloud = async (key?: string) => {
     if (
-      !confirm(
-        'Restoring from the cloud REPLACES the entire database on the next restart. Continue?',
-      )
+      !(await ask({
+        title: 'Replace the database?',
+        message: 'Restoring from the cloud REPLACES the entire database on the next restart.',
+        confirmLabel: 'Restore',
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -190,6 +198,7 @@ const GlobalSettings: Component = () => {
 
   return (
     <div class="flex max-w-[760px] flex-col gap-[22px] px-6 py-8 sm:px-12">
+      <ConfirmHost />
       <div class="flex items-end gap-3">
         <h1 class="text-[2.375rem] leading-none" style={{ color: 'var(--color-text-primary)' }}>
           Settings
