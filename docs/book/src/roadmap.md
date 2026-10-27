@@ -43,9 +43,9 @@ plan or the page named beside it.
 - Review and merge Phases 79 and 80 into `develop`. Phase 79's points to decide are in §8 of
   [its plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md): the `Host`
   trait that stays until the last callers move, and four shared test fixtures that keep a
-  dead-code allowance. `cargo deny check advisories` also fails on advisories published since
-  its last run (an unsound `AsyncFd::new`, certificate-trust issues); `bans`, `licenses` and
-  `sources` pass.
+  dead-code allowance. `cargo deny check advisories` also fails on four advisories published since
+  its last run, all in the `zstd` crates that `tack-api` uses (RUSTSEC-2026-0391, -0398, -0403
+  and -0410); a patch-level `cargo update` of `zstd`, `zstd-safe` and `zstd-sys` clears them.
 - Rerun the local live suite (`onboarding-lab/e2e/docket-prill-e2e.sh`, not versioned) against docket's `develop`. It passed on 2026-10-18, before
   docket's escalation record; Phase 80 changed what it expects and
   [Phase 81](#phase-81--what-the-audit-found) card A makes it pass again.
