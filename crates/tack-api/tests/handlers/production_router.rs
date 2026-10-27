@@ -957,7 +957,7 @@ async fn runner_v1_router_enforces_configured_body_limit() {
         // Genuine layer-level rejection, not merely a handler-level error:
         // every error this handler itself produces (including its own
         // `payload_too_large` for `json_body_bytes_max`) is a JSON envelope
-        // with an `error` object and `request_id: "req_runner"`
+        // with an `error` object and a `request_id`
         // (`runner_auth::protocol_error`). Axum's own body-extraction
         // rejection is not that shape at all, proving the handler — and
         // therefore `runner_auth::authenticate` — never ran.
@@ -997,4 +997,27 @@ async fn runner_v1_router_enforces_configured_body_limit() {
         assert_eq!(status, StatusCode::OK, "{name}: {claimed}");
         assert_eq!(claimed["request"]["request_id"], request_id, "{name}");
     }
+}
+
+#[tokio::test]
+async fn runner_v1_errors_name_the_request_the_runner_sent() {
+    let (app, _repo, _workspace_id, _item_id) = setup(AppConfig::default()).await;
+    let mut seen = Vec::new();
+    for sent in ["req_a1b2", "req_c3d4"] {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/runner/v1/claim")
+            .header("content-type", "application/json")
+            .header("x-request-id", sent)
+            .body(Body::from("{}"))
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()["x-request-id"], sent);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["request_id"], sent);
+        seen.push(body["error"]["request_id"].clone());
+    }
+    assert_ne!(seen[0], seen[1], "each request has an id of its own");
 }

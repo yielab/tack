@@ -209,6 +209,7 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
         .layer(DefaultBodyLimit::max(effective_body_limit_bytes(
             configured_max_body_size_bytes,
         )))
+        .layer(axum::middleware::from_fn(runner_auth::with_request_id))
         .with_state(state)
 }
 

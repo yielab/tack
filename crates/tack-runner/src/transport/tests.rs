@@ -1711,3 +1711,31 @@ mod slot_loop {
             .expect("serve result");
     }
 }
+
+#[tokio::test]
+async fn every_request_carries_a_request_id_of_its_own() {
+    let reply = fixture("claim.no-work.response.json");
+    let server = spawn_mock(vec![(200, reply.clone()), (200, reply)]);
+    let protocol = client(&server.base_url);
+    for nth in 1..=2 {
+        protocol
+            .claim(
+                &session(),
+                ClaimRequest {
+                    claim_request_id: ClaimRequestId::new(format!("claim_{nth}")),
+                    available_capacity: 1,
+                    wait: Duration::from_secs(1),
+                },
+            )
+            .await
+            .expect("no work");
+    }
+    let recorded = server.requests.lock().expect("requests").clone();
+    let ids: Vec<&String> = recorded
+        .iter()
+        .map(|request| request.headers.get("x-request-id").expect("a request id"))
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.iter().all(|id| id.starts_with("req_") && id.len() > 8));
+    assert_ne!(ids[0], ids[1]);
+}

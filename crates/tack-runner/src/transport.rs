@@ -69,6 +69,14 @@ use crate::{
 /// it rather than requiring every operator to spell it into `--api-url`.
 const PROTOCOL_BASE_PATH: &str = "/api/runner/v1";
 
+/// The header that carries a request's correlation id; the board answers with the same one.
+const REQUEST_ID_HEADER: &str = "x-request-id";
+
+/// A fresh correlation id, one per HTTP request.
+fn new_request_id() -> String {
+    format!("req_{}", uuid::Uuid::new_v4().simple())
+}
+
 /// How long an idle runner waits before it claims again: the server's
 /// `retry_after_ms`, less what the claim itself already took, held between a
 /// floor that keeps a server answering `0` from turning the loop hot and the
@@ -193,7 +201,15 @@ impl HttpPullProtocol {
         let mut sent = 0_u32;
         loop {
             sent += 1;
-            let mut request = self.http.request(method.clone(), &url).json(body);
+            // A request id of its own for every request, retries included: the board echoes it
+            // in the answer's error body and in its log, so one exchange can be followed from
+            // the runner's log to the board's.
+            let request_id = new_request_id();
+            let mut request = self
+                .http
+                .request(method.clone(), &url)
+                .header(REQUEST_ID_HEADER, &request_id)
+                .json(body);
             if let Some(credential) = credential {
                 // The only place a runner credential is written onto the
                 // wire. It is never formatted anywhere else.
@@ -224,6 +240,7 @@ impl HttpPullProtocol {
             if !may_retry {
                 tracing::debug!(
                     operation = %path,
+                    request_id = %request_id,
                     attempts = sent,
                     error = %outcome,
                     "runner protocol call failed"
@@ -912,6 +929,7 @@ impl AttemptDataProtocol for HttpPullProtocol {
             .http
             .request(method, &url)
             .bearer_auth(session.credential().expose())
+            .header(REQUEST_ID_HEADER, new_request_id())
             .header(ARTIFACT_FENCING_TOKEN_HEADER, fencing_token.0.to_string())
             .body(content);
         if let Some(media_type) = media_type {

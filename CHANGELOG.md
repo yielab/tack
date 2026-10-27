@@ -199,6 +199,14 @@ automation a template carries, and the removal of dollars per day.
   answers `400 invalid_request` with the field named when it is missing, where a few mistakes (a negative
   `available_capacity`, a heartbeat `journal_state` that is not one of the runner's journal states) were accepted
   before. A heartbeat's `journal_state` may be `terminal_report_pending`, which a runner has always been able to send.
+- **Every runner message is one set of types, and every runner request has an id of its own.** Enrollment, refresh,
+  accept and start, decisions, the artifact manifest and the cancellation observation join the claim, heartbeat,
+  event-batch and completion messages in `tack-protocol`, and the board and the runner read and write them with no
+  hand-built JSON left. On the wire nothing changes for a valid message (the board's timestamps in these answers are
+  written with a `Z` instead of `+00:00`). A request that does not fit answers `400 invalid_request` and names the
+  field, such as `options[0].label` or `fencing_token`, where a few mistakes were named only as `body`. The runner now
+  sends an `x-request-id` it makes anew for every request; the board puts it in the error body's `request_id` (it was
+  always `req_runner`), echoes it in its answer and logs it.
 - **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
   the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
   the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as
