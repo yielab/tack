@@ -893,11 +893,11 @@ async fn a_negative_or_too_large_fencing_token_is_invalid_request_and_writes_not
     }
 
     // Every other write carries it in the body; a recovery observation stands for them. A
-    // negative or fractional number never deserializes into the typed request (field `body`);
-    // one above `i64::MAX` parses, and is refused as the `fencing_token` itself.
+    // negative or fractional number never deserializes into the typed request, and one above
+    // `i64::MAX` parses and is refused after it; each is refused as the `fencing_token` itself.
     let bodies = [
-        (json!(-1), "body"),
-        (json!(1.5), "body"),
+        (json!(-1), "fencing_token"),
+        (json!(1.5), "fencing_token"),
         (json!(9_223_372_036_854_775_808_u64), "fencing_token"),
     ];
     for (token, field) in bodies {
