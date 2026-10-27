@@ -29,7 +29,7 @@ use crate::common;
 use crate::fake_docket;
 use fake_docket::{FakeDocket, Gate, Script, fixture};
 
-const POD: &str = "fab-dev";
+const POD: &str = "mer-dev";
 
 fn git(directory: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
@@ -175,7 +175,7 @@ fn adapter(fake: &FakeDocket, scene: &Scene) -> DocketAdapter {
 }
 
 fn hop(role: &str, model: &str, cycle: u32) -> Value {
-    json!({"step": role, "role": role, "member": format!("fab-dev-{role}"), "model": model,
+    json!({"step": role, "role": role, "member": format!("mer-dev-{role}"), "model": model,
            "provider": "local", "cycle": cycle, "attempt": 1})
 }
 
@@ -318,7 +318,7 @@ async fn prepare_sent(api: &str, setting: Option<PrepareSetting>) -> Option<Valu
     let mut attempt = spec(&scene, "attempt-1", 1);
     attempt.work.request.repository.prepare = setting;
     run_to_end(&adapter(&fake, &scene), &attempt).await;
-    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = fake.requests_to("POST", "/tasks/mer-dev");
     assert_eq!(posted.len(), 1);
     posted[0].body.get("prepare").cloned()
 }
@@ -354,7 +354,7 @@ async fn prepare_never_goes_to_api_5() {
 async fn probe_on_api_5_reports_each_team_and_the_ceiling() {
     let fake = pods_fake().await;
     fake.add_pod(
-        "fab-content",
+        "mer-content",
         "attended",
         &[("network", "docket pod set network none")],
     );
@@ -366,7 +366,7 @@ async fn probe_on_api_5_reports_each_team_and_the_ceiling() {
     assert_eq!(capability.autonomy_ceiling.as_deref(), Some("L3"));
     let teams = capability.teams.expect("teams");
     assert_eq!(teams.len(), 2);
-    let content = teams.iter().find(|t| t.name == "fab-content").unwrap();
+    let content = teams.iter().find(|t| t.name == "mer-content").unwrap();
     assert_eq!(content.profile, "attended");
     assert_eq!(content.violations[0].requirement, "network");
     assert_eq!(content.violations[0].fix, "docket pod set network none");
@@ -392,15 +392,15 @@ async fn probe_on_api_5_reports_each_team_and_the_ceiling() {
 #[tokio::test]
 async fn probe_reports_the_folders_each_teams_sandbox_reads() {
     let fake = pods_fake().await;
-    fake.add_pod("fab-granted", "lights-out", &[]);
+    fake.add_pod("mer-granted", "lights-out", &[]);
     fake.set_read_only(
-        "fab-granted",
+        "mer-granted",
         Some(&["/home/x/.nvm/versions/node/v22.17.1", "/home/x/venv"]),
     );
-    fake.add_pod("fab-narrowed", "lights-out", &[]);
-    fake.set_read_only("fab-narrowed", Some(&[]));
-    fake.add_pod("fab-old", "lights-out", &[]);
-    fake.set_read_only("fab-old", None);
+    fake.add_pod("mer-narrowed", "lights-out", &[]);
+    fake.set_read_only("mer-narrowed", Some(&[]));
+    fake.add_pod("mer-old", "lights-out", &[]);
+    fake.set_read_only("mer-old", None);
     let scene = scene();
     let adapter = adapter(&fake, &scene);
 
@@ -414,14 +414,14 @@ async fn probe_reports_the_folders_each_teams_sandbox_reads() {
             .clone()
     };
     assert_eq!(
-        read_only("fab-granted"),
+        read_only("mer-granted"),
         Some(vec![
             "/home/x/.nvm/versions/node/v22.17.1".to_owned(),
             "/home/x/venv".to_owned()
         ])
     );
-    assert_eq!(read_only("fab-narrowed"), Some(Vec::new()));
-    assert_eq!(read_only("fab-old"), None, "no key is unknown, not none");
+    assert_eq!(read_only("mer-narrowed"), Some(Vec::new()));
+    assert_eq!(read_only("mer-old"), None, "no key is unknown, not none");
     // The capture itself: the attended team keeps the machine's one grant.
     assert_eq!(
         read_only(POD),
@@ -496,7 +496,7 @@ async fn ensure_is_posted_once_for_two_attempts() {
         json!({"name": POD, "location": scene.repository.display().to_string(),
                "blueprint": "software", "ensure": true})
     );
-    assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 2);
+    assert_eq!(fake.requests_to("POST", "/tasks/mer-dev").len(), 2);
 }
 
 #[tokio::test]
@@ -508,7 +508,7 @@ async fn the_task_body_is_the_specs_example_key_by_key() {
 
     run_to_end(&adapter, &spec(&scene, "attempt-1", 2)).await;
 
-    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = fake.requests_to("POST", "/tasks/mer-dev");
     assert_eq!(posted.len(), 1);
     let item = spec(&scene, "attempt-1", 2)
         .work
@@ -593,7 +593,7 @@ async fn a_422_fails_the_attempt_with_the_bodys_text_and_posts_nothing_again() {
         steps.iter().any(|(_, text)| text == message),
         "the body's error is on the timeline: {steps:?}"
     );
-    assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
+    assert_eq!(fake.requests_to("POST", "/tasks/mer-dev").len(), 1);
 }
 
 /// The spec as the board sends it when it names a level for the run.
@@ -618,7 +618,7 @@ async fn autonomy_sent(profile: &str, asked: Option<&str>) -> Option<String> {
         None => spec,
     };
     run_to_end(&adapter, &spec).await;
-    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = fake.requests_to("POST", "/tasks/mer-dev");
     assert_eq!(posted.len(), 1);
     posted[0].body["autonomy"].as_str().map(str::to_owned)
 }
@@ -664,7 +664,7 @@ async fn a_422_above_dockets_ceiling_fails_the_attempt_with_dockets_text_and_pos
     assert_eq!(outcome.terminal_reason["code"], json!("rejected"));
     assert_eq!(outcome.terminal_reason["message"], json!(sentence));
     assert!(steps.iter().any(|(_, text)| *text == sentence), "{steps:?}");
-    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = fake.requests_to("POST", "/tasks/mer-dev");
     assert_eq!(posted.len(), 1);
     assert_eq!(posted[0].body["autonomy"], json!("L5"));
 }
@@ -681,7 +681,7 @@ async fn the_fake_refuses_an_autonomy_as_docket_does() {
     ] {
         let mut body = request_file("post-task-created");
         body["autonomy"] = request_file(name)["autonomy"].clone();
-        let (answered, answer) = ask(&fake, "POST", "/tasks/fab-dev", Some(body)).await;
+        let (answered, answer) = ask(&fake, "POST", "/tasks/mer-dev", Some(body)).await;
         assert_eq!(answered, status, "{name}: {answer:?}");
         assert_eq!(answer, fixture(name), "{name}");
     }
@@ -710,12 +710,12 @@ async fn a_needs_human_task_ends_the_attempt_with_that_code_and_dockets_sentence
     assert_eq!(outcome.terminal_reason["code"], json!("needs_human"));
     assert_eq!(outcome.terminal_reason["message"], json!(sentence));
     assert_eq!(
-        fake.requests_to("POST", "/tasks/fab-dev").len(),
+        fake.requests_to("POST", "/tasks/mer-dev").len(),
         1,
         "nothing queues the task again by itself"
     );
     assert!(
-        fake.requests_to("POST", "/tasks/fab-dev/").is_empty(),
+        fake.requests_to("POST", "/tasks/mer-dev/").is_empty(),
         "no cancel and no retry either"
     );
 }
@@ -854,7 +854,7 @@ async fn the_cursor_survives_a_second_adapter_over_the_same_state_dir() {
 
     let (_, second) = run_to_end(&adapter(&fake, &scene), &attempt).await;
     assert!(second.is_empty(), "nothing is delivered twice: {second:?}");
-    let polls = fake.requests_to("GET", "/traces/fab-dev");
+    let polls = fake.requests_to("GET", "/traces/mer-dev");
     let last = polls.last().unwrap();
     assert_eq!(
         last.query.replace("%3A", ":"),
@@ -1172,7 +1172,7 @@ async fn a_done_task_names_its_branch_head_and_leaves_the_worktree_alone() {
     assert_eq!(outcome.terminal_reason["untracked_files"], json!(2));
     // The posted base is the worktree's own commit, so the branch is cut there.
     assert_eq!(
-        fake.requests_to("POST", "/tasks/fab-dev")[0].body["baseRef"],
+        fake.requests_to("POST", "/tasks/mer-dev")[0].body["baseRef"],
         json!(base)
     );
 }
@@ -1210,20 +1210,20 @@ async fn a_rework_request_posts_its_base_branch_as_the_base_ref() {
     // The previous attempt's branch, which outlives it in the user's repository.
     git(
         &scene.repository,
-        &["branch", "docket/fab-dev/task-previous", "main"],
+        &["branch", "docket/mer-dev/task-previous", "main"],
     );
     let mut rework = spec(&scene, "attempt-2", 1);
     rework.work.request.metadata = json!({
         "rework_of": "exec_1",
-        "rework_base": "docket/fab-dev/task-previous",
+        "rework_base": "docket/mer-dev/task-previous",
     });
 
     run_to_end(&adapter, &rework).await;
 
-    let posted = fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = fake.requests_to("POST", "/tasks/mer-dev");
     assert_eq!(
         posted[0].body["baseRef"],
-        json!("docket/fab-dev/task-previous")
+        json!("docket/mer-dev/task-previous")
     );
 }
 
@@ -2283,7 +2283,7 @@ async fn a_task_parked_on_an_approval_survives_a_restart_of_the_runner() {
         ),
         "pub fn retry() {}"
     );
-    assert_eq!(fake.requests_to("POST", "/tasks/fab-dev").len(), 1);
+    assert_eq!(fake.requests_to("POST", "/tasks/mer-dev").len(), 1);
     let id = escalation_of(&fake);
     assert_eq!(
         fake.requests_to("POST", &format!("/escalations/{id}"))
@@ -2563,7 +2563,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
     tokio::time::sleep(Duration::from_millis(700)).await;
     assert!(refreshes().is_empty(), "{:?}", refreshes());
 
-    fake.add_pod("fab-content", "lights-out", &[]);
+    fake.add_pod("mer-content", "lights-out", &[]);
     let mut waited = 0;
     while refreshes().is_empty() && waited < 100 {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -2572,7 +2572,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
     let sent = refreshes();
     assert_eq!(sent.len(), 1, "{sent:?}");
     let teams = sent[0]["capabilities"]["harnesses"][0]["teams"].to_string();
-    assert!(teams.contains("fab-content"), "{teams}");
+    assert!(teams.contains("mer-content"), "{teams}");
 
     // The new report is now the last one sent: later intervals send nothing.
     tokio::time::sleep(Duration::from_millis(700)).await;
@@ -2778,14 +2778,14 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     get("pods-empty", ask(&fake, "GET", "/pods", None).await);
     get(
         "traces-empty",
-        ask(&fake, "GET", "/traces/fab-dev", None).await,
+        ask(&fake, "GET", "/traces/mer-dev", None).await,
     );
     get(
         "traces-since-empty",
         ask(
             &fake,
             "GET",
-            "/traces/fab-dev?since=2026-01-01T00%3A00%3A00Z%3A0",
+            "/traces/mer-dev?since=2026-01-01T00%3A00%3A00Z%3A0",
             None,
         )
         .await,
@@ -2822,13 +2822,13 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     get("pods", ask(&fake, "GET", "/pods", None).await);
     get(
         "pod-attended",
-        ask(&fake, "GET", "/pods/fab-dev", None).await,
+        ask(&fake, "GET", "/pods/mer-dev", None).await,
     );
     get("pod-unknown", ask(&fake, "GET", "/pods/nope", None).await);
-    fake.add_pod("fab-lights", "lights-out", &[]);
+    fake.add_pod("mer-lights", "lights-out", &[]);
     get(
         "pod-lights-out",
-        ask(&fake, "GET", "/pods/fab-lights", None).await,
+        ask(&fake, "GET", "/pods/mer-lights", None).await,
     );
     get("status", ask(&fake, "GET", "/status.json", None).await);
 
@@ -2841,7 +2841,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     let posted = ask(
         &fake,
         "POST",
-        "/tasks/fab-dev",
+        "/tasks/mer-dev",
         Some(request_file("post-task-created")),
     )
     .await;
@@ -2850,25 +2850,25 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     get("post-task-created", posted);
     get(
         "task-failed-pipeline",
-        ask(&fake, "GET", &format!("/tasks/fab-dev/{id}"), None).await,
+        ask(&fake, "GET", &format!("/tasks/mer-dev/{id}"), None).await,
     );
     get(
         "task-diff-failed",
-        ask(&fake, "GET", &format!("/tasks/fab-dev/{id}/diff"), None).await,
+        ask(&fake, "GET", &format!("/tasks/mer-dev/{id}/diff"), None).await,
     );
     get(
         "task-cancel-finished",
         ask(
             &fake,
             "POST",
-            &format!("/tasks/fab-dev/{id}/cancel"),
+            &format!("/tasks/mer-dev/{id}/cancel"),
             Some(json!({"reason": "x"})),
         )
         .await,
     );
     get(
         "task-unknown",
-        ask(&fake, "GET", "/tasks/fab-dev/task-unknown", None).await,
+        ask(&fake, "GET", "/tasks/mer-dev/task-unknown", None).await,
     );
     get(
         "escalation-unknown",
@@ -2889,7 +2889,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ask(
             &fake,
             "POST",
-            "/tasks/fab-dev",
+            "/tasks/mer-dev",
             Some(request_file("post-task-minimal")),
         )
         .await,
@@ -2903,14 +2903,14 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ..Script::default()
     });
     let second = request_file("post-task-gated");
-    let parked = ask(&fake, "POST", "/tasks/fab-dev", Some(second)).await;
+    let parked = ask(&fake, "POST", "/tasks/mer-dev", Some(second)).await;
     assert_eq!(parked.0, 201, "{parked:?}");
     get("post-task-gated", parked.clone());
     let held = parked.1["task"].as_str().unwrap().to_owned();
     let held_escalation = fake.escalation_id(&held);
     get(
         "task-waiting-escalation",
-        ask(&fake, "GET", &format!("/tasks/fab-dev/{held}"), None).await,
+        ask(&fake, "GET", &format!("/tasks/mer-dev/{held}"), None).await,
     );
     get(
         "escalations-pending",
@@ -2965,7 +2965,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     );
     get(
         "task-failed-after-escalation",
-        ask(&fake, "GET", &format!("/tasks/fab-dev/{held}"), None).await,
+        ask(&fake, "GET", &format!("/tasks/mer-dev/{held}"), None).await,
     );
     fake.script(Script {
         gate: Gate::Consult {
@@ -2982,7 +2982,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         third.as_object_mut().unwrap().remove(key);
     }
     third["restrictions"] = json!({"network": "none"});
-    let asking = ask(&fake, "POST", "/tasks/fab-dev", Some(third)).await;
+    let asking = ask(&fake, "POST", "/tasks/mer-dev", Some(third)).await;
     assert_eq!(asking.0, 201, "{asking:?}");
     let asking_id = asking.1["task"].as_str().unwrap().to_owned();
     let consult_path = format!("/escalations/{}", fake.escalation_id(&asking_id));
@@ -3018,7 +3018,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     });
     let mut fourth = request_file("post-task-created");
     fourth["idempotencyKey"] = json!("capture-attempt-4");
-    let input = ask(&fake, "POST", "/tasks/fab-dev", Some(fourth)).await;
+    let input = ask(&fake, "POST", "/tasks/mer-dev", Some(fourth)).await;
     assert_eq!(input.0, 201, "{input:?}");
     let input_id = input.1["task"].as_str().unwrap().to_owned();
     get(
@@ -3038,14 +3038,14 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     });
     let mut fifth = request_file("post-task-created");
     fifth["idempotencyKey"] = json!("capture-attempt-5");
-    let cancelled = ask(&fake, "POST", "/tasks/fab-dev", Some(fifth)).await;
+    let cancelled = ask(&fake, "POST", "/tasks/mer-dev", Some(fifth)).await;
     let cancelled_id = cancelled.1["task"].as_str().unwrap().to_owned();
     get(
         "cancel-accepted",
         ask(
             &fake,
             "POST",
-            &format!("/tasks/fab-dev/{cancelled_id}/cancel"),
+            &format!("/tasks/mer-dev/{cancelled_id}/cancel"),
             Some(request_file("cancel-accepted")),
         )
         .await,
@@ -3063,16 +3063,16 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     });
     let mut at_l5 = request_file("post-task-autonomy-l5");
     at_l5["idempotencyKey"] = json!("capture-attempt-l5");
-    let lights_out = ask(&fake, "POST", "/tasks/fab-dev", Some(at_l5)).await;
+    let lights_out = ask(&fake, "POST", "/tasks/mer-dev", Some(at_l5)).await;
     assert_eq!(lights_out.0, 201, "{lights_out:?}");
     let l5_id = lights_out.1["task"].as_str().unwrap().to_owned();
     get("post-task-autonomy-l5", lights_out);
     get(
         "task-failed-needs-human",
-        ask(&fake, "GET", &format!("/tasks/fab-dev/{l5_id}"), None).await,
+        ask(&fake, "GET", &format!("/tasks/mer-dev/{l5_id}"), None).await,
     );
     for name in ["traces-after-failure", "traces-escalation"] {
-        get(name, ask(&fake, "GET", "/traces/fab-dev", None).await);
+        get(name, ask(&fake, "GET", "/traces/mer-dev", None).await);
     }
 
     let mut wrong = Vec::new();
@@ -3092,7 +3092,7 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
         &fake,
         "POST",
         "/pods",
-        Some(json!({"project": "fab-dev", "path": "/x", "blueprint": "software", "ensure": true})),
+        Some(json!({"project": "mer-dev", "path": "/x", "blueprint": "software", "ensure": true})),
     )
     .await;
     assert_eq!(old.0, 400);
@@ -3104,7 +3104,7 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
         &fake,
         "POST",
         "/pods",
-        Some(json!({"name": "fab-dev", "location": "/x", "ensure": true})),
+        Some(json!({"name": "mer-dev", "location": "/x", "ensure": true})),
     )
     .await;
     assert_eq!(missing.0, 400);
@@ -3118,7 +3118,7 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
     let mut task = request_file("post-task-created");
     task["bogus"] = json!(1);
     fake.add_pod(POD, "attended", &[]);
-    let unknown = ask(&fake, "POST", "/tasks/fab-dev", Some(task)).await;
+    let unknown = ask(&fake, "POST", "/tasks/mer-dev", Some(task)).await;
     assert_eq!(unknown.0, 400);
     assert!(
         unknown.1["error"].as_str().unwrap().contains("\"bogus\""),

@@ -4,7 +4,7 @@ status: 400
 request: post-tasks-no-description.request.json
 tack-sends: no
 note: a body without description
-command: curl -X POST http://127.0.0.1:<port>/tasks/fab-dev (bearer token from docket's --token-file) with the body in post-tasks-no-description.request.json
+command: curl -X POST http://127.0.0.1:<port>/tasks/mer-dev (bearer token from docket's --token-file) with the body in post-tasks-no-description.request.json
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-26

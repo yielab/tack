@@ -1895,12 +1895,12 @@ async fn the_item_carries_started_by_and_team_from_its_newest_request() {
     seed::execution_request_auto_started(
         &repo,
         created["request_id"].as_str().unwrap(),
-        "fab-content",
+        "mer-content",
     )
     .await;
     let item = read().await;
     assert_eq!(item.started_by.as_deref(), Some("auto_start"));
-    assert_eq!(item.team.as_deref(), Some("fab-content"));
+    assert_eq!(item.team.as_deref(), Some("mer-content"));
 
     assert_eq!(item.merged_by, None);
     let now = Utc::now().to_rfc3339();
@@ -2522,7 +2522,7 @@ async fn a_profile_whose_network_is_not_a_boolean_is_refused() {
 #[tokio::test]
 async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_do() {
     let (app, _repo, _item_id) = setup().await;
-    let policy = json!({"agent": "claude-code", "docket": {"team": "fab-content"},
+    let policy = json!({"agent": "claude-code", "docket": {"team": "mer-content"},
         "tools": {"claude-code": ["Read", "Edit", "WebFetch"]}});
     let create = json!({"name": "Writer", "instructions": "x", "delivers": " a document in a folder ", "tool_policy": policy});
     let (status, created) = snd(&app, "POST", "/agent-profiles", create.to_string()).await;
@@ -2536,7 +2536,7 @@ async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_d
         .find(|p| p["agent_profile_id"] == id.as_str())
         .unwrap();
     assert_eq!(row["delivers"], "a document in a folder");
-    assert_eq!(row["tool_policy"]["docket"]["team"], "fab-content");
+    assert_eq!(row["tool_policy"]["docket"]["team"], "mer-content");
     assert_eq!(
         (
             row["changes_files"].as_bool(),

@@ -227,7 +227,7 @@ rec health GET /health yes "the daemon supervision asks only for the status" --n
 rec status-empty GET /status.json yes "no team yet, so no agents" --no-auth; expect 200 status
 rec unauthorized GET /pods no "a request without the bearer token" --no-auth; expect 401 unauthorized
 rec pods-empty GET /pods yes "no team yet"; expect 200 pods
-rec traces-empty GET /traces/fab-dev no "a team that does not exist yet has no events, and no error"; expect 200 traces
+rec traces-empty GET /traces/mer-dev no "a team that does not exist yet has no events, and no error"; expect 200 traces
 rec escalations-empty GET '/escalations?since=0' yes "the probe: nothing is waiting, and next equals since"; expect 200 escalations-empty
 
 # ── Teams, over throwaway repositories ────────────────────────────────────────
@@ -238,47 +238,47 @@ for repo in repo repo2; do
   git -C "$SCRATCH/$repo" add -A
   git -C "$SCRATCH/$repo" -c user.name=capture -c user.email=capture@localhost commit -q -m seed
 done
-DEV_BODY=$(jq -cn --arg location "$SCRATCH/repo" '{name: "fab-dev", location: $location, blueprint: "software", ensure: true}')
+DEV_BODY=$(jq -cn --arg location "$SCRATCH/repo" '{name: "mer-dev", location: $location, blueprint: "software", ensure: true}')
 rec post-pods-old-fields POST /pods no "the fields before docket read name and location: refused" \
-  --body "$(jq -cn --arg path "$SCRATCH/repo" '{project: "fab-dev", path: $path, blueprint: "software", ensure: true}')"; expect 400 old-fields
+  --body "$(jq -cn --arg path "$SCRATCH/repo" '{project: "mer-dev", path: $path, blueprint: "software", ensure: true}')"; expect 400 old-fields
 rec post-pods-created POST /pods yes "the body Tack sends; the answer still names the team project" --body "$DEV_BODY"; expect 201 post-pods
 rec post-pods-existing POST /pods yes "the same body again: ensure answers 200, created false" --body "$DEV_BODY"; expect 200 post-pods-again
 rec post-pods-conflict POST /pods no "the same body without ensure (Tack always sends ensure)" \
   --body "$(jq -c 'del(.ensure)' <<<"$DEV_BODY")"; expect 409 post-pods-conflict
-LIGHTS_BODY=$(jq -cn --arg location "$SCRATCH/repo2" '{name: "fab-lights", location: $location, blueprint: "software", ensure: true}')
+LIGHTS_BODY=$(jq -cn --arg location "$SCRATCH/repo2" '{name: "mer-lights", location: $location, blueprint: "software", ensure: true}')
 rec post-pods-created-second POST /pods no "a second team, set to lights-out below so its profile carries violations" --body "$LIGHTS_BODY"; expect 201 second-pod
 guard
-(cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set profile lights-out --pod fab-lights </dev/null >"$SCRATCH/pod-set.log" 2>&1) \
+(cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set profile lights-out --pod mer-lights </dev/null >"$SCRATCH/pod-set.log" 2>&1) \
   || die "docket pod set profile failed; see $SCRATCH/pod-set.log"
 
 mkdir -p "$SCRATCH/toolchain/node"
 guard
 "${DOCKET_ENV[@]}" "$DOCKET_BIN" setup sandbox read add "$SCRATCH/toolchain/node" </dev/null >"$SCRATCH/read-add.log" 2>&1 \
   || die "docket setup sandbox read add failed; see $SCRATCH/read-add.log"
-(cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set readOnly none --pod fab-lights </dev/null >"$SCRATCH/pod-set-read.log" 2>&1) \
+(cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set readOnly none --pod mer-lights </dev/null >"$SCRATCH/pod-set-read.log" 2>&1) \
   || die "docket pod set readOnly failed; see $SCRATCH/pod-set-read.log"
 
 rec pods GET /pods yes "two teams, one attended and one lights-out"; expect 200 pods
-rec pod-attended GET /pods/fab-dev yes "a team with no violation, keeping the machine's one read-only grant in readOnly"; expect 200 pod-attended
-rec pod-lights-out GET /pods/fab-lights yes "a lights-out team that lacks isolation, a network setting and an external gate; its readOnly setting is none, so readOnly is empty"; expect 200 pod-lights-out
+rec pod-attended GET /pods/mer-dev yes "a team with no violation, keeping the machine's one read-only grant in readOnly"; expect 200 pod-attended
+rec pod-lights-out GET /pods/mer-lights yes "a lights-out team that lacks isolation, a network setting and an external gate; its readOnly setting is none, so readOnly is empty"; expect 200 pod-lights-out
 rec pod-unknown GET /pods/no-such-team yes "a team docket does not know"; expect 404 pod-unknown
 rec status GET /status.json yes "with teams, the agents are their members" --no-auth; expect 200 status-teams
-rec traces-since-empty GET '/traces/fab-dev?since=2026-01-01T00:00:00Z:0' yes "the compound cursor echoed when there is nothing newer"; expect 200 traces-since
+rec traces-since-empty GET '/traces/mer-dev?since=2026-01-01T00:00:00Z:0' yes "the compound cursor echoed when there is nothing newer"; expect 200 traces-since
 
 # ── What docket refuses at POST /tasks/<pod> ──────────────────────────────────
 refuse() { # <name> <status> <note> <path> <body>
   rec "$1" POST "$4" no "$3" --body "$5"; expect "$2" "$1"
 }
-refuse post-tasks-no-description 400 "a body without description" /tasks/fab-dev '{"externalRef":"x"}'
-rec post-tasks-invalid-json POST /tasks/fab-dev no "a body that is not JSON" --raw 'not json'; expect 400 invalid-json
-refuse post-tasks-max-tokens-zero 400 "maxTokens must be above 0" /tasks/fab-dev '{"description":"x","maxTokens":0}'
-refuse post-tasks-empty-external-ref 400 "externalRef must have a character" /tasks/fab-dev '{"description":"x","externalRef":""}'
-refuse post-tasks-gate-without-command 400 "gate needs a command" /tasks/fab-dev '{"description":"x","gate":{}}'
-refuse post-tasks-brief-without-objective 422 "a brief with an empty objective" /tasks/fab-dev '{"description":"x","brief":{"objective":""}}'
-refuse post-tasks-denied-tool-unknown 422 "deniedTools names a tool docket does not have" /tasks/fab-dev '{"description":"x","restrictions":{"deniedTools":["no-such-tool"]}}'
-refuse post-tasks-network-open 422 "restrictions.network may only be none" /tasks/fab-dev '{"description":"x","restrictions":{"network":"open"}}'
-refuse post-tasks-autonomy-above-ceiling 422 "autonomy L5 on an attended team, whose ceiling is L3" /tasks/fab-dev '{"description":"x","autonomy":"L5"}'
-refuse post-tasks-autonomy-invalid 400 "autonomy that is not L3, L4 or L5" /tasks/fab-dev '{"description":"x","autonomy":"L9"}'
+refuse post-tasks-no-description 400 "a body without description" /tasks/mer-dev '{"externalRef":"x"}'
+rec post-tasks-invalid-json POST /tasks/mer-dev no "a body that is not JSON" --raw 'not json'; expect 400 invalid-json
+refuse post-tasks-max-tokens-zero 400 "maxTokens must be above 0" /tasks/mer-dev '{"description":"x","maxTokens":0}'
+refuse post-tasks-empty-external-ref 400 "externalRef must have a character" /tasks/mer-dev '{"description":"x","externalRef":""}'
+refuse post-tasks-gate-without-command 400 "gate needs a command" /tasks/mer-dev '{"description":"x","gate":{}}'
+refuse post-tasks-brief-without-objective 422 "a brief with an empty objective" /tasks/mer-dev '{"description":"x","brief":{"objective":""}}'
+refuse post-tasks-denied-tool-unknown 422 "deniedTools names a tool docket does not have" /tasks/mer-dev '{"description":"x","restrictions":{"deniedTools":["no-such-tool"]}}'
+refuse post-tasks-network-open 422 "restrictions.network may only be none" /tasks/mer-dev '{"description":"x","restrictions":{"network":"open"}}'
+refuse post-tasks-autonomy-above-ceiling 422 "autonomy L5 on an attended team, whose ceiling is L3" /tasks/mer-dev '{"description":"x","autonomy":"L5"}'
+refuse post-tasks-autonomy-invalid 400 "autonomy that is not L3, L4 or L5" /tasks/mer-dev '{"description":"x","autonomy":"L9"}'
 refuse post-tasks-unknown-pod 404 "a team docket does not know" /tasks/no-such-team '{"description":"x"}'
 
 # ── The one task: refused at claim by an unknown pipeline, before any agent turn ─
@@ -288,29 +288,29 @@ TASK_BODY=$(jq -cn '{description: "Capture only: this task fails at claim, no ag
   restrictions: {network: "none", deniedTools: ["bash"]},
   gate: {command: "true", timeoutS: 600},
   brief: {objective: "Capture only", acceptance: ["nothing"], constraints: ["nothing"]}}')
-rec post-task-created POST /tasks/fab-dev yes "a task as Tack posts it, with every key it can send; the pipeline does not exist" --body "$TASK_BODY"; expect 201 post-task
+rec post-task-created POST /tasks/mer-dev yes "a task as Tack posts it, with every key it can send; the pipeline does not exist" --body "$TASK_BODY"; expect 201 post-task
 TASK_ID=$(jq -r '.task' <<<"$LAST_BODY")
-wait_for fab-dev "$TASK_ID" failed
-rec post-task-existing POST /tasks/fab-dev yes "the same idempotencyKey again: 200, created false" --body "$TASK_BODY"; expect 200 post-task-again
+wait_for mer-dev "$TASK_ID" failed
+rec post-task-existing POST /tasks/mer-dev yes "the same idempotencyKey again: 200, created false" --body "$TASK_BODY"; expect 200 post-task-again
 MINIMAL_BODY=$(jq -cn '{description: "Capture only: a task with the four keys every task carries.",
   externalRef: "capture-item/attempt-2", idempotencyKey: "capture-attempt-2", baseRef: "main",
   pipeline: "no-such-pipeline"}')
-OPTIONAL_KEYS=pipeline rec post-task-minimal POST /tasks/fab-dev yes "the four keys every task carries (plus the unknown pipeline that keeps it from running)" --body "$MINIMAL_BODY"; expect 201 post-task-minimal
+OPTIONAL_KEYS=pipeline rec post-task-minimal POST /tasks/mer-dev yes "the four keys every task carries (plus the unknown pipeline that keeps it from running)" --body "$MINIMAL_BODY"; expect 201 post-task-minimal
 MINIMAL_ID=$(jq -r '.task' <<<"$LAST_BODY")
 
-wait_for fab-dev "$MINIMAL_ID" failed
-rec task-failed-pipeline GET "/tasks/fab-dev/$TASK_ID" yes "a task refused at claim: the sentence is in reason and the kind in failureKind; there is no error key"; expect 200 task
+wait_for mer-dev "$MINIMAL_ID" failed
+rec task-failed-pipeline GET "/tasks/mer-dev/$TASK_ID" yes "a task refused at claim: the sentence is in reason and the kind in failureKind; there is no error key"; expect 200 task
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = pipeline ] || die "the task failed, but not on its pipeline: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
-rec task-diff-failed GET "/tasks/fab-dev/$TASK_ID/diff" yes "the diff of a task that never started"; expect 200 task-diff
-rec task-cancel-finished POST "/tasks/fab-dev/$TASK_ID/cancel" yes "cancel of a task that has ended" --body '{"reason":"the capture"}'; expect 409 cancel
+rec task-diff-failed GET "/tasks/mer-dev/$TASK_ID/diff" yes "the diff of a task that never started"; expect 200 task-diff
+rec task-cancel-finished POST "/tasks/mer-dev/$TASK_ID/cancel" yes "cancel of a task that has ended" --body '{"reason":"the capture"}'; expect 409 cancel
 sleep 2
-rec traces-after-failure GET /traces/fab-dev yes "the events of the tasks refused at claim, a second after the last (docket holds back the newest second)"; expect 200 traces
+rec traces-after-failure GET /traces/mer-dev yes "the events of the tasks refused at claim, a second after the last (docket holds back the newest second)"; expect 200 traces
 
 # ── Routes for tasks docket does not know ─────────────────────────────────────
-rec task-unknown GET /tasks/fab-dev/task-unknown yes "a task docket does not know"; expect 404 task-unknown
-rec task-cancel-unknown POST /tasks/fab-dev/task-unknown/cancel yes "cancel of a task docket does not know" --body '{"reason":"the capture"}'; expect 404 cancel-unknown
-rec task-diff-unknown GET /tasks/fab-dev/task-unknown/diff yes "the diff of a task docket does not know"; expect 404 diff-unknown
+rec task-unknown GET /tasks/mer-dev/task-unknown yes "a task docket does not know"; expect 404 task-unknown
+rec task-cancel-unknown POST /tasks/mer-dev/task-unknown/cancel yes "cancel of a task docket does not know" --body '{"reason":"the capture"}'; expect 404 cancel-unknown
+rec task-diff-unknown GET /tasks/mer-dev/task-unknown/diff yes "the diff of a task docket does not know"; expect 404 diff-unknown
 
 # trace_cursor: docket holds back the events of the last second, so wait it out, then print the
 # cursor a read of the team's events would end on; a later read from it holds only what came after.
@@ -321,10 +321,10 @@ trace_cursor() {
 
 # ── An enqueue a team policy holds for a person: a pending escalation, no model ─
 # A `pre_input` policy that asks holds the enqueue itself; docket opens the escalation and
-# answers 201 with its id. The policy is a file of the throwaway home, on the fab-dev team only.
+# answers 201 with its id. The policy is a file of the throwaway home, on the mer-dev team only.
 guard
-mkdir -p "$DOCKET_HOME/workspaces/pods/fab-dev/config/policies"
-cat >"$DOCKET_HOME/workspaces/pods/fab-dev/config/policies/capture-needs-approval.yaml" <<'POLICY'
+mkdir -p "$DOCKET_HOME/workspaces/pods/mer-dev/config/policies"
+cat >"$DOCKET_HOME/workspaces/pods/mer-dev/config/policies/capture-needs-approval.yaml" <<'POLICY'
 kind: policy
 name: capture-needs-approval
 description: Capture only; holds an enqueue that names it until a person answers
@@ -335,11 +335,11 @@ when:
 then: ask
 message: Capture only; a person answers this enqueue.
 POLICY
-TRACE_FROM=$(trace_cursor fab-dev)
+TRACE_FROM=$(trace_cursor mer-dev)
 GATED_BODY=$(jq -cn '{description: "Capture only: capture-needs-approval holds this enqueue for a person.",
   externalRef: "capture-item/attempt-3", idempotencyKey: "capture-attempt-3", baseRef: "main",
   pipeline: "no-such-pipeline"}')
-OPTIONAL_KEYS=pipeline rec post-task-gated POST /tasks/fab-dev yes "a task a policy holds for approval: 201, status waiting_approval and the id of its escalation" --body "$GATED_BODY"; expect 201 post-task-gated
+OPTIONAL_KEYS=pipeline rec post-task-gated POST /tasks/mer-dev yes "a task a policy holds for approval: 201, status waiting_approval and the id of its escalation" --body "$GATED_BODY"; expect 201 post-task-gated
 [ "$(jq -r '.status' <<<"$LAST_BODY")" = waiting_approval ] || die "the policy did not hold the enqueue: $LAST_BODY"
 GATED_ID=$(jq -r '.task' <<<"$LAST_BODY")
 ESC_ID=$(jq -r '.escalation' <<<"$LAST_BODY")
@@ -350,7 +350,7 @@ rec escalations-pending GET '/escalations?since=0' yes "one pending escalation o
 NEXT=$(jq -r '.next' <<<"$LAST_BODY")
 rec escalations-task-since GET "/escalations?since=$NEXT&task=$GATED_ID" yes "the cursor and the task filter together: nothing newer, next equal to since"; expect 200 escalations-since
 [ "$(jq '.escalations | length' <<<"$LAST_BODY")" = 0 ] || die "the cursor returned a record: $LAST_BODY"
-rec task-waiting-escalation GET "/tasks/fab-dev/$GATED_ID" yes "a task waiting on an escalation: escalations lists the ids opened for it, and the keys of the retired shapes are gone"; expect 200 task-waiting
+rec task-waiting-escalation GET "/tasks/mer-dev/$GATED_ID" yes "a task waiting on an escalation: escalations lists the ids opened for it, and the keys of the retired shapes are gone"; expect 200 task-waiting
 
 OPTIONAL_KEYS=content rec escalation-unknown POST /escalations/esc-000000000000 yes "an answer to an escalation docket does not know" \
   --body '{"optionId":"approve_once","actor":"tack"}'; expect 404 escalation-unknown
@@ -360,19 +360,19 @@ OPTIONAL_KEYS=content rec escalation-accepted POST "/escalations/$ESC_ID" yes "a
   --body '{"optionId":"approve_once","actor":"tack"}'; expect 200 escalation-accepted
 OPTIONAL_KEYS=content rec escalation-settled POST "/escalations/$ESC_ID" yes "the same answer again: the escalation is already settled" \
   --body '{"optionId":"approve_once","actor":"tack"}'; expect 409 escalation-settled
-wait_for fab-dev "$GATED_ID" failed
-rec task-failed-after-escalation GET "/tasks/fab-dev/$GATED_ID" yes "the approved task resumed, and the unknown pipeline refused it at claim: escalations still lists the settled record"; expect 200 task-after-escalation
+wait_for mer-dev "$GATED_ID" failed
+rec task-failed-after-escalation GET "/tasks/mer-dev/$GATED_ID" yes "the approved task resumed, and the unknown pipeline refused it at claim: escalations still lists the settled record"; expect 200 task-after-escalation
 sleep 2
-HIDE_CURSOR=1 rec traces-escalation GET "/traces/fab-dev?since=$TRACE_FROM" yes "the events after the held enqueue: escalation_asked, escalation_resolved, and the grant"; expect 200 traces-escalation
+HIDE_CURSOR=1 rec traces-escalation GET "/traces/mer-dev?since=$TRACE_FROM" yes "the events after the held enqueue: escalation_asked, escalation_resolved, and the grant"; expect 200 traces-escalation
 
 # ── Cancel a task that waits on a person ───────────────────────────────────────
 PARKED_BODY=$(jq -cn '{description: "Capture only: capture-needs-approval holds this one too, and it is cancelled.",
   externalRef: "capture-item/attempt-5", idempotencyKey: "capture-attempt-5", baseRef: "main",
   pipeline: "no-such-pipeline"}')
-PARKED=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' -d "$PARKED_BODY" "$BASE/tasks/fab-dev")
+PARKED=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' -d "$PARKED_BODY" "$BASE/tasks/mer-dev")
 [ "$(jq -r '.status' <<<"$PARKED")" = waiting_approval ] || die "the policy did not hold the second enqueue: $PARKED"
 PARKED_ID=$(jq -r '.task' <<<"$PARKED")
-rec cancel-accepted POST "/tasks/fab-dev/$PARKED_ID/cancel" yes "cancel of a task that waits on a person: status cancelled, and its escalation is closed" --body '{"reason":"the capture"}'; expect 200 cancel
+rec cancel-accepted POST "/tasks/mer-dev/$PARKED_ID/cancel" yes "cancel of a task that waits on a person: status cancelled, and its escalation is closed" --body '{"reason":"the capture"}'; expect 200 cancel
 
 # ── A task at L5 whose pipeline asks a person: needs_human, no model ───────────
 # The lights-out team's ceiling is L5, and docket runs a lights-out team only once its profile is
@@ -385,8 +385,8 @@ guard
   || die "docket setup sandbox on failed; see $SCRATCH/sandbox-on.log"
 "${DOCKET_ENV[@]}" "$DOCKET_BIN" setup sandbox network none </dev/null >"$SCRATCH/sandbox-network.log" 2>&1 \
   || die "docket setup sandbox network none failed; see $SCRATCH/sandbox-network.log"
-mkdir -p "$DOCKET_HOME/workspaces/pods/fab-lights/config/pipelines"
-cat >"$DOCKET_HOME/workspaces/pods/fab-lights/config/pipelines/capture-approval.yaml" <<'PIPELINE'
+mkdir -p "$DOCKET_HOME/workspaces/pods/mer-lights/config/pipelines"
+cat >"$DOCKET_HOME/workspaces/pods/mer-lights/config/pipelines/capture-approval.yaml" <<'PIPELINE'
 name: capture-approval
 steps:
   - ask: lead
@@ -397,15 +397,15 @@ PIPELINE
 L5_BODY=$(jq -cn '{description: "Capture only: an approval step at L5 asks nobody, so this task fails needs_human.",
   externalRef: "capture-item/attempt-4", idempotencyKey: "capture-attempt-4", baseRef: "main",
   pipeline: "capture-approval", autonomy: "L5"}')
-OPTIONAL_KEYS="pipeline autonomy" rec post-task-autonomy-l5 POST /tasks/fab-lights yes "a task at L5 on the lights-out team: accepted, and the level is shown on the task" --body "$L5_BODY"; expect 201 post-task-l5
+OPTIONAL_KEYS="pipeline autonomy" rec post-task-autonomy-l5 POST /tasks/mer-lights yes "a task at L5 on the lights-out team: accepted, and the level is shown on the task" --body "$L5_BODY"; expect 201 post-task-l5
 L5_ID=$(jq -r '.task' <<<"$LAST_BODY")
-wait_for fab-lights "$L5_ID" failed
-rec task-failed-needs-human GET "/tasks/fab-lights/$L5_ID" yes "a task at L5 whose pipeline asks a person: failed, failureKind needs_human, no hop ran"; expect 200 task-needs-human
+wait_for mer-lights "$L5_ID" failed
+rec task-failed-needs-human GET "/tasks/mer-lights/$L5_ID" yes "a task at L5 whose pipeline asks a person: failed, failureKind needs_human, no hop ran"; expect 200 task-needs-human
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = needs_human ] || die "the task failed, but not needs_human: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
 rec escalations-settled GET '/escalations?since=0' yes "every record whatever its state: one resolved by a person, one closed by a cancel, one decided by the level"; expect 200 escalations-settled
 sleep 2
-rec traces-escalation-decided GET /traces/fab-lights yes "the events of the L5 task: escalation_decided"; expect 200 traces-decided
+rec traces-escalation-decided GET /traces/mer-lights yes "the events of the L5 task: escalation_decided"; expect 200 traces-decided
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

@@ -1,6 +1,6 @@
 {
   "events": [
-    "{\"ts\": \"2026-01-01T00:00:00Z\", \"project\": \"fab-dev\", \"session_id\": \"agent:fab-dev:task-00000000-0000-0000-0000-000000000000\", \"agent_role\": \"implementer\", \"event_type\": \"hop_started\", \"payload\": {\"task\": \"task-00000000-0000-0000-0000-000000000000\", \"step\": \"implementer\", \"role\": \"implementer\", \"member\": \"fab-dev-implementer\", \"model\": \"local/local-model\", \"provider\": \"local\", \"cycle\": 0, \"attempt\": 1}}"
+    "{\"ts\": \"2026-01-01T00:00:00Z\", \"project\": \"mer-dev\", \"session_id\": \"agent:mer-dev:task-00000000-0000-0000-0000-000000000000\", \"agent_role\": \"implementer\", \"event_type\": \"hop_started\", \"payload\": {\"task\": \"task-00000000-0000-0000-0000-000000000000\", \"step\": \"implementer\", \"role\": \"implementer\", \"member\": \"mer-dev-implementer\", \"model\": \"local/local-model\", \"provider\": \"local\", \"cycle\": 0, \"attempt\": 1}}"
   ],
   "next": "2026-01-01T00:00:00Z:1"
 }

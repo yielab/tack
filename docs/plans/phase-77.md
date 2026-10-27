@@ -7,13 +7,13 @@ Tack builds against its provisional fields and sends them only when docket says 
 **Done when:** a Claude Code, Codex or opencode run of a project with a lockfile starts with its
 dependencies installed, or fails before the agent with the install's output; a docket run makes no
 runner checkout; every run shows a limit and where it comes from; a profile with 5 successful runs
-offers a proposed limit; and Fabulada's code card passes its check through a team.
+offers a proposed limit; and Meridian's code card passes its check through a team.
 
 **Status (2026-10-19):** S, L, N and P merged into `develop` (`3a378747`); `pre-push` and the full
 suites pass (1 426 Rust, 719 frontend). Fixed at integration: the cached `node_modules` is a
 hard-linked tree inside the copy, because the agent's sandbox cannot follow a link out of it, and
 `.venv` is not cached; a run under the provisional limit still takes what is left of the day. K part 1 (API 5 or later accepted, `prepare` sent to API 6, docket's
-`prepare` failure shown) merged `5aa270d9`; K's `check_changed` (the Inbox names the files) followed docket's P45-3 the same day. Phase 77 is built; its proof is Fabulada's code card through a team.
+`prepare` failure shown) merged `5aa270d9`; K's `check_changed` (the Inbox names the files) followed docket's P45-3 the same day. Phase 77 is built; its proof is Meridian's code card through a team.
 
 ## Tasks
 

@@ -1,24 +1,24 @@
 {
-  "pod": "fab-dev",
+  "pod": "mer-dev",
   "members": [
     {
-      "id": "fab-dev-lead",
+      "id": "mer-dev-lead",
       "role": "lead",
       "model": {
         "value": "anthropic/claude-haiku-4-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/fab-dev-lead",
+      "workspace": "/scratch/home/.docket/workspaces/projects/mer-dev-lead",
       "verifyCmd": ""
     },
     {
-      "id": "fab-dev-implementer",
+      "id": "mer-dev-implementer",
       "role": "implementer",
       "model": {
         "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/fab-dev-implementer",
+      "workspace": "/scratch/home/.docket/workspaces/projects/mer-dev-implementer",
       "verifyCmd": ""
     }
   ],

@@ -1384,7 +1384,7 @@ fn docket_work(attempt: &str, repository: &Path, revision: &str) -> ClaimedWork 
     claimed.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new("docket");
     claimed.request.requested_model = None;
     claimed.request.resolved_agent_profile.tool_policy =
-        serde_json::json!({"docket": {"team": "fab-dev"}});
+        serde_json::json!({"docket": {"team": "mer-dev"}});
     claimed.request.permission_policy.network = false;
     claimed.request.metadata = serde_json::json!({"item": {"type": "feature", "trusted": true}});
     let additional = &mut claimed.request.repository.additional;
@@ -1420,7 +1420,7 @@ async fn run_docket(label: &str, by_name: bool) -> DocketRun {
     let root = root_dir.path();
     let (repository, remote, base) = dirty_repository(root);
     let fake = fake_docket::FakeDocket::start().await;
-    fake.add_pod("fab-dev", "lights-out", &[]);
+    fake.add_pod("mer-dev", "lights-out", &[]);
     fake.set_repository(&repository);
     fake.script(fake_docket::Script {
         commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
@@ -1510,7 +1510,7 @@ async fn a_docket_run_makes_no_checkout_and_sends_the_base_commit() {
         "no directory is made for the attempt"
     );
     // The base was asked for as `main`; docket is told the commit it names.
-    let posted = ran.fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = ran.fake.requests_to("POST", "/tasks/mer-dev");
     assert_eq!(posted[0].body["baseRef"], serde_json::json!(ran.base));
     assert_eq!(ran.report.actual_execution.base_revision, "main");
 }

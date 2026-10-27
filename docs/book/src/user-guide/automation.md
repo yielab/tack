@@ -26,10 +26,10 @@ The ladder as it looks, with every control that can be disabled shown with its r
 ```text
 1. Teams
    Each role works with a profile. The profile names the team and the machine.
-   Content      [ Fabulada content writer v ]
-                fab-content · lights-out · this computer
-   Developer    [ Fabulada implementer v ]
-                fab-dev · needs a person · this computer
+   Content      [ Meridian content writer v ]
+                mer-content · lights-out · this computer
+   Developer    [ Meridian implementer v ]
+                mer-dev · needs a person · this computer
    No role      [ No profile v ]
    Manage profiles →      [ Apply the repository's teams ]   (disabled)
    Tack cannot reach the team's machine from here yet. In the project's folder, run: docket init --name <team>
@@ -51,11 +51,11 @@ The ladder as it looks, with every control that can be disabled shown with its r
 
 4. Ceiling
    This project can reach L3.
-   ✗ The team fab-dev keeps its tasks at L3. <what to change>
-   ✓ The team fab-content runs lights-out.
+   ✗ The team mer-dev keeps its tasks at L3. <what to change>
+   ✓ The team mer-content runs lights-out.
 ```
 
-The names above (Fabulada, fab-content) are only an example; yours come from your own profiles.
+The names above (Meridian, mer-content) are only an example; yours come from your own profiles.
 
 > **Which tasks does this touch?** Only tasks with a role. A role is how Tack knows a task is meant for an
 > agent. Create roles under **Settings → Roles**, and give a task a role on its **Fields** tab.
@@ -229,7 +229,7 @@ Hover a badge for a one-sentence explanation.
 **The task's Automation row**, in the task drawer under the run button, says what happens to this task
 without you:
 
-- "Starts by itself when it reaches To Do · Team fab-content · Merge L3", when the project starts tasks by
+- "Starts by itself when it reaches To Do · Team mer-content · Merge L3", when the project starts tasks by
   itself;
 - "By hand: this project doesn't start tasks by itself", when it does not;
 - "By hand: the role Content has no profile", when a role of the task has no profile and the project has no

@@ -12,7 +12,7 @@
 #     (`docket setup provider add local <endpoint>`), so docket reaches the local model the
 #     way a person's docket does and Tack holds no endpoint;
 #   - `docket start --dispatch` run by this script on loopback, with two teams (pods),
-#     `fab-code` and `fab-content`, over the fixture repository; the runner's `[docket]`
+#     `mer-code` and `mer-content`, over the fixture repository; the runner's `[docket]`
 #     table points at it with `base_url`, so the runner starts nothing;
 #   - a runner configuration with prill as the verifier (`[verify]` with
 #     `kind = "prill"`, the runner's own seam).
@@ -152,7 +152,7 @@ if [ ! -d "$FIXTURE/.git" ]; then
   git -C "$FIXTURE" add -A
   git -C "$FIXTURE" -c user.name=e2e -c user.email=e2e@localhost commit -q -m "seed"
 fi
-for POD in fab-code fab-content; do
+for POD in mer-code mer-content; do
   CODE=$(curl -fsS -m 30 -o "$WORK/pod-$POD.json" -w '%{http_code}' -X POST "$DOCKET_URL/pods" \
     -H "Authorization: Bearer $(cat "$DOCKET_TOKEN_FILE")" -H 'Content-Type: application/json' \
     -d "{\"name\": \"$POD\", \"location\": \"$FIXTURE\", \"blueprint\": \"software\", \"ensure\": true}" || true)

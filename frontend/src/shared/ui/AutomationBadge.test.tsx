@@ -21,7 +21,7 @@ describe('AutomationBadge', () => {
   });
 
   it('names the team', () => {
-    expect(show({ team: 'fab-content' }).textContent).toBe('Team: fab-content');
+    expect(show({ team: 'mer-content' }).textContent).toBe('Team: mer-content');
   });
 
   it('says "Merged by itself" for an automatic merge', () => {

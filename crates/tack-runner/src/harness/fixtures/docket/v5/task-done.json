@@ -44,7 +44,7 @@
   "hops": [
     {
       "role": "implementer",
-      "member": "fab-dev-implementer",
+      "member": "mer-dev-implementer",
       "ok": true,
       "output": "",
       "costUsd": 0.0,
@@ -70,8 +70,8 @@
         "output": 200
       },
       "trace": {
-        "project": "fab-dev",
-        "session": "agent:fab-dev:task-00000000-0000-0000-0000-000000000000",
+        "project": "mer-dev",
+        "session": "agent:mer-dev:task-00000000-0000-0000-0000-000000000000",
         "firstTs": "2026-01-01T00:00:00Z",
         "lastTs": "2026-01-01T00:00:00Z"
       },
@@ -82,8 +82,8 @@
   ],
   "costUsd": 0.0,
   "worktree": {
-    "dir": "/scratch/home/.docket/workspaces/projects/fab-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
-    "branch": "docket/fab-dev/task-00000000-0000-0000-0000-000000000000",
+    "dir": "/scratch/home/.docket/workspaces/projects/mer-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/mer-dev/task-00000000-0000-0000-0000-000000000000",
     "baseCommit": "0000000000000000000000000000000000000000",
     "baseRef": "main",
     "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",

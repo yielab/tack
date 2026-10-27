@@ -7,7 +7,7 @@
 # counted in the result.
 
 project:
-  name: Fabulada
+  name: Meridian
   type: web
   description: Dialect-native bedtime stories, read aloud by families.
   vocabulary:                     # any subset of the 16 keys; the rest keep the type's defaults
@@ -50,7 +50,7 @@ fields:                           # custom fields; the name is what items use
   # type: text|number|date|boolean|select|multi_select|url|email|long_text; `default` and `validation` optional
 
 profiles:                         # agent profiles are shared by every project; a profile with an existing name is updated
-  - name: Fabulada content writer
+  - name: Meridian content writer
     kind: custom                  # implementer|reviewer|researcher|planner|custom (the default)
     instructions: >
       Write and edit stories, scripts and newsletter copy in the dialect the task names.
@@ -59,26 +59,26 @@ profiles:                         # agent profiles are shared by every project; 
       agent: docket               # which agent runs this profile; absent: the project's default agent
       tools: { docket: ["*"] }
       docket:
-        team: fab-content         # the team; absent: the project's own default team
+        team: mer-content         # the team; absent: the project's own default team
         pipeline_by_type: { feature: dual-review, task: single }
     limits: { budgets: { tokens: 300000 }, timeout_seconds: 1800 }
-  - name: Fabulada implementer
+  - name: Meridian implementer
     kind: implementer
     instructions: Implement the change on a branch; run the project's checks before you finish.
-    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: fab-dev, pipeline_by_type: { bug: tdd, feature: dual-review } } }
+    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: mer-dev, pipeline_by_type: { bug: tdd, feature: dual-review } } }
     limits: { budgets: { tokens: 600000 } }
-  - name: Fabulada growth
+  - name: Meridian growth
     kind: custom
     instructions: Draft campaigns and measure them; never publish anything yourself.
-    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: fab-growth } }
-  - name: Fabulada research
+    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: mer-growth } }
+  - name: Meridian research
     kind: researcher
     instructions: Read, compare and summarise; write findings as a document with sources.
-    tool_policy: { agent: docket, tools: { docket: [read, fetch, write] }, docket: { team: fab-research } }
-  - name: Fabulada ops
+    tool_policy: { agent: docket, tools: { docket: [read, fetch, write] }, docket: { team: mer-research } }
+  - name: Meridian ops
     kind: custom
     instructions: Deployments, backups and monitoring. Ask before anything that touches production.
-    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: fab-ops } }
+    tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: mer-ops } }
   - name: Security review
     kind: reviewer
     instructions: Review for secrets, injection and permissions. You only read.
@@ -88,11 +88,11 @@ profiles:                         # agent profiles are shared by every project; 
   # No `harness` or `model` on a profile: the agent is tool_policy.agent; a model belongs to a run or to the project (ADR 0019).
 
 roles:                            # project roles; `profile` is a name from `profiles` or an existing profile
-  - { name: Contenido, color: "#f59e0b", profile: Fabulada content writer }
-  - { name: Desarrollo, color: "#3b82f6", profile: Fabulada implementer }
-  - { name: Crecimiento, color: "#10b981", profile: Fabulada growth }
-  - { name: Investigación, color: "#8b5cf6", profile: Fabulada research }
-  - { name: Operaciones, color: "#6b7280", profile: Fabulada ops }
+  - { name: Contenido, color: "#f59e0b", profile: Meridian content writer }
+  - { name: Desarrollo, color: "#3b82f6", profile: Meridian implementer }
+  - { name: Crecimiento, color: "#10b981", profile: Meridian growth }
+  - { name: Investigación, color: "#8b5cf6", profile: Meridian research }
+  - { name: Operaciones, color: "#6b7280", profile: Meridian ops }
   - { name: Seguridad, color: "#ef4444", profile: Security review }
   - { name: Planificación, color: "#0ea5e9", profile: Planner }
 
@@ -102,12 +102,12 @@ sprints:                          # status: planning (the default) or closed; an
 
 automation:
   code_origin: folder             # folder|new_folder|url|none
-  repository: /home/person/Sites/localtales
+  repository: /home/person/Sites/meridian
   default_branch: main
   workspace_mode: local_branch    # local_branch|in_place|clone
   push_after_run: true
   default_harness: docket
-  default_profile: Fabulada implementer
+  default_profile: Meridian implementer
   default_model: null             # the agent's own default
   on_finish_status: En revisión
   definition_of_done: >
@@ -150,7 +150,7 @@ items:                            # the outline of ADR 0017, plus roles, sprint,
   - { ref: G1, title: Campaña de octubre en Instagram, type: feature, status: Por hacer, roles: [Crecimiento], sprint: Semana 43, fields: { Dialecto: rioplatense, Canal: [instagram] } }
   - { ref: G2, title: Newsletter semanal, type: task, status: Por hacer, roles: [Contenido, Crecimiento], recurrence: weekly, due: 2026-10-18, fields: { Dialecto: rioplatense, Canal: [newsletter] } }
   - { ref: G3, title: Informe mensual de métricas, type: task, roles: [Crecimiento], recurrence: monthly, due: 2026-10-31, fields: { Dialecto: rioplatense } }
-  - { ref: R1, title: Qué dialectos piden las familias en Chile, type: task, status: Por hacer, roles: [Investigación], fields: { Dialecto: chileno, Fuente: "https://forms.fabulada.app/chile" } }
+  - { ref: R1, title: Qué dialectos piden las familias en Chile, type: task, status: Por hacer, roles: [Investigación], fields: { Dialecto: chileno, Fuente: "https://forms.meridian.app/chile" } }
   - { ref: R2, title: Comparativa de voces sintéticas en español, type: task, roles: [Investigación], fields: { Dialecto: peninsular } }
   - { ref: O1, title: Copia de seguridad diaria de la base de historias, type: task, status: Por hacer, roles: [Operaciones], fields: { Dialecto: rioplatense } }
   - { ref: O2, title: Revisión trimestral de costos de hosting, type: task, roles: [Operaciones], recurrence: quarterly, due: 2026-12-31, fields: { Dialecto: rioplatense } }

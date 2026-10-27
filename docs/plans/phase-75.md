@@ -10,7 +10,7 @@ are only shown, dollars per day goes away and dollars become an estimate, the da
 reserved when a run is admitted, and every limit says who applies it. Beside it, what Tack sends
 an agent stops repeating itself: the brief goes to docket once, a rework replaces its previous fix
 section, comments have a size. docket fixes its own context in parallel (its requests are in the
-roadmap's partner item); the phase ends by running Fabulada again once docket has.
+roadmap's partner item); the phase ends by running Meridian again once docket has.
 
 ## The rule for every task: one owner per fact
 
@@ -61,7 +61,7 @@ cut from `develop`, `CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>
 | 2 | D (the daily limit, dollars per day removed), E (dollars as an estimate, who applies a limit), side by side: D alone touches `Merge.tsx`, E alone the execution responses | A, B |
 | 3 | V (integrator, no agent: what a profile's limits may hold, and the limit before a run starts), L (usage while a run runs, from docket's steps, which report it today) | V before Phase 76's Round 2, whose task A edits the same `create_profile` and `check` |
 | 4 | CT (Claude Code and opencode: one capture session, then the stop at the limit and the tools per role, in one task because both live in `claude_code.rs`) | L's `Progress.usage`; the capture costs model calls, on the maintainer's word |
-| 5 | Z (integrator): the screens that read L and V, the guides, the changelog; Fabulada's runs again | docket's context and count fixed |
+| 5 | Z (integrator): the screens that read L and V, the guides, the changelog; Meridian's runs again | docket's context and count fixed |
 
 Why this order: every pending piece reads one of two new facts, a profile's limit before the run
 (V) and its usage while it runs (L). Each is built once, in the round before its readers, so no
@@ -286,7 +286,7 @@ figure with the cache reads beside it; the run dialog prints the context route's
 run starts; a measured agent's admission says it can cross the day's limit. The User and
 Administrator guides (Merging → Budgets, Reviewing runs); the changelog's `[Unreleased]`; the
 roadmap. If Phase 76's Z is open at the same time, one pass writes both phases' changelog,
-roadmap and `CLAUDE.md` lines. Then Fabulada's runs again, on the maintainer's word, once docket
+roadmap and `CLAUDE.md` lines. Then Meridian's runs again, on the maintainer's word, once docket
 has fixed its context and count.
 
 ## How it went
@@ -299,7 +299,7 @@ lead sentence too; D's replay of a run given the day's room answered 409, so a s
 run alone was past the day, so it has its own sentence; E said every agent "reports its tokens at
 the end", which is not true of all, so a measured agent says Tack reads its tokens but cannot stop
 it yet. Phase 76, proposed the same day, takes migrations 093 and 094 and reads the file through
-`read_outline` so the `usd_per_day` warning reaches its plan; the Fabulada fixture lost its
+`read_outline` so the `usd_per_day` warning reaches its plan; the Meridian fixture lost its
 `usd_per_day`, and the one test of the warning adds it back inline.
 
 Round 3, the same day, two Sonnet agents (V was planned for the integrator). V added one wrapper
@@ -321,7 +321,7 @@ local formulas went with it (the panel's "new" input, which also subtracted cach
 `tokens` and `no_limit` and words the limit through the same `limit_source`; the dialog asks for it
 as its own resource so typing never refetches the composed text. A measured agent given the day's
 room says it can go past today's limit. Left: the dialog says "No limit set in Tack" in a project
-with a daily limit, where the run will be given the day's room when it is chosen; and Fabulada's
+with a daily limit, where the run will be given the day's room when it is chosen; and Meridian's
 runs, on docket's fixes.
 
 Round 4 (CT), the same day, on one capture: `scripts/capture-agent-usage-fixtures.sh`, free against

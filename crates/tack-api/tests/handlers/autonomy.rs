@@ -621,9 +621,9 @@ async fn the_ceiling_is_the_ceiling_of_the_team_that_ran_it() {
         ),
         (Some("writers"), 1, None),
         (
-            Some("fab-dev"),
+            Some("mer-dev"),
             0,
-            Some("Team fab-dev is not reported yet by this computer"),
+            Some("Team mer-dev is not reported yet by this computer"),
         ),
         (
             None,
@@ -882,7 +882,7 @@ async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_can
     let cases = [
         ("docket", "L3", Some("writers"), None, None),
         ("docket", "L4", Some("reviewers"), None, None),
-        ("docket", "L5", Some("fab-dev"), None, None),
+        ("docket", "L5", Some("mer-dev"), None, None),
         ("docket", "L4", Some("writers"), Some("L4"), None),
         (
             "docket",

@@ -4,8 +4,8 @@
   "channels": [],
   "agents": [
     {
-      "id": "fab-dev-implementer",
-      "name": "fab-dev implementer",
+      "id": "mer-dev-implementer",
+      "name": "mer-dev implementer",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-sonnet-4-6",
@@ -16,8 +16,8 @@
       "budgetUsd": null
     },
     {
-      "id": "fab-dev-lead",
-      "name": "fab-dev lead",
+      "id": "mer-dev-lead",
+      "name": "mer-dev lead",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-haiku-4-5",
@@ -28,8 +28,8 @@
       "budgetUsd": null
     },
     {
-      "id": "fab-lights-implementer",
-      "name": "fab-lights implementer",
+      "id": "mer-lights-implementer",
+      "name": "mer-lights implementer",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-sonnet-4-6",
@@ -40,8 +40,8 @@
       "budgetUsd": null
     },
     {
-      "id": "fab-lights-lead",
-      "name": "fab-lights lead",
+      "id": "mer-lights-lead",
+      "name": "mer-lights lead",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-haiku-4-5",

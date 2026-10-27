@@ -29,7 +29,7 @@ const Teams: Component<Props> = (props) => {
   };
   const profile = (id: string | null | undefined) => props.profiles().find((p) => p.agent_profile_id === id);
 
-  /** "fab-content · lights-out · this computer" for the chosen profile; empty without one. */
+  /** "mer-content · lights-out · this computer" for the chosen profile; empty without one. */
   const line = (id: string | null | undefined) => {
     const p = profile(id);
     if (!p) return '';

@@ -14,7 +14,7 @@ back out of `GET /api/projects/{id}/export?scope=bundle`, so a project can be mo
 versioned in git or written by an assistant and imported. A project template becomes the same
 file without items.
 
-**Why now:** Fabulada is five roles, five profiles, five teams, four fields, two sprints and
+**Why now:** Meridian is five roles, five profiles, five teams, four fields, two sprints and
 twenty items. Setting that up by hand is eleven screens; ADR 0017's outline carries the items
 and nothing else, so the project it creates still needs every role, profile, field and
 automation setting typed in afterwards. The snapshot export (`POST /api/projects/import`) is
@@ -44,7 +44,7 @@ items:        # ADR 0017's items, plus roles (names), sprint (a name), fields ({
               # recurrence and estimate_unit
 ```
 
-`crates/tack-api/tests/fixtures/bundles/fabulada.yaml` is the whole thing for Fabulada, with a
+`crates/tack-api/tests/fixtures/bundles/meridian.yaml` is the whole thing for Meridian, with a
 comment on every rule.
 
 ## Decisions

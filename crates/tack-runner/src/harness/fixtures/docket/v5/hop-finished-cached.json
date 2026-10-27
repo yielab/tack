@@ -2,7 +2,7 @@
   "task": "task-00000000-0000-0000-0000-000000000000",
   "step": "implementer",
   "role": "implementer",
-  "member": "fab-dev-implementer",
+  "member": "mer-dev-implementer",
   "model": "anthropic/claude-sonnet-4-6",
   "provider": "anthropic",
   "cycle": 0,

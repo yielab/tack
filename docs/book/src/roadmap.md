@@ -18,7 +18,7 @@ which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not pub
 Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79 and 80
 are built on a branch and not yet merged; Phases 76 and 81 are proposed.
 
-**Where this is going.** Fabulada, the first real project, is the proof of Phases 73 to 77: its
+**Where this is going.** Meridian, the first real project, is the proof of Phases 73 to 77: its
 code card through a team, with a real install. Phase 76 makes the project file a place the
 configuration is kept, not only imported from: a key that survives a rename, an import that
 removes what the file removed and keeps what the board changed, the cost of every removal shown
@@ -62,7 +62,7 @@ plan or the page named beside it.
 
 **Waiting on a partner:**
 
-- Fabulada's code card through a team, with a real install: the proof of Phases 74, 75 and 77.
+- Meridian's code card through a team, with a real install: the proof of Phases 74, 75 and 77.
   docket's context and token count are fixed in docket's `develop`. Installing dependencies is
   ADR 0027 (accepted 2026-10-19): whoever makes the agent's copy installs them from the lockfile.
   Tack's side is in `develop` (the runner installs for Claude Code, Codex and opencode, a docket
@@ -287,13 +287,13 @@ project's check. Whoever makes the agent's copy now installs the dependencies fr
 - **Every run has a limit and says where it comes from.** A profile with five successful runs
   offers a limit proposed from them; until then a provisional one applies.
 
-What is open is in [Open](#open): Fabulada's code card through a team.
+What is open is in [Open](#open): Meridian's code card through a team.
 
 ---
 
 ## Phase 75 — limits in tokens, and a lean context
 
-**Status:** opened 2026-10-18 from the measurements of Fabulada's first runs; ADR 0024 accepted
+**Status:** opened 2026-10-18 from the measurements of Meridian's first runs; ADR 0024 accepted
 the same day. Every round is in `develop`, with the guides: Round 4 on one capture of Claude Code's
 and opencode's live usage, so Tack stops both at a run's token limit and counts docket's cache
 reads as docket does; Round 5's screens print the attempt's counted tokens and the run dialog's
@@ -309,7 +309,7 @@ provider. Tokens are what every agent measures. So:
   and a time limit, a run can change them, and a project can set tokens per day. Dollars per
   day goes away, and Tack stops asking Claude Code for a dollar limit.
 - **A token counted is a new one:** uncached input, cache writes and output. Cache reads are
-  shown beside them and never count. In Fabulada's measured runs they were 70% to 92% of the
+  shown beside them and never count. In Meridian's measured runs they were 70% to 92% of the
   input.
 - **Every limit says who applies it and where it is changed**, and "no limit" names the brake
   that still applies: "No limit set in Tack · docket stops each step at its own limit (docket's
@@ -323,7 +323,7 @@ provider. Tokens are what every agent measures. So:
   three times; a rework replaces the previous round's fixes instead of piling them up; a card's
   comments have a size limit. Claude Code gets only the tools its role needs. Its seven
   default tools cost about 6 300 tokens on every call.
-- **What docket sends the model is docket's.** In Fabulada's runs, 64% of the tokens counted
+- **What docket sends the model is docket's.** In Meridian's runs, 64% of the tokens counted
   were old tool results sent again: one listing of the whole tree, with absolute paths, was 84%
   of a step. The fixes asked of docket are to condense old results, keep listings relative and
   bounded, hand the next step what the previous one wrote, and make the member's files (its
@@ -336,7 +336,7 @@ provider. Tokens are what every agent measures. So:
 | 2 | The daily limit with its reservation and bar; dollars per day removed from the schema, the screen and the project file; dollars shown as an estimate. | Sonnet |
 | 3 | A profile's limit checked where it is saved and shown before a run starts; a run's tokens while it runs, from docket's steps, so its reservation shrinks and its timeline shows them. | Integrator, Sonnet |
 | 4 | Claude Code and opencode stopped at their limit from what they report, and Claude Code's tools per role, from one capture of the real programs. | Sonnet |
-| 5 | The screens that read them; the guides; Fabulada's runs again. | Integrator |
+| 5 | The screens that read them; the guides; Meridian's runs again. | Integrator |
 
 ---
 
@@ -348,7 +348,7 @@ board reached their teams the same day; what is left is in [Open](#open).
 **ADR:** 0023 (inside ADRs 0002, 0006 §5 and 0021). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 
-On 2026-10-17 Fabulada went into Tack and docket end to end, on the maintainer's own board: 86
+On 2026-10-17 Meridian went into Tack and docket end to end, on the maintainer's own board: 86
 tasks, ten roles, eight profiles, three teams. The project, its roles and profiles, the teams and
 the choice of a run's team all worked. No run reached a team, and the board did not say why.
 Twenty defects in Tack were written down, each with its evidence. This phase closes them where
@@ -373,7 +373,7 @@ each fact is owned, so no rule is computed twice:
 | 1 | A run that cannot start ends; one name and one liveness rule for runners; the screens' words and the import. | Sonnet |
 | 2 | Current team reports and the per-team ceiling; logs, messages and the file's switch. | Sonnet |
 | 3 | The docket contract from captures, once docket's `POST /pods` is fixed. | Sonnet |
-| 4 | Docs and the gate; then Fabulada's first runs through its teams on the real board. | Integrator |
+| 4 | Docs and the gate; then Meridian's first runs through its teams on the real board. | Integrator |
 | 5 | From those runs: a docket task that outlives the runner is followed again, and the board makes its own decision token. | Sonnet |
 | 6 | A run that ended says why; a question ends with its run and the board finds its runner's verifier; the tutorial's screenshots. | Sonnet |
 
@@ -384,7 +384,7 @@ each fact is owned, so no rule is computed twice:
 **Status:** opened 2026-10-14 and built: the six waves landed in `develop` on 2026-10-14, the
 seventh, a whole project in and out through one file (ADR 0022), on 2026-10-17, followed the
 same day by the book's three guides. The live proof, `scripts/docket-prill-e2e.sh`, passes on
-docket's `develop` since 2026-10-18; Fabulada's runs through its teams are Phase 74's last round.
+docket's `develop` since 2026-10-18; Meridian's runs through its teams are Phase 74's last round.
 **ADRs:** 0021 (amends 0019 decision 7 and 0015 decision 1), 0022 (extends 0017). **Plan:**
 [`docs/plans/phase-73.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-73.md).
 

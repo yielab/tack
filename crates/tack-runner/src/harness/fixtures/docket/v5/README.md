@@ -131,7 +131,7 @@ a docket without the record.
 Four of docket's pauses need a model (a consult, an in-turn tool approval) or a protected-path
 diff (`check_changed`), and none is reachable here. Two are, and the script records them:
 
-- **An enqueue a policy holds.** The script writes one `pre_input` policy to the fab-dev team's
+- **An enqueue a policy holds.** The script writes one `pre_input` policy to the mer-dev team's
   `config/policies/` in the throwaway home (`then: ask`, matching one word). `POST /tasks/<pod>`
   with that word answers `201`, `status: "waiting_approval"` and the id of the escalation it
   opened (`post-task-gated`); a person's answer is then `approve_once` (`escalation-accepted`).

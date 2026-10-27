@@ -446,7 +446,7 @@ A template stores `roles`, `profiles` and `automation` as JSON in `project_templ
 ### Step 6: Regenerate, pin and document
 
 1. `./scripts/regen-generated.sh` regenerates `docs/openapi.json`, `frontend/src/shared/api/schema.gen.ts` and the lockfiles. The OpenAPI contract test fails until you do.
-2. Add the key to `crates/tack-api/tests/fixtures/bundles/fabulada.yaml` with a comment saying what it does.
+2. Add the key to `crates/tack-api/tests/fixtures/bundles/meridian.yaml` with a comment saying what it does.
 3. Add a row to the checking tests in `crates/tack-core/src/outline/bundle/tests.rs` (an accepted case and a refused one) and a case to `crates/tack-api/tests/handlers/bundle.rs`.
 4. Add the key to the tables in [The Project File Format](project-file.md), and to [Import, Export & Project Files](../user-guide/import-export.md) if a person writes it.
 

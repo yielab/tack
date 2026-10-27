@@ -239,10 +239,10 @@ A template is a project file without items. Migration `091_template_bundle` adds
 
 ## The worked example
 
-This is the whole Fabulada file, the fixture the tests read: `crates/tack-api/tests/fixtures/bundles/fabulada.yaml`. Its comments say what each rule does. Imported into a new project, it is applied with autonomy L3 and auto-start off, with a warning for each.
+This is the whole Meridian file, the fixture the tests read: `crates/tack-api/tests/fixtures/bundles/meridian.yaml`. Its comments say what each rule does. Imported into a new project, it is applied with autonomy L3 and auto-start off, with a warning for each.
 
 ```yaml
-{{#include ../../../../crates/tack-api/tests/fixtures/bundles/fabulada.yaml}}
+{{#include ../../../../crates/tack-api/tests/fixtures/bundles/meridian.yaml}}
 ```
 
 ## How to add a key
@@ -254,6 +254,6 @@ Take a new optional key on `automation`. Six places change, and `deny_unknown_fi
 3. **The write.** Apply it in `crates/tack-api/src/handlers/outline.rs` (`write_automation` here), and name the section in `at("…")` so a failure says where.
 4. **The export.** Read it back in `to_bundle`, and gather any new row in `Parts` and `bundle_response` in `handlers/export.rs`. The export must round-trip to the same text.
 5. **The stored forms, when they apply.** A key that a template should carry needs a column in `project_templates` (a migration), `build_project_from_template` and `save_project_as_template`.
-6. **The contract and the tests.** Run `./scripts/regen-generated.sh` (`docs/openapi.json`, `schema.gen.ts`); add the key to the Fabulada fixture with a comment; add a row to the checking tests in `crates/tack-core/src/outline/bundle/tests.rs` and a handler test in `crates/tack-api/tests/handlers/bundle.rs`; and add the key to this page's tables.
+6. **The contract and the tests.** Run `./scripts/regen-generated.sh` (`docs/openapi.json`, `schema.gen.ts`); add the key to the Meridian fixture with a comment; add a row to the checking tests in `crates/tack-core/src/outline/bundle/tests.rs` and a handler test in `crates/tack-api/tests/handlers/bundle.rs`; and add the key to this page's tables.
 
 A recipe with the commands is in [Adding Features](adding-features.md#add-a-key-to-the-project-file).

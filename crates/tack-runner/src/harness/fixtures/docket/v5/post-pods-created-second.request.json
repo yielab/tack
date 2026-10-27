@@ -1,5 +1,5 @@
 {
-  "name": "fab-lights",
+  "name": "mer-lights",
   "location": "/scratch/repo2",
   "blueprint": "software",
   "ensure": true

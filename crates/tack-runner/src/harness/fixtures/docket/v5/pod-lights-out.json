@@ -1,24 +1,24 @@
 {
-  "pod": "fab-lights",
+  "pod": "mer-lights",
   "members": [
     {
-      "id": "fab-lights-lead",
+      "id": "mer-lights-lead",
       "role": "lead",
       "model": {
         "value": "anthropic/claude-haiku-4-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/fab-lights-lead",
+      "workspace": "/scratch/home/.docket/workspaces/projects/mer-lights-lead",
       "verifyCmd": ""
     },
     {
-      "id": "fab-lights-implementer",
+      "id": "mer-lights-implementer",
       "role": "implementer",
       "model": {
         "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/fab-lights-implementer",
+      "workspace": "/scratch/home/.docket/workspaces/projects/mer-lights-implementer",
       "verifyCmd": ""
     }
   ],

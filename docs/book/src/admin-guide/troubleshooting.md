@@ -295,7 +295,7 @@ a minute. All the keys are in [docket teams](runners.md#docket-teams).
 **What you see.** `tack runner doctor` prints a team as attended:
 
 ```text
-  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
+  team mer-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
 In the project's **Settings → Automation → Ceiling**, the team is listed with "keeps its tasks at L3"
@@ -383,7 +383,7 @@ network), the board waits two minutes more and then asks a person. It never star
 itself, because it cannot tell whether the agent is still working on that computer.
 
 A run that the agent refused before it started is different: it ends **Failed** with the agent's own
-words, for example "docket did not accept the team fab-dev", and needs no one.
+words, for example "docket did not accept the team mer-dev", and needs no one.
 
 **What to do.** Decide what happens to the run:
 

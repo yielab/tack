@@ -1,5 +1,5 @@
 {
-  "project": "fab-dev",
+  "project": "mer-dev",
   "path": "/scratch/repo",
   "blueprint": "software",
   "ensure": true

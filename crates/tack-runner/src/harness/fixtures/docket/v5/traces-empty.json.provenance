@@ -3,7 +3,7 @@ route: GET /traces/<pod>
 status: 200
 tack-sends: no
 note: a team that does not exist yet has no events, and no error
-command: curl -X GET http://127.0.0.1:<port>/traces/fab-dev (bearer token from docket's --token-file)
+command: curl -X GET http://127.0.0.1:<port>/traces/mer-dev (bearer token from docket's --token-file)
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-26

@@ -1,7 +1,7 @@
 # ADR 0026: the runner finds its own settings, and a card says when nothing checks it
 
 **Status: ACCEPTED 2026-10-19.** The maintainer accepted both parts on 2026-10-19 during the
-Fabulada onboarding rerun and asked for them to be applied the same day.
+Meridian onboarding rerun and asked for them to be applied the same day.
 
 **Decide:** that the embedded runner reads **one settings file in a fixed place** when no other is
 named, and every screen that matters **says which file it read**; and that **tests and gates come
@@ -11,8 +11,8 @@ card, the board **says so** instead of something inventing a check.
 **Why now:** the embedded runner read a settings file only when each start named it. A reset of
 the data folder, a restart by hand and the unit `tack service install` writes all start it
 without one, and then it has no docket, no verifier and no branch push, with no error. It
-happened on every Fabulada rerun. In the same rerun the onboarding skill wrote two gate scripts
-and a content folder Fabulada never had, to check work that had no test.
+happened on every Meridian rerun. In the same rerun the onboarding skill wrote two gate scripts
+and a content folder Meridian never had, to check work that had no test.
 
 **If you do nothing:** every restart can silently turn docket and prill off; a card with no check
 looks the same in the run dialog as one with three.

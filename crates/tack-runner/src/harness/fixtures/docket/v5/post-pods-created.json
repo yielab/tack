@@ -1,16 +1,16 @@
 {
   "ok": true,
   "created": true,
-  "project": "fab-dev",
+  "project": "mer-dev",
   "blueprint": "software",
   "members": [
     {
-      "id": "fab-dev-lead",
+      "id": "mer-dev-lead",
       "role": "lead",
       "model": "anthropic/claude-haiku-4-5"
     },
     {
-      "id": "fab-dev-implementer",
+      "id": "mer-dev-implementer",
       "role": "implementer",
       "model": "anthropic/claude-sonnet-4-6"
     }

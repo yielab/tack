@@ -326,7 +326,7 @@ When the runner does start it:
 A profile names its team in its tool policy, as in this line from a project file:
 
 ```yaml
-tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: fab-dev } }
+tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: mer-dev } }
 ```
 
 The runner checks that docket reports that team and refuses the attempt, saying so,
@@ -351,8 +351,8 @@ docket
   ...
   api:         5
   daemon:      running on 127.0.0.1:7399
-  team fab-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
-  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
+  team mer-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
+  team mer-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
 A team that can finish a task with nobody present is `lights-out`. Any other team is `attended`, and

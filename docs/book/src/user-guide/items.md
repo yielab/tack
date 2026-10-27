@@ -144,7 +144,7 @@ Between the **Run with agent** button and the tabs, the drawer has an **Automati
 
 | The row says | What it means |
 |---|---|
-| "Starts by itself when it reaches To Do · Team fab-content · Merge L3" | The project starts tasks by itself from that status. The team and merge level are shown when they are known |
+| "Starts by itself when it reaches To Do · Team mer-content · Merge L3" | The project starts tasks by itself from that status. The team and merge level are shown when they are known |
 | "By hand: this project doesn't start tasks by itself" | Nothing starts it. Press **Run with agent** |
 | "By hand: the role Content has no profile" | The task's role has no profile and the project has no default. Choose one in [Teams](automation.md#teams) |
 
