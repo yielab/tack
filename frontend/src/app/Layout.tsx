@@ -10,7 +10,7 @@ import CommandPalette, { type Command } from '../shared/ui/CommandPalette';
 import { paletteOpen, openPalette, closePalette } from '../shared/state/commandPalette';
 import { IconPlus } from '../shared/ui/icons';
 import { getLastLens } from '../shared/state/lastView';
-import CreateItemModal from '../shared/ui/CreateItemModal';
+import CreateItemModal from '../features/items/CreateItemModal';
 import CreateProjectModal from '../features/projects/CreateProjectModal';
 import { useProject } from '../shared/state/projectContext';
 import { useVocab } from '../shared/vocab/useVocab';

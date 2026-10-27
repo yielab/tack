@@ -1,14 +1,15 @@
 import { type Component, createSignal, Show, createEffect, For, createResource, createMemo, createUniqueId } from 'solid-js';
-import Modal from './Modal';
-import RichTextEditor from './RichTextEditor';
-import Button from './Button';
-import Field from './Field';
-import { api } from '../api';
-import type { CreateItem, Item } from '../types';
-import { toast } from './toast';
-import { getItemTypeMap, resolveLabel } from '../vocab/vocab';
+import Modal from '../../shared/ui/Modal';
+import RichTextEditor from '../../shared/ui/RichTextEditor';
+import Button from '../../shared/ui/Button';
+import Field from '../../shared/ui/Field';
+import { api } from '../../shared/api';
+import type { CreateItem, Item } from '../../shared/types';
+import { toast } from '../../shared/ui/toast';
+import { getItemTypeMap, resolveLabel } from '../../shared/vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
-import { priorityColor } from './PriorityDot';
+import { createConfirm } from '../../shared/ui/ConfirmDialog';
+import { priorityColor } from '../../shared/ui/PriorityDot';
 
 /** Choice chip (type / priority / estimate): a pill; the chosen one gets the
  *  accent-soft fill, accent ink and a 2px accent ring. */
@@ -153,8 +154,10 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const handleDeleteChild = async (itemId: string) => {
-    if (!confirm('Delete this child item?')) return;
+    if (!(await ask({ title: 'Delete child item?', message: 'The child item will be deleted.', confirmLabel: 'Delete', danger: true }))) return;
 
     try {
       await api.items.remove(itemId);
@@ -239,6 +242,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       title={mode() === 'edit' ? 'Edit Item' : 'Create New Item'}
       size="xl"
     >
+      <ConfirmHost />
       <form onSubmit={handleSubmit} class="space-y-5">
         {/* Error message */}
         <Show when={error()}>
