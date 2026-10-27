@@ -1818,7 +1818,9 @@ pub async fn submit_completion(
             // The pack goes to prill's store; the runner does not wait for it, and a failure
             // is retried when the pull request is next followed.
             let attempt_id = attempt_id.clone();
-            tokio::spawn(async move { crate::prill_store::record_mrp(&app, &attempt_id).await });
+            app.tasks
+                .clone()
+                .spawn(async move { crate::prill_store::record_mrp(&app, &attempt_id).await });
         }
     }
 

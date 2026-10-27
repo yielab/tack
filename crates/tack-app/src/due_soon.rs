@@ -1,7 +1,7 @@
 //! The hourly pass that tells the outside world about items due within the next hour.
 //!
-//! `tick` is one pass and returns how many items it announced; `run` is the loop `tack serve`
-//! spawns. What an announcement does (a webhook POST) is the caller's: it hands in a
+//! `tick` is one pass and returns how many items it announced; `spawn` adds the loop `tack serve`
+//! runs. What an announcement does (a webhook POST) is the caller's: it hands in a
 //! [`DueSoonSink`].
 
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use tack_db::Repository;
 use tack_protocol::Clock;
 
 use crate::AppError;
+use crate::background::{Loops, Start};
 
 /// The event name an announcement carries.
 pub const EVENT: &str = "item.due_soon";
@@ -47,20 +48,21 @@ pub async fn tick(
     Ok(announced)
 }
 
-/// The loop: wait `interval`, run a pass, log a failed one, repeat. The first, immediate
-/// tick of the timer is skipped.
-pub async fn run(
+/// The loop: a pass every `interval`, the first one interval after the start, a failed one
+/// logged.
+pub fn spawn(
+    loops: &mut Loops,
     repo: Repository,
     clock: Arc<dyn Clock>,
     sink: Arc<dyn DueSoonSink>,
     interval: Duration,
 ) {
-    let mut timer = tokio::time::interval(interval);
-    timer.tick().await;
-    loop {
-        timer.tick().await;
-        if let Err(error) = tick(&repo, clock.as_ref(), sink.as_ref()).await {
-            tracing::warn!(%error, "Failed to query due-soon items for webhook");
+    loops.spawn_tick("due_soon", Start::AfterInterval, interval, move || {
+        let (repo, clock, sink) = (repo.clone(), clock.clone(), sink.clone());
+        async move {
+            if let Err(error) = tick(&repo, clock.as_ref(), sink.as_ref()).await {
+                tracing::warn!(%error, "Failed to query due-soon items for webhook");
+            }
         }
-    }
+    });
 }

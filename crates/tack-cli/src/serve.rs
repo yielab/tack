@@ -1,7 +1,8 @@
 //! The composition root of `tack serve`: the one place that opens the database, builds the
 //! `Repository` and the `AppState`, and hands them to the HTTP server. The background loops
-//! are spawned here too, one `tack_app::<module>::run(..)` per loop, as each moves out of
-//! `tack-api`; the server itself starts none of them.
+//! are started here too, one `tack_app::<module>::spawn(..)` per loop into one
+//! `tack_app::background::Loops` that is stopped when the server returns; the server itself
+//! starts only the artifact sweep, which needs its HTTP types.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -12,9 +13,11 @@ use tack_api::config::AppConfig;
 use tack_api::router::AppState;
 use tack_api::server::prepare;
 use tack_api::webhook::WebhookClient;
+use tack_app::background::{Loops, STOP_GRACE};
 use tack_db::{Repository, init_pool, migrations, repo};
 use tack_protocol::SystemClock;
 use tokio::sync::oneshot;
+use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
 /// Boot the server and block until it is shut down. `ready_tx` receives the real bound
@@ -54,7 +57,8 @@ pub async fn run(
         WebhookClient::new(url, config.webhook_secret.clone())
     });
 
-    spawn_backup_scheduler(&config, &repo);
+    let mut loops = Loops::new();
+    spawn_backup_scheduler(&mut loops, &config, &repo);
 
     let state = AppState {
         repo,
@@ -63,20 +67,23 @@ pub async fn run(
         broadcast_tx,
         webhook,
         local_runner,
+        tasks: TaskTracker::new(),
     };
 
     // Tasks a project starts by itself; off when its interval is 0.
     if state.config.auto_start_seconds > 0 {
-        tokio::spawn(tack_app::auto_start::run(
+        tack_app::auto_start::spawn(
+            &mut loops,
             state.repo.clone(),
             Arc::new(SystemClock),
             Arc::new(state.host()),
             Duration::from_secs(state.config.auto_start_seconds),
-        ));
+        );
     }
 
     // Inbound GitHub poll: returns at once when polling is off or no token is set.
-    tokio::spawn(tack_app::github_sync::run(
+    tack_app::github_sync::spawn(
+        &mut loops,
         state.repo.clone(),
         Arc::new(tack_protocol::SystemClock),
         tack_app::github_sync::Settings {
@@ -85,22 +92,24 @@ pub async fn run(
         },
         Arc::new(state.host()),
         Duration::from_secs(state.config.github_poll_seconds),
-    ));
+    );
 
     // Announce the items due within the hour, when a webhook is there to hear it.
     if let Some(webhook) = state.webhook.clone() {
-        tokio::spawn(tack_app::due_soon::run(
+        tack_app::due_soon::spawn(
+            &mut loops,
             state.repo.clone(),
             Arc::new(tack_protocol::SystemClock),
             Arc::new(webhook),
             tack_app::due_soon::INTERVAL,
-        ));
+        );
     }
 
-    // Purges stale replay bookkeeping and terminal events; off unless the operator opts in, since
-    // it deletes rows.
+    // Purges stale replay bookkeeping and terminal events and expires overdue decisions; off unless
+    // the operator opts in, since it deletes rows.
     if state.config.execution_retention_enable {
-        tokio::spawn(tack_app::retention::run(
+        tack_app::retention::spawn(
+            &mut loops,
             state.repo.clone(),
             Arc::new(SystemClock),
             tack_app::retention::Settings {
@@ -108,20 +117,23 @@ pub async fn run(
                 batch_size: tack_app::retention::DEFAULT_BATCH_SIZE,
             },
             Duration::from_secs(state.config.execution_retention_interval_secs),
-        ));
+        );
     }
 
     // Logs a stale lease or a request stuck in needs_operator; on by default, it only reads.
     if state.config.execution_health_enable {
-        tokio::spawn(tack_app::observability::run(
+        tack_app::observability::spawn(
+            &mut loops,
             state.repo.clone(),
             Arc::new(SystemClock),
             tack_app::observability::Settings::default(),
             Duration::from_secs(state.config.execution_health_interval_secs),
-        ));
+        );
     }
 
-    tack_api::serve(state, ready_tx).await
+    let served = tack_api::serve(state, ready_tx).await;
+    loops.stop(STOP_GRACE).await;
+    served
 }
 
 /// Automatic remote backup on a configured interval, clamped to a 60s floor
@@ -129,7 +141,7 @@ pub async fn run(
 /// the object store). The interval is env-only (`TACK_BACKUP_INTERVAL_SECS`),
 /// but the destination can come from UI-saved settings too, so this spawns
 /// whenever an interval is set and the loop re-checks the effective config each tick.
-fn spawn_backup_scheduler(config: &AppConfig, repo: &Repository) {
+fn spawn_backup_scheduler(loops: &mut Loops, config: &AppConfig, repo: &Repository) {
     let Some(interval_secs) = config.backup_interval_secs else {
         return;
     };
@@ -144,12 +156,13 @@ fn spawn_backup_scheduler(config: &AppConfig, repo: &Repository) {
     } else {
         interval_secs
     };
-    tokio::spawn(tack_app::remote_backup::run(
+    tack_app::remote_backup::spawn(
+        loops,
         repo.clone(),
         Arc::new(SystemClock),
         config.backup_config(),
         Duration::from_secs(interval_secs),
-    ));
+    );
     info!(interval_secs, "Remote backup scheduler enabled");
 }
 

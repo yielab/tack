@@ -8,6 +8,7 @@ use axum::http::{HeaderValue, Method, header};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Router, middleware};
 use tokio::sync::broadcast;
+use tokio_util::task::TaskTracker;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
@@ -50,6 +51,10 @@ pub struct AppState {
     /// `local_runner_routes` treats that exactly like a non-loopback bind —
     /// the routes are absent, not present-and-refusing.
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
+    /// The use cases a handler starts in the background after answering (a merge, a GitHub
+    /// push, the pack going to prill). Shutdown closes it and waits for them, so none is cut
+    /// off half done.
+    pub tasks: TaskTracker,
 }
 
 impl AppState {

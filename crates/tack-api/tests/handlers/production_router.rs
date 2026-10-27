@@ -46,6 +46,7 @@ async fn app_state(config: AppConfig, repo: Repository, workspace_id: Uuid) -> A
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     }
 }
 

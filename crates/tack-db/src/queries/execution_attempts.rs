@@ -190,20 +190,6 @@ pub async fn latest_attempt_of_request(
     .await?)
 }
 
-/// The git branch the attempt reported it worked on, or `None` when it reported none.
-pub async fn git_branch_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Option<String>, StoreError> {
-    let branch: Option<Option<String>> = sqlx::query_scalar(
-        "SELECT json_extract(actual_execution, '$.git.branch') FROM execution_attempts WHERE id = ?",
-    )
-    .bind(attempt_id)
-    .fetch_optional(repo.pool())
-    .await?;
-    Ok(branch.flatten())
-}
-
 /// The newest succeeded attempt of the task that pushed a branch, `None` when it has none.
 pub async fn newest_pushed_attempt_of_item(
     repo: &Repository,

@@ -14,6 +14,8 @@ tack-core = { path = "../tack-core" }
 tack-orch = { path = "../tack-orch" }
 tack-db = { path = "../tack-db" }
 tokio = { workspace = true }
+# The stop signal every background loop shares.
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
@@ -36,6 +38,7 @@ zstd = { workspace = true }
 tack-test-support = { path = "../tack-test-support" }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
 wiremock = { workspace = true }
 
 [lints]

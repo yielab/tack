@@ -1048,3 +1048,19 @@ pub async fn drop_trigger(repo: &Repository, trigger: &str) {
         .await
         .unwrap_or_else(|e| panic!("drop trigger {trigger}: {e}"));
 }
+
+/// Moves `execution_claim_replays` out of sight, so the retention purge that reads it fails.
+pub async fn execution_claim_replays_hidden(repo: &Repository) {
+    sqlx::query("ALTER TABLE execution_claim_replays RENAME TO execution_claim_replays_hidden")
+        .execute(repo.pool())
+        .await
+        .expect("hide execution_claim_replays");
+}
+
+/// Puts `execution_claim_replays` back after [`execution_claim_replays_hidden`].
+pub async fn execution_claim_replays_shown(repo: &Repository) {
+    sqlx::query("ALTER TABLE execution_claim_replays_hidden RENAME TO execution_claim_replays")
+        .execute(repo.pool())
+        .await
+        .expect("show execution_claim_replays");
+}

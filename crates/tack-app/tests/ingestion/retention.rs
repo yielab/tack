@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use chrono::{Duration, TimeZone, Utc};
+use tack_app::background::Loops;
 use tack_app::{observability, retention};
 use tack_db::queries;
 use tack_protocol::Clock;
@@ -13,6 +14,7 @@ use tack_protocol::execution::ExecutionState;
 use tack_test_support::{poll_until, seed};
 
 use crate::common::{FakeClock, World, enqueue, running_attempt, world};
+use crate::logs::capture;
 
 /// Runs `step` with the world's clock set to `at`, then puts the clock back.
 async fn at<T>(
@@ -55,12 +57,14 @@ async fn the_spawned_retention_loop_purges_stale_rows_and_keeps_fresh_ones() {
     );
 
     let clock: Arc<dyn Clock> = Arc::new(FakeClock(world.clock.0.clone()));
-    let task = tokio::spawn(retention::run(
+    let mut loops = Loops::new();
+    retention::spawn(
+        &mut loops,
         world.repo.clone(),
         clock,
         retention::Settings::default(),
         StdDuration::from_secs(3600),
-    ));
+    );
 
     let purged = poll_until(StdDuration::from_secs(3), async || {
         (queries::execution_claim_replays::replay_count(&world.repo)
@@ -70,7 +74,7 @@ async fn the_spawned_retention_loop_purges_stale_rows_and_keeps_fresh_ones() {
             .then_some(())
     })
     .await;
-    task.abort();
+    loops.stop(StdDuration::from_secs(3)).await;
     assert!(
         purged.is_some(),
         "the real spawned task purged the stale row within 3s and kept the fresh one"
@@ -139,4 +143,83 @@ async fn a_health_pass_reports_a_stale_lease_and_a_needs_operator_request() {
         "must observe the needs_operator request"
     );
     assert!(outcome.alerts.stale_lease_alert && outcome.alerts.needs_operator_alert);
+}
+
+/// A purge that fails is logged and tried again on the next cycle: the loop outlives it, and the
+/// row the failed pass could not reach is purged once the store answers again.
+#[tokio::test]
+async fn a_failing_purge_is_retried_next_cycle_and_does_not_end_the_loop() {
+    let (logged, _guard) = capture();
+    let world = world().await;
+    at(
+        &world,
+        now_fixed() - Duration::days(100),
+        running_attempt(&world, "old"),
+    )
+    .await;
+    seed::execution_claim_replays_hidden(&world.repo).await;
+
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock(world.clock.0.clone()));
+    let mut loops = Loops::new();
+    retention::spawn(
+        &mut loops,
+        world.repo.clone(),
+        clock,
+        retention::Settings::default(),
+        StdDuration::from_secs(1),
+    );
+
+    let failed = poll_until(StdDuration::from_secs(5), async || {
+        (logged.count("purge failed; will retry next cycle") > 0).then_some(())
+    })
+    .await;
+    seed::execution_claim_replays_shown(&world.repo).await;
+    let retried = poll_until(StdDuration::from_secs(5), async || {
+        (queries::execution_claim_replays::replay_count(&world.repo)
+            .await
+            .unwrap()
+            == 0)
+            .then_some(())
+    })
+    .await;
+    loops.stop(StdDuration::from_secs(5)).await;
+
+    assert!(failed.is_some(), "the first pass failed and said so");
+    assert!(
+        retried.is_some(),
+        "the next cycle purged the row once the store was back"
+    );
+}
+
+/// A stale lease is worth one warning when it appears, not one every pass for as long as it lasts.
+#[tokio::test]
+async fn a_stale_lease_alert_logs_once_on_the_transition_not_every_pass() {
+    let (logged, _guard) = capture();
+    let world = world().await;
+    at(
+        &world,
+        now_fixed() - Duration::hours(1),
+        running_attempt(&world, "stale"),
+    )
+    .await;
+
+    let clock: Arc<dyn Clock> = Arc::new(FakeClock(world.clock.0.clone()));
+    let mut loops = Loops::new();
+    observability::spawn(
+        &mut loops,
+        world.repo.clone(),
+        clock,
+        observability::Settings::default(),
+        StdDuration::from_secs(1),
+    );
+
+    // Every pass logs its snapshot at debug level: three of them, with the lease stale in all.
+    let passes = poll_until(StdDuration::from_secs(10), async || {
+        (logged.count("execution health snapshot") >= 3).then_some(())
+    })
+    .await;
+    loops.stop(StdDuration::from_secs(5)).await;
+
+    assert!(passes.is_some(), "three passes within the budget");
+    assert_eq!(logged.count("stale lease(s) detected"), 1);
 }

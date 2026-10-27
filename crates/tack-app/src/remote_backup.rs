@@ -30,6 +30,8 @@ use thiserror::Error;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::background::{Loops, Start};
+
 // ── Error ────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Error)]
@@ -830,39 +832,40 @@ pub async fn tick(
     }
 }
 
-/// The loop `tack serve` spawns: wait `interval`, run [`tick`], log what it did, repeat. The
-/// first pass comes one `interval` after the start, not at it. `interval` must not be zero.
-pub async fn run(
+/// The loop `tack serve` starts: run [`tick`] every `interval` and log what it did. The first
+/// pass comes one `interval` after the start, not at it. `interval` must not be zero.
+pub fn spawn(
+    loops: &mut Loops,
     repo: Repository,
     clock: Arc<dyn Clock>,
     base: BackupConfig,
     interval: std::time::Duration,
 ) {
-    let mut ticker = tokio::time::interval(interval);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    ticker.tick().await; // skip the first immediate tick
-    loop {
-        ticker.tick().await;
-        match tick(&repo, clock.as_ref(), &base).await {
-            Ok(Outcome::NotConfigured) => {
-                // A UI-only config may not be set yet; nothing to do this tick.
-                debug!("Scheduled backup skipped: remote backup not configured");
+    let base = Arc::new(base);
+    loops.spawn_tick("remote_backup", Start::AfterInterval, interval, move || {
+        let (repo, clock, base) = (repo.clone(), clock.clone(), base.clone());
+        async move {
+            match tick(&repo, clock.as_ref(), &base).await {
+                Ok(Outcome::NotConfigured) => {
+                    // A UI-only config may not be set yet; nothing to do this tick.
+                    debug!("Scheduled backup skipped: remote backup not configured");
+                }
+                Ok(Outcome::Uploaded(manifest)) => {
+                    info!(key = %manifest.object_key, "Scheduled backup complete");
+                }
+                Ok(Outcome::AnotherDeviceAhead { remote_generation }) => {
+                    warn!(
+                        remote_generation,
+                        "Scheduled backup skipped: another device has newer work (restore to resolve)"
+                    );
+                }
+                Err(TickError::StoreInit(e)) => {
+                    warn!(error = %e, "Scheduled backup store init failed");
+                }
+                Err(TickError::Backup(e)) => warn!(error = %e, "Scheduled backup failed"),
             }
-            Ok(Outcome::Uploaded(manifest)) => {
-                info!(key = %manifest.object_key, "Scheduled backup complete");
-            }
-            Ok(Outcome::AnotherDeviceAhead { remote_generation }) => {
-                warn!(
-                    remote_generation,
-                    "Scheduled backup skipped: another device has newer work (restore to resolve)"
-                );
-            }
-            Err(TickError::StoreInit(e)) => {
-                warn!(error = %e, "Scheduled backup store init failed");
-            }
-            Err(TickError::Backup(e)) => warn!(error = %e, "Scheduled backup failed"),
         }
-    }
+    });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -8,7 +8,9 @@ mod status_map;
 use std::future::Future;
 
 use tack_db::Repository;
-use tack_db::repo::execution::{Completion, CompletionResponse, CompletionResult, state};
+use tack_db::repo::execution::{
+    Completion, CompletionResponse, CompletionResult, FollowUps, state,
+};
 use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
@@ -54,7 +56,9 @@ pub enum Completed {
 /// Ends an attempt with the runner's report. Idempotent on `completion_id`. When a success is
 /// committed, the item is moved per the request's status map (best effort: a refused move or a
 /// failed lookup is logged and never fails the completion), and a rejection by the verifier
-/// that names something to fix enqueues one follow-up run.
+/// that names something to fix enqueues one follow-up run. Both are decided from what is stored
+/// before the report and written in the transaction that ends the attempt, so a crash leaves
+/// the attempt open with its report to be sent again, never ended with its board move lost.
 ///
 /// `read_pack` reads the Merge-Readiness Pack stored at a content reference, or `None` when it
 /// cannot be read or parsed; the bytes live outside the store, so the caller supplies it.
@@ -68,8 +72,31 @@ where
     R: Fn(String) -> Fut,
     Fut: Future<Output = Option<MergeReadinessPack>>,
 {
-    let result = repo
-        .complete_execution_result(
+    let (item_move, rework) = if report.terminal_state == ExecutionState::Succeeded {
+        let item_move =
+            status_map::plan(repo, report.attempt_id, report.terminal_reason_json).await;
+        let rework = rework::plan(
+            repo,
+            clock,
+            report.attempt_id,
+            report.actual_execution_json,
+            &read_pack,
+        )
+        .await
+        .unwrap_or_else(|err| {
+            tracing::warn!(
+                attempt_id = report.attempt_id,
+                error = %err,
+                "rework: could not plan the follow-up"
+            );
+            None
+        });
+        (item_move, rework)
+    } else {
+        (None, None)
+    };
+    let (result, followed) = repo
+        .complete_execution_with_follow_ups(
             Completion {
                 runner_id: report.runner_id,
                 attempt_id: report.attempt_id,
@@ -81,29 +108,19 @@ where
                 actual_execution: report.actual_execution_json,
                 usage: report.usage_json,
             },
+            FollowUps {
+                item_update: item_move.as_ref().map(status_map::Move::item_update),
+                rework: rework.as_ref().map(rework::Rework::follow_up),
+            },
             clock,
         )
         .await?;
     Ok(match result {
-        CompletionResult::Committed(response) => {
-            let mut item_moved = None;
-            if report.terminal_state == ExecutionState::Succeeded {
-                item_moved = status_map::apply(repo, report.attempt_id).await;
-                if let Err(err) =
-                    rework::enqueue_rework(repo, clock, report.attempt_id, &read_pack).await
-                {
-                    tracing::warn!(
-                        attempt_id = report.attempt_id,
-                        error = %err,
-                        "rework: could not enqueue the follow-up"
-                    );
-                }
-            }
-            Completed::Committed {
-                response,
-                item_moved,
-            }
-        }
+        CompletionResult::Committed(response) => Completed::Committed {
+            response,
+            item_moved: item_move
+                .and_then(|planned| planned.moved(report.attempt_id, followed.item_update)),
+        },
         CompletionResult::Replayed(response) => Completed::Replayed(response),
         CompletionResult::IdempotencyConflict => Completed::IdempotencyConflict,
         CompletionResult::Conflict => Completed::Conflict,

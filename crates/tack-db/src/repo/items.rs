@@ -486,200 +486,14 @@ impl Repository {
         workflow: &WorkflowConfig,
         expected_version: Option<i64>,
     ) -> Result<AtomicItemUpdateOutcome, StoreError> {
-        let now = Utc::now().to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-
-        let current = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
-        )
-        .bind(id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?;
-        let Some(current) = current else {
-            tx.rollback().await?;
-            return Ok(AtomicItemUpdateOutcome::NotFound);
-        };
-        let current_version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
-            .bind(id.to_string())
-            .fetch_one(&mut *tx)
-            .await?;
-        if expected_version.is_some_and(|expected| expected != current_version) {
-            tx.rollback().await?;
-            return Ok(AtomicItemUpdateOutcome::PreconditionFailed);
-        }
-
-        let old_status = current.status.clone();
-        let addresses_a_field = input.title.is_some()
-            || input.description.is_some()
-            || input.item_type.is_some()
-            || input.status.is_some()
-            || input.priority.is_some()
-            || input.estimate.is_some()
-            || input.estimate_unit.is_some()
-            || input.tags.is_some()
-            || input.due_date.is_some()
-            || input.sprint_id.is_some()
-            || input.sort_order.is_some()
-            || input.assignee.is_some()
-            || input.recurrence.is_some()
-            || input.run_settings.is_some();
-        // Match the pre-A2 no-op PATCH behavior: without an addressed field
-        // there is no logical mutation and therefore no version to consume.
-        if !addresses_a_field {
-            let item = current.into_item();
+        let outcome = update_item_in(&mut tx, id, input, workflow, expected_version).await?;
+        if matches!(outcome, AtomicItemUpdateOutcome::Updated { .. }) {
             tx.commit().await?;
-            return Ok(AtomicItemUpdateOutcome::Updated {
-                item: Box::new(item),
-                version: current_version,
-                old_status,
-            });
-        }
-        let status_category = if let Some(target) = input.status.as_deref() {
-            if let Err(error) = workflow.validate_transition(&old_status, target) {
-                tx.rollback().await?;
-                return Ok(AtomicItemUpdateOutcome::Rejected(error));
-            }
-            let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?",
-            )
-            .bind(&current.project_id)
-            .bind(target)
-            .fetch_one(&mut *tx)
-            .await?;
-            if let Err(error) = workflow.check_wip_limit(target, count as usize) {
-                tx.rollback().await?;
-                return Ok(AtomicItemUpdateOutcome::Rejected(error));
-            }
-            workflow
-                .statuses
-                .iter()
-                .find(|status| status.name == target)
-                .map(|status| status.category.clone())
         } else {
-            None
-        };
-
-        let mut query = QueryBuilder::<Sqlite>::new("UPDATE items SET ");
-        {
-            let mut fields = query.separated(", ");
-            if let Some(title) = input.title.as_deref() {
-                fields.push("title = ").push_bind_unseparated(title);
-            }
-            if let Some(description) = input.description.as_ref() {
-                fields
-                    .push("description = ")
-                    .push_bind_unseparated(description.as_deref());
-            }
-            if let Some(item_type) = input.item_type.as_ref() {
-                fields
-                    .push("item_type = ")
-                    .push_bind_unseparated(item_type.to_string());
-            }
-            if let Some(status) = input.status.as_deref() {
-                fields.push("status = ").push_bind_unseparated(status);
-            }
-            if let Some(priority) = input.priority.as_ref() {
-                fields
-                    .push("priority = ")
-                    .push_bind_unseparated(priority.to_string());
-            }
-            if let Some(estimate) = input.estimate {
-                fields.push("estimate = ").push_bind_unseparated(estimate);
-            }
-            if let Some(estimate_unit) = input.estimate_unit.as_ref() {
-                let value = estimate_unit
-                    .as_ref()
-                    .map(serde_json::to_string)
-                    .transpose()
-                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-                fields.push("estimate_unit = ").push_bind_unseparated(value);
-            }
-            if let Some(tags) = input.tags.as_ref() {
-                let value = serde_json::to_string(tags)
-                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-                fields.push("tags = ").push_bind_unseparated(value);
-            }
-            if let Some(due_date) = input.due_date.as_ref() {
-                fields
-                    .push("due_date = ")
-                    .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
-            }
-            if let Some(sprint_id) = input.sprint_id.as_ref() {
-                fields
-                    .push("sprint_id = ")
-                    .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
-            }
-            if let Some(sort_order) = input.sort_order {
-                fields
-                    .push("sort_order = ")
-                    .push_bind_unseparated(sort_order);
-            }
-            if let Some(assignee) = input.assignee.as_ref() {
-                fields
-                    .push("assignee = ")
-                    .push_bind_unseparated(assignee.as_deref());
-            }
-            if let Some(recurrence) = input.recurrence.as_ref() {
-                fields
-                    .push("recurrence = ")
-                    .push_bind_unseparated(recurrence.map(|r| r.to_string()));
-            }
-            if let Some(run_settings) = input.run_settings.as_ref() {
-                fields.push("run_settings = ").push_bind_unseparated(
-                    run_settings
-                        .as_ref()
-                        .and_then(|v| serde_json::to_string(v).ok()),
-                );
-            }
-            match status_category {
-                Some(StatusCategory::InProgress) => {
-                    fields
-                        .push("started_at = COALESCE(started_at, ")
-                        .push_bind_unseparated(&now)
-                        .push_unseparated(")");
-                    fields.push("completed_at = NULL");
-                }
-                Some(StatusCategory::Done) => {
-                    fields
-                        .push("completed_at = COALESCE(completed_at, ")
-                        .push_bind_unseparated(&now)
-                        .push_unseparated(")");
-                }
-                Some(StatusCategory::Todo) => {
-                    fields.push("completed_at = NULL");
-                }
-                None => {}
-            }
-            fields.push("updated_at = ").push_bind_unseparated(&now);
-            fields.push("version = version + 1");
-        }
-        query.push(" WHERE id = ").push_bind(id.to_string());
-        if let Some(expected_version) = expected_version {
-            query.push(" AND version = ").push_bind(expected_version);
-        }
-        let result = query.build().execute(&mut *tx).await?;
-        if result.rows_affected() != 1 {
             tx.rollback().await?;
-            return Ok(if expected_version.is_some() {
-                AtomicItemUpdateOutcome::PreconditionFailed
-            } else {
-                AtomicItemUpdateOutcome::NotFound
-            });
         }
-
-        let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
-        )))
-        .bind(id.to_string())
-        .fetch_one(&mut *tx)
-        .await?
-        .into_item();
-        tx.commit().await?;
-        Ok(AtomicItemUpdateOutcome::Updated {
-            item: Box::new(item),
-            version: current_version + 1,
-            old_status,
-        })
+        Ok(outcome)
     }
 
     #[instrument(skip(self))]
@@ -1110,6 +924,203 @@ impl Repository {
             .await?;
         Ok(())
     }
+}
+
+/// The body of [`Repository::update_item_atomically`] over a transaction the caller opened with
+/// `BEGIN IMMEDIATE` and ends: it writes only when it answers `Updated`, so any other answer
+/// leaves nothing to undo, and a caller that has more to write in the same transaction (a
+/// completion moving the item) calls this and goes on.
+pub(crate) async fn update_item_in(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    id: Uuid,
+    input: UpdateItem,
+    workflow: &WorkflowConfig,
+    expected_version: Option<i64>,
+) -> Result<AtomicItemUpdateOutcome, StoreError> {
+    let now = Utc::now().to_rfc3339();
+    let current = sqlx::query_as::<_, ItemRow>(
+        "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
+    )
+    .bind(id.to_string())
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(current) = current else {
+        return Ok(AtomicItemUpdateOutcome::NotFound);
+    };
+    let current_version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
+        .bind(id.to_string())
+        .fetch_one(&mut **tx)
+        .await?;
+    if expected_version.is_some_and(|expected| expected != current_version) {
+        return Ok(AtomicItemUpdateOutcome::PreconditionFailed);
+    }
+
+    let old_status = current.status.clone();
+    let addresses_a_field = input.title.is_some()
+        || input.description.is_some()
+        || input.item_type.is_some()
+        || input.status.is_some()
+        || input.priority.is_some()
+        || input.estimate.is_some()
+        || input.estimate_unit.is_some()
+        || input.tags.is_some()
+        || input.due_date.is_some()
+        || input.sprint_id.is_some()
+        || input.sort_order.is_some()
+        || input.assignee.is_some()
+        || input.recurrence.is_some()
+        || input.run_settings.is_some();
+    // Match the pre-A2 no-op PATCH behavior: without an addressed field
+    // there is no logical mutation and therefore no version to consume.
+    if !addresses_a_field {
+        let item = current.into_item();
+        return Ok(AtomicItemUpdateOutcome::Updated {
+            item: Box::new(item),
+            version: current_version,
+            old_status,
+        });
+    }
+    let status_category = if let Some(target) = input.status.as_deref() {
+        if let Err(error) = workflow.validate_transition(&old_status, target) {
+            return Ok(AtomicItemUpdateOutcome::Rejected(error));
+        }
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
+                .bind(&current.project_id)
+                .bind(target)
+                .fetch_one(&mut **tx)
+                .await?;
+        if let Err(error) = workflow.check_wip_limit(target, count as usize) {
+            return Ok(AtomicItemUpdateOutcome::Rejected(error));
+        }
+        workflow
+            .statuses
+            .iter()
+            .find(|status| status.name == target)
+            .map(|status| status.category.clone())
+    } else {
+        None
+    };
+
+    let mut query = QueryBuilder::<Sqlite>::new("UPDATE items SET ");
+    {
+        let mut fields = query.separated(", ");
+        if let Some(title) = input.title.as_deref() {
+            fields.push("title = ").push_bind_unseparated(title);
+        }
+        if let Some(description) = input.description.as_ref() {
+            fields
+                .push("description = ")
+                .push_bind_unseparated(description.as_deref());
+        }
+        if let Some(item_type) = input.item_type.as_ref() {
+            fields
+                .push("item_type = ")
+                .push_bind_unseparated(item_type.to_string());
+        }
+        if let Some(status) = input.status.as_deref() {
+            fields.push("status = ").push_bind_unseparated(status);
+        }
+        if let Some(priority) = input.priority.as_ref() {
+            fields
+                .push("priority = ")
+                .push_bind_unseparated(priority.to_string());
+        }
+        if let Some(estimate) = input.estimate {
+            fields.push("estimate = ").push_bind_unseparated(estimate);
+        }
+        if let Some(estimate_unit) = input.estimate_unit.as_ref() {
+            let value = estimate_unit
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            fields.push("estimate_unit = ").push_bind_unseparated(value);
+        }
+        if let Some(tags) = input.tags.as_ref() {
+            let value = serde_json::to_string(tags)
+                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            fields.push("tags = ").push_bind_unseparated(value);
+        }
+        if let Some(due_date) = input.due_date.as_ref() {
+            fields
+                .push("due_date = ")
+                .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
+        }
+        if let Some(sprint_id) = input.sprint_id.as_ref() {
+            fields
+                .push("sprint_id = ")
+                .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
+        }
+        if let Some(sort_order) = input.sort_order {
+            fields
+                .push("sort_order = ")
+                .push_bind_unseparated(sort_order);
+        }
+        if let Some(assignee) = input.assignee.as_ref() {
+            fields
+                .push("assignee = ")
+                .push_bind_unseparated(assignee.as_deref());
+        }
+        if let Some(recurrence) = input.recurrence.as_ref() {
+            fields
+                .push("recurrence = ")
+                .push_bind_unseparated(recurrence.map(|r| r.to_string()));
+        }
+        if let Some(run_settings) = input.run_settings.as_ref() {
+            fields.push("run_settings = ").push_bind_unseparated(
+                run_settings
+                    .as_ref()
+                    .and_then(|v| serde_json::to_string(v).ok()),
+            );
+        }
+        match status_category {
+            Some(StatusCategory::InProgress) => {
+                fields
+                    .push("started_at = COALESCE(started_at, ")
+                    .push_bind_unseparated(&now)
+                    .push_unseparated(")");
+                fields.push("completed_at = NULL");
+            }
+            Some(StatusCategory::Done) => {
+                fields
+                    .push("completed_at = COALESCE(completed_at, ")
+                    .push_bind_unseparated(&now)
+                    .push_unseparated(")");
+            }
+            Some(StatusCategory::Todo) => {
+                fields.push("completed_at = NULL");
+            }
+            None => {}
+        }
+        fields.push("updated_at = ").push_bind_unseparated(&now);
+        fields.push("version = version + 1");
+    }
+    query.push(" WHERE id = ").push_bind(id.to_string());
+    if let Some(expected_version) = expected_version {
+        query.push(" AND version = ").push_bind(expected_version);
+    }
+    let result = query.build().execute(&mut **tx).await?;
+    if result.rows_affected() != 1 {
+        return Ok(if expected_version.is_some() {
+            AtomicItemUpdateOutcome::PreconditionFailed
+        } else {
+            AtomicItemUpdateOutcome::NotFound
+        });
+    }
+
+    let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+        "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
+    )))
+    .bind(id.to_string())
+    .fetch_one(&mut **tx)
+    .await?
+    .into_item();
+    Ok(AtomicItemUpdateOutcome::Updated {
+        item: Box::new(item),
+        version: current_version + 1,
+        old_status,
+    })
 }
 
 #[cfg(test)]

@@ -3,8 +3,10 @@
 
 mod common;
 mod decisions;
+mod logs;
 mod support;
 
+mod background;
 mod cancel_run;
 mod claim;
 mod complete;

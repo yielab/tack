@@ -213,3 +213,32 @@ fn restore_swap_deletes_stale_wal_shm() {
 
     fs::remove_dir_all(dir).ok();
 }
+
+#[tokio::test]
+async fn shutdown_waits_for_a_use_case_a_handler_started() {
+    let tasks = TaskTracker::new();
+    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = finished.clone();
+    tasks.spawn(async move {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+
+    wait_for_tasks(&tasks, Duration::from_secs(5)).await;
+
+    assert!(
+        finished.load(std::sync::atomic::Ordering::SeqCst),
+        "the use case ran to its end before shutdown went on"
+    );
+}
+
+#[tokio::test]
+async fn shutdown_does_not_wait_forever_for_a_use_case_that_never_ends() {
+    let tasks = TaskTracker::new();
+    tasks.spawn(std::future::pending::<()>());
+
+    let started = std::time::Instant::now();
+    wait_for_tasks(&tasks, Duration::from_millis(100)).await;
+
+    assert!(started.elapsed() < Duration::from_secs(5));
+}

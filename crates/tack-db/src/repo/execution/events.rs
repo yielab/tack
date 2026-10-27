@@ -278,29 +278,6 @@ impl Repository {
         Ok(EventApplyResult::Applied(result))
     }
 
-    /// Retention (behavior only — startup/shutdown wiring, metrics and
-    /// alerting are the recurring background task's own concern). Bounded batch:
-    /// the subquery `LIMIT` keeps one sweep pass cheap and interruptible
-    /// rather than locking the table for an unbounded delete; the caller
-    /// loops until `0` is returned. Deletes purely by `created_at` age, the
-    /// same column `limits.json`'s `retention_event_days_default` is
-    /// documented against.
-    #[instrument(skip(self))]
-    pub async fn purge_execution_events_older_than(
-        &self,
-        cutoff: DateTime<Utc>,
-        batch_limit: i64,
-    ) -> Result<u64, StoreError> {
-        let result = sqlx::query(
-            "DELETE FROM execution_events WHERE id IN (SELECT id FROM execution_events WHERE created_at < ? LIMIT ?)",
-        )
-        .bind(cutoff.to_rfc3339())
-        .bind(batch_limit)
-        .execute(self.pool())
-        .await?;
-        Ok(result.rows_affected())
-    }
-
     /// Deletes stale rows from the six idempotency/replay bookkeeping tables
     /// (`execution_claim_replays`, `execution_heartbeat_replays`, `execution_cancellation_replays`,
     /// `execution_event_batch_replays`, `execution_completion_replays`, `execution_recovery_audits`),

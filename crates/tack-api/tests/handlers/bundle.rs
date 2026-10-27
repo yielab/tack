@@ -34,6 +34,7 @@ pub(crate) async fn app() -> Router {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     common::with_default_host(build_router(state))
 }

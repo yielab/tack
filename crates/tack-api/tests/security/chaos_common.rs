@@ -58,6 +58,7 @@ pub async fn build_app(
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     (crate::common::with_default_host(build_router(state)), repo)
 }

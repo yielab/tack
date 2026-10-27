@@ -8,6 +8,7 @@ use decisions::{
     attempt_and_request_state, clock, decision_state, pending_decision, running_attempt, seed_store,
 };
 use serde_json::json;
+use tack_app::retention;
 use tack_app::runs::expire_decisions::expire_decisions;
 use tack_app::runs::resolve_decision::{ResolveOutcome, resolve_decision};
 use tack_core::decision::DecisionResolvedBy;
@@ -93,5 +94,43 @@ async fn expiry_resumes_the_attempt_like_a_resolution_does() {
     assert_eq!(
         attempt_and_request_state(&repo, &kept).await,
         (WaitingDecision, WaitingDecision)
+    );
+}
+
+#[tokio::test]
+async fn a_retention_pass_expires_the_overdue_decisions_and_leaves_the_rest() {
+    let repo = setup_test_db().await;
+    let clock = clock();
+    let item_id = seed_store(&repo, &clock).await;
+    let attempt_id = running_attempt(&repo, &clock, &item_id, "retention").await;
+    pending_decision(
+        &repo,
+        &clock,
+        &attempt_id,
+        "dec-overdue",
+        Some(clock.now() - Duration::seconds(5)),
+    )
+    .await;
+    pending_decision(
+        &repo,
+        &clock,
+        &attempt_id,
+        "dec-future",
+        Some(clock.now() + Duration::minutes(30)),
+    )
+    .await;
+
+    let outcome = retention::tick(&repo, &clock, &retention::Settings::default())
+        .await
+        .expect("retention pass");
+
+    assert_eq!(outcome.decisions_expired, 1);
+    assert_eq!(
+        decision_state(&repo, &attempt_id, "dec-overdue").await,
+        "expired"
+    );
+    assert_eq!(
+        decision_state(&repo, &attempt_id, "dec-future").await,
+        "pending"
     );
 }

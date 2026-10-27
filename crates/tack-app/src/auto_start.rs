@@ -18,6 +18,7 @@ use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use uuid::Uuid;
 
+use crate::background::{Loops, Start};
 use crate::host::Host;
 use crate::runs::start_run::{RunRequest, default_selector, resolve_profile, start_run};
 use crate::{AppError, merge};
@@ -32,19 +33,24 @@ pub struct Outcome {
     pub started: usize,
 }
 
-/// The loop `tack serve` spawns: `tick` every `interval`, the first pass one interval after
-/// the start, a failed pass logged. The caller does not spawn it when auto-start is off
+/// The loop `tack serve` starts: `tick` every `interval`, the first pass one interval after
+/// the start, a failed pass logged. The caller does not start it when auto-start is off
 /// (`auto_start_seconds` is 0).
-pub async fn run(repo: Repository, clock: Arc<dyn Clock>, host: Arc<dyn Host>, interval: Duration) {
-    let mut ticker = tokio::time::interval(interval);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    ticker.tick().await; // skip the first immediate tick
-    loop {
-        ticker.tick().await;
-        if let Err(error) = tick(&repo, clock.as_ref(), host.as_ref()).await {
-            tracing::warn!(%error, "auto-start: could not list projects");
+pub fn spawn(
+    loops: &mut Loops,
+    repo: Repository,
+    clock: Arc<dyn Clock>,
+    host: Arc<dyn Host>,
+    interval: Duration,
+) {
+    loops.spawn_tick("auto_start", Start::AfterInterval, interval, move || {
+        let (repo, clock, host) = (repo.clone(), clock.clone(), host.clone());
+        async move {
+            if let Err(error) = tick(&repo, clock.as_ref(), host.as_ref()).await {
+                tracing::warn!(%error, "auto-start: could not list projects");
+            }
         }
-    }
+    });
 }
 
 /// One pass over every project with auto-start on.

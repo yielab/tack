@@ -301,71 +301,6 @@ async fn checkpoint_for(repo: &Repository, attempt_id: &str) -> Option<String> {
         .unwrap()
 }
 
-async fn append_batch(
-    repo: &Repository,
-    attempt_id: &str,
-    fence: i64,
-    previous_checkpoint: Option<&str>,
-    checkpoint: &str,
-    events: &[NewEvent<'_>],
-    clock: &FakeClock,
-) -> EventApplyResult {
-    repo.append_execution_events_result(
-        EventBatch {
-            runner_id: "runner-f2",
-            attempt_id,
-            fencing_token: fence,
-            previous_checkpoint,
-            checkpoint,
-        },
-        events,
-        clock,
-    )
-    .await
-    .unwrap()
-}
-
-async fn purge_events(repo: &Repository, cutoff: DateTime<Utc>, batch_size: i64) -> u64 {
-    repo.purge_execution_events_older_than(cutoff, batch_size)
-        .await
-        .unwrap()
-}
-
-/// Backdates `created_at` for the given `sequence` numbers on `attempt_id`'s
-/// events, so a retention cutoff can treat them as stale without advancing
-/// the shared clock (which would also expire the attempt's lease).
-async fn backdate_events(
-    repo: &Repository,
-    attempt_id: &str,
-    sequences: &[i64],
-    ts: DateTime<Utc>,
-) {
-    let list = sequences
-        .iter()
-        .map(i64::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "UPDATE execution_events SET created_at = ? WHERE attempt_id = ? AND sequence IN ({list})"
-    );
-    sqlx::query(sqlx::AssertSqlSafe(sql))
-        .bind(ts.to_rfc3339())
-        .bind(attempt_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-}
-
-async fn remaining_event_ids(repo: &Repository, attempt_id: &str) -> Vec<String> {
-    sqlx::query_scalar(
-        "SELECT event_id FROM execution_events WHERE attempt_id = ? ORDER BY sequence",
-    )
-    .bind(attempt_id)
-    .fetch_all(repo.pool())
-    .await
-    .unwrap()
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn record_patch_artifact(
     repo: &Repository,
@@ -664,48 +599,8 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
 }
 
 // ---------------------------------------------------------------------
-// Retention: `purge_execution_events_older_than` /
-// `list_execution_artifacts_older_than` / `delete_execution_artifacts_by_row_ids`.
+// Retention: `list_execution_artifacts_older_than` / `delete_execution_artifacts_by_row_ids`.
 // ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn event_retention_purges_rows_older_than_cutoff_in_batches() {
-    let (repo, item_id, clock) = ready_repo().await;
-    let aid = "attempt-retention-events";
-    let fence =
-        ready_running_attempt(&repo, &item_id, &clock, "request-retention-events", aid).await;
-    let old = [
-        event("evt-row-old-1", "evt-old-1", 1, clock.now()),
-        event("evt-row-old-2", "evt-old-2", 2, clock.now()),
-        event("evt-row-old-3", "evt-old-3", 3, clock.now()),
-    ];
-    let old_batch = append_batch(&repo, aid, fence, None, "cp1", &old, &clock).await;
-    assert!(matches!(old_batch, EventApplyResult::Applied(_)));
-    let fresh = [event("evt-row-fresh-1", "evt-fresh-1", 4, clock.now())];
-    let fresh_batch = append_batch(&repo, aid, fence, Some("cp1"), "cp2", &fresh, &clock).await;
-    assert!(matches!(fresh_batch, EventApplyResult::Applied(_)));
-
-    // Backdate the first batch's rows directly rather than advancing the
-    // shared clock 40 days (which would also expire the lease this test's
-    // *second* insert still needs to succeed through — retention age and
-    // lease liveness are deliberately independent concerns).
-    backdate_events(&repo, aid, &[1, 2, 3], clock.now() - Duration::days(40)).await;
-
-    // Cutoff: 30 days before "now", so the first batch (backdated to 40 days
-    // ago) is expired and the second (created just now) is not. Bounded
-    // batches of 2: 2 + 1 + 0 across three passes, converging to "caught up."
-    let cutoff = clock.now() - Duration::days(30);
-    for (pass, expected) in [2, 1, 0].into_iter().enumerate() {
-        assert_eq!(
-            purge_events(&repo, cutoff, 2).await,
-            expected,
-            "pass {pass}"
-        );
-    }
-
-    let remaining = remaining_event_ids(&repo, aid).await;
-    assert_eq!(remaining, vec!["evt-fresh-1".to_string()]);
-}
 
 #[tokio::test]
 async fn artifact_retention_lists_and_deletes_expired_rows() {

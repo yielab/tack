@@ -338,6 +338,22 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **Stopping the server stops every background loop and waits for what a request started.** The loops
+  (auto-start, the GitHub poll, due-soon, retention, the health watch, the remote backup) were
+  fire-and-forget: a panic in one was lost without a line, and two of them had no stop signal at all.
+  They now share one stop signal, finish the pass they are in, and a panic is logged with the loop's name.
+  A merge, a GitHub push or the pack going to prill, started when a request answered, is waited for
+  (up to ten seconds) instead of being cut off half done.
+- **A finished run's board move and its follow-up are written with its completion.** The item moved to its
+  finish status and the follow-up run for a rejected change were written after the attempt had ended, each
+  in a transaction of its own, so a crash between them left a finished run with the board unmoved and no
+  follow-up. They are decided before the report is stored and written in the same transaction, so the
+  attempt ends with both or stays open for the runner to report again.
+- **With retention on, only one loop deletes execution events.** A second sweep, kept in the API beside the
+  artifact sweep, deleted every event older than the window, including those of an attempt that was `lost`
+  or `needs_operator`; the retention loop keeps those on purpose. That second sweep is gone, so an event of
+  an attempt still waiting for a person is not purged. Overdue questions are expired by the retention loop,
+  on the same `TACK_EXECUTION_RETENTION_ENABLE` flag as before.
 - **A runner that is only waiting for work is no longer refused its heartbeat.** The runner took the
   slots that were asking the server for work as busy, reported less capacity than the server held
   against it, and the server answered a conflict, so a runner started on its own stayed "not answering"

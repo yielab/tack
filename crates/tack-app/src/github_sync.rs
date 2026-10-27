@@ -24,8 +24,10 @@ use std::time::Duration;
 use tack_db::Repository;
 use tack_db::queries::{github_links, pull_requests};
 use tack_protocol::Clock;
+use tokio::sync::Mutex;
 
 use crate::AppError;
+use crate::background::{Loops, Start};
 use crate::host::Host;
 
 /// What the inbound poll is configured with.
@@ -304,11 +306,12 @@ pub struct PollSummary {
     pub issues_updated: usize,
 }
 
-/// The loop `tack serve` spawns: every `interval`, one [`tick`] and then one pass of the merge
+/// The loop `tack serve` starts: every `interval`, one [`tick`] and then one pass of the merge
 /// autonomy (`autonomy::tick`, which looks at what the poll just learnt), a failed pass logged
-/// and the next one awaited. Returns at once when polling is off (`interval` is zero) or no
+/// and the next one awaited. Starts nothing when polling is off (`interval` is zero) or no
 /// `github_token` is configured — [`tick`] re-checks the token every pass too.
-pub async fn run(
+pub fn spawn(
+    loops: &mut Loops,
     repo: Repository,
     clock: Arc<dyn Clock>,
     settings: Settings,
@@ -325,35 +328,42 @@ pub async fn run(
             return;
         }
     };
-    let mut etags = HashMap::new();
-    let mut ticker = tokio::time::interval(interval);
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    ticker.tick().await; // skip the first immediate tick
-    loop {
-        ticker.tick().await;
-        match tick(
-            &repo,
-            clock.as_ref(),
-            &settings,
-            host.as_ref(),
-            &client,
-            &mut etags,
-        )
-        .await
-        {
-            Ok(summary) => {
-                tracing::debug!(
-                    repos_polled = summary.repos_polled,
-                    issues_updated = summary.issues_updated,
-                    "GitHub inbound poll complete"
-                );
+    let settings = Arc::new(settings);
+    let etags = Arc::new(Mutex::new(HashMap::new()));
+    loops.spawn_tick("github_sync", Start::AfterInterval, interval, move || {
+        let (repo, clock, settings, host, client, etags) = (
+            repo.clone(),
+            clock.clone(),
+            settings.clone(),
+            host.clone(),
+            client.clone(),
+            etags.clone(),
+        );
+        async move {
+            match tick(
+                &repo,
+                clock.as_ref(),
+                &settings,
+                host.as_ref(),
+                &client,
+                &mut *etags.lock().await,
+            )
+            .await
+            {
+                Ok(summary) => {
+                    tracing::debug!(
+                        repos_polled = summary.repos_polled,
+                        issues_updated = summary.issues_updated,
+                        "GitHub inbound poll complete"
+                    );
+                }
+                Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
             }
-            Err(error) => tracing::warn!(%error, "GitHub inbound poll failed"),
+            if let Err(error) = crate::autonomy::tick(&repo, clock.as_ref(), host.as_ref()).await {
+                tracing::warn!(%error, "autonomy pass failed");
+            }
         }
-        if let Err(error) = crate::autonomy::tick(&repo, clock.as_ref(), host.as_ref()).await {
-            tracing::warn!(%error, "autonomy pass failed");
-        }
-    }
+    });
 }
 
 /// Poll every linked GitHub repo once for issue-state changes. No-op

@@ -2,9 +2,12 @@
 //! binary (in the `tack-cli` crate) can start the HTTP server in-process.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use chrono::Utc;
+use tack_app::background::STOP_GRACE;
 use tokio::sync::oneshot;
+use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
 use crate::config::AppConfig;
@@ -64,16 +67,14 @@ pub async fn serve(
 ) -> anyhow::Result<()> {
     let config = state.config.clone();
     let local_runner = state.local_runner.clone();
+    let tasks = state.tasks.clone();
 
-    // Start the execution-domain artifact/event sweep and decision-expiry
-    // sweep — a cancellable background task gated by
-    // `TACK_EXECUTION_RETENTION_ENABLE`, which shares that flag with the
-    // replay/idempotency purge `tack-cli` spawns (see
-    // `spawn_artifact_and_decision_sweep`'s doc for why deletion must never
-    // be gated more loosely than that purge). Retention defaults **off** (it
-    // deletes rows, an explicit operator opt-in). Not stored on `AppState`:
-    // `stop()` runs once below, after the HTTP server stops accepting
-    // requests.
+    // Start the execution-domain artifact sweep — a cancellable loop gated by
+    // `TACK_EXECUTION_RETENTION_ENABLE`, which shares that flag with the purge
+    // and decision expiry `tack-cli` starts (deletion is never gated more
+    // loosely than that purge). Retention defaults **off** (it deletes rows,
+    // an explicit operator opt-in). Not stored on `AppState`: `stop()` runs
+    // once below, after the HTTP server stops accepting requests.
     let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
     execution_runtime
         .start(state.repo.clone(), (&config).into())
@@ -144,15 +145,26 @@ pub async fn serve(
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Join the execution sweep task before exiting — the HTTP
-    // server has already stopped accepting requests at this point, so this
-    // wait costs nothing observable and is what makes "shutdown joins task"
-    // true rather than aspirational (`execution_runtime.rs`'s `stop()`
-    // really does block until the live task's loop returns).
+    // The HTTP server has stopped accepting requests, so nothing adds to the use cases the
+    // handlers started in the background any more: let them finish (a merge cut off half way
+    // leaves the item without its branch merged), then stop the sweep loop and wait for it.
+    wait_for_tasks(&tasks, STOP_GRACE).await;
     execution_runtime.stop().await;
 
     info!("Server shut down gracefully");
     Ok(())
+}
+
+/// Closes `tasks` and waits up to `grace` for what it holds; what is left after that is
+/// dropped with the runtime.
+async fn wait_for_tasks(tasks: &TaskTracker, grace: Duration) {
+    tasks.close();
+    if tokio::time::timeout(grace, tasks.wait()).await.is_err() {
+        warn!(
+            still_running = tasks.len(),
+            "background use cases did not finish in time; dropping them"
+        );
+    }
 }
 
 /// Validate the security boundary before any network-facing resources start.

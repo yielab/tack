@@ -357,6 +357,7 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
             broadcast_tx: tx,
             webhook: None,
             local_runner: Some(control.clone()),
+            tasks: Default::default(),
         }));
     let body = serde_json::json!({ "harness_kind": "claude-code" });
 
@@ -417,6 +418,7 @@ async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
             broadcast_tx: tx,
             webhook: None,
             local_runner: Some(control.clone()),
+            tasks: Default::default(),
         }));
     let body = serde_json::json!({ "harness_kind": "claude-code" });
 

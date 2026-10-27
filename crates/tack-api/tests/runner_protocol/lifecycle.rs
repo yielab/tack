@@ -618,6 +618,7 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
         broadcast_tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     fx.app = runner_protocol::routes(
         runner_protocol::RunnerProtocolState::new(fx.repo.clone(), Arc::new(fx.clock.clone()))

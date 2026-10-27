@@ -255,6 +255,7 @@ async fn app_at(storage_dir: &Path) -> (Router, Repository, Uuid) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = common::with_default_host(build_router(state));
     let pid = common::create_project(&app, "P", "software").await;
