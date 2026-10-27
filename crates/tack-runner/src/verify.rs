@@ -103,6 +103,13 @@ pub async fn run(
     let attempt_id = workspace.attempt_id.as_str();
     let stager = ArtifactStager::new(scratch.join("staged"));
     let mut files = vec![("mrp.json", "mrp", MRP_MEDIA_TYPE)];
+    if config.kind == VerifyKind::Prill {
+        files.push((
+            prill::ORIGINAL_FILE,
+            "mrp_prill",
+            prill::ORIGINAL_MEDIA_TYPE,
+        ));
+    }
     if config.kind == VerifyKind::Prill && config.sign_key.is_some() {
         files.push((
             prill::ENVELOPE_FILE,

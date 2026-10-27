@@ -16,7 +16,10 @@ use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use crate::prill::{Scratch, Unavailable, run, write_private};
 use crate::router::AppState;
 
-const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
+/// The pack exactly as prill produced it. `prill record mrp` reads only this
+/// one; the pack Tack shows (`application/vnd.tack.mrp+json`) is a translation
+/// of it that prill does not accept.
+const PRILL_PACK_MEDIA_TYPE: &str = "application/vnd.prill.mrp+json";
 const ATTESTATION_MEDIA_TYPE: &str = "application/vnd.in-toto+json";
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -101,9 +104,10 @@ fn ensure_store_dir(db: &std::path::Path) -> bool {
         .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok())
 }
 
-/// Hands the attempt's pack (and its attestation, when it came with one) to
-/// `prill record mrp`, once. An attempt with no pack, or whose item is linked
-/// to no repository, has nothing to record.
+/// Hands the attempt's pack as prill produced it (and its attestation, when it
+/// came with one) to `prill record mrp`, once. An attempt that holds no such
+/// pack (its verifier was not prill), or whose item is linked to no
+/// repository, has nothing to record.
 pub async fn record_mrp(app: &AppState, attempt_id: &str) {
     if recorded(app, attempt_id, "mrp").await {
         return;
@@ -114,7 +118,7 @@ pub async fn record_mrp(app: &AppState, attempt_id: &str) {
     else {
         return;
     };
-    let Some(pack) = artifact_bytes(app, attempt_id, MRP_MEDIA_TYPE).await else {
+    let Some(pack) = artifact_bytes(app, attempt_id, PRILL_PACK_MEDIA_TYPE).await else {
         return;
     };
     let attestation = artifact_bytes(app, attempt_id, ATTESTATION_MEDIA_TYPE).await;

@@ -620,11 +620,26 @@ async fn a_prill_pack_is_translated_and_staged() {
     )
     .await;
     let staged = verified.result.expect("a pack");
-    assert_eq!(staged.len(), 1, "an unsigned run stages the pack alone");
+    assert_eq!(
+        staged.len(),
+        2,
+        "an unsigned run stages the translated pack and prill's own"
+    );
+    let original = staged[1].clone();
     let staged = &staged[0];
     assert_eq!(staged["kind"], "mrp");
     assert_eq!(staged["name"], "mrp.json");
     assert_eq!(staged["media_type"], MRP_MEDIA_TYPE);
+
+    // prill's pack goes up as prill printed it, so `prill record mrp` can take it.
+    assert_eq!(original["kind"], "mrp_prill");
+    assert_eq!(original["name"], "mrp.prill.json");
+    assert_eq!(original["media_type"], "application/vnd.prill.mrp+json");
+    let given = fs::read(repo_root().join("docs/contracts/mrp-v1/fixtures/prill/m2-sections.json"))
+        .expect("fixture");
+    let uploaded = fs::read(verified.scratch.join("evidence/mrp.prill.json")).expect("original");
+    assert_eq!(uploaded, given);
+    assert_eq!(original["sha256"], sha256_hex(&given));
 
     let evidence = verified.scratch.join("evidence");
     let translated = fs::read(evidence.join("mrp.json")).expect("translated pack");
@@ -799,14 +814,15 @@ async fn a_signed_run_stages_the_envelope_and_names_it_in_the_pack() {
     )
     .await;
     let staged = verified.result.expect("a signed pack");
-    assert_eq!(staged.len(), 2);
+    assert_eq!(staged.len(), 3);
     assert_eq!(staged[0]["kind"], "mrp");
-    assert_eq!(staged[1]["kind"], "mrp_attestation");
-    assert_eq!(staged[1]["name"], "mrp.intoto.json");
-    assert_eq!(staged[1]["media_type"], "application/vnd.in-toto+json");
+    assert_eq!(staged[1]["kind"], "mrp_prill");
+    assert_eq!(staged[2]["kind"], "mrp_attestation");
+    assert_eq!(staged[2]["name"], "mrp.intoto.json");
+    assert_eq!(staged[2]["media_type"], "application/vnd.in-toto+json");
     let evidence = verified.scratch.join("evidence");
     let envelope = fs::read(evidence.join("prill/mrp.intoto.json")).expect("envelope");
-    assert_eq!(staged[1]["sha256"], sha256_hex(&envelope));
+    assert_eq!(staged[2]["sha256"], sha256_hex(&envelope));
     let pack: MergeReadinessPack =
         serde_json::from_slice(&fs::read(evidence.join("mrp.json")).unwrap()).expect("mrp-v1");
     assert_eq!(

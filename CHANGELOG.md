@@ -375,6 +375,10 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The board can record a pack in prill's store.** `prill record mrp` was handed the pack Tack shows, a translation
+  prill refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now also uploads the
+  pack as prill printed it (`mrp.prill.json`), and the board hands prill that one. A run whose verifier was not
+  prill, or one made before this change, holds no such pack and is not recorded.
 - **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
   published since the last run); only the lockfile changes.
 - **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored
