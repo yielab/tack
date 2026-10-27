@@ -333,6 +333,9 @@ export interface AttemptOutcome {
   badge: { label: string; tone: StateTone; detail?: string } | null;
 }
 
+/** What a run that ended with the code `needs_human` says when the agent gave no sentence of its own. */
+export const NEEDS_A_PERSON_TEXT = 'The agent needed a person to decide, and nobody did';
+
 /** `terminal_reason` is untyped on the wire; read it defensively. */
 export function describeAttemptOutcome(state: string, terminalReason: unknown): AttemptOutcome {
   const reason = (terminalReason && typeof terminalReason === 'object' ? terminalReason : {}) as {
@@ -348,7 +351,7 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
     const text =
       str(reason.message) ??
-      (reason.code === 'timeout' ? "The run's time ran out" : str(reason.code)) ??
+      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
       'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
     if (reason.reason === 'exit_status') {

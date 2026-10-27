@@ -1,5 +1,5 @@
-import { type Component, Show, createEffect, createMemo, createSignal } from 'solid-js';
-import { Badge, Button, EmptyState, Field, Icons } from '../ui';
+import { type Component, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
+import { Badge, Button, EmptyState, Field, Icons, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import AttemptList from './AttemptList';
@@ -20,6 +20,10 @@ export interface ExecutionTimelineProps {
   /** `page`: two columns, with what the agent got, its usage and the ids in the side one.
    *  `drawer` (the default): one column, in that same order. */
   layout?: 'drawer' | 'page';
+  /** The run to show (its request id), as the address names it; the latest when absent. */
+  runId?: string;
+  /** Called with the request id of the run a chip picks or a new run starts, so the address can name it. */
+  onRunChange?: (requestId: string | undefined) => void;
 }
 
 /**
@@ -48,7 +52,12 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
   });
 
   // The run the tab shows: the latest until a chip picks another.
-  const [pickedId, setPickedId] = createSignal<string | undefined>(undefined);
+  const [pickedId, setPickedId] = createSignal<string | undefined>(props.runId);
+  createEffect(on(() => props.runId, (id) => setPickedId(id), { defer: true }));
+  const pick = (id: string | undefined) => {
+    setPickedId(id);
+    props.onRunChange?.(id);
+  };
   const numbered = createMemo(() =>
     requests().map((record, i) => {
       const number = requests().length - i;
@@ -76,14 +85,7 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
       </Show>
 
       <Show when={store.listStatus() === 'error'}>
-        {(() => {
-          const err = store.listError();
-          return (
-            <p class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
-              Couldn't load execution requests{err ? `: ${err.message}` : '.'}
-            </p>
-          );
-        })()}
+        <LoadError what="the runs" error={store.listError()} onRetry={() => void store.loadList(props.itemId)} />
       </Show>
 
       <Show
@@ -103,7 +105,7 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
             {/* Newest first, so the first chip is the latest run. */}
             <div class="flex flex-wrap items-center gap-2">
               <Show when={requests().length > 1}>
-                <RunChips chips={chips()} active={active()?.id ?? ''} onPick={setPickedId} label="Runs" testId="run-chips" />
+                <RunChips chips={chips()} active={active()?.id ?? ''} onPick={pick} label="Runs" testId="run-chips" />
               </Show>
               <Button
                 size="sm"
@@ -122,7 +124,7 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
                   itemId={props.itemId}
                   itemTitle={props.itemTitle!}
                   projectId={props.projectId!}
-                  onCreated={() => setPickedId(undefined)}
+                  onCreated={pick}
                 />
               </Show>
             </div>
@@ -138,6 +140,7 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
                       number={a().number}
                       layout={props.layout}
                       sideTarget={side()}
+                      onCreated={pick}
                     />
                   )}
                 </Show>
@@ -174,6 +177,7 @@ const RequestRow: Component<{
   number: number;
   layout?: 'drawer' | 'page';
   sideTarget?: HTMLElement;
+  onCreated: (requestId: string) => void;
 }> = (props) => {
   const store = useExecutionStore();
   const [reconcileOpen, setReconcileOpen] = createSignal(false);
@@ -253,7 +257,9 @@ const RequestRow: Component<{
     <section data-testid="run" class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
-        <Badge tone={status().tone}>{status().label}</Badge>
+        <span role="status" aria-live="polite" class="inline-flex">
+          <Badge tone={status().tone}>{status().label}</Badge>
+        </span>
         <Show when={!status().known}>
           <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             (unrecognised state — showing raw value)
@@ -309,7 +315,7 @@ const RequestRow: Component<{
       </Show>
 
       <Show when={needsAPerson(latestAttempt())}>
-        <RerunAtL3 attempt={latestAttempt()!} itemId={props.itemId} itemTitle={props.itemTitle} projectId={props.projectId} />
+        <RerunAtL3 attempt={latestAttempt()!} itemId={props.itemId} itemTitle={props.itemTitle} projectId={props.projectId} onCreated={props.onCreated} />
       </Show>
 
       <Show when={props.record.error}>
@@ -331,9 +337,7 @@ const RequestRow: Component<{
         {(() => {
           const a = attempts();
           return a.status === 'error' ? (
-            <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-              Couldn't load attempts: {a.error.message}
-            </p>
+            <LoadError what="the attempts" error={a.error} onRetry={() => void store.loadAttempts(summary()?.request_id ?? '').catch(() => undefined)} />
           ) : null;
         })()}
       </Show>

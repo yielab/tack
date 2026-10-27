@@ -1,8 +1,8 @@
 import { type Component, For, Show, createEffect, createResource, createSignal, on, onCleanup } from 'solid-js';
-import { Badge, EmptyState } from '../ui';
+import { Badge, EmptyState, LoadError } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
-import { inProject } from './attemptFormat';
+import { NEEDS_A_PERSON_TEXT, inProject } from './attemptFormat';
 
 export interface EventTimelineProps {
   requestId: string;
@@ -55,6 +55,16 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
   'agent.model_turn': { label: 'A call to the model' },
   'agent.tool_call': { label: 'The agent ran a tool' },
   'agent.tool_refused': { label: 'A tool call was refused', failed: true },
+  'agent.hop_started': { label: 'A step began' },
+  'agent.hop_finished': { label: 'A step ended' },
+  'agent.untracked': { label: 'Files left out of the evidence' },
+  'agent.refused': { label: 'docket refused the task', failed: true },
+  'agent.answer_failed': { label: 'docket did not take the answer', failed: true },
+  'escalation.asked': { label: 'docket asked a person' },
+  'escalation.resolved': { label: 'A person answered' },
+  'escalation.expired': { label: 'Nobody answered before it expired' },
+  'escalation.decided': { label: 'docket decided on its own' },
+  'escalation.unreadable': { label: 'docket asked for something Tack cannot put to a person', failed: true },
 };
 
 /** `attempt.terminal`: the agent's message and files are on the card above, so this
@@ -63,7 +73,7 @@ const TerminalBody: Component<{ payload: Record<string, unknown> }> = (props) =>
   const [raw, setRaw] = createSignal(false);
   const how = () => {
     const p = props.payload;
-    const text = typeof p.message === 'string' ? p.message : typeof p.code === 'string' ? p.code : null;
+    const text = typeof p.message === 'string' ? p.message : p.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : typeof p.code === 'string' ? p.code : null;
     return text ?? 'See what the agent did and said above.';
   };
   return (
@@ -152,9 +162,7 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
         </p>
       </Show>
       <Show when={events.state === 'errored'}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          Couldn't load events: {events.error instanceof Error ? events.error.message : 'unknown error'}
-        </p>
+        <LoadError what="the events" error={events.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={loaded()?.length === 0}>
         <EmptyState title="No events reported yet" />

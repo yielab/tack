@@ -5,6 +5,7 @@ import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
 import { mrpApi, type MrpCriterionStatus, type MrpReview } from '../execution/api';
 import type { AttemptMerge } from '../execution/attempts';
+import { LEVEL_MEANING } from '../help/texts';
 
 export interface MrpPanelProps {
   requestId: string;
@@ -47,6 +48,10 @@ const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
     const parts = [m.level, m.domain ? `domain ${m.domain}` : null].filter(Boolean);
     return `Merged by Tack${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
   };
+  const levelSentence = () => {
+    const m = props.merge.merged;
+    return m && m.trigger !== 'button' && m.level && m.level in LEVEL_MEANING ? LEVEL_MEANING[m.level as keyof typeof LEVEL_MEANING] : null;
+  };
   return (
     <Show when={label() ?? props.merge.reason}>
       {(text) => (
@@ -57,6 +62,11 @@ const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
             </Show>
             {text()}
           </p>
+          <Show when={levelSentence()}>
+            {(sentence) => (
+              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{sentence()}</p>
+            )}
+          </Show>
           <Show when={props.merge.merged?.policy_snapshot}>
             {(policy) => (
               <details class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>

@@ -42,7 +42,7 @@ pub struct RunRequest {
     pub verify: Option<bool>,
     pub push_branch: Option<bool>,
     /// The autonomy level a docket run is asked for (`L3`, `L4` or `L5`), sent as it is.
-    /// "Run again at L3" sets `L3`; absent, docket decides.
+    /// "Run again at L3" sets `L3`; absent, docket decides. Refused for any other agent.
     pub autonomy: Option<String>,
     /// `mcp` marks a run an agent started through `tack mcp`.
     pub origin: Option<String>,
@@ -870,6 +870,14 @@ pub async fn enqueue_run(
         snapshot_value["push_branch"] = json!(push_branch);
     }
     if let Some(autonomy) = &input.autonomy {
+        if requested_harness_kind != crate::autonomy::DOCKET {
+            return Err(error(
+                status::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "A level applies only to a docket run",
+                json!({"field": "autonomy", "reason": "level_needs_docket"}),
+            ));
+        }
         let level = autonomy
             .parse::<tack_core::autonomy::Level>()
             .map_err(|_| {

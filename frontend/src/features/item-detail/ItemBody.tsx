@@ -43,6 +43,9 @@ export interface ItemBodyProps {
   layout: 'drawer' | 'page';
   tab: string;
   onTabChange: (id: string) => void;
+  /** The run the Execution tab shows (its request id); the latest when absent. */
+  run?: string;
+  onRunChange?: (requestId: string | undefined) => void;
   /** Buttons at the right of the header row (Copy link on the page). */
   headerActions?: JSX.Element;
 }
@@ -127,7 +130,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
               <ActivityTab itemId={props.item.id} />
             </Show>
             <Show when={props.tab === 'execution'}>
-              <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} layout={props.layout} />
+              <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} layout={props.layout} runId={props.run} onRunChange={props.onRunChange} />
             </Show>
             <Show when={props.tab === 'dependencies'}>
               <DependenciesTab

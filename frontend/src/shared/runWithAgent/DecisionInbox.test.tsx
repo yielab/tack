@@ -94,13 +94,35 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
     expect(c.textContent).toContain('Allow this agent to run');
   });
 
-  it('the token prompt names the decision-token file beside the board\'s database', async () => {
+  it('the token prompt names no variable and no file, and links to the Administrator Guide', async () => {
     mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
     const c = mount();
     await flush();
     await flush();
 
-    expect(c.textContent).toContain("the decision-token file beside the board's database");
+    expect(c.textContent).toContain('Ask your administrator for it');
+    expect(c.textContent).not.toMatch(/TACK_EXECUTION|decision-token file/);
+    (c.querySelector('button[aria-label="Help: Your decision token"]') as HTMLButtonElement).click();
+    expect(c.innerHTML).toContain('admin-guide/administration.html#authentication');
+    expect((c.querySelector('input[type="password"]') as HTMLInputElement).placeholder).toBe('');
+  });
+
+  it('a failed load says what could not load and Try again loads it', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { status: 500, message: 'boom' } }), { status: 500 }))
+      .mockResolvedValue(new Response(JSON.stringify({ protocol_version: 1, data: [PENDING_WITH_OPTIONS] }), { status: 200 }));
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Could not load the questions');
+    expect(c.textContent).not.toContain('No decisions raised yet');
+    ([...c.querySelectorAll('button')].find((b) => b.textContent === 'Try again') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(c.textContent).toContain('Allow this agent to run');
+    expect(c.querySelector('[data-testid="load-error"]')).toBeNull();
   });
 
   it('an empty list renders a real empty state, not a silently blank panel', async () => {
@@ -276,7 +298,7 @@ describe('DecisionInbox — resolve outcomes are each named distinctly', () => {
     await flush();
     await flush();
 
-    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('not configured decision resolution'));
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('no decision token set up'));
   });
 
   it('an expired decision (409 decision_expired) is named distinctly from an idempotency conflict (409 idempotency_conflict)', async () => {

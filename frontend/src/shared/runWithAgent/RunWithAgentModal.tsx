@@ -1,7 +1,7 @@
 import { createStore } from 'solid-js/store';
 import { type Component, createSignal, createResource, createMemo, createEffect, onCleanup, Show } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Modal } from '../ui';
+import { LoadError, Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { BOOK } from '../help/routes';
 import { api, ApiError } from '../api';
@@ -14,12 +14,12 @@ import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   isAnsweringRunner, silentRunnerLabel, profileAgents, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
-  isDecisionsAttested, profileNetworkFor, profileToolsFor,
+  isDecisionsAttested, profileNetworkFor, profileToolsFor, LEVEL_NEEDS_DOCKET,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow from './RunFlow';
 import { summarizeModels } from './models';
-import { agentSafety } from '../help/texts';
+import { agentSafety, LEVEL_MEANING } from '../help/texts';
 
 const LIMIT_DEBOUNCE_MS = 300;
 
@@ -57,9 +57,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const open = () => (props.isOpen ? 'open' : undefined);
   const [project] = createResource(() => (props.isOpen ? props.projectId : undefined), (id) => api.projects.get(id));
   const [item] = createResource(() => (props.isOpen ? props.itemId : undefined), (id) => api.items.get(id));
-  const [fleets] = createResource(open, () => fleetsApi.list().then((r) => r.data.data));
+  const [fleets, { refetch: refetchFleets }] = createResource(open, () => fleetsApi.list().then((r) => r.data.data));
   const [agentProfiles, { refetch: refetchAgentProfiles }] = createResource(open, () => agentProfilesApi.list().then((r) => r.data.data));
-  const [liveRunners] = createResource(open, () => runnersApi.list().then((r) => r.data.data));
+  const [liveRunners, { refetch: refetchRunners }] = createResource(open, () => runnersApi.list().then((r) => r.data.data));
 
   const runnersData = (): RunnerSummary[] => (liveRunners.error !== undefined ? [] : (liveRunners() ?? []));
   const activeRunners = (): RunnerSummary[] => runnersData().filter((r) => isActiveRunnerState(r.state));
@@ -71,6 +71,22 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const fleetsData = () => (fleets.error !== undefined ? [] : (fleets() ?? []));
   const agentProfilesData = (): AgentProfileSummary[] =>
     agentProfiles.error !== undefined ? [] : (agentProfiles() ?? []);
+
+  // What the dialog is built from; when one of them fails it says so, with a way to try again,
+  // instead of offering "no profile" or "no machine".
+  const failed = (): string | null => {
+    const names = [
+      agentProfiles.error !== undefined ? 'the profiles' : null,
+      liveRunners.error !== undefined ? 'the computers' : null,
+      fleets.error !== undefined ? 'the groups of computers' : null,
+    ].filter((n): n is string => n !== null);
+    return names.length > 0 ? names.join(' and ') : null;
+  };
+  const retryFailed = () => {
+    if (agentProfiles.error !== undefined) void refetchAgentProfiles();
+    if (liveRunners.error !== undefined) void refetchRunners();
+    if (fleets.error !== undefined) void refetchFleets();
+  };
 
   const settled = () => !liveRunners.loading && liveRunners.error === undefined;
   const executionOff = createMemo(() => settled() && isExecutionOff(activeRunners().length));
@@ -170,6 +186,11 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   createEffect(() => {
     const options = harnessOptions();
     if (!options.some((h) => h.value === form.harnessKind)) setForm('harnessKind', options[0].value);
+  });
+
+  // A level goes only to docket: the dialog keeps to it, and the other agents are disabled.
+  createEffect(() => {
+    if (props.autonomy && harnessOptions().some((h) => h.value === 'docket') && form.harnessKind !== 'docket') setForm('harnessKind', 'docket');
   });
 
   const selectedAgentProfile = createMemo(() => agentProfilesData().find((p) => p.agent_profile_id === form.agentProfileId));
@@ -280,6 +301,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (!form.selectorId.trim()) errors.push('Select where this runs.');
     if (!form.agentProfileId) errors.push('Choose a profile.');
     if (!form.harnessKind) errors.push('Select an agent.');
+    else if (props.autonomy && form.harnessKind !== 'docket') errors.push(`${LEVEL_NEEDS_DOCKET}.`);
     if (!Number.isFinite(form.timeoutSeconds) || form.timeoutSeconds <= 0) errors.push('Timeout must be a positive number of seconds.');
     if (form.tokenLimitEdited && tokenLimitValue() === undefined) errors.push('Token limit must be a whole number above zero, or empty for no limit.');
     return errors;
@@ -333,7 +355,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
   const missingRow = () => Object.values(rows).some((r) => r() === 'missing');
 
-  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && structuralErrors().length === 0 && modelGate().allowed && !missingRow() && !submitting());
+  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && failed() === null && structuralErrors().length === 0 && modelGate().allowed && !missingRow() && !submitting());
 
   const buildValues = (): RunWithAgentFormValues => {
     return {
@@ -437,8 +459,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
         <form class="space-y-6" onSubmit={submit}>
           <Show when={props.autonomy}>
             <p data-testid="run-autonomy-note" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              This run is attended ({props.autonomy}): where docket would have settled a question by itself, it asks you.
+              This run is attended ({props.autonomy}): where docket would have settled a question by itself, it asks you.{' '}
+              {LEVEL_MEANING[props.autonomy!]}
             </p>
+          </Show>
+          <Show when={failed()}>
+            {(what) => <LoadError what={what()} error={agentProfiles.error ?? liveRunners.error ?? fleets.error} onRetry={retryFailed} />}
           </Show>
           <RunFlow
             form={form}
@@ -472,6 +498,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             limitSentence={limitLine}
             profileSource={profileSource}
             profileTools={profileTools}
+            levelNeedsDocket={!!props.autonomy}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
             modelLabel={() => runModel() ?? (modelsReport().requiresModel ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}

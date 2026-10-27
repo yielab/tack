@@ -99,6 +99,8 @@ function mockFetch(
     itemDelayMs?: number;
     /** The item's brief; absent answers 404, as an item with no brief does. */
     brief?: Record<string, unknown>;
+    /** While `down` is true the profiles list answers 500. */
+    profilesFailing?: { down: boolean };
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -115,6 +117,7 @@ function mockFetch(
       agentProfiles.push(created);
       return new Response(JSON.stringify({ protocol_version: 1, ...created }), { status: 200 });
     }
+    if (url.includes('/agent-profiles') && opts.profilesFailing?.down) return new Response(JSON.stringify({ error: { status: 500, message: 'boom' } }), { status: 500 });
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: agentProfiles }), { status: 200 });
     if (url.includes('/runners')) return new Response(JSON.stringify({ protocol_version: 1, data: runners }), { status: 200 });
     if (url.endsWith('/items/item-1/brief')) {
@@ -150,7 +153,7 @@ function mockFetch(
   }) as typeof fetch;
 }
 
-function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void }) {
+function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3' }) {
   const [open, setOpen] = createSignal(true);
   (Host as unknown as { lastSetOpen?: (v: boolean) => void }).lastSetOpen = setOpen;
   return (
@@ -170,6 +173,7 @@ function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (i
               projectId="project-1"
               onCreated={props.onCreated}
               capabilities={props.capabilities}
+              autonomy={props.autonomy}
             />
           )}
         />
@@ -179,7 +183,7 @@ function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (i
 }
 
 function mount(
-  props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void } = {},
+  props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3' } = {},
   fetchOpts: Parameters<typeof mockFetch>[0] = {},
 ) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch(fetchOpts));
@@ -242,6 +246,42 @@ afterEach(() => {
 });
 
 describe('RunWithAgentModal', () => {
+  it('a run carrying a level keeps to docket: the other agents are disabled with the reason, and the level is explained', async () => {
+    const base = runnerCapabilitySnapshot();
+    const both = runnerRow('runner-5', 'Both', runnerCapabilitySnapshot({
+      harnesses: [...base.harnesses, { ...base.harnesses[0], harness_kind: 'docket' }],
+    }));
+    mount({ autonomy: 'L3' }, { runners: [both], fleets: [], project: { ...PROJECT, default_harness: 'codex' } });
+    await flush();
+    await flush();
+    await flush();
+    const agent = select('Agent');
+    expect(agent.value).toBe('docket');
+    const options = [...agent.options];
+    expect(options.find((o) => o.value === 'codex')!.disabled).toBe(true);
+    expect(options.find((o) => o.value === 'codex')!.textContent).toContain('A level applies only to a docket run');
+    expect(options.find((o) => o.value === 'docket')!.disabled).toBe(false);
+    expect(document.querySelector('[data-testid="run-autonomy-note"]')!.textContent).toContain('you approve each step that needs it');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ requested_harness_kind: 'docket', autonomy: 'L3' });
+  });
+
+  it('a failed list of profiles is said as one with Try again, not offered as no profile', async () => {
+    const profilesFailing = { down: true };
+    mount({}, { runners: [RUNNER], fleets: [], profilesFailing });
+    await flush();
+    await flush();
+    expect(document.body.textContent).toContain('Could not load the profiles');
+    expect(submitButton().disabled).toBe(true);
+    profilesFailing.down = false;
+    ([...document.querySelectorAll('button')].find((b) => b.textContent === 'Try again') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.body.textContent).not.toContain('Could not load the profiles');
+  });
+
   it('advanced_values_are_remembered_on_the_task', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();

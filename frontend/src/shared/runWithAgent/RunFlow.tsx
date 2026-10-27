@@ -10,7 +10,7 @@ import type { AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
 import { installLine } from './install';
-import { gateHarnessModelSelection } from './shared';
+import { LEVEL_NEEDS_DOCKET, gateHarnessModelSelection } from './shared';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
 
@@ -70,6 +70,8 @@ export interface RunFlowProps {
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
   profileTools: Accessor<string[]>;
   harnessLabel: Accessor<string>;
+  /** The run carries a level, which only a docket run takes: every other agent is shown disabled, with that reason. */
+  levelNeedsDocket?: boolean;
   /** The model as the summary line names it. */
   modelLabel: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
@@ -291,7 +293,11 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             label="Agent"
             value={props.form.harnessKind}
             onInput={(e) => props.setForm('harnessKind', e.currentTarget.value)}
-            options={props.harnessOptions().map((h) => ({ value: h.value, label: h.label }))}
+            options={props.harnessOptions().map((h) => {
+              const blocked = props.levelNeedsDocket && h.value !== 'docket';
+              return { value: h.value, label: blocked ? `${h.label} — ${LEVEL_NEEDS_DOCKET}` : h.label, disabled: blocked };
+            })}
+            hint={props.levelNeedsDocket ? LEVEL_NEEDS_DOCKET : undefined}
           />
           <ModelField
             agentLabel={props.harnessLabel()}

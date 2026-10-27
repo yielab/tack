@@ -311,6 +311,44 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('Files from this run');
   });
 
+  it('an attempt that needs a person says so in words and has a button that opens its question', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
+    );
+    const asking = mount([attempt({ state: 'waiting_decision', ended_at: null })]);
+    expect(asking.textContent).not.toContain('Files from this run');
+    const open = [...asking.querySelectorAll('button')].find((b) => b.textContent === 'Open the question')!;
+    open.click();
+    await flush();
+    expect(asking.textContent).toContain('Files from this run');
+
+    const ended = mount([attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } })]);
+    expect(ended.textContent).toContain('The agent needed a person to decide');
+    expect(ended.textContent).not.toContain('needs_human');
+    expect([...ended.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(true);
+
+    const plain = mount([attempt()]);
+    expect([...plain.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(false);
+  });
+
+  it('a failed list of the files is said as one and Try again asks again', async () => {
+    let calls = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => {
+      calls += 1;
+      return Promise.resolve(calls <= 1
+        ? new Response(JSON.stringify({ error: { status: 500, message: 'boom' } }), { status: 500 })
+        : new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 }));
+    });
+    const c = mount([attempt()]);
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Could not load the files from this run');
+    ([...c.querySelectorAll('button')].find((b) => b.textContent === 'Try again') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(c.textContent).not.toContain('Could not load the files from this run');
+  });
+
   describe('pull request rendering', () => {
     it('renders nothing when pull_request is null', () => {
       const c = mount([attempt({ pull_request: null })]);

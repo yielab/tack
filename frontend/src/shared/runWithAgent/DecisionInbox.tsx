@@ -1,5 +1,6 @@
 import { type Component, For, Show, createResource, createSignal, onMount } from 'solid-js';
-import { Badge, Button, EmptyState, Field } from '../ui';
+import { Badge, Button, EmptyState, Field, LoadError } from '../ui';
+import { HELP } from '../help/texts';
 import { toast } from '../ui/toast';
 import {
   decisionTokenStore,
@@ -48,8 +49,7 @@ async function resolveAndNotify(
   } catch (err) {
     if (isDecisionTokenRejected(err)) {
       toast.error(
-        'Rejected — either this deployment has not configured decision resolution ' +
-          '(TACK_EXECUTION_DECISION_TOKEN), or the token entered above is wrong.',
+        'Rejected — either this board has no decision token set up, or the token entered above is wrong.',
       );
     } else if (isDecisionExpired(err)) {
       toast.error('This decision already expired — it can no longer be resolved.');
@@ -294,10 +294,10 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
           label="Your decision token"
           type="password"
           autocomplete="off"
-          placeholder="TACK_EXECUTION_DECISION_TOKEN"
           value={tokenInput()}
           onInput={(e) => setTokenInput(e.currentTarget.value)}
-          hint="Find it in the decision-token file beside the board's database. Kept only for this browser session. Required to answer — never sent when just viewing."
+          hint="Ask your administrator for it. Kept only for this browser session."
+          help={HELP.decisionToken}
           class="min-w-56 flex-1"
         />
         <Button size="sm" variant="secondary" onClick={saveToken}>
@@ -311,9 +311,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         </p>
       </Show>
       <Show when={decisions.error}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          Couldn't load decisions: {decisions.error instanceof Error ? decisions.error.message : 'unknown error'}
-        </p>
+        <LoadError what="the questions" error={decisions.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={!decisions.loading && !decisions.error && (decisions() ?? []).length === 0}>
         <EmptyState title="No decisions raised yet" />

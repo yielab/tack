@@ -25,6 +25,7 @@ export const HELP = {
   teamBadge: { text: 'The team that ran this task, named by the profile the run used.', href: BOOK.automation },
   mergedByItself: { text: 'Tack merged this change on its own, under the verifier\'s signed verdict.', href: BOOK.automation },
   automationRow: { text: 'What happens to this task without you: whether it starts by itself, which team takes it, and how far Tack may merge it.', href: BOOK.automation },
+  decisionToken: { text: 'A second secret, apart from signing in, that your administrator sets up. Needed to answer the agent; never sent when you only look.', href: BOOK.decisionToken },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
 
@@ -58,3 +59,10 @@ export const SAFETY_TEXT = {
   asks: "Not sandboxed on this computer, so the agent asks before each action unless you turn that off",
   blocked: "Doesn't run on this computer: it isn't sandboxed and can't ask before it acts. Install bubblewrap (Linux), or update the agent to a version that can ask.",
 } as const;
+
+/** What a level allows, in one sentence; the words the Merging guide uses. */
+export const LEVEL_MEANING: Record<'L3' | 'L4' | 'L5', string> = {
+  L3: 'L3: you approve each step that needs it, and you merge every change yourself.',
+  L4: 'L4: Tack merges by itself inside the domains you name; you approve the rest.',
+  L5: 'L5: Tack merges by itself anywhere in the repository, once its checks pass.',
+};

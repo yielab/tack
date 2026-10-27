@@ -215,6 +215,9 @@ export function gateHarnessModelSelection(
   return { allowed: true, reason: "Uses the agent's own model" };
 }
 
+/** Why every agent but docket is disabled when the run carries a level. */
+export const LEVEL_NEEDS_DOCKET = 'A level applies only to a docket run';
+
 // ─── Lifecycle-state display ────────────────────────────────────────────────
 
 export type StateTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
@@ -224,7 +227,7 @@ const STATE_LABEL: Record<string, string> = {
   leased: 'Starting',
   preparing: 'Preparing',
   running: 'Running',
-  waiting_decision: 'Asking you',
+  waiting_decision: 'Needs a person',
   succeeded: 'Finished',
   failed: 'Failed',
   cancelled: 'Cancelled',

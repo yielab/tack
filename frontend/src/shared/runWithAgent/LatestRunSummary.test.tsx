@@ -140,6 +140,19 @@ describe('LatestRunSummary', () => {
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
+  it('a run that needs a person is one state, in one colour, and the card opens its question', async () => {
+    const onOpen = vi.fn();
+    const asking = mount([{ ...RUN, state: 'running' }], onOpen, [{ ...ATTEMPT, state: 'waiting_decision', terminal_reason: null, ended_at: null }]);
+    for (let i = 0; i < 6; i++) await flush();
+    const card = asking.querySelector('[data-testid="latest-run"]')!;
+    const status = card.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('Needs a person');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(buttons(card)).not.toContain('Follow live');
+    [...card.querySelectorAll('button')].find((b) => b.textContent === 'Open the question')!.click();
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   it('a queued card offers to run on another computer', async () => {
     const waiting = { ...RUN, state: 'queued', waiting_reason: 'The computer this run asked for has not answered since 2026-10-19T10:00:00Z', waiting_since: null };
     const c = mount([waiting], () => {}, []);

@@ -1,5 +1,6 @@
 import { type Component, Show, createSignal } from 'solid-js';
 import { Button } from '../ui';
+import { LEVEL_MEANING } from '../help/texts';
 import type { AttemptSummary } from '../execution';
 import RunWithAgentModal from './RunWithAgentModal';
 
@@ -30,17 +31,15 @@ const RerunAtL3: Component<RerunAtL3Props> = (props) => {
     return state.enabled ? null : (state.reason ?? 'It cannot be run again at L3');
   };
   return (
-    <div class="flex flex-wrap items-center gap-2">
-      <Button size="sm" variant="secondary" disabled={!enabled()} title={reason() ?? undefined} onClick={() => setOpen(true)}>
-        Run again at L3
-      </Button>
-      <Show when={reason()}>
-        {(why) => (
-          <span data-testid="rerun-l3-reason" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            {why()}
-          </span>
-        )}
-      </Show>
+    <div class="space-y-1">
+      <div class="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" disabled={!enabled()} reason={reason() ?? undefined} onClick={() => setOpen(true)}>
+          Run again at L3
+        </Button>
+      </div>
+      <p data-testid="rerun-l3-meaning" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        {LEVEL_MEANING.L3}
+      </p>
       <Show when={enabled()}>
         <RunWithAgentModal
           isOpen={open()}

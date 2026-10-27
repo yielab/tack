@@ -46,7 +46,7 @@ describe('Run again at L3', () => {
   it('is offered on an attempt that needed a person, and opens the dialog with the L3 cap', () => {
     const c = mount();
     expect(button(c).disabled).toBe(false);
-    expect(c.querySelector('[data-testid="rerun-l3-reason"]')).toBeNull();
+    expect(c.querySelector('[data-testid="rerun-l3-meaning"]')!.textContent).toContain('you approve each step that needs it');
     expect(modal.last?.isOpen).toBe(false);
     button(c).click();
     expect(modal.last?.isOpen).toBe(true);
@@ -57,8 +57,7 @@ describe('Run again at L3', () => {
     const reason = 'This run already ran at L3';
     const c = mount({ attempt: attempt({ rerun_at_l3: { enabled: false, reason } }) });
     expect(button(c).disabled).toBe(true);
-    expect(button(c).title).toBe(reason);
-    expect(c.querySelector('[data-testid="rerun-l3-reason"]')!.textContent).toBe(reason);
+    expect(document.getElementById(button(c).getAttribute('aria-describedby')!)!.textContent).toBe(reason);
     button(c).click();
     expect(modal.last).toBeUndefined();
   });
@@ -66,7 +65,7 @@ describe('Run again at L3', () => {
   it('is disabled, with its reason, on a screen that does not know the task', () => {
     const c = mount({ itemTitle: '', projectId: '' });
     expect(button(c).disabled).toBe(true);
-    expect(button(c).title).toBe('This screen does not know the task');
+    expect(document.getElementById(button(c).getAttribute('aria-describedby')!)!.textContent).toBe('This screen does not know the task');
   });
 
   it('is only for a failed attempt whose code is needs_human', () => {
@@ -80,6 +79,7 @@ describe('Run again at L3', () => {
     const outcome = describeAttemptOutcome('failed', { code: 'needs_human', message: SENTENCE });
     expect(outcome.whyStopped).toBe(SENTENCE);
     expect(outcome.badge).toEqual({ label: 'Needs a person', tone: 'warning' });
+    expect(describeAttemptOutcome('failed', { code: 'needs_human' }).whyStopped).not.toContain('needs_human');
     expect(describeAttemptOutcome('failed', { code: 'token_limit' }).badge).toBeNull();
   });
 
