@@ -55,16 +55,17 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::{
-    ArtifactGrant, ArtifactManifestRequest, ArtifactManifestResponse, ArtifactUpload, AttemptId,
-    AttemptSnapshot, AttemptTransitionRequest, AttemptTransitionResponse, CancelObservation,
-    CancellationObservationRequest, CancellationObservationResponse, ClaimGranted, ClaimIdle,
-    ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer,
-    DecisionCreateRequest, DecisionCreateResponse, DecisionOption, DecisionPollRequest,
-    DecisionPollResponse, DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot,
-    EnrollmentRequest, EnrollmentResponse, EventBatchRequest, EventBatchResponse,
-    ExecutionRequestSnapshot, ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse,
-    LeaseResult, ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse,
-    RefreshRequest, RefreshResponse, RunnerId, StableErrorCode,
+    ArtifactContentResponse, ArtifactGrant, ArtifactManifestRequest, ArtifactManifestResponse,
+    ArtifactUpload, AttemptId, AttemptSnapshot, AttemptTransitionRequest,
+    AttemptTransitionResponse, CancelObservation, CancellationObservationRequest,
+    CancellationObservationResponse, ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest,
+    ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer, DecisionCreateRequest,
+    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
+    DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot, EnrollmentRequest,
+    EnrollmentResponse, EventBatchRequest, EventBatchResponse, ExecutionRequestSnapshot,
+    ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse, LeaseResult,
+    ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse, RefreshRequest,
+    RefreshResponse, RunnerId, StableErrorCode,
 };
 use uuid::Uuid;
 
@@ -1692,14 +1693,14 @@ pub async fn put_artifact_content(
         internal_error("Could not record artifact content")
     })?;
     match commit {
-        ArtifactContentCommitResult::Committed => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "artifact_id": artifact_id,
-            "state": "content_verified",
-            "size_bytes": stored.bytes_written,
-            "sha256": target.sha256,
-        }))),
+        ArtifactContentCommitResult::Committed => message_json(&ArtifactContentResponse {
+            protocol_version: ProtocolVersion::v1(),
+            attempt_id,
+            artifact_id,
+            state: "content_verified".to_owned(),
+            size_bytes: stored.bytes_written,
+            sha256: target.sha256,
+        }),
         ArtifactContentCommitResult::AlreadySet => {
             // Lost a race to a concurrent upload of the same artifact_id
             // after fully streaming and verifying our own copy: the bytes we

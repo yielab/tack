@@ -26,6 +26,10 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **The artifact upload's answer is a message struct.** `PUT .../artifacts/{id}/content` was the
+  last runner-protocol message the board built with `json!`; it is now `ArtifactContentResponse` in
+  `tack-protocol`, like every other request and response of the protocol.
+
 - **A request the server cannot read answers the same error body as any other failure.** A body
   that is not JSON, a field that is missing, a wrong content type, a body over the limit, a path
   or query parameter that is not valid, a route that is not there and a method a route does not

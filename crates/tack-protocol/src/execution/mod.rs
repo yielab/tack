@@ -21,14 +21,15 @@ pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,
 };
 pub use messages::{
-    ActiveAttempt, ArtifactGrant, ArtifactManifestEntry, ArtifactManifestRequest,
-    ArtifactManifestResponse, ArtifactUpload, AttemptTransitionRequest, AttemptTransitionResponse,
-    CancelObservation, CancellationObservationRequest, CancellationObservationResponse,
-    ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest,
-    CompletionResponse, DecisionAnswer, DecisionCreateRequest, DecisionCreateResponse,
-    DecisionOption, DecisionPollRequest, DecisionPollResponse, DecisionRecommendation,
-    DecisionUpdate, EnrollmentRequest, EnrollmentResponse, EventBatchRequest, EventBatchResponse,
-    EventRecord, HeartbeatRequest, HeartbeatResponse, LeaseResult, RefreshRequest, RefreshResponse,
+    ActiveAttempt, ArtifactContentResponse, ArtifactGrant, ArtifactManifestEntry,
+    ArtifactManifestRequest, ArtifactManifestResponse, ArtifactUpload, AttemptTransitionRequest,
+    AttemptTransitionResponse, CancelObservation, CancellationObservationRequest,
+    CancellationObservationResponse, ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest,
+    ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer, DecisionCreateRequest,
+    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
+    DecisionRecommendation, DecisionUpdate, EnrollmentRequest, EnrollmentResponse,
+    EventBatchRequest, EventBatchResponse, EventRecord, HeartbeatRequest, HeartbeatResponse,
+    LeaseResult, RefreshRequest, RefreshResponse,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

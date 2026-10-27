@@ -380,6 +380,18 @@ pub struct ArtifactManifestResponse {
     pub artifacts: Vec<ArtifactGrant>,
 }
 
+/// `PUT /attempts/{id}/artifacts/{artifact_id}/content`: the board has the bytes and they are the
+/// ones the manifest announced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtifactContentResponse {
+    pub protocol_version: ProtocolVersion,
+    pub attempt_id: AttemptId,
+    pub artifact_id: String,
+    pub state: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+}
+
 /// What a runner saw after the board asked an attempt to stop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -411,4 +423,45 @@ pub struct CancellationObservationResponse {
     pub state: ExecutionState,
     pub replayed: bool,
     pub committed_at: DateTime<Utc>,
+}
+
+#[cfg(test)]
+mod content_response_tests {
+    use super::*;
+
+    /// The body the board answers an artifact upload with: the keys a runner and the API
+    /// reference name, no more.
+    #[test]
+    fn an_artifact_content_response_is_the_documented_body() {
+        let response = ArtifactContentResponse {
+            protocol_version: ProtocolVersion::v1(),
+            attempt_id: AttemptId::new("att_1"),
+            artifact_id: "art_1".into(),
+            state: "content_verified".into(),
+            size_bytes: 12,
+            sha256: "a".repeat(64),
+        };
+        let value = serde_json::to_value(&response).unwrap();
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "artifact_id",
+                "attempt_id",
+                "protocol_version",
+                "sha256",
+                "size_bytes",
+                "state"
+            ]
+        );
+        assert_eq!(value["protocol_version"], 1);
+        let back: ArtifactContentResponse = serde_json::from_value(value).unwrap();
+        assert_eq!(back, response);
+    }
 }
