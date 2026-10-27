@@ -357,3 +357,36 @@ async fn naming_a_key_the_bucket_does_not_hold_is_refused() {
     assert_ne!(status, StatusCode::OK);
     assert!(!remote.staged_restore().exists());
 }
+
+#[tokio::test]
+async fn an_archive_or_manifest_that_cannot_be_read_is_a_422_with_a_code_not_a_500() {
+    let remote = Remote::start().await;
+    let manifest = remote.back_up().await;
+    let key = manifest["object_key"].as_str().unwrap().to_owned();
+
+    // The archive is not zstd at all.
+    remote
+        .objects
+        .lock()
+        .unwrap()
+        .insert(key.clone(), b"this is not a backup".to_vec());
+    let (status, body) = remote
+        .post("/api/backup/remote/restore", json!({"key": key}))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["error"]["code"], "unreadable_archive", "{body}");
+    assert!(message(&body).contains("cannot be read"), "{body}");
+    assert!(!remote.staged_restore().exists());
+
+    // The sidecar manifest is not JSON.
+    remote
+        .objects
+        .lock()
+        .unwrap()
+        .insert(format!("{key}.manifest.json"), b"{".to_vec());
+    let (status, body) = remote
+        .post("/api/backup/remote/restore", json!({"key": key}))
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["error"]["code"], "unreadable_archive", "{body}");
+}

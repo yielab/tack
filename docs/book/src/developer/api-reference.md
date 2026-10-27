@@ -1200,6 +1200,7 @@ download a bundle and stage it for next restart.
 | 200 | Restore staged for next restart | — |
 | 404 | No remote backups found | `ErrorEnvelope` |
 | 409 | Not configured, or restore would lose newer work | `ErrorEnvelope` |
+| 422 | The archive or its manifest cannot be read (`unreadable_archive`) | `ErrorEnvelope` |
 
 #### `POST /api/backup/remote/verify`
 

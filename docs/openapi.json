@@ -599,6 +599,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "The archive or its manifest cannot be read (`unreadable_archive`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       }
