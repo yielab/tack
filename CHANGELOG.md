@@ -40,6 +40,10 @@ automation a template carries, and the removal of dollars per day.
   code's: a lifecycle transition the board refuses (`AppError::InvalidTransition`) is 409 like the
   runner routes, not 400. A run sent to a revoked machine keeps its 409 under the new code
   `machine_revoked` (`runner_revoked` is the runner's own credential, 403).
+- **A write to a parent that is not there answers 404.** Creating a sprint or a role in a project
+  that does not exist answered 500 from the database's foreign key, and so did a dependency on an
+  item that does not exist; the store now checks the project or the item first and raises
+  `NotFound`, and a test drives each such route to a missing parent.
 - **The runner's file failures keep their kind.** A workspace or journal operation that failed on a
   file now says how (`runner workspace operation failed: entity not found`) instead of a bare
   "failed", and a poisoned lock is logged; the operating system's own text, which can name a path,

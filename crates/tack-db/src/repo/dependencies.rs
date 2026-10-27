@@ -17,6 +17,8 @@ impl Repository {
         source_item_id: Uuid,
         input: CreateDependency,
     ) -> Result<Dependency, DependencyError> {
+        self.require_item(source_item_id).await?;
+        self.require_item(input.target_item_id).await?;
         // Load existing dependency graph for cycle detection
         let edges = self
             .load_dependency_edges(source_item_id)

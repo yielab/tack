@@ -99,7 +99,7 @@ impl ApiError {
             ApiError::Store(failure) => failure.code(),
             ApiError::Core(rule) => rule.code(),
             ApiError::Dependency(DependencyError::Core(rule)) => rule.code(),
-            ApiError::Dependency(DependencyError::Db(_)) => StableErrorCode::InternalError,
+            ApiError::Dependency(DependencyError::Db(failure)) => failure.code(),
         }
     }
 }
@@ -120,8 +120,11 @@ impl IntoResponse for ApiError {
             | ApiError::Coded { message: msg, .. } => msg.clone(),
             ApiError::Core(err) => err.to_string(),
             ApiError::Dependency(err @ DependencyError::Core(_)) => err.to_string(),
-            ApiError::Dependency(err @ DependencyError::Db(_)) => {
-                error!(error = %err, "Database error in dependency operation");
+            ApiError::Dependency(DependencyError::Db(
+                failure @ (StoreError::NotFound { .. } | StoreError::Conflict(_)),
+            )) => failure.to_string(),
+            ApiError::Dependency(DependencyError::Db(failure)) => {
+                log_store_failure(failure);
                 "Internal server error".into()
             }
             ApiError::SectionFailed {

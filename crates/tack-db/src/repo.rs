@@ -37,6 +37,27 @@ impl Repository {
         Self { pool }
     }
 
+    /// The project a write names must be there: `NotFound { entity: "project" }` when it is not,
+    /// so a write whose foreign key would point at nothing answers 404 and never the database's
+    /// constraint error as a 500.
+    pub(crate) async fn require_project(&self, id: Uuid) -> Result<(), StoreError> {
+        let found: Option<i64> = sqlx::query_scalar("SELECT 1 FROM projects WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        found.map(|_| ()).ok_or(StoreError::not_found("project"))
+    }
+
+    /// The item a write names must be there: `NotFound { entity: "item" }` when it is not (see
+    /// [`Repository::require_project`]).
+    pub(crate) async fn require_item(&self, id: Uuid) -> Result<(), StoreError> {
+        let found: Option<i64> = sqlx::query_scalar("SELECT 1 FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&self.pool)
+            .await?;
+        found.map(|_| ()).ok_or(StoreError::not_found("item"))
+    }
+
     /// The raw connection pool, for the seeds and assertions of `tack-test-support`.
     /// Only that crate turns the `raw-pool` feature on; cargo unifies features across a
     /// build, so the feature alone does not keep other crates out, and the real gate is

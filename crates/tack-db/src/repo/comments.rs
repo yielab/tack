@@ -14,6 +14,7 @@ impl Repository {
         item_id: Uuid,
         input: CreateComment,
     ) -> Result<Comment, StoreError> {
+        self.require_item(item_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();

@@ -14,6 +14,7 @@ impl Repository {
         project_id: Uuid,
         input: CreateSprint,
     ) -> Result<Sprint, StoreError> {
+        self.require_project(project_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();

@@ -14,6 +14,7 @@ impl Repository {
         project_id: Uuid,
         input: CreateRole,
     ) -> Result<Role, StoreError> {
+        self.require_project(project_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let color = input.color.unwrap_or_else(|| "#6366f1".into());
