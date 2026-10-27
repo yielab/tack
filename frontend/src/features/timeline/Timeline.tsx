@@ -15,6 +15,7 @@ import { priorityFill } from '../../shared/ui/PriorityDot';
 import { IconTimeline } from '../../shared/ui/icons';
 import type { Item, Priority } from '../../shared/types';
 import { onActivateKey } from '../../shared/ui/keyActivate';
+import Card from '../../shared/ui/Card';
 
 // ── Drag state ─────────────────────────────────────────────────────────────
 
@@ -287,7 +288,7 @@ export default function Timeline() {
     >
       <div>
         <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>Timeline</h1>
-        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
+        <p class="mt-0.5 text-small text-content-muted">
           Drag bars to shift dates. Drag the left/right edge to resize start or due date.
         </p>
       </div>
@@ -295,14 +296,14 @@ export default function Timeline() {
         {(error) => <LoadError what="which items are blocked" error={error()} onRetry={() => void refetchBlocked()} />}
       </Show>
       <Show when={!(items as any).loading && (items() ?? []).length === 0}>
-        <div class="rounded-[28px] bg-panel">
+        <Card>
           <EmptyState
             icon={<IconTimeline size={28} />}
             title="No items to display on the timeline"
             description="Add items in Board or List — they'll appear here once created."
             action={<Button variant="secondary" size="sm" onClick={() => navigate(`/projects/${projectId}/board`)}>Go to Board</Button>}
           />
-        </div>
+        </Card>
       </Show>
 
       <Show when={(items() ?? []).length > 0}>
@@ -311,7 +312,7 @@ export default function Timeline() {
           <Button variant="secondary" onClick={previousPeriod}>← Previous</Button>
           <Button variant="secondary" onClick={goToday}>Today</Button>
           <Button variant="secondary" onClick={nextPeriod}>Next →</Button>
-          <div class="ml-auto flex gap-[3px] p-[3px] rounded-full bg-panel text-[0.8125rem]">
+          <div class="ml-auto flex gap-[3px] p-[3px] rounded-full bg-panel text-small">
             <For each={(['week', 'month', 'quarter'] as const)}>
               {(mode) => (
                 <button
@@ -329,7 +330,7 @@ export default function Timeline() {
         </div>
 
         {/* Gantt chart */}
-        <div class="relative rounded-[28px] bg-panel overflow-hidden">
+        <Card class="relative overflow-hidden">
           {/* Month gridlines + today line, spanning header and bars. Inset to
               the bars' content box so they line up with the bar positions. */}
           <div class="absolute inset-y-0 left-4 right-4 pointer-events-none" aria-hidden="true">
@@ -425,7 +426,7 @@ export default function Timeline() {
                           <span class="text-xs shrink-0" aria-label="done">✓</span>
                         </Show>
                         <span
-                          class="text-[0.78125rem] font-bold truncate"
+                          class="text-caption font-bold truncate"
                           style={{ 'text-decoration': isDone(item.status) ? 'line-through' : 'none' }}
                         >
                           {item.title}
@@ -444,7 +445,7 @@ export default function Timeline() {
                     {/* Date tooltip during drag */}
                     <Show when={dragging() && preview()}>
                       <div
-                        class="absolute -top-6 font-mono text-[0.6875rem] font-bold px-2.5 py-[3px] rounded-full whitespace-nowrap z-20 pointer-events-none"
+                        class="absolute -top-6 font-mono text-micro font-bold px-2.5 py-[3px] rounded-full whitespace-nowrap z-20 pointer-events-none"
                         style={{
                           left: `${pos().leftPercent}%`,
                           'background-color': 'var(--color-text-primary)',
@@ -459,7 +460,7 @@ export default function Timeline() {
               }}
             </For>
           </div>
-        </div>
+        </Card>
 
         {/* Legend */}
         <div class="flex flex-wrap gap-3.5 items-center text-xs text-content-muted">

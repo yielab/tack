@@ -403,7 +403,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
+      <section class="space-y-3 rounded-card p-5" style={panelStyle}>
         <div class="flex items-center gap-2">
           <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
             Description
@@ -427,7 +427,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
               fallback={
                 <button
                   type="button"
-                  class="w-full rounded-[20px] border border-dashed px-4 py-6 text-left text-sm"
+                  class="w-full rounded-item border border-dashed px-4 py-6 text-left text-sm"
                   style={{ 'border-color': 'var(--color-border-medium)', color: 'var(--color-text-tertiary)' }}
                   onClick={edit}
                 >
@@ -457,7 +457,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
+      <section class="space-y-3 rounded-card p-5" style={panelStyle}>
         <div class="flex items-center gap-2">
           <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
             Done when
@@ -530,7 +530,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </Button>
       </section>
 
-      <details class="rounded-[28px] p-5" style={panelStyle}>
+      <details class="rounded-card p-5" style={panelStyle}>
         <summary class="cursor-pointer text-lg" style={{ color: 'var(--color-text-primary)' }}>
           For the agent
           <Show when={agentSummary()}>
@@ -548,7 +548,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
             <For each={criteria}>
               {(c, i) => (
                 <div
-                  class="space-y-2 rounded-[20px] border p-3"
+                  class="space-y-2 rounded-item border p-3"
                   style={{ 'border-color': 'var(--color-border-light)', 'background-color': 'var(--color-bg-app)' }}
                   data-testid="criterion"
                 >
@@ -661,7 +661,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </div>
       </details>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={panelStyle}>
+      <section class="space-y-3 rounded-card p-5" style={panelStyle}>
       <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
         Link GitHub issue
       </h3>
@@ -683,7 +683,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
           </div>
         }
       >
-        <div class="flex items-center justify-between gap-2 rounded-[20px] py-2 pl-4 pr-2" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+        <div class="flex items-center justify-between gap-2 rounded-item py-2 pl-4 pr-2" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
           <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>
             {link()!.repo}#{link()!.issue_number}
           </span>

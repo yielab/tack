@@ -132,7 +132,7 @@ const DecisionRow: Component<{
         <Show when={!isPending() && !isExpired() && !isResolved()}>
           <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
         </Show>
-        <span class="ml-auto text-[0.6875rem]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {props.decision.decision_id}
         </span>
       </div>
@@ -172,7 +172,7 @@ const DecisionRow: Component<{
             }
           >
             <fieldset class="flex flex-col gap-2">
-              <legend class="mb-2 text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
+              <legend class="mb-2 text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
                 Choose an answer
               </legend>
               <For each={props.decision.options}>
@@ -185,7 +185,7 @@ const DecisionRow: Component<{
                   >
                     <span class="font-semibold">{opt.label}</span>
                     <Show when={opt.option_id === recommendedId()}>
-                      <span class="ml-2 text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
+                      <span class="ml-2 text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
                         Recommended
                       </span>
                     </Show>
@@ -287,7 +287,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   return (
     <div class="space-y-3">
       <div
-        class="flex flex-wrap items-end gap-2 rounded-[20px] px-4 py-3"
+        class="flex flex-wrap items-end gap-2 rounded-item px-4 py-3"
         style={{ 'background-color': 'var(--color-bg-panel)' }}
       >
         <Field

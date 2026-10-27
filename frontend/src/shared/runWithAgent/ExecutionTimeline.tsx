@@ -254,7 +254,7 @@ const RequestRow: Component<{
   });
 
   return (
-    <section data-testid="run" class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="run" class="space-y-4 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
         <span role="status" aria-live="polite" class="inline-flex">
@@ -270,7 +270,7 @@ const RequestRow: Component<{
         </span>
         {/* Once there is an attempt the ids sit with it; before that, this is the only place. */}
         <Show when={readyAttempts().length === 0}>
-          <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          <span class="ml-auto max-w-[14rem] truncate text-micro" title={summary()?.request_id} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
             {summary()?.request_id ?? '—'}
           </span>
         </Show>
@@ -347,7 +347,7 @@ const RequestRow: Component<{
         <Show
           when={readyAttempts().length > 0}
           fallback={
-            <p class="rounded-[20px] border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+            <p class="rounded-item border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
               No attempts yet.
             </p>
           }
@@ -382,7 +382,7 @@ const RequestRow: Component<{
 
       <Show when={reconcileOpen()}>
         <form
-          class="space-y-3 rounded-[28px] p-5"
+          class="space-y-3 rounded-card p-5"
           style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}
           onSubmit={reconcile}
         >

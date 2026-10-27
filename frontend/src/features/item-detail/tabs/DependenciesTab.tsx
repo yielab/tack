@@ -102,7 +102,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
     <ul class="space-y-2">
       <For each={links}>
         {(link) => (
-          <li class="flex items-center justify-between gap-2 rounded-[20px] py-2.5 pl-4 pr-2.5 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+          <li class="flex items-center justify-between gap-2 rounded-item py-2.5 pl-4 pr-2.5 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
             <A
               href={`/projects/${props.item.project_id}/items/${link.otherId}`}
               class="min-w-0 text-left font-semibold hover:underline"
@@ -127,7 +127,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Blocks
         </h3>
@@ -136,7 +136,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Blocked by
         </h3>
@@ -145,7 +145,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Add dependency
         </h3>
@@ -178,7 +178,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
           </div>
         </Show>
         <Show when={error()}>
-          <p class="rounded-[20px] px-4 py-2.5 text-sm font-medium" style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}>
+          <p class="rounded-item px-4 py-2.5 text-sm font-medium" style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}>
             {error()}
           </p>
         </Show>

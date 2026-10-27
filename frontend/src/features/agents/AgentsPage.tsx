@@ -137,7 +137,7 @@ const AgentsPage: Component = () => {
         <h1 class="text-[2.375rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Agents
         </h1>
-        <p class="mt-1.5 max-w-[620px] text-[0.9375rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="mt-1.5 max-w-[620px] text-lead" style={{ color: 'var(--color-text-secondary)' }}>
           Turn on an agent on this computer, sign it in, and run a test — the whole path from
           an installed binary to a completed run.
         </p>
@@ -146,7 +146,7 @@ const AgentsPage: Component = () => {
       <Show when={!localRunnerUnavailable() && otherActiveCount() > 0}>
         <div class="flex flex-wrap items-end gap-3">
           <p
-              class="rounded-full px-3.5 py-2 text-[0.8125rem]"
+              class="rounded-full px-3.5 py-2 text-small"
               style={{ background: 'var(--color-accent2-soft)', color: 'var(--color-accent2-ink)' }}
             >
               {otherActiveCount()} other machine{otherActiveCount() === 1 ? ' is' : 's are'} running agents —{' '}

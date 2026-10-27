@@ -29,6 +29,15 @@ export type { SelectProps, SelectOption } from './Select';
 export { default as Modal } from './Modal';
 export type { ModalProps } from './Modal';
 
+export { default as Card } from './Card';
+export type { CardProps } from './Card';
+
+export { default as Switch } from './Switch';
+export type { SwitchProps } from './Switch';
+
+export { default as ConfirmDialog, createConfirm } from './ConfirmDialog';
+export type { ConfirmOptions, ConfirmDialogProps } from './ConfirmDialog';
+
 export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
 

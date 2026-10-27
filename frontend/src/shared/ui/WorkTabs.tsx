@@ -40,7 +40,7 @@ export default function WorkTabs() {
           <A
             href={`/projects/${projectId()}/${tab.lens}`}
             onClick={() => setLastLens(tab.lens)}
-            class="flex items-center px-3.5 py-[5px] rounded-full text-[0.8125rem] transition-all"
+            class="flex items-center px-3.5 py-[5px] rounded-full text-small transition-all"
             style={activeLens() === tab.lens
               ? {
                   background: 'var(--color-bg-app)',

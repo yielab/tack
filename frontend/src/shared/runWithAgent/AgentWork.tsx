@@ -34,7 +34,7 @@ export const AgentConcluded: Component<{ result: string | null; workspace: strin
         <h4 class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent concluded</h4>
         <p
           data-testid="agent-result"
-          class="whitespace-pre-wrap rounded-[20px] px-4 py-3 text-sm"
+          class="whitespace-pre-wrap rounded-item px-4 py-3 text-sm"
           classList={{ 'max-h-96 overflow-auto': !clamped() }}
           style={{
             'background-color': 'var(--color-bg-panel)',
@@ -81,7 +81,7 @@ const ToolGroupRow: Component<{ group: ToolGroup; workspace: string | null }> = 
                 <li
                   data-testid="tool-target"
                   title={`${shown()}${t.failed ? ' (failed)' : ''}`}
-                  class="max-w-full break-all rounded-full px-2.5 py-0.5 text-[0.6875rem]"
+                  class="max-w-full break-all rounded-full px-2.5 py-0.5 text-micro"
                   style={{
                     'font-family': 'var(--font-mono)',
                     'background-color': t.failed ? 'var(--color-danger-100)' : 'var(--color-bg-subtle)',
@@ -149,7 +149,7 @@ export const AgentDid: Component<{
   return (
     <section data-testid="agent-did" class="space-y-2">
       <Show when={noTools()}>
-        <p class="rounded-[20px] px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+        <p class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           The agent had no tools in this run, so it could not read or change files.
         </p>
       </Show>

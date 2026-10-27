@@ -7,7 +7,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, type FieldHelp } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, Switch, type FieldHelp } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
@@ -39,7 +39,7 @@ const Fold = (props: { id?: string; title: string; summary: string; help?: Field
       {/* The summary itself stays `display: list-item`: a flex summary loses its disclosure marker. */}
       <span class="inline-flex flex-wrap items-center gap-2 align-middle">
         <Heading>{props.title}</Heading>
-        <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+        <span class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
       </span>
     </summary>
     <div class="mt-2.5 flex flex-col gap-2.5">
@@ -193,15 +193,13 @@ const AutomationPanel: Component = () => {
           <Show when={hasFolder() && check()}>
             <Note>{checkSentence(check()!)}</Note>
           </Show>
-          <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={p()?.prepare_command !== ''}
-              onChange={(e) => void save({ prepare_command: e.currentTarget.checked ? null : '' })}
-            />
+          <Switch
+            checked={p()?.prepare_command !== ''}
+            onChange={(checked) => void save({ prepare_command: checked ? null : '' })}
+            style={{ color: 'var(--color-text-primary)' }}
+          >
             Install dependencies before each run
-          </label>
+          </Switch>
           <Show when={p()?.prepare_command !== ''}>
             <Field
               label="Install command"
@@ -242,16 +240,14 @@ const AutomationPanel: Component = () => {
             </details>
           </div>
           <div class="flex items-center gap-2">
-            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={!!p()?.push_after_run}
-                disabled={pushDisabledReason() !== null}
-                onChange={(e) => void save({ push_after_run: e.currentTarget.checked })}
-              />
+            <Switch
+              checked={!!p()?.push_after_run}
+              disabled={pushDisabledReason() !== null}
+              onChange={(checked) => void save({ push_after_run: checked })}
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Push the branch when a run finishes
-            </label>
+            </Switch>
             <HelpHint label="Push the branch" help={HELP.pushTheBranch} />
           </div>
           <Show when={pushDisabledReason()}>
@@ -273,7 +269,7 @@ const AutomationPanel: Component = () => {
             rows={3}
             value={p()?.definition_of_done ?? ''}
             onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
-            class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm"
+            class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',

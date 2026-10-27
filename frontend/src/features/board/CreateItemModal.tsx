@@ -1,14 +1,15 @@
 import { type Component, createSignal, Show, createEffect, For, createResource, createMemo, createUniqueId } from 'solid-js';
-import Modal from './Modal';
-import RichTextEditor from './RichTextEditor';
-import Button from './Button';
-import Field from './Field';
-import { api } from '../api';
-import type { CreateItem, Item } from '../types';
-import { toast } from './toast';
-import { getItemTypeMap, resolveLabel } from '../vocab/vocab';
+import Modal from '../../shared/ui/Modal';
+import RichTextEditor from '../../shared/ui/RichTextEditor';
+import Button from '../../shared/ui/Button';
+import Field from '../../shared/ui/Field';
+import { api } from '../../shared/api';
+import type { CreateItem, Item } from '../../shared/types';
+import { toast } from '../../shared/ui/toast';
+import { getItemTypeMap, resolveLabel } from '../../shared/vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
-import { priorityColor } from './PriorityDot';
+import { createConfirm } from '../../shared/ui/ConfirmDialog';
+import { priorityColor } from '../../shared/ui/PriorityDot';
 
 /** Choice chip (type / priority / estimate): a pill; the chosen one gets the
  *  accent-soft fill, accent ink and a 2px accent ring. */
@@ -153,8 +154,10 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const handleDeleteChild = async (itemId: string) => {
-    if (!confirm('Delete this child item?')) return;
+    if (!(await ask({ title: 'Delete child item?', message: 'The child item will be deleted.', confirmLabel: 'Delete', danger: true }))) return;
 
     try {
       await api.items.remove(itemId);
@@ -239,11 +242,12 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       title={mode() === 'edit' ? 'Edit Item' : 'Create New Item'}
       size="xl"
     >
+      <ConfirmHost />
       <form onSubmit={handleSubmit} class="space-y-5">
         {/* Error message */}
         <Show when={error()}>
           <div
-            class="rounded-[22px] px-4 py-2.5 text-sm font-semibold"
+            class="rounded-xl px-4 py-2.5 text-sm font-semibold"
             style={{
               'background-color': 'var(--color-danger-100)',
               color: 'var(--color-danger-600)',
@@ -347,7 +351,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   type="button"
                   onClick={() => setEstimate(estimate() === value ? null : value)}
                   aria-pressed={estimate() === value}
-                  class={`w-9 h-9 rounded-full font-mono text-[0.8125rem] font-semibold ${chipClass(estimate() === value)}`}
+                  class={`w-9 h-9 rounded-full font-mono text-small font-semibold ${chipClass(estimate() === value)}`}
                   style={chipStyle(estimate() === value)}
                   disabled={loading()}
                 >
@@ -396,7 +400,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                         {typeof child.item_type === 'string' ? itemTypeConfig()[child.item_type as ItemType]?.emoji : '📌'}
                       </span>
                       <span class="flex-1 text-content">{child.title}</span>
-                      <span class="text-[0.6875rem] font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">
+                      <span class="text-micro font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">
                         {child.status}
                       </span>
                       <button
@@ -459,7 +463,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             <div class="flex flex-wrap gap-1.5 mb-2">
               <For each={tags()}>
                 {(tag) => (
-                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-full text-[0.6875rem] font-bold">
+                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-full text-micro font-bold">
                     {tag}
                     <button
                       type="button"

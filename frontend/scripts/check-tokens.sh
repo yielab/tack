@@ -111,3 +111,36 @@ if [ "$FONT_PX_COUNT" -gt "$FONT_PX_BASELINE" ]; then
 fi
 
 echo "✓ font-size gate passed"
+
+# ── Gate 4: arbitrary Tailwind values ─────────────────────────────────────────
+#
+# A value written in brackets (`rounded-[28px]`, `text-[0.8125rem]`) does not come
+# from the theme, so it drifts from the rest. Use the token when there is one
+# (rounded-card, rounded-item, text-micro, text-caption, text-small, text-lead:
+# the @theme static block in src/index.css) or a Tailwind scale class.
+#
+# Same RATCHET rule. Test files are excluded.
+ARBITRARY_BASELINE=235
+
+ARBITRARY_COUNT=$(grep -rhoE '[a-z0-9]-\[[^]]+\]' src --include='*.tsx' --include='*.ts' \
+  --exclude='*.test.tsx' --exclude='*.test.ts' | wc -l | tr -d ' ' || true)
+
+echo "Arbitrary Tailwind values: $ARBITRARY_COUNT (baseline $ARBITRARY_BASELINE, target 0)"
+
+if [ "$ARBITRARY_COUNT" -gt "$ARBITRARY_BASELINE" ]; then
+  echo ""
+  echo "ERROR: arbitrary Tailwind value count increased ($ARBITRARY_COUNT > $ARBITRARY_BASELINE)."
+  echo "Use a theme token or a scale class instead of a bracketed value:"
+  echo "  rounded-[28px]        → rounded-card"
+  echo "  rounded-[20px]        → rounded-item"
+  echo "  text-[0.8125rem]      → text-small"
+  echo "See the @theme static block in src/index.css."
+  exit 1
+fi
+
+if [ "$ARBITRARY_COUNT" -lt "$ARBITRARY_BASELINE" ]; then
+  echo "Progress: arbitrary value count dropped below baseline."
+  echo "→ Lower ARBITRARY_BASELINE in scripts/check-tokens.sh to $ARBITRARY_COUNT to lock it in."
+fi
+
+echo "✓ arbitrary-value gate passed"

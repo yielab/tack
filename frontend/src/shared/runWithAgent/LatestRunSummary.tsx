@@ -225,7 +225,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
         <div
           data-testid="latest-run"
           data-state={kind()}
-          class="min-w-0 space-y-2 rounded-[20px] p-4"
+          class="min-w-0 space-y-2 rounded-item p-4"
           style={{ 'background-color': background(), 'box-shadow': 'var(--shadow-sm)' }}
         >
           <div class="flex flex-wrap items-center gap-2">

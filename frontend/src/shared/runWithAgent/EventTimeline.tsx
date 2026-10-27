@@ -118,7 +118,7 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
         <TerminalBody payload={props.event.payload as Record<string, unknown>} />
       </Show>
     </div>
-    <div class="flex flex-col items-end text-[0.6875rem]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+    <div class="flex flex-col items-end text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
       <span>{relativeTimeFromIso(props.event.occurred_at)}</span>
     </div>
   </li>
