@@ -585,7 +585,10 @@ mod tests {
         assert_eq!(config.loops.auto_start_seconds, 5);
         assert_eq!(config.loops.github_poll_seconds, 9);
         assert_eq!(config.loops.backup_bucket.as_deref(), Some("b"));
-        assert_eq!(config.loops.backup_region, "auto", "an absent key keeps its default");
+        assert_eq!(
+            config.loops.backup_region, "auto",
+            "an absent key keeps its default"
+        );
     }
 
     /// Both secrets are made the same way: a missing file is created `0600`
