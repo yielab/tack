@@ -221,7 +221,11 @@ impl OwnerOnlyJournal {
         if self.quarantine_path(&record.attempt_id).exists() {
             return Err(JournalError::AlreadyExists);
         }
-        let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
+        let bytes = toml::to_string(record).map_err(|error| {
+            // The serializer's messages are fixed texts; none of them carries a field's value.
+            tracing::warn!(%error, "runner journal record could not be serialized");
+            JournalError::Serialization
+        })?;
         atomic_create_private(&self.journal_path(&record.attempt_id), bytes.as_bytes())
     }
 
@@ -238,7 +242,11 @@ impl OwnerOnlyJournal {
         if !path.exists() {
             return Err(JournalError::Missing);
         }
-        let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
+        let bytes = toml::to_string(record).map_err(|error| {
+            // The serializer's messages are fixed texts; none of them carries a field's value.
+            tracing::warn!(%error, "runner journal record could not be serialized");
+            JournalError::Serialization
+        })?;
         atomic_replace_private(&path, bytes.as_bytes())
     }
 
