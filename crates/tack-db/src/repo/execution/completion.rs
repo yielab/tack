@@ -159,13 +159,13 @@ pub enum CompletionResult {
 }
 
 fn encode(value: &impl serde::Serialize) -> Result<String, StoreError> {
-    serde_json::to_string(value).map_err(|error| StoreError::unwritable(error))
+    serde_json::to_string(value).map_err(StoreError::unwritable)
 }
 
 fn canonical_value(value: &impl serde::Serialize) -> Result<serde_json::Value, StoreError> {
     serde_json::to_value(value)
         .map(canonical_json)
-        .map_err(|error| StoreError::unwritable(error))
+        .map_err(StoreError::unwritable)
 }
 
 fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreError> {
@@ -180,7 +180,7 @@ fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreEr
         "actual_execution": canonical_value(completion.actual_execution)?,
         "usage": canonical_value(completion.usage)?,
     }))
-    .map_err(|error| StoreError::unwritable(error))
+    .map_err(StoreError::unwritable)
 }
 
 fn replay_response(serialized: &str) -> Result<CompletionResponse, StoreError> {
@@ -233,9 +233,9 @@ fn cancellation_fingerprint(
     input: &CancellationObservationInput<'_>,
 ) -> Result<String, StoreError> {
     let details: serde_json::Value =
-        serde_json::from_str(input.details).map_err(|error| StoreError::unwritable(error))?;
+        serde_json::from_str(input.details).map_err(StoreError::unwritable)?;
     let observation: serde_json::Value =
-        serde_json::from_str(input.observation).map_err(|error| StoreError::unwritable(error))?;
+        serde_json::from_str(input.observation).map_err(StoreError::unwritable)?;
     if observation != serde_json::Value::String("process_stopped".into()) {
         return Err(StoreError::unwritable(
             "cancellation observation must be JSON string process_stopped",
@@ -250,7 +250,7 @@ fn cancellation_fingerprint(
         "details": canonical_json(details),
         "observation": canonical_json(observation),
     }))
-    .map_err(|error| StoreError::unwritable(error))
+    .map_err(StoreError::unwritable)
 }
 
 fn cancellation_response(serialized: &str) -> Result<CancellationResponse, StoreError> {

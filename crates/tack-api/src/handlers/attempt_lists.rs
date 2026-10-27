@@ -51,7 +51,8 @@ async fn execution_request_exists(
 ) -> Result<bool, (StatusCode, Json<Value>)> {
     execution_requests::execution_request_exists(&state.repo, request_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify execution");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -120,7 +121,8 @@ pub async fn list_execution_attempt_artifacts(
         .repo
         .list_execution_artifacts_for_attempt_number(&request_id, attempt_number)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list artifacts");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -242,7 +244,8 @@ pub async fn list_execution_attempt_decisions(
     let decisions =
         execution_decisions::decisions_of_attempt(&state.repo, &request_id, attempt_number)
             .await
-            .map_err(|_| {
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not list decisions");
                 error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,

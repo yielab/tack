@@ -104,7 +104,7 @@ pub enum RecoveryObservationResult {
 
 /// The details as the audit row stores them: the JSON the protocol's struct encodes to.
 fn recovery_details_json(details: &RecoveryDetails) -> Result<String, StoreError> {
-    serde_json::to_string(details).map_err(|error| StoreError::unwritable(error))
+    serde_json::to_string(details).map_err(StoreError::unwritable)
 }
 
 fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
@@ -116,8 +116,7 @@ fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
 }
 
 fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, StoreError> {
-    let details =
-        serde_json::to_value(input.details).map_err(|error| StoreError::unwritable(error))?;
+    let details = serde_json::to_value(input.details).map_err(StoreError::unwritable)?;
     serde_json::to_string(&serde_json::json!({
         "runner_id": input.runner_id.as_str(),
         "attempt_id": input.attempt_id.as_str(),
@@ -126,7 +125,7 @@ fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, 
         "observation": recovery_observation_name(input.observation),
         "details": canonical_json(details),
     }))
-    .map_err(|error| StoreError::unwritable(error))
+    .map_err(StoreError::unwritable)
 }
 
 /// Everything `recover_attempt` does once it holds the open transaction and
@@ -283,13 +282,7 @@ fn recovery_response(serialized: &str) -> Result<RecoveryResponse, StoreError> {
     };
     let disposition = required("disposition")?
         .parse::<RecoveryDisposition>()
-        .map_err(|_| {
-            StoreError::corrupt(
-                "execution_recovery_audits",
-                "response",
-                "invalid recovery replay response disposition",
-            )
-        })?;
+        .map_err(|error| StoreError::corrupt("execution_recovery_audits", "response", error))?;
     Ok(RecoveryResponse {
         attempt_id: AttemptId::new(required("attempt_id")?),
         recovery_key: RecoveryKey::new(required("recovery_key")?),

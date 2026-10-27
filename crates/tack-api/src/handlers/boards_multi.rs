@@ -34,15 +34,20 @@ pub async fn create_board(
     Path(project_id): Path<Uuid>,
     Json(data): Json<CreateBoard>,
 ) -> Result<Json<Board>, StatusCode> {
-    data.validate()
-        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    data.validate().map_err(|failure| {
+        tracing::warn!(error = %failure, "Request body failed validation");
+        StatusCode::UNPROCESSABLE_ENTITY
+    })?;
 
     // Verify project exists
     state
         .repo
         .get_project(project_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     repo::boards::create_board(&state.repo, project_id, data)
@@ -101,10 +106,7 @@ pub async fn get_board(
     repo::boards::get_board(&state.repo, id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, board_id = %id, "Failed to get board");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// PATCH /api/boards/:id - Update a board
@@ -127,8 +129,10 @@ pub async fn update_board(
     Path(id): Path<Uuid>,
     Json(data): Json<UpdateBoard>,
 ) -> Result<Json<Board>, StatusCode> {
-    data.validate()
-        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    data.validate().map_err(|failure| {
+        tracing::warn!(error = %failure, "Request body failed validation");
+        StatusCode::UNPROCESSABLE_ENTITY
+    })?;
 
     repo::boards::update_board(&state.repo, id, data)
         .await
@@ -200,10 +204,7 @@ pub async fn get_board_view(
     // Get the board
     let board = repo::boards::get_board(&state.repo, id)
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, board_id = %id, "Board not found");
-            StatusCode::NOT_FOUND
-        })?;
+        .map_err(|e| crate::error::status_of_store_failure(&e))?;
 
     // Get the project to access workflow
     let project = state
@@ -421,10 +422,11 @@ async fn group_by_custom_field(
     items: Vec<Item>,
 ) -> Result<Vec<BoardColumnWithItems>, StatusCode> {
     // Get the field definition
-    let _field = state.repo.get_field(field_id).await.map_err(|e| {
-        tracing::error!(error = %e, field_id = %field_id, "Custom field not found");
-        StatusCode::NOT_FOUND
-    })?;
+    let _field = state
+        .repo
+        .get_field(field_id)
+        .await
+        .map_err(|e| crate::error::status_of_store_failure(&e))?;
 
     // Get all values for this field across all items
     let mut value_groups: std::collections::HashMap<String, Vec<Item>> =

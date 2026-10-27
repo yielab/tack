@@ -312,7 +312,8 @@ pub async fn resolve_decision(
     require_decision_token(&state, &headers)?;
     let principal_id = principal(&headers)?;
 
-    let value: Value = serde_json::from_slice(&body).map_err(|_| {
+    let value: Value = serde_json::from_slice(&body).map_err(|failure| {
+        tracing::warn!(error = %failure, "Request body must be valid JSON");
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,

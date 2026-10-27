@@ -197,7 +197,7 @@ The project file. `outline.rs` holds the serde types of every section (`Outline`
 
 **Owns:** SQLite connection pool initialisation, the migration runner, every `sqlx` line in the server, and `StoreError`. Commands are `Repository` methods in `repo/`; read models are functions in `queries/`.
 
-**Does not own:** HTTP concerns, config loading, or business rule enforcement. The repository functions are thin: they translate between Rust structs and SQL rows. It is the only crate allowed to name `sqlx`, and no `sqlx` type crosses its edge: every call returns `StoreError` (`NotFound`, `Conflict` or `Sql`), which `AppError` and `ApiError` both wrap. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables; `scripts/check-crate-graph.sh` and the bans in `deny.toml` keep `sqlx` and the raw pool in those two crates.
+**Does not own:** HTTP concerns, config loading, or business rule enforcement. The repository functions are thin: they translate between Rust structs and SQL rows. It is the only crate allowed to name `sqlx`, and no `sqlx` type crosses its edge: every call returns `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }` or `Sql`), which `AppError` and `ApiError` both wrap. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables; `scripts/check-crate-graph.sh` and the bans in `deny.toml` keep `sqlx` and the raw pool in those two crates.
 
 ---
 
@@ -467,8 +467,10 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 | `SectionFailed` | 500, with a message that names the project-file section and says whether what came before stayed |
 | `Core(CoreError::*NotFound*)` | 404 |
 | `Core(CoreError::InvalidTransition \| WipLimitExceeded \| …)` | 400 |
-| `Store(StoreError::NotFound)` | 404 |
+| `UnreadableArchive` | 422, with the code `unreadable_archive` (a restore whose archive or manifest cannot be read) |
+| `Store(StoreError::NotFound { entity })` | 404, "`<entity>` not found" |
 | `Store(StoreError::Conflict)` | 409 |
+| `Store(StoreError::Corrupt { table, column })` | 500, logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" |
 | `Store(StoreError::Sql)` | 500 |
 | `Internal` | 500 |
 

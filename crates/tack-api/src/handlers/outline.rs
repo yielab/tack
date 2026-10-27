@@ -143,8 +143,9 @@ fn read_csv(headers: &HeaderMap, body: &[u8]) -> ApiResult<Read> {
             "CSV must be sent as text/csv".into(),
         ));
     }
-    let text = std::str::from_utf8(body)
-        .map_err(|_| ApiError::BadRequest("CSV body is not valid UTF-8".into()))?;
+    let text = std::str::from_utf8(body).map_err(|failure| {
+        ApiError::BadRequest(format!("CSV body is not valid UTF-8: {failure}"))
+    })?;
     let csv = items_from_csv(text).map_err(refused)?;
     Ok(Read {
         outline: Outline {

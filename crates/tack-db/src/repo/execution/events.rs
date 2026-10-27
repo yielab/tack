@@ -109,7 +109,7 @@ fn event_batch_fingerprint(
         "previous_checkpoint": batch.previous_checkpoint.map(Checkpoint::as_str),
         "events": values?,
     }))
-    .map_err(|error| StoreError::unwritable(error))
+    .map_err(StoreError::unwritable)
 }
 
 impl Repository {
@@ -264,8 +264,8 @@ impl Repository {
             if exists {
                 duplicate.push(event.event_id.into())
             } else {
-                let payload = serde_json::to_string(event.payload)
-                    .map_err(|error| StoreError::unwritable(error))?;
+                let payload =
+                    serde_json::to_string(event.payload).map_err(StoreError::unwritable)?;
                 sqlx::query("INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(event.id).bind(attempt).bind(event.event_id).bind(event.sequence).bind(event.source).bind(event.kind).bind(payload).bind(event.occurred_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
                 accepted.push(event.event_id.into())
             }

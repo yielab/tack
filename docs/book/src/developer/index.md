@@ -243,7 +243,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   ├── tack-db/           SQLite persistence; the only crate that names sqlx
 │   │   └── src/
 │   │       ├── lib.rs       init_pool() — WAL mode, foreign keys on
-│   │       ├── error.rs     StoreError — NotFound, Conflict, Sql
+│   │       ├── error.rs     StoreError — NotFound, Conflict, Corrupt, Sql
 │   │       ├── migrations.rs Ordered migrations as embedded SQL strings
 │   │       ├── repo.rs      Repository struct — delegates to submodules
 │   │       ├── repo/        Commands: one file or directory per aggregate (items, projects, execution/, …)

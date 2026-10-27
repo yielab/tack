@@ -641,8 +641,9 @@ fn read_or_create_token(path: &std::path::Path) -> anyhow::Result<String> {
 }
 
 fn validate_origin(origin: &str) -> anyhow::Result<()> {
-    let parsed = reqwest::Url::parse(origin)
-        .map_err(|_| anyhow::anyhow!("allowed origin must be an absolute http(s) origin"))?;
+    let parsed = reqwest::Url::parse(origin).map_err(|failure| {
+        anyhow::Error::new(failure).context("allowed origin must be an absolute http(s) origin")
+    })?;
     if !matches!(parsed.scheme(), "http" | "https")
         || parsed.host_str().is_none()
         || !parsed.username().is_empty()
@@ -657,8 +658,9 @@ fn validate_origin(origin: &str) -> anyhow::Result<()> {
 }
 
 pub(crate) fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<()> {
-    let parsed = reqwest::Url::parse(value)
-        .map_err(|_| anyhow::anyhow!("{name} must be an absolute http(s) URL"))?;
+    let parsed = reqwest::Url::parse(value).map_err(|failure| {
+        anyhow::Error::new(failure).context(format!("{name} must be an absolute http(s) URL"))
+    })?;
     if !matches!(parsed.scheme(), "http" | "https")
         || parsed.host_str().is_none()
         || !parsed.username().is_empty()

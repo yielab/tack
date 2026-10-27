@@ -332,7 +332,8 @@ pub async fn list_fleets(
 ) -> Result<Json<FleetListResponse>, (StatusCode, Json<Value>)> {
     let rows = agent_fleets::fleets_by_name(&state.repo)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list fleets");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -343,7 +344,8 @@ pub async fn list_fleets(
     let data: Vec<FleetSummary> = rows
         .into_iter()
         .map(|r| -> Result<FleetSummary, (StatusCode, Json<Value>)> {
-            let policy = serde_json::from_str::<Value>(&r.default_policy).map_err(|_| {
+            let policy = serde_json::from_str::<Value>(&r.default_policy).map_err(|failure| {
+                tracing::error!(error = %failure, "Fleet policy is corrupt");
                 error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,
@@ -407,7 +409,8 @@ pub async fn add_fleet_member(
         .repo
         .add_fleet_member(&fleet_id, &input.runner_id, state.clock.now())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not add fleet member");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -464,7 +467,8 @@ pub async fn remove_fleet_member(
         .repo
         .remove_fleet_member(&fleet_id, &runner_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not remove fleet member");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -517,7 +521,8 @@ pub async fn list_runners(
     State(state): State<OperatorExecutionState>,
     Query(query): Query<ListRunnersQuery>,
 ) -> Result<Json<RunnerListResponse>, (StatusCode, Json<Value>)> {
-    let runners = state.repo.list_runners().await.map_err(|_| {
+    let runners = state.repo.list_runners().await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not list runners");
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
@@ -581,7 +586,8 @@ pub async fn revoke_runner(
         .repo
         .revoke_runner(&runner_id, state.clock.now())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not revoke runner");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -718,10 +724,14 @@ pub async fn provision_pending_runner(
     let expires_at = now
         .checked_add_signed(enrollment_lifetime)
         .ok_or(ProvisionError::LifetimeOutOfRange)?;
-    let labels =
-        serde_json::to_string(&input.labels).map_err(|_| ProvisionError::LabelsNotSerializable)?;
-    let capabilities = serde_json::to_string(&input.capability_snapshot)
-        .map_err(|_| ProvisionError::CapabilitySnapshotNotSerializable)?;
+    let labels = serde_json::to_string(&input.labels).map_err(|failure| {
+        tracing::warn!(error = %failure, "Could not encode the runner provisioning");
+        ProvisionError::LabelsNotSerializable
+    })?;
+    let capabilities = serde_json::to_string(&input.capability_snapshot).map_err(|failure| {
+        tracing::warn!(error = %failure, "Could not encode the runner provisioning");
+        ProvisionError::CapabilitySnapshotNotSerializable
+    })?;
     let enrollment_token_hash = token_hash(&raw_token);
     let runner = NewRunner {
         id: &runner_id,
@@ -951,7 +961,8 @@ pub async fn create_profile(
     .await?;
     check_limits(&input.limits)?;
     let id = format!("ap_{}", Uuid::new_v4());
-    let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|_| {
+    let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|failure| {
+        tracing::warn!(error = %failure, "tool_policy cannot be serialized");
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -959,7 +970,8 @@ pub async fn create_profile(
             json!({"field": "tool_policy"}),
         )
     })?;
-    let limits = serde_json::to_string(&input.limits).map_err(|_| {
+    let limits = serde_json::to_string(&input.limits).map_err(|failure| {
+        tracing::warn!(error = %failure, "limits cannot be serialized");
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -1021,7 +1033,8 @@ pub async fn list_profiles(
 ) -> Result<Json<AgentProfileListResponse>, (StatusCode, Json<Value>)> {
     let rows = agent_profiles::profiles_by_name(&state.repo)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list agent profiles");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1050,16 +1063,20 @@ fn profile_from_row(
             json!({}),
         )
     };
-    let tool_policy: Value = serde_json::from_str(&r.tool_policy)
-        .map_err(|_| corrupt("Agent profile policy is corrupt"))?;
+    let tool_policy: Value = serde_json::from_str(&r.tool_policy).map_err(|failure| {
+        tracing::error!(error = %failure, "Agent profile policy is corrupt");
+        corrupt("Agent profile policy is corrupt")
+    })?;
     let caps = tack_core::run_defaults::profile_capabilities(&tool_policy);
     Ok(AgentProfileSummary {
         agent_profile_id: r.id,
         name: r.name,
         instructions: r.instructions,
         tool_policy,
-        limits: serde_json::from_str(&r.limits)
-            .map_err(|_| corrupt("Agent profile limits are corrupt"))?,
+        limits: serde_json::from_str(&r.limits).map_err(|failure| {
+            crate::error::log_unreadable_document("Agent profile limits are corrupt", &failure);
+            corrupt("Agent profile limits are corrupt")
+        })?,
         kind: r.kind,
         builtin: r.builtin != 0,
         summary: r.summary,
@@ -1143,7 +1160,10 @@ async fn check_profile_fields(
     if let Some(fleet_id) = fleet_id {
         let exists = agent_fleets::fleet_exists(repo, fleet_id)
             .await
-            .map_err(|_| profile_db_error("Could not verify fleet"))?;
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not verify fleet");
+                profile_db_error("Could not verify fleet")
+            })?;
         if !exists {
             return Err(error(
                 StatusCode::BAD_REQUEST,
@@ -1271,13 +1291,19 @@ pub async fn profile_history(
 ) -> Result<Json<ProfileHistory>, (StatusCode, Json<Value>)> {
     let exists = agent_profiles::profile_exists(&state.repo, &id)
         .await
-        .map_err(|_| profile_db_error("Could not read agent profile"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read agent profile");
+            profile_db_error("Could not read agent profile")
+        })?;
     if !exists {
         return Err(profile_not_found());
     }
     let mut runs = agent_profiles::successful_run_tokens(&state.repo, &id, 20)
         .await
-        .map_err(|_| profile_db_error("Could not read the profile's runs"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read the profile's runs");
+            profile_db_error("Could not read the profile's runs")
+        })?;
     runs.sort_unstable();
     let p90 = tack_core::run_defaults::percentile(&runs, 90);
     Ok(Json(ProfileHistory {

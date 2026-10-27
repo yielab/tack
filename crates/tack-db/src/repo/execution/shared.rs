@@ -10,7 +10,7 @@ pub(super) fn terminal(state: &str) -> bool {
 
 /// A fencing token as the integer column holds it.
 pub(crate) fn token_column(token: FencingToken) -> Result<i64, StoreError> {
-    i64::try_from(token.get()).map_err(|_| StoreError::unwritable("fencing token is out of range"))
+    i64::try_from(token.get()).map_err(StoreError::unwritable)
 }
 
 /// A fencing token read from the integer column; a negative one is a corrupt row.

@@ -152,14 +152,13 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         let now = now.to_rfc3339();
-        let malformed = |error: serde_json::Error| StoreError::unwritable(error);
-        let options = serde_json::to_string(decision.options).map_err(malformed)?;
-        let metadata = serde_json::to_string(decision.metadata).map_err(malformed)?;
+        let options = serde_json::to_string(decision.options).map_err(StoreError::unwritable)?;
+        let metadata = serde_json::to_string(decision.metadata).map_err(StoreError::unwritable)?;
         let recommendation = decision
             .recommendation
             .map(serde_json::to_string)
             .transpose()
-            .map_err(malformed)?;
+            .map_err(StoreError::unwritable)?;
         // Serialize the eligibility check and the insert against a concurrent
         // completion, cancellation, or recovery transition for the same
         // attempt (all of which already open BEGIN IMMEDIATE). Without this,

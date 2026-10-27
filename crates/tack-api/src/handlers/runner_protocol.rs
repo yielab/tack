@@ -295,8 +295,10 @@ fn parse_body(bytes: &[u8]) -> runner_auth::ProtocolResult<Value> {
             LIMITS.json_body_bytes_max,
         ));
     }
-    serde_json::from_slice(bytes)
-        .map_err(|_| invalid_request("body", "Request body is not valid JSON"))
+    serde_json::from_slice(bytes).map_err(|failure| {
+        tracing::warn!(error = %failure, "body");
+        invalid_request("body", "Request body is not valid JSON")
+    })
 }
 
 /// `unsupported_protocol` is checked against the raw JSON value (not a typed
@@ -350,9 +352,10 @@ fn parse_message<T: serde::de::DeserializeOwned>(value: Value) -> runner_auth::P
 
 /// A response as the message struct that defines it.
 fn message_json<T: serde::Serialize>(message: &T) -> HandlerResult {
-    serde_json::to_value(message)
-        .map(Json)
-        .map_err(|_| internal_error("Could not encode the response"))
+    serde_json::to_value(message).map(Json).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode the response");
+        internal_error("Could not encode the response")
+    })
 }
 
 /// A fencing token, which is unsigned on the wire; one the store's integer column cannot hold
@@ -464,8 +467,10 @@ async fn authenticate_attempt_request(
 fn validate_capability_payload(
     parsed: &EmbeddedCapabilitySnapshot,
 ) -> runner_auth::ProtocolResult<(String, i64, i64)> {
-    let encoded = serde_json::to_value(parsed)
-        .map_err(|_| internal_error("Could not encode capabilities"))?;
+    let encoded = serde_json::to_value(parsed).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode capabilities");
+        internal_error("Could not encode capabilities")
+    })?;
     if json_byte_len(&encoded) > LIMITS.capabilities_bytes_max {
         return Err(payload_too_large(
             "capabilities_bytes_max",
@@ -495,8 +500,10 @@ fn validate_capability_payload(
             ));
         }
     }
-    let labels_json = serde_json::to_string(&parsed.labels)
-        .map_err(|_| internal_error("Could not encode labels"))?;
+    let labels_json = serde_json::to_string(&parsed.labels).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode labels");
+        internal_error("Could not encode labels")
+    })?;
     Ok((
         labels_json,
         parsed.concurrency.total as i64,
@@ -521,8 +528,10 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
     } = parse_message(value)?;
     let (labels_json, total_capacity, available_capacity) =
         validate_capability_payload(&capabilities)?;
-    let capability_snapshot_json = serde_json::to_string(&capabilities)
-        .map_err(|_| internal_error("Could not encode capabilities"))?;
+    let capability_snapshot_json = serde_json::to_string(&capabilities).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode capabilities");
+        internal_error("Could not encode capabilities")
+    })?;
 
     let raw_credential = generate_raw_credential();
     let credential_hash_value = runner_auth::credential_hash(&raw_credential);
@@ -670,8 +679,10 @@ pub async fn refresh(
     } = parse_message(value)?;
     let (labels_json, _total_capacity, _available_capacity) =
         validate_capability_payload(&capabilities)?;
-    let capability_snapshot_json = serde_json::to_string(&capabilities)
-        .map_err(|_| internal_error("Could not encode capabilities"))?;
+    let capability_snapshot_json = serde_json::to_string(&capabilities).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode capabilities");
+        internal_error("Could not encode capabilities")
+    })?;
 
     let raw_credential = rotate_credential.then(generate_raw_credential);
     let new_credential_hash = raw_credential.as_deref().map(runner_auth::credential_hash);
@@ -777,7 +788,10 @@ pub async fn claim(
         Duration::seconds(LIMITS.lease_duration_seconds),
     )
     .await
-    .map_err(|_| internal_error("Could not claim work"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not claim work");
+        internal_error("Could not claim work")
+    })?;
 
     match claimed {
         Some(ClaimedExecution {
@@ -789,9 +803,17 @@ pub async fn claim(
             // `needs_operator` rather than leasing it), so a stored snapshot that does not
             // parse here is a persistence-layer contract violation, not a client error.
             let request: ExecutionRequestSnapshot = serde_json::from_value(request_snapshot)
-                .map_err(|_| internal_error("The claimed request snapshot is not readable"))?;
-            let attempt_number = u32::try_from(lease.attempt_number)
-                .map_err(|_| internal_error("The claimed attempt number is out of range"))?;
+                .map_err(|failure| {
+                    crate::error::log_unreadable_document(
+                        "The claimed request snapshot is not readable",
+                        &failure,
+                    );
+                    internal_error("The claimed request snapshot is not readable")
+                })?;
+            let attempt_number = u32::try_from(lease.attempt_number).map_err(|failure| {
+                tracing::error!(error = %failure, "The claimed attempt number is out of range");
+                internal_error("The claimed attempt number is out of range")
+            })?;
             message_json(&ClaimResponse::Work(Box::new(ClaimGranted {
                 protocol_version: ProtocolVersion::v1(),
                 claim_request_id,
@@ -875,7 +897,10 @@ pub async fn heartbeat(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record heartbeat"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record heartbeat");
+        internal_error("Could not record heartbeat")
+    })?;
 
     match result {
         Heartbeat::Accepted(resp) | Heartbeat::Replayed(resp) => message_json(&HeartbeatResponse {
@@ -966,7 +991,10 @@ fn start_report(request: &AttemptTransitionRequest) -> Value {
 fn stored_instant(raw: &str, column: &str) -> runner_auth::ProtocolResult<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(raw)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|_| internal_error(&format!("Stored {column} is corrupt")))
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            internal_error(&format!("Stored {column} is corrupt"))
+        })
 }
 
 /// The answer to an accepted or started attempt, from the stored response.
@@ -976,7 +1004,10 @@ fn transition_json(
 ) -> HandlerResult {
     let committed_at = DateTime::parse_from_rfc3339(&resp.committed_at)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|_| internal_error("Stored committed_at is corrupt"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Stored committed_at is corrupt");
+            internal_error("Stored committed_at is corrupt")
+        })?;
     message_json(&AttemptTransitionResponse {
         protocol_version: ProtocolVersion::v1(),
         attempt_id: resp.attempt_id,
@@ -1030,7 +1061,10 @@ async fn transition_attempt(
             state.clock.now(),
         )
         .await
-        .map_err(|_| internal_error("Could not record attempt transition"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not record attempt transition");
+            internal_error("Could not record attempt transition")
+        })?;
 
     if matches!(phase, AttemptTransitionPhase::Running)
         && matches!(result, AttemptTransitionResult::Applied(_))
@@ -1044,7 +1078,10 @@ async fn transition_attempt(
                 &start_report(&request).to_string(),
             )
             .await
-            .map_err(|_| internal_error("Could not record the start report"))?;
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not record the start report");
+                internal_error("Could not record the start report")
+            })?;
     }
 
     match result {
@@ -1109,7 +1146,10 @@ pub async fn submit_events(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record events"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record events");
+        internal_error("Could not record events")
+    })?;
 
     match result {
         EventsReported::Applied(batch) => message_json(&EventBatchResponse {
@@ -1259,7 +1299,10 @@ pub async fn create_decision(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record decision"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record decision");
+        internal_error("Could not record decision")
+    })?;
 
     match created {
         DecisionCreated::Created {
@@ -1307,7 +1350,10 @@ pub async fn poll_decisions(
         fencing_token,
     )
     .await
-    .map_err(|_| internal_error("Could not verify attempt"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify attempt");
+        internal_error("Could not verify attempt")
+    })?;
     if !holds_fence {
         return Err(stale_lease(attempt_id.as_str()));
     }
@@ -1318,7 +1364,10 @@ pub async fn poll_decisions(
         &after,
     )
     .await
-    .map_err(|_| internal_error("Could not poll decisions"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not poll decisions");
+        internal_error("Could not poll decisions")
+    })?;
 
     let mut next_after = after.clone();
     let decisions = rows
@@ -1383,7 +1432,8 @@ pub async fn submit_artifacts(
                         LIMITS.artifact_content_bytes_max,
                     ));
                 }
-                let size_bytes = i64::try_from(artifact.size_bytes).map_err(|_| {
+                let size_bytes = i64::try_from(artifact.size_bytes).map_err(|failure| {
+                    tracing::warn!(error = %failure, "artifact_content_bytes_max");
                     payload_too_large(
                         "artifact_content_bytes_max",
                         LIMITS.artifact_content_bytes_max,
@@ -1447,7 +1497,10 @@ pub async fn submit_artifacts(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record artifact"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record artifact");
+        internal_error("Could not record artifact")
+    })?;
 
     match submitted {
         ManifestSubmitted::Accepted { upload_expires_at } => {
@@ -1545,8 +1598,10 @@ pub async fn put_artifact_content(
         upload,
     )
     .await
-    .map_err(|_| internal_error("Could not verify artifact"))?
-    {
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify artifact");
+        internal_error("Could not verify artifact")
+    })? {
         UploadChecked::Ready(target) => target,
         // Covers every "this write is not currently valid" case in one stable code, matching
         // `submit_artifacts`'s own precedent: an unknown artifact_id, a fencing mismatch, or a
@@ -1626,7 +1681,10 @@ pub async fn put_artifact_content(
         &stored.content_reference,
     )
     .await
-    .map_err(|_| internal_error("Could not record artifact content"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record artifact content");
+        internal_error("Could not record artifact content")
+    })?;
     match commit {
         ArtifactContentCommitResult::Committed => Ok(Json(json!({
             "protocol_version": 1,
@@ -1718,7 +1776,10 @@ pub async fn submit_completion(
         |reference: String| async move { read_pack(storage, &reference).await },
     )
     .await
-    .map_err(|_| internal_error("Could not record completion"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record completion");
+        internal_error("Could not record completion")
+    })?;
 
     if let Completed::Committed { item_moved, .. } = &completed {
         if let (Some(app), Some(moved)) = (state.app.as_ref(), item_moved) {
@@ -1776,7 +1837,10 @@ fn completion_json(
     replayed: bool,
 ) -> HandlerResult {
     let committed_at = DateTime::parse_from_rfc3339(&response.committed_at)
-        .map_err(|_| internal_error("The stored completion time is not readable"))?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "The stored completion time is not readable");
+            internal_error("The stored completion time is not readable")
+        })?
         .with_timezone(&Utc);
     message_json(&CompletionResponse {
         protocol_version: ProtocolVersion::v1(),
@@ -1840,10 +1904,14 @@ pub async fn observe_cancellation_report(
             "observation must be process_stopped",
         ));
     }
-    let details_json =
-        serde_json::to_string(&details).map_err(|_| internal_error("Could not encode details"))?;
-    let observation_json = serde_json::to_string(&observation)
-        .map_err(|_| internal_error("Could not encode observation"))?;
+    let details_json = serde_json::to_string(&details).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode details");
+        internal_error("Could not encode details")
+    })?;
+    let observation_json = serde_json::to_string(&observation).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode observation");
+        internal_error("Could not encode observation")
+    })?;
 
     let result = state
         .repo
@@ -1860,7 +1928,10 @@ pub async fn observe_cancellation_report(
             state.clock.now(),
         )
         .await
-        .map_err(|_| internal_error("Could not record cancellation observation"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not record cancellation observation");
+            internal_error("Could not record cancellation observation")
+        })?;
 
     match result {
         CancellationObservation::Cancelled(resp) => cancellation_json(attempt_id, resp, false),
@@ -1932,7 +2003,10 @@ pub async fn observe_recovery(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record recovery observation"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record recovery observation");
+        internal_error("Could not record recovery observation")
+    })?;
 
     let recovered = match observed {
         RecoveryObserved::Recorded(recovered) => recovered,
@@ -1948,7 +2022,10 @@ pub async fn observe_recovery(
     };
     let committed_at = DateTime::parse_from_rfc3339(&recovered.committed_at)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|_| internal_error("Stored committed_at is corrupt"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Stored committed_at is corrupt");
+            internal_error("Stored committed_at is corrupt")
+        })?;
     let response = RecoveryObservationResponse {
         protocol_version: ProtocolVersion::v1(),
         attempt_id: recovered.attempt_id,
@@ -1958,7 +2035,8 @@ pub async fn observe_recovery(
         committed_at,
         additional: Default::default(),
     };
-    Ok(Json(serde_json::to_value(response).map_err(|_| {
+    Ok(Json(serde_json::to_value(response).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode response");
         internal_error("Could not encode response")
     })?))
 }

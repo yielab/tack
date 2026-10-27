@@ -345,7 +345,10 @@ async fn prill_quality(
     let version = crate::prill_store::version(program).await?;
     let repos = tack_db::queries::pull_requests::repos_of_project(&state.repo, project)
         .await
-        .map_err(|_| "the board could not list the project's repositories".to_owned())?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list the project's repositories");
+            "the board could not list the project's repositories".to_owned()
+        })?;
     let mut found = Vec::new();
     let mut failure = None;
     for repo in repos {

@@ -90,7 +90,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - The live callers that read rows and write the outcome are `tack-app`'s `scheduler_wiring` and `model_policy_wiring`
 
 **tack-db** (the only crate that names `sqlx`; depends on `tack-protocol` and `tack-core`):
-- SQLite via `sqlx` (async), behind `StoreError` (`NotFound`, `Conflict`, `Sql`): no `sqlx` type crosses the crate's edge
+- SQLite via `sqlx` (async), behind `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }`, `Sql`): no `sqlx` type crosses the crate's edge. A stored value that cannot be decoded is `Corrupt`, never a panic and never a default (`decode.rs` is the one place that reads ids, instants, enums and JSON back)
 - Migrations (`migrations.rs`; `scripts/arch-facts.sh` prints how many, and the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
 - **Commands are `Repository` methods**, one directory or file per aggregate under `repo/` (`items.rs`, `projects.rs`, `execution/`, …). **Read models are functions in `queries/`**, one file per table, one `pub async fn` per question the rest of the program asks of it, each taking the `Repository` and returning a row struct under the columns' names
 - A state read from a row is converted to its typed enum at this crate's edge

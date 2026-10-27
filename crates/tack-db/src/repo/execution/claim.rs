@@ -328,7 +328,7 @@ fn heartbeat_fingerprint(
             }))
             .collect::<Vec<_>>(),
     }))
-    .map_err(|error| StoreError::unwritable(error))
+    .map_err(StoreError::unwritable)
 }
 
 fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreError> {
@@ -406,12 +406,8 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                         .cloned()
                         .unwrap_or(serde_json::Value::Null),
                 )
-                .map_err(|_| {
-                    StoreError::corrupt(
-                        "execution_heartbeat_replays",
-                        "response",
-                        "invalid heartbeat replay response field: journal_state",
-                    )
+                .map_err(|error| {
+                    StoreError::corrupt("execution_heartbeat_replays", "response", error)
                 })?,
                 last_event_checkpoint: match value.get("last_event_checkpoint") {
                     Some(serde_json::Value::Null) => None,

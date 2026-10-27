@@ -130,7 +130,8 @@ pub fn selector_from(
 /// The level a request body names, `L3`, `L4` or `L5`.
 pub fn level_from(text: Option<String>) -> Result<Option<AutonomyLevel>, Refusal> {
     text.map(|text| {
-        text.parse().map_err(|_| {
+        text.parse().map_err(|failure| {
+            tracing::warn!(error = %failure, "autonomy must be L3, L4 or L5");
             error(
                 status::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
@@ -181,7 +182,8 @@ fn error(status: u16, code: StableErrorCode, message: &str, details: Value) -> R
 /// `invalid_request`'s contract-shaped `{"field": ...}` detail rather than an
 /// empty object.
 fn canonical_string(value: Value, field: &str) -> Result<String, Refusal> {
-    serde_json::to_string(&tack_db::canonical_json(value)).map_err(|_| {
+    serde_json::to_string(&tack_db::canonical_json(value)).map_err(|failure| {
+        tracing::warn!(error = %failure, "Request cannot be canonicalized");
         error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -320,14 +322,14 @@ async fn with_item_context(
             json!({}),
         )
     };
-    let brief = repo
-        .get_item_brief(item.id)
-        .await
-        .map_err(|_| fail("Could not load the item's brief"))?;
-    let comments = repo
-        .list_comments(item.id)
-        .await
-        .map_err(|_| fail("Could not load the item's comments"))?;
+    let brief = repo.get_item_brief(item.id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load the item's brief");
+        fail("Could not load the item's brief")
+    })?;
+    let comments = repo.list_comments(item.id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load the item's comments");
+        fail("Could not load the item's comments")
+    })?;
     if let Some(object) = profile.as_object_mut() {
         let base = object
             .get("instructions")
@@ -340,7 +342,10 @@ async fn with_item_context(
     let brief = brief
         .map(serde_json::to_value)
         .transpose()
-        .map_err(|_| fail("Could not serialize the item's brief"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not serialize the item's brief");
+            fail("Could not serialize the item's brief")
+        })?;
     Ok((profile, brief))
 }
 
@@ -349,7 +354,8 @@ async fn with_item_context(
 async fn load_project(repo: &Repository, project_id: Uuid) -> Result<models::Project, Refusal> {
     repo.get_project(project_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load project");
             error(
                 status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -618,7 +624,8 @@ pub async fn default_selector(
     let mut runners: Vec<_> = repo
         .list_runners()
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list runners");
             error(
                 status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -659,7 +666,8 @@ async fn load_profile(
 ) -> Result<Value, Refusal> {
     let row = queries::agent_profiles::profile_by_id(repo, profile_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load agent profile");
             error(
                 status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -807,7 +815,10 @@ fn request_identity(
     // A stored replay row that fails to parse means the *persisted* snapshot is corrupt, not that
     // the caller's idempotency key collided with a different payload (that client-caused case is
     // `EnqueueResult::Conflict`, below). An unreadable row we wrote ourselves is a server fault.
-    let value: Value = serde_json::from_str(&snapshot).map_err(|_| stored_snapshot_invalid())?;
+    let value: Value = serde_json::from_str(&snapshot).map_err(|failure| {
+        tracing::error!(error = %failure, "A store call failed");
+        stored_snapshot_invalid()
+    })?;
     let request_id = value["request_id"]
         .as_str()
         .ok_or_else(stored_snapshot_invalid)?;
@@ -834,7 +845,10 @@ async fn check_runner_usable(
     }
     let eligible = queries::agent_runners::runner_is_active(repo, runner_id.as_str())
         .await
-        .map_err(|_| internal("Could not verify runner"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify runner");
+            internal("Could not verify runner")
+        })?;
     if eligible {
         Ok(())
     } else {
@@ -936,7 +950,8 @@ async fn build_snapshot(
             json!({"field": err.to_string()}),
         )
     })?;
-    serde_json::to_value(typed).map_err(|_| {
+    serde_json::to_value(typed).map_err(|failure| {
+        tracing::warn!(error = %failure, "Execution request snapshot is invalid");
         error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -999,7 +1014,10 @@ pub async fn enqueue_run(
     let item = repo
         .get_item(input.item_id)
         .await
-        .map_err(|_| internal("Could not verify item"))?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify item");
+            internal("Could not verify item")
+        })?
         .ok_or_else(item_not_found)?;
     let project = load_project(repo, item.project_id).await?;
     let existing = queries::execution_requests::snapshot_of_idempotency_key(
@@ -1008,7 +1026,10 @@ pub async fn enqueue_run(
         &input.idempotency_key,
     )
     .await
-    .map_err(|_| internal("Could not load idempotency replay"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load idempotency replay");
+        internal("Could not load idempotency replay")
+    })?;
     check_runner_usable(repo, &settled.selector, existing.is_some()).await?;
     // The request's own model is used as is; only a request naming none reads the project's
     // default model.
@@ -1019,7 +1040,10 @@ pub async fn enqueue_run(
         input.requested_model.as_deref(),
     )
     .await
-    .map_err(|_| internal("Could not resolve model policy"))?
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not resolve model policy");
+        internal("Could not resolve model policy")
+    })?
     .model;
     let (request_id, created_at) = request_identity(now, &scope, &input.idempotency_key, existing)?;
     let draft = Draft {
@@ -1036,7 +1060,8 @@ pub async fn enqueue_run(
     let columns = StoredColumns::from_snapshot(&snapshot)?;
     let model = draft.model;
     let item_id = input.item_id.to_string();
-    let timeout_seconds = i64::try_from(settled.timeout_seconds).map_err(|_| {
+    let timeout_seconds = i64::try_from(settled.timeout_seconds).map_err(|failure| {
+        tracing::warn!(error = %failure, "timeout_seconds is out of range");
         error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -1127,7 +1152,8 @@ pub async fn start_run(
             json!({"field": "agent_profile_snapshot", "reason": "field_removed"}),
         ));
     }
-    let Some(item) = repo.get_item(input.item_id).await.map_err(|_| {
+    let Some(item) = repo.get_item(input.item_id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify item");
         error(
             status::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
@@ -1187,7 +1213,8 @@ pub async fn start_run(
     }
     let provisional = queries::budgets::provisional_tokens(repo, &item.project_id.to_string())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load the project's limits");
             error(
                 status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,

@@ -198,7 +198,8 @@ pub async fn authenticate(
     let hash = credential_hash(token);
     let row = agent_runners::runner_by_credential_hash(repo, &hash)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify runner credential");
             protocol_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -237,7 +238,8 @@ pub async fn authenticate(
     if let Some(expires_at) = expires_at {
         let expires_at = DateTime::parse_from_rfc3339(&expires_at)
             .map(|value| value.with_timezone(&Utc))
-            .map_err(|_| {
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Stored credential expiry is corrupt");
                 protocol_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,

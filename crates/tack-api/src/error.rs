@@ -39,6 +39,11 @@ pub enum ApiError {
     #[error("{0}")]
     UnsupportedMediaType(String),
 
+    /// A restore's archive or manifest cannot be read (`unreadable_archive`): the stored bytes
+    /// are not what a backup is, so retrying the same restore cannot succeed.
+    #[error("{0}")]
+    UnreadableArchive(String),
+
     /// One section of a project file could not be written. `kept` says
     /// whether what the file wrote before it stays (an existing project) or
     /// went with the project (a new one).
@@ -76,6 +81,7 @@ impl IntoResponse for ApiError {
             ApiError::UnsupportedMediaType(msg) => {
                 (StatusCode::UNSUPPORTED_MEDIA_TYPE, msg.clone())
             }
+            ApiError::UnreadableArchive(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             ApiError::Core(err) => match err {
                 CoreError::ItemNotFound(_)
                 | CoreError::ProjectNotFound(_)
@@ -141,6 +147,7 @@ impl IntoResponse for ApiError {
             ApiError::MisdirectedHost(_) => Some("misdirected_host"),
             ApiError::CrossSiteRequest(_) => Some("cross_site_request"),
             ApiError::UnsupportedMediaType(_) => Some("unsupported_media_type"),
+            ApiError::UnreadableArchive(_) => Some("unreadable_archive"),
             _ => None,
         };
         let mut error_body = json!({
@@ -170,6 +177,31 @@ pub(crate) fn log_store_failure(failure: &StoreError) {
         StoreError::Sql(failure) => error!(error = %failure, "Database error"),
         StoreError::NotFound { .. } | StoreError::Conflict(_) => {}
     }
+}
+
+/// The status a handler without an error body answers a failed store call with: the one the
+/// store raised for a row that is not there or a write that conflicts, and a logged 500 for
+/// everything else, never a 404 guessed from a failure of another kind.
+pub(crate) fn status_of_store_failure(failure: &StoreError) -> StatusCode {
+    match failure {
+        StoreError::NotFound { .. } => StatusCode::NOT_FOUND,
+        StoreError::Conflict(_) => StatusCode::CONFLICT,
+        StoreError::Sql(_) | StoreError::Corrupt { .. } => {
+            log_store_failure(failure);
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+/// Logs a stored document that did not fit its type: where serde stopped and what kind of
+/// failure it was, never its message, which quotes the offending value.
+pub(crate) fn log_unreadable_document(what: &str, failure: &serde_json::Error) {
+    error!(
+        kind = ?failure.classify(),
+        line = failure.line(),
+        column = failure.column(),
+        "{what}"
+    );
 }
 
 impl From<tack_app::AppError> for ApiError {

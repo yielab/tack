@@ -26,6 +26,13 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **The store says what is wrong with a stored value.** `StoreError` gains `Corrupt { table, column }`
+  for a value that cannot be read back and `NotFound { entity }` for a row of a named kind that is
+  not there; row mapping returns them instead of panicking on a corrupt row or inventing a default
+  (the 78 `unwrap`s in the store's row mapping are gone), and the 500 for a corrupt row is logged
+  with the table and the column. A restore whose archive or manifest cannot be read answers 422
+  with the code `unreadable_archive` instead of 500, and the server-side failures that used to
+  drop their cause (`map_err(|_| …)`) now log it.
 - **A run that needed a person is its own outcome.** An attempt of the docket agent that ends because a
   tool call needs a person shows "Needs a person" with docket's sentence and offers **Run again at L3**,
   which opens the Run dialog for the same task with the run attended from the start; it is disabled, with

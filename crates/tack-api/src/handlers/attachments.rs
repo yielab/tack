@@ -29,8 +29,14 @@ fn contained_path(storage_dir: &std::path::Path, storage_path: &str) -> Result<P
     match std::fs::symlink_metadata(&candidate) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(refused()),
         Ok(_) => {
-            let root = std::fs::canonicalize(storage_dir).map_err(|_| refused())?;
-            let resolved = std::fs::canonicalize(&candidate).map_err(|_| refused())?;
+            let root = std::fs::canonicalize(storage_dir).map_err(|failure| {
+                tracing::warn!(error = %failure, "Attachment path could not be resolved");
+                refused()
+            })?;
+            let resolved = std::fs::canonicalize(&candidate).map_err(|failure| {
+                tracing::warn!(error = %failure, "Attachment path could not be resolved");
+                refused()
+            })?;
             if resolved.starts_with(&root) {
                 Ok(resolved)
             } else {
