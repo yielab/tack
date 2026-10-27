@@ -7,7 +7,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, type FieldHelp } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, Switch, type FieldHelp } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
@@ -193,15 +193,13 @@ const AutomationPanel: Component = () => {
           <Show when={hasFolder() && check()}>
             <Note>{checkSentence(check()!)}</Note>
           </Show>
-          <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={p()?.prepare_command !== ''}
-              onChange={(e) => void save({ prepare_command: e.currentTarget.checked ? null : '' })}
-            />
+          <Switch
+            checked={p()?.prepare_command !== ''}
+            onChange={(checked) => void save({ prepare_command: checked ? null : '' })}
+            style={{ color: 'var(--color-text-primary)' }}
+          >
             Install dependencies before each run
-          </label>
+          </Switch>
           <Show when={p()?.prepare_command !== ''}>
             <Field
               label="Install command"
@@ -242,16 +240,14 @@ const AutomationPanel: Component = () => {
             </details>
           </div>
           <div class="flex items-center gap-2">
-            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={!!p()?.push_after_run}
-                disabled={pushDisabledReason() !== null}
-                onChange={(e) => void save({ push_after_run: e.currentTarget.checked })}
-              />
+            <Switch
+              checked={!!p()?.push_after_run}
+              disabled={pushDisabledReason() !== null}
+              onChange={(checked) => void save({ push_after_run: checked })}
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Push the branch when a run finishes
-            </label>
+            </Switch>
             <HelpHint label="Push the branch" help={HELP.pushTheBranch} />
           </div>
           <Show when={pushDisabledReason()}>

@@ -1,6 +1,6 @@
 import { type Accessor, type Component, For, Show } from 'solid-js';
 import { toast } from '../../../../shared/ui/toast';
-import { FieldShell, HelpHint, LoadError } from '../../../../shared/ui';
+import { FieldShell, HelpHint, LoadError, Switch } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { AutonomyDomain, AutonomySettings } from '../../../../shared/api/autonomy';
 import { Heading, Note, SECTION, inputClass, inputStyle } from './parts';
@@ -109,16 +109,14 @@ const Merge: Component<{
             </div>
 
             <div class="flex items-center gap-2">
-              <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                <input
-                  type="checkbox"
-                  role="switch"
-                  aria-label="Merge when moved to Done"
-                  checked={s().merge_on_done}
-                  onChange={(e) => void save({ merge_on_done: e.currentTarget.checked })}
-                />
+              <Switch
+                ariaLabel="Merge when moved to Done"
+                checked={s().merge_on_done}
+                onChange={(checked) => void save({ merge_on_done: checked })}
+                style={{ color: 'var(--color-text-primary)' }}
+              >
                 Merge when moved to Done
-              </label>
+              </Switch>
               <HelpHint label="Merge when moved to Done" help={HELP.mergeOnDone} />
             </div>
 

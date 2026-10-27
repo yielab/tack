@@ -6,6 +6,8 @@ export interface SwitchProps {
   onChange: (checked: boolean) => void;
   disabled?: boolean;
   name?: string;
+  /** Names the switch when the visible text should not (default: the text). */
+  ariaLabel?: string;
   /** The visible text; it names the switch. */
   children: JSX.Element;
   /** Layout classes for the row (the base is a flex row with a small gap). */
@@ -21,6 +23,9 @@ const Switch: Component<SwitchProps> = (props) => (
       type="checkbox"
       role="switch"
       name={props.name}
+      aria-label={props.ariaLabel}
+      class="h-4 w-4"
+      style={{ 'accent-color': 'var(--color-primary-600)' }}
       checked={props.checked}
       disabled={props.disabled}
       onChange={(e) => props.onChange(e.currentTarget.checked)}

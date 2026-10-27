@@ -1,5 +1,5 @@
 import { type Accessor, type Component, For, Show } from 'solid-js';
-import { HelpHint } from '../../../../shared/ui';
+import { HelpHint, Switch } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { Project, UpdateProject, Role } from '../../../../shared/types';
 import { Heading, Note, SECTION, inputClass, inputStyle } from './parts';
@@ -26,23 +26,20 @@ const Start: Component<Props> = (props) => {
         <Heading>Start</Heading>
         <HelpHint label="Start" help={HELP.ladderStart} />
       </div>
-      <label class="flex items-center gap-2 text-sm" style={{ color: hasProfile() ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}>
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label="Start tasks by themselves"
-          checked={!!props.project()?.auto_start_enabled}
-          disabled={!hasProfile()}
-          onChange={(e) => {
-            // The status shown is only a fallback until it is saved; turning the switch on saves it,
-            // or nothing would start.
-            const on = e.currentTarget.checked;
-            const unsaved = on && !props.project()?.auto_start_status;
-            void props.save({ auto_start_enabled: on, ...(unsaved ? { auto_start_status: status() } : {}) });
-          }}
-        />
+      <Switch
+        ariaLabel="Start tasks by themselves"
+        checked={!!props.project()?.auto_start_enabled}
+        disabled={!hasProfile()}
+        style={{ color: hasProfile() ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}
+        onChange={(on) => {
+          // The status shown is only a fallback until it is saved; turning the switch on saves it,
+          // or nothing would start.
+          const unsaved = on && !props.project()?.auto_start_status;
+          void props.save({ auto_start_enabled: on, ...(unsaved ? { auto_start_status: status() } : {}) });
+        }}
+      >
         Start a task by itself
-      </label>
+      </Switch>
       <Show when={!hasProfile()}>
         <Note testid="start-reason">{NO_PROFILE_REASON}</Note>
       </Show>

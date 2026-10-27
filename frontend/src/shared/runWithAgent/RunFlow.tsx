@@ -1,7 +1,7 @@
 import { type Accessor, type Component, For, Show, createResource, createSignal } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
-import { Button, Field, FieldShell, HelpHint, Select, Badge } from '../ui';
+import { Button, Field, FieldShell, HelpHint, Select, Badge, Switch } from '../ui';
 import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
@@ -244,19 +244,16 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <div class="space-y-2">
         <div class="flex items-center gap-2">
-        <label class="flex flex-1 cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
-          <input
-            type="checkbox"
-            role="switch"
-            name="approvals"
-            class="h-4 w-4"
-            style={{ 'accent-color': 'var(--color-primary-600)' }}
-            checked={props.form.approvals === 'ask'}
-            disabled={!props.decisionsAttested()}
-            onChange={(e) => { props.onApprovals(); props.setForm('approvals', e.currentTarget.checked ? 'ask' : 'auto'); }}
-          />
+        <Switch
+          name="approvals"
+          class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
+          style={PILL}
+          checked={props.form.approvals === 'ask'}
+          disabled={!props.decisionsAttested()}
+          onChange={(checked) => { props.onApprovals(); props.setForm('approvals', checked ? 'ask' : 'auto'); }}
+        >
           Ask before each action
-        </label>
+        </Switch>
         <HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />
         </div>
         <Show when={props.sandboxLine()}>
@@ -271,17 +268,14 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
         </Show>
         <div class="flex items-center gap-2">
-        <label class="flex flex-1 cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
-          <input
-            type="checkbox"
-            role="switch"
-            class="h-4 w-4"
-            style={{ 'accent-color': 'var(--color-primary-600)' }}
-            checked={props.form.allowNetwork}
-            onChange={(e) => { props.onNetwork(); props.setForm('allowNetwork', e.currentTarget.checked); }}
-          />
+        <Switch
+          class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
+          style={PILL}
+          checked={props.form.allowNetwork}
+          onChange={(checked) => { props.onNetwork(); props.setForm('allowNetwork', checked); }}
+        >
           Web tools
-        </label>
+        </Switch>
         <HelpHint label="Web tools" help={HELP.webTools} />
         </div>
       </div>
