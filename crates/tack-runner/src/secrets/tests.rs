@@ -70,27 +70,20 @@ fn resolve_defaults_to_the_store_scheme_for_a_bare_name() {
 
 #[test]
 fn resolve_env_scheme_reads_the_process_environment() {
-    // SAFETY: single-threaded within this test's own env var name; no
-    // other test in this crate reads or writes this name.
-    unsafe {
-        std::env::set_var("TACK_SECRETS_TEST_ENV_VALUE", "env-value");
-    }
     let (_dir, path) = temp_store();
     let store = SecretStore::file(path);
+    let process = ProcessEnv::from_pairs([("TACK_SECRETS_TEST_ENV_VALUE", "env-value")]);
 
     assert_eq!(
         store
-            .resolve_own("env:TACK_SECRETS_TEST_ENV_VALUE")
+            .resolve_own("env:TACK_SECRETS_TEST_ENV_VALUE", &process)
             .expect("resolve")
             .expose(),
         "env-value"
     );
 
-    unsafe {
-        std::env::remove_var("TACK_SECRETS_TEST_ENV_VALUE");
-    }
     assert!(matches!(
-        store.resolve_own("env:TACK_SECRETS_TEST_ENV_VALUE"),
+        store.resolve_own("env:TACK_SECRETS_TEST_ENV_VALUE", &ProcessEnv::default()),
         Err(SecretError::EnvVarNotSet(name)) if name == "TACK_SECRETS_TEST_ENV_VALUE"
     ));
 }

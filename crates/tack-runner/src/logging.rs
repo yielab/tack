@@ -8,16 +8,14 @@ use tracing_subscriber::EnvFilter;
 /// heartbeating would say nothing.
 const DEFAULT_FILTER: &str = "warn,tack_runner=info";
 
-/// Installs the process-wide subscriber, writing to stderr. A subscriber already installed stays;
-/// that is the outcome this call wants, so the `Err` is not propagated.
-pub fn init() {
+/// Installs the process-wide subscriber, writing to stderr. `rust_log` is the process's `RUST_LOG`,
+/// read once by the caller (`ProcessEnv::var`). A subscriber already installed stays; that is the
+/// outcome this call wants, so the `Err` is not propagated.
+pub fn init(rust_log: Option<&str>) {
     // A `RUST_LOG` that is set but is not a valid filter is named once the subscriber is up.
-    let (filter, rejected) = match EnvFilter::try_from_default_env() {
-        Ok(filter) => (filter, false),
-        Err(_) => (
-            EnvFilter::new(DEFAULT_FILTER),
-            std::env::var_os(EnvFilter::DEFAULT_ENV).is_some(),
-        ),
+    let (filter, rejected) = match rust_log.map(EnvFilter::try_new) {
+        Some(Ok(filter)) => (filter, false),
+        other => (EnvFilter::new(DEFAULT_FILTER), other.is_some()),
     };
     let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
     if rejected {
@@ -29,7 +27,7 @@ pub fn init() {
 mod tests {
     #[test]
     fn a_second_call_keeps_the_first_subscriber_and_does_not_panic() {
-        super::init();
-        super::init();
+        super::init(None);
+        super::init(Some("debug"));
     }
 }

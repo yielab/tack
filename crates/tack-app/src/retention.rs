@@ -20,8 +20,7 @@ use crate::AppError;
 use crate::background::{Loops, Start};
 use crate::runs::expire_decisions::expire_decisions;
 
-/// Default retention window in days — mirrors `AppConfig::execution_retention_days`'s own
-/// default (`crates/tack-api/src/config.rs`).
+/// Default retention window in days, which `LoopConfig::execution_retention_days` starts from.
 pub const DEFAULT_RETENTION_DAYS: u32 = 90;
 
 /// Rows processed per purge transaction — see `Repository::purge_stale_execution_replays` for

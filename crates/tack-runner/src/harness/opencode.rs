@@ -368,8 +368,11 @@ impl HarnessGrammar for OpencodeGrammar {
         let program = run
             .program
             .ok_or_else(|| rejected("the opencode binary was not located".to_owned()))?;
-        let (path, home) = super::locate::snapshot();
-        let home = home.ok_or_else(|| rejected("the runner has no home directory".to_owned()))?;
+        let path = run.host.search_path();
+        let home = run
+            .host
+            .home()
+            .ok_or_else(|| rejected("the runner has no home directory".to_owned()))?;
         let login = config::read(program, path.as_deref(), &home).map_err(rejected)?;
 
         let model = request

@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use tack_api::handlers::runner_admin;
-use tack_app::local_runner::host_name;
+use tack_cli::config::host_name;
 use tack_runner::EnrollmentCredential;
 
 /// Whether the on-disk session names a runner id with no row in `database_url`: its database was

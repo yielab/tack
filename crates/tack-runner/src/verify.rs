@@ -94,11 +94,11 @@ fn json_failure(
 
 /// Whether `program` resolves: a path with a separator is looked at directly,
 /// a bare name is looked for in every `PATH` directory.
-pub fn program_found(program: &str) -> bool {
+pub fn program_found(program: &str, env: &crate::config::ProcessEnv) -> bool {
     if program.contains('/') {
         return Path::new(program).is_file();
     }
-    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path = env.search_path().unwrap_or_default();
     std::env::split_paths(&path).any(|directory| directory.join(program).is_file())
 }
 
@@ -110,6 +110,7 @@ pub async fn run(
     limits: &ProcessLimits,
     workspace: &Workspace,
     scratch: &Path,
+    env: &crate::config::ProcessEnv,
 ) -> Result<Vec<serde_json::Value>, VerifyFailure> {
     let evidence = scratch.join("evidence");
     fs::create_dir_all(&evidence)
@@ -122,8 +123,10 @@ pub async fn run(
     let output = evidence.join("mrp.json");
 
     match config.kind {
-        VerifyKind::Command => run_command(config, limits, workspace, &evidence, &output).await?,
-        VerifyKind::Prill => prill::run(config, limits, workspace, &evidence, &output).await?,
+        VerifyKind::Command => {
+            run_command(config, limits, workspace, &evidence, &output, env).await?
+        }
+        VerifyKind::Prill => prill::run(config, limits, workspace, &evidence, &output, env).await?,
     }
 
     let attempt_id = workspace.attempt_id.as_str();
@@ -168,6 +171,7 @@ async fn run_command(
     workspace: &Workspace,
     evidence: &Path,
     output: &Path,
+    env: &crate::config::ProcessEnv,
 ) -> Result<(), VerifyFailure> {
     let mut args = config.args.clone();
     args.extend([
@@ -178,7 +182,7 @@ async fn run_command(
         "--output".to_owned(),
         output.display().to_string(),
     ]);
-    let result = spawn_verifier(config, limits, workspace, args).await?;
+    let result = spawn_verifier(config, limits, workspace, args, env).await?;
     let stderr = stderr_prefix(&result);
     match result.exit {
         ProcessExit::Exited(0) => {}
@@ -225,8 +229,9 @@ async fn spawn_verifier(
     limits: &ProcessLimits,
     workspace: &Workspace,
     args: Vec<String>,
+    env: &crate::config::ProcessEnv,
 ) -> Result<ProcessResult, VerifyFailure> {
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = env.path_or_standard();
     let spec = ProcessSpec {
         program: PathBuf::from(&config.program),
         args,

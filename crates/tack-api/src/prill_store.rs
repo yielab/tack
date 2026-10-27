@@ -13,7 +13,7 @@ use tack_db::queries;
 use tokio::io::AsyncReadExt;
 
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
-use crate::prill::{Scratch, Unavailable, run, write_private};
+use crate::prill::{Prill, Scratch, Unavailable, run, write_private};
 use crate::router::AppState;
 
 /// The pack exactly as prill produced it. `prill record mrp` reads only this
@@ -60,7 +60,7 @@ async fn mark_recorded(app: &AppState, attempt_id: &str, kind: &str) {
 
 /// Runs `prill args…`; true when prill took it. A failure is logged.
 async fn record(app: &AppState, attempt_id: &str, kind: &str, args: Vec<String>) -> bool {
-    match run(&app.prill_program().await, &args, TIMEOUT).await {
+    match run(&app.prill().await, &args, TIMEOUT).await {
         Ok(output) if output.status.success() => true,
         Ok(output) => {
             let said = String::from_utf8_lossy(&output.stderr);
@@ -234,8 +234,8 @@ async fn head_commit(app: &AppState, attempt_id: &str) -> Option<String> {
 }
 
 /// prill's version, from `prill --version` (`prill 0.1.0`).
-pub async fn version(program: &str) -> Result<String, String> {
-    match run(program, &["--version".to_owned()], TIMEOUT).await {
+pub async fn version(prill: &Prill) -> Result<String, String> {
+    match run(prill, &["--version".to_owned()], TIMEOUT).await {
         Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
             .split_whitespace()
             .last()
@@ -247,14 +247,14 @@ pub async fn version(program: &str) -> Result<String, String> {
 }
 
 /// `prill metrics --db <db> --json`, parsed.
-pub async fn metrics(program: &str, db: &std::path::Path) -> Result<Value, String> {
+pub async fn metrics(prill: &Prill, db: &std::path::Path) -> Result<Value, String> {
     let args = [
         "metrics".to_owned(),
         "--db".to_owned(),
         db.display().to_string(),
         "--json".to_owned(),
     ];
-    match run(program, &args, TIMEOUT).await {
+    match run(prill, &args, TIMEOUT).await {
         Ok(output) if output.status.success() => {
             serde_json::from_slice(&output.stdout).map_err(|failure| {
                 format!("prill answered with something that is not JSON: {failure}")

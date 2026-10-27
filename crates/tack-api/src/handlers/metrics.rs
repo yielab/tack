@@ -341,8 +341,8 @@ async fn prill_quality(
     state: &AppState,
     project: &str,
 ) -> Result<(String, Vec<(String, serde_json::Value)>), String> {
-    let program = &state.prill_program().await;
-    let version = crate::prill_store::version(program).await?;
+    let prill = &state.prill().await;
+    let version = crate::prill_store::version(prill).await?;
     let repos = tack_db::queries::pull_requests::repos_of_project(&state.repo, project)
         .await
         .map_err(|failure| {
@@ -358,7 +358,7 @@ async fn prill_quality(
         if !db.is_file() {
             continue;
         }
-        match crate::prill_store::metrics(program, &db).await {
+        match crate::prill_store::metrics(prill, &db).await {
             Ok(metrics) => found.push((repo, metrics)),
             Err(reason) => failure = Some(reason),
         }

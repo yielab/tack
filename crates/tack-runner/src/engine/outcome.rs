@@ -232,7 +232,8 @@ where
         }
         // The verifier may run for its whole `timeout_seconds`; the runner's
         // ticker renews the lease meanwhile.
-        let result = crate::verify::run(config, limits, &spec.workspace, scratch).await;
+        let result =
+            crate::verify::run(config, limits, &spec.workspace, scratch, &self.process).await;
         match result {
             Ok(artifacts) => staged.extend(artifacts),
             Err(error) => {

@@ -19,6 +19,7 @@ mod ingestion;
 mod local_runner;
 mod mark_decision_viewed;
 mod observe_recovery;
+mod ports;
 mod refresh;
 mod report_events;
 mod requeue;

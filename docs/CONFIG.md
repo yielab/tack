@@ -329,6 +329,7 @@ settings.
 | Table | Effect |
 |---|---|
 | `[secrets] request_may_reference = ["gw"]` | The `store:` secret names a request's `secret_reference` may name. Empty (the default) means a request may reference none, and an `env:` reference is always refused. |
+| `[secrets] platform_store = "off"` | `"auto"` (the default) tries the OS credential store first and falls back to the owner-only file; `"off"` never asks it, for a machine with no session bus. |
 | `[environment] NAME = { value = "x" }` or `{ secret_reference = "env:VAR" }` | Variables every run gets. Resolved once at startup; a request cannot override one, and the `env:` scheme works here because the file is yours. A request may not set `HOME`, `PATH`, `GIT_*`, `SSH_*`, `LD_*`, `DYLD_*`, `PYTHON*`, `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `BASH_ENV`, `ENV` or any `*_BASE_URL`. |
 
 ## Agent sandbox

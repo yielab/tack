@@ -84,6 +84,7 @@ pub(super) async fn run(
     workspace: &Workspace,
     evidence: &Path,
     output: &Path,
+    env: &crate::config::ProcessEnv,
 ) -> Result<(), VerifyFailure> {
     let evidence_bytes = fs::read(evidence.join("evidence.json"))
         .map_err(|error| io_failure(None, "the staged evidence.json could not be read", &error))?;
@@ -175,7 +176,7 @@ pub(super) async fn run(
     // `prill.yaml` the agent edited is never the one it applies.
     args.extend(config.args.iter().cloned());
 
-    let result = spawn_verifier(config, limits, workspace, args).await?;
+    let result = spawn_verifier(config, limits, workspace, args, env).await?;
     let stderr = stderr_prefix(&result);
     let exit_code = match result.exit {
         ProcessExit::Exited(code @ (0 | 1)) => code,

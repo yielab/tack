@@ -79,17 +79,3 @@ pub fn config_path_from(variable: Option<OsString>, default: Option<PathBuf>) ->
 pub fn has_stored_session(state_dir: &Path) -> bool {
     state_dir.join("session.json").is_file()
 }
-
-/// This computer's host name, empty when the system will not say.
-pub fn host_name() -> String {
-    std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|name| name.trim().to_owned())
-        .filter(|name| !name.is_empty())
-        .or_else(|| std::env::var("HOSTNAME").ok())
-        .or_else(|| std::env::var("COMPUTERNAME").ok())
-        .unwrap_or_default()
-}

@@ -1418,8 +1418,11 @@ async fn import_single_issue(
     github_token: Option<&str>,
 ) -> (Router, Uuid, Value) {
     let config = AppConfig {
-        github_api_base: gh.uri(),
-        github_token: github_token.map(String::from),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            github_token: github_token.map(String::from),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1499,7 +1502,10 @@ async fn github_import_redirect_never_leaks_user_token() {
         .await;
 
     let config = AppConfig {
-        github_api_base: origin.uri(),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: origin.uri(),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1614,8 +1620,11 @@ async fn manual_github_link_closes_the_issue_on_done() {
         .await;
 
     let config = AppConfig {
-        github_api_base: gh.uri(),
-        github_token: Some("tok".into()),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            github_token: Some("tok".into()),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1674,8 +1683,11 @@ async fn push_uses_the_project_token_before_the_environment_token() {
     let control: Arc<dyn LocalRunnerControl> = control;
 
     let config = AppConfig {
-        github_api_base: gh.uri(),
-        github_token: Some("env-tok".into()),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            github_token: Some("env-tok".into()),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_local_runner(config, Some(control)).await;
@@ -1786,8 +1798,11 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh.uri(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh.uri(),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
@@ -1973,8 +1988,11 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh.uri(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh.uri(),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
@@ -2091,8 +2109,11 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh.uri(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh.uri(),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
@@ -2220,8 +2241,11 @@ async fn pull_request_poll_state_and_item(gh_uri: String) -> (tack_api::AppState
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh_uri,
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh_uri,
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,

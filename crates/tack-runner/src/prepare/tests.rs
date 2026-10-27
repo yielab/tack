@@ -65,6 +65,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         Some("package-lock.json"),
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect("first install");
@@ -101,6 +102,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         Some("package-lock.json"),
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect("second install");
@@ -128,6 +130,7 @@ async fn a_detected_install_runs_once_and_the_next_attempt_links_what_it_kept() 
         Some("package-lock.json"),
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect("another lockfile");
@@ -147,9 +150,15 @@ async fn a_detected_command_is_resolved_from_the_lockfile_and_hits_the_cache() {
     let checkout = setup.checkout("a1", "kept");
 
     // `npm ci` would fail here; the kept install answers instead.
-    prepare(&checkout, &PrepareSetting::Detect, &setup.state, LIMIT)
-        .await
-        .expect("prepared");
+    prepare(
+        &checkout,
+        &PrepareSetting::Detect,
+        &setup.state,
+        LIMIT,
+        &ProcessEnv::default(),
+    )
+    .await
+    .expect("prepared");
 
     assert!(checkout.join("node_modules/x").exists());
     assert!(checkout.join("node_modules/.tack-prepared").is_file());
@@ -159,14 +168,26 @@ async fn a_detected_command_is_resolved_from_the_lockfile_and_hits_the_cache() {
 async fn an_install_turned_off_or_without_a_lockfile_runs_nothing() {
     let setup = Setup::new();
     let with_lockfile = setup.checkout("a1", "lock");
-    prepare(&with_lockfile, &PrepareSetting::Off, &setup.state, LIMIT)
-        .await
-        .expect("off");
+    prepare(
+        &with_lockfile,
+        &PrepareSetting::Off,
+        &setup.state,
+        LIMIT,
+        &ProcessEnv::default(),
+    )
+    .await
+    .expect("off");
     let without = setup.state.join("workspaces/a2");
     fs::create_dir_all(&without).expect("checkout");
-    prepare(&without, &PrepareSetting::Detect, &setup.state, LIMIT)
-        .await
-        .expect("no lockfile");
+    prepare(
+        &without,
+        &PrepareSetting::Detect,
+        &setup.state,
+        LIMIT,
+        &ProcessEnv::default(),
+    )
+    .await
+    .expect("no lockfile");
 
     for checkout in [&with_lockfile, &without] {
         assert!(!checkout.join("node_modules").exists());
@@ -182,9 +203,15 @@ async fn a_replaced_command_runs_every_time_and_keeps_nothing() {
     };
     for name in ["a1", "a2"] {
         let checkout = setup.checkout(name, "lock");
-        prepare(&checkout, &setting, &setup.state, LIMIT)
-            .await
-            .expect("replaced");
+        prepare(
+            &checkout,
+            &setting,
+            &setup.state,
+            LIMIT,
+            &ProcessEnv::default(),
+        )
+        .await
+        .expect("replaced");
         assert!(checkout.join("node_modules/x").exists());
         assert!(!checkout.join("node_modules/.tack-prepared").exists());
     }
@@ -204,6 +231,7 @@ async fn a_folder_the_repository_holds_is_left_alone() {
         Some("package-lock.json"),
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect("install");
@@ -230,6 +258,7 @@ async fn an_attempt_that_loses_the_race_keeps_its_own_install_and_the_winners_en
         Some("package-lock.json"),
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect("install");
@@ -261,6 +290,7 @@ async fn an_install_that_cannot_be_hard_linked_still_runs_and_is_just_not_kept()
         Some("package-lock.json"),
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect("install");
@@ -287,9 +317,16 @@ async fn a_python_install_is_never_kept() {
 }
 
 async fn prepare_with(checkout: &Path, command: &str, lockfile: &str, state: &Path) {
-    install(checkout, command, Some(lockfile), state, LIMIT)
-        .await
-        .expect("install");
+    install(
+        checkout,
+        command,
+        Some(lockfile),
+        state,
+        LIMIT,
+        &ProcessEnv::default(),
+    )
+    .await
+    .expect("install");
 }
 
 #[tokio::test]
@@ -303,6 +340,7 @@ async fn a_failed_command_says_how_it_ended_and_shows_the_end_of_its_output() {
         None,
         &setup.state,
         LIMIT,
+        &ProcessEnv::default(),
     )
     .await
     .expect_err("fails");
@@ -311,9 +349,16 @@ async fn a_failed_command_says_how_it_ended_and_shows_the_end_of_its_output() {
         "Could not prepare the dependencies: `echo nope >&2; exit 3` exited 3\nnope"
     );
 
-    let error = install(&checkout, "seq 1 100; exit 1", None, &setup.state, LIMIT)
-        .await
-        .expect_err("fails");
+    let error = install(
+        &checkout,
+        "seq 1 100; exit 1",
+        None,
+        &setup.state,
+        LIMIT,
+        &ProcessEnv::default(),
+    )
+    .await
+    .expect_err("fails");
     let reason = error.to_string();
     assert!(reason.contains("exited 1\n61\n"), "{reason}");
     assert!(reason.ends_with("\n100"), "{reason}");
@@ -333,6 +378,7 @@ async fn a_command_that_outlasts_the_time_limit_is_stopped() {
         None,
         &setup.state,
         Duration::from_secs(1),
+        &ProcessEnv::default(),
     )
     .await
     .expect_err("times out");

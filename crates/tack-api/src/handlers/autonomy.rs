@@ -302,12 +302,12 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
         }
     }
     let mut blocked = Vec::new();
-    if state.config.github_poll_seconds == 0 || state.config.github_token.is_none() {
+    if state.config.loops.github_poll_seconds == 0 || state.config.loops.github_token.is_none() {
         blocked.push(
             "GitHub polling is off on this board, so Tack cannot read CI or merge".to_owned(),
         );
     }
-    if let Err(reason) = crate::prill_store::version(&state.prill_program().await).await {
+    if let Err(reason) = crate::prill_store::version(&state.prill().await).await {
         blocked.push(format!("{reason}, so a signed pack cannot be checked"));
     }
     if settings.attestation_public_key.is_none() {

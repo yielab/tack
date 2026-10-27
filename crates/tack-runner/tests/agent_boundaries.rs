@@ -168,6 +168,7 @@ fn fixture(request_may_reference: &[&str]) -> Fixture {
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         secrets,
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable")
     .with_environment(
@@ -345,6 +346,7 @@ async fn a_run_log_never_follows_a_workspace_symlink() {
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         secrets,
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable");
     let mut spec = spec(workspace, &[]);
@@ -379,6 +381,7 @@ fn a_subdirectory_that_escapes_the_workspace_is_rejected_before_spawn() {
         spec: &spec,
         scratch: dir.path(),
         program: None,
+        host: &tack_runner::ProcessEnv::default(),
     };
     for (kind, result) in [
         ("codex", CodexGrammar.invocation(&run)),
@@ -441,6 +444,7 @@ fn sandboxed_harness<G: HarnessGrammar>(
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         state.join("staging"),
         SecretStore::file(state.join("secrets.json")),
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable")
     .with_sandbox(sandbox)
@@ -556,7 +560,7 @@ async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
 
 #[tokio::test]
 async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
-    let (path, _) = tack_runner::harness::locate::snapshot();
+    let path = tack_runner::ProcessEnv::from_process().search_path();
     if sandbox::detect(path.as_deref(), None).kind != sandbox::SandboxKind::Bwrap {
         if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
             panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
@@ -699,6 +703,7 @@ async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
+            &tack_runner::ProcessEnv::from_process(),
         )
         .expect("the fake program is locatable")
         .with_probed_sandbox(machine.clone())
@@ -770,6 +775,7 @@ async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
+            &tack_runner::ProcessEnv::from_process(),
         )
         .expect("the fake program is locatable")
         .with_probed_sandbox(machine.clone())
@@ -859,13 +865,16 @@ fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
     }))
 }
 
-/// Mutates process-wide variables: safe under `cargo nextest` (one process
-/// per test), never under a bare `cargo test`.
+/// The runner's own environment holds a model credential of every kind; none reaches an agent.
 #[tokio::test]
 async fn the_runner_passes_no_model_credential_of_its_own() {
-    for name in MODEL_CREDENTIAL_VARIABLES {
-        unsafe { std::env::set_var(name, "runner-own-model-credential") };
-    }
+    let env = tack_runner::ProcessEnv::from_pairs(
+        std::env::vars_os().chain(
+            MODEL_CREDENTIAL_VARIABLES
+                .iter()
+                .map(|name| ((*name).into(), "runner-own-model-credential".into())),
+        ),
+    );
     for real in DESCRIPTORS {
         let dir = root("no-model-credential");
         let workspace = dir.path().join("workspace");
@@ -875,6 +884,7 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             dir.path().join("staging"),
             SecretStore::file(dir.path().join("secrets.json")),
+            &env,
         )
         .expect("the fake harness script is locatable");
         let mut spec = spec(workspace.clone(), &[]);
@@ -902,6 +912,7 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
             spec: &spec,
             scratch: dir.path(),
             program: None,
+            host: &tack_runner::ProcessEnv::default(),
         };
         for (kind, invocation) in [
             ("codex", CodexGrammar.invocation(&run)),
@@ -913,9 +924,6 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
                 }
             }
         }
-    }
-    for name in MODEL_CREDENTIAL_VARIABLES {
-        unsafe { std::env::remove_var(name) };
     }
 }
 
@@ -954,8 +962,6 @@ fn files_under(root: &std::path::Path) -> Vec<PathBuf> {
     found
 }
 
-/// Mutates process-wide variables: safe under `cargo nextest` (one process
-/// per test), never under a bare `cargo test`.
 #[tokio::test]
 async fn opencode_gets_its_login_and_providers_and_nothing_else() {
     const SEEDED_KEY: &str = "sk-seeded-key-7731";
@@ -992,10 +998,10 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
     )
     .expect("executable");
     let path = format!("{}:/usr/bin:/bin", bin.display());
-    unsafe {
-        std::env::set_var("PATH", &path);
-        std::env::set_var("HOME", &home);
-    }
+    let host = tack_runner::ProcessEnv::from_pairs([
+        ("PATH", path.as_str()),
+        ("HOME", home.to_str().unwrap()),
+    ]);
 
     let mut spec = spec(workspace.clone(), &[]);
     spec.work.request.requested_harness_kind =
@@ -1007,6 +1013,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         spec: &spec,
         scratch: dir.path(),
         program: Some(&opencode),
+        host: &host,
     };
     let invocation = OpencodeGrammar.invocation(&run).expect("an invocation");
     let injected: serde_json::Value =
@@ -1043,6 +1050,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         spec: &spec,
         scratch: dir.path(),
         program: Some(&opencode),
+        host: &host,
     };
     match OpencodeGrammar.invocation(&run) {
         Err(HarnessError::Rejected { reason }) => {
@@ -1099,6 +1107,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
+            &tack_runner::ProcessEnv::from_process(),
         )
         .expect("the probe is locatable");
         let harness = if sandboxed {
@@ -1158,6 +1167,11 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
         binary: Some(script),
         home: Some(dir.path().join("docket-home")),
         port: 1,
+        process: tack_runner::ProcessEnv::from_pairs([
+            ("PATH", "/usr/bin"),
+            ("HOME", "/home/someone"),
+            ("ANTHROPIC_API_KEY", "never-forwarded"),
+        ]),
         ..DocketConfig::default()
     };
     let explicit: std::collections::BTreeSet<String> = daemon::command(&config)

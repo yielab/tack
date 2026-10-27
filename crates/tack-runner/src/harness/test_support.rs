@@ -166,4 +166,8 @@ pub fn harness_for<G: HarnessGrammar>(
         state.join("staging"),
         secret_store(state),
     )
+    .with_host_env(crate::config::ProcessEnv::from_pairs([
+        ("HOME", "/home/test-runner"),
+        ("PATH", crate::config::STANDARD_PATH),
+    ]))
 }

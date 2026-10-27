@@ -39,7 +39,13 @@ fn discover(secrets: SecretStore, state: &std::path::Path) -> Result<ClaudeCodeA
         1024 * 1024,
         std::time::Duration::from_secs(600),
     );
-    ClaudeCodeAdapter::discover(ClaudeCodeGrammar, limits, state.join("staging"), secrets)
+    ClaudeCodeAdapter::discover(
+        ClaudeCodeGrammar,
+        limits,
+        state.join("staging"),
+        secrets,
+        &tack_runner::ProcessEnv::from_process(),
+    )
 }
 
 fn opted_in() -> bool {

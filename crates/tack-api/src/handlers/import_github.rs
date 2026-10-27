@@ -132,6 +132,7 @@ pub async fn import_github(
 
     let api_base = state
         .config
+        .loops
         .github_api_base
         .trim_end_matches('/')
         .to_string();

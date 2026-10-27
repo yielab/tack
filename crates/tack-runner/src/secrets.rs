@@ -35,6 +35,7 @@ use std::time::Duration;
 use keyring_core::api::CredentialStoreApi;
 use thiserror::Error;
 
+use crate::config::{PlatformStore, ProcessEnv};
 use crate::error::IoKind;
 
 /// Service name every keychain entry is filed under, and what a live
@@ -151,8 +152,12 @@ impl SecretStore {
     /// `config.rs` concern. The choice is made once, here, and never
     /// re-attempted for the life of the returned `SecretStore` — matching
     /// `tack runner doctor`'s report, which reads this same choice back.
-    pub fn open(file_fallback_path: &Path) -> Self {
-        match Self::platform_store() {
+    pub fn open(file_fallback_path: &Path, platform: PlatformStore) -> Self {
+        let platform_store = match platform {
+            PlatformStore::Auto => Self::platform_store(),
+            PlatformStore::Off => Err("the platform credential store is turned off".to_owned()),
+        };
+        match platform_store {
             Ok(store) => {
                 tracing::info!(backend = "keychain", "secret store backend selected");
                 Self {
@@ -363,16 +368,21 @@ impl SecretStore {
         if reference.starts_with("env:") {
             return Err(SecretError::SchemeNotAllowed(reference.to_owned()));
         }
-        self.resolve_own(reference)
+        self.resolve_own(reference, &ProcessEnv::default())
     }
 
     /// Resolves a reference the runner's own configuration wrote. As
     /// [`Self::resolve`], and `env:<VARIABLE>` reads the runner process's
-    /// own environment at spawn time — the path for a systemd-started
+    /// own environment (`process`) at spawn time — the path for a systemd-started
     /// runner with no keychain and no wish to keep a file.
-    pub fn resolve_own(&self, reference: &str) -> Result<SecretValue, SecretError> {
+    pub fn resolve_own(
+        &self,
+        reference: &str,
+        process: &ProcessEnv,
+    ) -> Result<SecretValue, SecretError> {
         if let Some(variable) = reference.strip_prefix("env:") {
-            return std::env::var(variable)
+            return process
+                .try_var(variable)
                 .map(SecretValue::new)
                 .map_err(|error| match error {
                     std::env::VarError::NotPresent => {
@@ -394,6 +404,7 @@ impl SecretStore {
     pub fn resolve_own_environment(
         &self,
         environment: &BTreeMap<String, crate::config::EnvValue>,
+        process: &ProcessEnv,
     ) -> Result<BTreeMap<String, String>, SecretError> {
         let mut resolved = BTreeMap::new();
         for (name, entry) in environment {
@@ -402,7 +413,7 @@ impl SecretStore {
                     resolved.insert(name.clone(), literal.clone());
                 }
                 (None, Some(reference)) => {
-                    let secret = self.resolve_own(reference)?;
+                    let secret = self.resolve_own(reference, process)?;
                     resolved.insert(name.clone(), secret.expose().to_owned());
                 }
                 (None, None) => {}

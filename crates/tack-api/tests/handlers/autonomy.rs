@@ -59,10 +59,13 @@ pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill
             api_token: Some(OPERATOR_TOKEN.into()),
             database_url: "sqlite::memory:".into(),
             storage_dir: storage.to_string_lossy().into_owned(),
-            github_token: github.map(|_| "gh-tok".into()),
-            github_api_base: github
-                .map_or_else(|| AppConfig::default().github_api_base, Into::into),
             prill_program: prill.into(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: github.map(|_| "gh-tok".into()),
+                github_api_base: github
+                    .map_or_else(|| AppConfig::default().loops.github_api_base, Into::into),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,

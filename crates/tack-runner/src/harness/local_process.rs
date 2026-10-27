@@ -203,6 +203,9 @@ pub struct RunContext<'a> {
     /// it, for a grammar that must ask that same binary something first.
     /// `None` outside a spawn (reporting, cancelling).
     pub program: Option<&'a Path>,
+    /// The environment the runner was started with, for a grammar that must run its agent's own
+    /// commands before the spawn.
+    pub host: &'a crate::config::ProcessEnv,
 }
 
 /// The harness-specific part of a spawn.
@@ -439,8 +442,7 @@ pub enum BinaryLocator {
     /// every call, so an uninstall after startup is caught at `validate`.
     Search {
         program: String,
-        path: Option<std::ffi::OsString>,
-        home: Option<PathBuf>,
+        env: crate::config::ProcessEnv,
     },
     /// A fixed program plus leading arguments: how tests point a grammar at
     /// the fake harness script.
@@ -454,11 +456,7 @@ pub enum BinaryLocator {
 impl BinaryLocator {
     fn resolve(&self) -> Result<(PathBuf, Vec<String>), String> {
         match self {
-            Self::Search {
-                program,
-                path,
-                home,
-            } => super::locate::locate(program, path.as_deref(), home.as_deref())
+            Self::Search { program, env } => super::locate::locate(program, env)
                 .map(|found| (found, Vec::new()))
                 .map_err(|error| error.to_string()),
             #[cfg(test)]
@@ -522,6 +520,9 @@ pub struct LocalProcessHarness<G: HarnessGrammar, C = crate::SystemClock> {
     /// Added to the version probe's environment only; tests steer the fake
     /// harness with it.
     probe_env: BTreeMap<String, String>,
+    /// The runner's own environment: the variables the descriptor lets an agent inherit, and the
+    /// `HOME` and `PATH` the readiness check runs with.
+    host_env: crate::config::ProcessEnv,
     /// The last successfully probed version, stamped on a run whose own
     /// output reports none.
     probed_version: std::sync::Mutex<Option<String>>,
@@ -548,12 +549,11 @@ impl<G: HarnessGrammar> LocalProcessHarness<G> {
         limits: ProcessLimits,
         staging_root: PathBuf,
         secrets: SecretStore,
+        env: &crate::config::ProcessEnv,
     ) -> Result<Self, String> {
-        let (path, home) = super::locate::snapshot();
         let locator = BinaryLocator::Search {
             program: grammar.descriptor().program.to_owned(),
-            path,
-            home,
+            env: env.clone(),
         };
         locator.resolve()?;
         Ok(Self::new(
@@ -563,7 +563,8 @@ impl<G: HarnessGrammar> LocalProcessHarness<G> {
             limits,
             staging_root,
             secrets,
-        ))
+        )
+        .with_host_env(env.clone()))
     }
 }
 
@@ -588,6 +589,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             sandbox: Sandbox::none("not detected"),
             probe_timeout: PROBE_TIMEOUT,
             probe_env: BTreeMap::new(),
+            host_env: crate::config::ProcessEnv::default(),
             probed_version: std::sync::Mutex::new(None),
             next_handle: AtomicU64::new(0),
             running: tokio::sync::Mutex::new(BTreeMap::new()),
@@ -605,6 +607,13 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
     ) -> Self {
         self.request_may_reference = request_may_reference;
         self.own_environment = own_environment;
+        self
+    }
+
+    /// The environment the runner was started with, which a run's inherited variables and the
+    /// readiness check read.
+    pub fn with_host_env(mut self, env: crate::config::ProcessEnv) -> Self {
+        self.host_env = env;
         self
     }
 
@@ -763,7 +772,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             .descriptor()
             .inherited_env
             .iter()
-            .filter_map(|name| Some(((*name).to_owned(), std::env::var(name).ok()?)))
+            .filter_map(|name| Some(((*name).to_owned(), self.host_env.var(name)?)))
             .collect()
     }
 
@@ -837,6 +846,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
             spec,
             scratch: &scratch,
             program: Some(&program),
+            host: &self.host_env,
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
@@ -1089,6 +1099,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                 spec: &running.spec,
                 scratch: &running.scratch,
                 program: None,
+                host: &self.host_env,
             },
             result,
         );
@@ -1337,7 +1348,7 @@ where
             (None, Some(check), Ok((program, prefix_args))) if !installed_version.is_empty() => {
                 let mut env: BTreeMap<String, String> = ["HOME", "PATH"]
                     .into_iter()
-                    .filter_map(|name| Some((name.to_owned(), std::env::var(name).ok()?)))
+                    .filter_map(|name| Some((name.to_owned(), self.host_env.var(name)?)))
                     .collect();
                 env.extend(self.probe_env.clone());
                 let shell = ReadinessShell {
@@ -1513,6 +1524,7 @@ where
             spec: &running.record.spec,
             scratch: &running.record.scratch,
             program: None,
+            host: &self.host_env,
         };
         let (observation, process_outcome, groups) = match running
             .process
@@ -1583,6 +1595,7 @@ where
                 spec: &record.spec,
                 scratch: &record.scratch,
                 program: None,
+                host: &self.host_env,
             };
             let mut calls = BTreeSet::new();
             process

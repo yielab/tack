@@ -16,9 +16,7 @@ use tack_protocol::execution::{
     CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability, ModelListSource,
     SignInState,
 };
-use tack_runner::{
-    ConfigOverrides, RunnerConfig, SecretStore, bootstrap, harness::process::ProcessLimits,
-};
+use tack_runner::{ConfigOverrides, RunnerConfig, bootstrap, harness::process::ProcessLimits};
 
 /// Irrelevant to a probe (the `--version` call is bounded by its own,
 /// shorter, internal timeout), but `harness::discover`
@@ -40,7 +38,7 @@ pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {
     );
     let config = read_config(config_path.clone())?;
     let runtime = tokio::runtime::Runtime::new()?;
-    let (report, verify, daemon) = runtime.block_on(probe(config));
+    let (report, verify, process, daemon) = runtime.block_on(probe(config));
 
     if as_json {
         println!("{}", serde_json::to_string_pretty(&report.capabilities)?);
@@ -49,7 +47,7 @@ pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {
 
     render_settings_file(config_path.as_deref());
     render(&report, daemon.as_ref());
-    render_verify(&verify);
+    render_verify(&verify, &process);
     Ok(())
 }
 
@@ -88,6 +86,7 @@ async fn probe(
 ) -> (
     bootstrap::DiscoveryReport,
     tack_runner::VerifyConfig,
+    tack_runner::ProcessEnv,
     Option<Result<String, String>>,
 ) {
     // A doctor run never claims or executes an attempt, so the only thing
@@ -99,25 +98,32 @@ async fn probe(
     let staging_root = std::env::temp_dir().join("tack-runner-doctor-unused-staging");
     // The secret store is the one the same file's state directory names, so
     // the backend this reports is the one a live runner would actually pick.
-    let secrets = SecretStore::open(&config.secret_store_path());
-    let report = bootstrap::probe(&staging_root, &PROCESS_LIMITS, &secrets, &config.docket).await;
+    let secrets = config.open_secret_store();
+    let report = bootstrap::probe(
+        &staging_root,
+        &PROCESS_LIMITS,
+        &secrets,
+        &config.docket,
+        &config.process,
+    )
+    .await;
     let daemon = if config.docket.configured() {
         Some(tack_runner::harness::docket::daemon::describe(&config.docket).await)
     } else {
         None
     };
-    (report, config.verify, daemon)
+    (report, config.verify, config.process, daemon)
 }
 
 /// The `[verify]` table as this runner would read it. The board never runs
 /// the verifier; this machine's runner does, after a succeeded attempt.
-fn render_verify(verify: &tack_runner::VerifyConfig) {
+fn render_verify(verify: &tack_runner::VerifyConfig, process: &tack_runner::ProcessEnv) {
     if !verify.enabled {
         println!();
         println!("verify: disabled");
         return;
     }
-    let found = if tack_runner::verify::program_found(&verify.program) {
+    let found = if tack_runner::verify::program_found(&verify.program, process) {
         "found"
     } else {
         "NOT FOUND on PATH; every succeeded attempt will report verify_failed"

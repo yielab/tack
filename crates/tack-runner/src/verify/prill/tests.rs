@@ -597,7 +597,14 @@ async fn verify_within(
         1024 * 1024,
         Duration::from_secs(timeout_seconds),
     );
-    let result = run_verifier(&config, &limits, &workspace, &scratch).await;
+    let result = run_verifier(
+        &config,
+        &limits,
+        &workspace,
+        &scratch,
+        &crate::config::ProcessEnv::default(),
+    )
+    .await;
     Verified {
         result,
         scratch,
@@ -789,9 +796,15 @@ async fn a_workspace_that_is_not_a_repository_cannot_be_verified() {
         base_revision: "main".to_owned(),
     };
     let limits = ProcessLimits::new(1024 * 1024, 1024 * 1024, Duration::from_secs(60));
-    let error = run_verifier(&config, &limits, &workspace, &scratch)
-        .await
-        .expect_err("no snapshot, no verification");
+    let error = run_verifier(
+        &config,
+        &limits,
+        &workspace,
+        &scratch,
+        &crate::config::ProcessEnv::default(),
+    )
+    .await
+    .expect_err("no snapshot, no verification");
     assert_eq!(error.exit_code, None);
     assert!(
         error

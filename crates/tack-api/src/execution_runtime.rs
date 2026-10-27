@@ -47,9 +47,9 @@ pub struct ExecutionRuntimeConfig {
 impl From<&AppConfig> for ExecutionRuntimeConfig {
     fn from(config: &AppConfig) -> Self {
         Self {
-            retention_enable: config.execution_retention_enable,
-            retention_days: config.execution_retention_days,
-            retention_interval_secs: config.execution_retention_interval_secs,
+            retention_enable: config.loops.execution_retention_enable,
+            retention_days: config.loops.execution_retention_days,
+            retention_interval_secs: config.loops.execution_retention_interval_secs,
             storage_dir: config.storage_dir.clone(),
         }
     }

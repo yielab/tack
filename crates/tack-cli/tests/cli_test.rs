@@ -2,7 +2,7 @@ use wiremock::matchers::{header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use tack_cli::client::TackClient;
-use tack_cli::config::{self, Config};
+use tack_cli::config::{self, ClientEnvironment, Config};
 use tack_cli::vocab;
 
 fn make_config(base_url: &str) -> Config {
@@ -272,13 +272,19 @@ async fn bearer_token_is_forwarded() {
 fn config_save_and_reload() {
     let guard = tempfile::tempdir().expect("temporary directory");
     let tmp = guard.path();
-    let original_home = std::env::var("HOME").ok();
-    // SAFETY: single-threaded test; no concurrent env reads in this process.
-    unsafe { std::env::set_var("HOME", tmp) };
+    let environment = ClientEnvironment {
+        home: Some(tmp.to_path_buf()),
+        ..ClientEnvironment::default()
+    };
 
-    config::save("http://test:9999", Some("tok123")).unwrap();
+    config::save_in(
+        environment.home.as_deref(),
+        "http://test:9999",
+        Some("tok123"),
+    )
+    .unwrap();
 
-    let cfg = Config::load(None, None);
+    let cfg = Config::load_with(None, None, &environment);
     assert_eq!(cfg.base_url, "http://test:9999");
     assert_eq!(cfg.token.as_deref(), Some("tok123"));
 
@@ -298,11 +304,6 @@ fn config_save_and_reload() {
             mode & 0o777
         );
     }
-
-    match original_home {
-        Some(h) => unsafe { std::env::set_var("HOME", h) },
-        None => unsafe { std::env::remove_var("HOME") },
-    }
 }
 
 // ── the local server's token file is the last place the token is looked for ──
@@ -310,28 +311,28 @@ fn config_save_and_reload() {
 #[test]
 fn token_falls_back_to_the_local_servers_file() {
     let guard = tempfile::tempdir().expect("temporary directory");
-    // SAFETY: single-threaded test; no concurrent env reads in this process.
-    unsafe {
-        std::env::set_var("HOME", guard.path());
-        std::env::remove_var("XDG_DATA_HOME");
-        std::env::remove_var("TACK_API_TOKEN");
-    }
-    let data_root = dirs::data_dir().expect("data dir").join("tack");
-    assert!(
-        data_root.starts_with(guard.path()),
-        "data root escaped HOME"
-    );
+    let data_root = guard.path().join("data").join("tack");
+    let environment = ClientEnvironment {
+        home: Some(guard.path().to_path_buf()),
+        data_root: Some(data_root.clone()),
+        ..ClientEnvironment::default()
+    };
     std::fs::create_dir_all(&data_root).unwrap();
     std::fs::write(data_root.join("api-token"), "from-the-server-file").unwrap();
 
     assert_eq!(
-        Config::load(None, None).token.as_deref(),
+        Config::load_with(None, None, &environment).token.as_deref(),
         Some("from-the-server-file")
     );
 
-    config::save("http://test:9999", Some("from-tackrc")).unwrap();
+    config::save_in(
+        environment.home.as_deref(),
+        "http://test:9999",
+        Some("from-tackrc"),
+    )
+    .unwrap();
     assert_eq!(
-        Config::load(None, None).token.as_deref(),
+        Config::load_with(None, None, &environment).token.as_deref(),
         Some("from-tackrc"),
         "~/.tackrc outranks the server's file"
     );

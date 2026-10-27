@@ -248,10 +248,10 @@ pub fn discover(
     request_may_reference: &[String],
     own_environment: &BTreeMap<String, String>,
     docket: &crate::config::DocketConfig,
+    env: &crate::config::ProcessEnv,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
-    let (path, home) = locate::snapshot();
-    let sandbox = sandbox::detect(path.as_deref(), home.as_deref());
+    let sandbox = sandbox::detect(env.search_path().as_deref(), env.home().as_deref());
     let machine = (
         &sandbox,
         limits,
@@ -259,6 +259,7 @@ pub fn discover(
         secrets,
         request_may_reference,
         own_environment,
+        env,
     );
     install(&mut found, machine, codex::CodexGrammar);
     install(&mut found, machine, claude_code::ClaudeCodeGrammar);
@@ -269,7 +270,13 @@ pub fn discover(
         let state_dir = staging_root.parent().unwrap_or(staging_root).to_path_buf();
         if found
             .0
-            .register(docket::DocketAdapter::new(docket.clone(), state_dir))
+            .register(docket::DocketAdapter::new(
+                crate::config::DocketConfig {
+                    process: env.clone(),
+                    ..docket.clone()
+                },
+                state_dir,
+            ))
             .is_err()
         {
             tracing::warn!(
@@ -293,11 +300,14 @@ type Machine<'a> = (
     &'a SecretStore,
     &'a [String],
     &'a BTreeMap<String, String>,
+    &'a crate::config::ProcessEnv,
 );
 
 fn install<G: local_process::HarnessGrammar>(
     (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
-    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment): Machine<'_>,
+    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment, env): Machine<
+        '_,
+    >,
     grammar: G,
 ) {
     let kind = grammar.descriptor().kind;
@@ -306,6 +316,7 @@ fn install<G: local_process::HarnessGrammar>(
         limits.clone(),
         staging_root.to_path_buf(),
         secrets.clone(),
+        env,
     );
     match harness {
         Ok(harness) => {
