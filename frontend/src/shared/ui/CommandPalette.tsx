@@ -1,6 +1,6 @@
 import { createSignal, For, Show, type Component, createEffect, createMemo, onCleanup } from 'solid-js';
-import { Portal } from 'solid-js/web';
-import { IconSearch } from './icons';
+import { Portal, Dynamic } from 'solid-js/web';
+import { IconSearch, type IconProps } from './icons';
 import KbdHint from './KbdHint';
 import { trapFocus } from './focusTrap';
 
@@ -8,7 +8,8 @@ export interface Command {
   id: string;
   label: string;
   description?: string;
-  icon?: string;
+  /** The same icon the sidebar uses for the place, when there is one. */
+  icon?: Component<IconProps>;
   /** Section heading in the palette (e.g. "Go to", "Actions"). */
   group?: string;
   action: () => void;
@@ -178,7 +179,7 @@ const CommandPalette: Component<CommandPaletteProps> = (props) => {
                                 width: '26px', height: '26px', 'border-radius': 'var(--radius-pill)', 'flex-shrink': 0,
                                 display: 'flex', 'align-items': 'center', 'justify-content': 'center', 'font-size': '0.75rem',
                                 background: active() ? 'var(--color-bg-base)' : 'var(--color-chip)',
-                              }}>{cmd.icon ?? '•'}</span>
+                              }}>{cmd.icon ? <Dynamic component={cmd.icon} size={15} /> : '•'}</span>
                               <span style={{ flex: 1, 'font-size': '0.84375rem', 'font-weight': active() ? 600 : 500, color: active() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>{cmd.label}</span>
                               <Show when={cmd.shortcut}>
                                 <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>{cmd.shortcut}</span>

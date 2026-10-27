@@ -9,7 +9,7 @@ import { ProjectProvider } from '../shared/state/projectContext';
 import CommandPalette, { type Command } from '../shared/ui/CommandPalette';
 import { paletteOpen, openPalette, closePalette } from '../shared/state/commandPalette';
 import { IconPlus } from '../shared/ui/icons';
-import { getLastLens } from '../shared/state/lastView';
+import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from '../shared/ui/destinations';
 import CreateItemModal from '../features/items/CreateItemModal';
 import CreateProjectModal from '../features/projects/CreateProjectModal';
 import { useProject } from '../shared/state/projectContext';
@@ -82,31 +82,18 @@ const LayoutInner: Component<LayoutProps> = (props) => {
 
   const globalCommands = (): Command[] => {
     const pid = projectId();
-    const lens = getLastLens();
     const cmds: Command[] = [];
 
     if (pid) {
-      cmds.push(
-        { id: 'new-item',     label: 'New Item',          icon: '➕', shortcut: 'N', group: 'Actions', action: () => setShowNewItem(true) },
-        { id: 'go-board',     label: 'Work → Board',      icon: '⬛', group: 'Go to', action: () => navigate(`/projects/${pid}/board`) },
-        { id: 'go-list',      label: 'Work → List',       icon: '☰',  group: 'Go to', action: () => navigate(`/projects/${pid}/list`) },
-        { id: 'go-table',     label: 'Work → Table',      icon: '▦',  group: 'Go to', action: () => navigate(`/projects/${pid}/table`) },
-        { id: 'go-calendar',  label: 'Work → Calendar',   icon: '📅', group: 'Go to', action: () => navigate(`/projects/${pid}/calendar`) },
-        { id: 'go-timeline',  label: 'Work → Timeline',   icon: '📊', group: 'Go to', action: () => navigate(`/projects/${pid}/timeline`) },
-        { id: 'go-sprint',    label: `Work → ${t('sprint')}`, icon: '🏃', group: 'Go to', action: () => navigate(`/projects/${pid}/sprint`) },
-        { id: 'go-overview',  label: 'Overview',          icon: '📈', group: 'Go to', action: () => navigate(`/projects/${pid}/overview`) },
-        { id: 'go-factory',   label: 'Factory metrics',   icon: '📊', group: 'Go to', action: () => navigate(`/projects/${pid}/factory`) },
-        { id: 'go-settings',  label: 'Project Settings',  icon: '⚙️', group: 'Go to', action: () => navigate(`/projects/${pid}/settings`) },
-      );
-      void lens; // used via getLastLens in sidebar
+      cmds.push({ id: 'new-item', label: 'New Item', icon: IconPlus, shortcut: 'N', group: 'Actions', action: () => setShowNewItem(true) });
+      for (const d of PROJECT_DESTINATIONS) {
+        cmds.push({ id: `go-${d.id}`, label: d.label(t), icon: d.icon, group: 'Project', action: () => navigate(d.path(pid)) });
+      }
     }
-
-    cmds.push(
-      { id: 'go-projects',  label: 'All Projects',        icon: '🏠', group: 'Workspace', action: () => navigate('/projects') },
-      { id: 'go-templates', label: 'Templates',           icon: '📋', group: 'Workspace', action: () => navigate('/templates') },
-      { id: 'go-gsettings', label: 'Global Settings',     icon: '🔧', group: 'Workspace', action: () => navigate('/settings') },
-      { id: 'new-project',  label: 'New Project',         icon: '📁', group: 'Actions', action: () => setShowNewProject(true) },
-    );
+    for (const d of WORKSPACE_DESTINATIONS) {
+      cmds.push({ id: `go-${d.id}`, label: d.label(t), icon: d.icon, group: 'Workspace', action: () => navigate(d.path(pid ?? '')) });
+    }
+    cmds.push({ id: 'new-project', label: 'New Project', icon: IconPlus, group: 'Actions', action: () => setShowNewProject(true) });
 
     return cmds;
   };
