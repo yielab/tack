@@ -178,8 +178,10 @@ where
         kind: PendingTerminalReportKind,
         report: &T,
     ) -> Result<(), EngineError> {
-        let canonical_json =
-            serde_json::to_string(report).map_err(|_| EngineError::TerminalReportSerialization)?;
+        let canonical_json = serde_json::to_string(report).map_err(|error| {
+            tracing::warn!(category = ?error.classify(), "terminal report could not be encoded");
+            EngineError::TerminalReportSerialization
+        })?;
         let mut pending = record.clone();
         pending.state = JournalState::TerminalReportPending;
         pending.pending_terminal_report = Some(PendingTerminalReport {
@@ -207,7 +209,10 @@ where
         match pending.kind {
             PendingTerminalReportKind::Completion => {
                 let report: CompletionRequest = serde_json::from_str(&pending.canonical_json)
-                    .map_err(|_| EngineError::Journal(JournalError::Malformed))?;
+                    .map_err(|error| {
+                        tracing::warn!(category = ?error.classify(), "pending terminal report is not valid JSON");
+                        EngineError::Journal(JournalError::Malformed)
+                    })?;
                 if report.protocol_version != ProtocolVersion::v1()
                     || report.runner_id != session.runner_id
                     || report.attempt_id != record.attempt_id
@@ -257,7 +262,10 @@ where
             }
             PendingTerminalReportKind::Cancellation => {
                 let report: CancellationReport = serde_json::from_str(&pending.canonical_json)
-                    .map_err(|_| EngineError::Journal(JournalError::Malformed))?;
+                    .map_err(|error| {
+                        tracing::warn!(category = ?error.classify(), "pending terminal report is not valid JSON");
+                        EngineError::Journal(JournalError::Malformed)
+                    })?;
                 if report.protocol_version != ProtocolVersion::v1()
                     || report.runner_id != session.runner_id
                     || report.attempt_id != record.attempt_id
