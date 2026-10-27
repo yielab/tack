@@ -15,6 +15,7 @@ use chaos_common::*;
 use serde_json::{Value, json};
 use tack_db::queries::{agent_runners, execution_attempts, execution_requests};
 use tack_db::{Repository, init_pool, migrations};
+use tack_protocol::Clock;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
 
@@ -51,11 +52,11 @@ async fn fleet_race_between_two_runners_grants_exactly_one_lease() {
     // fixture setup doesn't depend on that route's own behavior.
     let fleet_id = "fleet-g2-race";
     let clock = SystemClock;
-    repo.create_agent_fleet(fleet_id, "G2 race fleet", None, "{}", &clock)
+    repo.create_agent_fleet(fleet_id, "G2 race fleet", None, "{}", clock.now())
         .await
         .expect("insert fleet");
     for runner_id in [&runner_a.runner_id, &runner_b.runner_id] {
-        repo.add_fleet_member(fleet_id, runner_id, &clock)
+        repo.add_fleet_member(fleet_id, runner_id, clock.now())
             .await
             .expect("insert fleet member");
     }

@@ -27,7 +27,7 @@ async fn enrollment_token_is_single_use_and_revocation_fails_closed() {
     fx.issue_token("token-2", "revoked").await;
     assert!(
         fx.repo
-            .revoke_enrollment_token("revoked", &fx.clock)
+            .revoke_enrollment_token("revoked", fx.clock.now())
             .await
             .unwrap()
     );
@@ -58,7 +58,7 @@ async fn concurrent_enrollment_redemption_has_one_winner() {
                 token_hash: "hash-concurrent-enrollment",
                 expires_at: fx.clock.now() + Duration::minutes(5),
             },
-            &fx.clock,
+            fx.clock.now(),
         )
         .await
         .unwrap();

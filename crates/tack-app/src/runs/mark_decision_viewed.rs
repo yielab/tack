@@ -1,5 +1,5 @@
+use chrono::{DateTime, Utc};
 use tack_db::Repository;
-use tack_protocol::Clock;
 
 use crate::AppError;
 
@@ -8,11 +8,11 @@ use crate::AppError;
 /// `AppError::NotFound`.
 pub async fn mark_decision_viewed(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     attempt_id: &str,
     decision_id: &str,
 ) -> Result<String, AppError> {
-    repo.mark_execution_decision_viewed(attempt_id, decision_id, clock)
+    repo.mark_execution_decision_viewed(attempt_id, decision_id, now)
         .await?
         .ok_or(AppError::NotFound)
 }

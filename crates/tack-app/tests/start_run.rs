@@ -2,6 +2,7 @@
 //! (profile, agent, machine, repository, limits), what it is refused for, and how a retry replays.
 
 use crate::support;
+use tack_protocol::Clock;
 
 use serde_json::{Value, json};
 use support::{
@@ -58,7 +59,7 @@ async fn a_repeated_key_replays_and_another_operator_starts_its_own_run() {
 
     let other = start_run(
         &board.repo,
-        &SystemClock,
+        SystemClock.now(),
         "operator-2",
         full_request(board.item_id),
     )
@@ -86,7 +87,7 @@ async fn a_revoked_runner_still_replays_but_takes_no_new_run() {
     let first = start(&board, full_request(board.item_id)).await.unwrap();
     board
         .repo
-        .revoke_runner("runner-active", &SystemClock)
+        .revoke_runner("runner-active", SystemClock.now())
         .await
         .unwrap();
     let replay = start(&board, full_request(board.item_id)).await.unwrap();

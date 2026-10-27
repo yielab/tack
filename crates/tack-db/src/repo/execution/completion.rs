@@ -2,7 +2,6 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::Row;
-use tack_protocol::Clock;
 use tracing::{instrument, warn};
 
 use super::super::items::{AtomicItemUpdateOutcome, update_item_in};
@@ -10,7 +9,7 @@ use super::decisions::end_attempt_decisions;
 use super::enqueue::{
     EnqueueResult, NewExecutionRequest, enqueue_in, validate_execution_request_snapshot,
 };
-use super::shared::{mirror_request_state, stamp, terminal};
+use super::shared::{mirror_request_state, terminal};
 use super::state::{self, Move};
 use crate::canonical_json;
 use crate::{Repository, StoreError};
@@ -264,10 +263,10 @@ impl Repository {
     pub async fn complete_execution_result(
         &self,
         completion: Completion<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<CompletionResult, StoreError> {
         Ok(self
-            .complete_execution_with_follow_ups(completion, FollowUps::default(), clock)
+            .complete_execution_with_follow_ups(completion, FollowUps::default(), now)
             .await?
             .0)
     }
@@ -275,18 +274,18 @@ impl Repository {
     /// [`Self::complete_execution_result`], and when it commits, the `follow_ups` in the same
     /// transaction. A follow-up that fails with a store error undoes the completion with it (the
     /// runner reports again); one the rules refuse is in the outcome and the completion stands.
-    #[instrument(skip(self, completion, follow_ups, clock))]
+    #[instrument(skip(self, completion, follow_ups))]
     pub async fn complete_execution_with_follow_ups(
         &self,
         completion: Completion<'_>,
         follow_ups: FollowUps<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(CompletionResult, FollowUpsOutcome), StoreError> {
         let none = FollowUpsOutcome::default;
         if !completion.terminal_state.is_terminal() {
             return Ok((CompletionResult::Conflict, none()));
         }
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let fingerprint = completion_fingerprint(&completion)?;
         // A follow-up run Tack built wrong is dropped with a warning rather than failing the
         // completion for good: the runner would only report the same thing again.
@@ -437,7 +436,7 @@ impl Repository {
     pub async fn transition_attempt_with_facts(
         &self,
         input: AttemptTransitionInput<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<AttemptTransitionResult, StoreError> {
         if input.workspace_id.is_empty()
             || input.base_revision.is_empty()
@@ -449,7 +448,7 @@ impl Repository {
             return Ok(AttemptTransitionResult::Conflict);
         }
 
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         // Serialize duplicate transition acknowledgements for the same
         // attempt (e.g. a runner retrying an unacknowledged preparing or
         // running report) before either transaction reads this attempt
@@ -590,9 +589,9 @@ impl Repository {
     pub async fn observe_cancellation(
         &self,
         input: CancellationObservationInput<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<CancellationObservation, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let fingerprint = cancellation_fingerprint(&input)?;
         // Serialize duplicate cancellation observations for the same attempt
         // (e.g. a runner retrying an unacknowledged cancellation report)
@@ -678,14 +677,14 @@ impl Repository {
         Ok(CancellationObservation::Cancelled(response))
     }
 
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn complete_execution(
         &self,
         completion: Completion<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         Ok(matches!(
-            self.complete_execution_result(completion, clock).await?,
+            self.complete_execution_result(completion, now).await?,
             CompletionResult::Committed(_) | CompletionResult::Replayed(_)
         ))
     }
@@ -696,13 +695,13 @@ impl Repository {
     /// request end `cancelled` at once: that is the person's decision. A run
     /// somebody holds only gets `cancellation_requested_at`, which its runner
     /// reads on the next heartbeat.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn request_execution_cancellation(
         &self,
         request_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let applied = apply_cancellation(&mut tx, request_id, &now).await?;
         tx.commit().await?;
@@ -711,13 +710,13 @@ impl Repository {
 
     /// [`Self::request_execution_cancellation`], answering what became of the request in the
     /// same transaction: ended at once, waiting for its runner, already terminal, or unknown.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn cancel_execution_request(
         &self,
         request_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<CancellationOutcome, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let applied = apply_cancellation(&mut tx, request_id, &now).await?;
         let state: Option<String> =

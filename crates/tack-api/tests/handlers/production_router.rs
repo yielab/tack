@@ -19,6 +19,7 @@ use tack_api::openapi::ApiDoc;
 use tack_api::{AppState, router::build_router};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{Repository, queries};
+use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
@@ -571,7 +572,7 @@ async fn production_router_rejects_substituted_credentials() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");

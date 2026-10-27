@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_core::decision::DecisionResolvedBy;
 use tack_db::Repository;
 use tack_db::repo::execution::DecisionSettlement;
-use tack_protocol::Clock;
 
 use crate::AppError;
 use tack_db::canonical_json;
@@ -49,13 +49,12 @@ pub enum ResolveOutcome {
 ///   then it is resolved.
 pub async fn resolve_decision(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     attempt_id: &str,
     decision_id: &str,
     answer: &Value,
     resolved_by: &DecisionResolvedBy,
 ) -> Result<ResolveOutcome, AppError> {
-    let now = clock.now();
     let now_s = now.to_rfc3339();
     let outcome = repo
         .settle_execution_decision(attempt_id, decision_id, now, |decision| {

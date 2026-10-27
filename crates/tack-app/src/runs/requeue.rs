@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use tack_db::repo::execution::{OperatorRequeueResult, state};
 use tack_db::{Repository, queries};
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 
 use super::start_run::fingerprint;
@@ -20,20 +20,14 @@ pub struct Requeued {
 /// (`unknown` when it has none).
 pub async fn requeue(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     request_id: &str,
     recovery_key: &str,
     reason: &str,
     actor: &str,
 ) -> Result<Requeued, AppError> {
     let result = repo
-        .operator_requeue_needs_operator(
-            request_id,
-            recovery_key,
-            actor,
-            &fingerprint(reason),
-            clock,
-        )
+        .operator_requeue_needs_operator(request_id, recovery_key, actor, &fingerprint(reason), now)
         .await?;
     match result {
         OperatorRequeueResult::Requeued => Ok(Requeued { replayed: false }),

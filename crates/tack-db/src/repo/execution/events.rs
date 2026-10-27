@@ -4,10 +4,8 @@ use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
-use tack_protocol::Clock;
 use tracing::instrument;
 
-use super::shared::stamp;
 use crate::Repository;
 use crate::canonical_json;
 
@@ -158,14 +156,14 @@ impl Repository {
         ))
     }
 
-    #[instrument(skip(self, events, clock))]
+    #[instrument(skip(self, events))]
     pub async fn append_execution_events_result(
         &self,
         batch: EventBatch<'_>,
         events: &[NewEvent<'_>],
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<EventApplyResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let fingerprint = event_batch_fingerprint(&batch, events)?;
         // Serialize duplicate/replayed event batches for the same attempt
         // (e.g. a runner retrying an unacknowledged event-batch POST) before

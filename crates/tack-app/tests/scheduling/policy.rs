@@ -19,7 +19,6 @@ use tack_test_support::seed;
 use uuid::Uuid;
 
 use crate::scheduling::support::{codex_capability_snapshot, setup_repo};
-use tack_test_support::FixedClock;
 
 async fn register_active_runner(
     repo: &Repository,
@@ -38,7 +37,7 @@ async fn register_active_runner(
             capability_snapshot,
             protocol_version: 1,
         },
-        &FixedClock(now),
+        now,
     )
     .await
     .expect("register runner");
@@ -46,15 +45,9 @@ async fn register_active_runner(
 }
 
 async fn create_fleet(repo: &Repository, fleet_id: &str, now: chrono::DateTime<Utc>) {
-    repo.create_agent_fleet(
-        fleet_id,
-        &format!("fleet-{fleet_id}"),
-        None,
-        "{}",
-        &FixedClock(now),
-    )
-    .await
-    .expect("insert fleet");
+    repo.create_agent_fleet(fleet_id, &format!("fleet-{fleet_id}"), None, "{}", now)
+        .await
+        .expect("insert fleet");
 }
 
 async fn add_fleet_member(
@@ -63,7 +56,7 @@ async fn add_fleet_member(
     runner_id: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.add_fleet_member(fleet_id, runner_id, &FixedClock(now))
+    repo.add_fleet_member(fleet_id, runner_id, now)
         .await
         .expect("fleet membership");
 }
@@ -304,7 +297,7 @@ async fn assert_default_model_outcome(
             "claim",
             "attempt",
             ChronoDuration::seconds(60),
-            &FixedClock(now),
+            now,
             RequestSelection::Scheduled(chosen.as_deref()),
         )
         .await

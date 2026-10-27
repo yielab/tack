@@ -21,7 +21,7 @@ async fn report(
 ) -> EventsReported {
     report_events(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         EventReport {
             runner_id: RUNNER_ID,
             attempt_id,

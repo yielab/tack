@@ -77,7 +77,7 @@ impl Fixture {
                 capability_snapshot: &capability_snapshot,
                 protocol_version: 1,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .expect("runner");
@@ -164,7 +164,7 @@ async fn create_pending(
             token_hash: &token_hash,
             expires_at: clock.now() + Duration::hours(1),
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("pending runner");

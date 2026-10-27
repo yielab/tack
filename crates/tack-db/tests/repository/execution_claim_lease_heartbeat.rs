@@ -232,13 +232,16 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
     );
     assert!(matches!(
         fx.repo
-            .recover_attempt(recovery.clone(), &fx.clock)
+            .recover_attempt(recovery.clone(), fx.clock.now())
             .await
             .unwrap(),
         RecoveryObservationResult::Applied(_)
     ));
     assert!(matches!(
-        fx.repo.recover_attempt(recovery, &fx.clock).await.unwrap(),
+        fx.repo
+            .recover_attempt(recovery, fx.clock.now())
+            .await
+            .unwrap(),
         RecoveryObservationResult::Replayed(_)
     ));
     assert_eq!(fx.count("execution_recovery_audits", "attempt-a").await, 1);
@@ -541,7 +544,7 @@ async fn heartbeat_replay_insert_failure_rolls_back_all_updates() {
             0,
             &leases,
             Duration::seconds(60),
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
     assert!(result.is_err());

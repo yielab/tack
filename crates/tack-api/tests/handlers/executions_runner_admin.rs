@@ -2,6 +2,7 @@
 //! global-router registration is proven separately (`production_router.rs`).
 
 use tack_api::handlers::{executions, runner_admin};
+use tack_protocol::Clock;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
@@ -97,7 +98,7 @@ async fn setup() -> (axum::Router, Repository, String) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -109,7 +110,7 @@ async fn setup() -> (axum::Router, Repository, String) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -132,7 +133,7 @@ async fn builtin_profiles_exist_on_a_fresh_database() {
     };
     assert!(list(app.clone()).await.is_empty());
 
-    tack_db::repo::execution::seed_builtin_profiles(&repo)
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("seed");
     let profiles = list(app.clone()).await;
@@ -169,7 +170,7 @@ async fn builtin_profiles_exist_on_a_fresh_database() {
     assert_eq!(status, StatusCode::OK, "{patched}");
     assert_eq!(patched["instructions"], "edited");
     assert_eq!(patched["builtin"], true);
-    tack_db::repo::execution::seed_builtin_profiles(&repo)
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("second seed");
     let again = list(app.clone()).await;
@@ -248,7 +249,7 @@ async fn a_create_answers_the_request_and_refuses_in_the_error_envelope() {
     assert_eq!(err["error"]["code"], "invalid_request");
     assert_eq!(err["error"]["details"]["field"], "repository_snapshot");
 
-    repo.revoke_runner("runner-active", &SystemClock)
+    repo.revoke_runner("runner-active", SystemClock.now())
         .await
         .unwrap();
     let unavailable = create_body(&item_id).replace("same-key", "new-key");
@@ -396,7 +397,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
             1,
             "{}",
             1,
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -416,7 +417,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
             1,
             "{}",
             1,
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap(),
@@ -455,7 +456,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
             1,
             "{}",
             1,
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap(),
@@ -1219,7 +1220,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     let project_id = project_of(&repo, &item_id).await;
 
     // Seed builtin profiles
-    tack_db::repo::execution::seed_builtin_profiles(&repo)
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("seed profiles");
 
@@ -1436,7 +1437,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
             tool_policy: "{}",
             limits: r#"{"budgets":{"tokens":300000}}"#,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile b");
@@ -1554,7 +1555,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
             tool_policy: "{}",
             limits: r#"{"budgets":{"tokens":300000}}"#,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile b");
@@ -1798,7 +1799,7 @@ async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_o
             tool_policy: "{}",
             limits: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -1846,7 +1847,7 @@ async fn add_profile(repo: &Repository, id: &str) {
             tool_policy: "{}",
             limits: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -1961,7 +1962,7 @@ async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_s
                 tool_policy: "{}",
                 limits,
             },
-            &SystemClock,
+            SystemClock.now(),
         )
         .await
         .expect("profile");
@@ -2113,7 +2114,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 tool_policy: "{}",
                 limits,
             },
-            &SystemClock,
+            SystemClock.now(),
         )
         .await
         .expect("profile");
@@ -2220,7 +2221,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 tool_policy: "{}",
                 limits: &limits.to_string(),
             },
-            &SystemClock,
+            SystemClock.now(),
         )
         .await
         .ok();
@@ -2248,7 +2249,7 @@ async fn the_runner_list_says_which_runners_are_online() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("second runner");
@@ -2367,7 +2368,7 @@ async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Valu
             tool_policy: &tool_policy.to_string(),
             limits: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");

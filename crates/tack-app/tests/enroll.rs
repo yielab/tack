@@ -34,7 +34,7 @@ async fn world_with_a_pending_runner() -> World {
                 token_hash: TOKEN_HASH,
                 expires_at: world.clock.now() + Duration::minutes(5),
             },
-            &world.clock,
+            world.clock.now(),
         )
         .await
         .expect("pending runner");
@@ -48,7 +48,7 @@ async fn enroll_with(world: &World, token_hash: &str) -> Enrolled {
 async fn enroll_on(repo: &tack_db::Repository, clock: &FakeClock, token_hash: &str) -> Enrolled {
     enroll(
         repo,
-        clock,
+        clock.now(),
         Enrollment {
             token_hash,
             credential_hash: "hash-of-the-credential",

@@ -2,12 +2,7 @@
 
 use crate::StoreError;
 use sqlx::SqliteConnection;
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
-
-pub(super) fn stamp(clock: &dyn Clock) -> String {
-    clock.now().to_rfc3339()
-}
 
 pub(super) fn terminal(state: &str) -> bool {
     super::state::parse(state).is_ok_and(ExecutionState::is_terminal)

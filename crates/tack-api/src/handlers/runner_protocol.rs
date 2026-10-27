@@ -506,7 +506,7 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 
     let enrolled = tack_app::runs::enroll::enroll(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Enrollment {
             token_hash: &token_hash,
             credential_hash: &credential_hash_value,
@@ -654,7 +654,7 @@ pub async fn refresh(
     let new_credential_hash = raw_credential.as_deref().map(runner_auth::credential_hash);
     let refreshed = tack_app::runs::refresh::refresh(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Refresh {
             runner_id: &principal.runner_id,
             presented_credential_hash: &principal.credential_hash,
@@ -752,7 +752,7 @@ pub async fn claim(
     // attempt, then takes the fenced claim, which re-checks that choice before leasing it.
     let claimed = tack_app::runs::claim::claim(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         &principal.runner_id,
         &claim_request_id,
         Duration::seconds(LIMITS.lease_duration_seconds),
@@ -867,7 +867,7 @@ pub async fn heartbeat(
 
     let result = tack_app::runs::heartbeat::heartbeat(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Beat {
             runner_id: &principal.runner_id,
             heartbeat_id: &heartbeat_id,
@@ -1005,7 +1005,7 @@ async fn transition_attempt(
                 base_revision: &base_revision,
                 process_id: process_id.as_deref(),
             },
-            state.clock.as_ref(),
+            state.clock.now(),
         )
         .await
         .map_err(|_| internal_error("Could not record attempt transition"))?;
@@ -1123,7 +1123,7 @@ pub async fn submit_events(
 
     let result = tack_app::runs::report_events::report_events(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         EventReport {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
@@ -1310,7 +1310,7 @@ pub async fn create_decision(
 
     let created = tack_app::runs::create_decision::create_decision(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         DecisionRequest {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
@@ -1498,7 +1498,7 @@ pub async fn submit_artifacts(
 
     let submitted = tack_app::runs::submit_artifacts::submit_artifacts(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         ManifestSubmission {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
@@ -1603,7 +1603,7 @@ pub async fn put_artifact_content(
     };
     let target = match tack_app::runs::submit_artifacts::check_artifact_upload(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         upload,
     )
     .await
@@ -1683,7 +1683,7 @@ pub async fn put_artifact_content(
 
     let commit = tack_app::runs::submit_artifacts::commit_artifact_content(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         upload,
         &stored.content_reference,
     )
@@ -1789,7 +1789,7 @@ pub async fn submit_completion(
     let storage = state.artifact_storage.as_ref();
     let completed = tack_app::runs::complete::complete(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         CompletionReport {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
@@ -1923,7 +1923,7 @@ pub async fn observe_cancellation_report(
                 details: &details_json,
                 observation: &observation_json,
             },
-            state.clock.as_ref(),
+            state.clock.now(),
         )
         .await
         .map_err(|_| internal_error("Could not record cancellation observation"))?;
@@ -2004,7 +2004,7 @@ pub async fn observe_recovery(
 
     let observed = tack_app::runs::observe_recovery::observe_recovery(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Observation {
             runner_id: &principal.runner_id,
             attempt_id: request.attempt_id.as_str(),

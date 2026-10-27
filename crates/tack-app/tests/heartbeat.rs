@@ -19,7 +19,7 @@ async fn beat(
 ) -> Heartbeat {
     heartbeat(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         Beat {
             runner_id: RUNNER_ID,
             heartbeat_id,
@@ -39,7 +39,7 @@ async fn the_same_beat_again_returns_the_first_answer_and_other_content_conflict
     enqueue(&world, "replay-key").await;
     claim(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         RUNNER_ID,
         "claim-replay",
         Duration::seconds(60),
@@ -68,7 +68,7 @@ async fn a_lease_with_the_wrong_fence_is_stale() {
     enqueue(&world, "stale-key").await;
     let claimed = claim(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         RUNNER_ID,
         "claim-stale",
         Duration::seconds(60),

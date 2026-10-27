@@ -62,7 +62,7 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -74,7 +74,7 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
             tool_policy: "{}",
             limits: "{}",
         },
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -146,7 +146,7 @@ async fn ready_running_attempt(
             attempt_id,
             attempt_id,
             Duration::seconds(300),
-            clock,
+            clock.now(),
             RequestSelection::Naive,
         )
         .await
@@ -163,7 +163,7 @@ async fn ready_running_attempt(
             base_revision: "abc123",
             process_id: None,
         },
-        clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -177,7 +177,7 @@ async fn ready_running_attempt(
             base_revision: "abc123",
             process_id: Some("pid-1"),
         },
-        clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -255,7 +255,7 @@ async fn set_content_reference(
         artifact_id,
         fence,
         blob,
-        clock,
+        clock.now(),
     )
     .await
     .unwrap()
@@ -313,7 +313,7 @@ async fn record_patch_artifact(
     clock: &FakeClock,
 ) -> bool {
     let artifact = patch_artifact(row_id, artifact_id, sha256, content_reference);
-    repo.record_execution_artifact("runner-f2", attempt_id, fence, artifact, clock)
+    repo.record_execution_artifact("runner-f2", attempt_id, fence, artifact, clock.now())
         .await
         .unwrap()
 }
@@ -399,7 +399,7 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
                     checkpoint: "checkpoint-0001",
                 },
                 &[event("evt-row-1", "evt-1", 1, clock.now())],
-                &clock,
+                clock.now(),
             )
             .await
             .unwrap();
@@ -449,7 +449,7 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
                 checkpoint: failing_checkpoint,
             },
             &events,
-            &clock,
+            clock.now(),
         )
         .await;
     assert!(
@@ -543,7 +543,7 @@ async fn content_reference_is_committed_once_and_never_overwritten() {
             aid,
             fence,
             patch_artifact("art-row-1", "art-1", &sha, None),
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -578,7 +578,7 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
         "attempt-content-stale",
         fence,
         log_artifact("art-row-2", "art-2", &sha),
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -706,7 +706,7 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
             &sha,
             None,
         ),
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -734,7 +734,7 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
                 case.artifact_id,
                 fence,
                 &format!("{}-hex/real-upload.blob", case.artifact_id),
-                &clock,
+                clock.now(),
             )
             .await
             .unwrap();

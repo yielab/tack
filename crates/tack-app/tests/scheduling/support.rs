@@ -9,6 +9,7 @@ use chrono::Utc;
 use tack_core::models::{CreateItem, ItemType, Priority as ItemPriority, ProjectType};
 use tack_db::Repository;
 use tack_db::repo::execution::NewAgentProfile;
+use tack_protocol::Clock;
 
 use tack_test_support::{FixedClock, create_test_workspace, setup_test_db};
 
@@ -64,7 +65,7 @@ pub(crate) async fn setup_repo() -> (Repository, String) {
             tool_policy: "{}",
             limits: "{}",
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("agent profile");

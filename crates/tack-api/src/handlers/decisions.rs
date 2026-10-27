@@ -283,7 +283,7 @@ pub async fn mark_decision_viewed(
     principal(&headers)?;
     let viewed_at = runs::mark_decision_viewed::mark_decision_viewed(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         &attempt_id,
         &decision_id,
     )
@@ -325,7 +325,7 @@ pub async fn resolve_decision(
     let resolved_by = DecisionResolvedBy::operator(principal_id);
     let outcome = runs::resolve_decision::resolve_decision(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         &attempt_id,
         &decision_id,
         &answer,

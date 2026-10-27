@@ -119,17 +119,10 @@ pub async fn start_test_run(
     let repository = json!({
         "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
     });
-    enqueue_run(
-        repo,
-        clock,
-        PRINCIPAL,
-        request,
-        resolved_profile,
-        repository,
-    )
-    .await
-    .map(|started| started.request_id)
-    .map_err(TestRunError::Refused)
+    enqueue_run(repo, now, PRINCIPAL, request, resolved_profile, repository)
+        .await
+        .map(|started| started.request_id)
+        .map_err(TestRunError::Refused)
 }
 
 /// The archived project test runs are filed under, created and archived on first use.

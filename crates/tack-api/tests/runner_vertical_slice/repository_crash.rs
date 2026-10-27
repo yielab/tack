@@ -99,7 +99,7 @@ async fn fixture() -> Fixture {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -111,7 +111,7 @@ async fn fixture() -> Fixture {
             tool_policy: "{}",
             limits: "{}",
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -213,7 +213,7 @@ async fn try_claim(
             claim_request_id,
             attempt_id,
             Duration::seconds(60),
-            &fixture.clock,
+            fixture.clock.now(),
             RequestSelection::Naive,
         )
         .await
@@ -273,7 +273,7 @@ async fn recover(
                 observation,
                 details,
             },
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
         .expect("record recovery")
@@ -408,7 +408,7 @@ async fn assert_event_batch_fault_rolls_back(fault: &EventBatchFault) {
     assert!(
         fixture
             .repo
-            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, fixture.clock.now())
             .await
             .is_err(),
         "{}",
@@ -436,7 +436,7 @@ async fn event_batch_replay_writes_events_exactly_once() {
     assert!(matches!(
         fixture
             .repo
-            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, fixture.clock.now())
             .await
             .expect("first report"),
         EventApplyResult::Applied(ref result) if !result.replayed
@@ -444,7 +444,7 @@ async fn event_batch_replay_writes_events_exactly_once() {
     assert!(matches!(
         fixture
             .repo
-            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, fixture.clock.now())
             .await
             .expect("replay"),
         EventApplyResult::Applied(ref result) if result.replayed
@@ -485,7 +485,7 @@ async fn completion_crash_rolls_back_attempt_and_request() {
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), &fixture.clock)
+            .complete_execution(completion_crash(), fixture.clock.now())
             .await
             .is_err()
     );
@@ -506,14 +506,14 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), &fixture.clock)
+            .complete_execution(completion_crash(), fixture.clock.now())
             .await
             .expect("completion")
     );
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), &fixture.clock)
+            .complete_execution(completion_crash(), fixture.clock.now())
             .await
             .expect("completion replay")
     );
@@ -531,7 +531,7 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
 async fn request_cancellation(fixture: &Fixture) -> Result<bool, StoreError> {
     fixture
         .repo
-        .request_execution_cancellation("request-crash", &fixture.clock)
+        .request_execution_cancellation("request-crash", fixture.clock.now())
         .await
 }
 
@@ -615,7 +615,7 @@ async fn redeem(fixture: &Fixture) -> Result<RedeemEnrollmentResult, tack_db::St
             1,
             "{}",
             1,
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
 }
@@ -628,7 +628,7 @@ async fn enrollment_redeem_has_one_winner_and_keeps_hash_only_token() {
         .create_pending_runner_and_issue_token(
             pending_enroll_runner(),
             pending_enroll_token(&fixture.clock),
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
         .expect("pending runner and token");
@@ -686,7 +686,7 @@ async fn crash_heartbeat(
             0,
             &crash_heartbeat_lease(),
             Duration::seconds(60),
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
 }

@@ -6,7 +6,6 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_db::repo::execution::NewExecutionRequest;
 use tack_db::{Repository, StoreError, queries};
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::{MergeDecision, MergeReadinessPack, NextStep};
 use uuid::Uuid;
@@ -98,7 +97,7 @@ impl Rework {
 /// waits for review as before.
 pub(super) async fn plan<R, Fut>(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     attempt_id: &str,
     actual_execution: &str,
     read_pack: &R,
@@ -172,11 +171,10 @@ where
         "exec_{}",
         hex::encode(Sha256::digest(format!("{scope}\0{key}").as_bytes()))
     );
-    let created_at = clock.now();
     let root_object = snapshot.as_object_mut().ok_or(StoreError::NotFound)?;
     root_object.insert("request_id".into(), json!(new_id));
     root_object.insert("idempotency_key".into(), json!(key));
-    root_object.insert("created_at".into(), json!(created_at.to_rfc3339()));
+    root_object.insert("created_at".into(), json!(now.to_rfc3339()));
     let mut metadata = root_object.get("metadata").cloned().unwrap_or(json!({}));
     metadata["rework_of"] = json!(root);
     // The branch the attempt just rejected left in the user's repository: a harness that works
@@ -233,6 +231,6 @@ where
         environment: text("environment"),
         metadata: text("metadata"),
         request_snapshot,
-        created_at,
+        created_at: now,
     }))
 }

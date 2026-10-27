@@ -142,14 +142,14 @@ async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
 
     assert_eq!(
         fx.repo
-            .expire_decisions_of_ended_attempts(&fx.clock)
+            .expire_decisions_of_ended_attempts(fx.clock.now())
             .await
             .unwrap(),
         1
     );
     assert_eq!(
         fx.repo
-            .expire_decisions_of_ended_attempts(&fx.clock)
+            .expire_decisions_of_ended_attempts(fx.clock.now())
             .await
             .unwrap(),
         0
@@ -292,7 +292,7 @@ async fn cancellation_corrupt_replay_response_fails_closed() {
         .unwrap();
     assert!(
         fx.repo
-            .observe_cancellation(input, &fx.clock)
+            .observe_cancellation(input, fx.clock.now())
             .await
             .is_err()
     );
@@ -320,7 +320,7 @@ async fn cancellation_requires_exact_process_stopped_observation() {
     };
     assert!(
         fx.repo
-            .observe_cancellation(invalid, &fx.clock)
+            .observe_cancellation(invalid, fx.clock.now())
             .await
             .is_err()
     );
@@ -408,7 +408,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     );
     assert!(
         fx.repo
-            .observe_cancellation(input, &fx.clock)
+            .observe_cancellation(input, fx.clock.now())
             .await
             .is_err()
     );
@@ -441,7 +441,7 @@ async fn completion_replay_insert_failure_rolls_back_terminal() {
     );
     let error = fx
         .repo
-        .complete_execution_result(completion, &fx.clock)
+        .complete_execution_result(completion, fx.clock.now())
         .await;
     assert!(error.is_err());
     assert_eq!(
@@ -471,7 +471,12 @@ async fn recovery_replay_insert_failure_rolls_back_lifecycle() {
         "recovery-rollback",
         RecoveryObservation::Ambiguous,
     );
-    assert!(fx.repo.recover_attempt(input, &fx.clock).await.is_err());
+    assert!(
+        fx.repo
+            .recover_attempt(input, fx.clock.now())
+            .await
+            .is_err()
+    );
     assert_eq!(
         fx.attempt_state("attempt-recovery-rollback").await,
         "leased"

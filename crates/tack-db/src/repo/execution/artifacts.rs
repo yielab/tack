@@ -4,10 +4,8 @@ use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
-use tack_protocol::Clock;
 use tracing::instrument;
 
-use super::shared::stamp;
 use crate::Repository;
 
 #[derive(Debug, Clone)]
@@ -89,16 +87,16 @@ fn mrp_review_row(row: &sqlx::sqlite::SqliteRow) -> MrpReviewRow {
 }
 
 impl Repository {
-    #[instrument(skip(self, artifact, clock))]
+    #[instrument(skip(self, artifact))]
     pub async fn record_execution_artifact(
         &self,
         runner_id: &str,
         attempt_id: &str,
         fence: i64,
         artifact: NewArtifact<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         // Serialize the eligibility check and the insert against a concurrent
         // completion, cancellation, or recovery transition for the same
         // attempt (all of which already open BEGIN IMMEDIATE). Without this,
@@ -209,7 +207,7 @@ impl Repository {
     /// reports `AlreadySet` rather than silently re-writing, so "checksum
     /// mismatch stages nothing" can never be defeated by racing two uploads
     /// for the same artifact_id.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn set_execution_artifact_content_reference(
         &self,
         runner_id: &str,
@@ -217,9 +215,9 @@ impl Repository {
         artifact_id: &str,
         fence: i64,
         content_reference: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<ArtifactContentCommitResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let valid: bool = sqlx::query_scalar(state::sql("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ({terminal}) AND lease_expires_at > ?)"))
             .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
@@ -373,12 +371,12 @@ impl Repository {
 
     /// Stamps the first time the pack was opened. Idempotent: a second call
     /// keeps the first `viewed_at` and changes nothing else.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn mark_mrp_viewed(
         &self,
         attempt_id: &str,
         artifact_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<MrpReviewRow, StoreError> {
         let row = sqlx::query(AssertSqlSafe(format!(
             "INSERT INTO mrp_reviews (attempt_id, artifact_id, viewed_at) VALUES (?, ?, ?) \
@@ -387,7 +385,7 @@ impl Repository {
         )))
         .bind(attempt_id)
         .bind(artifact_id)
-        .bind(stamp(clock))
+        .bind(now.to_rfc3339())
         .fetch_one(self.pool())
         .await?;
         Ok(mrp_review_row(&row))
@@ -395,7 +393,7 @@ impl Repository {
 
     /// Records the verdict. The first review is the record: `Ok(None)` means
     /// the pack was already reviewed and nothing was written.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn record_mrp_review(
         &self,
         attempt_id: &str,
@@ -403,9 +401,9 @@ impl Repository {
         verdict: &str,
         reason: &str,
         reviewed_by: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<Option<MrpReviewRow>, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let row = sqlx::query(AssertSqlSafe(format!(
             "INSERT INTO mrp_reviews (attempt_id, artifact_id, verdict, reason, viewed_at, reviewed_at, reviewed_by) \
              VALUES (?, ?, ?, ?, ?, ?, ?) \

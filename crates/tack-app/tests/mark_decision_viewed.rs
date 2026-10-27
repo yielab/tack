@@ -41,7 +41,7 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -53,7 +53,7 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: "{}",
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -91,7 +91,7 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
         "att-viewed",
         "att-viewed",
         Duration::seconds(300),
-        &clock,
+        clock.now(),
         RequestSelection::Naive,
     )
     .await
@@ -105,11 +105,11 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
 async fn viewing_twice_keeps_the_first_timestamp() {
     let (repo, clock) = claimed_attempt_with_a_decision().await;
 
-    let first = mark_decision_viewed(&repo, &clock, "att-viewed", "dec-1")
+    let first = mark_decision_viewed(&repo, clock.now(), "att-viewed", "dec-1")
         .await
         .expect("first view");
     clock.0.advance(Duration::minutes(5));
-    let second = mark_decision_viewed(&repo, &clock, "att-viewed", "dec-1")
+    let second = mark_decision_viewed(&repo, clock.now(), "att-viewed", "dec-1")
         .await
         .expect("second view");
 
@@ -120,8 +120,8 @@ async fn viewing_twice_keeps_the_first_timestamp() {
 async fn a_decision_the_attempt_does_not_have_is_not_found() {
     let (repo, clock) = claimed_attempt_with_a_decision().await;
 
-    let missing = mark_decision_viewed(&repo, &clock, "att-viewed", "dec-other").await;
-    let wrong_attempt = mark_decision_viewed(&repo, &clock, "att-other", "dec-1").await;
+    let missing = mark_decision_viewed(&repo, clock.now(), "att-viewed", "dec-other").await;
+    let wrong_attempt = mark_decision_viewed(&repo, clock.now(), "att-other", "dec-1").await;
 
     assert!(matches!(missing, Err(AppError::NotFound)), "{missing:?}");
     assert!(

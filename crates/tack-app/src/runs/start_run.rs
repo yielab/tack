@@ -12,7 +12,6 @@ use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
 use tack_db::repo::execution::{EnqueueResult, NewExecutionRequest, RunnerListingRow};
 use tack_db::{Repository, queries};
 use tack_orch::scheduler::select::SchedulingPolicy;
-use tack_protocol::Clock;
 use tack_protocol::execution::{
     Approvals, AutonomyLevel, ExecutionRequestSnapshot, PermissionPolicy, RunnerId, RunnerSelector,
     StableErrorCode,
@@ -611,6 +610,7 @@ pub async fn resolve_profile(
 pub async fn default_selector(
     repo: &Repository,
     fleet_id: Option<String>,
+    now: DateTime<Utc>,
 ) -> Result<RunnerSelector, Refusal> {
     if let Some(fleet_id) = fleet_id {
         return Ok(RunnerSelector::Fleet { fleet_id });
@@ -631,7 +631,6 @@ pub async fn default_selector(
         .collect();
     // Of several active runners the ones answering win; when none answers, all stay
     // candidates and the run waits for whichever comes back.
-    let now = Utc::now();
     if runners.iter().any(|runner| runner_is_online(runner, now)) {
         runners.retain(|runner| runner_is_online(runner, now));
     }
@@ -797,13 +796,13 @@ fn validate_request(input: &RunRequest) -> Result<Settled, Refusal> {
 /// under this key keeps the first try's, read from the snapshot it left; a first try gets a new id
 /// and now.
 fn request_identity(
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     scope: &str,
     key: &str,
     existing_snapshot: Option<String>,
 ) -> Result<(String, DateTime<Utc>), Refusal> {
     let Some(snapshot) = existing_snapshot else {
-        return Ok((stable_request_id(scope, key), clock.now()));
+        return Ok((stable_request_id(scope, key), now));
     };
     // A stored replay row that fails to parse means the *persisted* snapshot is corrupt, not that
     // the caller's idempotency key collided with a different payload (that client-caused case is
@@ -989,7 +988,7 @@ impl StoredColumns {
 /// server-built requests that have no HTTP body to validate.
 pub async fn enqueue_run(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     authenticated_principal: &str,
     input: RunRequest,
     profile: Value,
@@ -1022,8 +1021,7 @@ pub async fn enqueue_run(
     .await
     .map_err(|_| internal("Could not resolve model policy"))?
     .model;
-    let (request_id, created_at) =
-        request_identity(clock, &scope, &input.idempotency_key, existing)?;
+    let (request_id, created_at) = request_identity(now, &scope, &input.idempotency_key, existing)?;
     let draft = Draft {
         input: &input,
         settled: &settled,
@@ -1107,7 +1105,7 @@ pub async fn enqueue_run(
 /// not a header, and the profile, agent and machine are resolved as for any other run.
 pub async fn start_run(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     principal: &str,
     mut input: RunRequest,
 ) -> Result<Started, Refusal> {
@@ -1185,7 +1183,7 @@ pub async fn start_run(
         return Err(select_an_agent());
     }
     if input.selector.is_none() {
-        input.selector = Some(default_selector(repo, resolved.fleet_id).await?);
+        input.selector = Some(default_selector(repo, resolved.fleet_id, now).await?);
     }
     let provisional = queries::budgets::provisional_tokens(repo, &item.project_id.to_string())
         .await
@@ -1199,5 +1197,5 @@ pub async fn start_run(
         })?
         .and_then(|n| u64::try_from(n).ok());
     let profile = load_profile(repo, &resolved.profile_id, provisional, &mut input).await?;
-    enqueue_run(repo, clock, principal, input, profile, repository).await
+    enqueue_run(repo, now, principal, input, profile, repository).await
 }

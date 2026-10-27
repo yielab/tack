@@ -160,7 +160,7 @@ async fn project_tick(
             .flatten()
             .filter(|resolved| resolved.harness.is_some() || project.default_harness.is_some());
         let has_machine = match &profile {
-            Some(resolved) => default_selector(repo, resolved.fleet_id.clone())
+            Some(resolved) => default_selector(repo, resolved.fleet_id.clone(), clock.now())
                 .await
                 .is_ok(),
             None => false,
@@ -259,7 +259,7 @@ async fn start(
         autonomy: None,
         origin: None,
     };
-    match start_run(repo, clock, PRINCIPAL, input).await {
+    match start_run(repo, clock.now(), PRINCIPAL, input).await {
         Ok(created) if !created.replayed => {}
         Ok(_) => return false,
         Err(refusal) => {

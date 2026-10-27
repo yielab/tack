@@ -2,6 +2,7 @@
 //! among racing answers, and the attempt resuming once its last pending decision is settled.
 
 use crate::decisions;
+use tack_protocol::Clock;
 
 use decisions::{
     attempt_and_request_state, clock, decision_state, pending_decision, running_attempt, seed_store,
@@ -28,7 +29,7 @@ async fn resolving_the_last_pending_decision_resumes_attempt_and_request() {
 
     let first = resolve_decision(
         &repo,
-        &clock,
+        clock.now(),
         &attempt_id,
         "dec-a",
         &json!({"option_id": "allow_once", "text": null}),
@@ -51,7 +52,7 @@ async fn resolving_the_last_pending_decision_resumes_attempt_and_request() {
 
     resolve_decision(
         &repo,
-        &clock,
+        clock.now(),
         &attempt_id,
         "dec-b",
         &json!({"option_id": "deny", "text": null}),
@@ -83,8 +84,8 @@ async fn concurrent_resolves_serialize_to_exactly_one_winner() {
     let deny = json!({"option_id": "deny", "text": null});
     let op_a = DecisionResolvedBy::operator("operator-a");
     let op_b = DecisionResolvedBy::operator("operator-b");
-    let resolve_a = resolve_decision(&repo, &clock, &attempt_id, "dec-race", &allow, &op_a);
-    let resolve_b = resolve_decision(&repo, &clock, &attempt_id, "dec-race", &deny, &op_b);
+    let resolve_a = resolve_decision(&repo, clock.now(), &attempt_id, "dec-race", &allow, &op_a);
+    let resolve_b = resolve_decision(&repo, clock.now(), &attempt_id, "dec-race", &deny, &op_b);
     let release = async {
         for _ in 0..512 {
             tokio::task::yield_now().await;

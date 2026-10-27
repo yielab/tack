@@ -6,6 +6,7 @@
 
 use std::future::Future;
 use std::time::Duration as StdDuration;
+use tack_protocol::Clock;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
 use tack_test_support::{create_test_workspace, seed, setup_test_db};
@@ -77,7 +78,7 @@ async fn setup() -> (Repository, String) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("runner");
@@ -89,7 +90,7 @@ async fn setup() -> (Repository, String) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -149,7 +150,7 @@ async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String
             &attempt_id,
             &attempt_id,
             Duration::minutes(10),
-            &SystemClock,
+            SystemClock.now(),
             RequestSelection::Naive,
         )
         .await
@@ -220,7 +221,7 @@ async fn seed_real_artifact(
             content_reference: Some(&stored.content_reference),
             metadata: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("record artifact");
@@ -269,7 +270,7 @@ async fn seed_stale_manifest_only_artifact(
             content_reference: None,
             metadata: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("record manifest-only artifact");

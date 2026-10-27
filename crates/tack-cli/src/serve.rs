@@ -15,7 +15,7 @@ use tack_api::server::prepare;
 use tack_api::webhook::WebhookClient;
 use tack_app::background::{Loops, STOP_GRACE};
 use tack_db::{Repository, init_pool, migrations, repo};
-use tack_protocol::SystemClock;
+use tack_protocol::{Clock, SystemClock};
 use tokio::sync::oneshot;
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
@@ -34,13 +34,13 @@ pub async fn run(
     migrations::run_all(&pool).await?;
     let repo = Repository::new(pool);
     repo::templates::seed_builtin_templates(&repo).await?;
-    repo::execution::seed_builtin_profiles(&repo).await?;
+    repo::execution::seed_builtin_profiles(&repo, SystemClock.now()).await?;
 
     let workspace_id = repo.ensure_default_workspace().await?;
 
     // A board from before a decision ended with its run left questions nobody can answer.
     let closed = repo
-        .expire_decisions_of_ended_attempts(&tack_protocol::SystemClock)
+        .expire_decisions_of_ended_attempts(SystemClock.now())
         .await?;
     if closed > 0 {
         info!(

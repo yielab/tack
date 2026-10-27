@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::CancellationOutcome;
-use tack_protocol::Clock;
 
 use crate::AppError;
 
@@ -19,10 +19,10 @@ pub enum Cancellation {
 /// terminal state is `AppError::Conflict`.
 pub async fn cancel_run(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     request_id: &str,
 ) -> Result<Cancellation, AppError> {
-    match repo.cancel_execution_request(request_id, clock).await? {
+    match repo.cancel_execution_request(request_id, now).await? {
         CancellationOutcome::Ended => Ok(Cancellation::Ended),
         CancellationOutcome::Requested => Ok(Cancellation::Requested),
         CancellationOutcome::AlreadyTerminal => Err(AppError::Conflict(

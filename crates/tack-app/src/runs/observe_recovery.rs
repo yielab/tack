@@ -1,8 +1,8 @@
+use chrono::{DateTime, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{
     RecoveryObservation as StoredObservation, RecoveryObservationInput, RecoveryObservationResult,
 };
-use tack_protocol::Clock;
 use tack_protocol::execution::{RecoveryDisposition, RecoveryObservation};
 
 use crate::AppError;
@@ -45,7 +45,7 @@ pub enum RecoveryObserved {
 /// and one already finished stays finished. Idempotent on `recovery_key`.
 pub async fn observe_recovery(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     observation: Observation<'_>,
 ) -> Result<RecoveryObserved, AppError> {
     let stored = match observation.observation {
@@ -63,7 +63,7 @@ pub async fn observe_recovery(
                 observation: stored,
                 details: observation.details_json,
             },
-            clock,
+            now,
         )
         .await?;
     let (response, replayed) = match result {

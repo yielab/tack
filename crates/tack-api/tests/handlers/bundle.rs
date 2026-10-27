@@ -15,7 +15,7 @@ use tower::ServiceExt;
 /// An app whose board has its built-in profiles and templates, as a started server does.
 pub(crate) async fn app() -> Router {
     let repo = tack_test_support::setup_test_db().await;
-    tack_db::repo::execution::seed_builtin_profiles(&repo)
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("built-in profiles");
     tack_db::repo::templates::seed_builtin_templates(&repo)

@@ -3,6 +3,7 @@
 //! verifier rejected goes back to the agent as one follow-up until a stop condition holds.
 
 use crate::common;
+use tack_protocol::Clock;
 
 use std::future::Future;
 
@@ -38,7 +39,7 @@ where
 {
     complete(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         CompletionReport {
             runner_id: RUNNER_ID,
             attempt_id: &run.attempt_id,

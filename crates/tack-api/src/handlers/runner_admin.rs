@@ -294,7 +294,7 @@ pub async fn create_fleet(
             &input.name,
             input.concurrency_limit,
             &input.default_policy.to_string(),
-            state.clock.as_ref(),
+            state.clock.now(),
         )
         .await;
     match inserted {
@@ -404,7 +404,7 @@ pub async fn add_fleet_member(
 ) -> Result<Json<FleetMemberResponse>, (StatusCode, Json<Value>)> {
     let outcome = state
         .repo
-        .add_fleet_member(&fleet_id, &input.runner_id, state.clock.as_ref())
+        .add_fleet_member(&fleet_id, &input.runner_id, state.clock.now())
         .await
         .map_err(|_| {
             error(
@@ -578,7 +578,7 @@ pub async fn revoke_runner(
 ) -> Result<Json<RevokeRunnerResponse>, (StatusCode, Json<Value>)> {
     let changed = state
         .repo
-        .revoke_runner(&runner_id, state.clock.as_ref())
+        .revoke_runner(&runner_id, state.clock.now())
         .await
         .map_err(|_| {
             error(
@@ -742,7 +742,7 @@ pub async fn provision_pending_runner(
     if !pending_runner_input_is_valid(&runner, &token, clock.now()) {
         return Err(ProvisionError::InvalidCapacityOrWindow);
     }
-    repo.create_pending_runner_and_issue_token(runner, token, clock)
+    repo.create_pending_runner_and_issue_token(runner, token, clock.now())
         .await
         .map_err(|err| match err {
             StoreError::Conflict(_) => ProvisionError::NameConflict,
@@ -843,7 +843,7 @@ pub async fn name_local_runner_after_host(
             .rename_generated_local_runner(
                 runner_id,
                 &this_computer_name(host, attempt),
-                &SystemClock,
+                SystemClock.now(),
             )
             .await
         {
@@ -894,7 +894,7 @@ pub async fn revoke_enrollment_token(
 ) -> Result<Json<RevokeEnrollmentTokenResponse>, (StatusCode, Json<Value>)> {
     state
         .repo
-        .revoke_runner_enrollment_token(&runner_id, &token_id, state.clock.as_ref())
+        .revoke_runner_enrollment_token(&runner_id, &token_id, state.clock.now())
         .await
         .map_err(|err| match err {
             StoreError::Conflict(_) => error(
@@ -980,7 +980,7 @@ pub async fn create_profile(
             },
             input.fleet_id.as_deref(),
             delivers,
-            state.clock.as_ref(),
+            state.clock.now(),
         )
         .await;
     match result {
@@ -1213,7 +1213,7 @@ pub async fn update_profile(
     };
     state
         .repo
-        .update_agent_profile(&id, patch, state.clock.as_ref())
+        .update_agent_profile(&id, patch, state.clock.now())
         .await
         .map_err(|err| match err {
             StoreError::NotFound => profile_not_found(),

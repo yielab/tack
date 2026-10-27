@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, EventBatchResult, NewEvent};
-use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::AppError;
@@ -49,7 +48,7 @@ pub enum EventsReported {
 /// conflict. Nothing is written for a stale fence.
 pub async fn report_events(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     report: EventReport<'_>,
 ) -> Result<EventsReported, AppError> {
     let rows: Vec<String> = report
@@ -81,7 +80,7 @@ pub async fn report_events(
                 checkpoint: report.checkpoint,
             },
             &events,
-            clock,
+            now,
         )
         .await?;
     Ok(match result {

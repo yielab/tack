@@ -5,11 +5,11 @@
 mod rework;
 mod status_map;
 
+use chrono::{DateTime, Utc};
 use std::future::Future;
 
 use tack_db::Repository;
 use tack_db::repo::execution::{Completion, CompletionResponse, CompletionResult, FollowUps};
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
 
@@ -62,7 +62,7 @@ pub enum Completed {
 /// cannot be read or parsed; the bytes live outside the store, so the caller supplies it.
 pub async fn complete<R, Fut>(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     report: CompletionReport<'_>,
     read_pack: R,
 ) -> Result<Completed, AppError>
@@ -75,7 +75,7 @@ where
             status_map::plan(repo, report.attempt_id, report.terminal_reason_json).await;
         let rework = rework::plan(
             repo,
-            clock,
+            now,
             report.attempt_id,
             report.actual_execution_json,
             &read_pack,
@@ -110,7 +110,7 @@ where
                 item_update: item_move.as_ref().map(status_map::Move::item_update),
                 rework: rework.as_ref().map(rework::Rework::follow_up),
             },
-            clock,
+            now,
         )
         .await?;
     Ok(match result {

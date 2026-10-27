@@ -263,7 +263,7 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -273,7 +273,7 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
             "claim-legacy-valid",
             "attempt-legacy-valid",
             Duration::seconds(60),
-            &clock,
+            clock.now(),
             RequestSelection::Naive,
         )
         .await

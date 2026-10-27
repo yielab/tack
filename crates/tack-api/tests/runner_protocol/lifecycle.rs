@@ -147,7 +147,7 @@ impl Fixture {
                 capability_snapshot: &capability_snapshot,
                 protocol_version: 1,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .expect("runner");
@@ -159,7 +159,7 @@ impl Fixture {
                 tool_policy: r#"{"mode":"safe"}"#,
                 limits: r#"{"tokens":1000}"#,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .expect("profile");

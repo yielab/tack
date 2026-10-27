@@ -339,7 +339,7 @@ async fn completion_replay_corrupt_response_fails_closed() {
         .unwrap();
     assert!(
         fx.repo
-            .complete_execution_result(completion, &fx.clock)
+            .complete_execution_result(completion, fx.clock.now())
             .await
             .is_err()
     );
@@ -507,7 +507,7 @@ async fn a_completion_commits_its_follow_ups_with_it() {
                     created_at: fx.clock.now(),
                 }),
             },
-            &fx.clock,
+            fx.clock.now(),
         )
         .await
         .unwrap();
@@ -552,7 +552,7 @@ async fn a_follow_up_that_fails_leaves_the_attempt_open_and_the_item_where_it_wa
                     created_at: fx.clock.now(),
                 }),
             },
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
 
@@ -598,7 +598,7 @@ async fn a_move_the_workflow_refuses_does_not_undo_the_completion() {
                 }),
                 rework: None,
             },
-            &fx.clock,
+            fx.clock.now(),
         )
         .await
         .unwrap();

@@ -2,11 +2,10 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tracing::instrument;
 
-use super::shared::{mirror_request_state, stamp};
+use super::shared::mirror_request_state;
 use super::state::{self, Move};
 use crate::queries::execution_decisions::DecisionRow;
 use crate::{Repository, StoreError};
@@ -119,9 +118,9 @@ impl Repository {
     /// many it closed.
     pub async fn expire_decisions_of_ended_attempts(
         &self,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<u64, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let closed = sqlx::query(
             state::sql("UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
              WHERE state='pending' AND attempt_id IN (SELECT id FROM execution_attempts \
@@ -140,16 +139,16 @@ impl Repository {
     /// `waiting_decision` in the same transaction. `false` means the attempt
     /// is not eligible (wrong fence, expired lease, or not in either state)
     /// and nothing was written.
-    #[instrument(skip(self, decision, clock))]
+    #[instrument(skip(self, decision))]
     pub async fn create_execution_decision(
         &self,
         runner_id: &str,
         attempt_id: &str,
         fence: i64,
         decision: NewDecision<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         // Serialize the eligibility check and the insert against a concurrent
         // completion, cancellation, or recovery transition for the same
         // attempt (all of which already open BEGIN IMMEDIATE). Without this,
@@ -174,14 +173,14 @@ impl Repository {
     /// Stamps `viewed_at` the first time an operator opens a decision; later
     /// calls keep the first timestamp. `Ok(None)` means no such decision for
     /// this attempt; `Ok(Some(ts))` is the stored (first) timestamp.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn mark_execution_decision_viewed(
         &self,
         attempt_id: &str,
         decision_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<Option<String>, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         sqlx::query_scalar(
             "UPDATE execution_decisions SET viewed_at = COALESCE(viewed_at, ?) \
              WHERE attempt_id = ? AND decision_id = ? RETURNING viewed_at",

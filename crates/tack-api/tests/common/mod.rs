@@ -394,7 +394,7 @@ pub async fn claim_execution_for_test(repo: &Repository, clock: &dyn Clock) {
         "claim-crash",
         "attempt-crash",
         chrono::Duration::seconds(60),
-        clock,
+        clock.now(),
         RequestSelection::Naive,
     )
     .await

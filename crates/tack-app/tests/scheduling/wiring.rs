@@ -18,7 +18,6 @@ use tack_protocol::execution::ExecutionState;
 use tack_test_support::seed;
 
 use crate::scheduling::support::{codex_capability_snapshot, setup_repo};
-use tack_test_support::FixedClock;
 
 const ALPHA_MODEL: Option<&str> = Some("opaque/model-alpha");
 
@@ -45,7 +44,7 @@ async fn setup_runner(
             capability_snapshot,
             protocol_version: 1,
         },
-        &FixedClock(now),
+        now,
     )
     .await
     .expect("register runner");
@@ -86,7 +85,7 @@ async fn setup_fleet(
     concurrency_limit: i64,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.create_agent_fleet(id, id, Some(concurrency_limit), "{}", &FixedClock(now))
+    repo.create_agent_fleet(id, id, Some(concurrency_limit), "{}", now)
         .await
         .expect("insert fleet");
 }
@@ -97,7 +96,7 @@ async fn join_fleet(
     runner_id: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.add_fleet_member(fleet_id, runner_id, &FixedClock(now))
+    repo.add_fleet_member(fleet_id, runner_id, now)
         .await
         .expect("fleet membership");
 }
@@ -497,7 +496,7 @@ async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
         "claim",
         "attempt",
         chrono::Duration::seconds(60),
-        &FixedClock(now),
+        now,
         RequestSelection::Scheduled(chosen.as_deref()),
     )
     .await
@@ -654,7 +653,7 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
         // Held past the three-hour poll below: a lease that ended unrenewed
         // would be handed to a person, which is not what this test is about.
         chrono::Duration::hours(4),
-        &FixedClock(now),
+        now,
         RequestSelection::Scheduled(Some("running")),
     )
     .await
@@ -683,7 +682,7 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
         "claim-review",
         "attempt-review",
         chrono::Duration::seconds(60),
-        &FixedClock(now),
+        now,
         RequestSelection::Scheduled(Some("review")),
     )
     .await
@@ -777,7 +776,7 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
             &format!("claim-{n}"),
             &format!("attempt-{n}"),
             chrono::Duration::hours(4),
-            &FixedClock(now),
+            now,
             RequestSelection::Scheduled(Some(&id)),
         )
         .await

@@ -6,7 +6,7 @@
 //! created without writing.
 
 use std::collections::HashMap;
-use tack_protocol::SystemClock;
+use tack_protocol::{Clock, SystemClock};
 
 use axum::Json;
 use axum::body::Bytes;
@@ -596,7 +596,7 @@ async fn write_profiles(
                 .or_else(|| old.and_then(|o| o.delivers.clone())),
             builtin: false,
         };
-        repo.write_agent_profile(&profile, &SystemClock)
+        repo.write_agent_profile(&profile, SystemClock.now())
             .await
             .map_err(at("profiles"))?;
         profile_ids.insert(profile.name.clone(), id);

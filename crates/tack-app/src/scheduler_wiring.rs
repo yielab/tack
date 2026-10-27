@@ -26,7 +26,6 @@ use tack_orch::scheduler::types::{
     BudgetKind, IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
     SelectionOutcome,
 };
-use tack_protocol::SystemClock;
 use tack_protocol::execution::{
     Approvals, EmbeddedCapabilitySnapshot, ExecutionRequestId, HarnessKind, RunnerId,
 };
@@ -389,7 +388,7 @@ pub async fn choose_request_for_runner(
         now - EXPIRED_LEASE_GRACE,
         LEASE_EXPIRED,
         LEASE_EXPIRED_SENTENCE,
-        &SystemClock,
+        now,
     )
     .await?;
     let Some(runner) = repo.fetch_runner_scheduling_snapshot(runner_id).await? else {

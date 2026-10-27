@@ -1,7 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{HeartbeatBatchResponse, HeartbeatBatchResult, HeartbeatLease};
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 
 use crate::AppError;
@@ -43,7 +42,7 @@ pub enum Heartbeat {
 /// by `lease_duration`. Idempotent on `heartbeat_id` with the same content.
 pub async fn heartbeat(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     beat: Beat<'_>,
 ) -> Result<Heartbeat, AppError> {
     let reported: Vec<HeartbeatLease<'_>> = beat
@@ -65,7 +64,7 @@ pub async fn heartbeat(
             beat.available_capacity,
             &reported,
             beat.lease_duration,
-            clock,
+            now,
         )
         .await?;
     Ok(match result {

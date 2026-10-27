@@ -2,6 +2,7 @@
 //! back to the queue, once per confirmation, and the recovery is audited.
 
 use crate::support;
+use tack_protocol::Clock;
 
 use chrono::Utc;
 use support::{board, full_request, start};
@@ -33,7 +34,7 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
     .await;
     let denied = requeue(
         &board.repo,
-        &SystemClock,
+        SystemClock.now(),
         &request_id,
         "operator-recovery-1",
         "operator reviewed",
@@ -60,7 +61,7 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
     .await;
     let allowed = requeue(
         &board.repo,
-        &SystemClock,
+        SystemClock.now(),
         &request_id,
         "operator-recovery-1",
         "operator reviewed",
@@ -114,7 +115,7 @@ async fn the_same_confirmation_replays_and_another_reason_under_the_key_conflict
     let confirm = |reason: &'static str| {
         requeue(
             &board.repo,
-            &SystemClock,
+            SystemClock.now(),
             &request_id,
             "operator-recovery-1",
             reason,
@@ -136,7 +137,7 @@ async fn a_run_with_no_attempt_cannot_be_requeued_and_names_an_unknown_state() {
     let started = start(&board, full_request(board.item_id)).await.unwrap();
     let denied = requeue(
         &board.repo,
-        &SystemClock,
+        SystemClock.now(),
         &started.request_id,
         "key",
         "reason",

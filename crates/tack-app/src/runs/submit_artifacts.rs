@@ -2,11 +2,10 @@
 //! each entry. The bytes themselves are streamed and verified by the caller; what is decided
 //! here is whether a write is allowed at all and whether the manifest agrees with itself.
 
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
 use tack_db::repo::execution::{ArtifactContentCommitResult, NewArtifact};
 use tack_db::{Repository, queries};
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use uuid::Uuid;
 
@@ -68,10 +67,9 @@ fn accepts_artifacts(state: ExecutionState) -> bool {
 /// with itself: the same content is a replay, other content is an idempotency conflict.
 pub async fn submit_artifacts(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     submission: ManifestSubmission<'_>,
 ) -> Result<ManifestSubmitted, AppError> {
-    let now = clock.now();
     let Some(lease) = queries::execution_attempts::attempt_lease(
         repo,
         submission.attempt_id,
@@ -120,7 +118,7 @@ pub async fn submit_artifacts(
                     content_reference: None,
                     metadata: &metadata_json,
                 },
-                clock,
+                now,
             )
             .await?;
         if !written {
@@ -202,10 +200,9 @@ fn content_type_matches(declared: &str, provided: &str) -> bool {
 /// decision, nothing was recorded yet and the `Content-Type` agrees with the manifest.
 pub async fn check_artifact_upload(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     upload: ContentUpload<'_>,
 ) -> Result<UploadChecked, AppError> {
-    let now = clock.now();
     let Some(facts) = queries::execution_artifacts::upload_facts(
         repo,
         upload.attempt_id,
@@ -245,7 +242,7 @@ pub async fn check_artifact_upload(
 /// removes its own copy in both cases.
 pub async fn commit_artifact_content(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     upload: ContentUpload<'_>,
     content_reference: &str,
 ) -> Result<ArtifactContentCommitResult, AppError> {
@@ -256,7 +253,7 @@ pub async fn commit_artifact_content(
             upload.artifact_id,
             upload.fencing_token,
             content_reference,
-            clock,
+            now,
         )
         .await?)
 }

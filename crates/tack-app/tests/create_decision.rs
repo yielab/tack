@@ -4,6 +4,7 @@
 //! lease that ended is refused.
 
 use crate::common;
+use tack_protocol::Clock;
 
 use chrono::Duration;
 use common::{RUNNER_ID, running_attempt, world};
@@ -23,7 +24,7 @@ async fn open(
     let options = [json!({"option_id": "allow", "label": "Allow"})];
     create_decision(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         DecisionRequest {
             runner_id: RUNNER_ID,
             attempt_id,

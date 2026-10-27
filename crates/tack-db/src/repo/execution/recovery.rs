@@ -3,11 +3,10 @@
 use crate::StoreError;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
-use tack_protocol::Clock;
 use tracing::instrument;
 
 use super::decisions::end_attempt_decisions;
-use super::shared::{stamp, terminal};
+use super::shared::terminal;
 use super::state::{self, Move};
 use crate::Repository;
 use crate::canonical_json;
@@ -308,9 +307,9 @@ impl Repository {
         recovery_key: &str,
         actor: &str,
         reason_fingerprint: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<OperatorRequeueResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         // Serialize duplicate operator requeues for the same request (e.g. a
         // double-clicked retry) before either transaction reads the
         // needs_operator attempt row. Two deferred readers can otherwise
@@ -360,9 +359,9 @@ impl Repository {
     pub async fn recover_attempt(
         &self,
         input: RecoveryObservationInput<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<RecoveryObservationResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let details = recovery_details(input.details)?;
         let fingerprint = recovery_fingerprint(&input)?;
         // Serialize duplicate recovery observations for the same attempt
@@ -396,7 +395,7 @@ impl Repository {
         expired_before: DateTime<Utc>,
         code: &str,
         sentence: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<u64, StoreError> {
         let candidates = sqlx::query_scalar::<_, String>(state::sql(
             "SELECT id FROM execution_attempts WHERE state IN ({held}) AND lease_expires_at < ?",
@@ -408,7 +407,7 @@ impl Repository {
             serde_json::json!({"journal_state": code, "process_observed": false}).to_string();
         let mut closed = 0;
         for attempt in candidates {
-            let now = stamp(clock);
+            let now = now.to_rfc3339();
             // The holder's state does not matter here: `needs_operator` never
             // starts a process, so a revoked or stopped runner's attempts are
             // asked about like any other. The row is read inside the

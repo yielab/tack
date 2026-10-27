@@ -187,7 +187,10 @@ async fn recovery_after_runner_revoked_is_stale() {
     let fence = fx
         .ready_completion_attempt("request-recovery-stale", "attempt-recovery-stale")
         .await;
-    fx.repo.revoke_runner("runner-a", &fx.clock).await.unwrap();
+    fx.repo
+        .revoke_runner("runner-a", fx.clock.now())
+        .await
+        .unwrap();
     assert_eq!(
         fx.recover(recovery_input(
             "attempt-recovery-stale",
@@ -222,7 +225,7 @@ async fn pending_runner_token_issue_fails_on_mismatched_capacity() {
                 token_hash: "hash",
                 expires_at: fx.clock.now(),
             },
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
     assert!(
@@ -331,11 +334,18 @@ async fn a_lease_nobody_renewed_asks_a_person_once_and_cancel_ends_it() {
     let grace = Duration::seconds(120);
     // The holder is gone for good: a revoked runner's runs are asked about
     // like any other's.
-    fx.repo.revoke_runner("runner-a", &fx.clock).await.unwrap();
+    fx.repo
+        .revoke_runner("runner-a", fx.clock.now())
+        .await
+        .unwrap();
     let sentence = "The computer that took this run stopped answering.";
     let expire = || {
-        fx.repo
-            .expire_unheld_leases(fx.clock.now() - grace, "lease_expired", sentence, &fx.clock)
+        fx.repo.expire_unheld_leases(
+            fx.clock.now() - grace,
+            "lease_expired",
+            sentence,
+            fx.clock.now(),
+        )
     };
 
     assert_eq!(expire().await.unwrap(), 1);

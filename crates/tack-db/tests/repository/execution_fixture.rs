@@ -98,7 +98,7 @@ impl Fixture {
                 capability_snapshot: "{}",
                 protocol_version: 1,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -110,7 +110,7 @@ impl Fixture {
                 tool_policy: "{}",
                 limits: "{}",
             },
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -194,7 +194,7 @@ impl Fixture {
                 claim_request_id,
                 attempt_id,
                 lease_duration,
-                &self.clock,
+                self.clock.now(),
                 RequestSelection::Naive,
             )
             .await
@@ -317,7 +317,7 @@ impl Fixture {
                 missed,
                 leases,
                 lease_duration,
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
@@ -346,7 +346,7 @@ impl Fixture {
                     token_hash,
                     expires_at: self.clock.now() + Duration::minutes(5),
                 },
-                &self.clock,
+                self.clock.now(),
             )
             .await
             .unwrap();
@@ -372,7 +372,7 @@ impl Fixture {
                 1,
                 "{}",
                 1,
-                &self.clock,
+                self.clock.now(),
             )
             .await
             .unwrap()
@@ -395,14 +395,14 @@ impl Fixture {
         events: &[NewEvent<'_>],
     ) -> Result<EventApplyResult, tack_db::StoreError> {
         self.repo
-            .append_execution_events_result(batch, events, &self.clock)
+            .append_execution_events_result(batch, events, self.clock.now())
             .await
     }
 
     /// Requests cancellation of `request_id`.
     pub async fn request_cancellation(&self, request_id: &str) -> bool {
         self.repo
-            .request_execution_cancellation(request_id, &self.clock)
+            .request_execution_cancellation(request_id, self.clock.now())
             .await
             .unwrap()
     }
@@ -421,7 +421,9 @@ impl Fixture {
         &self,
         input: CancellationObservationInput<'_>,
     ) -> Result<CancellationObservation, tack_db::StoreError> {
-        self.repo.observe_cancellation(input, &self.clock).await
+        self.repo
+            .observe_cancellation(input, self.clock.now())
+            .await
     }
 
     /// Reports a recovery observation, unwrapping the sqlx-level result.
@@ -435,7 +437,7 @@ impl Fixture {
         &self,
         input: RecoveryObservationInput<'_>,
     ) -> Result<RecoveryObservationResult, tack_db::StoreError> {
-        self.repo.recover_attempt(input, &self.clock).await
+        self.repo.recover_attempt(input, self.clock.now()).await
     }
 
     /// An operator requeue of `request_id` with the fixture's fixed
@@ -456,7 +458,7 @@ impl Fixture {
                 "client-key",
                 "operator-a",
                 "reason-a",
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
@@ -473,7 +475,7 @@ impl Fixture {
         input: AttemptTransitionInput<'_>,
     ) -> Result<AttemptTransitionResult, tack_db::StoreError> {
         self.repo
-            .transition_attempt_with_facts(input, &self.clock)
+            .transition_attempt_with_facts(input, self.clock.now())
             .await
     }
 
@@ -489,7 +491,7 @@ impl Fixture {
         completion: Completion<'_>,
     ) -> Result<CompletionResult, tack_db::StoreError> {
         self.repo
-            .complete_execution_result(completion, &self.clock)
+            .complete_execution_result(completion, self.clock.now())
             .await
     }
 
@@ -498,7 +500,7 @@ impl Fixture {
     /// shares the fencing/terminal-lock invariants with [`Self::complete`].
     pub async fn complete_raw(&self, completion: Completion<'_>) -> bool {
         self.repo
-            .complete_execution(completion, &self.clock)
+            .complete_execution(completion, self.clock.now())
             .await
             .unwrap()
     }
@@ -513,7 +515,13 @@ impl Fixture {
         expires_at: DateTime<Utc>,
     ) -> Result<CredentialRotationResult, tack_db::StoreError> {
         self.repo
-            .rotate_runner_credential("runner-a", expected_hash, new_hash, expires_at, &self.clock)
+            .rotate_runner_credential(
+                "runner-a",
+                expected_hash,
+                new_hash,
+                expires_at,
+                self.clock.now(),
+            )
             .await
     }
 
@@ -545,7 +553,7 @@ impl Fixture {
                 attempt_id,
                 fencing_token,
                 new_artifact(artifact_id, artifact_id),
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
@@ -577,7 +585,7 @@ impl Fixture {
                 attempt_id,
                 fencing_token,
                 new_decision(decision_id, decision_id),
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }

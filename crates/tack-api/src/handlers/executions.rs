@@ -795,7 +795,7 @@ pub(crate) async fn create_as(
     input: CreateExecution,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
     let input = RunRequest::try_from(input).map_err(refused)?;
-    start_run(&state.repo, state.clock.as_ref(), &principal, input)
+    start_run(&state.repo, state.clock.now(), &principal, input)
         .await
         .map(created)
         .map_err(refused)
@@ -1413,7 +1413,7 @@ pub async fn request_cancellation(
     State(state): State<OperatorExecutionState>,
     Path(request_id): Path<String>,
 ) -> Result<Json<CancellationRequestedResponse>, (StatusCode, Json<Value>)> {
-    let outcome = cancel_run(&state.repo, state.clock.as_ref(), &request_id)
+    let outcome = cancel_run(&state.repo, state.clock.now(), &request_id)
         .await
         .map_err(|failure| match failure {
             AppError::NotFound => error(
@@ -1472,7 +1472,7 @@ pub async fn requeue_needs_operator(
     let actor = principal(&headers)?;
     let requeued = requeue(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         &request_id,
         &input.recovery_key,
         &input.reason,

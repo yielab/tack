@@ -3,6 +3,7 @@
 //! that is no longer current is refused.
 
 use crate::common;
+use tack_protocol::Clock;
 
 use chrono::Duration;
 use common::{RUNNER_ID, enqueue, world};
@@ -22,7 +23,7 @@ async fn observe(
 ) -> RecoveryObserved {
     observe_recovery(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         Observation {
             runner_id: RUNNER_ID,
             attempt_id,
@@ -42,7 +43,7 @@ async fn a_process_proven_stopped_requeues_the_request_and_replays_idempotently(
     let request_id = enqueue(&world, "recovery-key").await;
     let claimed = claim(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         RUNNER_ID,
         "claim-recovery",
         Duration::seconds(60),
@@ -103,7 +104,7 @@ async fn a_recovery_key_reused_with_a_different_observation_conflicts() {
     enqueue(&world, "conflict-key").await;
     let claimed = claim(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         RUNNER_ID,
         "claim-conflict",
         Duration::seconds(60),
@@ -140,7 +141,7 @@ async fn an_older_fence_is_stale_and_changes_nothing() {
     enqueue(&world, "stale-key").await;
     let claimed = claim(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         RUNNER_ID,
         "claim-stale",
         Duration::seconds(60),

@@ -68,7 +68,7 @@ pub async fn world() -> World {
             capability_snapshot: &snapshot,
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -80,7 +80,7 @@ pub async fn world() -> World {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -158,7 +158,7 @@ pub async fn running_attempt(world: &World, key: &str) -> Running {
     let request_id = enqueue(world, key).await;
     let claimed = tack_app::runs::claim::claim(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         RUNNER_ID,
         &format!("claim-{key}"),
         chrono::Duration::seconds(60),

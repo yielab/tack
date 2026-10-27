@@ -447,7 +447,7 @@ pub async fn runner_with_profile(
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("seed runner");
@@ -459,7 +459,7 @@ pub async fn runner_with_profile(
             tool_policy: r#"{"mode":"safe"}"#,
             limits: "{}",
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("seed profile");
@@ -516,7 +516,7 @@ pub async fn running_attempt(
             &attempt_id,
             &attempt_id,
             Duration::seconds(300),
-            clock,
+            clock.now(),
             RequestSelection::Naive,
         )
         .await
@@ -554,7 +554,7 @@ pub async fn pending_decision(
                 expires_at,
                 recommendation: None,
             },
-            clock,
+            clock.now(),
         )
         .await
         .expect("seed decision insert");

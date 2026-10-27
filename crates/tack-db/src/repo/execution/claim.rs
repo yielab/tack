@@ -4,13 +4,11 @@
 use super::state::{self, Move};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
-use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tracing::instrument;
 
 use super::admin::conflict_on_unique;
 use super::enqueue::parse_execution_request_snapshot;
-use super::shared::stamp;
 use crate::{Repository, StoreError};
 
 #[derive(Debug, Clone)]
@@ -71,9 +69,12 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
 /// only ever refreshed in `summary`; edits to the rest are never overwritten.
 /// A custom profile already holding a built-in's name makes that insert a
 /// no-op (`name` is unique) rather than failing startup.
-pub async fn seed_builtin_profiles(repo: &crate::Repository) -> Result<(), StoreError> {
+pub async fn seed_builtin_profiles(
+    repo: &crate::Repository,
+    now: DateTime<Utc>,
+) -> Result<(), StoreError> {
     let pool = repo.pool();
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = now.to_rfc3339();
     for (kind, name, summary, tools, instructions) in BUILTIN_PROFILES {
         let tool_policy = serde_json::json!({"tools": {
             "claude-code": tools, "codex": ["*"], "opencode": ["*"], "docket": ["*"],
@@ -453,12 +454,12 @@ impl Repository {
         &self,
         runner: NewRunner<'_>,
         token: EnrollmentToken<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        if !pending_runner_input_is_valid(&runner, &token, clock.now()) {
+        if !pending_runner_input_is_valid(&runner, &token, now) {
             return Err(StoreError::malformed("invalid pending runner/token input"));
         }
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin().await?;
         sqlx::query("INSERT INTO agent_runners(id,name,credential_hash,state,labels,total_capacity,available_capacity,capability_snapshot,protocol_version,created_at,updated_at) VALUES(?,?,?,'pending_enrollment',?,?,?,?,?,?,?)").bind(runner.id).bind(runner.name).bind("pending:no-credential").bind(runner.labels).bind(runner.total_capacity).bind(runner.available_capacity).bind(runner.capability_snapshot).bind(runner.protocol_version).bind(&now).bind(&now).execute(&mut *tx).await.map_err(|err| conflict_on_unique(err, "runner_name_taken"))?;
         sqlx::query("INSERT INTO agent_enrollment_tokens(id,runner_id,token_hash,expires_at,created_at) VALUES(?,?,?,?,?)").bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(&now).execute(&mut *tx).await.map_err(|err| conflict_on_unique(err, "runner_name_taken"))?;
@@ -474,14 +475,14 @@ impl Repository {
         &self,
         runner_id: &str,
         name: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         let result = sqlx::query(
             "UPDATE agent_runners SET name = ?, updated_at = ? WHERE id = ? \
              AND name GLOB 'local-????????-????-????-????-????????????'",
         )
         .bind(name)
-        .bind(stamp(clock))
+        .bind(now.to_rfc3339())
         .bind(runner_id)
         .execute(self.pool())
         .await
@@ -500,9 +501,9 @@ impl Repository {
     pub async fn revoke_runner(
         &self,
         runner_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin().await?;
         let r=sqlx::query("UPDATE agent_runners SET state='revoked',revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE id=?").bind(&now).bind(&now).bind(runner_id).execute(&mut *tx).await?;
         if r.rows_affected() == 1 {
@@ -525,7 +526,7 @@ impl Repository {
         &self,
         fleet_id: &str,
         runner_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<AddFleetMemberOutcome, StoreError> {
         let fleet_exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_fleets WHERE id = ?)")
@@ -543,7 +544,7 @@ impl Repository {
         if !runner_exists {
             return Ok(AddFleetMemberOutcome::RunnerNotFound);
         }
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let result = sqlx::query(
             "INSERT OR IGNORE INTO agent_fleet_members (fleet_id,runner_id,created_at) VALUES (?,?,?)",
         )
@@ -593,9 +594,9 @@ impl Repository {
         expected_credential_hash: &str,
         new_credential_hash: &str,
         credential_expires_at: DateTime<Utc>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<CredentialRotationResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let updated = sqlx::query(
             "UPDATE agent_runners SET credential_hash=?,credential_expires_at=?,credential_rotated_at=?,updated_at=? \
@@ -630,9 +631,8 @@ impl Repository {
         available_capacity: i64,
         leases: &[HeartbeatLease<'_>],
         lease_duration: Duration,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<HeartbeatBatchResult, StoreError> {
-        let now = clock.now();
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
         let fingerprint = heartbeat_fingerprint(
@@ -738,10 +738,10 @@ impl Repository {
     pub async fn issue_enrollment_token(
         &self,
         token: EnrollmentToken<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         sqlx::query("INSERT INTO agent_enrollment_tokens (id, runner_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)")
-            .bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(stamp(clock))
+            .bind(token.id).bind(token.runner_id).bind(token.token_hash).bind(token.expires_at.to_rfc3339()).bind(now.to_rfc3339())
             .execute(self.pool()).await?;
         Ok(())
     }
@@ -749,10 +749,10 @@ impl Repository {
     pub async fn revoke_enrollment_token(
         &self,
         token_hash: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         let result = sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at = COALESCE(revoked_at, ?) WHERE token_hash = ? AND consumed_at IS NULL")
-            .bind(stamp(clock)).bind(token_hash).execute(self.pool()).await?;
+            .bind(now.to_rfc3339()).bind(token_hash).execute(self.pool()).await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -783,9 +783,9 @@ impl Repository {
         available_capacity: i64,
         capability_snapshot: &str,
         protocol_version: i64,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<RedeemEnrollmentResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         // Serialize token consumers before either transaction reads the
         // single-use row. Two deferred readers can otherwise deadlock while
         // both try to upgrade to writers, surfacing a database error instead
@@ -826,9 +826,9 @@ impl Repository {
         runner_version: &str,
         labels: &str,
         capability_snapshot: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<RunnerCapabilityUpdate, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(
             "SELECT credential_expires_at FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL",
@@ -883,10 +883,9 @@ impl Repository {
         claim_request_id: &str,
         attempt_id: &str,
         lease_duration: Duration,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
         selection: RequestSelection<'_>,
     ) -> Result<Option<ClaimedExecution>, StoreError> {
-        let now = clock.now();
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
         // Serialize claimants before either transaction reads the runner's
@@ -1008,13 +1007,13 @@ impl Repository {
         Ok(out)
     }
 
-    #[instrument(skip(self, input, clock))]
+    #[instrument(skip(self, input))]
     pub async fn register_runner(
         &self,
         input: NewRunner<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         sqlx::query(
             "INSERT INTO agent_runners (id, name, credential_hash, labels, total_capacity, \
              available_capacity, capability_snapshot, protocol_version, created_at, updated_at) \
@@ -1035,13 +1034,13 @@ impl Repository {
         Ok(())
     }
 
-    #[instrument(skip(self, input, clock))]
+    #[instrument(skip(self, input))]
     pub async fn create_agent_profile(
         &self,
         input: NewAgentProfile<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         sqlx::query(
             "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -1092,13 +1091,13 @@ impl Repository {
     }
 
     /// Insert the profile, or change the row with its id; `builtin` is never written.
-    #[instrument(skip(self, row, clock))]
+    #[instrument(skip(self, row))]
     pub async fn write_agent_profile(
         &self,
         row: &tack_core::outline::bundle::ProfileRow,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         sqlx::query(
             "INSERT INTO agent_profiles \
              (id, name, instructions, tool_policy, limits, kind, fleet_id, delivers, created_at, updated_at) \

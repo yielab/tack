@@ -6,6 +6,7 @@ use tack_app::runs::start_run::{PermissionRequest, RunRequest, Started};
 use tack_core::models::{CodeOrigin, CreateProject, ProjectType, UpdateProject, WorkspaceMode};
 use tack_db::repo::execution::{NewAgentProfile, NewRunner};
 use tack_db::{Repository, queries};
+use tack_protocol::Clock;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::{RunnerId, RunnerSelector};
 use tack_test_support::{create_test_workspace, make_item, setup_test_db};
@@ -48,7 +49,7 @@ pub async fn board() -> Board {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -71,7 +72,7 @@ pub async fn add_runner(repo: &Repository, id: &str) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("runner");
@@ -86,7 +87,7 @@ pub async fn add_profile(repo: &Repository, id: &str, tool_policy: &str, limits:
             tool_policy,
             limits,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -134,7 +135,7 @@ pub async fn start(
     board: &Board,
     request: RunRequest,
 ) -> Result<Started, tack_app::runs::start_run::Refusal> {
-    tack_app::runs::start_run::start_run(&board.repo, &SystemClock, OPERATOR, request).await
+    tack_app::runs::start_run::start_run(&board.repo, SystemClock.now(), OPERATOR, request).await
 }
 
 /// The snapshot a started run was stored with.

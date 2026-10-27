@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_db::repo::execution::NewDecision;
 use tack_db::{Repository, queries};
-use tack_protocol::Clock;
 use tack_protocol::execution::{ExecutionState, TransitionActor, validate_transition};
 use uuid::Uuid;
 
@@ -46,10 +45,9 @@ pub enum DecisionCreated {
 /// and overwrites nothing.
 pub async fn create_decision(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     request: DecisionRequest<'_>,
 ) -> Result<DecisionCreated, AppError> {
-    let now = clock.now();
     // A wrong runner or fence (`Stale`) is told apart from an attempt that cannot wait
     // (`Ineligible`) before the write, which collapses both into one answer.
     let Some(lease) = queries::execution_attempts::attempt_lease(
@@ -98,7 +96,7 @@ pub async fn create_decision(
                 expires_at: request.expires_at,
                 recommendation: recommendation_json.as_deref(),
             },
-            clock,
+            now,
         )
         .await?;
     if !written {
