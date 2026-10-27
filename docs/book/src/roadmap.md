@@ -162,15 +162,17 @@ and the live contract check is card A of Phase 81.
 ## Phase 81 — what the audit found
 
 **Status:** proposed 2026-10-26, from an audit of the tree with Phases 79 and 80 built (tests,
-structure, code design, screens, and the seams with docket and prill). No ADR. **Plan:**
+structure, code design, screens, and the seams with docket and prill). Round 1 (cards B, C, D, S,
+R, A and H) is built and merged on the Phase 79 branch, 2026-10-27; E, F, I, J and K remain. No ADR. **Plan:**
 [`docs/plans/phase-81.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-81.md).
 
 **The rule it keeps:** CI never needs docket or prill. CI tests Tack's code with the fake docket,
 the fake prill and captured fixtures; everything that talks to the real programs is one local
 command, the local `onboarding-lab/e2e/docket-prill-e2e.sh`, with a `--check` mode that diffs the captures and prill's
-contracts. Today's live suite cannot pass: its question test expects a sentence Tack no longer
-writes and passes when nothing is asked, and its only check of docket is a version number docket
-kept through a breaking change.
+contracts. The live suite now has fifteen tests and asks docket for its escalation record before it
+builds. On 2026-10-27 it passed fourteen against docket `52c22f89` and prill `6b95423`; the fifteenth, the answer that
+completes a lights-out run, fails when the local model's lead step repeats itself, which is the model and not Tack.
+`--check` passes. The run found five Tack defects, all fixed in the same round.
 
 | Id | Card | Model | Waits on |
 |---|---|---|---|
