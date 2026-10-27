@@ -76,8 +76,11 @@ pub enum Move {
     ResumeAfterDecision,
     /// The lease owner ends the attempt in `to` (a terminal state).
     Finish(ExecutionState),
-    /// An operator cancels a request no runner holds.
-    CancelQueued,
+    /// An operator ends a run nobody holds: a queued request, or one whose attempt waits for the
+    /// operator or whose lease ran out (the store checks the lease; the table cannot).
+    Cancel,
+    /// The scheduler fails a queued request no runner could ever claim.
+    FailUnclaimable,
     /// Recovery gives up an attempt whose lease ran out: it is `to` (`Lost` or `NeedsOperator`).
     Abandon(ExecutionState),
     /// An operator sends a request that waits for them back to the queue.
@@ -85,7 +88,7 @@ pub enum Move {
 }
 
 impl Move {
-    pub const ALL: [Move; 12] = [
+    pub const ALL: [Move; 13] = [
         Move::Lease,
         Move::Prepare,
         Move::Start,
@@ -94,7 +97,8 @@ impl Move {
         Move::Finish(ExecutionState::Succeeded),
         Move::Finish(ExecutionState::Failed),
         Move::Finish(ExecutionState::Cancelled),
-        Move::CancelQueued,
+        Move::Cancel,
+        Move::FailUnclaimable,
         Move::Abandon(ExecutionState::Lost),
         Move::Abandon(ExecutionState::NeedsOperator),
         Move::Requeue,
@@ -107,15 +111,16 @@ impl Move {
             Move::Start | Move::ResumeAfterDecision => ExecutionState::Running,
             Move::AskDecision => ExecutionState::WaitingDecision,
             Move::Finish(to) | Move::Abandon(to) => to,
-            Move::CancelQueued => ExecutionState::Cancelled,
+            Move::Cancel => ExecutionState::Cancelled,
+            Move::FailUnclaimable => ExecutionState::Failed,
             Move::Requeue => ExecutionState::Queued,
         }
     }
 
     pub fn actor(self) -> TransitionActor {
         match self {
-            Move::Lease => TransitionActor::Scheduler,
-            Move::CancelQueued | Move::Requeue => TransitionActor::Operator,
+            Move::Lease | Move::FailUnclaimable => TransitionActor::Scheduler,
+            Move::Cancel | Move::Requeue => TransitionActor::Operator,
             Move::Abandon(_) => TransitionActor::RecoveryService,
             _ => TransitionActor::LeaseOwner,
         }

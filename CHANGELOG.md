@@ -192,6 +192,7 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The frozen lifecycle table grew by the two moves the store always made.** `docs/contracts/runner-v1/lifecycle-transitions.json` now lists `queued` → `failed` by the scheduler (a request no runner could ever claim) and `cancelled` by an operator from `leased`, `preparing`, `running`, `waiting_decision` and `needs_operator` (a run nobody holds any more, ended without waiting for a runner). Both were plain filters in the store; now every `UPDATE ... WHERE state` guard comes from the table. No runner-visible behaviour changes.
 - **A runner can no longer end an attempt it has not started.** The store used to accept a success report for an attempt still `leased`; every guard on a state change now comes from the lifecycle table in the protocol crate, so the store and the table cannot disagree, and no query spells a state name.
 - **A level can only reach docket, and a run is a link.** `POST /api/executions` refuses an `autonomy` for any
   agent but docket with `400` "A level applies only to a docket run", where the level used to be kept and then

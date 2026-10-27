@@ -769,12 +769,19 @@ async fn apply_cancellation(
         let active = state::is_live(&state);
         if state::is_needs_operator(&state) || (active && expired) {
             let attempt: String = latest.get("id");
-            sqlx::query(state::sql("UPDATE execution_attempts SET state={cancelled},ended_at=?,updated_at=? WHERE id=?"))
-                .bind(now).bind(now).bind(&attempt).execute(&mut *tx).await?;
+            let (set, guard) = (Move::Cancel.set(), Move::Cancel.guard());
+            sqlx::query(state::sql(&format!(
+                "UPDATE execution_attempts SET {set},ended_at=?,updated_at=? WHERE id=? AND {guard}"
+            )))
+            .bind(now)
+            .bind(now)
+            .bind(&attempt)
+            .execute(&mut *tx)
+            .await?;
             end_attempt_decisions(tx, &attempt, now).await?;
-            sqlx::query(state::sql(
-                "UPDATE execution_requests SET state={cancelled},updated_at=? WHERE id=?",
-            ))
+            sqlx::query(state::sql(&format!(
+                "UPDATE execution_requests SET {set},updated_at=? WHERE id=? AND {guard}"
+            )))
             .bind(now)
             .bind(request_id)
             .execute(&mut *tx)

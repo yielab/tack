@@ -1,7 +1,7 @@
 //! Enqueueing: the request snapshot is parsed and validated, the request is stored, and the queue is read, both for listings and for what the
 //! scheduler may hand out next.
 
-use super::state;
+use super::state::{self, Move};
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
@@ -526,7 +526,8 @@ impl Repository {
         reason: &str,
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let updated = sqlx::query(state::sql("UPDATE execution_requests SET state={failed},waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND state={queued}"))
+        let step = Move::FailUnclaimable;
+        let updated = sqlx::query(state::sql(&format!("UPDATE execution_requests SET {},waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND {}", step.set(), step.guard())))
             .bind(code).bind(reason).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
         Ok(updated.rows_affected() == 1)

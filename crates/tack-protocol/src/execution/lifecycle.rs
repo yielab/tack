@@ -28,6 +28,12 @@ impl LifecycleError {
 
 /// Validates a non-replay state transition against runner protocol v1.
 ///
+/// Two moves the store makes are in the table beyond the lease owner's and recovery's: the
+/// scheduler fails a queued request no runner could ever claim (`queued` -> `failed`), and an
+/// operator cancels a run nobody holds any more (`needs_operator`, or a lease that ran out)
+/// without waiting for a runner to observe it (`* -> cancelled`). The table cannot say that a
+/// lease has expired; the store checks it.
+///
 /// Idempotent reports are intentionally not transitions: endpoint code returns
 /// the original success before calling this function, as specified by the
 /// frozen lifecycle fixture.
@@ -44,10 +50,15 @@ pub fn validate_transition(
 
     let allowed = matches!(
         (from, to, actor),
-        (Queued, Leased, Scheduler)
+        (Queued, Leased | Failed, Scheduler)
             | (Queued, Cancelled, Operator)
             | (Leased, Preparing | Failed | Cancelled, LeaseOwner)
             | (Leased, Lost | NeedsOperator, RecoveryService)
+            | (
+                Leased | Preparing | Running | WaitingDecision | NeedsOperator,
+                Cancelled,
+                Operator
+            )
             | (Preparing, Running | Failed | Cancelled, LeaseOwner)
             | (Preparing, Lost | NeedsOperator, RecoveryService)
             | (
