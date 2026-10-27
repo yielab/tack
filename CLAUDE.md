@@ -51,7 +51,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   defects, fixed in Phase 81's round 1. Since 2026-10-26 the suite lives in the
   git-ignored `onboarding-lab/e2e/` (`docket-prill-e2e.sh`), beside the `onboard-project` skill it exercises.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
-- **Proposed 2026-10-26:** Phase 81 (`docs/plans/phase-81.md`, no ADR) — what an audit of the tree
+- **Built 2026-10-27 (unmerged):** Phase 81 (`docs/plans/phase-81.md`, no ADR) — what an audit of the tree
   with Phases 79 and 80 found, as cards for Sonnet and Haiku agents in three rounds. CI never needs
   docket or prill; the three meet only in the local, unversioned `onboarding-lab/`.
   A card runs only the tests of what it touched; the full suites run once per round.

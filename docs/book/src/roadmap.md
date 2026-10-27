@@ -15,8 +15,8 @@ team, repeat tasks, and travel whole in one file.
 
 **Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. `v0.1.0-beta.10`,
 which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not published yet.
-Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79 and 80
-are built on a branch and not yet merged; Phase 81 is proposed.
+Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79, 80
+and 81 are built on a branch and not yet merged.
 
 **Where this is going.** Phases 79 and 80 give the runner a crate of its own and make
 a run that waits on a person wait without a clock. Phase 81 fixes what an audit of that tree
@@ -31,8 +31,8 @@ still works alone, and without a verifier a project stays at Level 3.
 Only a card of a phase the maintainer has opened is listed here, with its detail in the plan or
 the section named beside it. What is not a card is in "Cancelled" below.
 
-- **[Phase 81](#phase-81--what-the-audit-found)**, what the 2026-10-26 audit found, in cards B, C, D, S, R, A, H, E, F, I, J and K.
-  Its last card ends with the review and merge of Phases 79, 80 and 81 into `develop`.
+- **[Phase 81](#phase-81--what-the-audit-found)**, what the 2026-10-26 audit found: every card (B, C, D, S, R, A, H, E, F, I, J and K)
+  is built and merged on the Phase 79 branch. What is left is the review and merge of Phases 79, 80 and 81 into `develop`.
 
 ## Future, not planned
 
@@ -162,8 +162,10 @@ and the live contract check is card A of Phase 81.
 ## Phase 81 — what the audit found
 
 **Status:** proposed 2026-10-26, from an audit of the tree with Phases 79 and 80 built (tests,
-structure, code design, screens, and the seams with docket and prill). Round 1 (cards B, C, D, S,
-R, A and H) is built and merged on the Phase 79 branch, 2026-10-27; E, F, I, J and K remain. No ADR. **Plan:**
+structure, code design, screens, and the seams with docket and prill). Every card is built and merged on the
+Phase 79 branch, 2026-10-27: Round 1 (B, C, D, S, R, A, H), Round 2 (E, F) and Round 3 (I, J, K). The full
+suites ran on the merged tree: `pre-push`, 1613 Rust tests, 821 Vitest tests, Playwright on Chromium (68) and the
+smoke script all pass. What is left is the review and merge into `develop`. No ADR. **Plan:**
 [`docs/plans/phase-81.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-81.md).
 
 **The rule it keeps:** CI never needs docket or prill. CI tests Tack's code with the fake docket,
@@ -172,7 +174,7 @@ command, the local `onboarding-lab/e2e/docket-prill-e2e.sh`, with a `--check` mo
 contracts. The live suite now has fifteen tests and asks docket for its escalation record before it
 builds. On 2026-10-27 it passed fourteen against docket `52c22f89` and prill `6b95423`; the fifteenth, the answer that
 completes a lights-out run, fails when the local model's lead step repeats itself, which is the model and not Tack.
-`--check` passes. The run found five Tack defects, all fixed in the same round.
+`--check` passes, and the same result held on the tree with every card merged. The run found five Tack defects, all fixed in the same round.
 
 | Id | Card | Model | Waits on |
 |---|---|---|---|
@@ -185,10 +187,9 @@ completes a lights-out run, fails when the local model's lead step repeats itsel
 | H | The routes, tools and upgrade nobody tests, including a beta.9 database migrated to now | Haiku | — |
 | E | The execution store is typed: ids, token and state from the protocol, guards built from the lifecycle, a typed run request | Sonnet | Round 1 |
 | F | One wire format and one error model: protocol structs on both sides, a code on every error, no panic on a corrupt row | Sonnet | E |
-| I, J, K | Optional: one UI kit and tokens; `Host` split and config read once; the item apart from its read model | Haiku, Sonnet | S, R; F; J |
+| I, J, K | One UI kit and tokens; `Host` split and config read once; the item apart from its read model | Haiku, Sonnet | S, R; F; J |
 
-Rounds: **1** = B, C, D, S, R, A, H, at most two building at once; **2** = E then F; **3**, if
-wanted, = I, J, K. While a card works it runs only the tests of what it touched; the full suites run
+Rounds: **1** = B, C, D, S, R, A, H, at most two building at once; **2** = E then F; **3** = I, J, K. While a card works it runs only the tests of what it touched; the full suites run
 once per round on the merged tree, and the local suite of the three after Round 1 and at the end.
 
 ---

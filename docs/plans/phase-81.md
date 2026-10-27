@@ -484,7 +484,7 @@ match on; and no row read can panic.
 
 ### I. One kit for cards, switches, confirms, radii and type
 
-**Model:** Haiku. **Waits on:** S and R. Optional (Round 3).
+**Model:** Haiku. **Waits on:** S and R. Round 3.
 
 **Why.** 457 arbitrary Tailwind values; `rounded-[28px]` written 57 times though `--radius-card`
 exists; 28 font sizes; the card style rebuilt 33 times and drifted; eight native `confirm()`; 16 raw
@@ -502,7 +502,7 @@ sidebar's list. No visual change beyond the drift it removes.
 
 ### J. `Host` split and the environment read once
 
-**Model:** Sonnet. **Waits on:** F. Optional (Round 3).
+**Model:** Sonnet. **Waits on:** F. Round 3.
 
 **Why.** `Host` has ten methods across GitHub, secrets, verifier, artifacts and websocket, with
 `String` errors; one of them only calls back into `tack-app`. `AppConfig` lives in `tack-api` but
@@ -519,7 +519,7 @@ passed as values; the `set_var` blocks go.
 
 ### K. The item and its read model are separate
 
-**Model:** Sonnet. **Waits on:** J. Optional (Round 3).
+**Model:** Sonnet. **Waits on:** J. Round 3.
 
 **Why.** `Item` mixes the aggregate with read-model fields built by subqueries (`needs_review`,
 `merge_note`, `team`, …); its column list is pasted nine times; adding a field touches about fifteen
