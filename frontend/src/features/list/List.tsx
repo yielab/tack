@@ -23,6 +23,7 @@ import { typeBadgeTone } from '../../shared/ui/TypeBadge';
 import type { Priority } from '../../shared/types';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2 } from 'solid-icons/fi';
+import Card from '../../shared/ui/Card';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
 type ItemWithChildren = Item & { children: ItemWithChildren[]; level: number };
@@ -222,7 +223,7 @@ export default function List() {
             <h1 class="text-content m-0 leading-tight truncate" style={{ 'font-size': '2.125rem' }}>
               {project()?.name || 'List View'}
             </h1>
-            <p class="text-[0.8125rem] text-content-subtle">
+            <p class="text-small text-content-subtle">
               {flattenedItems().length} {flattenedItems().length === 1 ? 'item' : 'items'}
             </p>
           </div>
@@ -248,9 +249,9 @@ export default function List() {
 
       <div class="flex-1 overflow-auto">
         <Show when={projectId} fallback={
-          <div class="rounded-[28px] bg-panel">
+          <Card>
             <EmptyState icon={<IconList size={28} />} title="Select a project from the sidebar" />
-          </div>
+          </Card>
         }>
           {/* Items */}
           <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
@@ -258,7 +259,7 @@ export default function List() {
             <SortableProvider ids={flattenedItems().map(i => i.id)}>
               <div class="max-w-6xl">
                 <Show when={flattenedItems().length > 0} fallback={
-                  <div class="rounded-[28px] bg-panel">
+                  <Card>
                     <EmptyState
                       icon={<IconList size={28} />}
                       title="No items yet"
@@ -268,7 +269,7 @@ export default function List() {
                         </Button>
                       }
                     />
-                  </div>
+                  </Card>
                 }>
                   <div class="flex flex-col gap-2.5">
                     <For each={flattenedItems()}>
@@ -437,7 +438,7 @@ function ItemRow(props: {
           <div class="flex-shrink-0 flex gap-1">
             <For each={props.item.tags?.slice(0, 2)}>
               {(tag) => (
-                <span class="text-[0.6875rem] font-semibold px-2.5 py-[2px] rounded-full border border-line text-content-muted">
+                <span class="text-micro font-semibold px-2.5 py-[2px] rounded-full border border-line text-content-muted">
                   {tag}
                 </span>
               )}
@@ -474,7 +475,7 @@ function ItemRow(props: {
 }
 
 const pillControl =
-  'flex-shrink-0 min-h-8 text-[0.8125rem] px-3 rounded-full border-0 bg-app text-content ' +
+  'flex-shrink-0 min-h-8 text-small px-3 rounded-full border-0 bg-app text-content ' +
   'focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]';
 
 // Inline create form — a soft accent pill under its parent.

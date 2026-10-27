@@ -166,7 +166,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
       </Show>
 
-      <p data-testid="run-summary" class="rounded-[20px] px-4 py-3 text-sm" style={PILL}>
+      <p data-testid="run-summary" class="rounded-item px-4 py-3 text-sm" style={PILL}>
         <A href={automation()} class="font-semibold hover:underline" style={LINK}>{profileName()}</A>
         {' · '}
         <A href={automation()} class="hover:underline" style={LINK}>{props.modelLabel()}</A>
@@ -183,7 +183,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
 
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
-        <p data-testid="no-tools" class="rounded-[20px] px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+        <p data-testid="no-tools" class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           {profileName()} gives {props.harnessLabel()} no tools, so it can only answer in text: it cannot read or change files.{' '}
           <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Advanced.
         </p>
@@ -191,13 +191,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <details>
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
-        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-[20px] px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
+        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
       </details>
 
       <Show
         when={props.profilesLoading() || props.profiles().length > 0}
         fallback={
-          <div class="flex flex-wrap items-center justify-between gap-3 rounded-[20px] px-4 py-3" style={PILL}>
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-item px-4 py-3" style={PILL}>
             <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No agent profile exists yet.</p>
             <Button size="sm" variant="secondary" loading={props.creatingProfile()} onClick={props.createDefaultProfile}>
               Create default profile
@@ -383,7 +383,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <Show when={props.errors().length > 0}>
         <ul
-          class="space-y-1 rounded-[20px] px-4 py-3 text-xs font-medium"
+          class="space-y-1 rounded-item px-4 py-3 text-xs font-medium"
           style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
         >
           <For each={props.errors()}>{(msg) => <li>{msg}</li>}</For>

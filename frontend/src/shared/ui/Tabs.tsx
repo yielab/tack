@@ -74,7 +74,7 @@ const Tabs: Component<TabsProps> = (props) => {
                 {tab.label}
                 <Show when={tab.count !== undefined}>
                   <span
-                    class="ml-1.5 rounded-full px-1.5 py-px text-[0.6875rem] font-bold"
+                    class="ml-1.5 rounded-full px-1.5 py-px text-micro font-bold"
                     style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
                   >
                     {tab.count}

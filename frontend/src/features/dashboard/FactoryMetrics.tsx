@@ -5,6 +5,7 @@ import { Skeleton } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { JSX } from 'solid-js';
 import RateCardForm from './RateCardForm';
+import Card from '../../shared/ui/Card';
 
 type FactoryMetrics = components['schemas']['FactoryMetrics'];
 type Ratio = components['schemas']['Ratio'];
@@ -50,7 +51,7 @@ export default function FactoryMetrics() {
         <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
           Factory metrics
         </h1>
-        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
+        <p class="mt-0.5 text-small text-content-muted">
           Agent work, verification, and outcomes
         </p>
       </div>
@@ -58,7 +59,7 @@ export default function FactoryMetrics() {
       {/* Loading */}
       <Show when={metrics.loading && !metrics()}>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5" aria-hidden="true">
-          <For each={[1, 2, 3, 4, 5, 6]}>{() => <Skeleton height="180px" class="rounded-[28px]!" />}</For>
+          <For each={[1, 2, 3, 4, 5, 6]}>{() => <Skeleton height="180px" class="rounded-card!" />}</For>
         </div>
       </Show>
 
@@ -130,7 +131,7 @@ type CostRow = { name: string; tokens_in: number; cache_read: number; tokens_out
 /** Counted tokens and attempts per name, the cache reads beside them and not in them; dollars only where the rate card priced the row. */
 function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
   return (
-    <div class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-2.5">
+    <Card class="px-5 py-[18px] flex flex-col gap-2.5">
       <h2 class="text-lg text-content">{props.title}</h2>
       <table class="w-full text-left text-xs text-content-subtle">
         <thead>
@@ -158,16 +159,16 @@ function CostTable(props: { title: string; label: string; rows: CostRow[] }) {
           </For>
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
 function MetricCard<T>(props: { title: string; data: T; children: (data: T) => JSX.Element }) {
   return (
-    <div class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-2.5">
+    <Card class="px-5 py-[18px] flex flex-col gap-2.5">
       <h2 class="text-lg text-content">{props.title}</h2>
       {props.children(props.data)}
-    </div>
+    </Card>
   );
 }
 

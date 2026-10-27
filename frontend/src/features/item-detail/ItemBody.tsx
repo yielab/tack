@@ -150,7 +150,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
 
         <Show when={page()}>
           <aside
-            class="space-y-5 rounded-[28px] p-5"
+            class="space-y-5 rounded-card p-5"
             style={{ 'background-color': 'var(--color-bg-panel)' }}
           >
             {run}

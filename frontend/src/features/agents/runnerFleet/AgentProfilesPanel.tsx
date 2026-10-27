@@ -243,7 +243,7 @@ const AgentProfilesPanel: Component = () => {
         <Show
           when={rows().length > 0}
           fallback={
-            <div class="rounded-[28px] border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
+            <div class="rounded-card border-2 border-dashed" style={{ 'border-color': 'var(--color-border-light)' }}>
               <EmptyState
                 icon={<IconSettings size={26} />}
                 title="No agent profiles yet"
@@ -255,12 +255,12 @@ const AgentProfilesPanel: Component = () => {
           <ul class="space-y-2">
             <For each={rows()}>
               {(profile) => (
-                <li class="flex flex-col gap-1.5 rounded-[28px] bg-panel px-5 py-[18px]">
+                <li class="flex flex-col gap-1.5 rounded-card bg-panel px-5 py-[18px]">
                   <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-[0.9375rem] font-bold" style={{ color: 'var(--color-text-primary)' }}>
+                    <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {profile.name}
                     </span>
-                    <span class="font-mono text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
+                    <span class="font-mono text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
                       {profile.agent_profile_id}
                     </span>
                     <Show when={profile.builtin}>
@@ -273,13 +273,13 @@ const AgentProfilesPanel: Component = () => {
                       </Show>
                     </span>
                   </div>
-                  <div class="flex flex-wrap items-center gap-2 text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+                  <div class="flex flex-wrap items-center gap-2 text-caption" style={{ color: 'var(--color-text-secondary)' }}>
                     <span data-testid="profile-delivers">
                       {profile.delivers || 'Delivers: not said'} · on {(profile.tool_policy as { agent?: string } | null)?.agent ?? 'any agent'}
                     </span>
                     <CapabilityChips profile={profile} />
                   </div>
-                  <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
+                  <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
                 </li>
               )}
             </For>
@@ -288,7 +288,7 @@ const AgentProfilesPanel: Component = () => {
       </Show>
 
       <Show when={profiles.error !== undefined}>
-        <div class="text-[0.8125rem]" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-small" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load agent profiles.{' '}
           <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry
@@ -304,7 +304,7 @@ const AgentProfilesPanel: Component = () => {
           </Button>
         }
       >
-        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-[28px] bg-panel px-5 py-[18px]">
+        <form onSubmit={(e) => void submit(e)} class="max-w-md space-y-3 rounded-card bg-panel px-5 py-[18px]">
           <Field label="Name" required placeholder="reviewer" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
           <FieldShell label="Instructions" required for={instructionsId}>
             <textarea
@@ -314,7 +314,7 @@ const AgentProfilesPanel: Component = () => {
               placeholder="Review the diff for correctness and style."
               value={instructions()}
               onInput={(e) => setInstructions(e.currentTarget.value)}
-              class="w-full rounded-[20px] border px-3.5 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+              class="w-full rounded-item border px-3.5 py-2 text-sm resize-y focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
               style={{
                 'background-color': 'var(--color-bg-base)',
                 color: 'var(--color-text-primary)',
@@ -415,7 +415,7 @@ const AgentProfilesPanel: Component = () => {
                         placeholder="Other tool names, comma separated"
                         value={tools[h].extra}
                         onInput={(e) => setTools(h, 'extra', e.currentTarget.value)}
-                        class="w-full rounded-[20px] border px-3.5 py-1.5 text-sm"
+                        class="w-full rounded-item border px-3.5 py-1.5 text-sm"
                         style={{ 'background-color': 'var(--color-bg-base)', 'border-color': 'var(--color-border-medium)' }}
                       />
                     </Show>

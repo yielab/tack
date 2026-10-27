@@ -247,7 +247,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         {/* Error message */}
         <Show when={error()}>
           <div
-            class="rounded-[22px] px-4 py-2.5 text-sm font-semibold"
+            class="rounded-xl px-4 py-2.5 text-sm font-semibold"
             style={{
               'background-color': 'var(--color-danger-100)',
               color: 'var(--color-danger-600)',
@@ -351,7 +351,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                   type="button"
                   onClick={() => setEstimate(estimate() === value ? null : value)}
                   aria-pressed={estimate() === value}
-                  class={`w-9 h-9 rounded-full font-mono text-[0.8125rem] font-semibold ${chipClass(estimate() === value)}`}
+                  class={`w-9 h-9 rounded-full font-mono text-small font-semibold ${chipClass(estimate() === value)}`}
                   style={chipStyle(estimate() === value)}
                   disabled={loading()}
                 >
@@ -400,7 +400,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
                         {typeof child.item_type === 'string' ? itemTypeConfig()[child.item_type as ItemType]?.emoji : '📌'}
                       </span>
                       <span class="flex-1 text-content">{child.title}</span>
-                      <span class="text-[0.6875rem] font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">
+                      <span class="text-micro font-bold px-2.5 py-[3px] rounded-full bg-info-100 text-info-700">
                         {child.status}
                       </span>
                       <button
@@ -463,7 +463,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             <div class="flex flex-wrap gap-1.5 mb-2">
               <For each={tags()}>
                 {(tag) => (
-                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-full text-[0.6875rem] font-bold">
+                  <span class="inline-flex items-center gap-1 px-2.5 py-[3px] bg-accent-soft text-accent-ink rounded-full text-micro font-bold">
                     {tag}
                     <button
                       type="button"

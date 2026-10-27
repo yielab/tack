@@ -11,6 +11,7 @@ import type { Item, Priority, UpdateItem } from '../../shared/types';
 import { Badge, Button, Skeleton } from '../../shared/ui';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import { typeKey } from '../../shared/ui/TypeBadge';
+import Card from '../../shared/ui/Card';
 
 // ── Pure helpers (exported for unit testing) ──────────────────────────────────
 
@@ -216,7 +217,7 @@ export default function Table() {
           aria-label="Filter items"
           class="min-h-9 px-3.5 py-1.5 rounded-full text-sm w-56 border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
         />
-        <span class="text-[0.8125rem] text-content-subtle">
+        <span class="text-small text-content-subtle">
           {rows().length} item{rows().length === 1 ? '' : 's'}
         </span>
         <Button
@@ -240,12 +241,12 @@ export default function Table() {
           </Button>
           <Show when={colMenuOpen()}>
             <div
-              class="absolute right-0 mt-2 z-20 w-56 flex flex-col gap-0.5 p-2.5 rounded-[22px] bg-surface"
+              class="absolute right-0 mt-2 z-20 w-56 flex flex-col gap-0.5 p-2.5 rounded-xl bg-surface"
               style={{ 'box-shadow': 'var(--shadow-lg)' }}
             >
               <For each={COLUMNS}>
                 {(c) => (
-                  <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-[14px] text-[0.8125rem] text-content cursor-pointer hover:bg-sunken">
+                  <label class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-[14px] text-small text-content cursor-pointer hover:bg-sunken">
                     <input
                       type="checkbox"
                       class="w-4 h-4"
@@ -265,7 +266,7 @@ export default function Table() {
       <Show
         when={!loading()}
         fallback={
-          <div class="rounded-[28px] bg-panel p-3.5 flex flex-col gap-3" role="status">
+          <Card class="p-3.5 flex flex-col gap-3" role="status">
             <span class="sr-only">Loading…</span>
             <For each={[1, 2, 3, 4, 5]}>
               {() => (
@@ -277,25 +278,25 @@ export default function Table() {
                 </div>
               )}
             </For>
-          </div>
+          </Card>
         }
       >
         <Show
           when={rows().length > 0}
           fallback={
-            <div class="rounded-[28px] bg-panel py-12 text-center text-sm text-content-muted">
+            <Card class="py-12 text-center text-sm text-content-muted">
               No items {query() ? 'match your filter' : 'yet'}.
-            </div>
+            </Card>
           }
         >
-          <div class="overflow-x-auto rounded-[28px] bg-panel px-2 pt-2 pb-1">
+          <Card class="overflow-x-auto px-2 pt-2 pb-1">
             <table class="w-full border-collapse" style={{ 'font-size': '0.84375rem' }}>
               <thead>
                 <tr>
                   <For each={visibleColumns()}>
                     {(c) => (
                       <th
-                        class="text-left px-3 py-2.5 text-[0.6875rem] font-bold uppercase tracking-[.08em] select-none cursor-pointer whitespace-nowrap text-content-subtle border-b border-line"
+                        class="text-left px-3 py-2.5 text-micro font-bold uppercase tracking-[.08em] select-none cursor-pointer whitespace-nowrap text-content-subtle border-b border-line"
                         onClick={() => toggleSort(c.key)}
                         aria-sort={sortKey() === c.key ? (sortDir() === 'asc' ? 'ascending' : 'descending') : 'none'}
                       >
@@ -348,7 +349,7 @@ export default function Table() {
                 </For>
               </tbody>
             </table>
-          </div>
+          </Card>
         </Show>
       </Show>
     </div>

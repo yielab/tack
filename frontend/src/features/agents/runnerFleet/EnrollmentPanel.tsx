@@ -208,7 +208,7 @@ const EnrollmentPanel: Component = () => {
   return (
     <div class="space-y-3.5">
       <ConfirmHost />
-      <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
         Enroll issues a one-time token a runner exchanges for a durable credential. This page doesn't check back with the server, so it only shows runners
         enrolled or revoked from this browser this session, not whether they actually connected — see the{' '}
         <A href="/agents" class="underline" style={{ color: 'var(--color-accent-ink)' }}>Agents</A> page for a live runner roster.
@@ -217,7 +217,7 @@ const EnrollmentPanel: Component = () => {
       {/* Enroll form */}
       <form
         onSubmit={(e) => void submitEnroll(e)}
-        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-[28px] bg-panel px-5 py-[18px] sm:grid-cols-3"
+        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-card bg-panel px-5 py-[18px] sm:grid-cols-3"
       >
         <h3 class="col-span-full text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Enroll a runner
@@ -268,7 +268,7 @@ const EnrollmentPanel: Component = () => {
         <Show
           when={sessionRunners().length > 0}
           fallback={
-            <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
               None yet — enroll a runner above, or revoke one by ID below.
             </p>
           }
@@ -311,7 +311,7 @@ const EnrollmentPanel: Component = () => {
       {/* Manual revoke by ID — the fallback for a runner not enrolled this session */}
       <form
         onSubmit={(e) => void submitManualRevoke(e)}
-        class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]"
+        class="flex flex-col gap-2.5 rounded-card bg-panel px-5 py-[18px]"
       >
         <h3 class="text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Revoke a runner by ID

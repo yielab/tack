@@ -124,7 +124,7 @@ const Merge: Component<{
               <div class="flex flex-col gap-3">
                 <For each={s().domains} fallback={<Note>No domains yet. L4 merges only inside a domain.</Note>}>
                   {(d, i) => (
-                    <div data-testid="autonomy-domain" class="flex flex-col gap-1.5 rounded-[20px] border p-3" style={{ 'border-color': 'var(--color-border-medium)' }}>
+                    <div data-testid="autonomy-domain" class="flex flex-col gap-1.5 rounded-item border p-3" style={{ 'border-color': 'var(--color-border-medium)' }}>
                       <input
                         class={inputClass}
                         style={inputStyle}
@@ -212,7 +212,7 @@ const Merge: Component<{
               <textarea
                 aria-label="Public key"
                 rows={3}
-                class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm"
+                class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
                 style={{ ...inputStyle, 'font-family': 'var(--font-mono)' }}
                 value={s().attestation_public_key ?? ''}
                 onChange={(e) => void save({ attestation_public_key: e.currentTarget.value.trim() || null })}

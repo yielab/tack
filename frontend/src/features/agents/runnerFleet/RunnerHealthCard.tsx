@@ -4,6 +4,7 @@ import { gateFeature, gateFeatureAcrossRunners, type FeatureName } from '../../.
 import type { RunnerCapabilities } from '../../../shared/execution';
 import { formatCapacity, formatLabelChips } from './format';
 import { versionText } from '../runnerObservations';
+import Card from '../../../shared/ui/Card';
 
 /**
  * A runner's connection state, as far as this component is ever fed it.
@@ -99,15 +100,15 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
   const labelChips = () => formatLabelChips(props.labels);
 
   return (
-    <div
-      class="flex flex-col gap-2 rounded-[28px] bg-panel px-5 py-4"
+    <Card
+      class="flex flex-col gap-2 px-5 py-4"
       data-connection-status={props.connectionStatus}
     >
       <div class="flex flex-wrap items-center gap-2.5">
-        <span class="text-[0.9375rem] font-bold" style={{ color: 'var(--color-text-primary)' }}>
+        <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
           {props.name}
         </span>
-        <span class="font-mono text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
+        <span class="font-mono text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
           {props.runnerId}
         </span>
         <Badge tone={STATUS_TONE[props.connectionStatus]}>{STATUS_LABEL[props.connectionStatus]}</Badge>
@@ -115,7 +116,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
           <div class="ml-auto">{props.action}</div>
         </Show>
       </div>
-      <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
         {props.connectionReason}
       </p>
 
@@ -126,7 +127,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
         <For each={labelChips()}>
           {(chip) => (
             <span
-              class="rounded-full px-2.5 py-[3px] font-mono text-[0.6875rem]"
+              class="rounded-full px-2.5 py-[3px] font-mono text-micro"
               style={{ background: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
             >
               {chip}
@@ -197,7 +198,7 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
           </For>
         </ul>
       </div>
-    </div>
+    </Card>
   );
 };
 

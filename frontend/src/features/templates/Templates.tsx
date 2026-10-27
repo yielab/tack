@@ -7,6 +7,7 @@ import { Button, Field, FieldShell, Modal, Badge, EmptyState, Skeleton, createCo
 import { IconTemplates } from '../../shared/ui/icons';
 import { projectTypePillStyle, projectTypeTone } from '../../shared/ui/projectTypeTone';
 import type { ProjectTemplate } from '../../shared/types';
+import Card from '../../shared/ui/Card';
 
 /** Workflow column names in board order (for the preset preview). */
 function workflowColumns(t: ProjectTemplate): string[] {
@@ -87,7 +88,7 @@ export default function Templates() {
 
   /** Filter chip: a pill, accent-filled when active, with a type-hue dot. */
   const chipClass =
-    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[0.78125rem] transition-colors ' +
+    'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-caption transition-colors ' +
     'focus:outline-none focus-visible:ring-2';
   const chipStyle = (active: boolean) => ({
     'background-color': active ? 'var(--color-primary-600)' : 'var(--color-bg-panel)',
@@ -203,14 +204,14 @@ export default function Templates() {
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
               <For each={[1, 2, 3]}>
                 {() => (
-                  <div class="flex h-[190px] flex-col gap-2.5 rounded-[28px] bg-panel p-5">
+                  <Card class="flex h-[190px] flex-col gap-2.5 p-5">
                     <Skeleton width="60%" height="18px" />
                     <Skeleton width="40%" height="12px" />
                     <Skeleton width="90%" height="10px" />
                     <div class="mt-auto">
                       <Skeleton height="34px" rounded />
                     </div>
-                  </div>
+                  </Card>
                 )}
               </For>
             </div>
@@ -237,8 +238,8 @@ export default function Templates() {
               const samples = () => vocabSamples(template);
               const roles = () => roleLines(template);
               return (
-                <div
-                  class="flex flex-col gap-[9px] rounded-[28px] border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
+                <Card
+                  class="flex flex-col gap-[9px] border-2 border-transparent p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
                   tabindex="0"
                   onMouseEnter={() => setPreviewId(template.id)}
                   onMouseLeave={() =>
@@ -274,7 +275,7 @@ export default function Templates() {
 
                   {/* Description */}
                   <Show when={template.description}>
-                    <p class="text-[0.8125rem] leading-[1.4] text-content-muted">
+                    <p class="text-small leading-[1.4] text-content-muted">
                       {template.description}
                     </p>
                   </Show>
@@ -293,7 +294,7 @@ export default function Templates() {
 
                   {/* Preset preview (workflow columns + sample vocab) on hover/focus */}
                   <Show when={showPreview() && (columns().length > 0 || samples().length > 0 || roles().length > 0)}>
-                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-[0.6875rem] text-content-muted" data-testid="template-preview">
+                    <div class="flex flex-col gap-1.5 rounded-[18px] bg-app px-3 py-2.5 text-micro text-content-muted" data-testid="template-preview">
                       <Show when={columns().length > 0}>
                         <div class="flex flex-wrap items-center gap-1">
                           <For each={columns()}>
@@ -337,14 +338,14 @@ export default function Templates() {
                       </Button>
                     </Show>
                   </div>
-                </div>
+                </Card>
               );
             }}
           </For>
         </div>
 
         <Show when={templates() && templates()!.length === 0}>
-          <div class="rounded-[28px] border-2 border-dashed border-line px-6">
+          <div class="rounded-card border-2 border-dashed border-line px-6">
             <EmptyState
               icon={<IconTemplates size={26} style={{ color: 'var(--color-accent2-ink)' }} />}
               title={selectedType() ? 'No templates found for this type' : 'No templates yet'}
@@ -365,7 +366,7 @@ export default function Templates() {
           size="sm"
         >
           <div
-            class="mb-4 rounded-[20px] px-4 py-3"
+            class="mb-4 rounded-item px-4 py-3"
             style={{ 'background-color': 'var(--color-accent-soft)' }}
           >
             <div class="text-xs" style={{ color: 'var(--color-accent-ink)' }}>
@@ -392,7 +393,7 @@ export default function Templates() {
                 onInput={(e) => setProjectDescription(e.currentTarget.value)}
                 rows={3}
                 placeholder="Optional description"
-                class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+                class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
                 style={{
                   'background-color': 'var(--color-bg-base)',
                   color: 'var(--color-text-primary)',
@@ -403,7 +404,7 @@ export default function Templates() {
             </FieldShell>
 
             <div
-              class="rounded-[22px] px-4 py-2.5 text-sm"
+              class="rounded-xl px-4 py-2.5 text-sm"
               style={{
                 'background-color': 'var(--color-info-50)',
                 color: 'var(--color-info-700)',

@@ -155,11 +155,11 @@ export default function FieldsPanel() {
                   </div>
 
                   <Show when={field.description}>
-                    <p class="text-[0.78125rem] text-content-muted">{field.description}</p>
+                    <p class="text-caption text-content-muted">{field.description}</p>
                   </Show>
 
                   <Show when={field.options && field.options.length > 0}>
-                    <div class="text-[0.78125rem]">
+                    <div class="text-caption">
                       <span class="text-content-subtle">Options: </span>
                       <span class="text-content-muted">{field.options!.join(', ')}</span>
                     </div>

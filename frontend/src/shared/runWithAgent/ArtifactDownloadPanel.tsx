@@ -34,7 +34,7 @@ export const ArtifactView: Component<{
         <Show when={!text.error} fallback={<p class="text-sm" style={{ color: 'var(--color-danger-600)' }}>Couldn't read this artifact.</p>}>
           <Show when={shown() !== ''} fallback={<p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>This file is empty.</p>}>
             <Show when={isPatch()} fallback={
-              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-[20px] px-4 py-3 text-xs"
+              <pre data-testid="artifact-text" class="max-h-[65vh] overflow-auto whitespace-pre-wrap break-words rounded-item px-4 py-3 text-xs"
                 style={{ 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)', 'font-family': 'var(--font-mono)' }}>{shown()}</pre>
             }>
               <DiffView patch={shown()} />
@@ -104,7 +104,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
   };
 
   return (
-    <li class="space-y-2 rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <li class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
           {props.artifact.name}
@@ -113,7 +113,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
         <Show when={!props.artifact.content_verified}>
           <Badge tone="warning">Not verified yet</Badge>
         </Show>
-        <span class="text-[0.6875rem]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {formatSize(props.artifact.size_bytes)}
         </span>
         <div class="ml-auto flex gap-2">

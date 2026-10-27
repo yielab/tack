@@ -120,7 +120,7 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
         </Show>
         <Show when={!instructions.error && instructions()}>
           {(text) => (
-            <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-[20px] px-4 py-3 text-xs"
+            <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs"
               style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
           )}
         </Show>
@@ -302,7 +302,7 @@ const AttemptTools: Component<{
         <div data-testid="attempt-side" class="space-y-4">
           <Show when={terminal()}>
             <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-            <details data-testid="attempt-usage-fold" class="rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+            <details data-testid="attempt-usage-fold" class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
               <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                 Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
               </summary>
@@ -377,13 +377,13 @@ const AttemptRow: Component<{
     window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
   };
   return (
-    <li data-testid="attempt" class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+    <li data-testid="attempt" class="space-y-4 rounded-item p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
       {/* The review banner sits above the run: the verdict, with its optional note, is asked
           for here and nowhere else on this tab. */}
       <Show when={needsVerdict(props.attempt)}>
         <section
           data-testid="review-banner"
-          class="space-y-2 rounded-[20px] px-4 py-3"
+          class="space-y-2 rounded-item px-4 py-3"
           style={{ 'background-color': review() ? 'var(--color-bg-panel)' : 'var(--color-warning-100)' }}
         >
           <Show when={!review()}>
@@ -439,7 +439,7 @@ const AttemptRow: Component<{
           <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
           started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
         </span>
-        <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto max-w-[14rem] truncate text-micro" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {props.attempt.runner_id}
         </span>
       </div>
@@ -553,7 +553,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   };
   const cost = () => formatApproxCost(usage().cost);
   return (
-    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <Show
           when={usage().tokensIn !== null || usage().tokensOut !== null}
@@ -616,7 +616,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
         <For each={facts()}>{(fact) => <span>· {fact}</span>}</For>
       </div>
       <Show when={cost() !== NOT_MEASURED_TEXT}>
-        <p class="text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
           The cost is {harness()}'s own estimate at list price, not your bill.
         </p>
       </Show>

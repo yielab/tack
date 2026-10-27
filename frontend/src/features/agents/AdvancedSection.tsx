@@ -32,7 +32,7 @@ const AdvancedSection: Component = () => {
         </button>
         {/* Stays unrendered while collapsed: its vocabulary belongs to Advanced only. */}
         <Show when={open()}>
-          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             Enroll additional machines, manage fleets, and configure agent profiles.
           </p>
         </Show>

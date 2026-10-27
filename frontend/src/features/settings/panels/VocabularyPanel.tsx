@@ -59,21 +59,21 @@ const VocabularyPanel: Component = () => {
   return (
     <div class="grid max-w-[880px] gap-[18px] md:grid-cols-[1fr_280px]">
       <div class="flex flex-col gap-1.5">
-        <p class="mb-1.5 text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="mb-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Rename any term to match your domain. Blank fields fall back to the default label.
         </p>
 
-        <table class="w-full border-separate border-spacing-y-1.5 text-[0.8125rem]">
+        <table class="w-full border-separate border-spacing-y-1.5 text-small">
           <thead>
             <tr>
               <th
-                class="w-[130px] pr-3 text-left text-[0.6875rem] font-bold uppercase tracking-[.08em]"
+                class="w-[130px] pr-3 text-left text-micro font-bold uppercase tracking-[.08em]"
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
                 Default
               </th>
               <th
-                class="text-left text-[0.6875rem] font-bold uppercase tracking-[.08em]"
+                class="text-left text-micro font-bold uppercase tracking-[.08em]"
                 style={{ color: 'var(--color-text-tertiary)' }}
               >
                 Custom label
@@ -94,7 +94,7 @@ const VocabularyPanel: Component = () => {
                         aria-label={`Your word for “${def}”`}
                         placeholder={def}
                         onInput={(e) => setKey(key, e.currentTarget.value)}
-                        class="min-h-[30px] w-full rounded-full border px-3.5 py-1 text-[0.8125rem] focus:outline-none focus-visible:ring-2"
+                        class="min-h-[30px] w-full rounded-full border px-3.5 py-1 text-small focus:outline-none focus-visible:ring-2"
                         style={inputStyle(!!(edits()[key] ?? '').trim())}
                       />
                     </td>
@@ -109,7 +109,7 @@ const VocabularyPanel: Component = () => {
       <div class="flex flex-col gap-3">
         <div class="flex flex-col gap-2.5 rounded-[26px] bg-panel p-4">
           <p
-            class="text-[0.65625rem] font-bold uppercase tracking-[.1em]"
+            class="text-micro font-bold uppercase tracking-[.1em]"
             style={{ color: 'var(--color-text-tertiary)' }}
           >
             Preview — item type labels

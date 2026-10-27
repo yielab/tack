@@ -39,7 +39,7 @@ const Fold = (props: { id?: string; title: string; summary: string; help?: Field
       {/* The summary itself stays `display: list-item`: a flex summary loses its disclosure marker. */}
       <span class="inline-flex flex-wrap items-center gap-2 align-middle">
         <Heading>{props.title}</Heading>
-        <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+        <span class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
       </span>
     </summary>
     <div class="mt-2.5 flex flex-col gap-2.5">
@@ -269,7 +269,7 @@ const AutomationPanel: Component = () => {
             rows={3}
             value={p()?.definition_of_done ?? ''}
             onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
-            class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm"
+            class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',
