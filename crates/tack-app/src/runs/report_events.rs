@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, EventBatchResult, NewEvent};
-use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
 use uuid::Uuid;
 
 use crate::AppError;
@@ -19,13 +19,13 @@ pub struct ReportedEvent<'a> {
 
 /// A batch of events a runner reports for the attempt it holds.
 pub struct EventReport<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
     /// The checkpoint the runner believes the stream is at, when it sent one.
-    pub previous_checkpoint: Option<&'a str>,
+    pub previous_checkpoint: Option<&'a Checkpoint>,
     /// The checkpoint the stream reaches when this batch lands.
-    pub checkpoint: &'a str,
+    pub checkpoint: &'a Checkpoint,
     pub events: &'a [ReportedEvent<'a>],
 }
 
@@ -49,7 +49,7 @@ pub enum EventsReported {
 /// conflict. Nothing is written for a stale fence.
 pub async fn report_events(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     report: EventReport<'_>,
 ) -> Result<EventsReported, AppError> {
     let rows: Vec<String> = report
@@ -81,7 +81,7 @@ pub async fn report_events(
                 checkpoint: report.checkpoint,
             },
             &events,
-            clock,
+            now,
         )
         .await?;
     Ok(match result {

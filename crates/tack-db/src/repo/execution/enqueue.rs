@@ -1,14 +1,15 @@
 //! Enqueueing: the request snapshot is parsed and validated, the request is stored, and the queue is read, both for listings and for what the
 //! scheduler may hand out next.
 
+use super::state::{self, Move};
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
-use tack_protocol::Clock;
+use tack_protocol::execution::{ExecutionState, RunnerId};
 use tracing::instrument;
 
-use super::shared::{canonical_json, stamp};
 use crate::Repository;
+use crate::canonical_json;
 
 #[derive(Debug, Clone)]
 pub struct NewExecutionRequest<'a> {
@@ -128,7 +129,7 @@ pub struct FleetConcurrencySnapshot {
 pub struct ExecutionListingRow {
     pub id: String,
     pub item_id: String,
-    pub state: String,
+    pub state: ExecutionState,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
     pub waiting_reason: Option<String>,
@@ -136,6 +137,21 @@ pub struct ExecutionListingRow {
     /// `exact_runner` or `fleet`, with the runner or fleet id in `selector_id`.
     pub selector_kind: String,
     pub selector_id: String,
+}
+
+/// Reads one row of the listing's `SELECT`; a state no variant names is a corrupt row.
+fn listing_row(row: sqlx::sqlite::SqliteRow) -> Result<ExecutionListingRow, StoreError> {
+    Ok(ExecutionListingRow {
+        id: row.get("id"),
+        item_id: row.get("item_id"),
+        state: state::parse(&row.get::<String, _>("state"))?,
+        cancellation_requested_at: row.get("cancellation_requested_at"),
+        created_at: row.get("created_at"),
+        waiting_reason: row.get("waiting_reason"),
+        selector_kind: row.get("selector_kind"),
+        selector_id: row.get("selector_id"),
+        waiting_since: row.get("waiting_since"),
+    })
 }
 
 /// One row of `GET /api/executions/{request_id}/attempts` — every column
@@ -147,7 +163,7 @@ pub struct AttemptListingRow {
     pub attempt_number: i64,
     pub runner_id: String,
     pub fencing_token: i64,
-    pub state: String,
+    pub state: ExecutionState,
     pub lease_issued_at: String,
     pub lease_expires_at: String,
     pub last_heartbeat_at: Option<String>,
@@ -166,14 +182,21 @@ pub struct AttemptListingRow {
     pub start_report: Option<String>,
 }
 
-/// A request snapshot as an idempotent retry is compared: the task's own metadata (its type,
-/// priority and trust, which the server writes into `metadata.item`) left out, so a retry after
-/// the task changed answers the request it made, not a conflict. Everything else the request says
-/// still counts.
-pub fn without_task_metadata(snapshot: &serde_json::Value) -> serde_json::Value {
+/// A request snapshot as an idempotent retry is compared: what the task is now left out. The
+/// task's own metadata (its type, priority and trust, which the server writes into
+/// `metadata.item`) and the instructions composed from its text (title, description, comments)
+/// change when the card does, so a retry after an edit answers the request it made, not a
+/// conflict. Everything else the request says still counts.
+pub fn as_compared(snapshot: &serde_json::Value) -> serde_json::Value {
     let mut value = snapshot.clone();
     if let Some(metadata) = value.get_mut("metadata").and_then(|m| m.as_object_mut()) {
         metadata.remove("item");
+    }
+    if let Some(profile) = value
+        .get_mut("resolved_agent_profile")
+        .and_then(|p| p.as_object_mut())
+    {
+        profile.remove("instructions");
     }
     value
 }
@@ -185,9 +208,7 @@ fn same_request(stored: &str, request: &str) -> bool {
         serde_json::from_str::<serde_json::Value>(stored),
         serde_json::from_str::<serde_json::Value>(request),
     ) {
-        (Ok(stored), Ok(request)) => {
-            without_task_metadata(&stored) == without_task_metadata(&request)
-        }
+        (Ok(stored), Ok(request)) => as_compared(&stored) == as_compared(&request),
         _ => false,
     }
 }
@@ -426,8 +447,9 @@ impl Repository {
     /// rather than something `tack-orch` fetches itself.
     pub async fn fetch_runner_scheduling_snapshot(
         &self,
-        runner_id: &str,
+        runner_id: &RunnerId,
     ) -> Result<Option<RunnerSchedulingSnapshot>, StoreError> {
+        let runner_id = runner_id.as_str();
         let row = sqlx::query(
             "SELECT state, labels, total_capacity, available_capacity, last_heartbeat_at, \
              capability_snapshot FROM agent_runners WHERE id = ?",
@@ -461,17 +483,18 @@ impl Repository {
     /// filtering applied on top instead of a bare `ORDER BY created_at`.
     pub async fn list_eligible_queued_requests(
         &self,
-        runner_id: &str,
+        runner_id: &RunnerId,
     ) -> Result<Vec<QueuedRequestForScheduling>, StoreError> {
-        let rows = sqlx::query(
+        let runner_id = runner_id.as_str();
+        let rows = sqlx::query(state::sql(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
              requested_model, created_at, metadata, \
              permission_policy, waiting_since \
-             FROM execution_requests WHERE state='queued' AND \
+             FROM execution_requests WHERE state={queued} AND \
              ((selector_kind='exact_runner' AND selector_id=?) OR \
              (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m \
              WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at",
-        )
+        ))
         .bind(runner_id)
         .bind(runner_id)
         .fetch_all(self.pool())
@@ -505,7 +528,7 @@ impl Repository {
         blocking: bool,
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        sqlx::query("UPDATE execution_requests SET waiting_code=?,waiting_reason=?,waiting_since=CASE WHEN ? THEN COALESCE(waiting_since,?) ELSE NULL END WHERE id=? AND state='queued'")
+        sqlx::query(state::sql("UPDATE execution_requests SET waiting_code=?,waiting_reason=?,waiting_since=CASE WHEN ? THEN COALESCE(waiting_since,?) ELSE NULL END WHERE id=? AND state={queued}"))
             .bind(code).bind(reason).bind(blocking).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
         Ok(())
@@ -521,7 +544,8 @@ impl Repository {
         reason: &str,
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let updated = sqlx::query("UPDATE execution_requests SET state='failed',waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND state='queued'")
+        let step = Move::FailUnclaimable;
+        let updated = sqlx::query(state::sql(&format!("UPDATE execution_requests SET {},waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND {}", step.set(), step.guard())))
             .bind(code).bind(reason).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
         Ok(updated.rows_affected() == 1)
@@ -578,20 +602,7 @@ impl Repository {
                     .await?
             }
         };
-        Ok(rows
-            .into_iter()
-            .map(|row| ExecutionListingRow {
-                id: row.get("id"),
-                item_id: row.get("item_id"),
-                state: row.get("state"),
-                cancellation_requested_at: row.get("cancellation_requested_at"),
-                created_at: row.get("created_at"),
-                waiting_reason: row.get("waiting_reason"),
-                selector_kind: row.get("selector_kind"),
-                selector_id: row.get("selector_id"),
-                waiting_since: row.get("waiting_since"),
-            })
-            .collect())
+        rows.into_iter().map(listing_row).collect()
     }
 
     /// Backs the `item_ids` batch shape of `GET /api/executions` — exactly
@@ -625,20 +636,7 @@ impl Repository {
             q = q.bind(id);
         }
         let rows = q.fetch_all(self.pool()).await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| ExecutionListingRow {
-                id: row.get("id"),
-                item_id: row.get("item_id"),
-                state: row.get("state"),
-                cancellation_requested_at: row.get("cancellation_requested_at"),
-                created_at: row.get("created_at"),
-                waiting_reason: row.get("waiting_reason"),
-                selector_kind: row.get("selector_kind"),
-                selector_id: row.get("selector_id"),
-                waiting_since: row.get("waiting_since"),
-            })
-            .collect())
+        rows.into_iter().map(listing_row).collect()
     }
 
     /// Every attempt ever made against `request_id`, oldest first. Backs
@@ -659,41 +657,42 @@ impl Repository {
         .bind(request_id)
         .fetch_all(self.pool())
         .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| AttemptListingRow {
-                id: row.get("id"),
-                request_id: row.get("request_id"),
-                attempt_number: row.get("attempt_number"),
-                runner_id: row.get("runner_id"),
-                fencing_token: row.get("fencing_token"),
-                state: row.get("state"),
-                lease_issued_at: row.get("lease_issued_at"),
-                lease_expires_at: row.get("lease_expires_at"),
-                last_heartbeat_at: row.get("last_heartbeat_at"),
-                event_checkpoint: row.get("event_checkpoint"),
-                completion_id: row.get("completion_id"),
-                workspace_id: row.get("workspace_id"),
-                base_revision: row.get("base_revision"),
-                actual_execution: row.get("actual_execution"),
-                terminal_reason: row.get("terminal_reason"),
-                usage: row.get("usage"),
-                started_at: row.get("started_at"),
-                ended_at: row.get("ended_at"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                start_report: row.get("start_report"),
+        rows.into_iter()
+            .map(|row| {
+                Ok(AttemptListingRow {
+                    id: row.get("id"),
+                    request_id: row.get("request_id"),
+                    attempt_number: row.get("attempt_number"),
+                    runner_id: row.get("runner_id"),
+                    fencing_token: row.get("fencing_token"),
+                    state: state::parse(&row.get::<String, _>("state"))?,
+                    lease_issued_at: row.get("lease_issued_at"),
+                    lease_expires_at: row.get("lease_expires_at"),
+                    last_heartbeat_at: row.get("last_heartbeat_at"),
+                    event_checkpoint: row.get("event_checkpoint"),
+                    completion_id: row.get("completion_id"),
+                    workspace_id: row.get("workspace_id"),
+                    base_revision: row.get("base_revision"),
+                    actual_execution: row.get("actual_execution"),
+                    terminal_reason: row.get("terminal_reason"),
+                    usage: row.get("usage"),
+                    started_at: row.get("started_at"),
+                    ended_at: row.get("ended_at"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    start_report: row.get("start_report"),
+                })
             })
-            .collect())
+            .collect()
     }
 
-    #[instrument(skip(self, input, clock))]
+    #[instrument(skip(self, input))]
     pub async fn enqueue_execution(
         &self,
         input: NewExecutionRequest<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<EnqueueResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let request_snapshot = validate_execution_request_snapshot(&input)?;
         // Serialize duplicate enqueue requests for the same idempotency key
         // (e.g. a client retrying an unacknowledged enqueue POST) before

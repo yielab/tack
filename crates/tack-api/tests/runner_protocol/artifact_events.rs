@@ -121,7 +121,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -187,7 +187,7 @@ async fn enqueue_request(
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("enqueue");
@@ -308,7 +308,7 @@ async fn ready_running_attempt(
             token_hash: &token_hash,
             expires_at: clock.now() + Duration::hours(1),
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("pending runner");
@@ -340,7 +340,7 @@ async fn ready_running_attempt(
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        clock,
+        clock.now(),
     )
     .await
     .ok();

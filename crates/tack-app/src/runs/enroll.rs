@@ -1,7 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::RedeemEnrollmentResult;
-use tack_protocol::Clock;
 
 use crate::AppError;
 
@@ -39,10 +38,10 @@ pub enum Enrolled {
 /// another runner is `AppError::Store(StoreError::Conflict)`.
 pub async fn enroll(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     enrollment: Enrollment<'_>,
 ) -> Result<Enrolled, AppError> {
-    let server_time = clock.now();
+    let server_time = now;
     let credential_expires_at = server_time + Duration::days(CREDENTIAL_LIFETIME_DAYS);
     let redeemed = repo
         .redeem_enrollment_token(
@@ -56,7 +55,7 @@ pub async fn enroll(
             enrollment.available_capacity,
             enrollment.capability_snapshot_json,
             1,
-            clock,
+            now,
         )
         .await?;
     Ok(match redeemed {

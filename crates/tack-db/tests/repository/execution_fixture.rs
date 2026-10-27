@@ -6,6 +6,11 @@
 //! every argument of the underlying repository call one per line.
 
 use std::sync::Mutex;
+use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{
+    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryKey, RunnerId, WorkspaceId,
+};
+use tack_test_support::ids;
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::repo::execution::{
@@ -97,7 +102,7 @@ impl Fixture {
                 capability_snapshot: "{}",
                 protocol_version: 1,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -109,7 +114,7 @@ impl Fixture {
                 tool_policy: "{}",
                 limits: "{}",
             },
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -144,7 +149,7 @@ impl Fixture {
         fingerprint: &str,
     ) -> Result<EnqueueResult, tack_db::StoreError> {
         self.repo
-            .enqueue_execution(self.request(id, key, fingerprint), &self.clock)
+            .enqueue_execution(self.request(id, key, fingerprint), self.clock.now())
             .await
     }
 
@@ -189,11 +194,11 @@ impl Fixture {
     ) -> Result<Option<ClaimedExecution>, tack_db::StoreError> {
         self.repo
             .claim_execution_idempotent_with_snapshot(
-                "runner-a",
-                claim_request_id,
-                attempt_id,
+                &RunnerId::new("runner-a"),
+                &ClaimRequestId::new(claim_request_id),
+                &AttemptId::new(attempt_id),
                 lease_duration,
-                &self.clock,
+                self.clock.now(),
                 RequestSelection::Naive,
             )
             .await
@@ -202,7 +207,11 @@ impl Fixture {
     /// Enqueues `request_id` (as its own idempotency key) and claims it as
     /// `attempt_id` with a 60s lease; returns the fencing token most
     /// completion/recovery/cancellation tests key off of.
-    pub async fn ready_completion_attempt(&self, request_id: &str, attempt_id: &str) -> i64 {
+    pub async fn ready_completion_attempt(
+        &self,
+        request_id: &str,
+        attempt_id: &str,
+    ) -> FencingToken {
         self.enqueue(request_id, request_id, "same").await;
         self.claim(attempt_id, Duration::seconds(60))
             .await
@@ -213,14 +222,20 @@ impl Fixture {
     /// Like [`Self::ready_completion_attempt`], then accepted and started
     /// through the real transitions, so attempt and request both read
     /// `running` — the state a decision needs.
-    pub async fn ready_running_attempt(&self, request_id: &str, attempt_id: &str) -> i64 {
+    pub async fn ready_running_attempt(&self, request_id: &str, attempt_id: &str) -> FencingToken {
         let fence = self.ready_completion_attempt(request_id, attempt_id).await;
+        self.start_claimed_attempt(attempt_id, fence).await;
+        fence
+    }
+
+    /// Accepts and starts an attempt that holds a lease, through the real transitions.
+    pub async fn start_claimed_attempt(&self, attempt_id: &str, fence: FencingToken) {
         let preparing = AttemptTransitionInput {
-            runner_id: "runner-a",
-            attempt_id,
+            runner_id: &RunnerId::new("runner-a"),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             phase: AttemptTransitionPhase::Preparing,
-            workspace_id: "workspace-1",
+            workspace_id: &WorkspaceId::new("workspace-1"),
             base_revision: "abc123",
             process_id: None,
         };
@@ -237,7 +252,6 @@ impl Fixture {
             .await,
             AttemptTransitionResult::Applied(_)
         ));
-        fence
     }
 
     /// Settles `decision_id` on `attempt_id` at the row level with `state`
@@ -265,7 +279,7 @@ impl Fixture {
         .execute(&mut *tx)
         .await
         .unwrap();
-        let resumed = resume_attempt_after_decisions(&mut tx, attempt_id, now)
+        let resumed = resume_attempt_after_decisions(&mut tx, &AttemptId::new(attempt_id), now)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -305,26 +319,30 @@ impl Fixture {
     ) -> Result<HeartbeatBatchResult, tack_db::StoreError> {
         self.repo
             .heartbeat_batch(
-                "runner-a",
+                &RunnerId::new("runner-a"),
                 id,
                 sent_at,
                 missed,
                 leases,
                 lease_duration,
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
 
     /// A `HeartbeatLease` for `attempt_id`/`fencing_token` in the common
     /// "leased, prepared, no checkpoint" shape; override one field with
-    /// struct-update syntax (`HeartbeatLease { state: "running", ..fx.lease(a,
+    /// struct-update syntax (`HeartbeatLease { state: ExecutionState::Running, ..fx.lease(a,
     /// f) }`).
-    pub fn lease<'a>(&self, attempt_id: &'a str, fencing_token: i64) -> HeartbeatLease<'a> {
+    pub fn lease<'a>(
+        &self,
+        attempt_id: &'a str,
+        fencing_token: FencingToken,
+    ) -> HeartbeatLease<'a> {
         HeartbeatLease {
-            attempt_id,
+            attempt_id: ids::attempt(attempt_id),
             fencing_token,
-            state: "leased",
+            state: ExecutionState::Leased,
             journal_state: "prepared",
             last_event_checkpoint: None,
         }
@@ -340,7 +358,7 @@ impl Fixture {
                     token_hash,
                     expires_at: self.clock.now() + Duration::minutes(5),
                 },
-                &self.clock,
+                self.clock.now(),
             )
             .await
             .unwrap();
@@ -366,7 +384,7 @@ impl Fixture {
                 1,
                 "{}",
                 1,
-                &self.clock,
+                self.clock.now(),
             )
             .await
             .unwrap()
@@ -389,14 +407,14 @@ impl Fixture {
         events: &[NewEvent<'_>],
     ) -> Result<EventApplyResult, tack_db::StoreError> {
         self.repo
-            .append_execution_events_result(batch, events, &self.clock)
+            .append_execution_events_result(batch, events, self.clock.now())
             .await
     }
 
     /// Requests cancellation of `request_id`.
     pub async fn request_cancellation(&self, request_id: &str) -> bool {
         self.repo
-            .request_execution_cancellation(request_id, &self.clock)
+            .request_execution_cancellation(&ExecutionRequestId::new(request_id), self.clock.now())
             .await
             .unwrap()
     }
@@ -415,7 +433,9 @@ impl Fixture {
         &self,
         input: CancellationObservationInput<'_>,
     ) -> Result<CancellationObservation, tack_db::StoreError> {
-        self.repo.observe_cancellation(input, &self.clock).await
+        self.repo
+            .observe_cancellation(input, self.clock.now())
+            .await
     }
 
     /// Reports a recovery observation, unwrapping the sqlx-level result.
@@ -429,7 +449,7 @@ impl Fixture {
         &self,
         input: RecoveryObservationInput<'_>,
     ) -> Result<RecoveryObservationResult, tack_db::StoreError> {
-        self.repo.recover_attempt(input, &self.clock).await
+        self.repo.recover_attempt(input, self.clock.now()).await
     }
 
     /// An operator requeue of `request_id` with the fixture's fixed
@@ -446,11 +466,11 @@ impl Fixture {
     ) -> Result<OperatorRequeueResult, tack_db::StoreError> {
         self.repo
             .operator_requeue_needs_operator(
-                request_id,
-                "client-key",
+                &ExecutionRequestId::new(request_id),
+                &RecoveryKey::new("client-key"),
                 "operator-a",
                 "reason-a",
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
@@ -467,7 +487,7 @@ impl Fixture {
         input: AttemptTransitionInput<'_>,
     ) -> Result<AttemptTransitionResult, tack_db::StoreError> {
         self.repo
-            .transition_attempt_with_facts(input, &self.clock)
+            .transition_attempt_with_facts(input, self.clock.now())
             .await
     }
 
@@ -483,7 +503,7 @@ impl Fixture {
         completion: Completion<'_>,
     ) -> Result<CompletionResult, tack_db::StoreError> {
         self.repo
-            .complete_execution_result(completion, &self.clock)
+            .complete_execution_result(completion, self.clock.now())
             .await
     }
 
@@ -492,7 +512,7 @@ impl Fixture {
     /// shares the fencing/terminal-lock invariants with [`Self::complete`].
     pub async fn complete_raw(&self, completion: Completion<'_>) -> bool {
         self.repo
-            .complete_execution(completion, &self.clock)
+            .complete_execution(completion, self.clock.now())
             .await
             .unwrap()
     }
@@ -507,7 +527,13 @@ impl Fixture {
         expires_at: DateTime<Utc>,
     ) -> Result<CredentialRotationResult, tack_db::StoreError> {
         self.repo
-            .rotate_runner_credential("runner-a", expected_hash, new_hash, expires_at, &self.clock)
+            .rotate_runner_credential(
+                "runner-a",
+                expected_hash,
+                new_hash,
+                expires_at,
+                self.clock.now(),
+            )
             .await
     }
 
@@ -516,7 +542,7 @@ impl Fixture {
     pub async fn record_artifact(
         &self,
         attempt_id: &str,
-        fencing_token: i64,
+        fencing_token: FencingToken,
         artifact_id: &str,
     ) -> bool {
         self.record_artifact_result(attempt_id, fencing_token, artifact_id)
@@ -530,16 +556,16 @@ impl Fixture {
     pub async fn record_artifact_result(
         &self,
         attempt_id: &str,
-        fencing_token: i64,
+        fencing_token: FencingToken,
         artifact_id: &str,
     ) -> Result<bool, tack_db::StoreError> {
         self.repo
             .record_execution_artifact(
-                "runner-a",
-                attempt_id,
+                &RunnerId::new("runner-a"),
+                &AttemptId::new(attempt_id),
                 fencing_token,
                 new_artifact(artifact_id, artifact_id),
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
@@ -549,7 +575,7 @@ impl Fixture {
     pub async fn create_decision(
         &self,
         attempt_id: &str,
-        fencing_token: i64,
+        fencing_token: FencingToken,
         decision_id: &str,
     ) -> bool {
         self.create_decision_result(attempt_id, fencing_token, decision_id)
@@ -562,16 +588,16 @@ impl Fixture {
     pub async fn create_decision_result(
         &self,
         attempt_id: &str,
-        fencing_token: i64,
+        fencing_token: FencingToken,
         decision_id: &str,
     ) -> Result<bool, tack_db::StoreError> {
         self.repo
             .create_execution_decision(
-                "runner-a",
-                attempt_id,
+                &RunnerId::new("runner-a"),
+                &AttemptId::new(attempt_id),
                 fencing_token,
                 new_decision(decision_id, decision_id),
-                &self.clock,
+                self.clock.now(),
             )
             .await
     }
@@ -694,17 +720,17 @@ pub fn new_decision<'a>(row_id: &'a str, decision_id: &'a str) -> NewDecision<'a
 /// terminal state/reason and result/usage JSON.
 pub fn completion_input<'a>(
     attempt_id: &'a str,
-    fencing_token: i64,
+    fencing_token: FencingToken,
     completion_id: &'a str,
     final_event_checkpoint: Option<&'a str>,
 ) -> Completion<'a> {
     Completion {
-        runner_id: "runner-a",
-        attempt_id,
+        runner_id: ids::runner("runner-a"),
+        attempt_id: ids::attempt(attempt_id),
         fencing_token,
-        completion_id,
-        final_event_checkpoint,
-        terminal_state: "succeeded",
+        completion_id: ids::completion(completion_id),
+        final_event_checkpoint: final_event_checkpoint.map(ids::checkpoint),
+        terminal_state: ExecutionState::Succeeded,
         terminal_reason: "completed",
         actual_execution: r#"{"result":{"b":2,"a":1}}"#,
         usage: r#"{"output_tokens":2,"input_tokens":1}"#,
@@ -714,15 +740,15 @@ pub fn completion_input<'a>(
 /// A `CancellationObservationInput` for "runner-a".
 pub fn cancellation_input<'a>(
     attempt_id: &'a str,
-    fencing_token: i64,
+    fencing_token: FencingToken,
     cancellation_request_id: &'a str,
     observed_at: DateTime<Utc>,
 ) -> CancellationObservationInput<'a> {
     CancellationObservationInput {
-        runner_id: "runner-a",
-        attempt_id,
+        runner_id: ids::runner("runner-a"),
+        attempt_id: ids::attempt(attempt_id),
         fencing_token,
-        cancellation_request_id,
+        cancellation_request_id: ids::cancellation_request(cancellation_request_id),
         observed_at,
         details: r#"{"detail":{"b":2,"a":1}}"#,
         observation: r#""process_stopped""#,
@@ -750,15 +776,15 @@ pub fn expect_replayed_cancellation(
 /// A `RecoveryObservationInput` for "runner-a".
 pub fn recovery_input<'a>(
     attempt_id: &'a str,
-    fencing_token: i64,
+    fencing_token: FencingToken,
     recovery_key: &'a str,
     observation: RecoveryObservation,
 ) -> RecoveryObservationInput<'a> {
     RecoveryObservationInput {
-        runner_id: "runner-a",
-        attempt_id,
+        runner_id: ids::runner("runner-a"),
+        attempt_id: ids::attempt(attempt_id),
         fencing_token,
-        recovery_key,
+        recovery_key: ids::recovery_key(recovery_key),
         observation,
         details: r#"{"journal_state":"prepared","process_observed":false,"observer":{"b":2,"a":1}}"#,
     }

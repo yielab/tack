@@ -2,12 +2,11 @@
 //! command is one transaction, and a name that is already taken or a row that
 //! is not there comes back as the store's own `Conflict` / `NotFound`.
 
+use chrono::{DateTime, Utc};
 use sqlx::Row;
-use tack_protocol::Clock;
 use tracing::instrument;
 
 use super::claim::NewAgentProfile;
-use super::shared::stamp;
 use crate::{Repository, StoreError};
 
 /// Raises a unique-constraint violation as `Conflict(reason)`; every other
@@ -44,9 +43,9 @@ impl Repository {
         name: &str,
         concurrency_limit: Option<i64>,
         default_policy: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         sqlx::query("INSERT INTO agent_fleets (id,name,concurrency_limit,default_policy,created_at,updated_at) VALUES (?,?,?,?,?,?)")
             .bind(id).bind(name).bind(concurrency_limit).bind(default_policy).bind(&now).bind(&now)
             .execute(self.pool())
@@ -58,16 +57,16 @@ impl Repository {
     /// Revokes a runner's enrollment token that has not been redeemed. A token
     /// that was redeemed is `Conflict("already_consumed")`; one that never
     /// existed is `NotFound`. Revoking a revoked token again succeeds.
-    #[instrument(skip(self, clock))]
+    #[instrument(skip(self))]
     pub async fn revoke_runner_enrollment_token(
         &self,
         runner_id: &str,
         token_id: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let revoked = sqlx::query("UPDATE agent_enrollment_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE runner_id=? AND id=? AND consumed_at IS NULL")
-            .bind(stamp(clock))
+            .bind(now.to_rfc3339())
             .bind(runner_id)
             .bind(token_id)
             .execute(&mut *tx)
@@ -93,15 +92,15 @@ impl Repository {
     /// Adds an agent profile, placed in `fleet_id` and given a `delivers` line
     /// when either is named, in one transaction. A taken name is
     /// `Conflict("profile_name_taken")`.
-    #[instrument(skip(self, input, clock))]
+    #[instrument(skip(self, input))]
     pub async fn create_agent_profile_placed(
         &self,
         input: NewAgentProfile<'_>,
         fleet_id: Option<&str>,
         delivers: Option<&str>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let mut tx = self.pool().begin().await?;
         sqlx::query(
             "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) \
@@ -126,12 +125,12 @@ impl Repository {
 
     /// Changes the columns of agent profile `id` that `patch` names. No such
     /// profile is `NotFound`; a taken name is `Conflict("profile_name_taken")`.
-    #[instrument(skip(self, patch, clock))]
+    #[instrument(skip(self, patch))]
     pub async fn update_agent_profile(
         &self,
         id: &str,
         patch: AgentProfilePatch<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         let (set_fleet, fleet_id) = match patch.fleet_id {
             Some(value) => (1, value),
@@ -157,7 +156,7 @@ impl Repository {
         .bind(fleet_id)
         .bind(set_delivers)
         .bind(delivers)
-        .bind(stamp(clock))
+        .bind(now.to_rfc3339())
         .bind(id)
         .execute(self.pool())
         .await

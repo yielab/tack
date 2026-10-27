@@ -68,7 +68,8 @@ pub async fn tick(
     clock: &dyn Clock,
     settings: &Settings,
 ) -> Result<Outcome, AppError> {
-    let cutoff = clock.now() - Duration::days(i64::from(settings.retention_days));
+    let now = clock.now();
+    let cutoff = now - Duration::days(i64::from(settings.retention_days));
 
     let replays = repo
         .purge_stale_execution_replays(cutoff, settings.batch_size)
@@ -78,7 +79,7 @@ pub async fn tick(
         .purge_stale_terminal_execution_events(cutoff, settings.batch_size)
         .await
         .map_err(AppError::from);
-    let decisions_expired = expire_decisions(repo, clock).await;
+    let decisions_expired = expire_decisions(repo, now).await;
 
     match (replays, events, decisions_expired) {
         (Ok(replays), Ok(events), Ok(decisions_expired)) => Ok(Outcome {

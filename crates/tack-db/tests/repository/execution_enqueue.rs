@@ -2,6 +2,7 @@
 //! (pre-`request_snapshot`) schema-quarantine migration.
 
 use crate::repository::execution_fixture::{FakeClock, Fixture, request};
+use tack_protocol::execution::{AttemptId, ClaimRequestId, ExecutionRequestId, RunnerId};
 
 use chrono::Duration;
 use tack_db::{
@@ -21,13 +22,18 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
             .replace(",}", "}")
             .into_boxed_str(),
     );
-    assert!(fx.repo.enqueue_execution(missing, &fx.clock).await.is_err());
+    assert!(
+        fx.repo
+            .enqueue_execution(missing, fx.clock.now())
+            .await
+            .is_err()
+    );
 
     let mut malformed = fx.request("snapshot-malformed", "snapshot-malformed", "same");
     malformed.request_snapshot = "{not-json";
     assert!(
         fx.repo
-            .enqueue_execution(malformed, &fx.clock)
+            .enqueue_execution(malformed, fx.clock.now())
             .await
             .is_err()
     );
@@ -44,7 +50,7 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
     );
     assert!(
         fx.repo
-            .enqueue_execution(contradictory, &fx.clock)
+            .enqueue_execution(contradictory, fx.clock.now())
             .await
             .is_err()
     );
@@ -58,7 +64,7 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
     );
     assert!(
         fx.repo
-            .enqueue_execution(wrong_created_at, &fx.clock)
+            .enqueue_execution(wrong_created_at, fx.clock.now())
             .await
             .is_err()
     );
@@ -92,7 +98,10 @@ async fn enqueue_rejects_malformed_and_contradictory_snapshots() {
         invalid.request_snapshot =
             Box::leak(invalid.request_snapshot.replace(from, to).into_boxed_str());
         assert!(
-            fx.repo.enqueue_execution(invalid, &fx.clock).await.is_err(),
+            fx.repo
+                .enqueue_execution(invalid, fx.clock.now())
+                .await
+                .is_err(),
             "{suffix}"
         );
     }
@@ -255,23 +264,26 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
     let claimed = repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-a",
-            "claim-legacy-valid",
-            "attempt-legacy-valid",
+            &RunnerId::new("runner-a"),
+            &ClaimRequestId::new("claim-legacy-valid"),
+            &AttemptId::new("attempt-legacy-valid"),
             Duration::seconds(60),
-            &clock,
+            clock.now(),
             RequestSelection::Naive,
         )
         .await
         .unwrap()
         .expect("the later valid queued row remains claimable");
-    assert_eq!(claimed.lease.request_id, "legacy-valid");
+    assert_eq!(
+        claimed.lease.request_id,
+        ExecutionRequestId::new("legacy-valid")
+    );
 }
 
 #[tokio::test]
@@ -350,10 +362,85 @@ async fn enqueue_replay_compares_frozen_snapshot_before_current_time() {
     );
     assert_eq!(
         fx.repo
-            .enqueue_execution(changed_timestamp, &fx.clock)
+            .enqueue_execution(changed_timestamp, fx.clock.now())
             .await
             .unwrap(),
         EnqueueResult::Conflict,
         "same idempotency key with a changed frozen timestamp is not an exact replay"
+    );
+}
+
+/// The operator's attempt list reads each attempt's pull request, review and merge for the whole
+/// request, matching every outcome to its own attempt, and an unknown request has none.
+#[tokio::test]
+async fn attempts_come_with_their_own_pull_request_review_and_merge() {
+    use tack_db::queries::execution_attempts::attempts_with_outcomes;
+
+    let fx = Fixture::new().await;
+    fx.enqueue("req-outcomes", "key-outcomes", "same").await;
+    fx.claim("req-outcomes", Duration::seconds(30))
+        .await
+        .expect("claimed");
+    // The first attempt is the claimed one; two more are planted so that each of the three
+    // outcomes belongs to a different attempt and one attempt has none.
+    for number in 2..=4 {
+        sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES (?,?,?,?,?,'failed','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')")
+            .bind(format!("att-{number}"))
+            .bind("req-outcomes")
+            .bind(number)
+            .bind("runner-a")
+            .bind(number)
+            .execute(fx.repo.pool())
+            .await
+            .expect("plant an attempt");
+    }
+    fx.repo
+        .record_pull_request(
+            "req-outcomes",
+            "acme/widgets",
+            7,
+            "https://example.test/7",
+            "2026-01-01T00:00:00Z",
+        )
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO attempt_reviews (attempt_id,verdict,note,reviewed_at) VALUES ('att-2','accepted','fine','2026-01-02T00:00:00Z')")
+        .execute(fx.repo.pool())
+        .await
+        .unwrap();
+    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+        .bind(&fx.item_id)
+        .fetch_one(fx.repo.pool())
+        .await
+        .unwrap();
+    tack_test_support::seed::tack_merge_auto(
+        &fx.repo,
+        "att-3",
+        &project_id,
+        "2026-01-03T00:00:00Z",
+    )
+    .await;
+
+    let rows = attempts_with_outcomes(&fx.repo, "req-outcomes")
+        .await
+        .unwrap();
+    let ids: Vec<_> = rows.iter().map(|row| row.attempt.id.as_str()).collect();
+    assert_eq!(ids, ["req-outcomes", "att-2", "att-3", "att-4"]);
+    let pull_request = |row: &tack_db::queries::execution_attempts::AttemptWithOutcomes| {
+        row.pull_request.as_ref().map(|pr| pr.number)
+    };
+    assert_eq!(pull_request(&rows[0]), Some(7));
+    assert!(rows[0].review.is_none() && rows[0].merge.is_none());
+    assert_eq!(rows[1].review.as_ref().unwrap().verdict, "accepted");
+    assert!(rows[1].pull_request.is_none() && rows[1].merge.is_none());
+    assert_eq!(rows[2].merge.as_ref().unwrap().trigger, "auto");
+    assert!(rows[2].pull_request.is_none() && rows[2].review.is_none());
+    assert!(rows[3].pull_request.is_none() && rows[3].review.is_none() && rows[3].merge.is_none());
+
+    assert!(
+        attempts_with_outcomes(&fx.repo, "no-such-request")
+            .await
+            .unwrap()
+            .is_empty()
     );
 }

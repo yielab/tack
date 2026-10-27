@@ -1,11 +1,12 @@
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_core::decision::DecisionResolvedBy;
 use tack_db::Repository;
 use tack_db::repo::execution::DecisionSettlement;
-use tack_protocol::Clock;
+use tack_protocol::execution::AttemptId;
 
 use crate::AppError;
-use crate::runs::start_run::canonical_json;
+use tack_db::canonical_json;
 
 /// What came of an answer to a decision. A rejection is a value, not an error: the caller maps
 /// each to its own response.
@@ -49,13 +50,12 @@ pub enum ResolveOutcome {
 ///   then it is resolved.
 pub async fn resolve_decision(
     repo: &Repository,
-    clock: &dyn Clock,
-    attempt_id: &str,
+    now: DateTime<Utc>,
+    attempt_id: &AttemptId,
     decision_id: &str,
     answer: &Value,
     resolved_by: &DecisionResolvedBy,
 ) -> Result<ResolveOutcome, AppError> {
-    let now = clock.now();
     let now_s = now.to_rfc3339();
     let outcome = repo
         .settle_execution_decision(attempt_id, decision_id, now, |decision| {

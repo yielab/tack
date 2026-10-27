@@ -2,6 +2,8 @@
 //! runner stops it; a run nobody holds ends at once; one that is over cannot be cancelled.
 
 use crate::support;
+use tack_protocol::Clock;
+use tack_protocol::execution::ExecutionRequestId;
 
 use chrono::{Duration, Utc};
 use support::{board, full_request, start};
@@ -23,9 +25,13 @@ async fn state_of(board: &support::Board, request_id: &str) -> ExecutionState {
 async fn a_queued_run_is_marked_for_cancellation_and_not_ended() {
     let board = board().await;
     let started = start(&board, full_request(board.item_id)).await.unwrap();
-    let outcome = cancel_run(&board.repo, &SystemClock, &started.request_id)
-        .await
-        .unwrap();
+    let outcome = cancel_run(
+        &board.repo,
+        SystemClock.now(),
+        &ExecutionRequestId::new(&started.request_id),
+    )
+    .await
+    .unwrap();
     assert_eq!(outcome, Cancellation::Requested);
     assert_eq!(
         state_of(&board, &started.request_id).await,
@@ -57,9 +63,13 @@ async fn a_run_nobody_holds_ends_at_once() {
         },
     )
     .await;
-    let outcome = cancel_run(&board.repo, &SystemClock, &started.request_id)
-        .await
-        .unwrap();
+    let outcome = cancel_run(
+        &board.repo,
+        SystemClock.now(),
+        &ExecutionRequestId::new(&started.request_id),
+    )
+    .await
+    .unwrap();
     assert_eq!(outcome, Cancellation::Ended);
     assert_eq!(
         state_of(&board, &started.request_id).await,
@@ -99,9 +109,13 @@ async fn a_run_whose_lease_expired_ends_at_once_and_one_whose_lease_holds_does_n
     )
     .await;
     assert_eq!(
-        cancel_run(&board.repo, &SystemClock, &held.request_id)
-            .await
-            .unwrap(),
+        cancel_run(
+            &board.repo,
+            SystemClock.now(),
+            &ExecutionRequestId::new(&held.request_id)
+        )
+        .await
+        .unwrap(),
         Cancellation::Requested
     );
     assert_eq!(
@@ -133,9 +147,13 @@ async fn a_run_whose_lease_expired_ends_at_once_and_one_whose_lease_holds_does_n
     )
     .await;
     assert_eq!(
-        cancel_run(&board.repo, &SystemClock, &lapsed.request_id)
-            .await
-            .unwrap(),
+        cancel_run(
+            &board.repo,
+            SystemClock.now(),
+            &ExecutionRequestId::new(&lapsed.request_id)
+        )
+        .await
+        .unwrap(),
         Cancellation::Ended
     );
     assert_eq!(
@@ -150,9 +168,19 @@ async fn a_run_that_is_over_cannot_be_cancelled_and_an_unknown_one_is_not_found(
     let started = start(&board, full_request(board.item_id)).await.unwrap();
     seed::execution_request_state(&board.repo, &started.request_id, ExecutionState::Succeeded)
         .await;
-    let over = cancel_run(&board.repo, &SystemClock, &started.request_id).await;
+    let over = cancel_run(
+        &board.repo,
+        SystemClock.now(),
+        &ExecutionRequestId::new(&started.request_id),
+    )
+    .await;
     assert!(matches!(over, Err(AppError::Conflict(_))), "{over:?}");
 
-    let unknown = cancel_run(&board.repo, &SystemClock, "exec_missing").await;
+    let unknown = cancel_run(
+        &board.repo,
+        SystemClock.now(),
+        &ExecutionRequestId::new("exec_missing"),
+    )
+    .await;
     assert!(matches!(unknown, Err(AppError::NotFound)), "{unknown:?}");
 }

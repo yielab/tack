@@ -11,6 +11,7 @@ use tack_db::repo::execution::{
     CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
     RecoveryObservation,
 };
+use tack_protocol::execution::{ExecutionState, FencingToken};
 
 const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 
@@ -55,12 +56,16 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
     ] {
         let fx = Fixture::new().await;
         let request = format!("request-{state}");
-        let fence = fx.ready_completion_attempt(&request, "attempt-e").await;
+        let fence = if matches!(route, "succeeded" | "failed") {
+            fx.ready_running_attempt(&request, "attempt-e").await
+        } else {
+            fx.ready_completion_attempt(&request, "attempt-e").await
+        };
         seed_decisions(&fx, "attempt-e").await;
         match route {
             "succeeded" | "failed" => {
                 let done = Completion {
-                    terminal_state: state,
+                    terminal_state: state.parse().unwrap(),
                     ..completion_input("attempt-e", fence, "done", None)
                 };
                 assert!(
@@ -123,9 +128,7 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
 #[tokio::test]
 async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
     let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-old", "attempt-old")
-        .await;
+    let fence = fx.ready_running_attempt("request-old", "attempt-old").await;
     assert!(matches!(
         fx.complete(completion_input("attempt-old", fence, "done", None))
             .await,
@@ -139,14 +142,14 @@ async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
 
     assert_eq!(
         fx.repo
-            .expire_decisions_of_ended_attempts(&fx.clock)
+            .expire_decisions_of_ended_attempts(fx.clock.now())
             .await
             .unwrap(),
         1
     );
     assert_eq!(
         fx.repo
-            .expire_decisions_of_ended_attempts(&fx.clock)
+            .expire_decisions_of_ended_attempts(fx.clock.now())
             .await
             .unwrap(),
         0
@@ -256,7 +259,7 @@ async fn cancellation_foreign_fence_is_stale_before_replay_lookup() {
     );
     fx.observe_cancellation(input.clone()).await;
     let foreign = CancellationObservationInput {
-        fencing_token: fence + 1,
+        fencing_token: FencingToken::new(fence.get() + 1),
         ..input
     };
     assert_eq!(
@@ -289,7 +292,7 @@ async fn cancellation_corrupt_replay_response_fails_closed() {
         .unwrap();
     assert!(
         fx.repo
-            .observe_cancellation(input, &fx.clock)
+            .observe_cancellation(input, fx.clock.now())
             .await
             .is_err()
     );
@@ -317,7 +320,7 @@ async fn cancellation_requires_exact_process_stopped_observation() {
     };
     assert!(
         fx.repo
-            .observe_cancellation(invalid, &fx.clock)
+            .observe_cancellation(invalid, fx.clock.now())
             .await
             .is_err()
     );
@@ -405,7 +408,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     );
     assert!(
         fx.repo
-            .observe_cancellation(input, &fx.clock)
+            .observe_cancellation(input, fx.clock.now())
             .await
             .is_err()
     );
@@ -424,7 +427,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
 async fn completion_replay_insert_failure_rolls_back_terminal() {
     let fx = Fixture::new().await;
     let fence = fx
-        .ready_completion_attempt("request-completion-rollback", "attempt-completion-rollback")
+        .ready_running_attempt("request-completion-rollback", "attempt-completion-rollback")
         .await;
     sqlx::query("CREATE TRIGGER fail_completion_replay BEFORE INSERT ON execution_completion_replays BEGIN SELECT RAISE(ABORT, 'forced completion replay failure'); END")
         .execute(fx.repo.pool())
@@ -438,16 +441,16 @@ async fn completion_replay_insert_failure_rolls_back_terminal() {
     );
     let error = fx
         .repo
-        .complete_execution_result(completion, &fx.clock)
+        .complete_execution_result(completion, fx.clock.now())
         .await;
     assert!(error.is_err());
     assert_eq!(
         fx.attempt_state("attempt-completion-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(
         fx.request_state("request-completion-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(fx.capacity().await, 0);
 }
@@ -468,7 +471,12 @@ async fn recovery_replay_insert_failure_rolls_back_lifecycle() {
         "recovery-rollback",
         RecoveryObservation::Ambiguous,
     );
-    assert!(fx.repo.recover_attempt(input, &fx.clock).await.is_err());
+    assert!(
+        fx.repo
+            .recover_attempt(input, fx.clock.now())
+            .await
+            .is_err()
+    );
     assert_eq!(
         fx.attempt_state("attempt-recovery-rollback").await,
         "leased"
@@ -498,7 +506,7 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
     assert_eq!(
         fx.observe_cancellation(ambiguous_input).await,
         CancellationObservation::Ambiguous {
-            state: "leased".into()
+            state: ExecutionState::Leased
         }
     );
     sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = 'attempt-cancellation-outcomes'")
@@ -514,7 +522,7 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
     assert_eq!(
         fx.observe_cancellation(terminal_input).await,
         CancellationObservation::AlreadyTerminal {
-            state: "succeeded".into()
+            state: ExecutionState::Succeeded
         }
     );
 }

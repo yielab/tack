@@ -45,7 +45,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("heartbeat.request.json", 0xd79b_6787_5f57_ed34),
     ("heartbeat.request.two-active.json", 0x6857_d7de_10ee_3755),
     ("heartbeat.response.json", 0x63a2_31d5_7dd3_20e3),
-    ("lifecycle-transitions.json", 0xca13_1c5f_aa10_a91b),
+    ("lifecycle-transitions.json", 0x6545_6c76_7dc0_93a4),
     ("limits.json", 0xed78_5be0_4be8_ed98),
     ("protocol.json", 0xe879_2dbb_331d_2996),
     ("recovery-observation.request.json", 0xa853_654b_7c9c_3f01),

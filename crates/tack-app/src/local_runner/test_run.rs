@@ -9,7 +9,8 @@ use tack_protocol::Clock;
 use uuid::Uuid;
 
 use super::{LocalRunnerControl, RuntimeState};
-use crate::runs::start_run::{Refusal, RunRequest, enqueue_run};
+use crate::runs::start_run::{PermissionRequest, Refusal, RunRequest, enqueue_run};
+use tack_protocol::execution::{RunnerId, RunnerSelector};
 
 const PROJECT_NAME: &str = "Agent tests";
 /// Who the test run is filed as; its idempotency keys never meet another caller's.
@@ -83,19 +84,21 @@ pub async fn start_test_run(
     let tool_policy = parse(&profile.tool_policy);
     // The profile's tools for this harness, as the Run dialog sends them; none would leave the
     // agent unable to act.
-    let tools = tool_policy["tools"][harness_kind.as_str()].clone();
-    let tools = if tools.is_array() { tools } else { json!([]) };
+    let tools: Vec<String> =
+        serde_json::from_value(tool_policy["tools"][harness_kind.as_str()].clone())
+            .unwrap_or_default();
     let request = RunRequest {
         item_id: item.id,
         idempotency_key: Uuid::new_v4().to_string(),
-        selector_kind: Some("exact_runner".to_owned()),
-        selector_id: Some(runner_id),
+        selector: Some(RunnerSelector::ExactRunner {
+            runner_id: RunnerId::new(runner_id),
+        }),
         agent_profile_id: Some(profile.id),
         requested_harness_kind: Some(harness_kind),
         requested_model: None,
         agent_profile_snapshot: None,
         repository_snapshot: None,
-        permission_policy: json!({ "tools": tools, "network": false }),
+        permission_policy: PermissionRequest::new(tools, Some(false)),
         budgets: json!({}),
         environment: json!({}),
         metadata: json!({}),
@@ -116,17 +119,10 @@ pub async fn start_test_run(
     let repository = json!({
         "kind": "scratch", "remote": "", "base_revision": "", "subdirectory": null,
     });
-    enqueue_run(
-        repo,
-        clock,
-        PRINCIPAL,
-        request,
-        resolved_profile,
-        repository,
-    )
-    .await
-    .map(|started| started.request_id)
-    .map_err(TestRunError::Refused)
+    enqueue_run(repo, now, PRINCIPAL, request, resolved_profile, repository)
+        .await
+        .map(|started| started.request_id)
+        .map_err(TestRunError::Refused)
 }
 
 /// The archived project test runs are filed under, created and archived on first use.

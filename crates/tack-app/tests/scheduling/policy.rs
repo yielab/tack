@@ -15,10 +15,11 @@ use tack_db::{Repository, queries};
 use tack_orch::model_policy::{ModelPolicyTier, ResolvedModelPolicy};
 use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, ExecutionRequestId, RunnerId};
 use tack_test_support::seed;
 use uuid::Uuid;
 
-use crate::scheduling::support::{FixedClock, codex_capability_snapshot, setup_repo};
+use crate::scheduling::support::{codex_capability_snapshot, setup_repo};
 
 async fn register_active_runner(
     repo: &Repository,
@@ -37,7 +38,7 @@ async fn register_active_runner(
             capability_snapshot,
             protocol_version: 1,
         },
-        &FixedClock(now),
+        now,
     )
     .await
     .expect("register runner");
@@ -45,15 +46,9 @@ async fn register_active_runner(
 }
 
 async fn create_fleet(repo: &Repository, fleet_id: &str, now: chrono::DateTime<Utc>) {
-    repo.create_agent_fleet(
-        fleet_id,
-        &format!("fleet-{fleet_id}"),
-        None,
-        "{}",
-        &FixedClock(now),
-    )
-    .await
-    .expect("insert fleet");
+    repo.create_agent_fleet(fleet_id, &format!("fleet-{fleet_id}"), None, "{}", now)
+        .await
+        .expect("insert fleet");
 }
 
 async fn add_fleet_member(
@@ -62,7 +57,7 @@ async fn add_fleet_member(
     runner_id: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.add_fleet_member(fleet_id, runner_id, &FixedClock(now))
+    repo.add_fleet_member(fleet_id, runner_id, now)
         .await
         .expect("fleet membership");
 }
@@ -125,7 +120,7 @@ async fn enqueue_via_fleet(
             metadata: "{}",
             request_snapshot: &snapshot,
         },
-        &FixedClock(created_at),
+        created_at,
     )
     .await
     .expect("enqueue");
@@ -288,23 +283,28 @@ async fn assert_default_model_outcome(
     )
     .await;
     let expected = expect_leased.then_some(request_id);
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(
-        chosen.as_deref(),
+        chosen.as_ref().map(ExecutionRequestId::as_str),
         expected,
         "scheduler wiring must match the claim outcome"
     );
 
     let claimed = repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-a",
-            "claim",
-            "attempt",
+            &RunnerId::new("runner-a"),
+            &ClaimRequestId::new("claim"),
+            &AttemptId::new("attempt"),
             ChronoDuration::seconds(60),
-            &FixedClock(now),
-            RequestSelection::Scheduled(chosen.as_deref()),
+            now,
+            RequestSelection::Scheduled(chosen.as_ref()),
         )
         .await
         .expect("no db error");
@@ -314,7 +314,10 @@ async fn assert_default_model_outcome(
         "claim outcome must match eligibility"
     );
     if let Some(claimed) = claimed {
-        assert_eq!(claimed.lease.request_id, request_id);
+        assert_eq!(
+            claimed.lease.request_id,
+            ExecutionRequestId::new(request_id)
+        );
     }
 
     let (expect_attempts, expect_state, expect_capacity) = if expect_leased {

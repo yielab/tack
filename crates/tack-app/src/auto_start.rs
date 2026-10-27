@@ -20,8 +20,11 @@ use uuid::Uuid;
 
 use crate::background::{Loops, Start};
 use crate::host::Host;
-use crate::runs::start_run::{RunRequest, default_selector, resolve_profile, start_run};
+use crate::runs::start_run::{
+    PermissionRequest, RunRequest, default_selector, resolve_profile, start_run,
+};
 use crate::{AppError, merge};
+use tack_protocol::execution::Approvals;
 
 /// The principal a run started by the board itself is recorded under.
 const PRINCIPAL: &str = "auto_start";
@@ -157,7 +160,7 @@ async fn project_tick(
             .flatten()
             .filter(|resolved| resolved.harness.is_some() || project.default_harness.is_some());
         let has_machine = match &profile {
-            Some(resolved) => default_selector(repo, resolved.fleet_id.clone())
+            Some(resolved) => default_selector(repo, resolved.fleet_id.clone(), clock.now())
                 .await
                 .is_ok(),
             None => false,
@@ -221,11 +224,10 @@ async fn start(
         .ok()
         .flatten();
     let policy = policy.and_then(|text| serde_json::from_str::<Value>(&text).ok());
-    let tools = policy
+    let tools: Vec<String> = policy
         .as_ref()
-        .map(|policy| policy["tools"][harness.as_str()].clone())
-        .filter(Value::is_array)
-        .unwrap_or_else(|| json!([]));
+        .and_then(|policy| serde_json::from_value(policy["tools"][harness.as_str()].clone()).ok())
+        .unwrap_or_default();
     // Nobody ticks a box here, so the profile's role says whether the run may reach the network.
     let network = policy
         .as_ref()
@@ -233,22 +235,20 @@ async fn start(
     // The Run dialog's rule: auto where the machine sandboxes this agent, ask
     // where it does not. Absent `approvals` means auto, so it is set only when
     // some eligible machine reports no sandbox for the agent.
-    let approvals = if sandboxed_everywhere(repo, resolved.fleet_id.as_deref(), &harness).await {
-        json!({ "tools": tools, "network": network })
-    } else {
-        json!({ "tools": tools, "network": network, "approvals": "ask" })
-    };
+    let mut permissions = PermissionRequest::new(tools, Some(network));
+    if !sandboxed_everywhere(repo, resolved.fleet_id.as_deref(), &harness).await {
+        permissions.approvals = Some(Approvals::Ask);
+    }
     let input = RunRequest {
         item_id: candidate.item_id,
         idempotency_key: format!("auto-start:{}:{}", candidate.item_id, candidate.version),
-        selector_kind: None,
-        selector_id: None,
+        selector: None,
         agent_profile_id: None,
         requested_harness_kind: None,
         requested_model: None,
         agent_profile_snapshot: None,
         repository_snapshot: None,
-        permission_policy: approvals,
+        permission_policy: permissions,
         budgets: json!({}),
         environment: json!({}),
         metadata: json!({ "started_by": "auto_start" }),
@@ -259,7 +259,7 @@ async fn start(
         autonomy: None,
         origin: None,
     };
-    match start_run(repo, clock, PRINCIPAL, input).await {
+    match start_run(repo, clock.now(), PRINCIPAL, input).await {
         Ok(created) if !created.replayed => {}
         Ok(_) => return false,
         Err(refusal) => {

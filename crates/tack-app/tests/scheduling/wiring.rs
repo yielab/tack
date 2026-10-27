@@ -15,9 +15,10 @@ use tack_db::queries;
 use tack_db::repo::execution::{NewExecutionRequest, NewRunner, RequestSelection};
 use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, ExecutionRequestId, RunnerId};
 use tack_test_support::seed;
 
-use crate::scheduling::support::{FixedClock, codex_capability_snapshot, setup_repo};
+use crate::scheduling::support::{codex_capability_snapshot, setup_repo};
 
 const ALPHA_MODEL: Option<&str> = Some("opaque/model-alpha");
 
@@ -44,7 +45,7 @@ async fn setup_runner(
             capability_snapshot,
             protocol_version: 1,
         },
-        &FixedClock(now),
+        now,
     )
     .await
     .expect("register runner");
@@ -85,7 +86,7 @@ async fn setup_fleet(
     concurrency_limit: i64,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.create_agent_fleet(id, id, Some(concurrency_limit), "{}", &FixedClock(now))
+    repo.create_agent_fleet(id, id, Some(concurrency_limit), "{}", now)
         .await
         .expect("insert fleet");
 }
@@ -96,7 +97,7 @@ async fn join_fleet(
     runner_id: &str,
     now: chrono::DateTime<Utc>,
 ) {
-    repo.add_fleet_member(fleet_id, runner_id, &FixedClock(now))
+    repo.add_fleet_member(fleet_id, runner_id, now)
         .await
         .expect("fleet membership");
 }
@@ -165,7 +166,7 @@ async fn enqueue(
             metadata,
             request_snapshot: &snapshot,
         },
-        &FixedClock(created_at),
+        created_at,
     )
     .await
     .expect("enqueue")
@@ -240,9 +241,14 @@ async fn assert_eligibility(
     .await;
     enqueue_for_runner(&repo, &item_id, "req", "runner", model, "{}", now).await;
 
-    let chosen = choose_request_for_runner(&repo, "runner", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(chosen.is_some(), expect_chosen, "case: {case}");
 }
 
@@ -285,10 +291,19 @@ async fn assert_priority(case: &str, second_metadata: &str, expect_chosen: &str)
     )
     .await;
 
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
-    assert_eq!(chosen.as_deref(), Some(expect_chosen), "case: {case}");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
+    assert_eq!(
+        chosen.as_ref().map(ExecutionRequestId::as_str),
+        Some(expect_chosen),
+        "case: {case}"
+    );
 }
 
 #[tokio::test]
@@ -327,10 +342,14 @@ async fn assert_fleet_concurrency(
     )
     .await;
 
-    let chosen =
-        choose_request_for_runner(&repo, "runner-member", now, &SchedulingPolicy::default())
-            .await
-            .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-member"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(chosen.is_some(), expect_chosen, "case: {case}");
 }
 
@@ -349,9 +368,14 @@ async fn assert_absence(case: &str, register_idle_runner: bool) {
     if register_idle_runner {
         setup_codex_runner(&repo, runner_id, 1, 1, Some(0), now).await;
     }
-    let chosen = choose_request_for_runner(&repo, runner_id, now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new(runner_id),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(chosen, None, "case: {case}");
 }
 
@@ -391,12 +415,16 @@ async fn fresh_runner_with_no_heartbeat_can_claim_its_first_request() {
     )
     .await;
 
-    let chosen =
-        choose_request_for_runner(&repo, "runner-fresh", now, &SchedulingPolicy::default())
-            .await
-            .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-fresh"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(
-        chosen.as_deref(),
+        chosen.as_ref().map(ExecutionRequestId::as_str),
         Some("req-first-claim"),
         "a runner's own attested capability report time must stand in for a heartbeat it has \
          never had the chance to send yet"
@@ -435,7 +463,7 @@ async fn stale_capability_report_rejects_despite_no_heartbeat() {
 
     let chosen = choose_request_for_runner(
         &repo,
-        "runner-stale-report",
+        &RunnerId::new("runner-stale-report"),
         now,
         &SchedulingPolicy::default(),
     )
@@ -475,9 +503,14 @@ async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
         "a request no runner polled carries nothing"
     );
 
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(chosen, None);
     let (state, code, reason, since) = waiting_row(&repo, "req").await;
     assert_eq!(state, "queued");
@@ -487,17 +520,22 @@ async fn a_request_no_runner_can_claim_says_why_and_clears_when_selected() {
 
     // The same request, made claimable, is selected and all three clear.
     seed::execution_request_requested_model(&repo, "req", "opaque/model-alpha").await;
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
-    assert_eq!(chosen.as_deref(), Some("req"));
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
+    assert_eq!(chosen.as_ref().map(ExecutionRequestId::as_str), Some("req"));
     repo.claim_execution_idempotent_with_snapshot(
-        "runner-a",
-        "claim",
-        "attempt",
+        &RunnerId::new("runner-a"),
+        &ClaimRequestId::new("claim"),
+        &AttemptId::new("attempt"),
         chrono::Duration::seconds(60),
-        &FixedClock(now),
-        RequestSelection::Scheduled(chosen.as_deref()),
+        now,
+        RequestSelection::Scheduled(chosen.as_ref()),
     )
     .await
     .expect("no db error")
@@ -522,12 +560,12 @@ async fn a_request_unclaimable_past_the_setting_fails_with_no_runner_can_claim()
             ..SchedulingPolicy::default()
         };
 
-        choose_request_for_runner(&repo, "runner-a", now, &policy)
+        choose_request_for_runner(&repo, &RunnerId::new("runner-a"), now, &policy)
             .await
             .expect("no db error");
         let later = now + chrono::Duration::minutes(31);
         refresh_heartbeat(&repo, "runner-a", later).await;
-        choose_request_for_runner(&repo, "runner-a", later, &policy)
+        choose_request_for_runner(&repo, &RunnerId::new("runner-a"), later, &policy)
             .await
             .expect("no db error");
 
@@ -555,9 +593,14 @@ async fn a_poll_that_proves_nothing_neither_starts_nor_keeps_the_clock() {
     enqueue_for_runner(&repo, &item_id, "req", "runner-a", ALPHA_MODEL, "{}", now).await;
     for at in [now, now + chrono::Duration::minutes(31)] {
         refresh_heartbeat(&repo, "runner-b", at).await;
-        let chosen = choose_request_for_runner(&repo, "runner-b", at, &SchedulingPolicy::default())
-            .await
-            .expect("no db error");
+        let chosen = choose_request_for_runner(
+            &repo,
+            &RunnerId::new("runner-b"),
+            at,
+            &SchedulingPolicy::default(),
+        )
+        .await
+        .expect("no db error");
         assert_eq!(chosen, None);
     }
     assert_eq!(
@@ -578,9 +621,14 @@ async fn a_poll_that_proves_nothing_neither_starts_nor_keeps_the_clock() {
         &(now - chrono::Duration::minutes(60)).to_rfc3339(),
     )
     .await;
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(chosen, None);
     let (state, code, reason, since) = waiting_row(&repo, "req").await;
     assert_eq!(
@@ -647,14 +695,14 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     )
     .await;
     repo.claim_execution_idempotent_with_snapshot(
-        "runner-a",
-        "claim",
-        "attempt",
+        &RunnerId::new("runner-a"),
+        &ClaimRequestId::new("claim"),
+        &AttemptId::new("attempt"),
         // Held past the three-hour poll below: a lease that ended unrenewed
         // would be handed to a person, which is not what this test is about.
         chrono::Duration::hours(4),
-        &FixedClock(now),
-        RequestSelection::Scheduled(Some("running")),
+        now,
+        RequestSelection::Scheduled(Some(&ExecutionRequestId::new("running"))),
     )
     .await
     .expect("no db error")
@@ -678,12 +726,12 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
     )
     .await;
     repo.claim_execution_idempotent_with_snapshot(
-        "runner-a",
-        "claim-review",
-        "attempt-review",
+        &RunnerId::new("runner-a"),
+        &ClaimRequestId::new("claim-review"),
+        &AttemptId::new("attempt-review"),
         chrono::Duration::seconds(60),
-        &FixedClock(now),
-        RequestSelection::Scheduled(Some("review")),
+        now,
+        RequestSelection::Scheduled(Some(&ExecutionRequestId::new("review"))),
     )
     .await
     .expect("no db error")
@@ -729,13 +777,17 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
         } else {
             set_budgets(&repo, &item_id, tokens, queue).await;
         }
-        let chosen = choose_request_for_runner(&repo, "runner-a", now, &policy)
+        let chosen = choose_request_for_runner(&repo, &RunnerId::new("runner-a"), now, &policy)
             .await
             .expect("no db error");
         let (state, code, reason, since) = waiting_row(&repo, "next").await;
         match expect {
             None => {
-                assert_eq!(chosen.as_deref(), Some("next"), "{case}");
+                assert_eq!(
+                    chosen.as_ref().map(ExecutionRequestId::as_str),
+                    Some("next"),
+                    "{case}"
+                );
                 assert_eq!(state, "queued", "{case}");
             }
             Some(sentence) => {
@@ -745,7 +797,7 @@ async fn a_budget_reached_stops_new_work_and_says_why() {
                 assert_eq!(since, Some(now.to_rfc3339()), "{case}");
                 // The budget never fails the request, however long it waits.
                 let later = now + chrono::Duration::hours(3);
-                choose_request_for_runner(&repo, "runner-a", later, &policy)
+                choose_request_for_runner(&repo, &RunnerId::new("runner-a"), later, &policy)
                     .await
                     .expect("no db error");
                 assert_eq!(waiting_row(&repo, "next").await.0, "queued", "{case}");
@@ -772,12 +824,12 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         enqueue_for_runner(&repo, &item_id, &id, "runner-a", ALPHA_MODEL, "{}", now).await;
         seed::execution_request_token_limit(&repo, &id, 800_000, false).await;
         repo.claim_execution_idempotent_with_snapshot(
-            "runner-a",
-            &format!("claim-{n}"),
-            &format!("attempt-{n}"),
+            &RunnerId::new("runner-a"),
+            &ClaimRequestId::new(format!("claim-{n}")),
+            &AttemptId::new(format!("attempt-{n}")),
             chrono::Duration::hours(4),
-            &FixedClock(now),
-            RequestSelection::Scheduled(Some(&id)),
+            now,
+            RequestSelection::Scheduled(Some(&ExecutionRequestId::new(&id))),
         )
         .await
         .expect("no db error")
@@ -845,10 +897,18 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
         now,
     )
     .await;
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
-    assert_eq!(chosen.as_deref(), Some("asks-none"));
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
+    assert_eq!(
+        chosen.as_ref().map(ExecutionRequestId::as_str),
+        Some("asks-none")
+    );
     let (state, code, reason, _) = waiting_row(&repo, "asks-500k").await;
     assert_eq!(state, "queued");
     assert_eq!(code.as_deref(), Some("budget_reached"));
@@ -873,9 +933,14 @@ async fn the_days_tokens_are_reserved_by_open_runs() {
     )
     .await;
     seed::execution_request_token_limit(&repo, "asks-3m", 3_000_000, false).await;
-    choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     let (_, _, reason, _) = waiting_row(&repo, "asks-3m").await;
     assert_eq!(
         reason.as_deref(),
@@ -914,11 +979,19 @@ async fn a_provisional_limit_gives_way_to_the_days_room() {
         set_budgets(&repo, &item_id, Some(day), None).await;
         enqueue_for_runner(&repo, &item_id, "prov", "runner-a", ALPHA_MODEL, "{}", now).await;
         seed::execution_request_token_limit(&repo, "prov", 2_000_000, true).await;
-        let chosen =
-            choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-                .await
-                .expect("no db error");
-        assert_eq!(chosen.as_deref(), Some("prov"), "day {day}");
+        let chosen = choose_request_for_runner(
+            &repo,
+            &RunnerId::new("runner-a"),
+            now,
+            &SchedulingPolicy::default(),
+        )
+        .await
+        .expect("no db error");
+        assert_eq!(
+            chosen.as_ref().map(ExecutionRequestId::as_str),
+            Some("prov"),
+            "day {day}"
+        );
         let (tokens, source) = run_limit(&repo, "prov").await;
         assert_eq!((tokens, source.as_str()), expected, "day {day}");
     }

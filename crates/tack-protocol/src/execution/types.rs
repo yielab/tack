@@ -107,6 +107,16 @@ impl<'de> Deserialize<'de> for ProtocolVersion {
 #[serde(transparent)]
 pub struct FencingToken(pub u64);
 
+impl FencingToken {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// Runner protocol v1's execution state vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -124,6 +134,20 @@ pub enum ExecutionState {
 }
 
 impl ExecutionState {
+    /// Every state, in the order the lifecycle lists them.
+    pub const ALL: [Self; 10] = [
+        Self::Queued,
+        Self::Leased,
+        Self::Preparing,
+        Self::Running,
+        Self::WaitingDecision,
+        Self::Succeeded,
+        Self::Failed,
+        Self::Cancelled,
+        Self::Lost,
+        Self::NeedsOperator,
+    ];
+
     pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
@@ -375,6 +399,19 @@ pub enum AutonomyLevel {
     L3,
     L4,
     L5,
+}
+
+impl std::str::FromStr for AutonomyLevel {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "L3" => Ok(AutonomyLevel::L3),
+            "L4" => Ok(AutonomyLevel::L4),
+            "L5" => Ok(AutonomyLevel::L5),
+            other => Err(format!("unknown autonomy level \"{other}\"")),
+        }
+    }
 }
 
 impl AutonomyLevel {

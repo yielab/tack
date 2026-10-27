@@ -147,7 +147,7 @@ impl Fixture {
                 capability_snapshot: &capability_snapshot,
                 protocol_version: 1,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .expect("runner");
@@ -159,7 +159,7 @@ impl Fixture {
                 tool_policy: r#"{"mode":"safe"}"#,
                 limits: r#"{"tokens":1000}"#,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .expect("profile");
@@ -512,7 +512,7 @@ async fn enqueue_request(
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("enqueue");
@@ -648,7 +648,7 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
         .unwrap();
     let app = prill_board(&mut fx, root.path());
 
-    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("mrp-key", "claim-mrp").await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("mrp-key", "claim-mrp").await;
     seed::execution_pack_artifact(
         &fx.repo,
         &attempt_id,
@@ -793,6 +793,30 @@ async fn accept_is_idempotent_and_start_transitions_to_running() {
     assert_eq!(fx.request_state(&request_id).await, "running");
 }
 
+/// A heartbeat that names a state the lifecycle does not have is refused as an invalid request,
+/// not accepted and echoed back.
+#[tokio::test]
+async fn a_heartbeat_naming_an_unknown_state_is_invalid() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("hb-key", "claim-hb").await;
+    let beat = |state: &str| {
+        json!({
+            "protocol_version": 1, "runner_id": RUNNER_ID, "heartbeat_id": format!("hb-{state}"),
+            "sent_at": fx.clock.now().to_rfc3339(), "available_capacity": 1,
+            "active_attempts": [{
+                "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "state": state, "journal_state": "prepared"
+            }],
+        })
+        .to_string()
+    };
+    let (status, body) = fx.post("/heartbeat", beat("sleeping")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "invalid_request");
+    let (status, body) = fx.post("/heartbeat", beat("leased")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
 // ---------------------------------------------------------------------
 // 2. Stale/expired fence writes nothing and returns `stale_lease`.
 // ---------------------------------------------------------------------
@@ -836,6 +860,68 @@ async fn stale_and_expired_fence_write_nothing() {
         fx.checkpoint(&attempt_id).await,
         None,
         "attempt row is untouched"
+    );
+}
+
+// ---------------------------------------------------------------------
+// 2b. A fencing token the store cannot hold is malformed, not stale.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_negative_or_too_large_fencing_token_is_invalid_request_and_writes_nothing() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, _) = fx
+        .enqueue_and_claim("bad-fence-key", "claim-bad-fence")
+        .await;
+    let auth = format!("Bearer {RUNNER_CREDENTIAL}");
+
+    // The artifact upload carries its token in the X-Tack-Fencing-Token header.
+    for token in ["-1", "9223372036854775808", "18446744073709551615", "one"] {
+        let (status, body) = send(
+            &fx.app,
+            "PUT",
+            &format!("/attempts/{attempt_id}/artifacts/art-1/content"),
+            "bytes".to_owned(),
+            &[
+                ("authorization", auth.as_str()),
+                ("x-tack-fencing-token", token),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "header {token}: {body}");
+        assert_eq!(body["error"]["code"], "invalid_request", "header {token}");
+    }
+
+    // Every other write carries it in the body; a recovery observation stands for them. A
+    // negative or fractional number never deserializes into the typed request (field `body`);
+    // one above `i64::MAX` parses, and is refused as the `fencing_token` itself.
+    let bodies = [
+        (json!(-1), "body"),
+        (json!(1.5), "body"),
+        (json!(9_223_372_036_854_775_808_u64), "fencing_token"),
+    ];
+    for (token, field) in bodies {
+        let (status, body) = fx
+            .post(
+                &format!("/attempts/{attempt_id}/recovery-observation"),
+                json!({
+                    "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id,
+                    "fencing_token": token,
+                    "recovery_key": "recovery:bad-fence",
+                    "observation": "process_stopped",
+                    "details": {"journal_state": "prepared", "process_observed": false},
+                })
+                .to_string(),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "body {token}: {body}");
+        assert_eq!(body["error"]["code"], "invalid_request", "body {token}");
+        assert_eq!(body["error"]["details"]["field"], field, "body {token}");
+    }
+    assert_eq!(
+        fx.attempt_state(&attempt_id).await,
+        "leased",
+        "a refused request leaves the attempt as it was"
     );
 }
 
@@ -1062,9 +1148,8 @@ async fn artifact_manifest_is_accepted_with_put_upload_target() {
 #[tokio::test]
 async fn completion_is_idempotent_and_restores_capacity_once() {
     let fx = Fixture::new().await;
-    let (request_id, attempt_id, fencing_token) = fx
-        .enqueue_and_claim("completion-key", "claim-completion")
-        .await;
+    let (request_id, attempt_id, fencing_token) =
+        fx.ready_running("completion-key", "claim-completion").await;
     let (status, completed) = fx
         .complete_default(&attempt_id, fencing_token, "complete-1")
         .await;
@@ -1199,7 +1284,7 @@ async fn event_batch_conflict_vs_idempotency_conflict_retryable() {
 async fn completion_replay_changed_content_is_idempotency_conflict() {
     let fx = Fixture::new().await;
     let (_, attempt_id, fencing_token) = fx
-        .enqueue_and_claim("completion-idempotency-key", "claim-completion-idem")
+        .ready_running("completion-idempotency-key", "claim-completion-idem")
         .await;
 
     let (status, committed) = fx

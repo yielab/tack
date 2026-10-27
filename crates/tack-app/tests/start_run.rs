@@ -2,6 +2,7 @@
 //! (profile, agent, machine, repository, limits), what it is refused for, and how a retry replays.
 
 use crate::support;
+use tack_protocol::Clock;
 
 use serde_json::{Value, json};
 use support::{
@@ -11,7 +12,7 @@ use support::{
 use tack_app::runs::start_run::start_run;
 use tack_core::models::{CodeOrigin, CreateRole, UpdateProject, UpdateRole, WorkspaceMode};
 use tack_protocol::SystemClock;
-use tack_protocol::execution::StableErrorCode;
+use tack_protocol::execution::{AutonomyLevel, StableErrorCode};
 use tack_test_support::seed;
 
 async fn add_role(board: &support::Board, name: &str, profile: &str) {
@@ -58,7 +59,7 @@ async fn a_repeated_key_replays_and_another_operator_starts_its_own_run() {
 
     let other = start_run(
         &board.repo,
-        &SystemClock,
+        SystemClock.now(),
         "operator-2",
         full_request(board.item_id),
     )
@@ -86,7 +87,7 @@ async fn a_revoked_runner_still_replays_but_takes_no_new_run() {
     let first = start(&board, full_request(board.item_id)).await.unwrap();
     board
         .repo
-        .revoke_runner("runner-active", &SystemClock)
+        .revoke_runner("runner-active", SystemClock.now())
         .await
         .unwrap();
     let replay = start(&board, full_request(board.item_id)).await.unwrap();
@@ -118,6 +119,29 @@ async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request
         .unwrap();
     let retry = start(&board, full_request(board.item_id)).await.unwrap();
     assert!(retry.replayed);
+    assert_eq!(retry.request_id, first.request_id);
+}
+
+#[tokio::test]
+async fn a_retry_after_the_title_was_edited_replays_the_request() {
+    let board = board().await;
+    let first = start(&board, full_request(board.item_id)).await.unwrap();
+    board
+        .repo
+        .update_item(
+            board.item_id,
+            tack_core::models::UpdateItem {
+                title: Some("A title edited between the two tries".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let retry = start(&board, full_request(board.item_id)).await.unwrap();
+    assert!(
+        retry.replayed,
+        "the composed instructions are not the request"
+    );
     assert_eq!(retry.request_id, first.request_id);
 }
 
@@ -506,7 +530,7 @@ async fn the_principal_scopes_the_idempotency_key_and_names_the_creator() {
 async fn a_level_is_refused_for_an_agent_other_than_docket() {
     let board = board().await;
     let mut request = full_request(board.item_id);
-    request.autonomy = Some("L3".into());
+    request.autonomy = Some(AutonomyLevel::L3);
     let refusal = start(&board, request).await.unwrap_err();
     assert_eq!(refusal.status, 400);
     assert_eq!(refusal.code, StableErrorCode::InvalidRequest);
@@ -515,8 +539,47 @@ async fn a_level_is_refused_for_an_agent_other_than_docket() {
 
     let mut request = full_request(board.item_id);
     request.requested_harness_kind = Some("docket".into());
-    request.autonomy = Some("L3".into());
+    request.autonomy = Some(AutonomyLevel::L3);
     let started = start(&board, request).await.unwrap();
     let stored = snapshot(&board.repo, &started).await;
     assert_eq!(stored["autonomy"], "L3");
+}
+
+/// A request body's machine is both fields or neither, and only a runner or a fleet: the typed
+/// request cannot hold anything else.
+#[test]
+fn a_request_body_names_a_runner_or_a_fleet_or_nothing() {
+    use tack_app::runs::start_run::{level_from, selector_from};
+    use tack_protocol::execution::{RunnerId, RunnerSelector};
+
+    assert_eq!(selector_from(None, None).unwrap(), None);
+    assert_eq!(
+        selector_from(Some("fleet".into()), Some("f1".into())).unwrap(),
+        Some(RunnerSelector::Fleet {
+            fleet_id: "f1".into()
+        })
+    );
+    assert_eq!(
+        selector_from(Some("exact_runner".into()), Some("r1".into())).unwrap(),
+        Some(RunnerSelector::ExactRunner {
+            runner_id: RunnerId::new("r1")
+        })
+    );
+    for (kind, id) in [
+        (Some("any"), Some("x")),
+        (Some("fleet"), None),
+        (None, Some("x")),
+    ] {
+        let refusal = selector_from(kind.map(Into::into), id.map(Into::into)).unwrap_err();
+        assert_eq!(refusal.status, 400);
+        assert_eq!(refusal.details["field"], "selector_kind");
+    }
+    assert_eq!(
+        level_from(Some("L4".into())).unwrap(),
+        Some(AutonomyLevel::L4)
+    );
+    assert_eq!(
+        level_from(Some("l4".into())).unwrap_err().details["field"],
+        "autonomy"
+    );
 }

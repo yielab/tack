@@ -1,6 +1,7 @@
 //! Recovery observations and the operator-requeue path they can unblock.
 
 use crate::repository::execution_fixture::{Fixture, recovery_input};
+use tack_protocol::execution::{AttemptId, FencingToken, RunnerId, WorkspaceId};
 
 use chrono::Duration;
 use tack_db::repo::execution::{
@@ -134,7 +135,7 @@ async fn recovery_foreign_fence_is_stale() {
     assert_eq!(
         fx.recover(recovery_input(
             "attempt-recovery-stale",
-            fence + 1,
+            FencingToken::new(fence.get() + 1),
             "recovery-foreign",
             RecoveryObservation::Ambiguous,
         ))
@@ -187,7 +188,10 @@ async fn recovery_after_runner_revoked_is_stale() {
     let fence = fx
         .ready_completion_attempt("request-recovery-stale", "attempt-recovery-stale")
         .await;
-    fx.repo.revoke_runner("runner-a", &fx.clock).await.unwrap();
+    fx.repo
+        .revoke_runner("runner-a", fx.clock.now())
+        .await
+        .unwrap();
     assert_eq!(
         fx.recover(recovery_input(
             "attempt-recovery-stale",
@@ -222,7 +226,7 @@ async fn pending_runner_token_issue_fails_on_mismatched_capacity() {
                 token_hash: "hash",
                 expires_at: fx.clock.now(),
             },
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
     assert!(
@@ -312,11 +316,11 @@ async fn a_lease_nobody_renewed_asks_a_person_once_and_cancel_ends_it() {
             .fencing_token;
         assert!(matches!(
             fx.transition(AttemptTransitionInput {
-                runner_id: "runner-a",
-                attempt_id: attempt,
+                runner_id: &RunnerId::new("runner-a"),
+                attempt_id: &AttemptId::new(attempt),
                 fencing_token: fence,
                 phase: AttemptTransitionPhase::Preparing,
-                workspace_id: "workspace-1",
+                workspace_id: &WorkspaceId::new("workspace-1"),
                 base_revision: "abc123",
                 process_id: None,
             })
@@ -331,11 +335,18 @@ async fn a_lease_nobody_renewed_asks_a_person_once_and_cancel_ends_it() {
     let grace = Duration::seconds(120);
     // The holder is gone for good: a revoked runner's runs are asked about
     // like any other's.
-    fx.repo.revoke_runner("runner-a", &fx.clock).await.unwrap();
+    fx.repo
+        .revoke_runner("runner-a", fx.clock.now())
+        .await
+        .unwrap();
     let sentence = "The computer that took this run stopped answering.";
     let expire = || {
-        fx.repo
-            .expire_unheld_leases(fx.clock.now() - grace, "lease_expired", sentence, &fx.clock)
+        fx.repo.expire_unheld_leases(
+            fx.clock.now() - grace,
+            "lease_expired",
+            sentence,
+            fx.clock.now(),
+        )
     };
 
     assert_eq!(expire().await.unwrap(), 1);

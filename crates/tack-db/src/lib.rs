@@ -1,3 +1,4 @@
+mod canonical;
 pub mod error;
 pub mod migrations;
 pub mod queries;
@@ -8,6 +9,7 @@ use std::str::FromStr;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use tracing::info;
 
+pub use canonical::canonical_json;
 pub use error::StoreError;
 pub use repo::Repository;
 

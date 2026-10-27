@@ -2,6 +2,7 @@
 //! answer arrives after the deadline.
 
 use crate::decisions;
+use tack_protocol::execution::AttemptId;
 
 use chrono::Duration;
 use decisions::{
@@ -34,7 +35,7 @@ async fn the_sweep_expires_only_overdue_pending_decisions() {
         pending_decision(&repo, &clock, &attempt_id, decision_id, expires_at).await;
     }
 
-    let expired = expire_decisions(&repo, &clock).await.expect("sweep");
+    let expired = expire_decisions(&repo, clock.now()).await.expect("sweep");
 
     assert_eq!(expired, 2);
     for (decision_id, _, expected_state) in rows {
@@ -62,8 +63,8 @@ async fn expiry_resumes_the_attempt_like_a_resolution_does() {
     );
     let outcome = resolve_decision(
         &repo,
-        &clock,
-        &lazy,
+        clock.now(),
+        &AttemptId::new(&lazy),
         "dec-late",
         &json!({"option_id": "allow_once", "text": null}),
         &DecisionResolvedBy::operator("operator:local"),
@@ -84,7 +85,7 @@ async fn expiry_resumes_the_attempt_like_a_resolution_does() {
     pending_decision(&repo, &clock, &kept, "dec-overdue", Some(overdue)).await;
     pending_decision(&repo, &clock, &kept, "dec-open", None).await;
 
-    let expired = expire_decisions(&repo, &clock).await.expect("sweep");
+    let expired = expire_decisions(&repo, clock.now()).await.expect("sweep");
 
     assert_eq!(expired, 2);
     assert_eq!(

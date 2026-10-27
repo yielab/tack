@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::repo::execution::state;
 use tack_core::autonomy::Domain;
 
 use crate::repo::autonomy::{
@@ -181,18 +182,18 @@ pub async fn held_done_candidates(repo: &Repository) -> Result<Vec<String>, Stor
 /// unfinished item's newest request is one: a run a newer one replaced, or an item already Done,
 /// is never merged.
 pub async fn auto_candidates(repo: &Repository) -> Result<Vec<String>, StoreError> {
-    Ok(sqlx::query_scalar(
+    Ok(sqlx::query_scalar(state::sql(
         "SELECT a.id FROM execution_attempts a
          JOIN execution_requests r ON r.id = a.request_id
          JOIN items i ON i.id = r.item_id
          JOIN projects p ON p.id = i.project_id
-         WHERE a.state = 'succeeded'
+         WHERE a.state = {succeeded}
            AND p.archived = 0
            AND i.completed_at IS NULL
            AND r.id = (SELECT r2.id FROM execution_requests r2 WHERE r2.item_id = i.id
                         ORDER BY r2.created_at DESC, r2.rowid DESC LIMIT 1)
            AND a.id = (SELECT a2.id FROM execution_attempts a2 WHERE a2.request_id = r.id
-                         AND a2.state IN ('succeeded','failed','cancelled')
+                         AND a2.state IN ({terminal})
                         ORDER BY a2.attempt_number DESC LIMIT 1)
            AND (p.autonomy_level != 'L3' OR EXISTS (
                 SELECT 1 FROM autonomy_domains d WHERE d.project_id = p.id AND d.level != 'L3'))
@@ -203,7 +204,7 @@ pub async fn auto_candidates(repo: &Repository) -> Result<Vec<String>, StoreErro
            AND NOT EXISTS (SELECT 1 FROM tack_merges t WHERE t.attempt_id = a.id
                            AND (t.merged_at IS NOT NULL OR t.trigger != 'auto'))
          ORDER BY a.created_at",
-    )
+    ))
     .fetch_all(repo.pool())
     .await?)
 }

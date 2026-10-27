@@ -28,6 +28,12 @@ impl LifecycleError {
 
 /// Validates a non-replay state transition against runner protocol v1.
 ///
+/// Two moves the store makes are in the table beyond the lease owner's and recovery's: the
+/// scheduler fails a queued request no runner could ever claim (`queued` -> `failed`), and an
+/// operator cancels a run nobody holds any more (`needs_operator`, or a lease that ran out)
+/// without waiting for a runner to observe it (`* -> cancelled`). The table cannot say that a
+/// lease has expired; the store checks it.
+///
 /// Idempotent reports are intentionally not transitions: endpoint code returns
 /// the original success before calling this function, as specified by the
 /// frozen lifecycle fixture.
@@ -44,10 +50,15 @@ pub fn validate_transition(
 
     let allowed = matches!(
         (from, to, actor),
-        (Queued, Leased, Scheduler)
+        (Queued, Leased | Failed, Scheduler)
             | (Queued, Cancelled, Operator)
             | (Leased, Preparing | Failed | Cancelled, LeaseOwner)
             | (Leased, Lost | NeedsOperator, RecoveryService)
+            | (
+                Leased | Preparing | Running | WaitingDecision | NeedsOperator,
+                Cancelled,
+                Operator
+            )
             | (Preparing, Running | Failed | Cancelled, LeaseOwner)
             | (Preparing, Lost | NeedsOperator, RecoveryService)
             | (
@@ -79,6 +90,36 @@ pub fn validate_transition(
     }
 }
 
+/// The states a transition to `to` by `actor` may start from, read off the table in
+/// [`validate_transition`]. A store builds the guard of every `UPDATE` that moves a state from
+/// this list, so the rules are written once.
+pub fn sources(to: ExecutionState, actor: TransitionActor) -> Vec<ExecutionState> {
+    ExecutionState::ALL
+        .into_iter()
+        .filter(|from| validate_transition(*from, to, actor).is_ok())
+        .collect()
+}
+
+/// The states in which a runner holds a lease: the ones its lease owner can still move out of.
+pub fn lease_held() -> Vec<ExecutionState> {
+    ExecutionState::ALL
+        .into_iter()
+        .filter(|from| {
+            ExecutionState::ALL
+                .into_iter()
+                .any(|to| validate_transition(*from, to, TransitionActor::LeaseOwner).is_ok())
+        })
+        .collect()
+}
+
+/// The states no actor can move out of.
+pub fn terminal() -> Vec<ExecutionState> {
+    ExecutionState::ALL
+        .into_iter()
+        .filter(|state| state.is_terminal())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +142,13 @@ mod tests {
         #[serde(flatten, default)]
         additional: BTreeMap<String, serde_json::Value>,
     }
+
+    const ALL_ACTORS: [TransitionActor; 4] = [
+        TransitionActor::Scheduler,
+        TransitionActor::Operator,
+        TransitionActor::LeaseOwner,
+        TransitionActor::RecoveryService,
+    ];
 
     fn actor(name: &str) -> TransitionActor {
         match name {
@@ -143,24 +191,37 @@ mod tests {
         assert_eq!(error.reason, "invalid_transition");
     }
 
-    const ALL_STATES: [ExecutionState; 10] = [
-        ExecutionState::Queued,
-        ExecutionState::Leased,
-        ExecutionState::Preparing,
-        ExecutionState::Running,
-        ExecutionState::WaitingDecision,
-        ExecutionState::Succeeded,
-        ExecutionState::Failed,
-        ExecutionState::Cancelled,
-        ExecutionState::Lost,
-        ExecutionState::NeedsOperator,
-    ];
-    const ALL_ACTORS: [TransitionActor; 4] = [
-        TransitionActor::Scheduler,
-        TransitionActor::Operator,
-        TransitionActor::LeaseOwner,
-        TransitionActor::RecoveryService,
-    ];
+    #[test]
+    fn sources_and_held_states_are_read_off_the_table() {
+        use ExecutionState::{
+            Leased, Lost, NeedsOperator, Preparing, Queued, Running, WaitingDecision,
+        };
+        assert_eq!(
+            lease_held(),
+            [Leased, Preparing, Running, WaitingDecision],
+            "the states a lease owner can move out of"
+        );
+        assert_eq!(
+            sources(Lost, TransitionActor::RecoveryService),
+            lease_held()
+        );
+        assert_eq!(
+            sources(Running, TransitionActor::LeaseOwner),
+            [Preparing, WaitingDecision]
+        );
+        assert_eq!(
+            sources(Queued, TransitionActor::Operator),
+            [Lost, NeedsOperator]
+        );
+        assert_eq!(
+            terminal(),
+            [
+                ExecutionState::Succeeded,
+                ExecutionState::Failed,
+                ExecutionState::Cancelled
+            ]
+        );
+    }
 
     #[test]
     fn frozen_lifecycle_fixture_is_implemented_exactly() {
@@ -174,7 +235,7 @@ mod tests {
         );
 
         for rule in fixture.rules {
-            for to in ALL_STATES {
+            for to in ExecutionState::ALL {
                 for transition_actor in ALL_ACTORS {
                     let expected = rule.allow.get(&to).is_some_and(|allowed| {
                         allowed.iter().any(|name| actor(name) == transition_actor)

@@ -106,8 +106,8 @@ async fn a_retention_pass_purges_what_is_older_than_the_window() {
         .await
         .unwrap();
     assert_eq!(
-        second.replays.rows_purged, 1,
-        "the fresh one, a window later"
+        second.replays.rows_purged, 2,
+        "the fresh claim, and the audit of the old attempt's lease the fresh claim closed, a window later"
     );
 }
 

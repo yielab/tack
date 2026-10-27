@@ -2,6 +2,10 @@
 //! protocol that keeps a lease alive.
 
 use crate::repository::execution_fixture::{Fixture, recovery_input, request};
+use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{
+    AttemptId, Checkpoint, ExecutionRequestId, FencingToken, RunnerId, WorkspaceId,
+};
 
 use chrono::Duration;
 use sqlx::Row;
@@ -33,15 +37,18 @@ async fn claim_second_claimer_blocked_stale_heartbeat_writes_nothing() {
         .claim("attempt-a", Duration::seconds(60))
         .await
         .expect("first claim");
-    assert_eq!(lease.fencing_token, 1);
+    assert_eq!(lease.fencing_token, FencingToken::new(1));
     assert!(
         fx.claim("attempt-b", Duration::seconds(60)).await.is_none(),
         "capacity/request state prevent a second valid lease"
     );
     assert_eq!(
-        fx.heartbeat("heartbeat-stale", &[fx.lease("attempt-a", 999)])
-            .await,
-        HeartbeatBatchResult::StaleLease("attempt-a".into()),
+        fx.heartbeat(
+            "heartbeat-stale",
+            &[fx.lease("attempt-a", FencingToken::new(999))]
+        )
+        .await,
+        HeartbeatBatchResult::StaleLease(AttemptId::new("attempt-a")),
         "stale fence writes nothing"
     );
 }
@@ -79,10 +86,11 @@ async fn concurrent_claimers_receive_exactly_one_valid_lease() {
         "exactly one concurrent claimant receives a valid lease for one request"
     );
     let winner = leases.into_iter().next().unwrap();
-    assert_eq!(winner.request_id, "request-a");
+    assert_eq!(winner.request_id, ExecutionRequestId::new("request-a"));
     assert_eq!(winner.attempt_number, 1);
     assert_eq!(
-        winner.fencing_token, 1,
+        winner.fencing_token,
+        FencingToken::new(1),
         "the sole winner takes the first fencing token"
     );
 
@@ -148,7 +156,7 @@ async fn foreign_keys_and_expiry_recovery_fail_closed() {
         .repo
         .enqueue_execution(
             request("orphan", "missing-item", "orphan-key", "x"),
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
     assert!(orphan.is_err(), "request item FK is enforced");
@@ -166,7 +174,10 @@ async fn foreign_keys_and_expiry_recovery_fail_closed() {
         RecoveryObservationResult::Applied(response)
             if response.disposition == RecoveryDisposition::NeedsOperator
     ));
-    assert_eq!(fx.attempt_state(&lease.attempt_id).await, "needs_operator");
+    assert_eq!(
+        fx.attempt_state(lease.attempt_id.as_str()).await,
+        "needs_operator"
+    );
 }
 
 #[tokio::test]
@@ -190,11 +201,11 @@ async fn queue_and_history_indexes_are_used() {
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-a",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-a"),
         fencing_token: lease.fencing_token,
         previous_checkpoint: None,
-        checkpoint: "checkpoint-1",
+        checkpoint: &Checkpoint::new("checkpoint-1"),
     };
     assert!(matches!(
         fx.apply_events(batch, &[event]).await,
@@ -231,13 +242,16 @@ async fn heartbeat_replays_and_recovery_is_audited_once() {
     );
     assert!(matches!(
         fx.repo
-            .recover_attempt(recovery.clone(), &fx.clock)
+            .recover_attempt(recovery.clone(), fx.clock.now())
             .await
             .unwrap(),
         RecoveryObservationResult::Applied(_)
     ));
     assert!(matches!(
-        fx.repo.recover_attempt(recovery, &fx.clock).await.unwrap(),
+        fx.repo
+            .recover_attempt(recovery, fx.clock.now())
+            .await
+            .unwrap(),
         RecoveryObservationResult::Replayed(_)
     ));
     assert_eq!(fx.count("execution_recovery_audits", "attempt-a").await, 1);
@@ -356,7 +370,7 @@ async fn heartbeat_frozen_request_mutations_conflict_without_write() {
     );
     for mutated_leases in [
         [HeartbeatLease {
-            state: "running",
+            state: ExecutionState::Running,
             ..leases[0].clone()
         }],
         [HeartbeatLease {
@@ -364,7 +378,7 @@ async fn heartbeat_frozen_request_mutations_conflict_without_write() {
             ..leases[0].clone()
         }],
         [HeartbeatLease {
-            last_event_checkpoint: Some("checkpoint-mutated"),
+            last_event_checkpoint: Some(&Checkpoint::new("checkpoint-mutated")),
             ..leases[0].clone()
         }],
     ] {
@@ -399,7 +413,7 @@ async fn heartbeat_stale_lease_returns_typed_stale_result() {
     let leases = [fx.lease("attempt-heartbeat-stale", fence)];
     assert_eq!(
         fx.heartbeat("heartbeat-stale", &leases).await,
-        HeartbeatBatchResult::StaleLease("attempt-heartbeat-stale".into())
+        HeartbeatBatchResult::StaleLease(AttemptId::new("attempt-heartbeat-stale"))
     );
 }
 
@@ -428,7 +442,10 @@ async fn expired_unrecovered_attempt_blocks_capacity_and_claims() {
             .replace("2026-08-07T12:00:00Z", &fx.clock.now().to_rfc3339())
             .into_boxed_str(),
     );
-    fx.repo.enqueue_execution(blocked, &fx.clock).await.unwrap();
+    fx.repo
+        .enqueue_execution(blocked, fx.clock.now())
+        .await
+        .unwrap();
     assert!(
         fx.claim("attempt-heartbeat-blocked", Duration::seconds(60))
             .await
@@ -450,11 +467,11 @@ async fn in_flight_request_is_never_claimed_again_in_any_live_state() {
         .unwrap();
 
     let preparing = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-flight-leased",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-flight-leased"),
         fencing_token: lease.fencing_token,
         phase: AttemptTransitionPhase::Preparing,
-        workspace_id: "workspace-1",
+        workspace_id: &WorkspaceId::new("workspace-1"),
         base_revision: "abc123",
         process_id: None,
     };
@@ -475,7 +492,7 @@ async fn in_flight_request_is_never_claimed_again_in_any_live_state() {
         );
         assert!(
             fx.repo
-                .list_eligible_queued_requests("runner-a")
+                .list_eligible_queued_requests(&RunnerId::new("runner-a"))
                 .await
                 .unwrap()
                 .is_empty(),
@@ -531,13 +548,13 @@ async fn heartbeat_replay_insert_failure_rolls_back_all_updates() {
     let result = fx
         .repo
         .heartbeat_batch(
-            "runner-a",
+            &RunnerId::new("runner-a"),
             "heartbeat-rollback",
             fx.clock.now(),
             0,
             &leases,
             Duration::seconds(60),
-            &fx.clock,
+            fx.clock.now(),
         )
         .await;
     assert!(result.is_err());

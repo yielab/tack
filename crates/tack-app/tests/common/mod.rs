@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use tack_db::Repository;
 use tack_db::repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner};
 use tack_protocol::Clock;
+use tack_protocol::execution::{ClaimRequestId, FencingToken, RunnerId};
 use tack_test_support::{
     ControllableClock, create_test_workspace, make_item, make_project, setup_test_db,
 };
@@ -68,7 +69,7 @@ pub async fn world() -> World {
             capability_snapshot: &snapshot,
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -80,7 +81,7 @@ pub async fn world() -> World {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -139,7 +140,7 @@ pub async fn enqueue(world: &World, key: &str) -> String {
                 metadata: &field("metadata"),
                 request_snapshot: &snapshot_string,
             },
-            &world.clock,
+            world.clock.now(),
         )
         .await
         .expect("enqueue");
@@ -150,7 +151,7 @@ pub async fn enqueue(world: &World, key: &str) -> String {
 pub struct Running {
     pub request_id: String,
     pub attempt_id: String,
-    pub fence: i64,
+    pub fence: FencingToken,
 }
 
 /// Enqueues a request, claims it and puts the attempt in `running`.
@@ -158,9 +159,9 @@ pub async fn running_attempt(world: &World, key: &str) -> Running {
     let request_id = enqueue(world, key).await;
     let claimed = tack_app::runs::claim::claim(
         &world.repo,
-        &world.clock,
-        RUNNER_ID,
-        &format!("claim-{key}"),
+        world.clock.now(),
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new(format!("claim-{key}")),
         chrono::Duration::seconds(60),
     )
     .await
@@ -168,13 +169,13 @@ pub async fn running_attempt(world: &World, key: &str) -> Running {
     .expect("work");
     tack_test_support::seed::execution_attempt_state(
         &world.repo,
-        &claimed.lease.attempt_id,
+        claimed.lease.attempt_id.as_str(),
         tack_protocol::execution::ExecutionState::Running,
     )
     .await;
     Running {
         request_id,
-        attempt_id: claimed.lease.attempt_id,
+        attempt_id: claimed.lease.attempt_id.into_inner(),
         fence: claimed.lease.fencing_token,
     }
 }

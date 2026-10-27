@@ -2,6 +2,7 @@ use crate::common::{self, create_test_workspace, setup_test_db};
 use tack_core::models::*;
 use tack_core::vocabulary;
 use tack_core::workflow;
+use tack_protocol::Clock;
 
 /// A `CreateItem` with every field but `title` at its zero/default value —
 /// tests override only the fields their assertions actually check via
@@ -1150,9 +1151,13 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
         delivers: Some("an answer".into()),
         builtin: true,
     };
-    repo.write_agent_profile(&row, &SystemClock).await.unwrap();
+    repo.write_agent_profile(&row, SystemClock.now())
+        .await
+        .unwrap();
     row.name = "Second".into();
-    repo.write_agent_profile(&row, &SystemClock).await.unwrap();
+    repo.write_agent_profile(&row, SystemClock.now())
+        .await
+        .unwrap();
     let rows = repo.list_agent_profile_rows().await.unwrap();
     let mine: Vec<_> = rows.iter().filter(|r| r.id == "ap_mine").collect();
     assert_eq!(mine.len(), 1);

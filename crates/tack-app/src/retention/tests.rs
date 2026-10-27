@@ -1,14 +1,7 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
+use tack_test_support::FixedClock;
 use tack_test_support::setup_test_db;
-
-struct FixedClock(DateTime<Utc>);
-
-impl Clock for FixedClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.0
-    }
-}
 
 #[test]
 fn the_default_window_is_ninety_days_in_batches_of_five_hundred() {

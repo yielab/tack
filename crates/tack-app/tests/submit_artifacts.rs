@@ -4,6 +4,8 @@
 //! once.
 
 use crate::common;
+use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, FencingToken, RunnerId};
 
 use chrono::Duration;
 use common::{RUNNER_ID, running_attempt, world};
@@ -15,7 +17,7 @@ use tack_app::runs::submit_artifacts::{
 use tack_db::queries::execution_artifacts;
 use tack_db::repo::execution::ArtifactContentCommitResult;
 use tack_protocol::execution::ExecutionState;
-use tack_test_support::seed;
+use tack_test_support::{ids, seed};
 
 const CAP: u64 = 100;
 
@@ -35,15 +37,15 @@ fn manifest(artifact_id: &str, sha: char, size_bytes: i64) -> ArtifactManifest {
 async fn submit(
     world: &common::World,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     artifacts: &[ArtifactManifest],
 ) -> ManifestSubmitted {
     submit_artifacts(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         ManifestSubmission {
-            runner_id: RUNNER_ID,
-            attempt_id,
+            runner_id: &RunnerId::new(RUNNER_ID),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             artifacts,
             attempt_total_bytes_max: CAP,
@@ -177,7 +179,7 @@ async fn artifacts_land_only_while_the_attempt_runs_or_waits_and_only_under_a_li
         submit(
             &world,
             &run.attempt_id,
-            run.fence + 1,
+            FencingToken::new(run.fence.get() + 1),
             &[manifest("art-2", 'a', 1)]
         )
         .await,
@@ -199,12 +201,12 @@ async fn artifacts_land_only_while_the_attempt_runs_or_waits_and_only_under_a_li
 fn upload<'a>(
     attempt_id: &'a str,
     artifact_id: &'a str,
-    fence: i64,
+    fence: FencingToken,
     content_type: Option<&'a str>,
 ) -> ContentUpload<'a> {
     ContentUpload {
-        runner_id: RUNNER_ID,
-        attempt_id,
+        runner_id: ids::runner(RUNNER_ID),
+        attempt_id: ids::attempt(attempt_id),
         artifact_id,
         fencing_token: fence,
         content_type,
@@ -222,18 +224,19 @@ async fn an_upload_is_checked_against_its_manifest_and_its_content_is_recorded_o
         &[manifest("art-1", 'a', 10)],
     )
     .await;
-    let check = |artifact_id: &'static str, fence: i64, content_type: Option<&'static str>| {
-        let (world, attempt_id) = (&world, run.attempt_id.clone());
-        async move {
-            check_artifact_upload(
-                &world.repo,
-                &world.clock,
-                upload(&attempt_id, artifact_id, fence, content_type),
-            )
-            .await
-            .expect("check")
-        }
-    };
+    let check =
+        |artifact_id: &'static str, fence: FencingToken, content_type: Option<&'static str>| {
+            let (world, attempt_id) = (&world, run.attempt_id.clone());
+            async move {
+                check_artifact_upload(
+                    &world.repo,
+                    world.clock.now(),
+                    upload(&attempt_id, artifact_id, fence, content_type),
+                )
+                .await
+                .expect("check")
+            }
+        };
 
     let UploadChecked::Ready(target) =
         check("art-1", run.fence, Some("text/x-diff; charset=utf-8")).await
@@ -256,13 +259,13 @@ async fn an_upload_is_checked_against_its_manifest_and_its_content_is_recorded_o
         UploadChecked::Stale
     );
     assert_eq!(
-        check("art-1", run.fence + 1, None).await,
+        check("art-1", FencingToken::new(run.fence.get() + 1), None).await,
         UploadChecked::Stale
     );
 
     let committed = commit_artifact_content(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         upload(&run.attempt_id, "art-1", run.fence, None),
         "blob-1",
     )
@@ -271,7 +274,7 @@ async fn an_upload_is_checked_against_its_manifest_and_its_content_is_recorded_o
     assert_eq!(committed, ArtifactContentCommitResult::Committed);
     let again = commit_artifact_content(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         upload(&run.attempt_id, "art-1", run.fence, None),
         "blob-2",
     )

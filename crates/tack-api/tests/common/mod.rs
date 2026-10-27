@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, RunnerId};
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -390,11 +391,11 @@ pub async fn claim_runner(
 /// under test is the repository method, not a route.
 pub async fn claim_execution_for_test(repo: &Repository, clock: &dyn Clock) {
     repo.claim_execution_idempotent_with_snapshot(
-        "runner-crash",
-        "claim-crash",
-        "attempt-crash",
+        &RunnerId::new("runner-crash"),
+        &ClaimRequestId::new("claim-crash"),
+        &AttemptId::new("attempt-crash"),
         chrono::Duration::seconds(60),
-        clock,
+        clock.now(),
         RequestSelection::Naive,
     )
     .await

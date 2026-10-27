@@ -8,7 +8,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use serde::{Deserialize, Serialize};
-use tack_protocol::SystemClock;
+use tack_protocol::{Clock, SystemClock};
 use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
@@ -135,7 +135,11 @@ pub async fn mark_viewed(
     let artifact = newest_mrp_artifact(&state, &request_id, attempt_number).await?;
     let review = state
         .repo
-        .mark_mrp_viewed(&artifact.attempt_id, &artifact.artifact_id, &SystemClock)
+        .mark_mrp_viewed(
+            &artifact.attempt_id,
+            &artifact.artifact_id,
+            SystemClock.now(),
+        )
         .await?;
     Ok(Json(review))
 }
@@ -180,7 +184,7 @@ pub async fn review_mrp(
             verdict,
             reason,
             REVIEWER,
-            &SystemClock,
+            SystemClock.now(),
         )
         .await?
         .ok_or_else(|| ApiError::Conflict("This pack was already reviewed".into()))?;

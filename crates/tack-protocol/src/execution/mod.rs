@@ -16,7 +16,9 @@ pub use capabilities::{
     EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
     ModelsReport, RunnerCapabilities, SignInReport, SignInState, TeamReport, TeamViolation,
 };
-pub use lifecycle::{LifecycleError, TransitionActor, validate_transition};
+pub use lifecycle::{
+    LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,
+};
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,
     AutonomyLevel, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId,

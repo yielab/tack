@@ -2,12 +2,11 @@
 //! each entry. The bytes themselves are streamed and verified by the caller; what is decided
 //! here is whether a write is allowed at all and whether the manifest agrees with itself.
 
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use serde_json::Value;
 use tack_db::repo::execution::{ArtifactContentCommitResult, NewArtifact};
 use tack_db::{Repository, queries};
-use tack_protocol::Clock;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken, RunnerId};
 use uuid::Uuid;
 
 use crate::AppError;
@@ -27,9 +26,9 @@ pub struct ArtifactManifest {
 
 /// A manifest a runner declares for the attempt it holds.
 pub struct ManifestSubmission<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
     pub artifacts: &'a [ArtifactManifest],
     /// The most bytes an attempt's artifacts may declare in all.
     pub attempt_total_bytes_max: u64,
@@ -68,10 +67,9 @@ fn accepts_artifacts(state: ExecutionState) -> bool {
 /// with itself: the same content is a replay, other content is an idempotency conflict.
 pub async fn submit_artifacts(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     submission: ManifestSubmission<'_>,
 ) -> Result<ManifestSubmitted, AppError> {
-    let now = clock.now();
     let Some(lease) = queries::execution_attempts::attempt_lease(
         repo,
         submission.attempt_id,
@@ -89,9 +87,11 @@ pub async fn submit_artifacts(
         return Ok(ManifestSubmitted::Ineligible { state: lease.state });
     }
 
-    let existing_total =
-        queries::execution_artifacts::declared_bytes_of_attempt(repo, submission.attempt_id)
-            .await?;
+    let existing_total = queries::execution_artifacts::declared_bytes_of_attempt(
+        repo,
+        submission.attempt_id.as_str(),
+    )
+    .await?;
     let batch_total = submission.artifacts.iter().fold(0u64, |total, item| {
         total.saturating_add(item.size_bytes.max(0) as u64)
     });
@@ -120,7 +120,7 @@ pub async fn submit_artifacts(
                     content_reference: None,
                     metadata: &metadata_json,
                 },
-                clock,
+                now,
             )
             .await?;
         if !written {
@@ -130,7 +130,7 @@ pub async fn submit_artifacts(
         // The store inserts with `ON CONFLICT ... DO NOTHING`: read the row back and compare it
         // before reporting success for a reused `artifact_id`.
         let stored = repo
-            .get_execution_artifact(submission.attempt_id, &item.artifact_id)
+            .get_execution_artifact(submission.attempt_id.as_str(), &item.artifact_id)
             .await?
             .ok_or(AppError::NotFound)?;
         let stored_metadata: Value = serde_json::from_str(&stored.metadata).unwrap_or(Value::Null);
@@ -153,10 +153,10 @@ pub async fn submit_artifacts(
 /// An upload of the bytes of one declared artifact.
 #[derive(Debug, Clone, Copy)]
 pub struct ContentUpload<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
     pub artifact_id: &'a str,
-    pub fencing_token: i64,
+    pub fencing_token: FencingToken,
     /// The `Content-Type` the upload carries, when it carries one.
     pub content_type: Option<&'a str>,
 }
@@ -202,10 +202,9 @@ fn content_type_matches(declared: &str, provided: &str) -> bool {
 /// decision, nothing was recorded yet and the `Content-Type` agrees with the manifest.
 pub async fn check_artifact_upload(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     upload: ContentUpload<'_>,
 ) -> Result<UploadChecked, AppError> {
-    let now = clock.now();
     let Some(facts) = queries::execution_artifacts::upload_facts(
         repo,
         upload.attempt_id,
@@ -245,7 +244,7 @@ pub async fn check_artifact_upload(
 /// removes its own copy in both cases.
 pub async fn commit_artifact_content(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     upload: ContentUpload<'_>,
     content_reference: &str,
 ) -> Result<ArtifactContentCommitResult, AppError> {
@@ -256,7 +255,7 @@ pub async fn commit_artifact_content(
             upload.artifact_id,
             upload.fencing_token,
             content_reference,
-            clock,
+            now,
         )
         .await?)
 }

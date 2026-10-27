@@ -3,14 +3,16 @@
 use crate::StoreError;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
-use tack_protocol::Clock;
 use tracing::instrument;
 
 use super::decisions::end_attempt_decisions;
-use super::shared::{canonical_json, stamp, terminal};
-use super::state;
+use super::shared::{terminal, token_column, token_from_column};
+use super::state::{self, Move};
 use crate::Repository;
-use tack_protocol::execution::ExecutionState;
+use crate::canonical_json;
+use tack_protocol::execution::{
+    AttemptId, ExecutionRequestId, ExecutionState, FencingToken, RecoveryKey, RunnerId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperatorRequeueResult {
@@ -73,10 +75,10 @@ pub enum RecoveryObservation {
 
 #[derive(Debug, Clone)]
 pub struct RecoveryObservationInput<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
-    pub recovery_key: &'a str,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
+    pub recovery_key: &'a RecoveryKey,
     pub observation: RecoveryObservation,
     pub details: &'a str,
 }
@@ -85,8 +87,8 @@ pub use tack_protocol::execution::RecoveryDisposition;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoveryResponse {
-    pub attempt_id: String,
-    pub recovery_key: String,
+    pub attempt_id: AttemptId,
+    pub recovery_key: RecoveryKey,
     pub disposition: RecoveryDisposition,
     pub committed_at: String,
 }
@@ -137,10 +139,10 @@ fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, 
     let details: serde_json::Value = serde_json::from_str(input.details)
         .map_err(|error| StoreError::malformed(error.to_string()))?;
     serde_json::to_string(&serde_json::json!({
-        "runner_id": input.runner_id,
-        "attempt_id": input.attempt_id,
-        "fencing_token": input.fencing_token,
-        "recovery_key": input.recovery_key,
+        "runner_id": input.runner_id.as_str(),
+        "attempt_id": input.attempt_id.as_str(),
+        "fencing_token": input.fencing_token.get(),
+        "recovery_key": input.recovery_key.as_str(),
         "observation": recovery_observation_name(input.observation),
         "details": canonical_json(details),
     }))
@@ -163,8 +165,10 @@ async fn apply_recovery(
     now: &str,
     waiting: Option<(&str, &str)>,
 ) -> Result<RecoveryObservationResult, StoreError> {
+    let (attempt, key) = (input.attempt_id.as_str(), input.recovery_key.as_str());
+    let fencing_token = token_column(input.fencing_token)?;
     if let Some(row) = sqlx::query("SELECT fingerprint,response FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?")
-        .bind(input.attempt_id).bind(input.recovery_key).fetch_optional(&mut *tx).await? {
+        .bind(attempt).bind(key).fetch_optional(&mut *tx).await? {
         let stored_fingerprint: String = row.get("fingerprint");
         if stored_fingerprint != fingerprint {
             tx.commit().await?;
@@ -180,20 +184,20 @@ async fn apply_recovery(
     let state: String = row.get("state");
     if terminal(&state) {
         let response = RecoveryResponse {
-            attempt_id: input.attempt_id.into(),
-            recovery_key: input.recovery_key.into(),
+            attempt_id: input.attempt_id.clone(),
+            recovery_key: input.recovery_key.clone(),
             disposition: RecoveryDisposition::AlreadyTerminal,
             committed_at: now.to_owned(),
         };
         let serialized_response = serde_json::json!({
-            "attempt_id": response.attempt_id,
-            "recovery_key": response.recovery_key,
+            "attempt_id": response.attempt_id.as_str(),
+            "recovery_key": response.recovery_key.as_str(),
             "disposition": "already_terminal",
             "committed_at": response.committed_at,
         })
         .to_string();
         sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?, 'already_terminal',?,?,?,?)")
-            .bind(input.attempt_id).bind(input.recovery_key).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
+            .bind(attempt).bind(key).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
         tx.commit().await?;
         return Ok(RecoveryObservationResult::Applied(response));
     }
@@ -222,22 +226,25 @@ async fn apply_recovery(
         RecoveryDisposition::AlreadyTerminal => unreachable!("terminal states return above"),
     };
     let classification = disposition.as_str();
+    let attempt_state_value = attempt_state;
     let (attempt_state, request_state) = (state::text(attempt_state), state::text(request_state));
-    let updated = sqlx::query("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision')")
+    let guard = Move::Abandon(attempt_state_value).guard();
+    let updated = sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND {guard}")))
         .bind(attempt_state)
         .bind(now)
-        .bind(input.attempt_id)
-        .bind(input.runner_id)
-        .bind(input.fencing_token)
+        .bind(attempt)
+        .bind(input.runner_id.as_str())
+        .bind(fencing_token)
         .execute(&mut *tx)
         .await?;
     if updated.rows_affected() != 1 {
         tx.rollback().await?;
         return Ok(RecoveryObservationResult::Stale);
     }
-    sqlx::query("UPDATE execution_requests SET state=?,cancellation_requested_at=CASE WHEN ?='queued' THEN NULL ELSE cancellation_requested_at END,updated_at=? WHERE id=?")
+    sqlx::query("UPDATE execution_requests SET state=?,cancellation_requested_at=CASE WHEN ?=? THEN NULL ELSE cancellation_requested_at END,updated_at=? WHERE id=?")
         .bind(request_state)
         .bind(request_state)
+        .bind(state::text(ExecutionState::Queued))
         .bind(now)
         .bind(&request)
         .execute(&mut *tx)
@@ -253,20 +260,20 @@ async fn apply_recovery(
     }
     sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(now).bind(&runner).execute(&mut *tx).await?;
     let response = RecoveryResponse {
-        attempt_id: input.attempt_id.into(),
-        recovery_key: input.recovery_key.into(),
+        attempt_id: input.attempt_id.clone(),
+        recovery_key: input.recovery_key.clone(),
         disposition,
         committed_at: now.to_owned(),
     };
     let serialized_response = serde_json::json!({
-        "attempt_id": response.attempt_id,
-        "recovery_key": response.recovery_key,
+        "attempt_id": response.attempt_id.as_str(),
+        "recovery_key": response.recovery_key.as_str(),
         "disposition": response.disposition.as_str(),
         "committed_at": response.committed_at,
     })
     .to_string();
     sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES(?,?,?,?,?,?,?)")
-        .bind(input.attempt_id).bind(input.recovery_key).bind(classification).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
+        .bind(attempt).bind(key).bind(classification).bind(input.details).bind(fingerprint).bind(serialized_response).bind(now).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(RecoveryObservationResult::Applied(response))
 }
@@ -290,8 +297,8 @@ fn recovery_response(serialized: &str) -> Result<RecoveryResponse, StoreError> {
         .parse::<RecoveryDisposition>()
         .map_err(|_| StoreError::malformed("invalid recovery replay response disposition"))?;
     Ok(RecoveryResponse {
-        attempt_id: required("attempt_id")?,
-        recovery_key: required("recovery_key")?,
+        attempt_id: AttemptId::new(required("attempt_id")?),
+        recovery_key: RecoveryKey::new(required("recovery_key")?),
         disposition,
         committed_at: required("committed_at")?,
     })
@@ -300,13 +307,13 @@ fn recovery_response(serialized: &str) -> Result<RecoveryResponse, StoreError> {
 impl Repository {
     pub async fn operator_requeue_needs_operator(
         &self,
-        request_id: &str,
-        recovery_key: &str,
+        request_id: &ExecutionRequestId,
+        recovery_key: &RecoveryKey,
         actor: &str,
         reason_fingerprint: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<OperatorRequeueResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         // Serialize duplicate operator requeues for the same request (e.g. a
         // double-clicked retry) before either transaction reads the
         // needs_operator attempt row. Two deferred readers can otherwise
@@ -314,7 +321,7 @@ impl Repository {
         // redeem_enrollment_token and claim_execution_idempotent_with_snapshot
         // fixes above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let attempt:Option<String>=sqlx::query_scalar("SELECT id FROM execution_attempts WHERE request_id=? AND state='needs_operator' ORDER BY attempt_number DESC LIMIT 1").bind(request_id).fetch_optional(&mut *tx).await?;
+        let attempt:Option<String>=sqlx::query_scalar(state::sql("SELECT id FROM execution_attempts WHERE request_id=? AND state={needs_operator} ORDER BY attempt_number DESC LIMIT 1")).bind(request_id.as_str()).fetch_optional(&mut *tx).await?;
         let Some(attempt) = attempt else {
             tx.commit().await?;
             return Ok(OperatorRequeueResult::InvalidTransition);
@@ -324,7 +331,7 @@ impl Repository {
             "SELECT details FROM execution_recovery_audits WHERE attempt_id=? AND recovery_key=?",
         )
         .bind(&attempt)
-        .bind(recovery_key)
+        .bind(recovery_key.as_str())
         .fetch_optional(&mut *tx)
         .await?
         {
@@ -336,17 +343,19 @@ impl Repository {
             });
         };
         let authoritative_recovery: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND classification='needs_operator' AND fingerprint <> '' AND response <> '')",
+            "SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND classification=? AND fingerprint <> '' AND response <> '')",
         )
         .bind(&attempt)
+        .bind(RecoveryDisposition::NeedsOperator.as_str())
         .fetch_one(&mut *tx)
         .await?;
         if !authoritative_recovery {
             tx.commit().await?;
             return Ok(OperatorRequeueResult::InvalidTransition);
         }
-        if sqlx::query("UPDATE execution_requests SET state='queued',cancellation_requested_at=NULL,updated_at=? WHERE id=? AND state='needs_operator'").bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(OperatorRequeueResult::InvalidTransition)};
-        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(recovery_key).bind(details).bind(&now).execute(&mut *tx).await?;
+        let (set, guard) = (Move::Requeue.set(), Move::Requeue.guard());
+        if sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_requests SET {set},cancellation_requested_at=NULL,updated_at=? WHERE id=? AND {guard}"))).bind(&now).bind(request_id.as_str()).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(OperatorRequeueResult::InvalidTransition)};
+        sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(recovery_key.as_str()).bind(details).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(OperatorRequeueResult::Requeued)
     }
@@ -354,9 +363,9 @@ impl Repository {
     pub async fn recover_attempt(
         &self,
         input: RecoveryObservationInput<'_>,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<RecoveryObservationResult, StoreError> {
-        let now = stamp(clock);
+        let now = now.to_rfc3339();
         let details = recovery_details(input.details)?;
         let fingerprint = recovery_fingerprint(&input)?;
         // Serialize duplicate recovery observations for the same attempt
@@ -367,7 +376,7 @@ impl Repository {
         // claim_execution_idempotent_with_snapshot fixes above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query("SELECT a.request_id,a.runner_id,a.state,a.started_at FROM execution_attempts a JOIN agent_runners r ON r.id=a.runner_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND r.state='active' AND r.revoked_at IS NULL")
-            .bind(input.attempt_id).bind(input.runner_id).bind(input.fencing_token).fetch_optional(&mut *tx).await?;
+            .bind(input.attempt_id.as_str()).bind(input.runner_id.as_str()).bind(token_column(input.fencing_token)?).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
             tx.commit().await?;
             return Ok(RecoveryObservationResult::Stale);
@@ -390,32 +399,38 @@ impl Repository {
         expired_before: DateTime<Utc>,
         code: &str,
         sentence: &str,
-        clock: &dyn Clock,
+        now: DateTime<Utc>,
     ) -> Result<u64, StoreError> {
-        let candidates = sqlx::query_scalar::<_, String>("SELECT id FROM execution_attempts WHERE state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
-            .bind(expired_before.to_rfc3339()).fetch_all(self.pool()).await?;
+        let candidates = sqlx::query_scalar::<_, String>(state::sql(
+            "SELECT id FROM execution_attempts WHERE state IN ({held}) AND lease_expires_at < ?",
+        ))
+        .bind(expired_before.to_rfc3339())
+        .fetch_all(self.pool())
+        .await?;
         let details =
             serde_json::json!({"journal_state": code, "process_observed": false}).to_string();
         let mut closed = 0;
         for attempt in candidates {
-            let now = stamp(clock);
+            let now = now.to_rfc3339();
             // The holder's state does not matter here: `needs_operator` never
             // starts a process, so a revoked or stopped runner's attempts are
             // asked about like any other. The row is read inside the
             // transaction, so an attempt that moved since the list is skipped.
             let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-            let row = sqlx::query("SELECT request_id,runner_id,fencing_token,state,started_at FROM execution_attempts WHERE id=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
+            let row = sqlx::query(state::sql("SELECT request_id,runner_id,fencing_token,state,started_at FROM execution_attempts WHERE id=? AND state IN ({held}) AND lease_expires_at < ?"))
                 .bind(&attempt).bind(expired_before.to_rfc3339()).fetch_optional(&mut *tx).await?;
             let Some(row) = row else {
                 tx.commit().await?;
                 continue;
             };
-            let runner: String = row.get("runner_id");
+            let runner = RunnerId::new(row.get::<String, _>("runner_id"));
+            let attempt = AttemptId::new(attempt);
+            let recovery_key = RecoveryKey::new(code);
             let input = RecoveryObservationInput {
                 runner_id: &runner,
                 attempt_id: &attempt,
-                fencing_token: row.get("fencing_token"),
-                recovery_key: code,
+                fencing_token: token_from_column(row.get("fencing_token"))?,
+                recovery_key: &recovery_key,
                 observation: RecoveryObservation::Ambiguous,
                 details: &details,
             };
@@ -458,18 +473,18 @@ impl Repository {
                 .await?;
         let request_state_counts = request_rows.into_iter().collect();
 
-        let stale_lease_count: i64 = sqlx::query_scalar(
+        let stale_lease_count: i64 = sqlx::query_scalar(state::sql(
             "SELECT COUNT(*) FROM execution_attempts WHERE lease_expires_at < ? \
-             AND state IN ('leased','preparing','running','waiting_decision')",
-        )
+             AND state IN ({held})",
+        ))
         .bind(&now_s)
         .fetch_one(self.pool())
         .await?;
-        let oldest_stale_lease_expires_at: Option<String> = sqlx::query_scalar(
+        let oldest_stale_lease_expires_at: Option<String> = sqlx::query_scalar(state::sql(
             "SELECT lease_expires_at FROM execution_attempts WHERE lease_expires_at < ? \
-             AND state IN ('leased','preparing','running','waiting_decision') \
+             AND state IN ({held}) \
              ORDER BY lease_expires_at ASC LIMIT 1",
-        )
+        ))
         .bind(&now_s)
         .fetch_optional(self.pool())
         .await?;
@@ -477,15 +492,15 @@ impl Repository {
             .and_then(|s| parse_rfc3339_checked(&s))
             .map(|expired_at| (now - expired_at).num_seconds().max(0));
 
-        let needs_operator_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM execution_requests WHERE state = 'needs_operator'",
-        )
+        let needs_operator_count: i64 = sqlx::query_scalar(state::sql(
+            "SELECT COUNT(*) FROM execution_requests WHERE state = {needs_operator}",
+        ))
         .fetch_one(self.pool())
         .await?;
-        let oldest_needs_operator_updated_at: Option<String> = sqlx::query_scalar(
-            "SELECT updated_at FROM execution_requests WHERE state = 'needs_operator' \
+        let oldest_needs_operator_updated_at: Option<String> = sqlx::query_scalar(state::sql(
+            "SELECT updated_at FROM execution_requests WHERE state = {needs_operator} \
              ORDER BY updated_at ASC LIMIT 1",
-        )
+        ))
         .fetch_optional(self.pool())
         .await?;
         let oldest_needs_operator_age_secs = oldest_needs_operator_updated_at

@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use tack_db::repo::execution::{OperatorRequeueResult, state};
 use tack_db::{Repository, queries};
-use tack_protocol::Clock;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{ExecutionRequestId, ExecutionState, RecoveryKey};
 
 use super::start_run::fingerprint;
 use crate::AppError;
@@ -20,20 +20,14 @@ pub struct Requeued {
 /// (`unknown` when it has none).
 pub async fn requeue(
     repo: &Repository,
-    clock: &dyn Clock,
-    request_id: &str,
-    recovery_key: &str,
+    now: DateTime<Utc>,
+    request_id: &ExecutionRequestId,
+    recovery_key: &RecoveryKey,
     reason: &str,
     actor: &str,
 ) -> Result<Requeued, AppError> {
     let result = repo
-        .operator_requeue_needs_operator(
-            request_id,
-            recovery_key,
-            actor,
-            &fingerprint(reason),
-            clock,
-        )
+        .operator_requeue_needs_operator(request_id, recovery_key, actor, &fingerprint(reason), now)
         .await?;
     match result {
         OperatorRequeueResult::Requeued => Ok(Requeued { replayed: false }),
@@ -42,14 +36,15 @@ pub async fn requeue(
             "the recovery key was used with a different confirmation".to_owned(),
         )),
         OperatorRequeueResult::InvalidTransition | OperatorRequeueResult::NotFound => {
-            let from = queries::execution_attempts::latest_state_of_request(repo, request_id)
-                .await
-                .ok()
-                .flatten()
-                .map_or_else(
-                    || "unknown".to_owned(),
-                    |state| state::text(state).to_owned(),
-                );
+            let from =
+                queries::execution_attempts::latest_state_of_request(repo, request_id.as_str())
+                    .await
+                    .ok()
+                    .flatten()
+                    .map_or_else(
+                        || "unknown".to_owned(),
+                        |state| state::text(state).to_owned(),
+                    );
             Err(AppError::InvalidTransition {
                 from,
                 to: state::text(ExecutionState::Queued).to_owned(),

@@ -6,8 +6,10 @@
 
 use std::future::Future;
 use std::time::Duration as StdDuration;
+use tack_protocol::Clock;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, FencingToken, RunnerId};
 use tack_test_support::{create_test_workspace, seed, setup_test_db};
 
 use chrono::{Duration, Utc};
@@ -77,7 +79,7 @@ async fn setup() -> (Repository, String) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("runner");
@@ -89,24 +91,11 @@ async fn setup() -> (Repository, String) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
     (repo, item.id.to_string())
-}
-
-/// A single fixed instant, used both as the snapshot's own declared
-/// `created_at` field below and as the clock `enqueue_execution` is called
-/// with in `running_attempt` — `enqueue_execution` rejects a snapshot whose
-/// `created_at` does not match the clock's `now()` *exactly*, so this must
-/// not be two separate `Utc::now()` reads.
-struct FixedExecutionClock(chrono::DateTime<Utc>);
-
-impl tack_protocol::Clock for FixedExecutionClock {
-    fn now(&self) -> chrono::DateTime<Utc> {
-        self.0
-    }
 }
 
 fn new_request<'a>(
@@ -149,30 +138,30 @@ fn new_request<'a>(
 /// comfortably longer than any sweep-wait loop below) and bumps it straight
 /// to `running`; the resolve/expiry paths under test here don't gate on how
 /// an attempt got to `running`, only on its current state/lease.
-async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, i64) {
+async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, FencingToken) {
     let request_id = format!("req-{tag}");
     let now = Utc::now();
-    repo.enqueue_execution(
-        new_request(&request_id, item_id, &request_id, now),
-        &FixedExecutionClock(now),
-    )
-    .await
-    .expect("enqueue");
+    repo.enqueue_execution(new_request(&request_id, item_id, &request_id, now), now)
+        .await
+        .expect("enqueue");
     let attempt_id = format!("att-{tag}");
     let claim = repo
         .claim_execution_idempotent_with_snapshot(
-            RUNNER_ID,
-            &attempt_id,
-            &attempt_id,
+            &RunnerId::new(RUNNER_ID),
+            &ClaimRequestId::new(&attempt_id),
+            &AttemptId::new(&attempt_id),
             Duration::minutes(10),
-            &SystemClock,
+            SystemClock.now(),
             RequestSelection::Naive,
         )
         .await
         .expect("claim")
         .expect("work available");
     seed::execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
-    (claim.lease.attempt_id, claim.lease.fencing_token)
+    (
+        claim.lease.attempt_id.into_inner(),
+        claim.lease.fencing_token,
+    )
 }
 
 /// Artifact storage root for one sweep-wiring test. The `TempDir` removes
@@ -200,7 +189,7 @@ async fn seed_real_artifact(
     storage: &ArtifactStorage,
     artifact_root: &std::path::Path,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     content: &[u8],
@@ -221,8 +210,8 @@ async fn seed_real_artifact(
         .expect("store real blob");
 
     repo.record_execution_artifact(
-        RUNNER_ID,
-        attempt_id,
+        &RunnerId::new(RUNNER_ID),
+        &AttemptId::new(attempt_id),
         fence,
         NewArtifact {
             id: row_id,
@@ -236,7 +225,7 @@ async fn seed_real_artifact(
             content_reference: Some(&stored.content_reference),
             metadata: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("record artifact");
@@ -264,14 +253,14 @@ async fn artifact_row_exists(repo: &Repository, row_id: &str) -> bool {
 async fn seed_stale_manifest_only_artifact(
     repo: &Repository,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     days_ago: i64,
 ) {
     repo.record_execution_artifact(
-        RUNNER_ID,
-        attempt_id,
+        &RunnerId::new(RUNNER_ID),
+        &AttemptId::new(attempt_id),
         fence,
         NewArtifact {
             id: row_id,
@@ -285,7 +274,7 @@ async fn seed_stale_manifest_only_artifact(
             content_reference: None,
             metadata: "{}",
         },
-        &SystemClock,
+        SystemClock.now(),
     )
     .await
     .expect("record manifest-only artifact");

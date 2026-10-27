@@ -53,8 +53,9 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::{
-    ActualExecution, AttemptId, EmbeddedCapabilitySnapshot, ExecutionState, ProtocolVersion,
-    RecoveryKey, RecoveryObservationRequest, RecoveryObservationResponse, StableErrorCode, Usage,
+    ActualExecution, AttemptId, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId,
+    EmbeddedCapabilitySnapshot, ExecutionState, FencingToken, ProtocolVersion,
+    RecoveryObservationRequest, RecoveryObservationResponse, StableErrorCode, Usage, WorkspaceId,
 };
 use uuid::Uuid;
 
@@ -334,6 +335,21 @@ fn as_u64(value: &Value, name: &str) -> runner_auth::ProtocolResult<u64> {
         .ok_or_else(|| invalid_request(name, &format!("{name} must be a non-negative integer")))
 }
 
+/// A fencing token as the wire carries it, or `None` when the store's integer column cannot
+/// hold it.
+fn fencing_token_from_wire(token: u64) -> Option<FencingToken> {
+    i64::try_from(token).ok().map(|_| FencingToken::new(token))
+}
+
+/// A fencing token, which is unsigned on the wire; one the store's integer column cannot hold
+/// is as malformed as a negative one.
+fn as_fencing_token(value: &Value, name: &str) -> runner_auth::ProtocolResult<FencingToken> {
+    as_u64(value, name)
+        .ok()
+        .and_then(fencing_token_from_wire)
+        .ok_or_else(|| invalid_request(name, &format!("{name} must be a non-negative integer")))
+}
+
 fn as_array<'a>(value: &'a Value, name: &str) -> runner_auth::ProtocolResult<&'a Vec<Value>> {
     field(value, name)?
         .as_array()
@@ -407,16 +423,16 @@ fn generate_raw_credential() -> String {
 async fn authenticate_attempt_request(
     state: &RunnerProtocolState,
     headers: &HeaderMap,
-    attempt_id: &str,
+    attempt_id: &AttemptId,
     body: &[u8],
-) -> runner_auth::ProtocolResult<(runner_auth::RunnerPrincipal, Value, i64)> {
+) -> runner_auth::ProtocolResult<(runner_auth::RunnerPrincipal, Value, FencingToken)> {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, headers, now).await?;
     let value = parse_body(body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
     runner_auth::require_matching_attempt(&value, attempt_id)?;
-    let fencing_token = as_i64(&value, "fencing_token")?;
+    let fencing_token = as_fencing_token(&value, "fencing_token")?;
     Ok((principal, value, fencing_token))
 }
 
@@ -506,7 +522,7 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
 
     let enrolled = tack_app::runs::enroll::enroll(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Enrollment {
             token_hash: &token_hash,
             credential_hash: &credential_hash_value,
@@ -654,9 +670,9 @@ pub async fn refresh(
     let new_credential_hash = raw_credential.as_deref().map(runner_auth::credential_hash);
     let refreshed = tack_app::runs::refresh::refresh(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Refresh {
-            runner_id: &principal.runner_id,
+            runner_id: principal.runner_id.as_str(),
             presented_credential_hash: &principal.credential_hash,
             runner_version: &runner_version,
             labels_json: &labels_json,
@@ -726,7 +742,7 @@ pub async fn claim(
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
-    let claim_request_id = as_str(&value, "claim_request_id")?.to_owned();
+    let claim_request_id = ClaimRequestId::new(as_str(&value, "claim_request_id")?);
     // `available_capacity` is part of the wire contract (`claim.request.json`
     // requires it) but has no effect here: unlike `heartbeat`, whose
     // `heartbeat_batch` repository call cross-checks a runner's reported
@@ -752,7 +768,7 @@ pub async fn claim(
     // attempt, then takes the fenced claim, which re-checks that choice before leasing it.
     let claimed = tack_app::runs::claim::claim(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         &principal.runner_id,
         &claim_request_id,
         Duration::seconds(LIMITS.lease_duration_seconds),
@@ -848,21 +864,26 @@ pub async fn heartbeat(
         .iter()
         .map(|entry| -> runner_auth::ProtocolResult<ReportedLease> {
             Ok(ReportedLease {
-                attempt_id: as_str(entry, "attempt_id")?.to_owned(),
-                fencing_token: as_i64(entry, "fencing_token")?,
-                state: as_str(entry, "state")?.to_owned(),
+                attempt_id: AttemptId::new(as_str(entry, "attempt_id")?),
+                fencing_token: as_fencing_token(entry, "fencing_token")?,
+                state: as_str(entry, "state")?.parse().map_err(|_| {
+                    invalid_request(
+                        "state",
+                        "state must be a lifecycle state of runner protocol v1",
+                    )
+                })?,
                 journal_state: as_str(entry, "journal_state")?.to_owned(),
                 last_event_checkpoint: entry
                     .get("last_event_checkpoint")
                     .and_then(Value::as_str)
-                    .map(str::to_owned),
+                    .map(Checkpoint::new),
             })
         })
         .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
 
     let result = tack_app::runs::heartbeat::heartbeat(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Beat {
             runner_id: &principal.runner_id,
             heartbeat_id: &heartbeat_id,
@@ -893,7 +914,8 @@ pub async fn heartbeat(
             "The heartbeat_id was already used with different content",
             json!({"heartbeat_id": heartbeat_id}),
         )),
-        Heartbeat::StaleLease(id) => Err(stale_lease(&id)),
+        Heartbeat::StaleLease(id) => Err(stale_lease(id.as_str())),
+        Heartbeat::RunnerNotActive => Err(stale_lease(principal.runner_id.as_str())),
     }
 }
 
@@ -908,7 +930,7 @@ pub async fn heartbeat(
 pub async fn accept_attempt(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     transition_attempt(
@@ -924,7 +946,7 @@ pub async fn accept_attempt(
 pub async fn start_attempt(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     transition_attempt(
@@ -963,13 +985,13 @@ fn start_report(body: &Value) -> Value {
 async fn transition_attempt(
     state: RunnerProtocolState,
     headers: HeaderMap,
-    attempt_id: String,
+    attempt_id: AttemptId,
     body: Bytes,
     phase: AttemptTransitionPhase,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let workspace_id = as_str(&value, "workspace_id")?.to_owned();
+    let workspace_id = WorkspaceId::new(as_str(&value, "workspace_id")?);
     let base_revision = as_str(&value, "base_revision")?.to_owned();
     let process_id = value
         .get("process_id")
@@ -1000,7 +1022,7 @@ async fn transition_attempt(
                 base_revision: &base_revision,
                 process_id: process_id.as_deref(),
             },
-            state.clock.as_ref(),
+            state.clock.now(),
         )
         .await
         .map_err(|_| internal_error("Could not record attempt transition"))?;
@@ -1035,7 +1057,7 @@ async fn transition_attempt(
             "replayed": true,
             "committed_at": resp.committed_at,
         }))),
-        AttemptTransitionResult::Stale => Err(stale_lease(&attempt_id)),
+        AttemptTransitionResult::Stale => Err(stale_lease(attempt_id.as_str())),
         AttemptTransitionResult::Conflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::InvalidTransition,
@@ -1062,7 +1084,7 @@ struct PreparedEvent {
 pub async fn submit_events(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     // `event_batch_bytes_max` (1 MiB) equals `json_body_bytes_max`, so
@@ -1070,11 +1092,11 @@ pub async fn submit_events(
     // this endpoint's whole-batch byte cap; no separate check is needed.
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let checkpoint = as_str(&value, "checkpoint")?.to_owned();
+    let checkpoint = Checkpoint::new(as_str(&value, "checkpoint")?);
     let previous_checkpoint = value
         .get("previous_checkpoint")
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(Checkpoint::new);
     let events = as_array(&value, "events")?.clone();
     if events.len() as u64 > LIMITS.event_batch_count_max {
         return Err(payload_too_large(
@@ -1118,12 +1140,12 @@ pub async fn submit_events(
 
     let result = tack_app::runs::report_events::report_events(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         EventReport {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
             fencing_token,
-            previous_checkpoint: previous_checkpoint.as_deref(),
+            previous_checkpoint: previous_checkpoint.as_ref(),
             checkpoint: &checkpoint,
             events: &reported,
         },
@@ -1157,7 +1179,7 @@ pub async fn submit_events(
             "The event batch checkpoint does not match the attempt's current stream position",
             json!({"attempt_id": attempt_id}),
         )),
-        EventsReported::Stale => Err(stale_lease(&attempt_id)),
+        EventsReported::Stale => Err(stale_lease(attempt_id.as_str())),
     }
 }
 
@@ -1255,7 +1277,7 @@ fn bounded_string_list(object: &Value, field: &str) -> runner_auth::ProtocolResu
 pub async fn create_decision(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
@@ -1305,7 +1327,7 @@ pub async fn create_decision(
 
     let created = tack_app::runs::create_decision::create_decision(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         DecisionRequest {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
@@ -1332,7 +1354,7 @@ pub async fn create_decision(
             "state": decision_state,
             "created_at": created_at,
         }))),
-        DecisionCreated::Stale => Err(stale_lease(&attempt_id)),
+        DecisionCreated::Stale => Err(stale_lease(attempt_id.as_str())),
         DecisionCreated::Ineligible {
             state: attempt_state,
         } => Err(protocol_error(
@@ -1353,7 +1375,7 @@ pub async fn create_decision(
 pub async fn poll_decisions(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
@@ -1369,13 +1391,16 @@ pub async fn poll_decisions(
     .await
     .map_err(|_| internal_error("Could not verify attempt"))?;
     if !holds_fence {
-        return Err(stale_lease(&attempt_id));
+        return Err(stale_lease(attempt_id.as_str()));
     }
 
-    let rows =
-        queries::execution_decisions::decisions_changed_since(&state.repo, &attempt_id, &after)
-            .await
-            .map_err(|_| internal_error("Could not poll decisions"))?;
+    let rows = queries::execution_decisions::decisions_changed_since(
+        &state.repo,
+        attempt_id.as_str(),
+        &after,
+    )
+    .await
+    .map_err(|_| internal_error("Could not poll decisions"))?;
 
     let mut next_after = after.clone();
     let decisions: Vec<Value> = rows
@@ -1410,7 +1435,7 @@ pub async fn poll_decisions(
 pub async fn submit_artifacts(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
@@ -1493,7 +1518,7 @@ pub async fn submit_artifacts(
 
     let submitted = tack_app::runs::submit_artifacts::submit_artifacts(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         ManifestSubmission {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
@@ -1535,7 +1560,7 @@ pub async fn submit_artifacts(
                 "artifacts": accepted,
             })))
         }
-        ManifestSubmitted::Stale => Err(stale_lease(&attempt_id)),
+        ManifestSubmitted::Stale => Err(stale_lease(attempt_id.as_str())),
         ManifestSubmitted::Ineligible {
             state: attempt_state,
         } => Err(protocol_error(
@@ -1570,7 +1595,7 @@ pub async fn submit_artifacts(
 pub async fn put_artifact_content(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path((attempt_id, artifact_id)): Path<(String, String)>,
+    Path((attempt_id, artifact_id)): Path<(AttemptId, String)>,
     body: Body,
 ) -> HandlerResult {
     let now = state.clock.now();
@@ -1579,11 +1604,12 @@ pub async fn put_artifact_content(
     let fencing_token = headers
         .get(ARTIFACT_FENCING_TOKEN_HEADER)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<i64>().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .and_then(fencing_token_from_wire)
         .ok_or_else(|| {
             invalid_request(
                 "fencing_token",
-                "The X-Tack-Fencing-Token header is required and must be an integer",
+                "The X-Tack-Fencing-Token header is required and must be a non-negative integer",
             )
         })?;
 
@@ -1598,7 +1624,7 @@ pub async fn put_artifact_content(
     };
     let target = match tack_app::runs::submit_artifacts::check_artifact_upload(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         upload,
     )
     .await
@@ -1610,7 +1636,7 @@ pub async fn put_artifact_content(
         // runner_id mismatch are all indistinguishable from a stale lease to an unauthenticated
         // caller, and must stay that way — a more specific error here would let a caller probe
         // for which of the three is true.
-        UploadChecked::Stale => return Err(stale_lease(&attempt_id)),
+        UploadChecked::Stale => return Err(stale_lease(attempt_id.as_str())),
         UploadChecked::Ineligible {
             state: attempt_state,
         } => {
@@ -1642,7 +1668,7 @@ pub async fn put_artifact_content(
     let stored = state
         .artifact_storage
         .store_streaming(
-            &attempt_id,
+            attempt_id.as_str(),
             &artifact_id,
             target.size_bytes,
             &target.sha256,
@@ -1678,7 +1704,7 @@ pub async fn put_artifact_content(
 
     let commit = tack_app::runs::submit_artifacts::commit_artifact_content(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         upload,
         &stored.content_reference,
     )
@@ -1715,7 +1741,7 @@ pub async fn put_artifact_content(
                 .artifact_storage
                 .remove_blob(&stored.content_reference)
                 .await;
-            Err(stale_lease(&attempt_id))
+            Err(stale_lease(attempt_id.as_str()))
         }
     }
 }
@@ -1727,12 +1753,12 @@ pub async fn put_artifact_content(
 pub async fn submit_completion(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let completion_id = as_str(&value, "completion_id")?.to_owned();
+    let completion_id = CompletionId::new(as_str(&value, "completion_id")?);
     let terminal_state = as_str(&value, "terminal_state")?
         .parse::<ExecutionState>()
         .ok()
@@ -1772,7 +1798,7 @@ pub async fn submit_completion(
     let final_event_checkpoint = value
         .get("final_event_checkpoint")
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .map(Checkpoint::new);
 
     let terminal_reason_json = serde_json::to_string(&terminal_reason)
         .map_err(|_| internal_error("Could not encode terminal_reason"))?;
@@ -1784,13 +1810,13 @@ pub async fn submit_completion(
     let storage = state.artifact_storage.as_ref();
     let completed = tack_app::runs::complete::complete(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         CompletionReport {
             runner_id: &principal.runner_id,
             attempt_id: &attempt_id,
             fencing_token,
             completion_id: &completion_id,
-            final_event_checkpoint: final_event_checkpoint.as_deref(),
+            final_event_checkpoint: final_event_checkpoint.as_ref(),
             terminal_state,
             terminal_reason_json: &terminal_reason_json,
             actual_execution_json: &actual_execution_json,
@@ -1818,9 +1844,9 @@ pub async fn submit_completion(
             // The pack goes to prill's store; the runner does not wait for it, and a failure
             // is retried when the pull request is next followed.
             let attempt_id = attempt_id.clone();
-            app.tasks
-                .clone()
-                .spawn(async move { crate::prill_store::record_mrp(&app, &attempt_id).await });
+            app.tasks.clone().spawn(async move {
+                crate::prill_store::record_mrp(&app, attempt_id.as_str()).await
+            });
         }
     }
 
@@ -1860,7 +1886,7 @@ pub async fn submit_completion(
             "The completion could not be committed",
             json!({"attempt_id": attempt_id}),
         )),
-        Completed::Stale => Err(stale_lease(&attempt_id)),
+        Completed::Stale => Err(stale_lease(attempt_id.as_str())),
     }
 }
 
@@ -1883,12 +1909,13 @@ async fn read_pack(
 pub async fn observe_cancellation_report(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let cancellation_request_id = as_str(&value, "cancellation_request_id")?.to_owned();
+    let cancellation_request_id =
+        CancellationRequestId::new(as_str(&value, "cancellation_request_id")?);
     let observation = as_str(&value, "observation")?;
     if observation != "process_stopped" {
         return Err(invalid_request(
@@ -1918,7 +1945,7 @@ pub async fn observe_cancellation_report(
                 details: &details_json,
                 observation: &observation_json,
             },
-            state.clock.as_ref(),
+            state.clock.now(),
         )
         .await
         .map_err(|_| internal_error("Could not record cancellation observation"))?;
@@ -1946,7 +1973,7 @@ pub async fn observe_cancellation_report(
             "The cancellation_request_id was already used with different content",
             json!({"cancellation_request_id": cancellation_request_id}),
         )),
-        CancellationObservation::Stale => Err(stale_lease(&attempt_id)),
+        CancellationObservation::Stale => Err(stale_lease(attempt_id.as_str())),
         CancellationObservation::AlreadyTerminal { state } => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::InvalidTransition,
@@ -1972,7 +1999,7 @@ pub async fn observe_cancellation_report(
 pub async fn observe_recovery(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    Path(attempt_id): Path<String>,
+    Path(attempt_id): Path<AttemptId>,
     body: Bytes,
 ) -> HandlerResult {
     let now = state.clock.now();
@@ -1987,24 +2014,29 @@ pub async fn observe_recovery(
             "The recovery-observation request does not match the runner-v1 shape",
         )
     })?;
-    if request.attempt_id.as_str() != attempt_id {
+    if request.attempt_id != attempt_id {
         return Err(invalid_request(
             "attempt_id",
             "attempt_id in the body must match the path",
         ));
     }
-    let fencing_token = request.fencing_token.0 as i64;
+    let fencing_token = fencing_token_from_wire(request.fencing_token.get()).ok_or_else(|| {
+        invalid_request(
+            "fencing_token",
+            "fencing_token must be a non-negative integer",
+        )
+    })?;
     let details_json = serde_json::to_string(&request.details)
         .map_err(|_| internal_error("Could not encode details"))?;
 
     let observed = tack_app::runs::observe_recovery::observe_recovery(
         &state.repo,
-        state.clock.as_ref(),
+        state.clock.now(),
         Observation {
             runner_id: &principal.runner_id,
-            attempt_id: request.attempt_id.as_str(),
+            attempt_id: &request.attempt_id,
             fencing_token,
-            recovery_key: request.recovery_key.as_str(),
+            recovery_key: &request.recovery_key,
             observation: request.observation,
             details_json: &details_json,
         },
@@ -2022,15 +2054,15 @@ pub async fn observe_recovery(
                 json!({"recovery_key": request.recovery_key.as_str()}),
             ));
         }
-        RecoveryObserved::Stale => return Err(stale_lease(&attempt_id)),
+        RecoveryObserved::Stale => return Err(stale_lease(attempt_id.as_str())),
     };
     let committed_at = DateTime::parse_from_rfc3339(&recovered.committed_at)
         .map(|value| value.with_timezone(&Utc))
         .map_err(|_| internal_error("Stored committed_at is corrupt"))?;
     let response = RecoveryObservationResponse {
         protocol_version: ProtocolVersion::v1(),
-        attempt_id: AttemptId::new(recovered.attempt_id),
-        recovery_key: RecoveryKey::new(recovered.recovery_key),
+        attempt_id: recovered.attempt_id,
+        recovery_key: recovered.recovery_key,
         disposition: recovered.disposition,
         replayed: recovered.replayed,
         committed_at,

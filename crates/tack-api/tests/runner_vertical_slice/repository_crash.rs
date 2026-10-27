@@ -1,5 +1,8 @@
 use std::sync::Mutex;
 use tack_protocol::Clock;
+use tack_protocol::execution::{
+    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryKey, RunnerId,
+};
 
 use crate::common;
 use chrono::{DateTime, Duration, Utc};
@@ -14,7 +17,7 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::ExecutionState;
-use tack_test_support::{create_test_workspace, seed, setup_test_db};
+use tack_test_support::{create_test_workspace, ids, seed, setup_test_db};
 
 struct FakeClock(Mutex<DateTime<Utc>>);
 
@@ -99,7 +102,7 @@ async fn fixture() -> Fixture {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -111,7 +114,7 @@ async fn fixture() -> Fixture {
             tool_policy: "{}",
             limits: "{}",
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -177,7 +180,7 @@ async fn enqueue(fixture: &Fixture) {
     let snapshot = request_snapshot(&fixture.item_id, &fixture.clock);
     fixture
         .repo
-        .enqueue_execution(request(&fixture.item_id, &snapshot), &fixture.clock)
+        .enqueue_execution(request(&fixture.item_id, &snapshot), fixture.clock.now())
         .await
         .expect("enqueue");
 }
@@ -209,11 +212,11 @@ async fn try_claim(
     fixture
         .repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-crash",
-            claim_request_id,
-            attempt_id,
+            &RunnerId::new("runner-crash"),
+            &ClaimRequestId::new(claim_request_id),
+            &AttemptId::new(attempt_id),
             Duration::seconds(60),
-            &fixture.clock,
+            fixture.clock.now(),
             RequestSelection::Naive,
         )
         .await
@@ -252,7 +255,11 @@ async fn claim_crash_rolls_back_then_retry_keeps_fence_at_one() {
         .await
         .expect("claim retry")
         .expect("lease after retry");
-    assert_eq!(lease.lease.fencing_token, 1, "rollback cannot burn a fence");
+    assert_eq!(
+        lease.lease.fencing_token,
+        FencingToken::new(1),
+        "rollback cannot burn a fence"
+    );
 }
 
 /// Records a recovery observation for the fixed `attempt-crash`/fence 1.
@@ -266,14 +273,14 @@ async fn recover(
         .repo
         .recover_attempt(
             RecoveryObservationInput {
-                runner_id: "runner-crash",
-                attempt_id: "attempt-crash",
-                fencing_token: 1,
-                recovery_key,
+                runner_id: &RunnerId::new("runner-crash"),
+                attempt_id: &AttemptId::new("attempt-crash"),
+                fencing_token: FencingToken::new(1),
+                recovery_key: &RecoveryKey::new(recovery_key),
                 observation,
                 details,
             },
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
         .expect("record recovery")
@@ -342,11 +349,11 @@ fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
 
 fn crash_event_batch() -> EventBatch<'static> {
     EventBatch {
-        runner_id: "runner-crash",
-        attempt_id: "attempt-crash",
-        fencing_token: 1,
+        runner_id: ids::runner("runner-crash"),
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
         previous_checkpoint: None,
-        checkpoint: "checkpoint-1",
+        checkpoint: ids::checkpoint("checkpoint-1"),
     }
 }
 
@@ -408,7 +415,7 @@ async fn assert_event_batch_fault_rolls_back(fault: &EventBatchFault) {
     assert!(
         fixture
             .repo
-            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, fixture.clock.now())
             .await
             .is_err(),
         "{}",
@@ -436,7 +443,7 @@ async fn event_batch_replay_writes_events_exactly_once() {
     assert!(matches!(
         fixture
             .repo
-            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, fixture.clock.now())
             .await
             .expect("first report"),
         EventApplyResult::Applied(ref result) if !result.replayed
@@ -444,7 +451,7 @@ async fn event_batch_replay_writes_events_exactly_once() {
     assert!(matches!(
         fixture
             .repo
-            .append_execution_events_result(crash_event_batch(), &events, &fixture.clock)
+            .append_execution_events_result(crash_event_batch(), &events, fixture.clock.now())
             .await
             .expect("replay"),
         EventApplyResult::Applied(ref result) if result.replayed
@@ -455,12 +462,12 @@ async fn event_batch_replay_writes_events_exactly_once() {
 
 fn completion_crash() -> Completion<'static> {
     Completion {
-        runner_id: "runner-crash",
-        attempt_id: "attempt-crash",
-        fencing_token: 1,
-        completion_id: "completion-1",
+        runner_id: ids::runner("runner-crash"),
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
+        completion_id: ids::completion("completion-1"),
         final_event_checkpoint: None,
-        terminal_state: "succeeded",
+        terminal_state: tack_protocol::execution::ExecutionState::Succeeded,
         terminal_reason: "completed",
         actual_execution: "{}",
         usage: "{}",
@@ -485,7 +492,7 @@ async fn completion_crash_rolls_back_attempt_and_request() {
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), &fixture.clock)
+            .complete_execution(completion_crash(), fixture.clock.now())
             .await
             .is_err()
     );
@@ -506,14 +513,14 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), &fixture.clock)
+            .complete_execution(completion_crash(), fixture.clock.now())
             .await
             .expect("completion")
     );
     assert!(
         fixture
             .repo
-            .complete_execution(completion_crash(), &fixture.clock)
+            .complete_execution(completion_crash(), fixture.clock.now())
             .await
             .expect("completion replay")
     );
@@ -531,12 +538,15 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
 async fn request_cancellation(fixture: &Fixture) -> Result<bool, StoreError> {
     fixture
         .repo
-        .request_execution_cancellation("request-crash", &fixture.clock)
+        .request_execution_cancellation(
+            &ExecutionRequestId::new("request-crash"),
+            fixture.clock.now(),
+        )
         .await
 }
 
 /// The request-crash row's `(state, cancellation_requested_at)`.
-async fn cancellation_state(fixture: &Fixture) -> (String, Option<String>) {
+async fn cancellation_state(fixture: &Fixture) -> (ExecutionState, Option<String>) {
     let detail = queries::execution_requests::request_detail(&fixture.repo, "request-crash")
         .await
         .expect("cancellation state")
@@ -561,7 +571,7 @@ async fn cancellation_crash_retries_without_false_terminal_state() {
 
     assert!(request_cancellation(&fixture).await.is_err());
     let (state, cancelled_at) = cancellation_state(&fixture).await;
-    assert_eq!(state, "leased");
+    assert_eq!(state, ExecutionState::Leased);
     assert_eq!(cancelled_at, None);
 
     seed::drop_trigger(&fixture.repo, "inject_cancel_crash").await;
@@ -571,7 +581,7 @@ async fn cancellation_crash_retries_without_false_terminal_state() {
             .expect("cancellation retry")
     );
     let (state, cancelled_at) = cancellation_state(&fixture).await;
-    assert_eq!(state, "leased");
+    assert_eq!(state, ExecutionState::Leased);
     assert!(
         cancelled_at.is_some(),
         "requesting cancellation must not pretend the attempt is terminal"
@@ -615,7 +625,7 @@ async fn redeem(fixture: &Fixture) -> Result<RedeemEnrollmentResult, tack_db::St
             1,
             "{}",
             1,
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
 }
@@ -628,7 +638,7 @@ async fn enrollment_redeem_has_one_winner_and_keeps_hash_only_token() {
         .create_pending_runner_and_issue_token(
             pending_enroll_runner(),
             pending_enroll_token(&fixture.clock),
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
         .expect("pending runner and token");
@@ -662,9 +672,9 @@ async fn enrollment_redeem_has_one_winner_and_keeps_hash_only_token() {
 
 fn crash_heartbeat_lease() -> [HeartbeatLease<'static>; 1] {
     [HeartbeatLease {
-        attempt_id: "attempt-crash",
-        fencing_token: 1,
-        state: "running",
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
+        state: ExecutionState::Running,
         journal_state: "process_observed_running",
         last_event_checkpoint: None,
     }]
@@ -680,13 +690,13 @@ async fn crash_heartbeat(
     fixture
         .repo
         .heartbeat_batch(
-            "runner-crash",
+            &RunnerId::new("runner-crash"),
             "hb-crash-1",
             observed_at,
             0,
             &crash_heartbeat_lease(),
             Duration::seconds(60),
-            &fixture.clock,
+            fixture.clock.now(),
         )
         .await
 }

@@ -1,7 +1,86 @@
-use tack_protocol::execution::ExecutionState;
+use std::collections::HashMap;
 
-use crate::repo::execution::state;
+use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken, RunnerId};
+
+use crate::queries::attempt_reviews::AttemptReviewRow;
+use crate::repo::autonomy::MergeRow;
+use crate::repo::execution::{AttemptListingRow, state, token_column};
+use crate::repo::pull_requests::PullRequestRow;
 use crate::{Repository, StoreError};
+
+/// One attempt of a request with what became of it: the pull request it opened, the operator's
+/// verdict and the merge ledger's row, each `None` when there is none.
+#[derive(Debug, Clone)]
+pub struct AttemptWithOutcomes {
+    pub attempt: AttemptListingRow,
+    pub pull_request: Option<PullRequestRow>,
+    pub review: Option<AttemptReviewRow>,
+    pub merge: Option<MergeRow>,
+}
+
+/// Every attempt of `request_id`, oldest first, each with its pull request, review and merge. The
+/// outcomes are read for the whole request at once (one query per table, however many attempts
+/// the request has), and any failure is returned.
+pub async fn attempts_with_outcomes(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Vec<AttemptWithOutcomes>, StoreError> {
+    let attempts = repo.list_attempts_for_request(request_id).await?;
+    if attempts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut pull_requests: HashMap<String, PullRequestRow> = sqlx::query_as::<_, PullRequestRow>(
+        "SELECT * FROM pull_requests WHERE attempt_id IN \
+         (SELECT id FROM execution_attempts WHERE request_id = ?)",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?
+    .into_iter()
+    .map(|row| (row.attempt_id.clone(), row))
+    .collect();
+    let mut reviews: HashMap<String, AttemptReviewRow> = sqlx::query_as::<
+        _,
+        (String, String, Option<String>, String),
+    >(
+        "SELECT attempt_id, verdict, note, reviewed_at FROM attempt_reviews WHERE attempt_id IN \
+             (SELECT id FROM execution_attempts WHERE request_id = ?)",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?
+    .into_iter()
+    .map(|(attempt_id, verdict, note, reviewed_at)| {
+        (
+            attempt_id,
+            AttemptReviewRow {
+                verdict,
+                note,
+                reviewed_at,
+            },
+        )
+    })
+    .collect();
+    let mut merges: HashMap<String, MergeRow> = sqlx::query_as::<_, MergeRow>(
+        "SELECT * FROM tack_merges WHERE attempt_id IN \
+         (SELECT id FROM execution_attempts WHERE request_id = ?)",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?
+    .into_iter()
+    .map(|row| (row.attempt_id.clone(), row))
+    .collect();
+    Ok(attempts
+        .into_iter()
+        .map(|attempt| AttemptWithOutcomes {
+            pull_request: pull_requests.remove(&attempt.id),
+            review: reviews.remove(&attempt.id),
+            merge: merges.remove(&attempt.id),
+            attempt,
+        })
+        .collect())
+}
 
 /// The state an attempt is in, or `None` when no attempt has this id.
 pub async fn attempt_state(
@@ -78,16 +157,16 @@ pub struct AttemptLease {
 /// has all three: a wrong id, a wrong runner and a stale fence look the same.
 pub async fn attempt_lease(
     repo: &Repository,
-    attempt_id: &str,
-    runner_id: &str,
-    fencing_token: i64,
+    attempt_id: &AttemptId,
+    runner_id: &RunnerId,
+    fencing_token: FencingToken,
 ) -> Result<Option<AttemptLease>, StoreError> {
     let row: Option<(String, String)> = sqlx::query_as(
         "SELECT state, lease_expires_at FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?",
     )
-    .bind(attempt_id)
-    .bind(runner_id)
-    .bind(fencing_token)
+    .bind(attempt_id.as_str())
+    .bind(runner_id.as_str())
+    .bind(token_column(fencing_token)?)
     .fetch_optional(repo.pool())
     .await?;
     row.map(|(state_text, lease_expires_at)| {
@@ -102,16 +181,16 @@ pub async fn attempt_lease(
 /// Whether `runner_id` holds the attempt under `fencing_token`, whatever its state or lease.
 pub async fn holds_fence(
     repo: &Repository,
-    attempt_id: &str,
-    runner_id: &str,
-    fencing_token: i64,
+    attempt_id: &AttemptId,
+    runner_id: &RunnerId,
+    fencing_token: FencingToken,
 ) -> Result<bool, StoreError> {
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?)",
     )
-    .bind(attempt_id)
-    .bind(runner_id)
-    .bind(fencing_token)
+    .bind(attempt_id.as_str())
+    .bind(runner_id.as_str())
+    .bind(token_column(fencing_token)?)
     .fetch_one(repo.pool())
     .await?)
 }
@@ -195,14 +274,14 @@ pub async fn newest_pushed_attempt_of_item(
     repo: &Repository,
     item_id: &str,
 ) -> Result<Option<String>, StoreError> {
-    Ok(sqlx::query_scalar(
+    Ok(sqlx::query_scalar(state::sql(
         "SELECT a.id FROM execution_attempts a
          JOIN execution_requests r ON r.id = a.request_id
-         WHERE r.item_id = ? AND a.state = 'succeeded'
+         WHERE r.item_id = ? AND a.state = {succeeded}
            AND json_extract(a.actual_execution, '$.git.pushed') = 1
            AND json_extract(a.actual_execution, '$.git.head_commit') IS NOT NULL
          ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1",
-    )
+    ))
     .bind(item_id)
     .fetch_optional(repo.pool())
     .await?)

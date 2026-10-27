@@ -2,17 +2,18 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_db::repo::execution::NewDecision;
 use tack_db::{Repository, queries};
-use tack_protocol::Clock;
-use tack_protocol::execution::{ExecutionState, TransitionActor, validate_transition};
+use tack_protocol::execution::{
+    AttemptId, ExecutionState, FencingToken, RunnerId, TransitionActor, validate_transition,
+};
 use uuid::Uuid;
 
 use crate::AppError;
 
 /// A question an attempt asks the person while it waits.
 pub struct DecisionRequest<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
     /// The runner's own id for the question; the same id again is a replay.
     pub decision_id: &'a str,
     pub kind: &'a str,
@@ -46,10 +47,9 @@ pub enum DecisionCreated {
 /// and overwrites nothing.
 pub async fn create_decision(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     request: DecisionRequest<'_>,
 ) -> Result<DecisionCreated, AppError> {
-    let now = clock.now();
     // A wrong runner or fence (`Stale`) is told apart from an attempt that cannot wait
     // (`Ineligible`) before the write, which collapses both into one answer.
     let Some(lease) = queries::execution_attempts::attempt_lease(
@@ -98,7 +98,7 @@ pub async fn create_decision(
                 expires_at: request.expires_at,
                 recommendation: recommendation_json.as_deref(),
             },
-            clock,
+            now,
         )
         .await?;
     if !written {
@@ -111,7 +111,7 @@ pub async fn create_decision(
     // conflict; an exact replay answers with the row's own state and creation time.
     let stored = queries::execution_decisions::decision_of_attempt(
         repo,
-        request.attempt_id,
+        request.attempt_id.as_str(),
         request.decision_id,
     )
     .await?

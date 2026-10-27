@@ -1,7 +1,6 @@
 use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{CredentialRotationResult, RunnerCapabilityUpdate};
-use tack_protocol::Clock;
 
 use super::enroll::CREDENTIAL_LIFETIME_DAYS;
 use crate::AppError;
@@ -38,20 +37,19 @@ pub enum Refreshed {
 /// `AppError::Store(StoreError::Conflict)`.
 pub async fn refresh(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     refresh: Refresh<'_>,
 ) -> Result<Refreshed, AppError> {
-    let accepted_at = clock.now();
     let rotated_expiry = match refresh.new_credential_hash {
         Some(new_hash) => {
-            let expires = accepted_at + Duration::days(CREDENTIAL_LIFETIME_DAYS);
+            let expires = now + Duration::days(CREDENTIAL_LIFETIME_DAYS);
             let rotation = repo
                 .rotate_runner_credential(
                     refresh.runner_id,
                     refresh.presented_credential_hash,
                     new_hash,
                     expires,
-                    clock,
+                    now,
                 )
                 .await?;
             match rotation {
@@ -67,7 +65,7 @@ pub async fn refresh(
             refresh.runner_version,
             refresh.labels_json,
             refresh.capability_snapshot_json,
-            clock,
+            now,
         )
         .await?;
     let RunnerCapabilityUpdate::Updated {
@@ -76,11 +74,9 @@ pub async fn refresh(
     else {
         return Ok(Refreshed::Revoked);
     };
-    let credential_expires_at = rotated_expiry
-        .or(credential_expires_at)
-        .unwrap_or(accepted_at);
+    let credential_expires_at = rotated_expiry.or(credential_expires_at).unwrap_or(now);
     Ok(Refreshed::Accepted {
         credential_expires_at,
-        accepted_at,
+        accepted_at: now,
     })
 }

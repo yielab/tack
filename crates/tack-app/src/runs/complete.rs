@@ -5,14 +5,14 @@
 mod rework;
 mod status_map;
 
+use chrono::{DateTime, Utc};
 use std::future::Future;
 
 use tack_db::Repository;
-use tack_db::repo::execution::{
-    Completion, CompletionResponse, CompletionResult, FollowUps, state,
+use tack_db::repo::execution::{Completion, CompletionResponse, CompletionResult, FollowUps};
+use tack_protocol::execution::{
+    AttemptId, Checkpoint, CompletionId, ExecutionState, FencingToken, RunnerId,
 };
-use tack_protocol::Clock;
-use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
 
 use crate::AppError;
@@ -21,12 +21,12 @@ pub use status_map::ItemMoved;
 
 /// How a runner says an attempt ended.
 pub struct CompletionReport<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
     /// The runner's own id for this report; the same id again is a replay.
-    pub completion_id: &'a str,
-    pub final_event_checkpoint: Option<&'a str>,
+    pub completion_id: &'a CompletionId,
+    pub final_event_checkpoint: Option<&'a Checkpoint>,
     /// `Succeeded`, `Failed` or `Cancelled`.
     pub terminal_state: ExecutionState,
     /// The reason, the execution and the usage, already encoded as JSON.
@@ -64,7 +64,7 @@ pub enum Completed {
 /// cannot be read or parsed; the bytes live outside the store, so the caller supplies it.
 pub async fn complete<R, Fut>(
     repo: &Repository,
-    clock: &dyn Clock,
+    now: DateTime<Utc>,
     report: CompletionReport<'_>,
     read_pack: R,
 ) -> Result<Completed, AppError>
@@ -73,19 +73,23 @@ where
     Fut: Future<Output = Option<MergeReadinessPack>>,
 {
     let (item_move, rework) = if report.terminal_state == ExecutionState::Succeeded {
-        let item_move =
-            status_map::plan(repo, report.attempt_id, report.terminal_reason_json).await;
+        let item_move = status_map::plan(
+            repo,
+            report.attempt_id.as_str(),
+            report.terminal_reason_json,
+        )
+        .await;
         let rework = rework::plan(
             repo,
-            clock,
-            report.attempt_id,
+            now,
+            report.attempt_id.as_str(),
             report.actual_execution_json,
             &read_pack,
         )
         .await
         .unwrap_or_else(|err| {
             tracing::warn!(
-                attempt_id = report.attempt_id,
+                attempt_id = %report.attempt_id,
                 error = %err,
                 "rework: could not plan the follow-up"
             );
@@ -103,7 +107,7 @@ where
                 fencing_token: report.fencing_token,
                 completion_id: report.completion_id,
                 final_event_checkpoint: report.final_event_checkpoint,
-                terminal_state: state::text(report.terminal_state),
+                terminal_state: report.terminal_state,
                 terminal_reason: report.terminal_reason_json,
                 actual_execution: report.actual_execution_json,
                 usage: report.usage_json,
@@ -112,14 +116,15 @@ where
                 item_update: item_move.as_ref().map(status_map::Move::item_update),
                 rework: rework.as_ref().map(rework::Rework::follow_up),
             },
-            clock,
+            now,
         )
         .await?;
     Ok(match result {
         CompletionResult::Committed(response) => Completed::Committed {
             response,
-            item_moved: item_move
-                .and_then(|planned| planned.moved(report.attempt_id, followed.item_update)),
+            item_moved: item_move.and_then(|planned| {
+                planned.moved(report.attempt_id.as_str(), followed.item_update)
+            }),
         },
         CompletionResult::Replayed(response) => Completed::Replayed(response),
         CompletionResult::IdempotencyConflict => Completed::IdempotencyConflict,

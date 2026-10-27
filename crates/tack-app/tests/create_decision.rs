@@ -4,6 +4,8 @@
 //! lease that ended is refused.
 
 use crate::common;
+use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, FencingToken, RunnerId};
 
 use chrono::Duration;
 use common::{RUNNER_ID, running_attempt, world};
@@ -16,17 +18,17 @@ use tack_test_support::seed;
 async fn open(
     world: &common::World,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     decision_id: &str,
     prompt: &str,
 ) -> DecisionCreated {
     let options = [json!({"option_id": "allow", "label": "Allow"})];
     create_decision(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         DecisionRequest {
-            runner_id: RUNNER_ID,
-            attempt_id,
+            runner_id: &RunnerId::new(RUNNER_ID),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             decision_id,
             kind: "tool_permission",
@@ -94,7 +96,14 @@ async fn a_stale_fence_or_an_ended_lease_is_stale_and_writes_nothing() {
     let run = running_attempt(&world, "decision-stale").await;
 
     assert_eq!(
-        open(&world, &run.attempt_id, run.fence + 1, "dec-1", "Allow?").await,
+        open(
+            &world,
+            &run.attempt_id,
+            FencingToken::new(run.fence.get() + 1),
+            "dec-1",
+            "Allow?"
+        )
+        .await,
         DecisionCreated::Stale
     );
     world.clock.0.advance(Duration::seconds(61));

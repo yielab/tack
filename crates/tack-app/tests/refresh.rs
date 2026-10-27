@@ -16,7 +16,7 @@ async fn refresh_with(
 ) -> Refreshed {
     refresh(
         &world.repo,
-        &world.clock,
+        world.clock.now(),
         Refresh {
             runner_id: RUNNER_ID,
             presented_credential_hash,
@@ -84,7 +84,7 @@ async fn a_revoked_runner_is_refused() {
     let world = world().await;
     world
         .repo
-        .revoke_runner(RUNNER_ID, &world.clock)
+        .revoke_runner(RUNNER_ID, world.clock.now())
         .await
         .expect("revoke");
 
