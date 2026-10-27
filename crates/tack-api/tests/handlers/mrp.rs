@@ -38,9 +38,12 @@ async fn setup(
             api_token: Some(OPERATOR_TOKEN.into()),
             database_url: "sqlite::memory:".into(),
             storage_dir: storage_root.to_string_lossy().into_owned(),
-            github_token: github_base.map(|_| "gh-tok".into()),
-            github_api_base: github_base
-                .map_or_else(|| AppConfig::default().github_api_base, Into::into),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: github_base.map(|_| "gh-tok".into()),
+                github_api_base: github_base
+                    .map_or_else(|| AppConfig::default().loops.github_api_base, Into::into),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,

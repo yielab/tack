@@ -302,7 +302,7 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
         }
     }
     let mut blocked = Vec::new();
-    if state.config.github_poll_seconds == 0 || state.config.github_token.is_none() {
+    if state.config.loops.github_poll_seconds == 0 || state.config.loops.github_token.is_none() {
         blocked.push(
             "GitHub polling is off on this board, so Tack cannot read CI or merge".to_owned(),
         );

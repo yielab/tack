@@ -26,7 +26,8 @@
 //!
 //! `spawn` owns the logging of a failed pass and nothing else; [`background::Loops`] owns the
 //! timing, the stop signal and the panic log, and `tick` owns the rule. `tack-cli`'s `serve.rs`
-//! owns the `Loops`, calls each module's `spawn` and stops them all on shutdown.
+//! owns the `Loops`, hands [`loop_config::LoopConfig`] the settings to start the ones that are
+//! on, and stops them all on shutdown.
 
 pub mod auto_start;
 pub mod autonomy;
@@ -35,6 +36,7 @@ pub mod due_soon;
 mod error;
 pub mod github_sync;
 pub mod local_runner;
+pub mod loop_config;
 pub mod merge;
 pub mod model_policy_wiring;
 pub mod mrp;

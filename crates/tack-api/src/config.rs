@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tack_app::loop_config::LoopConfig;
 
 /// Application configuration loaded from tack.toml or environment variables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,62 +48,10 @@ pub struct AppConfig {
     #[serde(default)]
     pub webhook_secret: Option<String>,
 
-    /// Optional GitHub personal access token (`repo` scope). When set, item
-    /// status changes and comments are pushed to linked GitHub issues, and the
-    /// inbound poll (`github_poll_seconds`) may start.
-    /// Never logged.
-    #[serde(default)]
-    pub github_token: Option<String>,
-
-    /// GitHub API base URL. Override for GitHub Enterprise or to point tests at
-    /// a mock server. Defaults to `https://api.github.com`.
-    #[serde(default = "default_github_api_base")]
-    pub github_api_base: String,
-
-    /// Inbound GitHub poll interval in seconds. `0` (the default) is off; the
-    /// poll only starts when this is nonzero **and** `github_token` is set.
-    /// See `docs/GITHUB-SYNC.md`.
-    #[serde(default)]
-    pub github_poll_seconds: u64,
-
-    /// How often the board looks for tasks a project starts by itself, in seconds.
-    /// `0` is off. Env: `TACK_AUTO_START_SECONDS`.
-    #[serde(default = "default_auto_start_seconds")]
-    pub auto_start_seconds: u64,
-
-    // ── Remote backup (S3-compatible object storage) ──────────────────────────
-    /// S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO.
-    /// Example: `https://<account>.r2.cloudflarestorage.com`
-    #[serde(default)]
-    pub backup_endpoint: Option<String>,
-
-    /// Bucket name. Required to enable remote backup.
-    #[serde(default)]
-    pub backup_bucket: Option<String>,
-
-    /// AWS/S3 region. Cloudflare R2 uses `auto`; AWS requires the real region.
-    #[serde(default = "default_backup_region")]
-    pub backup_region: String,
-
-    /// S3 access key ID. Required to enable remote backup.
-    #[serde(default)]
-    pub backup_access_key: Option<String>,
-
-    /// S3 secret access key. Required to enable remote backup. Never logged.
-    #[serde(default)]
-    pub backup_secret_key: Option<String>,
-
-    /// Object key prefix inside the bucket. Default: `tack`.
-    #[serde(default = "default_backup_prefix")]
-    pub backup_prefix: String,
-
-    /// Automatic backup interval in seconds. Omit (None) for manual-only backups.
-    #[serde(default)]
-    pub backup_interval_secs: Option<u64>,
-
-    /// How many remote backups to retain after each upload. Default: 10.
-    #[serde(default = "default_backup_retention")]
-    pub backup_retention: usize,
+    /// What configures the background loops (GitHub poll, auto-start, backup, retention, health
+    /// watch). Owned by `tack-app`; flattened, so the keys and variables keep their names.
+    #[serde(flatten)]
+    pub loops: LoopConfig,
 
     /// The prill the board runs to check an attestation
     /// (`crate::prill::attest_verify`). `TACK_PRILL_PROGRAM`; a bare name is
@@ -119,38 +68,6 @@ pub struct AppConfig {
     /// then on — see `tack_app::local_runner::effective_enabled`.
     #[serde(default)]
     pub local_runner_enable: bool,
-
-    // ── Execution runtime retention/observability ───────────────
-    /// Enables the execution-domain retention sweep (replay/idempotency
-    /// bookkeeping + terminal `execution_events` purge — see
-    /// `tack_app::retention`). **Off by default** — see
-    /// `default_execution_retention_enable`'s doc comment for the full
-    /// rationale. This sweep deletes rows; data deletion must be an
-    /// operator opt-in.
-    #[serde(default = "default_execution_retention_enable")]
-    pub execution_retention_enable: bool,
-
-    /// Days of replay/idempotency bookkeeping and terminal `execution_events`
-    /// history kept before the retention sweep purges them. Default: 90.
-    #[serde(default = "default_execution_retention_days")]
-    pub execution_retention_days: u32,
-
-    /// Interval, in seconds, between execution-retention sweeps. Default:
-    /// 3600 (hourly) — retention is a hygiene task, not a latency-sensitive one.
-    #[serde(default = "default_execution_retention_interval_secs")]
-    pub execution_retention_interval_secs: u64,
-
-    /// Enables the execution-domain health watch (runner/queue/lease/event
-    /// counts; logs a `warn!` on stale-lease/`needs_operator` onset — see
-    /// `tack_app::observability`). **On by default** — unlike
-    /// retention above, this reads and logs only; it deletes nothing, so it
-    /// carries none of retention's data-loss risk.
-    #[serde(default = "default_execution_health_enable")]
-    pub execution_health_enable: bool,
-
-    /// Interval, in seconds, between execution health-watch checks. Default: 60.
-    #[serde(default = "default_execution_health_interval_secs")]
-    pub execution_health_interval_secs: u64,
 
     /// Shared secret required to resolve a scoped execution decision via
     /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`.
@@ -178,10 +95,6 @@ pub struct AppConfig {
     pub allow_unauthenticated_nonloopback: bool,
 }
 
-fn default_auto_start_seconds() -> u64 {
-    30
-}
-
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -197,25 +110,9 @@ impl Default for AppConfig {
             api_token: None,
             webhook_url: None,
             webhook_secret: None,
-            github_token: None,
-            github_api_base: default_github_api_base(),
-            github_poll_seconds: 0,
-            auto_start_seconds: default_auto_start_seconds(),
-            backup_endpoint: None,
-            backup_bucket: None,
-            backup_region: default_backup_region(),
-            backup_access_key: None,
-            backup_secret_key: None,
-            backup_prefix: default_backup_prefix(),
-            backup_interval_secs: None,
-            backup_retention: default_backup_retention(),
+            loops: LoopConfig::default(),
             prill_program: default_prill_program(),
             local_runner_enable: false,
-            execution_retention_enable: default_execution_retention_enable(),
-            execution_retention_days: default_execution_retention_days(),
-            execution_retention_interval_secs: default_execution_retention_interval_secs(),
-            execution_health_enable: default_execution_health_enable(),
-            execution_health_interval_secs: default_execution_health_interval_secs(),
             execution_decision_token: None,
             allow_unauthenticated_nonloopback: false,
         }
@@ -238,9 +135,6 @@ impl AppConfig {
 fn default_prill_program() -> String {
     "prill".into()
 }
-fn default_github_api_base() -> String {
-    "https://api.github.com".into()
-}
 fn default_host() -> String {
     "127.0.0.1".into()
 }
@@ -262,37 +156,6 @@ fn default_storage_dir() -> String {
 fn default_max_body_size_bytes() -> usize {
     2 * 1024 * 1024
 } // 2 MB
-
-fn default_backup_region() -> String {
-    "auto".into()
-}
-fn default_backup_prefix() -> String {
-    "tack".into()
-}
-fn default_backup_retention() -> usize {
-    10
-}
-
-fn default_execution_retention_enable() -> bool {
-    // This sweep deletes rows (`purge_stale_execution_replays`,
-    // `purge_stale_terminal_execution_events`) — data deletion must be
-    // opt-in, not read-only hygiene the operator never asked for.
-    // `execution_health_enable` stays `true` below: it only reads and logs,
-    // it deletes nothing.
-    false
-}
-fn default_execution_retention_days() -> u32 {
-    90
-}
-fn default_execution_retention_interval_secs() -> u64 {
-    3600
-}
-fn default_execution_health_enable() -> bool {
-    true
-}
-fn default_execution_health_interval_secs() -> u64 {
-    60
-}
 
 fn default_allowed_origins() -> Vec<String> {
     vec![
@@ -405,11 +268,11 @@ impl AppConfig {
         for origin in &self.allowed_origins {
             validate_origin(origin)?;
         }
-        validate_outbound_url("github_api_base", &self.github_api_base)?;
+        validate_outbound_url("github_api_base", &self.loops.github_api_base)?;
         if let Some(url) = &self.webhook_url {
             validate_outbound_url("webhook_url", url)?;
         }
-        if let Some(url) = &self.backup_endpoint {
+        if let Some(url) = &self.loops.backup_endpoint {
             validate_outbound_url("backup_endpoint", url)?;
         }
         Ok(())
@@ -417,17 +280,8 @@ impl AppConfig {
 
     /// The backup settings the environment configured, as the backup module takes them.
     pub fn backup_config(&self) -> tack_app::remote_backup::BackupConfig {
-        tack_app::remote_backup::BackupConfig {
-            endpoint: self.backup_endpoint.clone(),
-            bucket: self.backup_bucket.clone(),
-            region: self.backup_region.clone(),
-            access_key: self.backup_access_key.clone(),
-            secret_key: self.backup_secret_key.clone(),
-            prefix: self.backup_prefix.clone(),
-            retention: self.backup_retention,
-            db_file: self.db_file_path(),
-            storage_dir: self.storage_dir.clone(),
-        }
+        self.loops
+            .backup_config(self.db_file_path(), &self.storage_dir)
     }
 
     /// Extract the filesystem path from the database URL.
@@ -500,12 +354,12 @@ impl AppConfig {
         if let Ok(v) = std::env::var("TACK_GITHUB_TOKEN")
             && !v.is_empty()
         {
-            config.github_token = Some(v);
+            config.loops.github_token = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_GITHUB_API_BASE")
             && !v.is_empty()
         {
-            config.github_api_base = v;
+            config.loops.github_api_base = v;
         }
         if let Ok(v) = std::env::var("TACK_PRILL_PROGRAM")
             && !v.is_empty()
@@ -513,70 +367,74 @@ impl AppConfig {
             config.prill_program = v;
         }
         if let Ok(v) = std::env::var("TACK_GITHUB_POLL_SECONDS") {
-            config.github_poll_seconds = v.parse().unwrap_or(0);
+            config.loops.github_poll_seconds = v.parse().unwrap_or(0);
         }
         if let Ok(v) = std::env::var("TACK_AUTO_START_SECONDS") {
-            config.auto_start_seconds = v.parse().unwrap_or_else(|_| default_auto_start_seconds());
+            config.loops.auto_start_seconds = v
+                .parse()
+                .unwrap_or_else(|_| LoopConfig::default().auto_start_seconds);
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_ENDPOINT")
             && !v.is_empty()
         {
-            config.backup_endpoint = Some(v);
+            config.loops.backup_endpoint = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_BUCKET")
             && !v.is_empty()
         {
-            config.backup_bucket = Some(v);
+            config.loops.backup_bucket = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_REGION")
             && !v.is_empty()
         {
-            config.backup_region = v;
+            config.loops.backup_region = v;
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_ACCESS_KEY")
             && !v.is_empty()
         {
-            config.backup_access_key = Some(v);
+            config.loops.backup_access_key = Some(v);
         }
         // Never log the secret key value
         if let Ok(v) = std::env::var("TACK_BACKUP_SECRET_KEY")
             && !v.is_empty()
         {
-            config.backup_secret_key = Some(v);
+            config.loops.backup_secret_key = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_PREFIX")
             && !v.is_empty()
         {
-            config.backup_prefix = v;
+            config.loops.backup_prefix = v;
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_INTERVAL_SECS") {
-            config.backup_interval_secs = v.parse().ok();
+            config.loops.backup_interval_secs = v.parse().ok();
         }
         if let Ok(v) = std::env::var("TACK_BACKUP_RETENTION") {
-            config.backup_retention = v.parse().unwrap_or(default_backup_retention());
+            config.loops.backup_retention =
+                v.parse().unwrap_or(LoopConfig::default().backup_retention);
         }
         if let Ok(v) = std::env::var("TACK_LOCAL_RUNNER_ENABLE") {
             config.local_runner_enable = v == "1" || v.eq_ignore_ascii_case("true");
         }
         if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_ENABLE") {
-            config.execution_retention_enable = v == "1" || v.eq_ignore_ascii_case("true");
+            config.loops.execution_retention_enable = v == "1" || v.eq_ignore_ascii_case("true");
         }
         if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_DAYS") {
-            config.execution_retention_days =
-                v.parse().unwrap_or(default_execution_retention_days());
+            config.loops.execution_retention_days = v
+                .parse()
+                .unwrap_or(LoopConfig::default().execution_retention_days);
         }
         if let Ok(v) = std::env::var("TACK_EXECUTION_RETENTION_INTERVAL_SECS") {
-            config.execution_retention_interval_secs = v
+            config.loops.execution_retention_interval_secs = v
                 .parse()
-                .unwrap_or(default_execution_retention_interval_secs());
+                .unwrap_or(LoopConfig::default().execution_retention_interval_secs);
         }
         if let Ok(v) = std::env::var("TACK_EXECUTION_HEALTH_ENABLE") {
-            config.execution_health_enable = v == "1" || v.eq_ignore_ascii_case("true");
+            config.loops.execution_health_enable = v == "1" || v.eq_ignore_ascii_case("true");
         }
         if let Ok(v) = std::env::var("TACK_EXECUTION_HEALTH_INTERVAL_SECS") {
-            config.execution_health_interval_secs = v
+            config.loops.execution_health_interval_secs = v
                 .parse()
-                .unwrap_or(default_execution_health_interval_secs());
+                .unwrap_or(LoopConfig::default().execution_health_interval_secs);
         }
         // Never log the decision-token value — same posture as the
         // approval-token parse above.

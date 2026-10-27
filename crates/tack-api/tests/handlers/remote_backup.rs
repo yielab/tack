@@ -115,11 +115,14 @@ impl Remote {
         let (app, _) = common::test_app_with_file_db_and_config(
             &format!("sqlite:{}?mode=rwc", db_path.display()),
             AppConfig {
-                backup_endpoint: Some(server.uri()),
-                backup_bucket: Some(BUCKET.into()),
-                backup_access_key: Some("access".into()),
-                backup_secret_key: Some("secret".into()),
                 storage_dir: dir.path().join("storage").display().to_string(),
+                loops: tack_app::loop_config::LoopConfig {
+                    backup_endpoint: Some(server.uri()),
+                    backup_bucket: Some(BUCKET.into()),
+                    backup_access_key: Some("access".into()),
+                    backup_secret_key: Some("secret".into()),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         )

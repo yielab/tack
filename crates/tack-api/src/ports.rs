@@ -21,10 +21,7 @@ struct Adapter(AppState);
 impl AppState {
     /// The GitHub this board is configured with: its API root and the environment's token.
     pub fn github(&self) -> GitHub {
-        GitHub {
-            github_token: self.config.github_token.clone(),
-            api_base: self.config.github_api_base.clone(),
-        }
+        self.config.loops.github()
     }
 
     /// A project's GitHub token: its own `github_token_ref` resolved through the embedded
