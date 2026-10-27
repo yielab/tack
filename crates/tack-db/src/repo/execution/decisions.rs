@@ -7,6 +7,7 @@ use tack_protocol::execution::ExecutionState;
 use tracing::instrument;
 
 use super::shared::{mirror_request_state, stamp};
+use super::state::{self, Move};
 use crate::queries::execution_decisions::DecisionRow;
 use crate::{Repository, StoreError};
 
@@ -60,11 +61,12 @@ async fn park_attempt_on_pending_decision(
     attempt_id: &str,
     now: &str,
 ) -> Result<(), StoreError> {
-    let parked = sqlx::query(
-        "UPDATE execution_attempts SET state='waiting_decision',updated_at=? \
-         WHERE id=? AND state='running' \
-         AND EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')",
-    )
+    let (set, guard) = (Move::AskDecision.set(), Move::AskDecision.guard());
+    let parked = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE execution_attempts SET {set},updated_at=? \
+         WHERE id=? AND {guard} \
+         AND EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')"
+    )))
     .bind(now)
     .bind(attempt_id)
     .bind(attempt_id)
@@ -88,11 +90,15 @@ pub async fn resume_attempt_after_decisions(
     now: DateTime<Utc>,
 ) -> Result<bool, StoreError> {
     let now = now.to_rfc3339();
-    let resumed = sqlx::query(
-        "UPDATE execution_attempts SET state='running',updated_at=? \
-         WHERE id=? AND state='waiting_decision' \
-         AND NOT EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')",
-    )
+    let (set, guard) = (
+        Move::ResumeAfterDecision.set(),
+        Move::ResumeAfterDecision.guard(),
+    );
+    let resumed = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE execution_attempts SET {set},updated_at=? \
+         WHERE id=? AND {guard} \
+         AND NOT EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')"
+    )))
     .bind(&now)
     .bind(attempt_id)
     .bind(attempt_id)
@@ -117,9 +123,9 @@ impl Repository {
     ) -> Result<u64, StoreError> {
         let now = stamp(clock);
         let closed = sqlx::query(
-            "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
+            state::sql("UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
              WHERE state='pending' AND attempt_id IN (SELECT id FROM execution_attempts \
-             WHERE state IN ('succeeded','failed','cancelled','lost','needs_operator'))",
+             WHERE state IN ({terminal},{lost},{needs_operator}))"),
         )
         .bind(&now)
         .bind(ATTEMPT_ENDED)
@@ -152,7 +158,7 @@ impl Repository {
         // a decision land against an attempt that has already gone terminal,
         // lost, or needs_operator.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ('running','waiting_decision') AND lease_expires_at > ?)")
+        let valid: bool = sqlx::query_scalar(state::sql("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ({running},{waiting_decision}) AND lease_expires_at > ?)"))
             .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
         if !valid {
             tx.commit().await?;

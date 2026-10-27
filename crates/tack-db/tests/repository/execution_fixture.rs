@@ -6,6 +6,7 @@
 //! every argument of the underlying repository call one per line.
 
 use std::sync::Mutex;
+use tack_protocol::execution::ExecutionState;
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::repo::execution::{
@@ -215,6 +216,12 @@ impl Fixture {
     /// `running` — the state a decision needs.
     pub async fn ready_running_attempt(&self, request_id: &str, attempt_id: &str) -> i64 {
         let fence = self.ready_completion_attempt(request_id, attempt_id).await;
+        self.start_claimed_attempt(attempt_id, fence).await;
+        fence
+    }
+
+    /// Accepts and starts an attempt that holds a lease, through the real transitions.
+    pub async fn start_claimed_attempt(&self, attempt_id: &str, fence: i64) {
         let preparing = AttemptTransitionInput {
             runner_id: "runner-a",
             attempt_id,
@@ -237,7 +244,6 @@ impl Fixture {
             .await,
             AttemptTransitionResult::Applied(_)
         ));
-        fence
     }
 
     /// Settles `decision_id` on `attempt_id` at the row level with `state`
@@ -704,7 +710,7 @@ pub fn completion_input<'a>(
         fencing_token,
         completion_id,
         final_event_checkpoint,
-        terminal_state: "succeeded",
+        terminal_state: ExecutionState::Succeeded,
         terminal_reason: "completed",
         actual_execution: r#"{"result":{"b":2,"a":1}}"#,
         usage: r#"{"output_tokens":2,"input_tokens":1}"#,

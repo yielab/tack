@@ -11,7 +11,7 @@ use super::enqueue::{
     EnqueueResult, NewExecutionRequest, enqueue_in, validate_execution_request_snapshot,
 };
 use super::shared::{canonical_json, mirror_request_state, stamp, terminal};
-use super::state;
+use super::state::{self, Move};
 use crate::{Repository, StoreError};
 use tack_core::models::UpdateItem;
 use tack_core::workflow::WorkflowConfig;
@@ -58,7 +58,7 @@ pub struct Completion<'a> {
     pub fencing_token: i64,
     pub completion_id: &'a str,
     pub final_event_checkpoint: Option<&'a str>,
-    pub terminal_state: &'a str,
+    pub terminal_state: ExecutionState,
     pub terminal_reason: &'a str,
     pub actual_execution: &'a str,
     pub usage: &'a str,
@@ -282,7 +282,7 @@ impl Repository {
         clock: &dyn Clock,
     ) -> Result<(CompletionResult, FollowUpsOutcome), StoreError> {
         let none = FollowUpsOutcome::default;
-        if !terminal(completion.terminal_state) {
+        if !completion.terminal_state.is_terminal() {
             return Ok((CompletionResult::Conflict, none()));
         }
         let now = stamp(clock);
@@ -352,8 +352,9 @@ impl Repository {
         }
         let request: String = row.get("request_id");
         let runner: String = row.get("runner_id");
-        let updated = sqlx::query("UPDATE execution_attempts SET state=?,completion_id=?,terminal_reason=?,actual_execution=?,usage=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at > ?")
-            .bind(completion.terminal_state).bind(completion.completion_id).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).bind(completion.final_event_checkpoint).bind(&now).execute(&mut *tx).await?;
+        let guard = Move::Finish(completion.terminal_state).guard();
+        let updated = sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_attempts SET state=?,completion_id=?,terminal_reason=?,actual_execution=?,usage=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ? AND {guard} AND lease_expires_at > ?")))
+            .bind(state::text(completion.terminal_state)).bind(completion.completion_id).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id).bind(completion.runner_id).bind(completion.fencing_token).bind(completion.final_event_checkpoint).bind(&now).execute(&mut *tx).await?;
         if updated.rows_affected() != 1 {
             // Defensive: near-unreachable under the BEGIN IMMEDIATE this
             // function already opens, but a lost compare-and-set is a
@@ -363,7 +364,7 @@ impl Repository {
         }
         end_attempt_decisions(&mut tx, completion.attempt_id, &now).await?;
         sqlx::query("UPDATE execution_requests SET state=?,updated_at=? WHERE id=?")
-            .bind(completion.terminal_state)
+            .bind(state::text(completion.terminal_state))
             .bind(&now)
             .bind(request)
             .execute(&mut *tx)
@@ -371,7 +372,7 @@ impl Repository {
         sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(&now).bind(runner).execute(&mut *tx).await?;
         let response = CompletionResponse {
             completion_id: completion.completion_id.into(),
-            terminal_state: completion.terminal_state.into(),
+            terminal_state: state::text(completion.terminal_state).into(),
             final_event_checkpoint: completion.final_event_checkpoint.map(str::to_owned),
             committed_at: now.clone(),
         };
@@ -513,10 +514,11 @@ impl Repository {
                 ));
             }
             AttemptTransitionPhase::Preparing if state == ExecutionState::Leased => {
-                let updated = sqlx::query(
-                    "UPDATE execution_attempts SET state='preparing',workspace_id=?,base_revision=?,prepared_at=?,updated_at=? \
-                     WHERE id=? AND runner_id=? AND fencing_token=? AND state='leased' AND lease_expires_at>?",
-                )
+                let (set, guard) = (Move::Prepare.set(), Move::Prepare.guard());
+                let updated = sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE execution_attempts SET {set},workspace_id=?,base_revision=?,prepared_at=?,updated_at=? \
+                     WHERE id=? AND runner_id=? AND fencing_token=? AND {guard} AND lease_expires_at>?"
+                )))
                 .bind(input.workspace_id)
                 .bind(input.base_revision)
                 .bind(&now)
@@ -545,11 +547,12 @@ impl Repository {
             AttemptTransitionPhase::Running
                 if state == ExecutionState::Preparing && exact_workspace =>
             {
-                let updated = sqlx::query(
-                    "UPDATE execution_attempts SET state='running',process_id=?,started_at=?,updated_at=? \
-                     WHERE id=? AND runner_id=? AND fencing_token=? AND state='preparing' \
-                     AND workspace_id=? AND base_revision=? AND lease_expires_at>?",
-                )
+                let (set, guard) = (Move::Start.set(), Move::Start.guard());
+                let updated = sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE execution_attempts SET {set},process_id=?,started_at=?,updated_at=? \
+                     WHERE id=? AND runner_id=? AND fencing_token=? AND {guard} \
+                     AND workspace_id=? AND base_revision=? AND lease_expires_at>?"
+                )))
                 .bind(input.process_id)
                 .bind(&now)
                 .bind(&now)
@@ -636,23 +639,29 @@ impl Repository {
             tx.commit().await?;
             return Ok(CancellationObservation::Ambiguous { state });
         }
-        let updated = sqlx::query("UPDATE execution_attempts SET state='cancelled',completion_id=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?")
+        let (set, guard) = (
+            Move::Finish(ExecutionState::Cancelled).set(),
+            Move::Finish(ExecutionState::Cancelled).guard(),
+        );
+        let updated = sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_attempts SET {set},completion_id=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND {guard} AND lease_expires_at>?")))
             .bind(input.cancellation_request_id).bind(&now).bind(&now).bind(input.attempt_id).bind(input.runner_id).bind(input.fencing_token).bind(&now).execute(&mut *tx).await?;
         if updated.rows_affected() != 1 {
             tx.rollback().await?;
             return Ok(CancellationObservation::Ambiguous { state });
         }
         end_attempt_decisions(&mut tx, input.attempt_id, &now).await?;
-        sqlx::query("UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?")
-            .bind(&now)
-            .bind(request)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(state::sql(
+            "UPDATE execution_requests SET state={cancelled},updated_at=? WHERE id=?",
+        ))
+        .bind(&now)
+        .bind(request)
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(&now).bind(owner).execute(&mut *tx).await?;
         let response = CancellationResponse {
             attempt_id: input.attempt_id.into(),
             cancellation_request_id: input.cancellation_request_id.into(),
-            state: "cancelled".into(),
+            state: state::text(ExecutionState::Cancelled).into(),
             committed_at: now.clone(),
         };
         let serialized_response = serde_json::json!({
@@ -662,8 +671,8 @@ impl Repository {
             "committed_at": response.committed_at,
         })
         .to_string();
-        sqlx::query("INSERT INTO execution_cancellation_replays(attempt_id,cancellation_request_id,state,fingerprint,response,created_at) VALUES(?,?, 'cancelled',?,?,?)")
-            .bind(input.attempt_id).bind(input.cancellation_request_id).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO execution_cancellation_replays(attempt_id,cancellation_request_id,state,fingerprint,response,created_at) VALUES(?,?,?,?,?,?)")
+            .bind(input.attempt_id).bind(input.cancellation_request_id).bind(state::text(ExecutionState::Cancelled)).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(CancellationObservation::Cancelled(response))
     }
@@ -746,7 +755,7 @@ async fn apply_cancellation(
     request_id: &str,
     now: &str,
 ) -> Result<bool, StoreError> {
-    let result = sqlx::query("UPDATE execution_requests SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?), updated_at = ? WHERE id = ? AND state NOT IN ('succeeded','failed','cancelled')")
+    let result = sqlx::query(state::sql("UPDATE execution_requests SET cancellation_requested_at = COALESCE(cancellation_requested_at, ?), updated_at = ? WHERE id = ? AND state NOT IN ({terminal})"))
         .bind(now).bind(now).bind(request_id).execute(&mut *tx).await?;
     if result.rows_affected() != 1 {
         return Ok(false);
@@ -759,14 +768,16 @@ async fn apply_cancellation(
         let active = state::is_live(&state);
         if state::is_needs_operator(&state) || (active && expired) {
             let attempt: String = latest.get("id");
-            sqlx::query("UPDATE execution_attempts SET state='cancelled',ended_at=?,updated_at=? WHERE id=?")
+            sqlx::query(state::sql("UPDATE execution_attempts SET state={cancelled},ended_at=?,updated_at=? WHERE id=?"))
                 .bind(now).bind(now).bind(&attempt).execute(&mut *tx).await?;
             end_attempt_decisions(tx, &attempt, now).await?;
-            sqlx::query("UPDATE execution_requests SET state='cancelled',updated_at=? WHERE id=?")
-                .bind(now)
-                .bind(request_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(state::sql(
+                "UPDATE execution_requests SET state={cancelled},updated_at=? WHERE id=?",
+            ))
+            .bind(now)
+            .bind(request_id)
+            .execute(&mut *tx)
+            .await?;
             // A `needs_operator` attempt already gave its slot back.
             if active {
                 let runner: String = latest.get("runner_id");

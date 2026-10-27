@@ -1,4 +1,5 @@
 use crate::StoreError;
+use crate::repo::execution::state;
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, instrument, warn};
@@ -17,7 +18,9 @@ use super::dependencies::insert_dependency;
 /// The `needs_review` column of an `items` row: the latest terminal attempt of
 /// the item's latest execution request left a non-empty patch or a kept
 /// workspace, and nobody has reviewed it yet.
-pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
+pub(crate) fn needs_review_sql() -> String {
+    state::expand(
+        "EXISTS (
     SELECT 1 FROM execution_attempts a
     LEFT JOIN attempt_reviews rv ON rv.attempt_id = a.id
     WHERE a.id = (
@@ -25,7 +28,7 @@ pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
         WHERE a2.request_id = (
             SELECT r.id FROM execution_requests r
             WHERE r.item_id = items.id ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1
-        ) AND a2.state IN ('succeeded','failed','cancelled')
+        ) AND a2.state IN ({terminal})
         ORDER BY a2.attempt_number DESC LIMIT 1
     )
     AND rv.attempt_id IS NULL
@@ -37,7 +40,9 @@ pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
               AND json_extract(art.value, '$.size_bytes') > 0
         )
     )
-)";
+)",
+    )
+}
 
 /// The `merge_note` of an `items` row: why the item's latest merge was held,
 /// while it has not merged.
@@ -153,8 +158,9 @@ impl Repository {
 
     #[instrument(skip(self))]
     pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, StoreError> {
+        let needs_review = needs_review_sql();
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
              FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
@@ -185,8 +191,9 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, StoreError> {
         let mut tx = self.pool().begin().await?;
+        let needs_review = needs_review_sql();
         let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
         .fetch_optional(&mut *tx)
@@ -209,8 +216,9 @@ impl Repository {
         filter: &ItemFilter,
     ) -> Result<Vec<Item>, StoreError> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
+        let needs_review = needs_review_sql();
         let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
+            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
              FROM items{where_clause} ORDER BY sort_order ASC"
         );
 
@@ -1109,8 +1117,9 @@ pub(crate) async fn update_item_in(
         });
     }
 
+    let needs_review = needs_review_sql();
     let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-        "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
+        "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
     )))
     .bind(id.to_string())
     .fetch_one(&mut **tx)

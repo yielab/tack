@@ -1,6 +1,7 @@
 //! A project's daily budgets (`project_budgets`, migration 087) and the counts
 //! they are compared with. A project with no row has no budget.
 
+use crate::repo::execution::state;
 use chrono::{DateTime, Utc};
 
 /// One project's limits; `None` is no limit.
@@ -52,21 +53,19 @@ pub const COUNTED_TOKENS_SQL: &str = "(COALESCE(json_extract(a.usage, '$.tokens_
 /// shown beside [`COUNTED_TOKENS_SQL`], never part of it.
 pub const CACHE_READ_SQL: &str = "COALESCE(json_extract(a.usage, '$.cache_read_tokens'), 0)";
 
-/// The attempt states in which a run is open: it holds its place in the day.
-pub(crate) const OPEN_ATTEMPT_STATES: &str = "'leased', 'preparing', 'running', 'waiting_decision'";
-
 /// Joins, to `execution_attempts a`, `live.counted`: what an open attempt has
 /// counted so far, which is [`COUNTED_TOKENS_SQL`] over the `usage` its progress
 /// lines carry (an attempt's own `usage` is written only when it ends). The one
 /// owner of the attempt's running counted sum: the day's spend and its reservation read it.
 pub(crate) fn running_counted_join() -> String {
+    let held = state::held();
     format!(
         "LEFT JOIN (SELECT attempt_id, SUM({COUNTED_TOKENS_SQL}) AS counted FROM (
              SELECT e.attempt_id AS attempt_id, json_extract(e.payload, '$.usage') AS usage
              FROM execution_events e
              WHERE json_type(e.payload, '$.usage') = 'object'
                AND e.attempt_id IN
-                 (SELECT id FROM execution_attempts WHERE state IN ({OPEN_ATTEMPT_STATES}))) a
+                 (SELECT id FROM execution_attempts WHERE state IN ({held}))) a
            GROUP BY attempt_id) live ON live.attempt_id = a.id"
     )
 }
@@ -127,7 +126,7 @@ impl crate::Repository {
     ) -> Result<(), crate::StoreError> {
         // Every expression reads the row as it was before the update.
         sqlx::query(
-            "UPDATE execution_requests SET
+            state::sql("UPDATE execution_requests SET
                request_snapshot = json_set(request_snapshot,
                  '$.budgets.tokens', MIN(?1, COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1)),
                  '$.resolved_agent_profile.budgets.tokens',
@@ -140,9 +139,9 @@ impl crate::Repository {
                metadata = json_set(metadata, '$.limit_source',
                  CASE WHEN ?1 < COALESCE(json_extract(request_snapshot, '$.budgets.tokens'), ?1 + 1)
                       THEN 'day' ELSE 'provisional' END)
-             WHERE id = ?2 AND state = 'queued'
+             WHERE id = ?2 AND state = {queued}
                AND (json_extract(request_snapshot, '$.budgets.tokens') IS NULL
-                    OR json_extract(request_snapshot, '$.metadata.limit_source') = 'provisional')",
+                    OR json_extract(request_snapshot, '$.metadata.limit_source') = 'provisional')"),
         )
         .bind(tokens)
         .bind(request_id)

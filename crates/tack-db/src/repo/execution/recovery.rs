@@ -8,7 +8,7 @@ use tracing::instrument;
 
 use super::decisions::end_attempt_decisions;
 use super::shared::{canonical_json, stamp, terminal};
-use super::state;
+use super::state::{self, Move};
 use crate::Repository;
 use tack_protocol::execution::ExecutionState;
 
@@ -222,8 +222,10 @@ async fn apply_recovery(
         RecoveryDisposition::AlreadyTerminal => unreachable!("terminal states return above"),
     };
     let classification = disposition.as_str();
+    let attempt_state_value = attempt_state;
     let (attempt_state, request_state) = (state::text(attempt_state), state::text(request_state));
-    let updated = sqlx::query("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision')")
+    let guard = Move::Abandon(attempt_state_value).guard();
+    let updated = sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_attempts SET state=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND {guard}")))
         .bind(attempt_state)
         .bind(now)
         .bind(input.attempt_id)
@@ -235,9 +237,10 @@ async fn apply_recovery(
         tx.rollback().await?;
         return Ok(RecoveryObservationResult::Stale);
     }
-    sqlx::query("UPDATE execution_requests SET state=?,cancellation_requested_at=CASE WHEN ?='queued' THEN NULL ELSE cancellation_requested_at END,updated_at=? WHERE id=?")
+    sqlx::query("UPDATE execution_requests SET state=?,cancellation_requested_at=CASE WHEN ?=? THEN NULL ELSE cancellation_requested_at END,updated_at=? WHERE id=?")
         .bind(request_state)
         .bind(request_state)
+        .bind(state::text(ExecutionState::Queued))
         .bind(now)
         .bind(&request)
         .execute(&mut *tx)
@@ -314,7 +317,7 @@ impl Repository {
         // redeem_enrollment_token and claim_execution_idempotent_with_snapshot
         // fixes above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let attempt:Option<String>=sqlx::query_scalar("SELECT id FROM execution_attempts WHERE request_id=? AND state='needs_operator' ORDER BY attempt_number DESC LIMIT 1").bind(request_id).fetch_optional(&mut *tx).await?;
+        let attempt:Option<String>=sqlx::query_scalar(state::sql("SELECT id FROM execution_attempts WHERE request_id=? AND state={needs_operator} ORDER BY attempt_number DESC LIMIT 1")).bind(request_id).fetch_optional(&mut *tx).await?;
         let Some(attempt) = attempt else {
             tx.commit().await?;
             return Ok(OperatorRequeueResult::InvalidTransition);
@@ -336,16 +339,18 @@ impl Repository {
             });
         };
         let authoritative_recovery: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND classification='needs_operator' AND fingerprint <> '' AND response <> '')",
+            "SELECT EXISTS(SELECT 1 FROM execution_recovery_audits WHERE attempt_id=? AND classification=? AND fingerprint <> '' AND response <> '')",
         )
         .bind(&attempt)
+        .bind(RecoveryDisposition::NeedsOperator.as_str())
         .fetch_one(&mut *tx)
         .await?;
         if !authoritative_recovery {
             tx.commit().await?;
             return Ok(OperatorRequeueResult::InvalidTransition);
         }
-        if sqlx::query("UPDATE execution_requests SET state='queued',cancellation_requested_at=NULL,updated_at=? WHERE id=? AND state='needs_operator'").bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(OperatorRequeueResult::InvalidTransition)};
+        let (set, guard) = (Move::Requeue.set(), Move::Requeue.guard());
+        if sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_requests SET {set},cancellation_requested_at=NULL,updated_at=? WHERE id=? AND {guard}"))).bind(&now).bind(request_id).execute(&mut *tx).await?.rows_affected()!=1{tx.rollback().await?;return Ok(OperatorRequeueResult::InvalidTransition)};
         sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,created_at) VALUES(?,?, 'operator_requeue', ?,?)").bind(&attempt).bind(recovery_key).bind(details).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(OperatorRequeueResult::Requeued)
@@ -392,8 +397,12 @@ impl Repository {
         sentence: &str,
         clock: &dyn Clock,
     ) -> Result<u64, StoreError> {
-        let candidates = sqlx::query_scalar::<_, String>("SELECT id FROM execution_attempts WHERE state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
-            .bind(expired_before.to_rfc3339()).fetch_all(self.pool()).await?;
+        let candidates = sqlx::query_scalar::<_, String>(state::sql(
+            "SELECT id FROM execution_attempts WHERE state IN ({held}) AND lease_expires_at < ?",
+        ))
+        .bind(expired_before.to_rfc3339())
+        .fetch_all(self.pool())
+        .await?;
         let details =
             serde_json::json!({"journal_state": code, "process_observed": false}).to_string();
         let mut closed = 0;
@@ -404,7 +413,7 @@ impl Repository {
             // asked about like any other. The row is read inside the
             // transaction, so an attempt that moved since the list is skipped.
             let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-            let row = sqlx::query("SELECT request_id,runner_id,fencing_token,state,started_at FROM execution_attempts WHERE id=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at < ?")
+            let row = sqlx::query(state::sql("SELECT request_id,runner_id,fencing_token,state,started_at FROM execution_attempts WHERE id=? AND state IN ({held}) AND lease_expires_at < ?"))
                 .bind(&attempt).bind(expired_before.to_rfc3339()).fetch_optional(&mut *tx).await?;
             let Some(row) = row else {
                 tx.commit().await?;
@@ -458,18 +467,18 @@ impl Repository {
                 .await?;
         let request_state_counts = request_rows.into_iter().collect();
 
-        let stale_lease_count: i64 = sqlx::query_scalar(
+        let stale_lease_count: i64 = sqlx::query_scalar(state::sql(
             "SELECT COUNT(*) FROM execution_attempts WHERE lease_expires_at < ? \
-             AND state IN ('leased','preparing','running','waiting_decision')",
-        )
+             AND state IN ({held})",
+        ))
         .bind(&now_s)
         .fetch_one(self.pool())
         .await?;
-        let oldest_stale_lease_expires_at: Option<String> = sqlx::query_scalar(
+        let oldest_stale_lease_expires_at: Option<String> = sqlx::query_scalar(state::sql(
             "SELECT lease_expires_at FROM execution_attempts WHERE lease_expires_at < ? \
-             AND state IN ('leased','preparing','running','waiting_decision') \
+             AND state IN ({held}) \
              ORDER BY lease_expires_at ASC LIMIT 1",
-        )
+        ))
         .bind(&now_s)
         .fetch_optional(self.pool())
         .await?;
@@ -477,15 +486,15 @@ impl Repository {
             .and_then(|s| parse_rfc3339_checked(&s))
             .map(|expired_at| (now - expired_at).num_seconds().max(0));
 
-        let needs_operator_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM execution_requests WHERE state = 'needs_operator'",
-        )
+        let needs_operator_count: i64 = sqlx::query_scalar(state::sql(
+            "SELECT COUNT(*) FROM execution_requests WHERE state = {needs_operator}",
+        ))
         .fetch_one(self.pool())
         .await?;
-        let oldest_needs_operator_updated_at: Option<String> = sqlx::query_scalar(
-            "SELECT updated_at FROM execution_requests WHERE state = 'needs_operator' \
+        let oldest_needs_operator_updated_at: Option<String> = sqlx::query_scalar(state::sql(
+            "SELECT updated_at FROM execution_requests WHERE state = {needs_operator} \
              ORDER BY updated_at ASC LIMIT 1",
-        )
+        ))
         .fetch_optional(self.pool())
         .await?;
         let oldest_needs_operator_age_secs = oldest_needs_operator_updated_at

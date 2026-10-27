@@ -460,7 +460,7 @@ fn completion_crash() -> Completion<'static> {
         fencing_token: 1,
         completion_id: "completion-1",
         final_event_checkpoint: None,
-        terminal_state: "succeeded",
+        terminal_state: tack_protocol::execution::ExecutionState::Succeeded,
         terminal_reason: "completed",
         actual_execution: "{}",
         usage: "{}",

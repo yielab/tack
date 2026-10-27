@@ -124,6 +124,20 @@ pub enum ExecutionState {
 }
 
 impl ExecutionState {
+    /// Every state, in the order the lifecycle lists them.
+    pub const ALL: [Self; 10] = [
+        Self::Queued,
+        Self::Leased,
+        Self::Preparing,
+        Self::Running,
+        Self::WaitingDecision,
+        Self::Succeeded,
+        Self::Failed,
+        Self::Cancelled,
+        Self::Lost,
+        Self::NeedsOperator,
+    ];
+
     pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }

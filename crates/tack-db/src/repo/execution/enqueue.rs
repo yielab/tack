@@ -1,6 +1,7 @@
 //! Enqueueing: the request snapshot is parsed and validated, the request is stored, and the queue is read, both for listings and for what the
 //! scheduler may hand out next.
 
+use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
@@ -463,15 +464,15 @@ impl Repository {
         &self,
         runner_id: &str,
     ) -> Result<Vec<QueuedRequestForScheduling>, StoreError> {
-        let rows = sqlx::query(
+        let rows = sqlx::query(state::sql(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
              requested_model, created_at, metadata, \
              permission_policy, waiting_since \
-             FROM execution_requests WHERE state='queued' AND \
+             FROM execution_requests WHERE state={queued} AND \
              ((selector_kind='exact_runner' AND selector_id=?) OR \
              (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m \
              WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at",
-        )
+        ))
         .bind(runner_id)
         .bind(runner_id)
         .fetch_all(self.pool())
@@ -505,7 +506,7 @@ impl Repository {
         blocking: bool,
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
-        sqlx::query("UPDATE execution_requests SET waiting_code=?,waiting_reason=?,waiting_since=CASE WHEN ? THEN COALESCE(waiting_since,?) ELSE NULL END WHERE id=? AND state='queued'")
+        sqlx::query(state::sql("UPDATE execution_requests SET waiting_code=?,waiting_reason=?,waiting_since=CASE WHEN ? THEN COALESCE(waiting_since,?) ELSE NULL END WHERE id=? AND state={queued}"))
             .bind(code).bind(reason).bind(blocking).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
         Ok(())
@@ -521,7 +522,7 @@ impl Repository {
         reason: &str,
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
-        let updated = sqlx::query("UPDATE execution_requests SET state='failed',waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND state='queued'")
+        let updated = sqlx::query(state::sql("UPDATE execution_requests SET state={failed},waiting_code=?,waiting_reason=?,updated_at=? WHERE id=? AND state={queued}"))
             .bind(code).bind(reason).bind(now.to_rfc3339()).bind(request_id)
             .execute(self.pool()).await?;
         Ok(updated.rows_affected() == 1)

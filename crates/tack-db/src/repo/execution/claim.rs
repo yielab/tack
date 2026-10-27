@@ -1,6 +1,7 @@
 //! Claiming: runners and their enrollment, the agent profiles and fleets they belong to, what the scheduler may hand out, and the lease a claim
 //! issues and its heartbeats extend.
 
+use super::state::{self, Move};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use tack_protocol::Clock;
@@ -676,9 +677,9 @@ impl Repository {
             tx.commit().await?;
             return Ok(HeartbeatBatchResult::Replayed(response));
         }
-        let active_reservations: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM execution_attempts WHERE runner_id=? AND state IN ('leased','preparing','running','waiting_decision')",
-        )
+        let active_reservations: i64 = sqlx::query_scalar(state::sql(
+            "SELECT COUNT(*) FROM execution_attempts WHERE runner_id=? AND state IN ({held})",
+        ))
         .bind(runner_id)
         .fetch_one(&mut *tx)
         .await?;
@@ -689,7 +690,7 @@ impl Repository {
         }
         let mut result = Vec::with_capacity(leases.len());
         for lease in leases {
-            let row=sqlx::query("SELECT r.cancellation_requested_at FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND a.state IN ('leased','preparing','running','waiting_decision') AND a.lease_expires_at>?").bind(lease.attempt_id).bind(runner_id).bind(lease.fencing_token).bind(&now_s).fetch_optional(&mut *tx).await?;
+            let row=sqlx::query(state::sql("SELECT r.cancellation_requested_at FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND a.state IN ({held}) AND a.lease_expires_at>?")).bind(lease.attempt_id).bind(runner_id).bind(lease.fencing_token).bind(&now_s).fetch_optional(&mut *tx).await?;
             let Some(row) = row else {
                 tx.rollback().await?;
                 return Ok(HeartbeatBatchResult::StaleLease(lease.attempt_id.into()));
@@ -915,7 +916,7 @@ impl Repository {
         }
         let request = match selection {
             RequestSelection::Naive => {
-                sqlx::query("SELECT id,request_snapshot FROM execution_requests WHERE state='queued' AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at LIMIT 1")
+                sqlx::query(state::sql("SELECT id,request_snapshot FROM execution_requests WHERE state={queued} AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at LIMIT 1"))
                     .bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?
             }
             RequestSelection::Scheduled(Some(chosen_id)) => {
@@ -923,7 +924,7 @@ impl Repository {
                 // still `queued` and still selector-eligible for this
                 // runner, exactly as the naive path always has, rather than
                 // trusting the earlier read-only snapshot blindly.
-                sqlx::query("SELECT id,request_snapshot FROM execution_requests WHERE id=? AND state='queued' AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?)))")
+                sqlx::query(state::sql("SELECT id,request_snapshot FROM execution_requests WHERE id=? AND state={queued} AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?)))"))
                     .bind(chosen_id).bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?
             }
             RequestSelection::Scheduled(None) => unreachable!("handled above"),
@@ -933,7 +934,8 @@ impl Repository {
             return Ok(None);
         };
         let request_id: String = request.get("id");
-        if sqlx::query("UPDATE execution_requests SET state='leased',waiting_code=NULL,waiting_reason=NULL,waiting_since=NULL,updated_at=? WHERE id=? AND state='queued'").bind(&now_s).bind(&request_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.rollback().await?; return Ok(None); }
+        let (set, guard) = (Move::Lease.set(), Move::Lease.guard());
+        if sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_requests SET {set},waiting_code=NULL,waiting_reason=NULL,waiting_since=NULL,updated_at=? WHERE id=? AND {guard}"))).bind(&now_s).bind(&request_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.rollback().await?; return Ok(None); }
         let n: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(attempt_number),0)+1 FROM execution_attempts WHERE request_id=?",
         )

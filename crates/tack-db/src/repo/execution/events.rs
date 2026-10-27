@@ -1,5 +1,6 @@
 //! Events: a runner's batches of events are appended once, read back per attempt, and purged with the replay bookkeeping.
 
+use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
@@ -172,7 +173,7 @@ impl Repository {
         // Mirrors the redeem_enrollment_token and
         // claim_execution_idempotent_with_snapshot fixes above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let row = sqlx::query("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ('leased','preparing','running','waiting_decision') AND lease_expires_at>?")
+        let row = sqlx::query(state::sql("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ({held}) AND lease_expires_at>?"))
             .bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
             tx.commit().await?;
@@ -374,12 +375,12 @@ impl Repository {
         loop {
             let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
 
-            let ids: Vec<String> = sqlx::query_scalar(
+            let ids: Vec<String> = sqlx::query_scalar(state::sql(
                 "SELECT ee.id FROM execution_events ee \
                  JOIN execution_attempts ea ON ea.id = ee.attempt_id \
-                 WHERE ee.occurred_at < ? AND ea.state IN ('succeeded','failed','cancelled') \
+                 WHERE ee.occurred_at < ? AND ea.state IN ({terminal}) \
                  ORDER BY ee.occurred_at ASC LIMIT ?",
-            )
+            ))
             .bind(&cutoff_str)
             .bind(batch_size)
             .fetch_all(&mut *tx)

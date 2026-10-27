@@ -32,7 +32,7 @@ use tack_db::repo::execution::{
 async fn concurrent_duplicate_completions_have_one_committed_writer() {
     let fx = Fixture::new().await;
     let fence = fx
-        .ready_completion_attempt("request-concurrent-complete", "attempt-concurrent-complete")
+        .ready_running_attempt("request-concurrent-complete", "attempt-concurrent-complete")
         .await;
     let completion = completion_input(
         "attempt-concurrent-complete",

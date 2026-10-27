@@ -1,5 +1,6 @@
 //! Artifacts an attempt produced, their stored content, and the operator's review of a Merge-Readiness Pack.
 
+use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
@@ -106,7 +107,7 @@ impl Repository {
         // an artifact land against an attempt that has already gone
         // terminal, lost, or needs_operator.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at > ?)")
+        let valid: bool = sqlx::query_scalar(state::sql("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ({terminal}) AND lease_expires_at > ?)"))
             .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
         if !valid {
             tx.commit().await?;
@@ -220,7 +221,7 @@ impl Repository {
     ) -> Result<ArtifactContentCommitResult, StoreError> {
         let now = stamp(clock);
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ('succeeded','failed','cancelled') AND lease_expires_at > ?)")
+        let valid: bool = sqlx::query_scalar(state::sql("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state NOT IN ({terminal}) AND lease_expires_at > ?)"))
             .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
         if !valid {
             tx.commit().await?;

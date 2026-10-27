@@ -4,8 +4,7 @@ use chrono::{DateTime, Utc};
 use sqlx::AssertSqlSafe;
 
 use crate::repo::budgets::{
-    COUNTED_TOKENS_SQL, DayRoom, OPEN_ATTEMPT_STATES, ProjectBudgets, day_start,
-    running_counted_join,
+    COUNTED_TOKENS_SQL, DayRoom, ProjectBudgets, day_start, running_counted_join,
 };
 use crate::{Repository, StoreError};
 
@@ -115,6 +114,7 @@ pub async fn day_room(
     };
     let counted = spent_today(repo, project_id, now).await?;
     // The fragment is a constant of this crate; only `project_id` is bound.
+    let held = crate::repo::execution::state::held();
     let (open_runs, reserved): (i64, i64) = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT COUNT(*), COALESCE(SUM(MAX(own - counted, 0)), 0) FROM (
             SELECT json_extract(r.request_snapshot, '$.budgets.tokens') AS own,
@@ -124,7 +124,7 @@ pub async fn day_room(
             JOIN execution_requests r ON r.id = a.request_id
             JOIN items i ON i.id = r.item_id
             WHERE i.project_id = ?
-              AND a.state IN ({OPEN_ATTEMPT_STATES}))
+              AND a.state IN ({held}))
          WHERE own IS NOT NULL",
         running_counted_join()
     )))
@@ -147,7 +147,7 @@ pub async fn review_queue_items(repo: &Repository, project_id: &str) -> Result<i
     // The fragment is a constant of this crate; only `project_id` is bound.
     Ok(sqlx::query_scalar(AssertSqlSafe(format!(
         "SELECT COUNT(*) FROM items WHERE project_id = ? AND completed_at IS NULL AND {}",
-        crate::repo::items::NEEDS_REVIEW_SQL
+        crate::repo::items::needs_review_sql()
     )))
     .bind(project_id)
     .fetch_one(repo.pool())

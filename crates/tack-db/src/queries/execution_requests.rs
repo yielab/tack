@@ -167,11 +167,11 @@ pub async fn items_with_an_open_request(
     repo: &Repository,
     project_id: &str,
 ) -> Result<Vec<String>, StoreError> {
-    Ok(sqlx::query_scalar(
+    Ok(sqlx::query_scalar(state::sql(
         "SELECT r.item_id FROM execution_requests r JOIN items i ON i.id = r.item_id
          WHERE i.project_id = ?
-           AND r.state IN ('queued','leased','preparing','running','waiting_decision')",
-    )
+           AND r.state IN ({open})",
+    ))
     .bind(project_id)
     .fetch_all(repo.pool())
     .await?)

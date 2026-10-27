@@ -55,12 +55,16 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
     ] {
         let fx = Fixture::new().await;
         let request = format!("request-{state}");
-        let fence = fx.ready_completion_attempt(&request, "attempt-e").await;
+        let fence = if matches!(route, "succeeded" | "failed") {
+            fx.ready_running_attempt(&request, "attempt-e").await
+        } else {
+            fx.ready_completion_attempt(&request, "attempt-e").await
+        };
         seed_decisions(&fx, "attempt-e").await;
         match route {
             "succeeded" | "failed" => {
                 let done = Completion {
-                    terminal_state: state,
+                    terminal_state: state.parse().unwrap(),
                     ..completion_input("attempt-e", fence, "done", None)
                 };
                 assert!(
@@ -123,9 +127,7 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
 #[tokio::test]
 async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
     let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-old", "attempt-old")
-        .await;
+    let fence = fx.ready_running_attempt("request-old", "attempt-old").await;
     assert!(matches!(
         fx.complete(completion_input("attempt-old", fence, "done", None))
             .await,
@@ -415,7 +417,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     );
     assert_eq!(
         fx.request_state("request-cancellation-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(fx.capacity().await, 0);
 }
@@ -424,7 +426,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
 async fn completion_replay_insert_failure_rolls_back_terminal() {
     let fx = Fixture::new().await;
     let fence = fx
-        .ready_completion_attempt("request-completion-rollback", "attempt-completion-rollback")
+        .ready_running_attempt("request-completion-rollback", "attempt-completion-rollback")
         .await;
     sqlx::query("CREATE TRIGGER fail_completion_replay BEFORE INSERT ON execution_completion_replays BEGIN SELECT RAISE(ABORT, 'forced completion replay failure'); END")
         .execute(fx.repo.pool())
@@ -443,11 +445,11 @@ async fn completion_replay_insert_failure_rolls_back_terminal() {
     assert!(error.is_err());
     assert_eq!(
         fx.attempt_state("attempt-completion-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(
         fx.request_state("request-completion-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(fx.capacity().await, 0);
 }

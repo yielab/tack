@@ -8,9 +8,7 @@ mod status_map;
 use std::future::Future;
 
 use tack_db::Repository;
-use tack_db::repo::execution::{
-    Completion, CompletionResponse, CompletionResult, FollowUps, state,
-};
+use tack_db::repo::execution::{Completion, CompletionResponse, CompletionResult, FollowUps};
 use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
@@ -103,7 +101,7 @@ where
                 fencing_token: report.fencing_token,
                 completion_id: report.completion_id,
                 final_event_checkpoint: report.final_event_checkpoint,
-                terminal_state: state::text(report.terminal_state),
+                terminal_state: report.terminal_state,
                 terminal_reason: report.terminal_reason_json,
                 actual_execution: report.actual_execution_json,
                 usage: report.usage_json,

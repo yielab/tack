@@ -648,7 +648,7 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
         .unwrap();
     let app = prill_board(&mut fx, root.path());
 
-    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("mrp-key", "claim-mrp").await;
+    let (_, attempt_id, fencing_token) = fx.ready_running("mrp-key", "claim-mrp").await;
     seed::execution_pack_artifact(
         &fx.repo,
         &attempt_id,
@@ -1062,9 +1062,8 @@ async fn artifact_manifest_is_accepted_with_put_upload_target() {
 #[tokio::test]
 async fn completion_is_idempotent_and_restores_capacity_once() {
     let fx = Fixture::new().await;
-    let (request_id, attempt_id, fencing_token) = fx
-        .enqueue_and_claim("completion-key", "claim-completion")
-        .await;
+    let (request_id, attempt_id, fencing_token) =
+        fx.ready_running("completion-key", "claim-completion").await;
     let (status, completed) = fx
         .complete_default(&attempt_id, fencing_token, "complete-1")
         .await;
@@ -1199,7 +1198,7 @@ async fn event_batch_conflict_vs_idempotency_conflict_retryable() {
 async fn completion_replay_changed_content_is_idempotency_conflict() {
     let fx = Fixture::new().await;
     let (_, attempt_id, fencing_token) = fx
-        .enqueue_and_claim("completion-idempotency-key", "claim-completion-idem")
+        .ready_running("completion-idempotency-key", "claim-completion-idem")
         .await;
 
     let (status, committed) = fx
