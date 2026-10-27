@@ -18,7 +18,7 @@ it. So:
   captured from the real programs. Today `.github/` names neither program, and `scripts/smoke.sh`
   in fake mode needs neither; no card may change that.
 - **Everything that talks to a real docket or prill is local**, in one command,
-  `scripts/docket-prill-e2e.sh`, plus its `--check` mode (card A). It is run by hand, at the end
+  `onboarding-lab/e2e/docket-prill-e2e.sh`, plus its `--check` mode (card A). It is run by hand, at the end
   of a round, never in CI.
 - A Rust test that needs a real program is `#[ignore = "<reason>"]` and run by that command, never
   a test that silently returns early when the program is missing (today
@@ -44,7 +44,7 @@ it. So:
 - **The full suites run once per round**, on the merged tree, by whoever integrates: `.githooks/pre-push`,
   `cargo nextest run --workspace`, `npx vitest run`, and the Playwright CI config on Chromium. A
   card that changes the HTTP API runs `./scripts/regen-generated.sh` before it finishes.
-- **The local suite of the three** (`scripts/docket-prill-e2e.sh` and `--check`) runs after Round 1
+- **The local suite of the three** (`onboarding-lab/e2e/docket-prill-e2e.sh` and `--check`) runs after Round 1
   merges and once at the end; only card A runs it inside a card, once, at its end.
 - **Load.** At most two cards build at the same time, each in its own worktree with its own build
   folder on the partition with room; the dispatcher renices builds from outside. No card opens a
@@ -101,7 +101,7 @@ the two round gates passed on the merged tree.
 
 **Model:** Sonnet. **Waits on:** C (A asserts the texts C writes).
 
-**Why.** The only place Tack, docket and prill meet is `scripts/docket-prill-e2e.sh` with
+**Why.** The only place Tack, docket and prill meet is `onboarding-lab/e2e/docket-prill-e2e.sh` with
 `frontend/e2e/docket-prill.spec.ts`. Its "9 of 9" (2026-10-18) predates the escalation record, and
 today it cannot pass:
 - test 08 expects the sentence `Allow bash… docket's policy:`, which Tack no longer writes (the

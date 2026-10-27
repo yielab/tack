@@ -442,17 +442,39 @@ README's and the book's images and GIFs, each through its own config and its own
 The default config ignores them and CI never runs them.
 
 `docket-prill.spec.ts` is a live test, not a CI one, and it is not versioned: it lives in the
-git-ignored `onboarding-lab/e2e/` with `docket-prill-e2e.sh`, which builds `tack`
-with the SPA embedded, runs docket (0.2.0-beta.6, API 6) and prill from their own source trees
-(`DOCKET_SRC`, `PRILL_SRC`), starts `docket start --dispatch` itself in a scratch `HOME` with an
-isolated `DOCKET_HOME` and two pods (`saas-code`, `saas-content`) over the fixture repository, and
-drives the whole workflow through the UI: a project, its runner enrolled on the Agents page, its
-settings, a code item and a content item added at once, a rejection with its rework, and a
-screenshot of the ladder, with a screenshot per step in `onboarding-lab/results/docket-prill/`. It
-checks what a person would: every run's steps reach the timeline before it ends, in order; prill's
-pack comes back for each run and is reviewed. The script dies before building when
-`GET /status.json` does not answer `apiVersion` 5 or later. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1`
-when nothing in Tack changed; the script lists its knobs at the top.
+git-ignored `onboarding-lab/e2e/` with `docket-prill-e2e.sh`. CI never runs it and never needs
+docket or prill; the three meet only here. The script builds `tack` with the SPA embedded, runs
+docket (API 6) and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`), and starts docket
+in a scratch `HOME` with an isolated `DOCKET_HOME`, three teams over the fixture repository (two
+attended, one lights-out with an approval step) and a prill key that signs every pack. It dies
+before building when `GET /escalations?since=0` does not answer 200. Fourteen serial tests drive
+the workflow through the UI, as a person would:
+
+- A project, its runner enrolled on the Agents page, and a code, a content and a plain item.
+- Each run goes to the team its role's profile names: docket holds one task for the attempt there
+  and none in another team, every step reaches the timeline in order, and the usage per model
+  equals docket's own, with cache reads out of the counted tokens and the limit.
+- A policy parks a task with no model: the card says "Needs a person", the question survives a
+  restart of the runner and of docket, and the answer is given on screen. Cancelling a parked
+  run closes its question.
+- Level 5 on a lights-out team meets the approval and ends needing a person; on an attended team
+  docket's 422 sentence is shown.
+- The pack of each run comes back signed, `prill attest verify` accepts the head commit and
+  refuses another, and prill's own records are read.
+
+Each step leaves a screenshot in `onboarding-lab/results/docket-prill/`, and the lab's README keeps
+the date and result of the last run. A test that needs a model (the lead hop of a lights-out
+team) can fail on the local model alone; read the log before blaming Tack. A failing `command`
+criterion becomes docket's gate and docket fails the run before prill sees it, so a verifier
+reject is provoked with an `absent` or `file` criterion. The Team select lists only teams some
+profile already names, so the first profile of a team is made over the API.
+
+`docket-prill-e2e.sh --check` needs no model and no container: it runs `scripts/capture-docket-fixtures.sh`
+against real docket, compares the keys of its answers with the fixtures under
+`crates/tack-runner/src/harness/fixtures/docket/`, compares `docs/contracts/mrp-v1/fixtures/prill/`
+with prill's own contract fixtures, and runs the `briefing_schema` test, which is `#[ignore]`d in
+CI because it needs `prill` on `PATH`. It exits non-zero when any of them drifted. Rerun the
+script with `DOCKET_PRILL_SKIP_BUILD=1` when nothing in Tack changed; it lists its knobs at the top.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it
