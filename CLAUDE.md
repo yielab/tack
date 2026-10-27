@@ -31,11 +31,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   tokens with no default and no dollars per day, cache reads never counted, every limit naming who
   applies it, and nothing sent to an agent twice. every round (A, G, B, D, E, V, L, CT, Z's screens) is in `develop`; left is
   Z's run of My SaaS, end to end through docket and prill.
-- **Proposed 2026-10-18:** Phase 76 (`docs/plans/phase-76.md`, ADR 0025, proposed) — the project
-  file kept in sync like Drupal's configuration: a key on every role, field, sprint and profile, an
-  import that is a three-way comparison against the last revision (removes what the file removed,
-  keeps what the board changed, stops on a conflict, shows every removal's cost), revisions to go
-  back to, and every import in one transaction. Waits on the maintainer's "continúa".
+- **Future, not planned (2026-10-27):** Phase 76 (`docs/plans/phase-76.md`, ADR 0025, proposed) — the project
+  file kept in sync like Drupal's configuration. Postponed with no date; the plan predates Phases 79 to 81 and
+  needs a re-read before it is opened. Until then the project file only creates and updates, never deletes.
 - **Accepted 2026-10-19, from the My SaaS rerun:** ADR 0026 (built: the runner's default settings
   file, and a card with no check says so) and ADR 0027 (whoever makes the agent's copy installs its
   dependencies from the lockfile; Tack makes no copy of its own for a docket run; decision 5, a

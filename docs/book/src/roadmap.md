@@ -4,7 +4,7 @@
 > history; closed phases are archived under
 > [`docs/closed-cycles/boards/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/boards).
 
-**Tack is delivered through Phase 78, bar Phase 76.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 78.** A project is planned and tracked on a board, a list, a
 table, a calendar or a timeline, with or without agents. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. The run's work comes back as evidence to review, an independent
@@ -16,12 +16,9 @@ team, repeat tasks, and travel whole in one file.
 **Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. `v0.1.0-beta.10`,
 which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not published yet.
 Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79 and 80
-are built on a branch and not yet merged; Phases 76 and 81 are proposed.
+are built on a branch and not yet merged; Phase 81 is proposed.
 
-**Where this is going.** Phase 76 makes the project file a place the
-configuration is kept, not only imported from: a key that survives a rename, an import that
-removes what the file removed and keeps what the board changed, the cost of every removal shown
-first, and a revision to go back to. Phases 79 and 80 give the runner a crate of its own and make
+**Where this is going.** Phases 79 and 80 give the runner a crate of its own and make
 a run that waits on a person wait without a clock. Phase 81 fixes what an audit of that tree
 found. Tack keeps the same three neighbours it never contains: an agent runtime such as docket,
 which runs the work; an independent verifier such as prill, which judges it; and GitHub. Each
@@ -36,8 +33,17 @@ the section named beside it. What is not a card is in "Cancelled" below.
 
 - **[Phase 81](#phase-81--what-the-audit-found)**, what the 2026-10-26 audit found, in cards B, C, D, S, R, A, H, E, F, I, J and K.
   Its last card ends with the review and merge of Phases 79, 80 and 81 into `develop`.
-- **[Phase 76](#phase-76--the-project-file-is-kept-in-sync)**, the project file kept in sync. It is
-  proposed and builds nothing until the maintainer approves it.
+
+## Future, not planned
+
+Phase 76 is the only one. It has no date, no owner and no card in progress; it stays written so
+it can be opened later.
+
+- **[Phase 76](#phase-76--the-project-file-is-kept-in-sync)**, the project file kept in sync: a
+  key that survives a rename, an import that removes what the file removed and keeps what the
+  board changed, the cost of every removal shown first, and a revision to go back to. Until it is
+  opened, the project file stays what Phase 73 made it: an import that creates and updates by
+  name and never deletes.
 
 ## Cancelled
 
@@ -71,7 +77,7 @@ includes the composed instructions (so a title edit answers 409): card E of Phas
 what the first runs from the desktop app found, the board screen audit, the gaps of earlier phases
 that are a fix, and the item screen's new design, and orders them so each screen and each module is
 changed by one task, once. No ADR: nothing here changes a decision; the one model change is a tick
-on a manual check. Phase 76 goes after it, since both change the profile table and the project file.
+on a manual check.
 
 | Id | Task | Owns | Waits on |
 |---|---|---|---|
@@ -187,8 +193,9 @@ once per round on the merged tree, and the local suite of the three after Round 
 
 ## Phase 76 — the project file is kept in sync
 
-**Status:** proposed 2026-10-18; ADR 0025 proposed the same day, with its four defaults. It waits
-on the maintainer's approval. **ADR:** 0025 (amends 0022 §2 and §6). **Plan:**
+**Status:** future, not planned (postponed 2026-10-27). Proposed 2026-10-18; ADR 0025 proposed the
+same day, with its four defaults. Nothing is built, and the plan was written before Phases 79 to
+81 moved the code: re-read it against the tree before opening it. **ADR:** 0025 (amends 0022 §2 and §6). **Plan:**
 [`docs/plans/phase-76.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md).
 
 The project file of Phase 73 is a one-way door: it creates and updates by name and never

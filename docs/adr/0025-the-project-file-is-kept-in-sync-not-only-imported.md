@@ -1,6 +1,6 @@
 # ADR 0025: the project file is kept in sync, not only imported
 
-**Status: PROPOSED 2026-10-18.** To be executed by Phase 76 (`docs/plans/phase-76.md`, proposed; it waits on the maintainer). Amends ADR 0022
+**Status: PROPOSED 2026-10-18; postponed 2026-10-27, future and not planned.** To be executed by Phase 76 (`docs/plans/phase-76.md`), which has no date. Amends ADR 0022
 decision 2 (an import never deletes), decision 6 (the export carries no ids) and its alternative
 "a bundle that deletes what it does not mention". Keeps ADR 0022 decision 4 (a file cannot raise
 autonomy or switch auto-start on) and ADR 0017 (items are always added, never matched).
