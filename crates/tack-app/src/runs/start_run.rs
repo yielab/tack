@@ -646,6 +646,29 @@ fn item_not_found() -> Refusal {
     )
 }
 
+/// The level a run asks for: a level applies only to a docket run, and only L3, L4 or L5 exist.
+fn requested_level(
+    requested_harness_kind: &str,
+    autonomy: &str,
+) -> Result<tack_core::autonomy::Level, Refusal> {
+    if requested_harness_kind != crate::autonomy::DOCKET {
+        return Err(error(
+            status::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "A level applies only to a docket run",
+            json!({"field": "autonomy", "reason": "level_needs_docket"}),
+        ));
+    }
+    autonomy.parse().map_err(|_| {
+        error(
+            status::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "autonomy must be L3, L4 or L5",
+            json!({"field": "autonomy"}),
+        )
+    })
+}
+
 /// Enqueues a request whose profile and repository are already resolved. Also the entry for
 /// server-built requests that have no HTTP body to validate.
 pub async fn enqueue_run(
@@ -870,24 +893,7 @@ pub async fn enqueue_run(
         snapshot_value["push_branch"] = json!(push_branch);
     }
     if let Some(autonomy) = &input.autonomy {
-        if requested_harness_kind != crate::autonomy::DOCKET {
-            return Err(error(
-                status::BAD_REQUEST,
-                StableErrorCode::InvalidRequest,
-                "A level applies only to a docket run",
-                json!({"field": "autonomy", "reason": "level_needs_docket"}),
-            ));
-        }
-        let level = autonomy
-            .parse::<tack_core::autonomy::Level>()
-            .map_err(|_| {
-                error(
-                    status::BAD_REQUEST,
-                    StableErrorCode::InvalidRequest,
-                    "autonomy must be L3, L4 or L5",
-                    json!({"field": "autonomy"}),
-                )
-            })?;
+        let level = requested_level(&requested_harness_kind, autonomy)?;
         snapshot_value["autonomy"] = json!(level.to_string());
     }
     if input.origin.as_deref() == Some("mcp") {

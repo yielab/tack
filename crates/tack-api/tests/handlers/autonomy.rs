@@ -1003,7 +1003,7 @@ async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_can
 }
 
 #[tokio::test]
-async fn a_run_created_at_l3_keeps_that_level_and_another_level_name_is_refused() {
+async fn a_docket_run_created_at_l3_keeps_that_level_and_any_other_run_is_refused_a_level() {
     let root = tempfile::tempdir().unwrap();
     let prill = fake_prill(root.path());
     let b = board(root.path(), None, &prill).await;
@@ -1014,7 +1014,12 @@ async fn a_run_created_at_l3_keeps_that_level_and_another_level_name_is_refused(
             .unwrap()
             .map(|raw| serde_json::from_str::<Value>(&raw).unwrap()["agent_profile_id"].clone())
             .unwrap();
-    for (autonomy, key) in [("L3", "again"), ("L9", "refused")] {
+    // (harness, level, key, the field the refusal names, or none when the run is created)
+    for (harness, autonomy, key, refused) in [
+        ("docket", "L3", "again", None),
+        ("docket", "L9", "unknown", Some("autonomy")),
+        ("codex", "L3", "not-docket", Some("autonomy")),
+    ] {
         let mut body = crate::handlers::mrp::execution_request_body(
             &b.item_id,
             key,
@@ -1022,15 +1027,17 @@ async fn a_run_created_at_l3_keeps_that_level_and_another_level_name_is_refused(
             profile.as_str().unwrap(),
             None,
         );
+        body["requested_harness_kind"] = json!(harness);
         body["autonomy"] = json!(autonomy);
         let (status, created) =
             common::send(&b.app, "POST", "/api/executions", body, &operator_headers()).await;
-        if autonomy == "L9" {
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{created}");
+        if let Some(field) = refused {
             assert_eq!(
-                created["error"]["details"]["field"], "autonomy",
-                "{created}"
+                status,
+                StatusCode::BAD_REQUEST,
+                "{harness} {autonomy}: {created}"
             );
+            assert_eq!(created["error"]["details"]["field"], field, "{created}");
             continue;
         }
         assert_eq!(status, StatusCode::OK, "{created}");
