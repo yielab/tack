@@ -44,7 +44,7 @@ use std::{
 use async_trait::async_trait;
 use reqwest::{Client, Method, StatusCode, header};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use tack_protocol::execution as wire;
 use tack_protocol::execution::{
     ClaimGranted, ClaimResponse, ExecutionState, ProtocolErrorEnvelope, ProtocolVersion,
@@ -276,25 +276,19 @@ fn map_error_body(status: StatusCode, body: &[u8]) -> ProtocolClientError {
     }
 }
 
-fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value, ProtocolClientError> {
-    value.get(name).ok_or(ProtocolClientError::Rejected)
+/// An instant a harness adapter reported as text, as the wire carries it; one that is not an
+/// RFC 3339 timestamp is refused here, the way the board would refuse it.
+fn instant(timestamp: &Timestamp) -> Result<chrono::DateTime<chrono::Utc>, ProtocolClientError> {
+    chrono::DateTime::parse_from_rfc3339(timestamp.as_str())
+        .map(|parsed| parsed.with_timezone(&chrono::Utc))
+        .map_err(|_| ProtocolClientError::Protocol {
+            code: StableErrorCode::InvalidRequest,
+        })
 }
 
-fn as_str(value: &Value, name: &str) -> Result<String, ProtocolClientError> {
-    field(value, name)?
-        .as_str()
-        .map(str::to_owned)
-        .ok_or(ProtocolClientError::Rejected)
-}
-
-fn as_u64(value: &Value, name: &str) -> Result<u64, ProtocolClientError> {
-    field(value, name)?
-        .as_u64()
-        .ok_or(ProtocolClientError::Rejected)
-}
-
-fn optional_str(value: &Value, name: &str) -> Option<String> {
-    value.get(name).and_then(Value::as_str).map(str::to_owned)
+/// An instant of the wire as the runner's text timestamp.
+fn timestamp(instant: chrono::DateTime<chrono::Utc>) -> Timestamp {
+    Timestamp::new(instant.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
 }
 
 fn typed<T: for<'de> Deserialize<'de>>(value: &Value) -> Result<T, ProtocolClientError> {
@@ -322,22 +316,20 @@ fn require_v1(value: &Value) -> Result<(), ProtocolClientError> {
 /// `EmbeddedCapabilitySnapshot`'s own doc comment in tack-orch), so they are
 /// dropped here rather than emitted as extra keys the server would have to
 /// absorb into its additive-field bucket.
-fn embedded_capabilities(capabilities: &RunnerCapabilities) -> Result<Value, ProtocolClientError> {
+fn embedded_capabilities(
+    capabilities: &RunnerCapabilities,
+) -> Result<wire::EmbeddedCapabilitySnapshot, ProtocolClientError> {
     let mut value =
         serde_json::to_value(capabilities).map_err(|_| ProtocolClientError::Rejected)?;
     if let Some(object) = value.as_object_mut() {
         object.remove("runner_version");
         object.remove("protocol_version");
     }
-    Ok(value)
+    typed(&value)
 }
 
 fn attempt_state(state: ExecutionState) -> Result<AttemptState, ProtocolClientError> {
     AttemptState::from_execution(state).ok_or(ProtocolClientError::Rejected)
-}
-
-fn attempt_state_from(value: &Value, name: &str) -> Result<AttemptState, ProtocolClientError> {
-    typed(field(value, name)?)
 }
 
 #[async_trait]
@@ -347,14 +339,14 @@ impl PullProtocol for HttpPullProtocol {
         enrollment_credential: &EnrollmentCredential,
         request: EnrollmentRequest,
     ) -> Result<EnrollmentResponse, ProtocolClientError> {
-        let body = json!({
-            "protocol_version": 1,
+        let body = wire::EnrollmentRequest {
+            protocol_version: ProtocolVersion::v1(),
             // The only place the enrollment token is written onto the wire.
-            "enrollment_token": enrollment_credential.expose(),
-            "runner_name": request.runner_name,
-            "runner_version": request.runner_version,
-            "capabilities": embedded_capabilities(&request.capabilities)?,
-        });
+            enrollment_token: enrollment_credential.expose().to_owned(),
+            runner_name: request.runner_name,
+            runner_version: request.runner_version,
+            capabilities: embedded_capabilities(&request.capabilities)?,
+        };
         let value = self
             .send_json(
                 Method::POST,
@@ -366,15 +358,16 @@ impl PullProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
+        let granted: wire::EnrollmentResponse = typed(&value)?;
         Ok(EnrollmentResponse {
             session: RunnerSession::new(
-                RunnerId::new(as_str(&value, "runner_id")?),
-                RunnerCredential::new(as_str(&value, "runner_credential")?),
-                Timestamp::new(as_str(&value, "credential_expires_at")?),
+                granted.runner_id,
+                RunnerCredential::new(granted.runner_credential),
+                timestamp(granted.credential_expires_at),
             ),
-            heartbeat_interval: Duration::from_secs(as_u64(&value, "heartbeat_interval_seconds")?),
-            lease_duration: Duration::from_secs(as_u64(&value, "lease_duration_seconds")?),
-            server_time: Timestamp::new(as_str(&value, "server_time")?),
+            heartbeat_interval: Duration::from_secs(granted.heartbeat_interval_seconds),
+            lease_duration: Duration::from_secs(granted.lease_duration_seconds),
+            server_time: timestamp(granted.server_time),
         })
     }
 
@@ -383,14 +376,14 @@ impl PullProtocol for HttpPullProtocol {
         session: &RunnerSession,
         request: RefreshRequest,
     ) -> Result<RefreshResponse, ProtocolClientError> {
-        let body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "runner_name": request.runner_name,
-            "runner_version": request.runner_version,
-            "rotate_credential": request.rotate_credential,
-            "capabilities": embedded_capabilities(&request.capabilities)?,
-        });
+        let body = wire::RefreshRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            runner_name: request.runner_name,
+            runner_version: request.runner_version,
+            rotate_credential: request.rotate_credential,
+            capabilities: embedded_capabilities(&request.capabilities)?,
+        };
         let value = self
             .send_json(
                 Method::POST,
@@ -402,20 +395,21 @@ impl PullProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
+        let accepted: wire::RefreshResponse = typed(&value)?;
         // `refresh.response.json` carries `runner_credential: null` when no
         // rotation was requested. Retaining the current credential in that
         // case is the fixture's own documented meaning — not a fallback.
-        let credential = match value.get("runner_credential").and_then(Value::as_str) {
+        let credential = match accepted.runner_credential {
             Some(rotated) => RunnerCredential::new(rotated),
             None => session.credential().clone(),
         };
         Ok(RefreshResponse {
             session: RunnerSession::new(
-                RunnerId::new(as_str(&value, "runner_id")?),
+                accepted.runner_id,
                 credential,
-                Timestamp::new(as_str(&value, "credential_expires_at")?),
+                timestamp(accepted.credential_expires_at),
             ),
-            accepted_at: Timestamp::new(as_str(&value, "accepted_at")?),
+            accepted_at: timestamp(accepted.accepted_at),
         })
     }
 
@@ -519,14 +513,17 @@ impl PullProtocol for HttpPullProtocol {
                 });
             }
         };
-        let mut body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "attempt_id": report.attempt_id,
-            "fencing_token": report.fencing_token,
-            "workspace_id": workspace_id,
-            "base_revision": base_revision,
-        });
+        let mut body = wire::AttemptTransitionRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            attempt_id: report.attempt_id.clone(),
+            fencing_token: report.fencing_token,
+            workspace_id: workspace_id.clone(),
+            base_revision: base_revision.clone(),
+            process_id: None,
+            environment_names: Vec::new(),
+            sandbox: None,
+        };
         let path = match report.phase {
             StartPhase::Preparing => {
                 format!("/attempts/{}/accept", report.attempt_id)
@@ -537,13 +534,10 @@ impl PullProtocol for HttpPullProtocol {
                         code: StableErrorCode::InvalidRequest,
                     });
                 };
-                body["process_id"] = json!(process_id);
-                if !report.environment_names.is_empty() {
-                    body["environment_names"] = json!(report.environment_names);
-                }
-                if let Some(sandbox) = &report.sandbox {
-                    body["sandbox"] = json!(sandbox);
-                }
+                body.process_id = Some(process_id.to_owned());
+                // Empty is not sent.
+                body.environment_names = report.environment_names.clone();
+                body.sandbox = report.sandbox.clone();
                 format!("/attempts/{}/start", report.attempt_id)
             }
         };
@@ -586,7 +580,16 @@ impl PullProtocol for HttpPullProtocol {
         session: &RunnerSession,
         report: CancellationReport,
     ) -> Result<CancellationResponse, ProtocolClientError> {
-        let body = serde_json::to_value(&report).map_err(|_| ProtocolClientError::Rejected)?;
+        let body = wire::CancellationObservationRequest {
+            protocol_version: report.protocol_version,
+            runner_id: report.runner_id.clone(),
+            attempt_id: report.attempt_id.clone(),
+            fencing_token: report.fencing_token,
+            cancellation_request_id: report.cancellation_request_id.clone(),
+            observation: report.observation,
+            observed_at: instant(&report.observed_at)?,
+            details: report.details.clone(),
+        };
         let path = format!("/attempts/{}/cancellation-observation", report.attempt_id);
         let value = self
             .send_json(
@@ -599,18 +602,14 @@ impl PullProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
+        let observed: wire::CancellationObservationResponse = typed(&value)?;
         Ok(CancellationResponse {
-            protocol_version: ProtocolVersion::v1(),
-            attempt_id: AttemptId::new(as_str(&value, "attempt_id")?),
-            cancellation_request_id: crate::client::CancellationRequestId::new(as_str(
-                &value,
-                "cancellation_request_id",
-            )?),
-            state: attempt_state_from(&value, "state")?,
-            replayed: field(&value, "replayed")?
-                .as_bool()
-                .ok_or(ProtocolClientError::Rejected)?,
-            committed_at: Timestamp::new(as_str(&value, "committed_at")?),
+            protocol_version: observed.protocol_version,
+            attempt_id: observed.attempt_id,
+            cancellation_request_id: observed.cancellation_request_id,
+            state: attempt_state(observed.state)?,
+            replayed: observed.replayed,
+            committed_at: timestamp(observed.committed_at),
         })
     }
 
@@ -686,27 +685,7 @@ pub trait AttemptDataProtocol: Send + Sync {
     ) -> Result<(), ProtocolClientError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DecisionOption {
-    pub option_id: String,
-    pub label: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub risks: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub estimated_tokens: Option<u64>,
-}
-
-/// The option a harness would pick, as in `decision.create.request.json`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Recommendation {
-    pub option_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rationale: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub evidence_refs: Option<Vec<String>>,
-}
+pub use wire::{DecisionAnswer, DecisionOption, DecisionRecommendation as Recommendation};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecisionCreateReport {
@@ -738,14 +717,6 @@ pub struct DecisionPollReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DecisionAnswer {
-    #[serde(default)]
-    pub option_id: Option<String>,
-    #[serde(default)]
-    pub text: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedDecision {
     pub decision_id: String,
     pub state: String,
@@ -764,19 +735,7 @@ pub struct DecisionPollResponse {
     pub next_after: Option<Timestamp>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ArtifactManifestItem {
-    pub artifact_id: String,
-    pub kind: String,
-    pub name: String,
-    #[serde(default)]
-    pub media_type: Option<String>,
-    pub size_bytes: u64,
-    pub sha256: String,
-    pub content_disposition: String,
-    #[serde(default)]
-    pub metadata: Map<String, Value>,
-}
+pub use wire::ArtifactManifestEntry as ArtifactManifestItem;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArtifactManifestReport {
@@ -824,21 +783,19 @@ impl AttemptDataProtocol for HttpPullProtocol {
         session: &RunnerSession,
         report: DecisionCreateReport,
     ) -> Result<DecisionCreateResponse, ProtocolClientError> {
-        let mut body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "attempt_id": report.attempt_id,
-            "fencing_token": report.fencing_token,
-            "decision_id": report.decision_id,
-            "kind": report.kind,
-            "prompt": report.prompt,
-            "options": report.options,
-            "expires_at": report.expires_at,
-            "metadata": report.metadata,
-        });
-        if let Some(recommendation) = &report.recommendation {
-            body["recommendation"] = json!(recommendation);
-        }
+        let body = wire::DecisionCreateRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            attempt_id: report.attempt_id.clone(),
+            fencing_token: report.fencing_token,
+            decision_id: report.decision_id.clone(),
+            kind: report.kind.clone(),
+            prompt: report.prompt.clone(),
+            options: report.options.clone(),
+            recommendation: report.recommendation.clone(),
+            expires_at: Some(instant(&report.expires_at)?),
+            metadata: report.metadata.clone(),
+        };
         let path = format!("/attempts/{}/decisions", report.attempt_id);
         let value = self
             .send_json(
@@ -851,7 +808,12 @@ impl AttemptDataProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
-        typed(&value)
+        let created: wire::DecisionCreateResponse = typed(&value)?;
+        Ok(DecisionCreateResponse {
+            decision_id: created.decision_id,
+            state: created.state,
+            created_at: timestamp(created.created_at),
+        })
     }
 
     async fn poll_decisions(
@@ -859,13 +821,13 @@ impl AttemptDataProtocol for HttpPullProtocol {
         session: &RunnerSession,
         report: DecisionPollReport,
     ) -> Result<DecisionPollResponse, ProtocolClientError> {
-        let body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "attempt_id": report.attempt_id,
-            "fencing_token": report.fencing_token,
-            "after": report.after,
-        });
+        let body = wire::DecisionPollRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            attempt_id: report.attempt_id.clone(),
+            fencing_token: report.fencing_token,
+            after: instant(&report.after)?,
+        };
         let path = format!("/attempts/{}/decisions/poll", report.attempt_id);
         let value = self
             .send_json(
@@ -878,7 +840,21 @@ impl AttemptDataProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
-        typed(&value)
+        let polled: wire::DecisionPollResponse = typed(&value)?;
+        Ok(DecisionPollResponse {
+            decisions: polled
+                .decisions
+                .into_iter()
+                .map(|update| ResolvedDecision {
+                    decision_id: update.decision_id,
+                    state: update.state,
+                    answer: update.answer,
+                    resolved_at: update.resolved_at.map(timestamp),
+                    resolved_by: update.resolved_by,
+                })
+                .collect(),
+            next_after: Some(timestamp(polled.next_after)),
+        })
     }
 
     async fn submit_artifact_manifest(
@@ -886,13 +862,13 @@ impl AttemptDataProtocol for HttpPullProtocol {
         session: &RunnerSession,
         report: ArtifactManifestReport,
     ) -> Result<Vec<ArtifactUploadGrant>, ProtocolClientError> {
-        let body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "attempt_id": report.attempt_id,
-            "fencing_token": report.fencing_token,
-            "artifacts": report.artifacts,
-        });
+        let body = wire::ArtifactManifestRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            attempt_id: report.attempt_id.clone(),
+            fencing_token: report.fencing_token,
+            artifacts: report.artifacts.clone(),
+        };
         let path = format!("/attempts/{}/artifacts", report.attempt_id);
         let value = self
             .send_json(
@@ -905,23 +881,18 @@ impl AttemptDataProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
-        let entries = field(&value, "artifacts")?
-            .as_array()
-            .ok_or(ProtocolClientError::Rejected)?
-            .clone();
-        entries
-            .iter()
-            .map(|entry| {
-                let upload = field(entry, "upload")?;
-                Ok(ArtifactUploadGrant {
-                    artifact_id: as_str(entry, "artifact_id")?,
-                    state: as_str(entry, "state")?,
-                    method: as_str(upload, "method")?,
-                    path: as_str(upload, "path")?,
-                    expires_at: optional_str(upload, "expires_at").map(Timestamp::new),
-                })
+        let accepted: wire::ArtifactManifestResponse = typed(&value)?;
+        Ok(accepted
+            .artifacts
+            .into_iter()
+            .map(|grant| ArtifactUploadGrant {
+                artifact_id: grant.artifact_id,
+                state: grant.state,
+                method: grant.upload.method,
+                path: grant.upload.path,
+                expires_at: grant.upload.expires_at.map(timestamp),
             })
-            .collect()
+            .collect())
     }
 
     async fn put_artifact_content(

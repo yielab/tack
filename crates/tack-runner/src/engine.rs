@@ -205,13 +205,7 @@ pub struct LocalRunHandle {
     pub process_id: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CancelObservation {
-    ProcessStopped,
-    AlreadyTerminal,
-    Ambiguous,
-}
+pub use tack_protocol::execution::CancelObservation;
 
 /// Typed, non-secret evidence supplied by the harness after a cancellation
 /// attempt. The adapter owns the observation time and details; the engine only

@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Mutex, time::UNIX_EPOCH};
 
+use serde_json::json;
 use tack_protocol::execution::{
     CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities,
 };

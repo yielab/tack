@@ -710,7 +710,7 @@ where
                 media_type: Some(media_type.to_owned()),
                 size_bytes: content.len() as u64,
                 sha256: sha256.to_owned(),
-                content_disposition: "inline_upload".to_owned(),
+                content_disposition: Some("inline_upload".to_owned()),
                 metadata: Default::default(),
             }],
         };
