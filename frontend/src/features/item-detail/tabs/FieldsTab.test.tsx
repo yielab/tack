@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import FieldsTab from './FieldsTab';
 import type { Item } from '../../../shared/types';
+import { flush } from '../../../test/flush';
 
 const ITEM = { id: 'i1', project_id: 'p1' } as unknown as Item;
 
@@ -9,8 +10,6 @@ const defs = [
   { id: 'f1', project_id: 'p1', name: 'Client', field_type: 'text', description: null, required: false, default_value: null, options: null, validation: null, created_at: '', updated_at: '' },
 ];
 const roles = [{ id: 'r1', project_id: 'p1', name: 'Developer', color: '#fff', icon: null, created_at: '' }];
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 afterEach(() => {

@@ -2,10 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import DetailsTab from './DetailsTab';
 import type { Item } from '../../../shared/types';
+import { flush } from '../../../test/flush';
 
 const ITEM = { id: 'i1', project_id: 'p1', description: '' } as unknown as Item;
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 let linked = false;
 let putResponse: (body: unknown) => Response;

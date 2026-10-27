@@ -23,3 +23,5 @@ mod provisional_limit;
 mod role_profile_fleet;
 #[path = "migrations/template_bundle.rs"]
 mod template_bundle;
+#[path = "migrations/upgrade_from_beta9.rs"]
+mod upgrade_from_beta9;

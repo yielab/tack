@@ -4,6 +4,7 @@ import { ProjectContext, type ProjectContextValue } from '../../shared/state/pro
 import FactoryMetrics from './FactoryMetrics';
 import type { components } from '../../shared/api/schema.gen';
 import type { Resource } from 'solid-js';
+import { flush } from '../../test/flush';
 
 // Mock useParams to provide the project ID
 vi.mock('@solidjs/router', () => ({
@@ -25,8 +26,6 @@ const projectValue: ProjectContextValue = {
   vocabulary: () => ({}),
   refetch: () => {},
 };
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function mount() {
   const container = document.createElement('div');

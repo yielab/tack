@@ -3,8 +3,7 @@ import { render } from 'solid-js/web';
 import { MemoryRouter, Route, useSearchParams } from '@solidjs/router';
 import { ExecutionStoreProvider } from '../state/executionContext';
 import RunWithAgentButton from './RunWithAgentButton';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 /** Last search params seen by a component mounted inside the test router —

@@ -25,6 +25,8 @@ mod bundle;
 mod crud;
 #[path = "handlers/custom_fields.rs"]
 mod custom_fields;
+#[path = "handlers/debug_and_relations.rs"]
+mod debug_and_relations;
 #[path = "handlers/executions_runner_admin.rs"]
 mod executions_runner_admin;
 #[path = "handlers/fleet_membership.rs"]
@@ -45,6 +47,8 @@ mod operator_read_routes;
 mod outline;
 #[path = "handlers/production_router.rs"]
 mod production_router;
+#[path = "handlers/remote_backup.rs"]
+mod remote_backup;
 #[path = "handlers/rework.rs"]
 mod rework;
 #[path = "handlers/templates.rs"]

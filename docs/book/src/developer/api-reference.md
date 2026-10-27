@@ -347,6 +347,7 @@ Roles / specialties and their assignment to items.
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Role assigned to item | — |
+| 404 | The item or the role does not exist, or they belong to different projects | `ErrorEnvelope` |
 
 #### `GET /api/projects/{project_id}/roles`
 

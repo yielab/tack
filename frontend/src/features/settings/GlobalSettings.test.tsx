@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import GlobalSettings from './GlobalSettings';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {

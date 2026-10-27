@@ -4,10 +4,9 @@ import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import AttemptList from './AttemptList';
 import type { AttemptSummary } from '../execution';
+import { flush } from '../../test/flush';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
 function attempt(overrides: Partial<AttemptSummary> = {}): AttemptSummary {

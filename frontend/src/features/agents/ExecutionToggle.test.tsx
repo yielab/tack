@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import ExecutionToggle from './ExecutionToggle';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 
 function mount() {
   const container = document.createElement('div');

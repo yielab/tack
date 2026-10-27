@@ -13,7 +13,7 @@ real agent account. `cargo nextest` is not part of cargo; install it once with
 `tack-desktop` is a workspace of its own:
 `cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml`.
 
-Frontend: `cd frontend && npm test` (Vitest). Browser E2E: `make e2e`.
+Frontend: `cd frontend && npm test` (Vitest; shared test helpers — `flush`, `mountProjectView` for a project view over stubbed items — are in `frontend/src/test/`). Browser E2E: `make e2e`.
 
 A count appears in this guide only next to the command that produces it, and — like any
 load-bearing number quoted anywhere in this repository — gets re-measured before it is
@@ -92,7 +92,7 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 | Crate | Where | Harness | What belongs here |
 |---|---|---|---|
 | `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above. The merge policy, the profile a run gets (`run_defaults`), which tasks start (`auto_start`), recurrence and the project file's `check` and `to_bundle` (`outline/bundle/tests.rs`, which reads the My SaaS fixture) are all table tests here |
-| `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
+| `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races. `tests/fixtures/tack-0.1.0-beta.9.sqlite` is a database written by that release (provenance in the README beside it): `migrations/upgrade_from_beta9.rs` migrates it to now and compares its schema with a fresh one |
 | `tack-protocol` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-protocol/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; `mrp_contract` pins the merge-readiness pack | the runner-v1 contract: capability negotiation, request/attempt lifecycle, usage provenance, the pack. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract/fixtures.rs` in the same change (the test asserts the number of fixtures; `grep -c` the table, or read the assertion, rather than quoting it) |
 | `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) | plain `#[test]`; the crate has no database and no clock | the scheduler and the model policy, as tables of cases over plain values |
 | `tack-app` | `crates/tack-app/tests/` (one file per use case; `scheduling/`, `ingestion/`) | `tack_test_support::setup_test_db()` and a `ControllableClock`; a fake `Host` for the ticks | a rule of a run: call the use case or a `tick()` directly on a real store and read the result with `tack_db::queries::` — no router, no sleeping. Plant rows with `tack_test_support::seed` |

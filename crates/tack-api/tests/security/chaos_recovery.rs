@@ -270,7 +270,7 @@ struct SupersededFence {
 /// pre-spawn recovery observation so the returned fence is guaranteed stale
 /// before any caller uses it.
 async fn setup_superseded_fence(app: &axum::Router) -> SupersededFence {
-    let item_id = create_project_and_item(app).await;
+    let item_id = common::create_project_and_item(app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(app, "stale-fence").await;
     let runner = enroll_runner(app, "Stale fence runner").await;
     let request_id = create_execution_request(
@@ -449,7 +449,7 @@ async fn oversized_single_artifact_rejected_per_item_cap() {
     let storage_dir_guard = distinctive_temp_dir("oversized-artifact");
     let storage_dir = storage_dir_guard.path();
     let (app, repo) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, "oversized").await;
 
     // Declared size over `artifact_content_bytes_max` (50 MiB).
@@ -483,7 +483,7 @@ async fn cumulative_artifact_total_rejected_over_attempt_cap() {
     let storage_dir_guard = distinctive_temp_dir("cumulative-artifact");
     let storage_dir = storage_dir_guard.path();
     let (app, repo) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, "cumulative").await;
 
     for i in 0..10 {
@@ -544,7 +544,7 @@ async fn traversal_id_encodings_battery_never_escapes_storage_root() {
     let storage_dir_guard = distinctive_temp_dir("traversal");
     let storage_dir = storage_dir_guard.path();
     let (app, _repo) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, "traversal").await;
     let hdr = auth(&attempt.credential);
 
@@ -619,7 +619,7 @@ async fn corrupted_snapshot_row_degrades_to_typed_error_not_panic() {
     let storage_dir_guard = distinctive_temp_dir("corrupt-row");
     let storage_dir = storage_dir_guard.path();
     let (app, repo) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "corrupt-row").await;
     let runner = enroll_runner(&app, "Corrupt-row runner").await;
     let request_id = create_execution_request(

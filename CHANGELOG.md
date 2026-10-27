@@ -377,6 +377,12 @@ automation a template carries, and the removal of dollars per day.
 
 - **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
   published since the last run); only the lockfile changes.
+- **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored
+  the item in its path, so a dependency of one item could be deleted through another's. It answers 404 now.
+- **Assigning a role that does not exist, or one from another project, answers 404**, not a server error, and assigns nothing.
+- **A sprint lane's progress follows its items.** The "done/total items · points · %" line and the bar were
+  worked out once, when the lane first appeared, so a lane that appeared before the items loaded, or
+  an item dragged into it, left them at 0/0 until the page reloaded.
 - **Stopping the server stops every background loop and waits for what a request started.** The loops
   (auto-start, the GitHub poll, due-soon, retention, the health watch, the remote backup) were
   fire-and-forget: a panic in one was lost without a line, and two of them had no stop signal at all.

@@ -78,30 +78,6 @@ fn full_capabilities() -> Value {
     })
 }
 
-async fn create_project_and_item(app: &axum::Router) -> String {
-    let (status, project) = common::send(
-        app,
-        "POST",
-        "/api/projects",
-        json!({"name": "H8 fleet membership", "project_type": "software", "code_origin": "url", "repository": "https://example.test/h8.git"}),
-        &operator_headers(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{project}");
-    let project_id = project["id"].as_str().unwrap().to_owned();
-
-    let (status, item) = common::send(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/items"),
-        json!({"title": "Prove fleet-targeted scheduling lands on a member"}),
-        &operator_headers(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{item}");
-    item["id"].as_str().unwrap().to_owned()
-}
-
 /// Operator creates a pending runner and its one-time enrollment token, then
 /// a mock runner redeems it — returning the runner id and a ready-to-use
 /// `Authorization` header pair carrying the raw runner credential.
@@ -184,7 +160,9 @@ async fn fleet_targeted_request_schedules_onto_member_not_outsider() {
     let app = router_for(repo.clone(), workspace_id).await;
     let op = operator_headers();
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id =
+        common::create_project_and_item(&app, "https://example.test/h8.git", &operator_headers())
+            .await;
     let (status, profile) = common::send(
         &app,
         "POST",
