@@ -1,7 +1,86 @@
+use std::collections::HashMap;
+
 use tack_protocol::execution::ExecutionState;
 
-use crate::repo::execution::state;
+use crate::queries::attempt_reviews::AttemptReviewRow;
+use crate::repo::autonomy::MergeRow;
+use crate::repo::execution::{AttemptListingRow, state};
+use crate::repo::pull_requests::PullRequestRow;
 use crate::{Repository, StoreError};
+
+/// One attempt of a request with what became of it: the pull request it opened, the operator's
+/// verdict and the merge ledger's row, each `None` when there is none.
+#[derive(Debug, Clone)]
+pub struct AttemptWithOutcomes {
+    pub attempt: AttemptListingRow,
+    pub pull_request: Option<PullRequestRow>,
+    pub review: Option<AttemptReviewRow>,
+    pub merge: Option<MergeRow>,
+}
+
+/// Every attempt of `request_id`, oldest first, each with its pull request, review and merge. The
+/// outcomes are read for the whole request at once (one query per table, however many attempts
+/// the request has), and any failure is returned.
+pub async fn attempts_with_outcomes(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Vec<AttemptWithOutcomes>, StoreError> {
+    let attempts = repo.list_attempts_for_request(request_id).await?;
+    if attempts.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut pull_requests: HashMap<String, PullRequestRow> = sqlx::query_as::<_, PullRequestRow>(
+        "SELECT * FROM pull_requests WHERE attempt_id IN \
+         (SELECT id FROM execution_attempts WHERE request_id = ?)",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?
+    .into_iter()
+    .map(|row| (row.attempt_id.clone(), row))
+    .collect();
+    let mut reviews: HashMap<String, AttemptReviewRow> = sqlx::query_as::<
+        _,
+        (String, String, Option<String>, String),
+    >(
+        "SELECT attempt_id, verdict, note, reviewed_at FROM attempt_reviews WHERE attempt_id IN \
+             (SELECT id FROM execution_attempts WHERE request_id = ?)",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?
+    .into_iter()
+    .map(|(attempt_id, verdict, note, reviewed_at)| {
+        (
+            attempt_id,
+            AttemptReviewRow {
+                verdict,
+                note,
+                reviewed_at,
+            },
+        )
+    })
+    .collect();
+    let mut merges: HashMap<String, MergeRow> = sqlx::query_as::<_, MergeRow>(
+        "SELECT * FROM tack_merges WHERE attempt_id IN \
+         (SELECT id FROM execution_attempts WHERE request_id = ?)",
+    )
+    .bind(request_id)
+    .fetch_all(repo.pool())
+    .await?
+    .into_iter()
+    .map(|row| (row.attempt_id.clone(), row))
+    .collect();
+    Ok(attempts
+        .into_iter()
+        .map(|attempt| AttemptWithOutcomes {
+            pull_request: pull_requests.remove(&attempt.id),
+            review: reviews.remove(&attempt.id),
+            merge: merges.remove(&attempt.id),
+            attempt,
+        })
+        .collect())
+}
 
 /// The state an attempt is in, or `None` when no attempt has this id.
 pub async fn attempt_state(

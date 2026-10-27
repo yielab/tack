@@ -14,12 +14,13 @@ use axum::{
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tack_db::queries::{
-    agent_profiles, attempt_reviews, autonomy, budgets, execution_attempts, execution_requests,
-    pull_requests,
-};
+use tack_db::queries::execution_attempts::AttemptWithOutcomes;
+use tack_db::queries::{agent_profiles, budgets, execution_attempts, execution_requests};
 use tack_db::repo::execution::state as execution_state;
-use tack_db::{Repository, StoreError, repo::execution::RunnerListingRow};
+use tack_db::{
+    Repository, StoreError,
+    repo::execution::{AttemptListingRow, RunnerListingRow},
+};
 use tack_protocol::execution::{ExecutionState, ProtocolErrorEnvelope, StableErrorCode};
 use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
 use utoipa::ToSchema;
@@ -1094,9 +1095,7 @@ pub async fn list_execution_attempts(
             json!({"resource": "execution_request"}),
         ));
     };
-    let attempts = state
-        .repo
-        .list_attempts_for_request(&request_id)
+    let attempts = execution_attempts::attempts_with_outcomes(&state.repo, &request_id)
         .await
         .map_err(|_| {
             error(
@@ -1106,46 +1105,14 @@ pub async fn list_execution_attempts(
                 json!({}),
             )
         })?;
-    let mut pull_requests = std::collections::HashMap::new();
-    for attempt in &attempts {
-        if let Ok(Some(pr)) = pull_requests::pull_request_of_attempt(&state.repo, &attempt.id).await
-        {
-            pull_requests.insert(
-                attempt.id.clone(),
-                AttemptPullRequest {
-                    number: pr.number,
-                    url: pr.url,
-                    state: pr.state,
-                },
-            );
-        }
-    }
-    let mut reviews = std::collections::HashMap::new();
-    for attempt in &attempts {
-        let row = attempt_reviews::review_of_attempt(&state.repo, &attempt.id)
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not list attempt reviews",
-                    json!({}),
-                )
-            })?;
-        if let Some(review) = row {
-            reviews.insert(
-                attempt.id.clone(),
-                AttemptReview {
-                    verdict: review.verdict,
-                    note: review.note,
-                    reviewed_at: review.reviewed_at,
-                    pull_request_url: None,
-                },
-            );
-        }
-    }
-    let mut merges = std::collections::HashMap::new();
-    for attempt in &attempts {
+    let mut data = Vec::with_capacity(attempts.len());
+    for AttemptWithOutcomes {
+        attempt,
+        pull_request,
+        review,
+        merge,
+    } in attempts
+    {
         let (enabled, reason) = match &state.app {
             Some(app) => tack_app::merge::button(&app.repo, &app.host(), &attempt.id).await,
             None => (
@@ -1153,17 +1120,8 @@ pub async fn list_execution_attempts(
                 Some("Merging is not available on this board".to_owned()),
             ),
         };
-        let merged = match autonomy::merge_of_attempt(&state.repo, &attempt.id)
-            .await
-            .map_err(|_| {
-                error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not read the attempt's merge",
-                    json!({}),
-                )
-            })? {
-            Some(row) => row.merged_at.map(|merged_at| MergedBy {
+        let merged = merge.and_then(|row| {
+            row.merged_at.map(|merged_at| MergedBy {
                 trigger: row.trigger,
                 level: row.level,
                 domain: row.domain,
@@ -1171,126 +1129,142 @@ pub async fn list_execution_attempts(
                 merge_sha: row.merge_sha,
                 policy_snapshot: row
                     .policy_snapshot
-                    .and_then(|raw| serde_json::from_str(&raw).ok()),
-            }),
-            None => None,
-        };
-        merges.insert(
-            attempt.id.clone(),
-            AttemptMerge {
-                enabled,
-                reason,
-                merged,
-            },
-        );
-    }
-    let mut reruns = std::collections::HashMap::new();
-    for attempt in &attempts {
+                    .and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
+            })
+        });
         let needs_human = attempt
             .terminal_reason
             .as_deref()
             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
             .is_some_and(|reason| reason["code"] == "needs_human");
-        if needs_human {
+        let rerun_at_l3 = if needs_human {
             let (enabled, reason) = tack_app::autonomy::rerun_at_l3(&state.repo, &attempt.id).await;
-            reruns.insert(attempt.id.clone(), AttemptRerun { enabled, reason });
-        }
+            Some(AttemptRerun { enabled, reason })
+        } else {
+            None
+        };
+        data.push(attempt_summary(
+            attempt,
+            requested_model.as_deref(),
+            pull_request.map(|pr| AttemptPullRequest {
+                number: pr.number,
+                url: pr.url,
+                state: pr.state,
+            }),
+            review.map(|review| AttemptReview {
+                verdict: review.verdict,
+                note: review.note,
+                reviewed_at: review.reviewed_at,
+                pull_request_url: None,
+            }),
+            AttemptMerge {
+                enabled,
+                reason,
+                merged,
+            },
+            rerun_at_l3,
+        ));
     }
-    let data: Vec<AttemptSummary> = attempts
-        .into_iter()
-        .map(|attempt| {
-            // `derive_attempt_facts` is a convenience "service handler" —
-            // takes the exact raw column shapes `AttemptListingRow` already
-            // carries, so nothing here re-derives provenance/economics
-            // logic. No runner infra cost-rate is stored anywhere in this
-            // schema today, so `runner_rate_usd_per_hour` is always `None`
-            // here — `runner_time_cost.cost_usd_estimated` stays honestly
-            // `not_measured`, never a fabricated rate.
-            let facts = derive_attempt_facts(
-                requested_model.as_deref(),
-                attempt.actual_execution.as_deref(),
-                attempt.usage.as_deref(),
-                attempt.started_at.as_deref().and_then(parse_rfc3339),
-                attempt.ended_at.as_deref().and_then(parse_rfc3339),
-                None,
-            );
-            let counted_tokens = attempt
-                .usage
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<tack_protocol::execution::Usage>(raw).ok())
-                .and_then(|usage| usage.counted());
-            let start_report = attempt
-                .start_report
-                .as_deref()
-                .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
-            let environment_names = start_report
-                .as_ref()
-                .and_then(|report| report.get("environment_names"))
-                .and_then(Value::as_array)
-                .map(|names| {
-                    names
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default();
-            let sandbox = start_report
-                .as_ref()
-                .and_then(|report| report.get("sandbox"))
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            AttemptSummary {
-                environment_names,
-                sandbox,
-                pull_request: pull_requests.remove(&attempt.id),
-                review: reviews.remove(&attempt.id),
-                merge: merges
-                    .remove(&attempt.id)
-                    .expect("one merge state per attempt"),
-                rerun_at_l3: reruns.remove(&attempt.id),
-                attempt_id: attempt.id,
-                request_id: attempt.request_id,
-                attempt_number: attempt.attempt_number,
-                runner_id: attempt.runner_id,
-                fencing_token: attempt.fencing_token,
-                state: attempt.state,
-                lease_issued_at: attempt.lease_issued_at,
-                lease_expires_at: attempt.lease_expires_at,
-                last_heartbeat_at: attempt.last_heartbeat_at,
-                event_checkpoint: attempt.event_checkpoint,
-                completion_id: attempt.completion_id,
-                workspace_id: attempt.workspace_id,
-                base_revision: attempt.base_revision,
-                actual_execution: attempt
-                    .actual_execution
-                    .as_deref()
-                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
-                terminal_reason: attempt
-                    .terminal_reason
-                    .as_deref()
-                    .and_then(|raw| serde_json::from_str::<TerminalReason>(raw).ok()),
-                usage: attempt
-                    .usage
-                    .as_deref()
-                    .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
-                counted_tokens,
-                started_at: attempt.started_at,
-                ended_at: attempt.ended_at,
-                created_at: attempt.created_at,
-                updated_at: attempt.updated_at,
-                model_provenance: facts.model_provenance.map(|provenance| {
-                    serde_json::to_value(provenance).expect("ModelProvenance serializes")
-                }),
-                usage_economics: serde_json::to_value(facts.usage_economics)
-                    .expect("UsageEconomics serializes"),
-            }
-        })
-        .collect();
     Ok(Json(AttemptListResponse {
         protocol_version: 1,
         data,
     }))
+}
+
+/// One attempt's row of the operator's list: its stored columns read into their shapes, with
+/// the provenance and economics derived from them.
+fn attempt_summary(
+    attempt: AttemptListingRow,
+    requested_model: Option<&str>,
+    pull_request: Option<AttemptPullRequest>,
+    review: Option<AttemptReview>,
+    merge: AttemptMerge,
+    rerun_at_l3: Option<AttemptRerun>,
+) -> AttemptSummary {
+    // `derive_attempt_facts` is a convenience "service handler" —
+    // takes the exact raw column shapes `AttemptListingRow` already
+    // carries, so nothing here re-derives provenance/economics
+    // logic. No runner infra cost-rate is stored anywhere in this
+    // schema today, so `runner_rate_usd_per_hour` is always `None`
+    // here — `runner_time_cost.cost_usd_estimated` stays honestly
+    // `not_measured`, never a fabricated rate.
+    let facts = derive_attempt_facts(
+        requested_model,
+        attempt.actual_execution.as_deref(),
+        attempt.usage.as_deref(),
+        attempt.started_at.as_deref().and_then(parse_rfc3339),
+        attempt.ended_at.as_deref().and_then(parse_rfc3339),
+        None,
+    );
+    let counted_tokens = attempt
+        .usage
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<tack_protocol::execution::Usage>(raw).ok())
+        .and_then(|usage| usage.counted());
+    let start_report = attempt
+        .start_report
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let environment_names = start_report
+        .as_ref()
+        .and_then(|report| report.get("environment_names"))
+        .and_then(Value::as_array)
+        .map(|names| {
+            names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let sandbox = start_report
+        .as_ref()
+        .and_then(|report| report.get("sandbox"))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    AttemptSummary {
+        environment_names,
+        sandbox,
+        pull_request,
+        review,
+        merge,
+        rerun_at_l3,
+        attempt_id: attempt.id,
+        request_id: attempt.request_id,
+        attempt_number: attempt.attempt_number,
+        runner_id: attempt.runner_id,
+        fencing_token: attempt.fencing_token,
+        state: attempt.state,
+        lease_issued_at: attempt.lease_issued_at,
+        lease_expires_at: attempt.lease_expires_at,
+        last_heartbeat_at: attempt.last_heartbeat_at,
+        event_checkpoint: attempt.event_checkpoint,
+        completion_id: attempt.completion_id,
+        workspace_id: attempt.workspace_id,
+        base_revision: attempt.base_revision,
+        actual_execution: attempt
+            .actual_execution
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+        terminal_reason: attempt
+            .terminal_reason
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<TerminalReason>(raw).ok()),
+        usage: attempt
+            .usage
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok()),
+        counted_tokens,
+        started_at: attempt.started_at,
+        ended_at: attempt.ended_at,
+        created_at: attempt.created_at,
+        updated_at: attempt.updated_at,
+        model_provenance: facts.model_provenance.map(|provenance| {
+            serde_json::to_value(provenance).expect("ModelProvenance serializes")
+        }),
+        usage_economics: serde_json::to_value(facts.usage_economics)
+            .expect("UsageEconomics serializes"),
+    }
 }
 
 /// `POST /api/attempts/{attempt_id}/merge` — the Merge button. Merges the
