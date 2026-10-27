@@ -39,6 +39,29 @@ pub enum CleanupResult {
     Refused,
 }
 
+/// The kind of an I/O failure, printed as the words the standard library uses for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IoKind(pub std::io::ErrorKind);
+
+impl std::fmt::Display for IoKind {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(out, "{}", self.0)
+    }
+}
+
+/// A lock another thread poisoned by panicking while it held it: the panic is the cause and was
+/// reported where it happened, so this logs that the lock is unusable and answers an `Io` failure.
+pub(crate) fn poisoned<T>(_: std::sync::PoisonError<T>) -> WorkspaceError {
+    tracing::error!("a runner workspace lock was poisoned by an earlier panic");
+    WorkspaceError::Io(IoKind(std::io::ErrorKind::Other))
+}
+
+impl From<std::io::Error> for WorkspaceError {
+    fn from(failure: std::io::Error) -> Self {
+        WorkspaceError::Io(IoKind(failure.kind()))
+    }
+}
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum WorkspaceError {
     #[error("runner workspace root is unsafe")]
@@ -71,8 +94,10 @@ pub enum WorkspaceError {
     /// `HEAD` or the index is not what was captured and verified.
     #[error("the tree changed after it was verified")]
     TreeChanged,
-    #[error("runner workspace operation failed")]
-    Io,
+    /// A file operation failed; the kind says how (`NotFound`, `PermissionDenied`, ...) and
+    /// nothing else of it, since the operating system's text can name a path.
+    #[error("runner workspace operation failed: {0}")]
+    Io(IoKind),
 }
 
 #[path = "git.rs"]
@@ -285,12 +310,12 @@ where
     fn lock_folder(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
         let lock = self.lock_path(workspace)?;
         fs::create_dir_all(lock.parent().ok_or(WorkspaceError::UnsafeRoot)?)
-            .map_err(|_| WorkspaceError::Io)?;
+            .map_err(WorkspaceError::from)?;
         match OpenOptions::new().write(true).create_new(true).open(&lock) {
             Ok(mut file) => file
                 .write_all(workspace.attempt_id.as_str().as_bytes())
                 .and_then(|()| file.sync_all())
-                .map_err(|_| WorkspaceError::Io),
+                .map_err(WorkspaceError::from),
             // The same attempt restarting holds its own lock.
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 match fs::read_to_string(&lock) {
@@ -298,7 +323,7 @@ where
                     _ => Err(WorkspaceError::Busy),
                 }
             }
-            Err(_) => Err(WorkspaceError::Io),
+            Err(error) => Err(WorkspaceError::from(error)),
         }
     }
 
@@ -332,8 +357,8 @@ where
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
             Err(_) => return Err(WorkspaceError::UnsafePath),
         };
-        fs::create_dir_all(&workspace.path).map_err(|_| WorkspaceError::Io)?;
-        owner_only(&workspace.path).map_err(|_| WorkspaceError::Io)?;
+        fs::create_dir_all(&workspace.path).map_err(WorkspaceError::from)?;
+        owner_only(&workspace.path).map_err(WorkspaceError::from)?;
 
         let marker = workspace.path.join(".tack-attempt");
         if created {
@@ -414,7 +439,7 @@ where
         let Some((_, candidate)) = self.owned_path(workspace)? else {
             return Ok(CleanupResult::Refused);
         };
-        fs::remove_dir_all(candidate).map_err(|_| WorkspaceError::Io)?;
+        fs::remove_dir_all(candidate).map_err(WorkspaceError::from)?;
         Ok(CleanupResult::Deleted)
     }
 
@@ -429,12 +454,14 @@ where
             .parent()
             .ok_or(WorkspaceError::UnsafeRoot)?
             .join("quarantine");
-        fs::create_dir_all(&quarantine).map_err(|_| WorkspaceError::Io)?;
+        fs::create_dir_all(&quarantine).map_err(WorkspaceError::from)?;
         let destination = quarantine.join(encode_id(workspace.attempt_id.as_str()));
         if destination.exists() {
-            return Err(WorkspaceError::Io);
+            return Err(WorkspaceError::Io(IoKind(
+                std::io::ErrorKind::AlreadyExists,
+            )));
         }
-        fs::rename(candidate, &destination).map_err(|_| WorkspaceError::Io)?;
+        fs::rename(candidate, &destination).map_err(WorkspaceError::from)?;
         Ok(destination)
     }
 
@@ -475,7 +502,7 @@ where
     }
 
     fn ensure_safe_root(&self) -> Result<PathBuf, WorkspaceError> {
-        fs::create_dir_all(&self.root).map_err(|_| WorkspaceError::Io)?;
+        fs::create_dir_all(&self.root).map_err(WorkspaceError::from)?;
         let root = self
             .root
             .canonicalize()
@@ -483,7 +510,7 @@ where
         if root.join(".git").exists() {
             return Err(WorkspaceError::UnsafeRoot);
         }
-        owner_only(&root).map_err(|_| WorkspaceError::Io)?;
+        owner_only(&root).map_err(WorkspaceError::from)?;
         Ok(root)
     }
 }
@@ -501,12 +528,12 @@ fn write_marker(path: &Path, attempt_id: &str) -> Result<(), WorkspaceError> {
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| WorkspaceError::Io)?;
+        .map_err(WorkspaceError::from)?;
     marker
         .write_all(attempt_id.as_bytes())
-        .map_err(|_| WorkspaceError::Io)?;
-    marker.sync_all().map_err(|_| WorkspaceError::Io)?;
-    owner_only(path).map_err(|_| WorkspaceError::Io)
+        .map_err(WorkspaceError::from)?;
+    marker.sync_all().map_err(WorkspaceError::from)?;
+    owner_only(path).map_err(WorkspaceError::from)
 }
 
 #[cfg(unix)]

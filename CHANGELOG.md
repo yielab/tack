@@ -40,6 +40,10 @@ automation a template carries, and the removal of dollars per day.
   code's: a lifecycle transition the board refuses (`AppError::InvalidTransition`) is 409 like the
   runner routes, not 400. A run sent to a revoked machine keeps its 409 under the new code
   `machine_revoked` (`runner_revoked` is the runner's own credential, 403).
+- **The runner's file failures keep their kind.** A workspace or journal operation that failed on a
+  file now says how (`runner workspace operation failed: entity not found`) instead of a bare
+  "failed", and a poisoned lock is logged; the operating system's own text, which can name a path,
+  is still never kept. About 50 of the `map_err(|_| …)` that dropped their cause are gone.
 - **The store says what is wrong with a stored value.** `StoreError` gains `Corrupt { table, column }`
   for a value that cannot be read back and `NotFound { entity }` for a row of a named kind that is
   not there; row mapping returns them instead of panicking on a corrupt row or inventing a default
