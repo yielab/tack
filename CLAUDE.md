@@ -19,7 +19,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   2026-10-14 but its GitHub release is not published, so the README's install commands 404
   until the maintainer publishes it (`docs/LAUNCH-CHECKLIST.md`).
 - **In `develop`, unreleased:** Phase 73 (`docs/plans/phase-73.md`, ADRs 0021 and 0022) — every
-  docket run goes to a long-lived team over docket's HTTP API version 5, a role chooses the
+  docket run goes to a long-lived team over docket's HTTP API version 6, a role chooses the
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
   ceiling, usage is kept per model, Settings → Automation is a ladder of four rungs, and a
   whole project goes in and out through one file (a template is that file without items).

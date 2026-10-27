@@ -168,7 +168,7 @@ chmod +x "$SHIMS/claude"
 cp "$SHIMS/claude" "$SHIMS/codex"
 chmod +x "$SHIMS/codex"
 
-# docket is a daemon the runner reaches over HTTP (API 5), not a binary it runs per attempt, so there is no shim here: tests/docket_v5.rs proves it against the in-process fake.
+# docket is a daemon the runner reaches over HTTP (API 6), not a binary it runs per attempt, so there is no shim here: tests/docket_v5.rs proves it against the in-process fake.
 
 # opencode has no run shim (step 8 says why); this one only answers the probe,
 # so the runner never reaches a real opencode install or its login.

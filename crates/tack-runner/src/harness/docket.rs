@@ -1,6 +1,6 @@
 //! docket as a harness: a daemon the runner talks to over HTTP, not a process
 //! it spawns. [`DocketAdapter`] implements [`HarnessAdapter`] and
-//! [`HarnessProbe`] directly against docket's operator API (version 5 or 6, with
+//! [`HarnessProbe`] directly against docket's operator API (version 6, with
 //! the escalation record): it posts the attempt as a task to the team the
 //! profile names, follows the task's hops on the trace, carries docket's
 //! escalations (every approval and question) to the person, and names the
@@ -21,6 +21,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
+use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, Usage,
@@ -43,8 +44,13 @@ mod client;
 pub mod daemon;
 mod probe;
 mod task;
+mod wire;
 
 use client::Client;
+use wire::{
+    Enqueued, Escalation, EscalationEvent, EscalationList, EscalationState, HopEvent, TaskDiff,
+    TaskUsage, TaskView, Tokens, TraceEvent, TracePage,
+};
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     kind: "docket",
@@ -70,14 +76,6 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// The task states in which docket waits for a person and the agent does no work.
 fn waiting_on_a_person(status: &str) -> bool {
     matches!(status, "waiting_input" | "waiting_approval")
-}
-
-/// When docket says a question or an approval stops being open: its `expiresAt`, which docket
-/// leaves null for a question it never expires.
-fn expiry(record: &Value) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(record["expiresAt"].as_str()?)
-        .ok()
-        .map(|at| at.with_timezone(&Utc))
 }
 
 /// Progress lines the engine has not yet taken, before more are dropped.
@@ -162,8 +160,8 @@ struct RunInfo {
     timeout: Duration,
     /// docket refused the task with this sentence; there is nothing to follow.
     refused: Option<String>,
-    /// The operator API version docket answered when the task started.
-    api: String,
+    /// The operator API version docket answered when the task started, when it could be asked.
+    api: Option<u32>,
 }
 
 /// The ends of the channels `wait` drives.
@@ -417,33 +415,31 @@ struct CacheFigures {
 }
 
 impl CacheFigures {
-    fn of(cached: Option<u64>, written: Option<u64>) -> Self {
+    /// A hop's, or one model's, `usage`.
+    fn of_hop(usage: &Tokens) -> Self {
         Self {
-            read: cached,
-            write: written,
+            read: usage.cached,
+            write: usage.cache_write,
         }
-    }
-
-    /// A hop's `usage`.
-    fn of_hop(usage: &Value) -> Self {
-        Self::of(usage["cached"].as_u64(), usage["cacheWrite"].as_u64())
     }
 
     /// A task's `usage`: its own `cached`/`cacheWrite` when docket sends them, else
     /// the sums of its `byModel` entries, which carry them since docket's `da556114`.
-    fn of_task(usage: &Value) -> Self {
-        let sum = |key: &str| {
-            usage["byModel"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .filter_map(|(_, used)| used[key].as_u64())
+    fn of_task(usage: &TaskUsage) -> Self {
+        let sum = |figure: fn(&Tokens) -> Option<u64>| {
+            usage
+                .by_model
+                .values()
+                .filter_map(figure)
                 .reduce(|a, b| a + b)
         };
-        Self::of(
-            usage["cached"].as_u64().or_else(|| sum("cached")),
-            usage["cacheWrite"].as_u64().or_else(|| sum("cacheWrite")),
-        )
+        Self {
+            read: usage.total.cached.or_else(|| sum(|used| used.cached)),
+            write: usage
+                .total
+                .cache_write
+                .or_else(|| sum(|used| used.cache_write)),
+        }
     }
 
     /// The keys `Usage.additional` carries them under.
@@ -459,8 +455,7 @@ impl CacheFigures {
     }
 }
 
-fn hop_role(payload: &Value) -> String {
-    let role = payload["role"].as_str().unwrap_or("agent");
+fn hop_role(role: &str) -> String {
     let mut chars = role.chars();
     chars
         .next()
@@ -469,174 +464,165 @@ fn hop_role(payload: &Value) -> String {
 }
 
 /// The timeline line a `hop_started` or `hop_finished` record makes.
-fn hop_progress(event_type: &str, payload: &Value) -> Option<Progress> {
+fn hop_progress(finished: bool, hop: &HopEvent) -> Progress {
     let who = format!(
         "{} ({})",
-        hop_role(payload),
-        payload["model"].as_str().unwrap_or("no model named")
+        hop_role(&hop.role),
+        hop.model.as_deref().unwrap_or("no model named")
     );
-    match event_type {
-        "hop_started" => Some(Progress {
-            kind: "agent.hop_started".to_owned(),
+    if !finished {
+        return Progress {
+            kind: event_kind::AGENT_HOP_STARTED.to_owned(),
             text: format!("{who} started"),
             usage: None,
-        }),
-        "hop_finished" => {
-            let mut parts = vec![match payload["verdict"].as_str() {
-                Some(verdict) => verdict.to_owned(),
-                None if payload["ok"] == json!(false) => match payload["error"].as_str() {
-                    Some(error) if !error.is_empty() => format!("failed: {error}"),
-                    _ => "failed".to_owned(),
-                },
-                None => "done".to_owned(),
-            }];
-            if let Some(cycle) = payload["cycle"].as_u64().filter(|cycle| *cycle > 0) {
-                parts.push(format!("cycle {cycle}"));
+        };
+    }
+    let mut parts = vec![match &hop.verdict {
+        Some(verdict) => verdict.clone(),
+        None if hop.ok == Some(false) => match hop.error.as_deref() {
+            Some(error) if !error.is_empty() => format!("failed: {error}"),
+            _ => "failed".to_owned(),
+        },
+        None => "done".to_owned(),
+    }];
+    if let Some(cycle) = hop.cycle.filter(|cycle| *cycle > 0) {
+        parts.push(format!("cycle {cycle}"));
+    }
+    if let Some(gate) = &hop.gate {
+        parts.push(format!("gate {gate}"));
+    }
+    let mut usage = None;
+    if let Some(used) = &hop.usage
+        && let (Some(input), Some(output)) = (used.input, used.output)
+    {
+        let cache = CacheFigures::of_hop(used);
+        parts.push(match cache.read {
+            Some(read) => {
+                format!("{input} tokens in ({read} read from cache), {output} out")
             }
-            if let Some(gate) = payload["gate"].as_str() {
-                parts.push(format!("gate {gate}"));
-            }
-            let mut usage = None;
-            if let (Some(input), Some(output)) = (
-                payload["usage"]["input"].as_u64(),
-                payload["usage"]["output"].as_u64(),
-            ) {
-                let cache = CacheFigures::of_hop(&payload["usage"]);
-                parts.push(match cache.read {
-                    Some(read) => {
-                        format!("{input} tokens in ({read} read from cache), {output} out")
-                    }
-                    None => format!("{input} tokens in, {output} out"),
-                });
-                // docket's `input` includes the cache reads and writes, as `tokens_in` does.
-                let mut additional = BTreeMap::new();
-                cache.put(&mut additional);
-                usage = Some(Usage {
-                    tokens_in: measurement(Some(input)),
-                    tokens_out: measurement(Some(output)),
-                    duration_ms: measurement(payload["durationMs"].as_u64()),
-                    cost_usd: measurement(None),
-                    additional,
-                });
-            }
-            Some(Progress {
-                kind: "agent.hop_finished".to_owned(),
-                text: format!("{who}: {}", parts.join(", ")),
-                usage,
-            })
-        }
-        _ => None,
+            None => format!("{input} tokens in, {output} out"),
+        });
+        // docket's `input` includes the cache reads and writes, as `tokens_in` does.
+        let mut additional = BTreeMap::new();
+        cache.put(&mut additional);
+        usage = Some(Usage {
+            tokens_in: measurement(Some(input)),
+            tokens_out: measurement(Some(output)),
+            duration_ms: measurement(hop.duration_ms),
+            cost_usd: measurement(None),
+            additional,
+        });
+    }
+    Progress {
+        kind: event_kind::AGENT_HOP_FINISHED.to_owned(),
+        text: format!("{who}: {}", parts.join(", ")),
+        usage,
     }
 }
 
+/// The labels docket gave the options of the escalations Tack has read, by escalation and
+/// option, so a timeline line names what a person picked and never docket's id for it.
+type OptionLabels = HashMap<(String, String), String>;
+
 /// The timeline line an `escalation_*` record makes. `escalation_delivered` says only that a
 /// channel carried a notification, which the line for the question already tells.
-fn escalation_progress(event_type: &str, payload: &Value) -> Option<Progress> {
-    let kind = payload["kind"].as_str().unwrap_or("approval");
-    let option = payload["optionId"].as_str().unwrap_or("none");
-    let (name, text) = match event_type {
-        "escalation_asked" => (
-            "escalation.asked",
+fn escalation_progress(event: &TraceEvent, labels: &OptionLabels) -> Option<Progress> {
+    let (kind, text) = match event {
+        TraceEvent::EscalationAsked(asked) => (
+            event_kind::ESCALATION_ASKED,
             format!(
-                "docket asked ({kind}): {}",
-                payload["prompt"].as_str().unwrap_or("it names no question")
+                "docket asked: {}",
+                asked.prompt.as_deref().unwrap_or("it names no question")
             ),
         ),
-        "escalation_resolved" => (
-            "escalation.resolved",
-            format!("{kind} answered: option {option}"),
+        TraceEvent::EscalationResolved(resolved) => (
+            event_kind::ESCALATION_RESOLVED,
+            match picked_label(resolved, labels) {
+                Some(label) => format!("a person answered: {label}"),
+                None => "a person answered".to_owned(),
+            },
         ),
-        "escalation_expired" => (
-            "escalation.expired",
-            format!("{kind} expired: nobody answered"),
+        TraceEvent::EscalationExpired(_) => (
+            event_kind::ESCALATION_EXPIRED,
+            "nobody answered before it expired".to_owned(),
         ),
-        "escalation_decided" => {
-            let mut why = format!("policy {}", payload["policy"].as_str().unwrap_or("unnamed"));
-            if let Some(level) = payload["level"].as_str() {
-                why.push_str(&format!(", level {level}"));
-            }
-            (
-                "escalation.decided",
-                format!("decided alone: option {option} ({why})"),
-            )
-        }
+        TraceEvent::EscalationDecided(_) => (
+            event_kind::ESCALATION_DECIDED,
+            "docket decided this on its own".to_owned(),
+        ),
         _ => return None,
     };
     Some(Progress {
-        kind: name.to_owned(),
+        kind: kind.to_owned(),
         text,
         usage: None,
     })
 }
 
+/// The label docket gave the option an escalation was resolved with, when Tack has read it.
+fn picked_label<'a>(event: &EscalationEvent, labels: &'a OptionLabels) -> Option<&'a str> {
+    let key = (event.escalation.clone()?, event.option_id.clone()?);
+    labels.get(&key).map(String::as_str)
+}
+
 /// One of docket's options for an escalation, worded as docket words it.
-fn escalation_option(option: &Value) -> Option<DecisionOption> {
-    let text = |key: &str| {
-        option[key]
-            .as_str()
-            .filter(|text| !text.is_empty())
-            .map(str::to_owned)
-    };
-    let risks: Vec<String> = option["risks"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|risk| risk.as_str().map(str::to_owned))
-        .collect();
-    let id = option["id"].as_str()?;
-    Some(DecisionOption {
-        option_id: id.to_owned(),
-        label: text("label").unwrap_or_else(|| id.to_owned()),
-        description: text("description"),
-        risks: Some(risks).filter(|risks| !risks.is_empty()),
-        estimated_tokens: option["estimatedTokens"].as_u64(),
-    })
+fn escalation_option(option: &wire::EscalationOption) -> DecisionOption {
+    let text = |value: &Option<String>| value.clone().filter(|text| !text.is_empty());
+    DecisionOption {
+        option_id: option.id.clone(),
+        label: text(&option.label).unwrap_or_else(|| option.id.clone()),
+        description: text(&option.description),
+        risks: Some(option.risks.clone()).filter(|risks| !risks.is_empty()),
+        estimated_tokens: option.estimated_tokens,
+    }
 }
 
 /// docket's recommendation, when it names one of the options offered.
-fn escalation_recommendation(record: &Value, options: &[DecisionOption]) -> Option<Recommendation> {
-    let recommendation = record.get("recommendation")?;
-    let option_id = recommendation["optionId"].as_str()?;
+fn escalation_recommendation(
+    record: &Escalation,
+    options: &[DecisionOption],
+) -> Option<Recommendation> {
+    let recommendation = record.recommendation.as_ref()?;
     options
         .iter()
-        .find(|option| option.option_id == option_id)?;
-    let evidence: Vec<String> = recommendation["evidenceRefs"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|reference| reference.as_str().map(str::to_owned))
-        .collect();
+        .find(|option| option.option_id == recommendation.option_id)?;
     Some(Recommendation {
-        option_id: option_id.to_owned(),
-        rationale: recommendation["rationale"]
-            .as_str()
-            .filter(|text| !text.is_empty())
-            .map(str::to_owned),
-        evidence_refs: Some(evidence).filter(|evidence| !evidence.is_empty()),
+        option_id: recommendation.option_id.clone(),
+        rationale: recommendation
+            .rationale
+            .clone()
+            .filter(|text| !text.is_empty()),
+        evidence_refs: Some(recommendation.evidence_refs.clone())
+            .filter(|evidence| !evidence.is_empty()),
     })
 }
 
 /// The id Tack offers for answering in text where docket's only option is to decline.
 const TEXT_ANSWER: &str = "accept";
 
+/// The kinds of escalation docket records (`operator-loop.spec.md`), which Tack puts to a person.
+const KNOWN_KINDS: [&str; 5] = ["approval", "gate", "check_changed", "consult", "input"];
+
+/// The kinds whose answer's text is a reason.
+const REASON_KINDS: [&str; 3] = ["approval", "gate", "check_changed"];
+
 /// The question one of docket's escalations is, and what answering it posts. The options are
 /// docket's own, in its order, so the last one is the way out; a question whose only option is to
-/// decline but which takes text is offered an answer in text beside it.
-fn escalation_question(record: &Value) -> Option<(Question, Pending)> {
-    let id = record["id"].as_str()?.to_owned();
-    let kind = record["kind"].as_str().unwrap_or("approval").to_owned();
-    let mut options: Vec<DecisionOption> = record["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(escalation_option)
-        .collect();
+/// decline but which takes text is offered an answer in text beside it. A kind Tack does not know
+/// is the sentence saying so, and nothing is asked.
+fn escalation_question(record: &Escalation) -> Result<(Question, Pending), String> {
+    let kind = record.kind.clone();
+    if !KNOWN_KINDS.contains(&kind.as_str()) {
+        return Err(format!(
+            "docket asked something of kind {kind:?}, which this Tack cannot put to you; answer it in docket"
+        ));
+    }
+    let mut options: Vec<DecisionOption> = record.options.iter().map(escalation_option).collect();
     let docket_ids: Vec<String> = options
         .iter()
         .map(|option| option.option_id.clone())
         .collect();
-    let by_text = docket_ids.iter().all(|id| id == "decline")
-        && record["affordances"]["acceptsText"] == json!(true);
+    let by_text = docket_ids.iter().all(|id| id == "decline") && record.affordances.accepts_text;
     if by_text {
         let own = |id: &str, label: &str| DecisionOption {
             option_id: id.to_owned(),
@@ -650,29 +636,33 @@ fn escalation_question(record: &Value) -> Option<(Question, Pending)> {
     let recommendation = escalation_recommendation(record, &options);
     // What the answer's text fills: an approval takes a reason, a question the one property
     // its schema names.
-    let property = if matches!(kind.as_str(), "approval" | "gate" | "check_changed") {
+    let schema = record.requested_schema.as_ref();
+    let property = if REASON_KINDS.contains(&kind.as_str()) {
         "reason".to_owned()
     } else {
-        record["requestedSchema"]["properties"]
-            .as_object()
-            .and_then(|properties| properties.keys().next().cloned())
+        schema
+            .and_then(|schema| schema.properties.keys().next().cloned())
             .unwrap_or_else(|| "answer".to_owned())
     };
-    let required = record["requestedSchema"]["required"]
-        .as_array()
-        .is_some_and(|names| names.iter().any(|name| name == &json!(property)));
+    let required = schema.is_some_and(|schema| schema.required.contains(&property));
     let mut metadata = serde_json::Map::new();
-    for key in ["step", "role", "policy", "level"] {
-        if let Some(value) = record[key].as_str().filter(|value| !value.is_empty()) {
+    for (key, value) in [
+        ("step", &record.step),
+        ("role", &record.role),
+        ("policy", &record.policy),
+        ("level", &record.level),
+    ] {
+        if let Some(value) = value.as_deref().filter(|value| !value.is_empty()) {
             metadata.insert(key.to_owned(), value.into());
         }
     }
-    Some((
+    Ok((
         Question {
-            vendor_id: id.clone(),
+            vendor_id: record.id.clone(),
             kind,
-            prompt: record["prompt"]
-                .as_str()
+            prompt: record
+                .prompt
+                .as_deref()
                 .filter(|prompt| !prompt.is_empty())
                 .unwrap_or("docket asks a question")
                 .to_owned(),
@@ -681,12 +671,12 @@ fn escalation_question(record: &Value) -> Option<(Question, Pending)> {
             metadata,
         },
         Pending {
-            escalation: id,
+            escalation: record.id.clone(),
             options: docket_ids,
             by_text,
             property,
             required,
-            expires_at: expiry(record),
+            expires_at: record.expires_at,
         },
     ))
 }
@@ -696,6 +686,10 @@ fn escalation_question(record: &Value) -> Option<(Question, Pending)> {
 struct Escalations {
     /// The first one waiting for a person that has not been asked yet.
     next: Option<(Question, Pending)>,
+    /// Pending ones Tack cannot put to a person, by docket's id, and the sentence saying why.
+    unaskable: Vec<(String, String)>,
+    /// The label of every option of every record read.
+    labels: OptionLabels,
     /// The held one has expired in docket's own record.
     expired: bool,
     /// The highest `seq` below the first record still pending: where a restarted adapter may
@@ -719,30 +713,58 @@ impl DocketAdapter {
             .await
             .ok()
             .filter(|r| r.status == 200)?;
-        let listed = reply.body["escalations"].as_array()?;
+        let list: EscalationList = reply
+            .read()
+            .inspect_err(|why| tracing::warn!(why, "docket's escalations could not be read"))
+            .ok()?;
         let mut found = Escalations {
             settled_through: since,
             ..Escalations::default()
         };
         let mut open = false;
-        for record in listed {
-            let pending = record["state"] == json!("pending");
+        for raw in list.escalations {
+            let record = match serde_json::from_value::<Escalation>(raw.clone()) {
+                Ok(record) => record,
+                Err(why) => {
+                    // A pending record that cannot be read is still one a person must be told of.
+                    if let Some(id) = raw["id"].as_str()
+                        && raw["state"] == json!("pending")
+                        && !asked.contains(id)
+                    {
+                        open = true;
+                        found.unaskable.push((
+                            id.to_owned(),
+                            format!(
+                                "docket asked something this Tack could not read ({why}); answer it in docket"
+                            ),
+                        ));
+                    }
+                    continue;
+                }
+            };
+            for option in &record.options {
+                if let Some(label) = option.label.as_deref().filter(|label| !label.is_empty()) {
+                    found
+                        .labels
+                        .insert((record.id.clone(), option.id.clone()), label.to_owned());
+                }
+            }
             if let Some(held) = held
-                && record["id"] == json!(held.escalation)
-                && record["state"] == json!("expired")
+                && record.id == held.escalation
+                && matches!(record.state, EscalationState::Expired)
             {
                 found.expired = true;
             }
-            if pending {
+            if matches!(record.state, EscalationState::Pending) {
                 open = true;
-                if held.is_none()
-                    && found.next.is_none()
-                    && !record["id"].as_str().is_some_and(|id| asked.contains(id))
-                {
-                    found.next = escalation_question(record);
+                if held.is_none() && found.next.is_none() && !asked.contains(&record.id) {
+                    match escalation_question(&record) {
+                        Ok(question) => found.next = Some(question),
+                        Err(sentence) => found.unaskable.push((record.id.clone(), sentence)),
+                    }
                 }
-            } else if !open && let Some(seq) = record["seq"].as_u64() {
-                found.settled_through = found.settled_through.max(seq);
+            } else if !open {
+                found.settled_through = found.settled_through.max(record.seq);
             }
         }
         Some(found)
@@ -781,24 +803,23 @@ impl DocketAdapter {
         info: &RunInfo,
         state: AttemptState,
         reason: Value,
-        task: &Value,
+        task: Option<&TaskView>,
         model: Option<String>,
     ) -> HarnessOutcome {
-        let usage = &task["usage"];
-        let by_model: BTreeMap<String, Value> = usage["byModel"]
-            .as_object()
+        let usage = task.and_then(|task| task.usage.as_ref());
+        let by_model: BTreeMap<String, Value> = usage
             .into_iter()
-            .flatten()
+            .flat_map(|usage| &usage.by_model)
             .map(|(name, used)| {
                 // `by_model` keeps the input the cache did not serve, with the cache
                 // figures on top (`ModelUsage`); docket's `input` has them inside.
                 let cache = CacheFigures::of_hop(used);
-                let input = used["input"].as_u64().unwrap_or(0);
+                let input = used.input.unwrap_or(0);
                 let mut entry = json!({
                     "input": input
                         .saturating_sub(cache.read.unwrap_or(0))
                         .saturating_sub(cache.write.unwrap_or(0)),
-                    "output": used["output"].as_u64().unwrap_or(0),
+                    "output": used.output.unwrap_or(0),
                 });
                 if let Some(read) = cache.read {
                     entry["cache_read"] = read.into();
@@ -810,7 +831,9 @@ impl DocketAdapter {
             })
             .collect();
         let mut additional = BTreeMap::new();
-        CacheFigures::of_task(usage).put(&mut additional);
+        if let Some(usage) = usage {
+            CacheFigures::of_task(usage).put(&mut additional);
+        }
         if !by_model.is_empty() {
             additional.insert("by_model".to_owned(), json!(by_model));
         }
@@ -823,7 +846,9 @@ impl DocketAdapter {
             final_checkpoint: None,
             actual_execution: ActualExecution {
                 harness_kind: DomainHarnessKind::new(DESCRIPTOR.kind),
-                harness_version: format!("API {}", info.api),
+                harness_version: info
+                    .api
+                    .map_or_else(|| "API unknown".to_owned(), |api| format!("API {api}")),
                 model_source: if model.is_some() {
                     ModelSource::Reported
                 } else {
@@ -841,8 +866,8 @@ impl DocketAdapter {
                 additional: BTreeMap::from([("team".to_owned(), json!(info.pod))]),
             },
             usage: Usage {
-                tokens_in: measurement(usage["input"].as_u64()),
-                tokens_out: measurement(usage["output"].as_u64()),
+                tokens_in: measurement(usage.and_then(|usage| usage.total.input)),
+                tokens_out: measurement(usage.and_then(|usage| usage.total.output)),
                 duration_ms: measurement(Some(elapsed)),
                 cost_usd: measurement(None),
                 additional,
@@ -854,28 +879,30 @@ impl DocketAdapter {
     async fn finish(
         &self,
         info: &RunInfo,
-        task: &Value,
+        task: &TaskView,
         model: Option<String>,
         progress: &mpsc::Sender<Progress>,
         unanswered_until: Option<DateTime<Utc>>,
     ) -> HarnessOutcome {
-        let status = task["status"].as_str().unwrap_or_default();
         // docket's task record says why it ended in `reason`, for a failed and a blocked task
         // alike; its hops carry their own `error`, the task has none.
-        let why = task["reason"].as_str().unwrap_or_default();
-        let (state, reason) = match status {
+        let why = task.reason.as_deref().unwrap_or_default();
+        let failure_kind = task.failure_kind.as_deref();
+        let (state, reason) = match task.status.as_str() {
             "done" => {
-                let branch = task["worktree"]["branch"].as_str().unwrap_or_default();
+                let branch = task
+                    .worktree
+                    .as_ref()
+                    .map_or("", |worktree| worktree.branch.as_str());
                 match Self::branch_head(&info.workspace, branch).await {
                     Ok(head) => {
                         let mut untracked = 0;
-                        if let Ok(diff) = self.client.task_diff(&info.pod, &info.task).await
-                            && diff.status == 200
-                            && let Some(count) = diff.body["untracked"]
-                                .as_array()
-                                .map(Vec::len)
-                                .filter(|count| *count > 0)
+                        if let Ok(reply) = self.client.task_diff(&info.pod, &info.task).await
+                            && reply.status == 200
+                            && let Ok(diff) = reply.read::<TaskDiff>()
+                            && !diff.untracked.is_empty()
                         {
+                            let count = diff.untracked.len();
                             untracked = count;
                             let text = if count == 1 {
                                 "1 file docket did not commit is not in the evidence".to_owned()
@@ -885,7 +912,7 @@ impl DocketAdapter {
                                 )
                             };
                             let _ = progress.try_send(Progress {
-                                kind: "agent.untracked".to_owned(),
+                                kind: event_kind::AGENT_UNTRACKED.to_owned(),
                                 text,
                                 usage: None,
                             });
@@ -894,7 +921,8 @@ impl DocketAdapter {
                         let mut reason = json!({"code": "done", "team": info.pod,
                                                 "task": info.task, "branch": branch,
                                                 "head_commit": head,
-                                                "base_commit": task["worktree"]["baseCommit"]});
+                                                "base_commit": task.worktree.as_ref()
+                                                    .and_then(|worktree| worktree.base_commit.clone())});
                         // The engine names them when the branch turns out to equal its base.
                         if untracked > 0 {
                             reason["untracked_files"] = json!(untracked);
@@ -913,7 +941,7 @@ impl DocketAdapter {
                 json!({"code": "cancelled", "task": info.task}),
             ),
             // docket's own sweep ended a question nobody answered in time.
-            "blocked" if task["blockedReason"] == "input_expired" => (
+            "blocked" if task.blocked_reason.as_deref() == Some("input_expired") => (
                 AttemptState::Failed,
                 json!({"code": "not_answered",
                        "message": super::not_answered(unanswered_until),
@@ -925,14 +953,14 @@ impl DocketAdapter {
             ),
             // At L5 a tool call needed approval and docket asks nobody; the task is final until
             // someone retries it, so the attempt ends here and nothing queues it again.
-            _ if task["failureKind"] == "needs_human" => (
+            _ if failure_kind == Some("needs_human") => (
                 AttemptState::Failed,
                 json!({"code": "needs_human",
                        "message": if why.is_empty() { NEEDS_A_PERSON } else { why },
                        "task": info.task}),
             ),
             // The install failed before any hop; docket's reason names the command and its output.
-            _ if task["failureKind"] == "prepare" => (
+            _ if failure_kind == Some("prepare") => (
                 AttemptState::Failed,
                 json!({"code": "prepare",
                        "message": format!("Could not prepare the dependencies (docket): {why}"),
@@ -940,11 +968,11 @@ impl DocketAdapter {
             ),
             _ => (
                 AttemptState::Failed,
-                json!({"code": task["failureKind"].as_str().unwrap_or("failed"),
+                json!({"code": failure_kind.unwrap_or("failed"),
                        "message": why, "task": info.task}),
             ),
         };
-        self.outcome(info, state, reason, task, model)
+        self.outcome(info, state, reason, Some(task), model)
     }
 }
 
@@ -974,10 +1002,10 @@ impl HarnessAdapter for DocketAdapter {
             return Err(rejected(WRONG_WORKSPACE.to_owned()));
         }
         let team = Self::named_team(spec);
-        // The version first: a docket older than API 5 gets no task, and neither does one
+        // The version first: a docket older than API 6 gets no task, and neither does one
         // without the escalation record, which is where every question is read from.
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
-        probe::escalation_record(&self.client, &api)
+        probe::escalation_record(&self.client, api)
             .await
             .map_err(rejected)?;
         // The default pod is made when the task starts, like any other.
@@ -1010,12 +1038,13 @@ impl HarnessAdapter for DocketAdapter {
             .display()
             .to_string();
 
-        // Once per team per process; docket answers 200 for one it has.
-        let mut ensured = self.ensured.lock().await;
-        if !ensured.contains(&pod) {
+        // Once per team per process; docket answers 200 for one it has. The set is not held across
+        // the call, so a slow docket delays only the run that waits on it.
+        let known = self.ensured.lock().await.contains(&pod);
+        if !known {
             match self.client.ensure_pod(&pod, &location).await {
                 Ok(reply) if reply.status == 200 || reply.status == 201 => {
-                    ensured.insert(pod.clone());
+                    self.ensured.lock().await.insert(pod.clone());
                 }
                 Ok(reply) => {
                     return Err(rejected(format!(
@@ -1029,20 +1058,17 @@ impl HarnessAdapter for DocketAdapter {
                 }
             }
         }
-        drop(ensured);
 
         let base_ref = match request.metadata.get("rework_base").and_then(Value::as_str) {
             Some(branch) if !branch.is_empty() => branch.to_owned(),
             _ => Self::base_commit(spec).await,
         };
-        // The answered version decides which fields the task body may carry.
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
         let body = task::body(
             request,
             &attempt_id,
             spec.work.lease.attempt_number,
             &base_ref,
-            probe::api_at_least(&api, probe::PREPARE_API_VERSION),
             request.autonomy(),
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
@@ -1050,9 +1076,12 @@ impl HarnessAdapter for DocketAdapter {
             HarnessError::Process
         })?;
         let (task, refused) = match reply.status {
-            200 | 201 => match reply.body["task"].as_str() {
-                Some(id) => (id.to_owned(), None),
-                None => return Err(HarnessError::Process),
+            200 | 201 => match reply.read::<Enqueued>() {
+                Ok(enqueued) => (enqueued.task, None),
+                Err(why) => {
+                    tracing::warn!(why, "docket's answer to the task names no task");
+                    return Err(HarnessError::Process);
+                }
             },
             // The task is never retried: the attempt fails with docket's words.
             400 | 422 => (format!("rejected-{attempt_id}"), Some(reply.error())),
@@ -1074,7 +1103,7 @@ impl HarnessAdapter for DocketAdapter {
                 started_at: Utc::now(),
                 timeout: Duration::from_secs(request.timeout_seconds),
                 refused,
-                api,
+                api: Some(api),
             })
             .await)
     }
@@ -1164,13 +1193,11 @@ impl HarnessAdapter for DocketAdapter {
             return Ok(RecoveryObservation::ProcessStopped);
         }
         Ok(match self.client.task(pod, task).await {
-            Ok(reply) if reply.status == 200 => {
-                if terminal(reply.body["status"].as_str().unwrap_or_default()) {
-                    RecoveryObservation::ProcessStopped
-                } else {
-                    RecoveryObservation::ProcessRunning
-                }
-            }
+            Ok(reply) if reply.status == 200 => match reply.read::<TaskView>() {
+                Ok(view) if terminal(&view.status) => RecoveryObservation::ProcessStopped,
+                Ok(_) => RecoveryObservation::ProcessRunning,
+                Err(_) => RecoveryObservation::Ambiguous,
+            },
             _ => RecoveryObservation::Ambiguous,
         })
     }
@@ -1193,7 +1220,7 @@ impl HarnessAdapter for DocketAdapter {
         let api = probe::status(&self.client)
             .await
             .map(|status| status.api)
-            .unwrap_or_default();
+            .ok();
         Ok(self
             .register(RunInfo {
                 pod: pod.to_owned(),
@@ -1219,7 +1246,7 @@ impl DocketAdapter {
     ) -> Result<HarnessOutcome, HarnessError> {
         if let Some(error) = &info.refused {
             let _ = side.progress.try_send(Progress {
-                kind: "agent.refused".to_owned(),
+                kind: event_kind::AGENT_REFUSED.to_owned(),
                 text: error.clone(),
                 usage: None,
             });
@@ -1227,7 +1254,7 @@ impl DocketAdapter {
                 info,
                 AttemptState::Failed,
                 json!({"code": "rejected", "message": error}),
-                &Value::Null,
+                None,
                 None,
             ));
         }
@@ -1244,45 +1271,10 @@ impl DocketAdapter {
         let mut asked: HashSet<String> = HashSet::new();
         let mut refused: HashMap<String, u32> = HashMap::new();
         let mut pending: Option<Pending> = None;
+        // What docket called the options it offered, learnt from the escalations read before the
+        // events that name them.
+        let mut labels = OptionLabels::new();
         loop {
-            // The hops since the cursor.
-            if let Ok(page) = self.client.traces(&info.pod, &cursor).await
-                && page.status == 200
-            {
-                for line in page.body["events"].as_array().into_iter().flatten() {
-                    let Some(event) = line
-                        .as_str()
-                        .and_then(|l| serde_json::from_str::<Value>(l).ok())
-                    else {
-                        continue;
-                    };
-                    let payload = &event["payload"];
-                    if payload["task"] != json!(info.task) {
-                        continue;
-                    }
-                    let kind = event["event_type"].as_str().unwrap_or_default();
-                    if kind == "hop_finished"
-                        && payload["role"] == json!("implementer")
-                        && let Some(model) = payload["model"].as_str().filter(|m| !m.is_empty())
-                    {
-                        served_model = Some(model.to_owned());
-                    }
-                    if let Some(step) =
-                        hop_progress(kind, payload).or_else(|| escalation_progress(kind, payload))
-                        && side.progress.try_send(step).is_err()
-                    {
-                        tracing::warn!(harness = DESCRIPTOR.kind, "a progress line was dropped");
-                    }
-                }
-                if let Some(next) = page.body["next"]
-                    .as_str()
-                    .filter(|n| !n.is_empty() && *n != cursor)
-                {
-                    self.write_state(&info.attempt_id, "cursor", next);
-                    cursor = next.to_owned();
-                }
-            }
-
             // Whatever needs a person.
             let mut expired_in_docket = false;
             if let Some(read) = self
@@ -1290,6 +1282,15 @@ impl DocketAdapter {
                 .await
             {
                 expired_in_docket = read.expired;
+                labels.extend(read.labels);
+                for (id, sentence) in read.unaskable {
+                    let _ = side.progress.try_send(Progress {
+                        kind: event_kind::ESCALATION_UNREADABLE.to_owned(),
+                        text: sentence,
+                        usage: None,
+                    });
+                    asked.insert(id);
+                }
                 if let Some((mut question, ask)) = read.next {
                     // A question asked again is a new decision: Tack keys a decision
                     // by the id, and the refused one is already resolved there.
@@ -1307,32 +1308,75 @@ impl DocketAdapter {
                 }
             }
 
+            // The hops and escalation events since the cursor.
+            if let Ok(reply) = self.client.traces(&info.pod, &cursor).await
+                && reply.status == 200
+                && let Ok(page) = reply.read::<TracePage>()
+            {
+                for line in &page.events {
+                    let event = match TraceEvent::parse(line) {
+                        Ok(event) => event,
+                        Err(why) => {
+                            tracing::warn!(%why, "a trace event could not be read");
+                            continue;
+                        }
+                    };
+                    if event.task() != Some(info.task.as_str()) {
+                        continue;
+                    }
+                    if let TraceEvent::HopFinished(hop) = &event
+                        && hop.role == "implementer"
+                        && let Some(model) = hop.model.as_deref().filter(|m| !m.is_empty())
+                    {
+                        served_model = Some(model.to_owned());
+                    }
+                    let step = match &event {
+                        TraceEvent::HopStarted(hop) => Some(hop_progress(false, hop)),
+                        TraceEvent::HopFinished(hop) => Some(hop_progress(true, hop)),
+                        other => escalation_progress(other, &labels),
+                    };
+                    if let Some(step) = step
+                        && side.progress.try_send(step).is_err()
+                    {
+                        tracing::warn!(harness = DESCRIPTOR.kind, "a progress line was dropped");
+                    }
+                }
+                if let Some(next) = page
+                    .next
+                    .as_deref()
+                    .filter(|n| !n.is_empty() && *n != cursor)
+                {
+                    self.write_state(&info.attempt_id, "cursor", next);
+                    cursor = next.to_owned();
+                }
+            }
+
             let task = match self.client.task(&info.pod, &info.task).await {
-                Ok(reply) if reply.status == 200 => reply.body,
+                Ok(reply) if reply.status == 200 => reply
+                    .read::<TaskView>()
+                    .inspect_err(|why| tracing::warn!(why, "the task could not be read"))
+                    .ok(),
                 Ok(reply) => {
                     tracing::warn!(status = reply.status, "the task could not be read");
-                    Value::Null
+                    None
                 }
                 Err(why) => {
                     tracing::warn!(why, "docket could not be reached");
-                    Value::Null
+                    None
                 }
             };
-            if terminal(task["status"].as_str().unwrap_or_default()) {
+            if let Some(view) = task.as_ref().filter(|view| terminal(&view.status)) {
                 let model = served_model.or_else(|| {
-                    task["hops"]
-                        .as_array()
-                        .into_iter()
-                        .flatten()
+                    view.hops
+                        .iter()
                         .rev()
-                        .find(|hop| hop["role"] == json!("implementer"))
-                        .and_then(|hop| hop["model"].as_str())
-                        .map(str::to_owned)
+                        .find(|hop| hop.role.as_deref() == Some("implementer"))
+                        .and_then(|hop| hop.model.clone())
                 });
                 return Ok(self
                     .finish(
                         info,
-                        &task,
+                        view,
                         model,
                         &side.progress,
                         pending.as_ref().and_then(|held| held.expires_at),
@@ -1340,7 +1384,9 @@ impl DocketAdapter {
                     .await);
             }
             let now = tokio::time::Instant::now();
-            let waiting = waiting_on_a_person(task["status"].as_str().unwrap_or_default());
+            let waiting = task
+                .as_ref()
+                .is_some_and(|view| waiting_on_a_person(&view.status));
             if waiting && was_waiting {
                 deadline += now - last_poll;
             }
@@ -1366,7 +1412,7 @@ impl DocketAdapter {
                     json!({"code": "not_answered",
                            "message": super::not_answered(held_expiry),
                            "task": info.task}),
-                    &task,
+                    task.as_ref(),
                     served_model,
                 ));
             }
@@ -1380,7 +1426,7 @@ impl DocketAdapter {
                     info,
                     AttemptState::Failed,
                     json!({"code": "timeout", "message": message, "task": info.task}),
-                    &task,
+                    task.as_ref(),
                     served_model,
                 ));
             }
@@ -1396,7 +1442,7 @@ impl DocketAdapter {
                         asked.remove(&ask.escalation);
                         *refused.entry(ask.escalation.clone()).or_default() += 1;
                         let _ = side.progress.try_send(Progress {
-                            kind: "agent.answer_failed".to_owned(),
+                            kind: event_kind::AGENT_ANSWER_FAILED.to_owned(),
                             text: format!("{problem}; asking again"),
                             usage: None,
                         });

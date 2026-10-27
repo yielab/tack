@@ -317,7 +317,7 @@ Polling `GET /api/executions/{request_id}/attempts` after this, on a live embedd
 runner, reached `"state": "succeeded"` in the same real run. docket is reached the same way
 as every other harness, as `--harness docket` on a runner-v1 execution request —
 never through a Tack-side dispatch route. docket takes the attempt as one task in a team,
-over its HTTP API version 5 (see
+over its HTTP API version 6 (see
 [Runs, Teams and Automation](book/src/developer/runs-and-teams.md#the-docket-adapter)).
 
 ---

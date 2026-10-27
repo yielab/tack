@@ -4,6 +4,7 @@
 //! nothing else they share.
 
 pub mod clock;
+pub mod event_kind;
 pub mod execution;
 pub mod mrp;
 pub mod prepare;

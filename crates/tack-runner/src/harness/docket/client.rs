@@ -1,14 +1,17 @@
-//! The calls this harness makes to docket's operator API (version 5 or 6), one
+//! The calls this harness makes to docket's operator API (version 6), one
 //! function per route. Each returns the status and the JSON body as docket
-//! sent them; reading them is the caller's work. The token is read from its
+//! sent them; the caller reads the body through [`Reply::read`], into the
+//! shapes of `wire.rs`. The token is read from its
 //! file on every call, so a daemon restarted with a new one needs no restart
 //! here.
 
 use std::{path::PathBuf, time::Duration};
 
 use reqwest::{Method, Url};
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+use super::wire::ErrorBody;
 use crate::config::DocketConfig;
 
 /// How long one request may take.
@@ -24,10 +27,17 @@ pub(super) struct Reply {
 impl Reply {
     /// docket's `{"error": "<sentence>"}`, or the status when it sent none.
     pub fn error(&self) -> String {
-        self.body["error"]
-            .as_str()
+        self.read::<ErrorBody>()
+            .ok()
+            .and_then(|body| body.error)
             .filter(|text| !text.is_empty())
-            .map_or_else(|| format!("docket answered {}", self.status), str::to_owned)
+            .unwrap_or_else(|| format!("docket answered {}", self.status))
+    }
+
+    /// The body as the shape the caller expects of this route, or the sentence saying it is not.
+    pub fn read<T: DeserializeOwned>(&self) -> Result<T, String> {
+        serde_json::from_value(self.body.clone())
+            .map_err(|why| format!("docket's answer is not what its API describes: {why}"))
     }
 }
 

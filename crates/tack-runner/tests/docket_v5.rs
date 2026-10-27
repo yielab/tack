@@ -214,16 +214,16 @@ async fn run_to_end(
 }
 
 #[tokio::test]
-async fn probe_on_api_4_names_beta_6_and_no_task_is_posted() {
+async fn probe_on_api_5_names_beta_6_and_no_task_is_posted() {
     let fake = pods_fake().await;
-    fake.set_api_version("4");
+    fake.set_api_version("5");
     let scene = scene();
     let adapter = adapter(&fake, &scene);
 
     let capability = adapter.probe().await;
     assert_eq!(
         capability.probe_error.as_deref(),
-        Some("needs docket 0.2.0-beta.6 (API 5); this docket answers API 4")
+        Some("needs docket 0.2.0-beta.6 (API 6); this docket answers API 5")
     );
     let refused = adapter.validate(&spec(&scene, "attempt-1", 1)).await;
     assert!(
@@ -236,24 +236,24 @@ async fn probe_on_api_4_names_beta_6_and_no_task_is_posted() {
 #[tokio::test]
 async fn probe_on_a_later_api_is_accepted_and_names_the_version_it_answered() {
     let fake = pods_fake().await;
-    fake.set_api_version("6");
+    fake.set_api_version("7");
     let scene = scene();
     let adapter = adapter(&fake, &scene);
 
     let capability = adapter.probe().await;
     assert_eq!(capability.probe_error, None);
-    assert_eq!(capability.api_version(), Some("6"));
+    assert_eq!(capability.api_version(), Some("7"));
     adapter
         .validate(&spec(&scene, "attempt-1", 1))
         .await
-        .expect("API 6 is accepted");
+        .expect("API 7 is accepted");
     let (outcome, _) = run_to_end(&adapter, &spec(&scene, "attempt-1", 1)).await;
-    assert_eq!(outcome.actual_execution.harness_version, "API 6");
+    assert_eq!(outcome.actual_execution.harness_version, "API 7");
 }
 
 #[tokio::test]
-async fn a_version_below_5_or_not_a_number_is_refused_with_the_sentence() {
-    for found in ["4", "abc", ""] {
+async fn a_version_below_6_or_not_a_number_is_refused_with_the_sentence() {
+    for found in ["4", "5", "abc", ""] {
         let fake = pods_fake().await;
         fake.set_api_version(found);
         let scene = scene();
@@ -262,7 +262,7 @@ async fn a_version_below_5_or_not_a_number_is_refused_with_the_sentence() {
         assert_eq!(
             adapter.probe().await.probe_error,
             Some(format!(
-                "needs docket 0.2.0-beta.6 (API 5); this docket answers API {found}"
+                "needs docket 0.2.0-beta.6 (API 6); this docket answers API {found}"
             ))
         );
         assert!(
@@ -280,7 +280,6 @@ async fn a_version_below_5_or_not_a_number_is_refused_with_the_sentence() {
 #[tokio::test]
 async fn a_docket_without_the_escalation_record_is_refused_with_the_sentence() {
     let fake = pods_fake().await;
-    fake.set_api_version("6");
     fake.without_escalations();
     let scene = scene();
     let adapter = adapter(&fake, &scene);
@@ -303,17 +302,16 @@ async fn a_docket_without_the_escalation_record_is_refused_with_the_sentence() {
 }
 
 #[tokio::test]
-async fn an_api_5_run_reports_api_5_as_its_harness_version() {
+async fn a_run_reports_the_api_version_docket_answered_as_its_harness_version() {
     let fake = pods_fake().await;
     let scene = scene();
     let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
-    assert_eq!(outcome.actual_execution.harness_version, "API 5");
+    assert_eq!(outcome.actual_execution.harness_version, "API 6");
 }
 
-/// The `prepare` key of the body posted for a run whose project says `setting`, on docket `api`.
-async fn prepare_sent(api: &str, setting: Option<PrepareSetting>) -> Option<Value> {
+/// The `prepare` key of the body posted for a run whose project says `setting`.
+async fn prepare_sent(setting: Option<PrepareSetting>) -> Option<Value> {
     let fake = pods_fake().await;
-    fake.set_api_version(api);
     let scene = scene();
     let mut attempt = spec(&scene, "attempt-1", 1);
     attempt.work.request.repository.prepare = setting;
@@ -324,34 +322,21 @@ async fn prepare_sent(api: &str, setting: Option<PrepareSetting>) -> Option<Valu
 }
 
 #[tokio::test]
-async fn prepare_goes_to_api_6_as_the_command_or_an_empty_string() {
+async fn prepare_goes_to_docket_as_the_command_or_an_empty_string() {
     let command = PrepareSetting::Replace {
         command: "npm ci".to_owned(),
     };
+    assert_eq!(prepare_sent(Some(command)).await, Some(json!("npm ci")));
     assert_eq!(
-        prepare_sent("6", Some(command)).await,
-        Some(json!("npm ci"))
-    );
-    assert_eq!(
-        prepare_sent("6", Some(PrepareSetting::Off)).await,
+        prepare_sent(Some(PrepareSetting::Off)).await,
         Some(json!(""))
     );
-    assert_eq!(prepare_sent("6", Some(PrepareSetting::Detect)).await, None);
-    assert_eq!(prepare_sent("6", None).await, None);
+    assert_eq!(prepare_sent(Some(PrepareSetting::Detect)).await, None);
+    assert_eq!(prepare_sent(None).await, None);
 }
 
 #[tokio::test]
-async fn prepare_never_goes_to_api_5() {
-    let command = PrepareSetting::Replace {
-        command: "npm ci".to_owned(),
-    };
-    for setting in [Some(command), Some(PrepareSetting::Off), None] {
-        assert_eq!(prepare_sent("5", setting).await, None);
-    }
-}
-
-#[tokio::test]
-async fn probe_on_api_5_reports_each_team_and_the_ceiling() {
+async fn probe_reports_each_team_and_the_ceiling() {
     let fake = pods_fake().await;
     fake.add_pod(
         "saas-content",
@@ -766,22 +751,19 @@ async fn every_escalation_event_but_a_delivery_is_a_timeline_line() {
         [
             (
                 "escalation.asked".to_owned(),
-                format!(
-                    "docket asked (approval): {}",
-                    asked["prompt"].as_str().unwrap()
-                )
+                format!("docket asked: {}", asked["prompt"].as_str().unwrap())
             ),
             (
                 "escalation.resolved".to_owned(),
-                "approval answered: option approve_once".to_owned()
+                "a person answered".to_owned()
             ),
             (
                 "escalation.expired".to_owned(),
-                "approval expired: nobody answered".to_owned()
+                "nobody answered before it expired".to_owned()
             ),
             (
                 "escalation.decided".to_owned(),
-                "decided alone: option deny (policy deny, level L5)".to_owned()
+                "docket decided this on its own".to_owned()
             ),
         ]
     );
@@ -824,6 +806,82 @@ async fn a_400_on_the_pod_fails_the_attempt_with_the_bodys_text_and_posts_no_tas
         requests.iter().all(|request| request.url.path() == "/pods"),
         "no task is posted: {requests:?}"
     );
+}
+
+/// A slow docket answering for one team holds up that team's run and no other: the fast team's
+/// run starts while the slow team's `POST /pods` is still unanswered.
+#[tokio::test]
+async fn a_slow_team_does_not_hold_up_a_run_on_another_team() {
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{body_partial_json, method, path},
+    };
+    let docket = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/status.json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(fixture("status")))
+        .mount(&docket)
+        .await;
+    for (team, delay) in [
+        ("slow-team", Duration::from_secs(20)),
+        ("fast-team", Duration::ZERO),
+    ] {
+        Mock::given(method("POST"))
+            .and(path("/pods"))
+            .and(body_partial_json(json!({"name": team})))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(delay)
+                    .set_body_json(fixture("post-pods-existing")),
+            )
+            .mount(&docket)
+            .await;
+        Mock::given(method("POST"))
+            .and(path(format!("/tasks/{team}")))
+            .respond_with(
+                ResponseTemplate::new(201).set_body_json(json!({"task": format!("task-{team}")})),
+            )
+            .mount(&docket)
+            .await;
+    }
+    let fake = FakeDocket::start().await;
+    let scene = scene();
+    let adapter = Arc::new(DocketAdapter::new(
+        DocketConfig {
+            base_url: Some(docket.uri()),
+            token_file: Some(fake.token_file()),
+            ..DocketConfig::default()
+        },
+        scene.state.clone(),
+    ));
+    let on_team = |team: &str, attempt: &str| {
+        let mut spec = spec(&scene, attempt, 1);
+        spec.work.request.resolved_agent_profile.tool_policy["docket"]["team"] = json!(team);
+        spec
+    };
+    let slow = tokio::spawn({
+        let (adapter, spec) = (Arc::clone(&adapter), on_team("slow-team", "attempt-slow"));
+        async move { adapter.start(&spec).await }
+    });
+    // The slow team's call is in flight before the fast team starts.
+    while docket
+        .received_requests()
+        .await
+        .expect("recorded")
+        .iter()
+        .all(|request| request.url.path() != "/pods")
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let fast = tokio::time::timeout(
+        Duration::from_secs(10),
+        adapter.start(&on_team("fast-team", "attempt-fast")),
+    )
+    .await
+    .expect("the fast team starts while the slow team's pod is unanswered");
+    assert_eq!(fast.expect("starts").process_id, "fast-team/task-fast-team");
+    slow.abort();
 }
 
 #[tokio::test]
@@ -1266,7 +1324,6 @@ async fn failures_carry_docket_kind_and_text() {
 #[tokio::test]
 async fn a_failed_install_fails_the_attempt_with_dockets_reason_and_no_work() {
     let fake = pods_fake().await;
-    fake.set_api_version("6");
     let reason = "prepare failed: npm ci (exit 1): ERR! lockfile out of date";
     fake.script(Script {
         status: "failed".to_owned(),
@@ -2491,6 +2548,21 @@ fn report(
     }
 }
 
+/// Waits until the runner has asked docket for its status `more` times since now, which is how
+/// many times it has probed: the last of them starts only after the one before it was reported
+/// or not, so `more - 1` probes are complete when this returns.
+async fn probed_again(fake: &FakeDocket, more: usize) {
+    let probes = || fake.requests_to("GET", "/status.json").len();
+    let target = probes() + more;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while probes() < target {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the runner probes docket again");
+}
+
 #[tokio::test]
 async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_sends_none() {
     use tack_runner::{
@@ -2559,8 +2631,8 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
             .collect::<Vec<_>>()
     };
 
-    // Several intervals pass with nothing changed: no refresh.
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    // Several probes pass with nothing changed: no refresh.
+    probed_again(&fake, 4).await;
     assert!(refreshes().is_empty(), "{:?}", refreshes());
 
     fake.add_pod("saas-content", "lights-out", &[]);
@@ -2574,8 +2646,8 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
     let teams = sent[0]["capabilities"]["harnesses"][0]["teams"].to_string();
     assert!(teams.contains("saas-content"), "{teams}");
 
-    // The new report is now the last one sent: later intervals send nothing.
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    // The new report is now the last one sent: later probes send nothing.
+    probed_again(&fake, 4).await;
     assert_eq!(refreshes().len(), 1);
 
     handle.request();
