@@ -42,7 +42,7 @@ async fn fleet_race_between_two_runners_grants_exactly_one_lease() {
     let storage_dir = dir.join("storage");
     let (app, repo) = app_file_backed(&db_path, &storage_dir).await;
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "fleet-race").await;
     let runner_a = enroll_runner(&app, "Fleet racer A").await;
     let runner_b = enroll_runner(&app, "Fleet racer B").await;
@@ -122,7 +122,7 @@ async fn duplicated_credential_race_grants_exactly_one_lease() {
     let storage_dir = dir.join("storage");
     let (app, repo) = app_file_backed(&db_path, &storage_dir).await;
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "dup-cred").await;
     let runner = enroll_runner(&app, "Duplicated-credential runner").await;
     let request_id = create_execution_request(
@@ -190,7 +190,7 @@ async fn revoked_credential_rejected_everywhere_freezes_attempt() {
     let storage_dir = storage_dir_guard.path();
     let (app, repo) = app_in_memory(storage_dir).await;
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "revoke").await;
     let runner = enroll_runner(&app, "Revoked runner").await;
     let _request_id = create_execution_request(

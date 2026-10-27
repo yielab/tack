@@ -77,6 +77,12 @@ pub async fn test_app_with_local_runner(
 /// The caller supplies the full SQLite URL (e.g. `"sqlite:/tmp/test.db?mode=rwc"`).
 /// Used for tests that require file-level operations (backup/restore).
 pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
+    test_app_with_file_db_and_config(db_url, AppConfig::default()).await
+}
+
+/// Same as [`test_app_with_file_db`] with a custom config (e.g. a backup destination).
+/// `config.database_url` is replaced by `db_url`.
+pub async fn test_app_with_file_db_and_config(db_url: &str, config: AppConfig) -> (Router, Uuid) {
     let pool = init_pool(db_url).await.expect("file-based pool");
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
@@ -85,7 +91,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
 
     let config = AppConfig {
         database_url: db_url.to_string(),
-        ..AppConfig::default()
+        ..config
     };
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
@@ -149,6 +155,36 @@ pub async fn create_item(app: &Router, project_id: Uuid, title: &str) -> Uuid {
     let bytes = to_bytes(res.into_body(), 4 * 1024 * 1024).await.unwrap();
     let v: Value = serde_json::from_slice(&bytes).unwrap();
     Uuid::parse_str(v["id"].as_str().unwrap()).unwrap()
+}
+
+/// Create a project on the git remote `repository` (a run's repository snapshot has to be the
+/// project's) and one item on it, sending `headers` (an operator token, when the app has one);
+/// returns the item's id.
+pub async fn create_project_and_item(
+    app: &Router,
+    repository: &str,
+    headers: &[(&str, &str)],
+) -> String {
+    let (status, project) = send_large(
+        app,
+        "POST",
+        "/api/projects",
+        json!({"name": "Shared project", "project_type": "software", "code_origin": "url", "repository": repository}),
+        headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{project}");
+    let project_id = project["id"].as_str().unwrap().to_owned();
+    let (status, item) = send_large(
+        app,
+        "POST",
+        &format!("/api/projects/{project_id}/items"),
+        json!({"title": "Shared item"}),
+        headers,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{item}");
+    item["id"].as_str().unwrap().to_owned()
 }
 
 /// Send a request, returning `(status, parsed JSON body)`. An empty or non-JSON body

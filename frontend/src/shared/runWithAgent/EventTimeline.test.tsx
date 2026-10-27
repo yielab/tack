@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import EventTimeline from './EventTimeline';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 function mount(requestId = 'exec_1', attemptNumber = 1, live?: () => boolean, workspace?: string) {

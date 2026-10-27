@@ -6,6 +6,7 @@ import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import type { Resource } from 'solid-js';
 import ItemDetailDrawer from './ItemDetailDrawer';
 import ItemPage from './ItemPage';
+import { flush } from '../../test/flush';
 
 const ITEM = {
   id: 'item-1',
@@ -36,8 +37,6 @@ const projectValue: ProjectContextValue = {
 };
 
 let fetchMock: ReturnType<typeof vi.spyOn>;
-const flush = () => new Promise((r) => setTimeout(r, 0));
-
 function jsonOf(url: string): unknown {
   // GET /api/items/{id} returns the detail envelope, matching the real handler
   // (crates/tack-api/src/handlers/items.rs) that api.items.get() unwraps.

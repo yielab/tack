@@ -81,29 +81,6 @@ pub fn full_capabilities() -> Value {
     })
 }
 
-pub async fn create_project_and_item(app: &axum::Router) -> String {
-    let (status, project) = common::send_large(
-        app,
-        "POST",
-        "/api/projects",
-        json!({"name": "G2 audit", "project_type": "software", "code_origin": "url", "repository": "https://example.test/g2.git"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{project}");
-    let project_id = project["id"].as_str().unwrap().to_owned();
-    let (status, item) = common::send_large(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/items"),
-        json!({"title": "G2 adversarial item"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{item}");
-    item["id"].as_str().unwrap().to_owned()
-}
-
 pub async fn agent_profile(app: &axum::Router, label: &str) -> String {
     let (status, profile) = common::send_large(
         app,

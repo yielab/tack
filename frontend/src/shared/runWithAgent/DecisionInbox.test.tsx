@@ -3,8 +3,7 @@ import { render } from 'solid-js/web';
 import { toast } from '../ui/toast';
 import { decisionTokenStore, type DecisionRecord } from '../execution';
 import DecisionInbox, { type DecisionInboxProps } from './DecisionInbox';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 const PENDING_WITH_OPTIONS: DecisionRecord = {

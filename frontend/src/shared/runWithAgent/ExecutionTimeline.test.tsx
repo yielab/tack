@@ -2,8 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { ExecutionStoreProvider } from '../state/executionContext';
 import ExecutionTimeline from './ExecutionTimeline';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 /** The run the tab shows. Only one is on screen: the latest, until a chip picks another. */

@@ -6,8 +6,7 @@ import manualOnly from '../../../../docs/contracts/mrp-v1/fixtures/manual-only.j
 import verifierFailed from '../../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json';
 import MrpPanel from './MrpPanel';
 import type { AttemptMerge } from '../execution/attempts';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 function mount(merge?: AttemptMerge) {

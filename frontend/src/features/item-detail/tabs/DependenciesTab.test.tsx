@@ -5,6 +5,7 @@ import { api } from '../../../shared/api';
 import { MemoryRouter, Route } from '@solidjs/router';
 import DependenciesTab from './DependenciesTab';
 import type { Item } from '../../../shared/types';
+import { flush } from '../../../test/flush';
 
 const ITEM = { id: 'i1', project_id: 'p1', title: 'Item One' } as unknown as Item;
 
@@ -13,8 +14,6 @@ const projectItems = [
   { id: 'i2', title: 'Item Two' },
   { id: 'i3', title: 'Item Three' },
 ];
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let deps: unknown[];
 let fetchMock: ReturnType<typeof vi.spyOn>;
 

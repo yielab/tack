@@ -6,6 +6,7 @@ import { ProjectContext, type ProjectContextValue } from '../../shared/state/pro
 import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import Breadcrumb from '../../shared/ui/Breadcrumb';
 import ItemPage from './ItemPage';
+import { flush } from '../../test/flush';
 
 const ITEM = {
   id: 'abcdef12-0000-0000-0000-000000000000',
@@ -45,8 +46,6 @@ function jsonOf(url: string): unknown {
   if (url.includes('/executions')) return { protocol_version: 1, data: [] };
   return {};
 }
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) =>

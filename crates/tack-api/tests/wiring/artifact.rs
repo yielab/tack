@@ -104,30 +104,6 @@ fn full_capabilities() -> Value {
     })
 }
 
-async fn create_project_and_item(app: &axum::Router) -> String {
-    let (status, project) = common::send_large(
-        app,
-        "POST",
-        "/api/projects",
-        json!({"name": "Artifact wiring", "project_type": "software", "code_origin": "url", "repository": "https://example.test/wiring.git"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{project}");
-    let project_id = project["id"].as_str().unwrap().to_owned();
-
-    let (status, item) = common::send_large(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/items"),
-        json!({"title": "Prove the artifact storage/download wiring end to end"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{item}");
-    item["id"].as_str().unwrap().to_owned()
-}
-
 struct RunningAttempt {
     runner_id: String,
     credential: String,
@@ -303,7 +279,8 @@ async fn upload_artifact(label: &str) -> UploadedArtifact {
     );
 
     let (app, repo) = real_app(&storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let item_id =
+        common::create_project_and_item(&app, "https://example.test/wiring.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, label).await;
 
     let content = b"diff --git a/x b/x\n+hello from wiring\n".to_vec();

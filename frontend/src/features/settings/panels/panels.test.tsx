@@ -10,6 +10,7 @@ import DataPanel from './DataPanel';
 import ProjectSettings from '../ProjectSettings';
 import AutomationPanel from './AutomationPanel';
 import { toast } from '../../../shared/ui/toast';
+import { flush } from '../../../test/flush';
 
 const PROJECT = {
   id: 'p1',
@@ -56,8 +57,6 @@ const autonomyPuts = () =>
     .filter((c) => (c[1] as RequestInit)?.method === 'PUT' && String(c[0]).endsWith('/api/projects/p1/autonomy'))
     .map((c) => JSON.parse((c[1] as RequestInit).body as string));
 const withInput = (c: HTMLElement, label: string) => c.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 afterEach(() => {
