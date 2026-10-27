@@ -80,6 +80,13 @@ describe('DependenciesTab', () => {
     expect(text).toContain('Item Three'); // i3 blocks i1 → blocked by
   });
 
+  it("links each row to the other item's own page, not the drawer", async () => {
+    const { container } = mount();
+    await flush();
+    const hrefs = Array.from(container.querySelectorAll('li a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/projects/p1/items/i2', '/projects/p1/items/i3']);
+  });
+
   it('surfaces the server cycle-rejection message and adds nothing', async () => {
     const { container } = mount();
     await flush();

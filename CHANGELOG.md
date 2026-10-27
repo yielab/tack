@@ -356,6 +356,10 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A long status name no longer wraps in its board column header.** It is cut with an ellipsis and its
+  full name is the header's tooltip.
+- **The Dependencies tab's links open the item's own page**, `/projects/<id>/items/<item>`, not the drawer,
+  so they can be opened in a new tab.
 - **A runner that is only waiting for work is no longer refused its heartbeat.** The runner took the
   slots that were asking the server for work as busy, reported less capacity than the server held
   against it, and the server answered a conflict, so a runner started on its own stayed "not answering"
