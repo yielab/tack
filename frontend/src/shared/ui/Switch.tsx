@@ -10,7 +10,7 @@ export interface SwitchProps {
   ariaLabel?: string;
   /** The visible text; it names the switch. */
   children: JSX.Element;
-  /** Layout classes for the row (the base is a flex row with a small gap). */
+  /** Layout classes for the row (the base is a flex row, at least 24px tall, with a small gap). */
   class?: string;
   style?: JSX.CSSProperties;
 }
@@ -18,7 +18,7 @@ export interface SwitchProps {
 /** An on/off switch with its text. A native checkbox with role="switch", so the keyboard and the
  *  screen reader see a switch, and a disabled one stays disabled with its reason shown beside it. */
 const Switch: Component<SwitchProps> = (props) => (
-  <label class={clsx('flex items-center gap-2 text-sm', props.class)} style={props.style}>
+  <label class={clsx('flex min-h-6 items-center gap-2 text-sm', props.class)} style={props.style}>
     <input
       type="checkbox"
       role="switch"
