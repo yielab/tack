@@ -751,19 +751,20 @@ pub(crate) fn refused(refusal: Refusal) -> (StatusCode, Json<Value>) {
     )
 }
 
-impl From<CreateExecution> for RunRequest {
-    fn from(input: CreateExecution) -> Self {
-        RunRequest {
+impl TryFrom<CreateExecution> for RunRequest {
+    type Error = Refusal;
+
+    fn try_from(input: CreateExecution) -> Result<Self, Refusal> {
+        Ok(RunRequest {
             item_id: input.item_id,
             idempotency_key: input.idempotency_key,
-            selector_kind: input.selector_kind,
-            selector_id: input.selector_id,
+            selector: start_run::selector_from(input.selector_kind, input.selector_id)?,
             agent_profile_id: input.agent_profile_id,
             requested_harness_kind: input.requested_harness_kind,
             requested_model: input.requested_model,
             agent_profile_snapshot: input.agent_profile_snapshot,
             repository_snapshot: input.repository_snapshot,
-            permission_policy: input.permission_policy,
+            permission_policy: start_run::PermissionRequest::from_value(input.permission_policy)?,
             budgets: input.budgets,
             environment: input.environment,
             metadata: input.metadata,
@@ -771,9 +772,9 @@ impl From<CreateExecution> for RunRequest {
             status_map_policy_id: input.status_map_policy_id,
             verify: input.verify,
             push_branch: input.push_branch,
-            autonomy: input.autonomy,
+            autonomy: start_run::level_from(input.autonomy)?,
             origin: input.origin,
-        }
+        })
     }
 }
 
@@ -793,7 +794,8 @@ pub(crate) async fn create_as(
     principal: String,
     input: CreateExecution,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
-    start_run(&state.repo, state.clock.as_ref(), &principal, input.into())
+    let input = RunRequest::try_from(input).map_err(refused)?;
+    start_run(&state.repo, state.clock.as_ref(), &principal, input)
         .await
         .map(created)
         .map_err(refused)

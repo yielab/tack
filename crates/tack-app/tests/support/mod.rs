@@ -2,11 +2,12 @@
 //! one profile, on `setup_test_db()`. Not every test binary uses every function.
 
 use serde_json::{Value, json};
-use tack_app::runs::start_run::{RunRequest, Started};
+use tack_app::runs::start_run::{PermissionRequest, RunRequest, Started};
 use tack_core::models::{CodeOrigin, CreateProject, ProjectType, UpdateProject, WorkspaceMode};
 use tack_db::repo::execution::{NewAgentProfile, NewRunner};
 use tack_db::{Repository, queries};
 use tack_protocol::SystemClock;
+use tack_protocol::execution::{RunnerId, RunnerSelector};
 use tack_test_support::{create_test_workspace, make_item, setup_test_db};
 use uuid::Uuid;
 
@@ -96,8 +97,9 @@ pub fn full_request(item_id: Uuid) -> RunRequest {
     RunRequest {
         item_id,
         idempotency_key: "same-key".into(),
-        selector_kind: Some("exact_runner".into()),
-        selector_id: Some("runner-active".into()),
+        selector: Some(RunnerSelector::ExactRunner {
+            runner_id: RunnerId::new("runner-active"),
+        }),
         agent_profile_id: Some("profile-c1".into()),
         requested_harness_kind: Some("codex".into()),
         requested_model: None,
@@ -105,7 +107,7 @@ pub fn full_request(item_id: Uuid) -> RunRequest {
         repository_snapshot: Some(
             json!({"kind":"git","remote":"https://example.test/c1.git","base_revision":"abc123","subdirectory":null}),
         ),
-        permission_policy: json!({"tools":["shell"],"network":false}),
+        permission_policy: PermissionRequest::new(vec!["shell".into()], Some(false)),
         budgets: json!({"tokens":1000}),
         environment: json!({"MODE":{"value":"test","secret_reference":null}}),
         metadata: json!({"source":"c1-test"}),
@@ -123,8 +125,7 @@ pub fn bare_request(item_id: Uuid, key: &str) -> RunRequest {
     RunRequest {
         idempotency_key: key.into(),
         agent_profile_id: None,
-        selector_kind: None,
-        selector_id: None,
+        selector: None,
         ..full_request(item_id)
     }
 }

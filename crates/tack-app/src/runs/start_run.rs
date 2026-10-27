@@ -6,13 +6,17 @@
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use tack_core::models;
 use tack_core::run_defaults::{Candidate, Resolved, Source, resolve};
 use tack_db::repo::execution::{EnqueueResult, NewExecutionRequest, RunnerListingRow};
 use tack_db::{Repository, queries};
 use tack_orch::scheduler::select::SchedulingPolicy;
 use tack_protocol::Clock;
-use tack_protocol::execution::{ExecutionRequestSnapshot, StableErrorCode};
+use tack_protocol::execution::{
+    Approvals, AutonomyLevel, ExecutionRequestSnapshot, PermissionPolicy, RunnerId, RunnerSelector,
+    StableErrorCode,
+};
 use uuid::Uuid;
 
 use crate::model_policy_wiring::resolve_request_model_policy;
@@ -23,9 +27,9 @@ use crate::model_policy_wiring::resolve_request_model_policy;
 pub struct RunRequest {
     pub item_id: Uuid,
     pub idempotency_key: String,
-    /// `exact_runner` or `fleet`.
-    pub selector_kind: Option<String>,
-    pub selector_id: Option<String>,
+    /// Where the run goes: one runner or a fleet. Left out, the profile's fleet or the only
+    /// runner is chosen.
+    pub selector: Option<RunnerSelector>,
     pub agent_profile_id: Option<String>,
     pub requested_harness_kind: Option<String>,
     /// The one model string the agent is asked to use, passed verbatim.
@@ -33,7 +37,7 @@ pub struct RunRequest {
     /// Removed from the request: a caller that still sends it is refused.
     pub agent_profile_snapshot: Option<Value>,
     pub repository_snapshot: Option<Value>,
-    pub permission_policy: Value,
+    pub permission_policy: PermissionRequest,
     pub budgets: Value,
     pub environment: Value,
     pub metadata: Value,
@@ -41,11 +45,102 @@ pub struct RunRequest {
     pub status_map_policy_id: Option<String>,
     pub verify: Option<bool>,
     pub push_branch: Option<bool>,
-    /// The autonomy level a docket run is asked for (`L3`, `L4` or `L5`), sent as it is.
-    /// "Run again at L3" sets `L3`; absent, docket decides. Refused for any other agent.
-    pub autonomy: Option<String>,
+    /// The autonomy level a docket run is asked for. "Run again at L3" sets `L3`; absent, docket
+    /// decides. Refused for any other agent.
+    pub autonomy: Option<AutonomyLevel>,
     /// `mcp` marks a run an agent started through `tack mcp`.
     pub origin: Option<String>,
+}
+
+/// The permissions a caller asks for. It is the protocol's [`PermissionPolicy`] but for
+/// `network`, which a caller may leave out: the resolved profile then says whether its role needs
+/// the network ([`PermissionRequest::resolved`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct PermissionRequest {
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub network: Option<bool>,
+    #[serde(default)]
+    pub approvals: Option<Approvals>,
+    #[serde(flatten, default)]
+    pub additional: BTreeMap<String, Value>,
+}
+
+impl PermissionRequest {
+    /// The permissions a request body carries; one that is not an object of the policy's shape is
+    /// refused.
+    pub fn from_value(value: Value) -> Result<Self, Refusal> {
+        serde_json::from_value(value).map_err(|err| {
+            error(
+                status::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                &format!("permission_policy is invalid: {err}"),
+                json!({"field": "permission_policy"}),
+            )
+        })
+    }
+
+    /// The tools and the network a request names, and nothing else.
+    pub fn new(tools: Vec<String>, network: Option<bool>) -> Self {
+        Self {
+            tools,
+            network,
+            ..Self::default()
+        }
+    }
+
+    /// The policy to store: `network` as the caller said it, or `profile_network` when it did not.
+    pub fn resolved(self, profile_network: bool) -> PermissionPolicy {
+        PermissionPolicy {
+            tools: self.tools,
+            network: self.network.unwrap_or(profile_network),
+            approvals: self.approvals,
+            additional: self.additional,
+        }
+    }
+}
+
+/// The machine a request body names, from its two fields: both or neither. `Any` is not a machine
+/// a run can be sent to.
+pub fn selector_from(
+    kind: Option<String>,
+    id: Option<String>,
+) -> Result<Option<RunnerSelector>, Refusal> {
+    match (kind.as_deref(), id) {
+        (None, None) => Ok(None),
+        (Some("exact_runner"), Some(id)) => Ok(Some(RunnerSelector::ExactRunner {
+            runner_id: RunnerId::new(id),
+        })),
+        (Some("fleet"), Some(fleet_id)) => Ok(Some(RunnerSelector::Fleet { fleet_id })),
+        (Some("exact_runner" | "fleet") | None, _) => Err(error(
+            status::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "selector_kind, selector_id, agent_profile_id and timeout_seconds must be resolved before enqueue",
+            json!({"field": "selector_kind"}),
+        )),
+        (Some(_), _) => Err(error(
+            status::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "selector_kind must be exact_runner or fleet",
+            json!({"field": "selector_kind"}),
+        )),
+    }
+}
+
+/// The level a request body names, `L3`, `L4` or `L5`.
+pub fn level_from(text: Option<String>) -> Result<Option<AutonomyLevel>, Refusal> {
+    text.map(|text| {
+        text.parse().map_err(|_| {
+            error(
+                status::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "autonomy must be L3, L4 or L5",
+                json!({"field": "autonomy"}),
+            )
+        })
+    })
+    .transpose()
 }
 
 /// The request a run was stored as.
@@ -516,9 +611,9 @@ pub async fn resolve_profile(
 pub async fn default_selector(
     repo: &Repository,
     fleet_id: Option<String>,
-) -> Result<(String, String), Refusal> {
+) -> Result<RunnerSelector, Refusal> {
     if let Some(fleet_id) = fleet_id {
-        return Ok(("fleet".to_owned(), fleet_id));
+        return Ok(RunnerSelector::Fleet { fleet_id });
     }
     let mut runners: Vec<_> = repo
         .list_runners()
@@ -542,7 +637,9 @@ pub async fn default_selector(
     }
     let runners: Vec<String> = runners.into_iter().map(|runner| runner.id).collect();
     match <[String; 1]>::try_from(runners) {
-        Ok([only]) => Ok(("exact_runner".to_owned(), only)),
+        Ok([only]) => Ok(RunnerSelector::ExactRunner {
+            runner_id: RunnerId::new(only),
+        }),
         Err(_) => Err(error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -583,14 +680,10 @@ async fn load_profile(
     let tool_policy = serde_json::from_str::<Value>(&row.tool_policy).unwrap_or_else(|_| json!({}));
     // A request that does not say `network` gets what the profile's role needs; one that does,
     // true or false, keeps its own.
-    if let Some(policy) = input.permission_policy.as_object_mut()
-        && !policy.contains_key("network")
-    {
-        policy.insert(
-            "network".into(),
-            json!(tack_core::run_defaults::profile_network(&tool_policy)),
-        );
-    }
+    input
+        .permission_policy
+        .network
+        .get_or_insert_with(|| tack_core::run_defaults::profile_network(&tool_policy));
     let (budgets, timeout_seconds, source) = run_limits(input, &limits, provisional)?;
     input.budgets = budgets;
     input.timeout_seconds = Some(timeout_seconds);
@@ -616,11 +709,8 @@ fn item_not_found() -> Refusal {
     )
 }
 
-/// The level a run asks for: a level applies only to a docket run, and only L3, L4 or L5 exist.
-fn requested_level(
-    requested_harness_kind: &str,
-    autonomy: &str,
-) -> Result<tack_core::autonomy::Level, Refusal> {
+/// A level applies only to a docket run.
+fn check_level_applies(requested_harness_kind: &str) -> Result<(), Refusal> {
     if requested_harness_kind != crate::autonomy::DOCKET {
         return Err(error(
             status::BAD_REQUEST,
@@ -629,14 +719,270 @@ fn requested_level(
             json!({"field": "autonomy", "reason": "level_needs_docket"}),
         ));
     }
-    autonomy.parse().map_err(|_| {
+    Ok(())
+}
+
+fn internal(message: &str) -> Refusal {
+    error(
+        status::INTERNAL_SERVER_ERROR,
+        StableErrorCode::InternalError,
+        message,
+        json!({}),
+    )
+}
+
+fn stored_snapshot_invalid() -> Refusal {
+    internal("Stored request snapshot is invalid")
+}
+
+/// What a request must have settled before it is stored: the machine, the profile, the agent, the
+/// time limit and the permissions. Anything missing was left unresolved by the caller.
+struct Settled {
+    selector: RunnerSelector,
+    selector_kind: &'static str,
+    selector_id: String,
+    agent_profile_id: String,
+    requested_harness_kind: String,
+    timeout_seconds: u64,
+    permission_policy: PermissionPolicy,
+}
+
+/// Step 1: the request names everything a stored run needs. `selector_kind` and `selector_id` are
+/// the columns the selector is stored as.
+fn validate_request(input: &RunRequest) -> Result<Settled, Refusal> {
+    let (Some(selector), Some(agent_profile_id), Some(timeout_seconds), Some(network)) = (
+        input.selector.clone(),
+        input.agent_profile_id.clone(),
+        input.timeout_seconds,
+        input.permission_policy.network,
+    ) else {
+        return Err(error(
+            status::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "selector_kind, selector_id, agent_profile_id and timeout_seconds must be resolved before enqueue",
+            json!({"field": "selector_kind"}),
+        ));
+    };
+    let Some(requested_harness_kind) = input.requested_harness_kind.clone() else {
+        return Err(select_an_agent());
+    };
+    let (selector_kind, selector_id) = match &selector {
+        RunnerSelector::ExactRunner { runner_id } => ("exact_runner", runner_id.to_string()),
+        RunnerSelector::Fleet { fleet_id } => ("fleet", fleet_id.clone()),
+        RunnerSelector::Any => {
+            return Err(error(
+                status::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "selector_kind must be exact_runner or fleet",
+                json!({"field": "selector_kind"}),
+            ));
+        }
+    };
+    if input.autonomy.is_some() {
+        check_level_applies(&requested_harness_kind)?;
+    }
+    let permission_policy = input.permission_policy.clone().resolved(network);
+    Ok(Settled {
+        selector,
+        selector_kind,
+        selector_id,
+        agent_profile_id,
+        requested_harness_kind,
+        timeout_seconds,
+        permission_policy,
+    })
+}
+
+/// Step 2: the id and instant the request is stored under. A retry of a request already stored
+/// under this key keeps the first try's, read from the snapshot it left; a first try gets a new id
+/// and now.
+fn request_identity(
+    clock: &dyn Clock,
+    scope: &str,
+    key: &str,
+    existing_snapshot: Option<String>,
+) -> Result<(String, DateTime<Utc>), Refusal> {
+    let Some(snapshot) = existing_snapshot else {
+        return Ok((stable_request_id(scope, key), clock.now()));
+    };
+    // A stored replay row that fails to parse means the *persisted* snapshot is corrupt, not that
+    // the caller's idempotency key collided with a different payload (that client-caused case is
+    // `EnqueueResult::Conflict`, below). An unreadable row we wrote ourselves is a server fault.
+    let value: Value = serde_json::from_str(&snapshot).map_err(|_| stored_snapshot_invalid())?;
+    let request_id = value["request_id"]
+        .as_str()
+        .ok_or_else(stored_snapshot_invalid)?;
+    let created_at = value["created_at"]
+        .as_str()
+        .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+        .ok_or_else(stored_snapshot_invalid)?
+        .with_timezone(&Utc);
+    Ok((request_id.to_owned(), created_at))
+}
+
+/// Step 3: a new request for an exact runner needs that runner to be usable. A retry must reach the
+/// durable replay record even if a mutable runner status changed after the original create.
+async fn check_runner_usable(
+    repo: &Repository,
+    selector: &RunnerSelector,
+    is_retry: bool,
+) -> Result<(), Refusal> {
+    let RunnerSelector::ExactRunner { runner_id } = selector else {
+        return Ok(());
+    };
+    if is_retry {
+        return Ok(());
+    }
+    let eligible = queries::agent_runners::runner_is_active(repo, runner_id.as_str())
+        .await
+        .map_err(|_| internal("Could not verify runner"))?;
+    if eligible {
+        Ok(())
+    } else {
+        Err(error(
+            status::CONFLICT,
+            StableErrorCode::RunnerRevoked,
+            "The selected runner is unavailable or revoked",
+            json!({"runner_id": runner_id}),
+        ))
+    }
+}
+
+/// Everything the snapshot of one request is built from, apart from the profile and repository.
+struct Draft<'a> {
+    input: &'a RunRequest,
+    settled: &'a Settled,
+    item: &'a models::Item,
+    project: &'a models::Project,
+    principal: &'a str,
+    request_id: &'a str,
+    created_at: DateTime<Utc>,
+    model: Option<String>,
+}
+
+/// Step 4: the snapshot the request is stored as, checked against the protocol's type. The item's
+/// text is folded into the profile's instructions, and the brief, the verifier's stages, the level
+/// and the origin are added when there are any.
+async fn build_snapshot(
+    repo: &Repository,
+    draft: &Draft<'_>,
+    profile: Value,
+    repository_snapshot: Value,
+) -> Result<Value, Refusal> {
+    let Draft {
+        input,
+        settled,
+        item,
+        project,
+        principal,
+        request_id,
+        created_at,
+        model,
+    } = draft;
+    let (agent_profile_snapshot, brief) =
+        with_item_context(repo, item, profile, project.definition_of_done.as_deref()).await?;
+    let mut snapshot = json!({
+        "request_id": request_id,
+        "item_id": input.item_id.to_string(),
+        "idempotency_key": input.idempotency_key,
+        "created_by": {"source":"operator_api","subject_id":principal},
+        "created_at": created_at.to_rfc3339(),
+        "selector": settled.selector,
+        "agent_profile_id": settled.agent_profile_id,
+        "resolved_agent_profile": agent_profile_snapshot,
+        "requested_harness_kind": settled.requested_harness_kind,
+        "requested_model": model,
+        "repository": repository_snapshot,
+        "permission_policy": settled.permission_policy,
+        "timeout_seconds": settled.timeout_seconds,
+        "budgets": input.budgets,
+        "status_map_policy_id": input.status_map_policy_id,
+        "environment": input.environment,
+        "metadata": input.metadata,
+    });
+    if let Some(brief) = brief {
+        snapshot["brief"] = brief;
+        // The saved version the run was briefed with; its hash names it in the pack.
+        if let Ok(versions) = repo.list_item_brief_versions(item.id).await
+            && let Some(latest) = versions.last()
+        {
+            snapshot["brief_version"] = json!(latest.version);
+        }
+    }
+    if let Some(verify) = input.verify {
+        snapshot["verify"] = json!(verify);
+    }
+    // The stages prill must require for this project; the runner sends them as
+    // its `--config` layer. Absent means the project requires none.
+    if let Ok(Some(settings)) =
+        queries::autonomy::project_settings(repo, &item.project_id.to_string()).await
+        && !settings.verify_require.is_empty()
+    {
+        snapshot["verify_require"] = json!(settings.verify_require);
+    }
+    if let Some(push_branch) = input.push_branch {
+        snapshot["push_branch"] = json!(push_branch);
+    }
+    if let Some(level) = input.autonomy {
+        snapshot["autonomy"] = json!(level);
+    }
+    if input.origin.as_deref() == Some("mcp") {
+        snapshot["origin"] = json!("mcp");
+    }
+    let typed: ExecutionRequestSnapshot = serde_json::from_value(snapshot).map_err(|err| {
         error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
-            "autonomy must be L3, L4 or L5",
-            json!({"field": "autonomy"}),
+            "Execution request snapshot is incomplete or invalid",
+            json!({"field": err.to_string()}),
+        )
+    })?;
+    serde_json::to_value(typed).map_err(|_| {
+        error(
+            status::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            "Execution request snapshot is invalid",
+            json!({"field": "execution_request_snapshot"}),
         )
     })
+}
+
+/// Step 5: the snapshot split into the columns the store keeps, each canonical JSON.
+struct StoredColumns {
+    request_snapshot: String,
+    request_fingerprint: String,
+    agent_profile_snapshot: String,
+    repository_snapshot: String,
+    permission_policy: String,
+    budgets: String,
+    environment: String,
+    metadata: String,
+}
+
+impl StoredColumns {
+    fn from_snapshot(snapshot: &Value) -> Result<Self, Refusal> {
+        let root = snapshot.as_object().ok_or_else(|| {
+            error(
+                status::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "Execution request snapshot is invalid",
+                json!({"field": "execution_request_snapshot"}),
+            )
+        })?;
+        let column = |snapshot_field: &str, public_field: &str| {
+            canonical_string(root[snapshot_field].clone(), public_field)
+        };
+        Ok(Self {
+            request_snapshot: canonical_string(snapshot.clone(), "request_snapshot")?,
+            request_fingerprint: request_fingerprint(snapshot)?,
+            agent_profile_snapshot: column("resolved_agent_profile", "agent_profile_snapshot")?,
+            repository_snapshot: column("repository", "repository_snapshot")?,
+            permission_policy: column("permission_policy", "permission_policy")?,
+            budgets: column("budgets", "budgets")?,
+            environment: column("environment", "environment")?,
+            metadata: column("metadata", "metadata")?,
+        })
+    }
 }
 
 /// Enqueues a request whose profile and repository are already resolved. Also the entry for
@@ -649,256 +995,50 @@ pub async fn enqueue_run(
     profile: Value,
     repository_snapshot: Value,
 ) -> Result<Started, Refusal> {
-    let idempotency_scope = format!("operator:{authenticated_principal}");
-    let (Some(selector_kind), Some(selector_id), Some(agent_profile_id), Some(timeout_seconds)) = (
-        input.selector_kind.clone(),
-        input.selector_id.clone(),
-        input.agent_profile_id.clone(),
-        input.timeout_seconds,
-    ) else {
-        return Err(error(
-            status::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "selector_kind, selector_id, agent_profile_id and timeout_seconds must be resolved before enqueue",
-            json!({"field": "selector_kind"}),
-        ));
-    };
-    let Some(requested_harness_kind) = input.requested_harness_kind.clone() else {
-        return Err(select_an_agent());
-    };
-    let Some(item) = repo.get_item(input.item_id).await.map_err(|_| {
-        error(
-            status::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not verify item",
-            json!({}),
-        )
-    })?
-    else {
-        return Err(item_not_found());
-    };
+    let scope = format!("operator:{authenticated_principal}");
+    let settled = validate_request(&input)?;
+    let item = repo
+        .get_item(input.item_id)
+        .await
+        .map_err(|_| internal("Could not verify item"))?
+        .ok_or_else(item_not_found)?;
     let project = load_project(repo, item.project_id).await?;
-    let existing_snapshot = queries::execution_requests::snapshot_of_idempotency_key(
+    let existing = queries::execution_requests::snapshot_of_idempotency_key(
         repo,
-        &idempotency_scope,
+        &scope,
         &input.idempotency_key,
     )
     .await
-    .map_err(|_| {
-        error(
-            status::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not load idempotency replay",
-            json!({}),
-        )
-    })?;
-    // An exact retry must be allowed to reach the durable replay record even
-    // if a mutable runner status changed after the original create.
-    if existing_snapshot.is_none() && selector_kind == "exact_runner" {
-        let eligible = queries::agent_runners::runner_is_active(repo, &selector_id)
-            .await
-            .map_err(|_| {
-                error(
-                    status::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Could not verify runner",
-                    json!({}),
-                )
-            })?;
-        if !eligible {
-            return Err(error(
-                status::CONFLICT,
-                StableErrorCode::RunnerRevoked,
-                "The selected runner is unavailable or revoked",
-                json!({"runner_id": selector_id}),
-            ));
-        }
-    }
-    if !matches!(selector_kind.as_str(), "exact_runner" | "fleet") {
-        return Err(error(
-            status::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "selector_kind must be exact_runner or fleet",
-            json!({"field": "selector_kind"}),
-        ));
-    }
-    // The request's own model is used as is; only a request naming none
-    // reads the project's default model.
-    let resolved_model = resolve_request_model_policy(
+    .map_err(|_| internal("Could not load idempotency replay"))?;
+    check_runner_usable(repo, &settled.selector, existing.is_some()).await?;
+    // The request's own model is used as is; only a request naming none reads the project's
+    // default model.
+    let model = resolve_request_model_policy(
         repo,
         item.project_id,
-        &requested_harness_kind,
+        &settled.requested_harness_kind,
         input.requested_model.as_deref(),
     )
     .await
-    .map_err(|_| {
-        error(
-            status::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not resolve model policy",
-            json!({}),
-        )
-    })?
+    .map_err(|_| internal("Could not resolve model policy"))?
     .model;
-    let (request_id, created_at) = match existing_snapshot {
-        Some(snapshot) => {
-            // A stored replay row that fails to parse means the *persisted*
-            // snapshot is corrupt, not that the caller's idempotency key
-            // collided with a different payload — that distinct, genuinely
-            // client-caused case is detected below via
-            // `EnqueueResult::Conflict`. An unreadable row we ourselves wrote
-            // is a server-side fault, so it is `internal_error`, not
-            // `idempotency_conflict`.
-            let value: Value = serde_json::from_str(&snapshot).map_err(|_| {
-                error(
-                    status::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Stored request snapshot is invalid",
-                    json!({}),
-                )
-            })?;
-            let object = value.as_object().ok_or_else(|| {
-                error(
-                    status::INTERNAL_SERVER_ERROR,
-                    StableErrorCode::InternalError,
-                    "Stored request snapshot is invalid",
-                    json!({}),
-                )
-            })?;
-            let request_id = object
-                .get("request_id")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    error(
-                        status::INTERNAL_SERVER_ERROR,
-                        StableErrorCode::InternalError,
-                        "Stored request snapshot is invalid",
-                        json!({}),
-                    )
-                })?;
-            let created_at = object
-                .get("created_at")
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    error(
-                        status::INTERNAL_SERVER_ERROR,
-                        StableErrorCode::InternalError,
-                        "Stored request snapshot is invalid",
-                        json!({}),
-                    )
-                })?;
-            let created_at = DateTime::parse_from_rfc3339(created_at)
-                .map(|time| time.with_timezone(&Utc))
-                .map_err(|_| {
-                    error(
-                        status::INTERNAL_SERVER_ERROR,
-                        StableErrorCode::InternalError,
-                        "Stored request snapshot is invalid",
-                        json!({}),
-                    )
-                })?;
-            (request_id.to_owned(), created_at)
-        }
-        None => (
-            stable_request_id(&idempotency_scope, &input.idempotency_key),
-            clock.now(),
-        ),
+    let (request_id, created_at) =
+        request_identity(clock, &scope, &input.idempotency_key, existing)?;
+    let draft = Draft {
+        input: &input,
+        settled: &settled,
+        item: &item,
+        project: &project,
+        principal: authenticated_principal,
+        request_id: &request_id,
+        created_at,
+        model,
     };
+    let snapshot = build_snapshot(repo, &draft, profile, repository_snapshot).await?;
+    let columns = StoredColumns::from_snapshot(&snapshot)?;
+    let model = draft.model;
     let item_id = input.item_id.to_string();
-    let selector = match selector_kind.as_str() {
-        "exact_runner" => json!({"kind":"exact_runner","runner_id":selector_id}),
-        "fleet" => json!({"kind":"fleet","fleet_id":selector_id}),
-        _ => unreachable!("selector kind was validated"),
-    };
-    let (agent_profile_snapshot, brief) =
-        with_item_context(repo, &item, profile, project.definition_of_done.as_deref()).await?;
-    let mut snapshot_value = json!({
-        "request_id": request_id,
-        "item_id": item_id,
-        "idempotency_key": input.idempotency_key,
-        "created_by": {"source":"operator_api","subject_id":authenticated_principal},
-        "created_at": created_at.to_rfc3339(),
-        "selector": selector,
-        "agent_profile_id": agent_profile_id,
-        "resolved_agent_profile": agent_profile_snapshot,
-        "requested_harness_kind": requested_harness_kind,
-        "requested_model": resolved_model.clone(),
-        "repository": repository_snapshot,
-        "permission_policy": input.permission_policy,
-        "timeout_seconds": timeout_seconds,
-        "budgets": input.budgets,
-        "status_map_policy_id": input.status_map_policy_id,
-        "environment": input.environment,
-        "metadata": input.metadata,
-    });
-    if let Some(brief) = brief {
-        snapshot_value["brief"] = brief;
-        // The saved version the run was briefed with; its hash names it in the pack.
-        if let Ok(versions) = repo.list_item_brief_versions(item.id).await
-            && let Some(latest) = versions.last()
-        {
-            snapshot_value["brief_version"] = json!(latest.version);
-        }
-    }
-    if let Some(verify) = input.verify {
-        snapshot_value["verify"] = json!(verify);
-    }
-    // The stages prill must require for this project; the runner sends them as
-    // its `--config` layer. Absent means the project requires none.
-    if let Ok(Some(settings)) =
-        queries::autonomy::project_settings(repo, &item.project_id.to_string()).await
-        && !settings.verify_require.is_empty()
-    {
-        snapshot_value["verify_require"] = json!(settings.verify_require);
-    }
-    if let Some(push_branch) = input.push_branch {
-        snapshot_value["push_branch"] = json!(push_branch);
-    }
-    if let Some(autonomy) = &input.autonomy {
-        let level = requested_level(&requested_harness_kind, autonomy)?;
-        snapshot_value["autonomy"] = json!(level.to_string());
-    }
-    if input.origin.as_deref() == Some("mcp") {
-        snapshot_value["origin"] = json!("mcp");
-    }
-    let typed_snapshot: ExecutionRequestSnapshot =
-        serde_json::from_value(snapshot_value).map_err(|err| {
-            error(
-                status::BAD_REQUEST,
-                StableErrorCode::InvalidRequest,
-                "Execution request snapshot is incomplete or invalid",
-                json!({"field": err.to_string()}),
-            )
-        })?;
-    let snapshot_value = serde_json::to_value(typed_snapshot).map_err(|_| {
-        error(
-            status::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "Execution request snapshot is invalid",
-            json!({"field": "execution_request_snapshot"}),
-        )
-    })?;
-    let request_snapshot = canonical_string(snapshot_value.clone(), "request_snapshot")?;
-    let request_fingerprint = request_fingerprint(&snapshot_value)?;
-    let root = snapshot_value.as_object().ok_or_else(|| {
-        error(
-            status::BAD_REQUEST,
-            StableErrorCode::InvalidRequest,
-            "Execution request snapshot is invalid",
-            json!({"field": "execution_request_snapshot"}),
-        )
-    })?;
-    let serialized_field = |snapshot_field: &str, public_field: &str| {
-        canonical_string(root[snapshot_field].clone(), public_field)
-    };
-    let agent_profile_snapshot =
-        serialized_field("resolved_agent_profile", "agent_profile_snapshot")?;
-    let repository_snapshot = serialized_field("repository", "repository_snapshot")?;
-    let permission_policy = serialized_field("permission_policy", "permission_policy")?;
-    let budgets = serialized_field("budgets", "budgets")?;
-    let environment = serialized_field("environment", "environment")?;
-    let metadata = serialized_field("metadata", "metadata")?;
-    let timeout_seconds = i64::try_from(timeout_seconds).map_err(|_| {
+    let timeout_seconds = i64::try_from(settled.timeout_seconds).map_err(|_| {
         error(
             status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -911,48 +1051,39 @@ pub async fn enqueue_run(
             NewExecutionRequest {
                 id: &request_id,
                 item_id: &item_id,
-                idempotency_scope: &idempotency_scope,
+                idempotency_scope: &scope,
                 idempotency_key: &input.idempotency_key,
-                request_fingerprint: &request_fingerprint,
-                selector_kind: &selector_kind,
-                selector_id: &selector_id,
-                agent_profile_id: Some(&agent_profile_id),
-                agent_profile_snapshot: &agent_profile_snapshot,
-                requested_harness_kind: Some(&requested_harness_kind),
-                requested_model: resolved_model.as_deref(),
-                repository_snapshot: &repository_snapshot,
-                permission_policy: &permission_policy,
+                request_fingerprint: &columns.request_fingerprint,
+                selector_kind: settled.selector_kind,
+                selector_id: &settled.selector_id,
+                agent_profile_id: Some(&settled.agent_profile_id),
+                agent_profile_snapshot: &columns.agent_profile_snapshot,
+                requested_harness_kind: Some(&settled.requested_harness_kind),
+                requested_model: model.as_deref(),
+                repository_snapshot: &columns.repository_snapshot,
+                permission_policy: &columns.permission_policy,
                 timeout_seconds: Some(timeout_seconds),
-                budgets: &budgets,
+                budgets: &columns.budgets,
                 status_map_policy_id: input.status_map_policy_id.as_deref(),
-                environment: &environment,
-                metadata: &metadata,
-                request_snapshot: &request_snapshot,
+                environment: &columns.environment,
+                metadata: &columns.metadata,
+                request_snapshot: &columns.request_snapshot,
             },
             created_at,
         )
         .await
         .map_err(|err| {
-            // `err` is a driver-level store error (a constraint name, a
-            // SQLite status message, or one of `execution.rs`'s own fixed
-            // `snapshot_error` strings) — never a bound value, credential or
-            // request body, so it is safe to log verbatim. Without this, an
-            // enqueue failure that the server itself could name (a fenced-
-            // out FK reference, a contended write, a snapshot mismatch)
-            // reaches the client as an undifferentiated `internal_error`
-            // with no trace of which of those it was.
+            // `err` is a driver-level store error (a constraint name, a SQLite status message, or
+            // one of the store's own fixed snapshot strings), never a bound value, credential or
+            // request body, so it is safe to log verbatim. Without this, an enqueue failure the
+            // server itself could name reaches the client as an undifferentiated `internal_error`.
             tracing::warn!(
                 item_id = %item_id,
                 request_id = %request_id,
                 error = %err,
                 "enqueue_execution failed"
             );
-            error(
-                status::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not enqueue execution",
-                json!({}),
-            )
+            internal("Could not enqueue execution")
         })?;
     match result {
         EnqueueResult::Created(request_id) => Ok(Started {
@@ -1053,10 +1184,8 @@ pub async fn start_run(
     if input.requested_harness_kind.is_none() {
         return Err(select_an_agent());
     }
-    if input.selector_kind.is_none() && input.selector_id.is_none() {
-        let (kind, id) = default_selector(repo, resolved.fleet_id).await?;
-        input.selector_kind = Some(kind);
-        input.selector_id = Some(id);
+    if input.selector.is_none() {
+        input.selector = Some(default_selector(repo, resolved.fleet_id).await?);
     }
     let provisional = queries::budgets::provisional_tokens(repo, &item.project_id.to_string())
         .await

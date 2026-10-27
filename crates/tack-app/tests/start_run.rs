@@ -11,7 +11,7 @@ use support::{
 use tack_app::runs::start_run::start_run;
 use tack_core::models::{CodeOrigin, CreateRole, UpdateProject, UpdateRole, WorkspaceMode};
 use tack_protocol::SystemClock;
-use tack_protocol::execution::StableErrorCode;
+use tack_protocol::execution::{AutonomyLevel, StableErrorCode};
 use tack_test_support::seed;
 
 async fn add_role(board: &support::Board, name: &str, profile: &str) {
@@ -529,7 +529,7 @@ async fn the_principal_scopes_the_idempotency_key_and_names_the_creator() {
 async fn a_level_is_refused_for_an_agent_other_than_docket() {
     let board = board().await;
     let mut request = full_request(board.item_id);
-    request.autonomy = Some("L3".into());
+    request.autonomy = Some(AutonomyLevel::L3);
     let refusal = start(&board, request).await.unwrap_err();
     assert_eq!(refusal.status, 400);
     assert_eq!(refusal.code, StableErrorCode::InvalidRequest);
@@ -538,8 +538,47 @@ async fn a_level_is_refused_for_an_agent_other_than_docket() {
 
     let mut request = full_request(board.item_id);
     request.requested_harness_kind = Some("docket".into());
-    request.autonomy = Some("L3".into());
+    request.autonomy = Some(AutonomyLevel::L3);
     let started = start(&board, request).await.unwrap();
     let stored = snapshot(&board.repo, &started).await;
     assert_eq!(stored["autonomy"], "L3");
+}
+
+/// A request body's machine is both fields or neither, and only a runner or a fleet: the typed
+/// request cannot hold anything else.
+#[test]
+fn a_request_body_names_a_runner_or_a_fleet_or_nothing() {
+    use tack_app::runs::start_run::{level_from, selector_from};
+    use tack_protocol::execution::{RunnerId, RunnerSelector};
+
+    assert_eq!(selector_from(None, None).unwrap(), None);
+    assert_eq!(
+        selector_from(Some("fleet".into()), Some("f1".into())).unwrap(),
+        Some(RunnerSelector::Fleet {
+            fleet_id: "f1".into()
+        })
+    );
+    assert_eq!(
+        selector_from(Some("exact_runner".into()), Some("r1".into())).unwrap(),
+        Some(RunnerSelector::ExactRunner {
+            runner_id: RunnerId::new("r1")
+        })
+    );
+    for (kind, id) in [
+        (Some("any"), Some("x")),
+        (Some("fleet"), None),
+        (None, Some("x")),
+    ] {
+        let refusal = selector_from(kind.map(Into::into), id.map(Into::into)).unwrap_err();
+        assert_eq!(refusal.status, 400);
+        assert_eq!(refusal.details["field"], "selector_kind");
+    }
+    assert_eq!(
+        level_from(Some("L4".into())).unwrap(),
+        Some(AutonomyLevel::L4)
+    );
+    assert_eq!(
+        level_from(Some("l4".into())).unwrap_err().details["field"],
+        "autonomy"
+    );
 }

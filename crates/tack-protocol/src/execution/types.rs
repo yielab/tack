@@ -391,6 +391,19 @@ pub enum AutonomyLevel {
     L5,
 }
 
+impl std::str::FromStr for AutonomyLevel {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text {
+            "L3" => Ok(AutonomyLevel::L3),
+            "L4" => Ok(AutonomyLevel::L4),
+            "L5" => Ok(AutonomyLevel::L5),
+            other => Err(format!("unknown autonomy level \"{other}\"")),
+        }
+    }
+}
+
 impl AutonomyLevel {
     pub fn as_str(self) -> &'static str {
         match self {
