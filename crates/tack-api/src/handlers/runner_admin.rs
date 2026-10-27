@@ -16,7 +16,7 @@ use tack_db::repo::execution::{
 };
 use tack_db::repo::execution::{AgentProfilePatch, pending_runner_input_is_valid};
 use tack_db::{Repository, StoreError};
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{ProtocolErrorEnvelope, RunnerId, StableErrorCode};
 use tack_protocol::{Clock, SystemClock};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -869,7 +869,7 @@ pub async fn local_runner_id_exists(
         .map_err(StoreError::from)?;
     let repo = Repository::new(pool);
     Ok(repo
-        .fetch_runner_scheduling_snapshot(runner_id)
+        .fetch_runner_scheduling_snapshot(&RunnerId::new(runner_id))
         .await?
         .is_some())
 }

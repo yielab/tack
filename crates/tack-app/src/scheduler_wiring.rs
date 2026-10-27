@@ -378,10 +378,10 @@ async fn record_waiting(
 /// queued) — the caller treats all of these identically to "no work."
 pub async fn choose_request_for_runner(
     repo: &Repository,
-    runner_id: &str,
+    runner_id: &RunnerId,
     now: DateTime<Utc>,
     policy: &SchedulingPolicy,
-) -> Result<Option<String>, StoreError> {
+) -> Result<Option<ExecutionRequestId>, StoreError> {
     // A run whose lease expired and was not renewed is nobody's: ask a person
     // about it before looking for work, since it is no longer queued.
     repo.expire_unheld_leases(
@@ -507,7 +507,7 @@ pub async fn choose_request_for_runner(
     {
         repo.limit_request_to_day_room(request_id, *room).await?;
     }
-    Ok(selected)
+    Ok(selected.map(ExecutionRequestId::new))
 }
 
 #[cfg(test)]

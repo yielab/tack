@@ -17,6 +17,7 @@ use tack_core::{
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
+pub mod ids;
 pub mod seed;
 
 mod clock;

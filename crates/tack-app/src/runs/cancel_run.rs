@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::CancellationOutcome;
+use tack_protocol::execution::ExecutionRequestId;
 
 use crate::AppError;
 
@@ -20,7 +21,7 @@ pub enum Cancellation {
 pub async fn cancel_run(
     repo: &Repository,
     now: DateTime<Utc>,
-    request_id: &str,
+    request_id: &ExecutionRequestId,
 ) -> Result<Cancellation, AppError> {
     match repo.cancel_execution_request(request_id, now).await? {
         CancellationOutcome::Ended => Ok(Cancellation::Ended),

@@ -4,6 +4,7 @@
 //! writes nothing.
 
 use crate::common;
+use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
 
 use common::{RUNNER_ID, running_attempt, world};
 use tack_app::runs::report_events::{EventReport, EventsReported, ReportedEvent, report_events};
@@ -13,7 +14,7 @@ use tack_protocol::Clock;
 async fn report(
     world: &common::World,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     previous: Option<&str>,
     checkpoint: &str,
     event_id: &str,
@@ -23,11 +24,11 @@ async fn report(
         &world.repo,
         world.clock.now(),
         EventReport {
-            runner_id: RUNNER_ID,
-            attempt_id,
+            runner_id: &RunnerId::new(RUNNER_ID),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
-            previous_checkpoint: previous,
-            checkpoint,
+            previous_checkpoint: previous.map(Checkpoint::new).as_ref(),
+            checkpoint: &Checkpoint::new(checkpoint),
             events: &[ReportedEvent {
                 event_id,
                 sequence: 1,
@@ -77,7 +78,7 @@ async fn a_batch_lands_once_and_the_same_batch_again_is_a_replay() {
         panic!("an identical resend is a replay");
     };
     assert!(replay.replayed);
-    assert_eq!(replay.committed_checkpoint, "cp-1");
+    assert_eq!(replay.committed_checkpoint, Checkpoint::new("cp-1"));
     assert_eq!(
         execution_events::event_count_with_id(&world.repo, &run.attempt_id, "evt-1")
             .await
@@ -152,7 +153,7 @@ async fn a_fence_that_is_not_current_writes_nothing() {
     let stale = report(
         &world,
         &run.attempt_id,
-        run.fence + 1,
+        FencingToken::new(run.fence.get() + 1),
         None,
         "cp-1",
         "evt-1",

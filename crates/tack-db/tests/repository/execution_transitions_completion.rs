@@ -3,6 +3,9 @@
 
 use crate::repository::execution_fixture::{Fixture, completion_input};
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{
+    AttemptId, Checkpoint, CompletionId, FencingToken, RunnerId, WorkspaceId,
+};
 
 use chrono::Duration;
 use sqlx::Row;
@@ -24,11 +27,11 @@ async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
         .unwrap();
 
     let preparing = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-start",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-start"),
         fencing_token: lease.fencing_token,
         phase: AttemptTransitionPhase::Preparing,
-        workspace_id: "workspace-1",
+        workspace_id: &WorkspaceId::new("workspace-1"),
         base_revision: "abc123",
         process_id: None,
     };
@@ -44,7 +47,7 @@ async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
     ));
     assert_eq!(
         fx.transition(AttemptTransitionInput {
-            workspace_id: "workspace-changed",
+            workspace_id: &WorkspaceId::new("workspace-changed"),
             ..preparing
         })
         .await,
@@ -52,11 +55,11 @@ async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
     );
 
     let running = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-start",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-start"),
         fencing_token: lease.fencing_token,
         phase: AttemptTransitionPhase::Running,
-        workspace_id: "workspace-1",
+        workspace_id: &WorkspaceId::new("workspace-1"),
         base_revision: "abc123",
         process_id: Some("process-1"),
     };
@@ -113,11 +116,11 @@ async fn attempt_start_rejects_wrong_order_and_stale_authority() {
         .unwrap();
 
     let running = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-order",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-order"),
         fencing_token: lease.fencing_token,
         phase: AttemptTransitionPhase::Running,
-        workspace_id: "workspace-1",
+        workspace_id: &WorkspaceId::new("workspace-1"),
         base_revision: "abc123",
         process_id: Some("process-1"),
     };
@@ -127,7 +130,7 @@ async fn attempt_start_rejects_wrong_order_and_stale_authority() {
     );
     assert_eq!(
         fx.transition(AttemptTransitionInput {
-            fencing_token: lease.fencing_token + 1,
+            fencing_token: FencingToken::new(lease.fencing_token.get() + 1),
             ..running.clone()
         })
         .await,
@@ -185,7 +188,7 @@ async fn completion_replay_foreign_fence_is_stale() {
     let completion = completion_input("attempt-completion-stale", fence, "completion-stale", None);
     fx.complete(completion.clone()).await;
     let foreign = Completion {
-        fencing_token: fence + 1,
+        fencing_token: FencingToken::new(fence.get() + 1),
         ..completion
     };
     assert_eq!(fx.complete(foreign).await, CompletionResult::Stale);
@@ -266,7 +269,7 @@ async fn completion_conflict_before_replay_row_is_benign() {
     // live attempt row (final_event_checkpoint doesn't match), not a reused
     // idempotency key. Benign/retryable.
     let wrong_checkpoint = Completion {
-        final_event_checkpoint: Some("not-current"),
+        final_event_checkpoint: Some(&Checkpoint::new("not-current")),
         ..base
     };
     assert_eq!(
@@ -300,7 +303,7 @@ async fn completion_changed_after_replay_is_idempotency_conflict() {
         ..base.clone()
     };
     let changed_checkpoint = Completion {
-        final_event_checkpoint: Some("changed"),
+        final_event_checkpoint: Some(&Checkpoint::new("changed")),
         ..base
     };
     assert_eq!(
@@ -389,7 +392,8 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
     let fx = Fixture::new().await;
     fx.enqueue("request-a", "key-a", "same").await;
     fx.claim("attempt-a", Duration::seconds(60)).await;
-    fx.start_claimed_attempt("attempt-a", 1).await;
+    fx.start_claimed_attempt("attempt-a", FencingToken::new(1))
+        .await;
     let event = NewEvent {
         id: "row-1",
         event_id: "event-1",
@@ -400,19 +404,19 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-a",
-        fencing_token: 1,
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-a"),
+        fencing_token: FencingToken::new(1),
         previous_checkpoint: None,
-        checkpoint: "checkpoint-1",
+        checkpoint: &Checkpoint::new("checkpoint-1"),
     };
     fx.apply_events(batch, &[event]).await;
     let base = Completion {
-        runner_id: "runner-a",
-        attempt_id: "attempt-a",
-        fencing_token: 1,
-        completion_id: "complete-1",
-        final_event_checkpoint: Some("checkpoint-1"),
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-a"),
+        fencing_token: FencingToken::new(1),
+        completion_id: &CompletionId::new("complete-1"),
+        final_event_checkpoint: Some(&Checkpoint::new("checkpoint-1")),
         terminal_state: ExecutionState::Succeeded,
         terminal_reason: "completed",
         actual_execution: "{}",
@@ -424,7 +428,7 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
         "same completion is replay-safe"
     );
     let reopen = Completion {
-        completion_id: "complete-2",
+        completion_id: &CompletionId::new("complete-2"),
         terminal_state: ExecutionState::Failed,
         terminal_reason: "changed",
         ..base
@@ -468,7 +472,11 @@ async fn move_the_item(fx: &Fixture) -> (UpdateItem, WorkflowConfig, String) {
 
 /// A successful completion with the JSON terminal reason a runner reports, which the item's
 /// derived columns read once it is stored.
-fn json_completion<'a>(attempt_id: &'a str, fence: i64, completion_id: &'a str) -> Completion<'a> {
+fn json_completion<'a>(
+    attempt_id: &'a str,
+    fence: FencingToken,
+    completion_id: &'a str,
+) -> Completion<'a> {
     Completion {
         terminal_reason: r#"{"summary":"done"}"#,
         ..completion_input(attempt_id, fence, completion_id, None)

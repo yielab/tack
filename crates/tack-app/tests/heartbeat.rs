@@ -3,6 +3,7 @@
 
 use crate::common;
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{ClaimRequestId, FencingToken, RunnerId};
 
 use chrono::{DateTime, Duration, Utc};
 use common::{RUNNER_ID, enqueue, world};
@@ -21,7 +22,7 @@ async fn beat(
         &world.repo,
         world.clock.now(),
         Beat {
-            runner_id: RUNNER_ID,
+            runner_id: &RunnerId::new(RUNNER_ID),
             heartbeat_id,
             sent_at,
             available_capacity,
@@ -40,8 +41,8 @@ async fn the_same_beat_again_returns_the_first_answer_and_other_content_conflict
     claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-replay",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-replay"),
         Duration::seconds(60),
     )
     .await
@@ -69,8 +70,8 @@ async fn a_lease_with_the_wrong_fence_is_stale() {
     let claimed = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-stale",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-stale"),
         Duration::seconds(60),
     )
     .await
@@ -78,7 +79,7 @@ async fn a_lease_with_the_wrong_fence_is_stale() {
     .expect("work");
     let lease = ReportedLease {
         attempt_id: claimed.lease.attempt_id.clone(),
-        fencing_token: claimed.lease.fencing_token + 1,
+        fencing_token: FencingToken::new(claimed.lease.fencing_token.get() + 1),
         state: ExecutionState::Leased,
         journal_state: "prepared".into(),
         last_event_checkpoint: None,

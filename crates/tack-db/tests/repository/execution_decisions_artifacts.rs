@@ -11,7 +11,7 @@ use tack_db::repo::execution::{
     CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
     RecoveryObservation,
 };
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{ExecutionState, FencingToken};
 
 const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 
@@ -259,7 +259,7 @@ async fn cancellation_foreign_fence_is_stale_before_replay_lookup() {
     );
     fx.observe_cancellation(input.clone()).await;
     let foreign = CancellationObservationInput {
-        fencing_token: fence + 1,
+        fencing_token: FencingToken::new(fence.get() + 1),
         ..input
     };
     assert_eq!(

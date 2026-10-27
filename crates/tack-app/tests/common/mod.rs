@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use tack_db::Repository;
 use tack_db::repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner};
 use tack_protocol::Clock;
+use tack_protocol::execution::{ClaimRequestId, FencingToken, RunnerId};
 use tack_test_support::{
     ControllableClock, create_test_workspace, make_item, make_project, setup_test_db,
 };
@@ -150,7 +151,7 @@ pub async fn enqueue(world: &World, key: &str) -> String {
 pub struct Running {
     pub request_id: String,
     pub attempt_id: String,
-    pub fence: i64,
+    pub fence: FencingToken,
 }
 
 /// Enqueues a request, claims it and puts the attempt in `running`.
@@ -159,8 +160,8 @@ pub async fn running_attempt(world: &World, key: &str) -> Running {
     let claimed = tack_app::runs::claim::claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        &format!("claim-{key}"),
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new(format!("claim-{key}")),
         chrono::Duration::seconds(60),
     )
     .await
@@ -168,13 +169,13 @@ pub async fn running_attempt(world: &World, key: &str) -> Running {
     .expect("work");
     tack_test_support::seed::execution_attempt_state(
         &world.repo,
-        &claimed.lease.attempt_id,
+        claimed.lease.attempt_id.as_str(),
         tack_protocol::execution::ExecutionState::Running,
     )
     .await;
     Running {
         request_id,
-        attempt_id: claimed.lease.attempt_id,
+        attempt_id: claimed.lease.attempt_id.into_inner(),
         fence: claimed.lease.fencing_token,
     }
 }

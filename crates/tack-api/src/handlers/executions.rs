@@ -21,7 +21,9 @@ use tack_db::{
     Repository, StoreError,
     repo::execution::{AttemptListingRow, RunnerListingRow},
 };
-use tack_protocol::execution::{ExecutionState, ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{
+    ExecutionRequestId, ExecutionState, ProtocolErrorEnvelope, RecoveryKey, StableErrorCode,
+};
 use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -1411,7 +1413,7 @@ pub async fn list_execution_attempt_events(
 )]
 pub async fn request_cancellation(
     State(state): State<OperatorExecutionState>,
-    Path(request_id): Path<String>,
+    Path(request_id): Path<ExecutionRequestId>,
 ) -> Result<Json<CancellationRequestedResponse>, (StatusCode, Json<Value>)> {
     let outcome = cancel_run(&state.repo, state.clock.now(), &request_id)
         .await
@@ -1437,7 +1439,7 @@ pub async fn request_cancellation(
         })?;
     Ok(Json(CancellationRequestedResponse {
         protocol_version: 1,
-        request_id,
+        request_id: request_id.into_inner(),
         state: match outcome {
             Cancellation::Ended => "cancelled",
             Cancellation::Requested => "cancellation_requested",
@@ -1466,7 +1468,7 @@ pub struct RecoveryConfirmation {
 pub async fn requeue_needs_operator(
     State(state): State<OperatorExecutionState>,
     headers: HeaderMap,
-    Path(request_id): Path<String>,
+    Path(request_id): Path<ExecutionRequestId>,
     Json(input): Json<RecoveryConfirmation>,
 ) -> Result<Json<RequeueResponse>, (StatusCode, Json<Value>)> {
     let actor = principal(&headers)?;
@@ -1474,7 +1476,7 @@ pub async fn requeue_needs_operator(
         &state.repo,
         state.clock.now(),
         &request_id,
-        &input.recovery_key,
+        &RecoveryKey::new(input.recovery_key.as_str()),
         &input.reason,
         &actor,
     )
@@ -1501,7 +1503,7 @@ pub async fn requeue_needs_operator(
     })?;
     Ok(Json(RequeueResponse {
         protocol_version: 1,
-        request_id,
+        request_id: request_id.into_inner(),
         state: execution_state::text(ExecutionState::Queued).into(),
         recovered_from: execution_state::text(ExecutionState::NeedsOperator).into(),
         replayed: requeued.replayed,

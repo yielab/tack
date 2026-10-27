@@ -4,11 +4,15 @@
 use super::state::{self, Move};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{
+    AttemptId, Checkpoint, ClaimRequestId, ExecutionRequestId, ExecutionState, FencingToken,
+    RunnerId,
+};
 use tracing::instrument;
 
 use super::admin::conflict_on_unique;
 use super::enqueue::parse_execution_request_snapshot;
+use super::shared::{token_column, token_from_column};
 use crate::{Repository, StoreError};
 
 #[derive(Debug, Clone)]
@@ -108,11 +112,11 @@ pub async fn seed_builtin_profiles(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lease {
-    pub attempt_id: String,
-    pub request_id: String,
+    pub attempt_id: AttemptId,
+    pub request_id: ExecutionRequestId,
     pub attempt_number: i64,
-    pub runner_id: String,
-    pub fencing_token: i64,
+    pub runner_id: RunnerId,
+    pub fencing_token: FencingToken,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -219,7 +223,7 @@ pub enum RequestSelection<'a> {
     /// (including "there were no queued requests at all") — this call
     /// reports `no work` without falling back to naive selection, which
     /// would silently undo the scheduler's rejection.
-    Scheduled(Option<&'a str>),
+    Scheduled(Option<&'a ExecutionRequestId>),
 }
 
 /// One row of `GET /api/runners` — every column
@@ -247,20 +251,20 @@ pub struct RunnerListingRow {
 
 #[derive(Debug, Clone)]
 pub struct HeartbeatLease<'a> {
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
     pub state: ExecutionState,
     pub journal_state: &'a str,
-    pub last_event_checkpoint: Option<&'a str>,
+    pub last_event_checkpoint: Option<&'a Checkpoint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeartbeatLeaseResponse {
-    pub attempt_id: String,
-    pub fencing_token: i64,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
     pub state: ExecutionState,
     pub journal_state: String,
-    pub last_event_checkpoint: Option<String>,
+    pub last_event_checkpoint: Option<Checkpoint>,
     pub lease_expires_at: DateTime<Utc>,
     pub cancellation_requested: bool,
 }
@@ -277,11 +281,14 @@ pub enum HeartbeatBatchResult {
     Accepted(HeartbeatBatchResponse),
     Replayed(HeartbeatBatchResponse),
     Conflict,
-    StaleLease(String),
+    /// A reported lease is no longer the runner's; names its attempt.
+    StaleLease(AttemptId),
+    /// The runner is revoked or was never enrolled, so it holds nothing.
+    RunnerNotActive,
 }
 
 fn heartbeat_fingerprint(
-    runner_id: &str,
+    runner_id: &RunnerId,
     heartbeat_id: &str,
     sent_at: DateTime<Utc>,
     available_capacity: i64,
@@ -295,17 +302,17 @@ fn heartbeat_fingerprint(
         .iter()
         .map(|lease| {
             (
-                lease.attempt_id,
-                lease.fencing_token,
+                lease.attempt_id.as_str(),
+                lease.fencing_token.get(),
                 state::text(lease.state),
                 lease.journal_state,
-                lease.last_event_checkpoint,
+                lease.last_event_checkpoint.map(Checkpoint::as_str),
             )
         })
         .collect::<Vec<_>>();
     leases.sort_unstable();
     serde_json::to_string(&serde_json::json!({
-        "runner_id": runner_id,
+        "runner_id": runner_id.as_str(),
         "heartbeat_id": heartbeat_id,
         "sent_at": sent_at.to_rfc3339(),
         "available_capacity": available_capacity,
@@ -356,10 +363,11 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                     .map(|value| value.with_timezone(&Utc))
                     .map_err(|error| StoreError::malformed(error.to_string()))?;
             Ok(HeartbeatLeaseResponse {
-                attempt_id: required_string(value, "attempt_id")?,
+                attempt_id: AttemptId::new(required_string(value, "attempt_id")?),
                 fencing_token: value
                     .get("fencing_token")
-                    .and_then(serde_json::Value::as_i64)
+                    .and_then(serde_json::Value::as_u64)
+                    .map(FencingToken::new)
                     .ok_or_else(|| {
                         StoreError::malformed(
                             "invalid heartbeat replay response field: fencing_token",
@@ -369,7 +377,7 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                 journal_state: required_string(value, "journal_state")?,
                 last_event_checkpoint: match value.get("last_event_checkpoint") {
                     Some(serde_json::Value::Null) => None,
-                    Some(serde_json::Value::String(value)) => Some(value.clone()),
+                    Some(serde_json::Value::String(value)) => Some(Checkpoint::new(value.clone())),
                     _ => {
                         return Err(StoreError::malformed(
                             "invalid heartbeat replay response field: last_event_checkpoint",
@@ -404,11 +412,11 @@ fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, StoreError> {
             .map_err(|error| StoreError::malformed(error.to_string()))
     };
     Ok(Lease {
-        attempt_id: row.get("id"),
-        request_id: row.get("request_id"),
+        attempt_id: AttemptId::new(row.get::<String, _>("id")),
+        request_id: ExecutionRequestId::new(row.get::<String, _>("request_id")),
         attempt_number: row.get("attempt_number"),
-        runner_id: row.get("runner_id"),
-        fencing_token: row.get("fencing_token"),
+        runner_id: RunnerId::new(row.get::<String, _>("runner_id")),
+        fencing_token: token_from_column(row.get("fencing_token"))?,
         issued_at: parse(issued)?,
         expires_at: parse(expires)?,
     })
@@ -625,7 +633,7 @@ impl Repository {
     #[allow(clippy::too_many_arguments)] // protocol batch fields must fingerprint together
     pub async fn heartbeat_batch(
         &self,
-        runner_id: &str,
+        runner_id: &RunnerId,
         heartbeat_id: &str,
         sent_at: DateTime<Utc>,
         available_capacity: i64,
@@ -649,21 +657,22 @@ impl Repository {
         // can otherwise deadlock while both try to upgrade to writers.
         // Mirrors the redeem_enrollment_token and
         // claim_execution_idempotent_with_snapshot fixes above.
+        let runner = runner_id.as_str();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let capacity: Option<i64> = sqlx::query_scalar(
             "SELECT total_capacity FROM agent_runners WHERE id=? AND state='active' AND revoked_at IS NULL",
         )
-        .bind(runner_id)
+        .bind(runner)
         .fetch_optional(&mut *tx)
         .await?;
         let Some(capacity) = capacity else {
             tx.commit().await?;
-            return Ok(HeartbeatBatchResult::StaleLease(runner_id.into()));
+            return Ok(HeartbeatBatchResult::RunnerNotActive);
         };
         if let Some(row) = sqlx::query(
             "SELECT fingerprint,response FROM execution_heartbeat_replays WHERE runner_id=? AND heartbeat_id=?",
         )
-        .bind(runner_id)
+        .bind(runner)
         .bind(heartbeat_id)
         .fetch_optional(&mut *tx)
         .await?
@@ -681,7 +690,7 @@ impl Repository {
         let active_reservations: i64 = sqlx::query_scalar(state::sql(
             "SELECT COUNT(*) FROM execution_attempts WHERE runner_id=? AND state IN ({held})",
         ))
-        .bind(runner_id)
+        .bind(runner)
         .fetch_one(&mut *tx)
         .await?;
         let expected_available_capacity = capacity - active_reservations;
@@ -691,24 +700,28 @@ impl Repository {
         }
         let mut result = Vec::with_capacity(leases.len());
         for lease in leases {
-            let row=sqlx::query(state::sql("SELECT r.cancellation_requested_at FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND a.state IN ({held}) AND a.lease_expires_at>?")).bind(lease.attempt_id).bind(runner_id).bind(lease.fencing_token).bind(&now_s).fetch_optional(&mut *tx).await?;
+            let (attempt, fencing_token) = (
+                lease.attempt_id.as_str(),
+                token_column(lease.fencing_token)?,
+            );
+            let row=sqlx::query(state::sql("SELECT r.cancellation_requested_at FROM execution_attempts a JOIN execution_requests r ON r.id=a.request_id WHERE a.id=? AND a.runner_id=? AND a.fencing_token=? AND a.state IN ({held}) AND a.lease_expires_at>?")).bind(attempt).bind(runner).bind(fencing_token).bind(&now_s).fetch_optional(&mut *tx).await?;
             let Some(row) = row else {
                 tx.rollback().await?;
-                return Ok(HeartbeatBatchResult::StaleLease(lease.attempt_id.into()));
+                return Ok(HeartbeatBatchResult::StaleLease(lease.attempt_id.clone()));
             };
             let cancellation: Option<String> = row.get("cancellation_requested_at");
-            sqlx::query("UPDATE execution_attempts SET last_heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=?").bind(&now_s).bind(expires.to_rfc3339()).bind(&now_s).bind(lease.attempt_id).bind(runner_id).bind(lease.fencing_token).execute(&mut *tx).await?;
+            sqlx::query("UPDATE execution_attempts SET last_heartbeat_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=?").bind(&now_s).bind(expires.to_rfc3339()).bind(&now_s).bind(attempt).bind(runner).bind(fencing_token).execute(&mut *tx).await?;
             result.push(HeartbeatLeaseResponse {
-                attempt_id: lease.attempt_id.into(),
+                attempt_id: lease.attempt_id.clone(),
                 fencing_token: lease.fencing_token,
                 state: lease.state,
                 journal_state: lease.journal_state.into(),
-                last_event_checkpoint: lease.last_event_checkpoint.map(str::to_owned),
+                last_event_checkpoint: lease.last_event_checkpoint.cloned(),
                 lease_expires_at: expires,
                 cancellation_requested: cancellation.is_some(),
             });
         }
-        sqlx::query("UPDATE agent_runners SET available_capacity=?,last_heartbeat_at=?,updated_at=? WHERE id=?").bind(available_capacity).bind(&now_s).bind(&now_s).bind(runner_id).execute(&mut *tx).await?;
+        sqlx::query("UPDATE agent_runners SET available_capacity=?,last_heartbeat_at=?,updated_at=? WHERE id=?").bind(available_capacity).bind(&now_s).bind(&now_s).bind(runner).execute(&mut *tx).await?;
         let response = HeartbeatBatchResponse {
             heartbeat_id: heartbeat_id.into(),
             accepted_at: now,
@@ -718,17 +731,17 @@ impl Repository {
             "heartbeat_id": response.heartbeat_id,
             "accepted_at": response.accepted_at.to_rfc3339(),
             "leases": response.leases.iter().map(|lease| serde_json::json!({
-                "attempt_id": lease.attempt_id,
-                "fencing_token": lease.fencing_token,
+                "attempt_id": lease.attempt_id.as_str(),
+                "fencing_token": lease.fencing_token.get(),
                 "state": state::text(lease.state),
                 "journal_state": lease.journal_state,
-                "last_event_checkpoint": lease.last_event_checkpoint,
+                "last_event_checkpoint": lease.last_event_checkpoint.as_ref().map(Checkpoint::as_str),
                 "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
                 "cancellation_requested": lease.cancellation_requested,
             })).collect::<Vec<_>>(),
         })
         .to_string();
-        sqlx::query("INSERT INTO execution_heartbeat_replays(runner_id,heartbeat_id,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(runner_id).bind(heartbeat_id).bind(fingerprint).bind(&stored).bind(&now_s).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO execution_heartbeat_replays(runner_id,heartbeat_id,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(runner).bind(heartbeat_id).bind(fingerprint).bind(&stored).bind(&now_s).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(HeartbeatBatchResult::Accepted(response))
     }
@@ -879,22 +892,27 @@ impl Repository {
     /// the caller rather than this module.
     pub async fn claim_execution_idempotent_with_snapshot(
         &self,
-        runner_id: &str,
-        claim_request_id: &str,
-        attempt_id: &str,
+        runner_id: &RunnerId,
+        claim_request_id: &ClaimRequestId,
+        attempt_id: &AttemptId,
         lease_duration: Duration,
         now: DateTime<Utc>,
         selection: RequestSelection<'_>,
     ) -> Result<Option<ClaimedExecution>, StoreError> {
         let now_s = now.to_rfc3339();
         let expires = now + lease_duration;
+        let (runner, claim_request, attempt) = (
+            runner_id.as_str(),
+            claim_request_id.as_str(),
+            attempt_id.as_str(),
+        );
         // Serialize claimants before either transaction reads the runner's
         // shared capacity row. Two deferred readers can otherwise deadlock
         // while both try to upgrade to writers, surfacing a database error
         // instead of one authoritative lease and one well-typed no-work
         // result. Mirrors the redeem_enrollment_token fix above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let replay=sqlx::query("SELECT a.id,a.request_id,a.attempt_number,a.runner_id,a.fencing_token,a.lease_issued_at,a.lease_expires_at,r.request_snapshot FROM execution_claim_replays c JOIN execution_attempts a ON a.id=c.attempt_id JOIN execution_requests r ON r.id=a.request_id WHERE c.runner_id=? AND c.claim_request_id=?").bind(runner_id).bind(claim_request_id).fetch_optional(&mut *tx).await?;
+        let replay=sqlx::query("SELECT a.id,a.request_id,a.attempt_number,a.runner_id,a.fencing_token,a.lease_issued_at,a.lease_expires_at,r.request_snapshot FROM execution_claim_replays c JOIN execution_attempts a ON a.id=c.attempt_id JOIN execution_requests r ON r.id=a.request_id WHERE c.runner_id=? AND c.claim_request_id=?").bind(runner).bind(claim_request).fetch_optional(&mut *tx).await?;
         if let Some(row) = replay {
             let lease = lease_from_row(&row)?;
             let snapshot = snapshot(&row)?;
@@ -904,7 +922,7 @@ impl Repository {
                 request_snapshot: snapshot,
             }));
         }
-        if sqlx::query("UPDATE agent_runners SET available_capacity=available_capacity-1,updated_at=? WHERE id=? AND state='active' AND revoked_at IS NULL AND available_capacity>0").bind(&now_s).bind(runner_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.commit().await?; return Ok(None); }
+        if sqlx::query("UPDATE agent_runners SET available_capacity=available_capacity-1,updated_at=? WHERE id=? AND state='active' AND revoked_at IS NULL AND available_capacity>0").bind(&now_s).bind(runner).execute(&mut *tx).await?.rows_affected()!=1 { tx.commit().await?; return Ok(None); }
         // `Scheduled(None)` means the scheduler already looked at every
         // selector-eligible request and found none this runner is eligible
         // for — reported as "no work" (after undoing the capacity
@@ -917,7 +935,7 @@ impl Repository {
         let request = match selection {
             RequestSelection::Naive => {
                 sqlx::query(state::sql("SELECT id,request_snapshot FROM execution_requests WHERE state={queued} AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?))) ORDER BY created_at LIMIT 1"))
-                    .bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?
+                    .bind(runner).bind(runner).fetch_optional(&mut *tx).await?
             }
             RequestSelection::Scheduled(Some(chosen_id)) => {
                 // Defense in depth: re-verify the scheduler's chosen id is
@@ -925,7 +943,7 @@ impl Repository {
                 // runner, exactly as the naive path always has, rather than
                 // trusting the earlier read-only snapshot blindly.
                 sqlx::query(state::sql("SELECT id,request_snapshot FROM execution_requests WHERE id=? AND state={queued} AND ((selector_kind='exact_runner' AND selector_id=?) OR (selector_kind='fleet' AND EXISTS(SELECT 1 FROM agent_fleet_members m WHERE m.fleet_id=selector_id AND m.runner_id=?)))"))
-                    .bind(chosen_id).bind(runner_id).bind(runner_id).fetch_optional(&mut *tx).await?
+                    .bind(chosen_id.as_str()).bind(runner).bind(runner).fetch_optional(&mut *tx).await?
             }
             RequestSelection::Scheduled(None) => unreachable!("handled above"),
         };
@@ -933,29 +951,29 @@ impl Repository {
             tx.rollback().await?;
             return Ok(None);
         };
-        let request_id: String = request.get("id");
+        let request_id = ExecutionRequestId::new(request.get::<String, _>("id"));
         let (set, guard) = (Move::Lease.set(), Move::Lease.guard());
-        if sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_requests SET {set},waiting_code=NULL,waiting_reason=NULL,waiting_since=NULL,updated_at=? WHERE id=? AND {guard}"))).bind(&now_s).bind(&request_id).execute(&mut *tx).await?.rows_affected()!=1 { tx.rollback().await?; return Ok(None); }
+        if sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_requests SET {set},waiting_code=NULL,waiting_reason=NULL,waiting_since=NULL,updated_at=? WHERE id=? AND {guard}"))).bind(&now_s).bind(request_id.as_str()).execute(&mut *tx).await?.rows_affected()!=1 { tx.rollback().await?; return Ok(None); }
         let n: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(attempt_number),0)+1 FROM execution_attempts WHERE request_id=?",
         )
-        .bind(&request_id)
+        .bind(request_id.as_str())
         .fetch_one(&mut *tx)
         .await?;
-        let f: i64 = sqlx::query_scalar(
+        let fencing_token: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(fencing_token),0)+1 FROM execution_attempts WHERE request_id=?",
         )
-        .bind(&request_id)
+        .bind(request_id.as_str())
         .fetch_one(&mut *tx)
         .await?;
-        sqlx::query("INSERT INTO execution_attempts(id,request_id,attempt_number,runner_id,fencing_token,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(attempt_id).bind(&request_id).bind(n).bind(runner_id).bind(f).bind(&now_s).bind(expires.to_rfc3339()).bind(&now_s).bind(&now_s).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO execution_claim_replays(runner_id,claim_request_id,attempt_id,created_at) VALUES(?,?,?,?)").bind(runner_id).bind(claim_request_id).bind(attempt_id).bind(&now_s).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO execution_attempts(id,request_id,attempt_number,runner_id,fencing_token,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(attempt).bind(request_id.as_str()).bind(n).bind(runner).bind(fencing_token).bind(&now_s).bind(expires.to_rfc3339()).bind(&now_s).bind(&now_s).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO execution_claim_replays(runner_id,claim_request_id,attempt_id,created_at) VALUES(?,?,?,?)").bind(runner).bind(claim_request).bind(attempt).bind(&now_s).execute(&mut *tx).await?;
         let lease = Lease {
-            attempt_id: attempt_id.into(),
+            attempt_id: attempt_id.clone(),
             request_id,
             attempt_number: n,
-            runner_id: runner_id.into(),
-            fencing_token: f,
+            runner_id: runner_id.clone(),
+            fencing_token: token_from_column(fencing_token)?,
             issued_at: now,
             expires_at: expires,
         };

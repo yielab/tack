@@ -478,6 +478,7 @@ pub async fn running_attempt(
 ) -> String {
     use chrono::Duration;
     use tack_db::repo::execution::{NewExecutionRequest, RequestSelection};
+    use tack_protocol::execution::{AttemptId, ClaimRequestId, RunnerId};
 
     let request_id = format!("req-{tag}");
     let snapshot = format!(
@@ -512,9 +513,9 @@ pub async fn running_attempt(
     let attempt_id = format!("att-{tag}");
     let claim = repo
         .claim_execution_idempotent_with_snapshot(
-            runner_id,
-            &attempt_id,
-            &attempt_id,
+            &RunnerId::new(runner_id),
+            &ClaimRequestId::new(&attempt_id),
+            &AttemptId::new(&attempt_id),
             Duration::seconds(300),
             clock.now(),
             RequestSelection::Naive,
@@ -523,7 +524,7 @@ pub async fn running_attempt(
         .expect("seed claim")
         .expect("work available");
     execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
-    claim.lease.attempt_id
+    claim.lease.attempt_id.into_inner()
 }
 
 /// Raises a pending decision against a running attempt through the real insert path (which also
@@ -538,12 +539,13 @@ pub async fn pending_decision(
     expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     use tack_db::repo::execution::NewDecision;
+    use tack_protocol::execution::{AttemptId, FencingToken, RunnerId};
     let row_id = format!("row-{}", Uuid::new_v4());
     let written = repo
         .create_execution_decision(
-            runner_id,
-            attempt_id,
-            1,
+            &RunnerId::new(runner_id),
+            &AttemptId::new(attempt_id),
+            FencingToken::new(1),
             NewDecision {
                 id: &row_id,
                 decision_id,

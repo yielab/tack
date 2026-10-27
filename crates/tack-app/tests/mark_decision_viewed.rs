@@ -6,6 +6,7 @@ use tack_app::{AppError, runs::mark_decision_viewed::mark_decision_viewed};
 use tack_db::Repository;
 use tack_db::repo::execution::{NewAgentProfile, NewExecutionRequest, NewRunner, RequestSelection};
 use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, RunnerId};
 use tack_test_support::{
     ControllableClock, create_test_workspace, make_item, make_project, seed, setup_test_db,
 };
@@ -87,9 +88,9 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
     .await
     .expect("enqueue");
     repo.claim_execution_idempotent_with_snapshot(
-        RUNNER_ID,
-        "att-viewed",
-        "att-viewed",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("att-viewed"),
+        &AttemptId::new("att-viewed"),
         Duration::seconds(300),
         clock.now(),
         RequestSelection::Naive,
@@ -105,11 +106,11 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
 async fn viewing_twice_keeps_the_first_timestamp() {
     let (repo, clock) = claimed_attempt_with_a_decision().await;
 
-    let first = mark_decision_viewed(&repo, clock.now(), "att-viewed", "dec-1")
+    let first = mark_decision_viewed(&repo, clock.now(), &AttemptId::new("att-viewed"), "dec-1")
         .await
         .expect("first view");
     clock.0.advance(Duration::minutes(5));
-    let second = mark_decision_viewed(&repo, clock.now(), "att-viewed", "dec-1")
+    let second = mark_decision_viewed(&repo, clock.now(), &AttemptId::new("att-viewed"), "dec-1")
         .await
         .expect("second view");
 
@@ -120,8 +121,15 @@ async fn viewing_twice_keeps_the_first_timestamp() {
 async fn a_decision_the_attempt_does_not_have_is_not_found() {
     let (repo, clock) = claimed_attempt_with_a_decision().await;
 
-    let missing = mark_decision_viewed(&repo, clock.now(), "att-viewed", "dec-other").await;
-    let wrong_attempt = mark_decision_viewed(&repo, clock.now(), "att-other", "dec-1").await;
+    let missing = mark_decision_viewed(
+        &repo,
+        clock.now(),
+        &AttemptId::new("att-viewed"),
+        "dec-other",
+    )
+    .await;
+    let wrong_attempt =
+        mark_decision_viewed(&repo, clock.now(), &AttemptId::new("att-other"), "dec-1").await;
 
     assert!(matches!(missing, Err(AppError::NotFound)), "{missing:?}");
     assert!(

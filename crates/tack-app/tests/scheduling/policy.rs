@@ -15,6 +15,7 @@ use tack_db::{Repository, queries};
 use tack_orch::model_policy::{ModelPolicyTier, ResolvedModelPolicy};
 use tack_orch::scheduler::SchedulingPolicy;
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, ExecutionRequestId, RunnerId};
 use tack_test_support::seed;
 use uuid::Uuid;
 
@@ -282,23 +283,28 @@ async fn assert_default_model_outcome(
     )
     .await;
     let expected = expect_leased.then_some(request_id);
-    let chosen = choose_request_for_runner(&repo, "runner-a", now, &SchedulingPolicy::default())
-        .await
-        .expect("no db error");
+    let chosen = choose_request_for_runner(
+        &repo,
+        &RunnerId::new("runner-a"),
+        now,
+        &SchedulingPolicy::default(),
+    )
+    .await
+    .expect("no db error");
     assert_eq!(
-        chosen.as_deref(),
+        chosen.as_ref().map(ExecutionRequestId::as_str),
         expected,
         "scheduler wiring must match the claim outcome"
     );
 
     let claimed = repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-a",
-            "claim",
-            "attempt",
+            &RunnerId::new("runner-a"),
+            &ClaimRequestId::new("claim"),
+            &AttemptId::new("attempt"),
             ChronoDuration::seconds(60),
             now,
-            RequestSelection::Scheduled(chosen.as_deref()),
+            RequestSelection::Scheduled(chosen.as_ref()),
         )
         .await
         .expect("no db error");
@@ -308,7 +314,10 @@ async fn assert_default_model_outcome(
         "claim outcome must match eligibility"
     );
     if let Some(claimed) = claimed {
-        assert_eq!(claimed.lease.request_id, request_id);
+        assert_eq!(
+            claimed.lease.request_id,
+            ExecutionRequestId::new(request_id)
+        );
     }
 
     let (expect_attempts, expect_state, expect_capacity) = if expect_leased {

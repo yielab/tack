@@ -4,6 +4,7 @@
 
 use crate::common;
 use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, FencingToken, RecoveryKey, RunnerId};
 
 use chrono::Duration;
 use common::{RUNNER_ID, enqueue, world};
@@ -17,7 +18,7 @@ const DETAILS: &str = r#"{"journal_state":"prepared","process_observed":false}"#
 async fn observe(
     world: &common::World,
     attempt_id: &str,
-    fencing_token: i64,
+    fencing_token: FencingToken,
     recovery_key: &str,
     observation: RecoveryObservation,
 ) -> RecoveryObserved {
@@ -25,10 +26,10 @@ async fn observe(
         &world.repo,
         world.clock.now(),
         Observation {
-            runner_id: RUNNER_ID,
-            attempt_id,
+            runner_id: &RunnerId::new(RUNNER_ID),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token,
-            recovery_key,
+            recovery_key: &RecoveryKey::new(recovery_key),
             observation,
             details_json: DETAILS,
         },
@@ -44,14 +45,14 @@ async fn a_process_proven_stopped_requeues_the_request_and_replays_idempotently(
     let claimed = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-recovery",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-recovery"),
         Duration::seconds(60),
     )
     .await
     .expect("claim")
     .expect("work");
-    let attempt_id = claimed.lease.attempt_id;
+    let attempt_id = claimed.lease.attempt_id.into_inner();
     let fence = claimed.lease.fencing_token;
 
     let RecoveryObserved::Recorded(applied) = observe(
@@ -105,14 +106,14 @@ async fn a_recovery_key_reused_with_a_different_observation_conflicts() {
     let claimed = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-conflict",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-conflict"),
         Duration::seconds(60),
     )
     .await
     .expect("claim")
     .expect("work");
-    let attempt_id = claimed.lease.attempt_id;
+    let attempt_id = claimed.lease.attempt_id.into_inner();
     let fence = claimed.lease.fencing_token;
     observe(
         &world,
@@ -142,19 +143,19 @@ async fn an_older_fence_is_stale_and_changes_nothing() {
     let claimed = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-stale",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-stale"),
         Duration::seconds(60),
     )
     .await
     .expect("claim")
     .expect("work");
-    let attempt_id = claimed.lease.attempt_id;
+    let attempt_id = claimed.lease.attempt_id.into_inner();
 
     let outcome = observe(
         &world,
         &attempt_id,
-        claimed.lease.fencing_token + 1,
+        FencingToken::new(claimed.lease.fencing_token.get() + 1),
         "recovery-stale",
         RecoveryObservation::ProcessStopped,
     )

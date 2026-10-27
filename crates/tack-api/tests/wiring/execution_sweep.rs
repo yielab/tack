@@ -9,6 +9,7 @@ use std::time::Duration as StdDuration;
 use tack_protocol::Clock;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, FencingToken, RunnerId};
 use tack_test_support::{create_test_workspace, seed, setup_test_db};
 
 use chrono::{Duration, Utc};
@@ -137,7 +138,7 @@ fn new_request<'a>(
 /// comfortably longer than any sweep-wait loop below) and bumps it straight
 /// to `running`; the resolve/expiry paths under test here don't gate on how
 /// an attempt got to `running`, only on its current state/lease.
-async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, i64) {
+async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, FencingToken) {
     let request_id = format!("req-{tag}");
     let now = Utc::now();
     repo.enqueue_execution(new_request(&request_id, item_id, &request_id, now), now)
@@ -146,9 +147,9 @@ async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String
     let attempt_id = format!("att-{tag}");
     let claim = repo
         .claim_execution_idempotent_with_snapshot(
-            RUNNER_ID,
-            &attempt_id,
-            &attempt_id,
+            &RunnerId::new(RUNNER_ID),
+            &ClaimRequestId::new(&attempt_id),
+            &AttemptId::new(&attempt_id),
             Duration::minutes(10),
             SystemClock.now(),
             RequestSelection::Naive,
@@ -157,7 +158,10 @@ async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String
         .expect("claim")
         .expect("work available");
     seed::execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
-    (claim.lease.attempt_id, claim.lease.fencing_token)
+    (
+        claim.lease.attempt_id.into_inner(),
+        claim.lease.fencing_token,
+    )
 }
 
 /// Artifact storage root for one sweep-wiring test. The `TempDir` removes
@@ -185,7 +189,7 @@ async fn seed_real_artifact(
     storage: &ArtifactStorage,
     artifact_root: &std::path::Path,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     content: &[u8],
@@ -206,8 +210,8 @@ async fn seed_real_artifact(
         .expect("store real blob");
 
     repo.record_execution_artifact(
-        RUNNER_ID,
-        attempt_id,
+        &RunnerId::new(RUNNER_ID),
+        &AttemptId::new(attempt_id),
         fence,
         NewArtifact {
             id: row_id,
@@ -249,14 +253,14 @@ async fn artifact_row_exists(repo: &Repository, row_id: &str) -> bool {
 async fn seed_stale_manifest_only_artifact(
     repo: &Repository,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     days_ago: i64,
 ) {
     repo.record_execution_artifact(
-        RUNNER_ID,
-        attempt_id,
+        &RunnerId::new(RUNNER_ID),
+        &AttemptId::new(attempt_id),
         fence,
         NewArtifact {
             id: row_id,

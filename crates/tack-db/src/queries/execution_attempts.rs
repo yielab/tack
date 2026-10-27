@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken, RunnerId};
 
 use crate::queries::attempt_reviews::AttemptReviewRow;
 use crate::repo::autonomy::MergeRow;
-use crate::repo::execution::{AttemptListingRow, state};
+use crate::repo::execution::{AttemptListingRow, state, token_column};
 use crate::repo::pull_requests::PullRequestRow;
 use crate::{Repository, StoreError};
 
@@ -157,16 +157,16 @@ pub struct AttemptLease {
 /// has all three: a wrong id, a wrong runner and a stale fence look the same.
 pub async fn attempt_lease(
     repo: &Repository,
-    attempt_id: &str,
-    runner_id: &str,
-    fencing_token: i64,
+    attempt_id: &AttemptId,
+    runner_id: &RunnerId,
+    fencing_token: FencingToken,
 ) -> Result<Option<AttemptLease>, StoreError> {
     let row: Option<(String, String)> = sqlx::query_as(
         "SELECT state, lease_expires_at FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?",
     )
-    .bind(attempt_id)
-    .bind(runner_id)
-    .bind(fencing_token)
+    .bind(attempt_id.as_str())
+    .bind(runner_id.as_str())
+    .bind(token_column(fencing_token)?)
     .fetch_optional(repo.pool())
     .await?;
     row.map(|(state_text, lease_expires_at)| {
@@ -181,16 +181,16 @@ pub async fn attempt_lease(
 /// Whether `runner_id` holds the attempt under `fencing_token`, whatever its state or lease.
 pub async fn holds_fence(
     repo: &Repository,
-    attempt_id: &str,
-    runner_id: &str,
-    fencing_token: i64,
+    attempt_id: &AttemptId,
+    runner_id: &RunnerId,
+    fencing_token: FencingToken,
 ) -> Result<bool, StoreError> {
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=?)",
     )
-    .bind(attempt_id)
-    .bind(runner_id)
-    .bind(fencing_token)
+    .bind(attempt_id.as_str())
+    .bind(runner_id.as_str())
+    .bind(token_column(fencing_token)?)
     .fetch_one(repo.pool())
     .await?)
 }

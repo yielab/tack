@@ -5,7 +5,7 @@ use super::state::{self, Move};
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{ExecutionState, RunnerId};
 use tracing::instrument;
 
 use crate::Repository;
@@ -447,8 +447,9 @@ impl Repository {
     /// rather than something `tack-orch` fetches itself.
     pub async fn fetch_runner_scheduling_snapshot(
         &self,
-        runner_id: &str,
+        runner_id: &RunnerId,
     ) -> Result<Option<RunnerSchedulingSnapshot>, StoreError> {
+        let runner_id = runner_id.as_str();
         let row = sqlx::query(
             "SELECT state, labels, total_capacity, available_capacity, last_heartbeat_at, \
              capability_snapshot FROM agent_runners WHERE id = ?",
@@ -482,8 +483,9 @@ impl Repository {
     /// filtering applied on top instead of a bare `ORDER BY created_at`.
     pub async fn list_eligible_queued_requests(
         &self,
-        runner_id: &str,
+        runner_id: &RunnerId,
     ) -> Result<Vec<QueuedRequestForScheduling>, StoreError> {
+        let runner_id = runner_id.as_str();
         let rows = sqlx::query(state::sql(
             "SELECT id, selector_kind, selector_id, requested_harness_kind, \
              requested_model, created_at, metadata, \

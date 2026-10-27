@@ -2,6 +2,7 @@
 //! answer arrives after the deadline.
 
 use crate::decisions;
+use tack_protocol::execution::AttemptId;
 
 use chrono::Duration;
 use decisions::{
@@ -63,7 +64,7 @@ async fn expiry_resumes_the_attempt_like_a_resolution_does() {
     let outcome = resolve_decision(
         &repo,
         clock.now(),
-        &lazy,
+        &AttemptId::new(&lazy),
         "dec-late",
         &json!({"option_id": "allow_once", "text": null}),
         &DecisionResolvedBy::operator("operator:local"),

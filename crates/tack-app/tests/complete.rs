@@ -4,6 +4,7 @@
 
 use crate::common;
 use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, CompletionId, FencingToken, RunnerId};
 
 use std::future::Future;
 
@@ -41,10 +42,10 @@ where
         &world.repo,
         world.clock.now(),
         CompletionReport {
-            runner_id: RUNNER_ID,
-            attempt_id: &run.attempt_id,
+            runner_id: &RunnerId::new(RUNNER_ID),
+            attempt_id: &AttemptId::new(&run.attempt_id),
             fencing_token: run.fence,
-            completion_id,
+            completion_id: &CompletionId::new(completion_id),
             final_event_checkpoint: None,
             terminal_state,
             terminal_reason_json: &terminal_reason.to_string(),
@@ -130,7 +131,7 @@ async fn an_attempt_ends_once_per_completion_id_and_other_content_conflicts() {
 async fn a_fence_that_is_not_current_cannot_end_the_attempt() {
     let world = world().await;
     let mut run = running_attempt(&world, "complete-stale").await;
-    run.fence += 1;
+    run.fence = FencingToken::new(run.fence.get() + 1);
 
     let stale = finish(
         &world,

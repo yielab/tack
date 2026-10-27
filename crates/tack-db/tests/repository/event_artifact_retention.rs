@@ -5,6 +5,9 @@
 //! what belongs at the `tack-db` layer.
 
 use crate::common;
+use tack_protocol::execution::{
+    AttemptId, Checkpoint, ClaimRequestId, FencingToken, RunnerId, WorkspaceId,
+};
 
 use std::sync::Mutex;
 
@@ -136,15 +139,15 @@ async fn ready_running_attempt(
     clock: &FakeClock,
     request_id: &str,
     attempt_id: &str,
-) -> i64 {
+) -> FencingToken {
     repo.enqueue_execution(request(request_id, item_id, request_id), clock.now())
         .await
         .unwrap();
     let claim = repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-f2",
-            attempt_id,
-            attempt_id,
+            &RunnerId::new("runner-f2"),
+            &ClaimRequestId::new(attempt_id),
+            &AttemptId::new(attempt_id),
             Duration::seconds(300),
             clock.now(),
             RequestSelection::Naive,
@@ -155,11 +158,11 @@ async fn ready_running_attempt(
     let fence = claim.lease.fencing_token;
     repo.transition_attempt_with_facts(
         AttemptTransitionInput {
-            runner_id: "runner-f2",
-            attempt_id,
+            runner_id: &RunnerId::new("runner-f2"),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             phase: AttemptTransitionPhase::Preparing,
-            workspace_id: "workspace-1",
+            workspace_id: &WorkspaceId::new("workspace-1"),
             base_revision: "abc123",
             process_id: None,
         },
@@ -169,11 +172,11 @@ async fn ready_running_attempt(
     .unwrap();
     repo.transition_attempt_with_facts(
         AttemptTransitionInput {
-            runner_id: "runner-f2",
-            attempt_id,
+            runner_id: &RunnerId::new("runner-f2"),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             phase: AttemptTransitionPhase::Running,
-            workspace_id: "workspace-1",
+            workspace_id: &WorkspaceId::new("workspace-1"),
             base_revision: "abc123",
             process_id: Some("pid-1"),
         },
@@ -245,13 +248,13 @@ async fn set_content_reference(
     repo: &Repository,
     attempt_id: &str,
     artifact_id: &str,
-    fence: i64,
+    fence: FencingToken,
     blob: &str,
     clock: &FakeClock,
 ) -> ArtifactContentCommitResult {
     repo.set_execution_artifact_content_reference(
-        "runner-f2",
-        attempt_id,
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new(attempt_id),
         artifact_id,
         fence,
         blob,
@@ -305,7 +308,7 @@ async fn checkpoint_for(repo: &Repository, attempt_id: &str) -> Option<String> {
 async fn record_patch_artifact(
     repo: &Repository,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     sha256: &str,
@@ -313,9 +316,15 @@ async fn record_patch_artifact(
     clock: &FakeClock,
 ) -> bool {
     let artifact = patch_artifact(row_id, artifact_id, sha256, content_reference);
-    repo.record_execution_artifact("runner-f2", attempt_id, fence, artifact, clock.now())
-        .await
-        .unwrap()
+    repo.record_execution_artifact(
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new(attempt_id),
+        fence,
+        artifact,
+        clock.now(),
+    )
+    .await
+    .unwrap()
 }
 
 /// Lists artifacts expired as of `cutoff` and deletes them by row id.
@@ -392,11 +401,11 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
         let seeded = repo
             .append_execution_events_result(
                 EventBatch {
-                    runner_id: "runner-f2",
-                    attempt_id: case.attempt_id,
+                    runner_id: &RunnerId::new("runner-f2"),
+                    attempt_id: &AttemptId::new(case.attempt_id),
                     fencing_token: fence,
                     previous_checkpoint: None,
-                    checkpoint: "checkpoint-0001",
+                    checkpoint: &Checkpoint::new("checkpoint-0001"),
                 },
                 &[event("evt-row-1", "evt-1", 1, clock.now())],
                 clock.now(),
@@ -433,7 +442,7 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
                 event("evt-row-2", "evt-2", 2, clock.now()),
                 event("evt-row-3", "evt-3", 3, clock.now()),
             ],
-            Some("checkpoint-0001"),
+            Some(Checkpoint::new("checkpoint-0001")),
         )
     } else {
         (vec![event("evt-row-x", "evt-x", 1, clock.now())], None)
@@ -442,11 +451,11 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
     let result = repo
         .append_execution_events_result(
             EventBatch {
-                runner_id: "runner-f2",
-                attempt_id: case.attempt_id,
+                runner_id: &RunnerId::new("runner-f2"),
+                attempt_id: &AttemptId::new(case.attempt_id),
                 fencing_token: fence,
-                previous_checkpoint,
-                checkpoint: failing_checkpoint,
+                previous_checkpoint: previous_checkpoint.as_ref(),
+                checkpoint: &Checkpoint::new(failing_checkpoint),
             },
             &events,
             clock.now(),
@@ -539,8 +548,8 @@ async fn content_reference_is_committed_once_and_never_overwritten() {
     let sha = "0".repeat(64);
     let written = repo
         .record_execution_artifact(
-            "runner-f2",
-            aid,
+            &RunnerId::new("runner-f2"),
+            &AttemptId::new(aid),
             fence,
             patch_artifact("art-row-1", "art-1", &sha, None),
             clock.now(),
@@ -574,8 +583,8 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
     .await;
     let sha = "1".repeat(64);
     repo.record_execution_artifact(
-        "runner-f2",
-        "attempt-content-stale",
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new("attempt-content-stale"),
         fence,
         log_artifact("art-row-2", "art-2", &sha),
         clock.now(),
@@ -587,7 +596,7 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
         &repo,
         "attempt-content-stale",
         "art-2",
-        fence + 1, // wrong fence
+        FencingToken::new(fence.get() + 1), // wrong fence
         "attempt-content-stale-hex/blob-2",
         &clock,
     )
@@ -695,8 +704,8 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
 
     let sha = "4".repeat(64);
     repo.record_execution_artifact(
-        "runner-f2",
-        &attempt_id,
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new(&attempt_id),
         fence,
         // No content yet — exactly the "manifest created, upload not
         // finished" state `sweep_artifacts` must treat as racy.
@@ -729,8 +738,8 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
     if case.race_happens {
         let result = repo
             .set_execution_artifact_content_reference(
-                "runner-f2",
-                &attempt_id,
+                &RunnerId::new("runner-f2"),
+                &AttemptId::new(&attempt_id),
                 case.artifact_id,
                 fence,
                 &format!("{}-hex/real-upload.blob", case.artifact_id),

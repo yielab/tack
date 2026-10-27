@@ -3,6 +3,7 @@ use serde_json::Value;
 use tack_core::decision::DecisionResolvedBy;
 use tack_db::Repository;
 use tack_db::repo::execution::DecisionSettlement;
+use tack_protocol::execution::AttemptId;
 
 use crate::AppError;
 use tack_db::canonical_json;
@@ -50,7 +51,7 @@ pub enum ResolveOutcome {
 pub async fn resolve_decision(
     repo: &Repository,
     now: DateTime<Utc>,
-    attempt_id: &str,
+    attempt_id: &AttemptId,
     decision_id: &str,
     answer: &Value,
     resolved_by: &DecisionResolvedBy,

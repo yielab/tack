@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use tack_db::repo::execution::{OperatorRequeueResult, state};
 use tack_db::{Repository, queries};
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{ExecutionRequestId, ExecutionState, RecoveryKey};
 
 use super::start_run::fingerprint;
 use crate::AppError;
@@ -21,8 +21,8 @@ pub struct Requeued {
 pub async fn requeue(
     repo: &Repository,
     now: DateTime<Utc>,
-    request_id: &str,
-    recovery_key: &str,
+    request_id: &ExecutionRequestId,
+    recovery_key: &RecoveryKey,
     reason: &str,
     actor: &str,
 ) -> Result<Requeued, AppError> {
@@ -36,14 +36,15 @@ pub async fn requeue(
             "the recovery key was used with a different confirmation".to_owned(),
         )),
         OperatorRequeueResult::InvalidTransition | OperatorRequeueResult::NotFound => {
-            let from = queries::execution_attempts::latest_state_of_request(repo, request_id)
-                .await
-                .ok()
-                .flatten()
-                .map_or_else(
-                    || "unknown".to_owned(),
-                    |state| state::text(state).to_owned(),
-                );
+            let from =
+                queries::execution_attempts::latest_state_of_request(repo, request_id.as_str())
+                    .await
+                    .ok()
+                    .flatten()
+                    .map_or_else(
+                        || "unknown".to_owned(),
+                        |state| state::text(state).to_owned(),
+                    );
             Err(AppError::InvalidTransition {
                 from,
                 to: state::text(ExecutionState::Queued).to_owned(),

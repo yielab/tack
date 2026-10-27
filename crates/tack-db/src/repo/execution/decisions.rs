@@ -2,10 +2,10 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken, RunnerId};
 use tracing::instrument;
 
-use super::shared::mirror_request_state;
+use super::shared::{mirror_request_state, token_column};
 use super::state::{self, Move};
 use crate::queries::execution_decisions::DecisionRow;
 use crate::{Repository, StoreError};
@@ -34,7 +34,7 @@ const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 /// from before it left behind.
 pub(super) async fn end_attempt_decisions(
     conn: &mut SqliteConnection,
-    attempt_id: &str,
+    attempt_id: &AttemptId,
     now: &str,
 ) -> Result<(), StoreError> {
     sqlx::query(
@@ -44,7 +44,7 @@ pub(super) async fn end_attempt_decisions(
     .bind(now)
     .bind(ATTEMPT_ENDED)
     .bind(now)
-    .bind(attempt_id)
+    .bind(attempt_id.as_str())
     .execute(conn)
     .await?;
     Ok(())
@@ -57,7 +57,7 @@ pub(super) async fn end_attempt_decisions(
 /// waiting, or no longer live, is untouched.
 async fn park_attempt_on_pending_decision(
     conn: &mut SqliteConnection,
-    attempt_id: &str,
+    attempt_id: &AttemptId,
     now: &str,
 ) -> Result<(), StoreError> {
     let (set, guard) = (Move::AskDecision.set(), Move::AskDecision.guard());
@@ -67,8 +67,8 @@ async fn park_attempt_on_pending_decision(
          AND EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')"
     )))
     .bind(now)
-    .bind(attempt_id)
-    .bind(attempt_id)
+    .bind(attempt_id.as_str())
+    .bind(attempt_id.as_str())
     .execute(&mut *conn)
     .await?;
     if parked.rows_affected() == 1 {
@@ -85,7 +85,7 @@ async fn park_attempt_on_pending_decision(
 /// (terminal, lost, needs an operator), is left as it is.
 pub async fn resume_attempt_after_decisions(
     conn: &mut SqliteConnection,
-    attempt_id: &str,
+    attempt_id: &AttemptId,
     now: DateTime<Utc>,
 ) -> Result<bool, StoreError> {
     let now = now.to_rfc3339();
@@ -99,8 +99,8 @@ pub async fn resume_attempt_after_decisions(
          AND NOT EXISTS(SELECT 1 FROM execution_decisions WHERE attempt_id=? AND state='pending')"
     )))
     .bind(&now)
-    .bind(attempt_id)
-    .bind(attempt_id)
+    .bind(attempt_id.as_str())
+    .bind(attempt_id.as_str())
     .execute(&mut *conn)
     .await?;
     if resumed.rows_affected() != 1 {
@@ -142,9 +142,9 @@ impl Repository {
     #[instrument(skip(self, decision))]
     pub async fn create_execution_decision(
         &self,
-        runner_id: &str,
-        attempt_id: &str,
-        fence: i64,
+        runner_id: &RunnerId,
+        attempt_id: &AttemptId,
+        fence: FencingToken,
         decision: NewDecision<'_>,
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
@@ -158,13 +158,13 @@ impl Repository {
         // lost, or needs_operator.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let valid: bool = sqlx::query_scalar(state::sql("SELECT EXISTS(SELECT 1 FROM execution_attempts WHERE id = ? AND runner_id = ? AND fencing_token = ? AND state IN ({running},{waiting_decision}) AND lease_expires_at > ?)"))
-            .bind(attempt_id).bind(runner_id).bind(fence).bind(&now).fetch_one(&mut *tx).await?;
+            .bind(attempt_id.as_str()).bind(runner_id.as_str()).bind(token_column(fence)?).bind(&now).fetch_one(&mut *tx).await?;
         if !valid {
             tx.commit().await?;
             return Ok(false);
         }
         sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, options, metadata, expires_at, recommendation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, decision_id) DO NOTHING")
-        .bind(decision.id).bind(attempt_id).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(decision.recommendation).bind(&now).bind(&now).execute(&mut *tx).await?;
+        .bind(decision.id).bind(attempt_id.as_str()).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(decision.recommendation).bind(&now).bind(&now).execute(&mut *tx).await?;
         park_attempt_on_pending_decision(&mut tx, attempt_id, &now).await?;
         tx.commit().await?;
         Ok(true)
@@ -176,7 +176,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn mark_execution_decision_viewed(
         &self,
-        attempt_id: &str,
+        attempt_id: &AttemptId,
         decision_id: &str,
         now: DateTime<Utc>,
     ) -> Result<Option<String>, StoreError> {
@@ -186,7 +186,7 @@ impl Repository {
              WHERE attempt_id = ? AND decision_id = ? RETURNING viewed_at",
         )
         .bind(&now)
-        .bind(attempt_id)
+        .bind(attempt_id.as_str())
         .bind(decision_id)
         .fetch_optional(self.pool())
         .await
@@ -220,7 +220,7 @@ impl Repository {
     /// exists for this attempt.
     pub async fn settle_execution_decision<T>(
         &self,
-        attempt_id: &str,
+        attempt_id: &AttemptId,
         decision_id: &str,
         now: DateTime<Utc>,
         decide: impl FnOnce(&DecisionRow) -> (DecisionSettlement, T),
@@ -232,7 +232,7 @@ impl Repository {
              answer, expires_at, resolved_at, resolved_by, recommendation, viewed_at, created_at, updated_at \
              FROM execution_decisions WHERE attempt_id = ? AND decision_id = ?",
         )
-        .bind(attempt_id)
+        .bind(attempt_id.as_str())
         .bind(decision_id)
         .fetch_optional(&mut *tx)
         .await?;
@@ -302,7 +302,8 @@ impl Repository {
         .await?;
         let attempts: std::collections::BTreeSet<&String> = expired.iter().collect();
         for attempt_id in attempts {
-            resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
+            resume_attempt_after_decisions(&mut tx, &AttemptId::new(attempt_id.as_str()), now)
+                .await?;
         }
         tx.commit().await?;
         Ok(expired.len() as u64)

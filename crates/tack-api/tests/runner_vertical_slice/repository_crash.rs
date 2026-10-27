@@ -1,5 +1,8 @@
 use std::sync::Mutex;
 use tack_protocol::Clock;
+use tack_protocol::execution::{
+    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryKey, RunnerId,
+};
 
 use crate::common;
 use chrono::{DateTime, Duration, Utc};
@@ -14,7 +17,7 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::ExecutionState;
-use tack_test_support::{create_test_workspace, seed, setup_test_db};
+use tack_test_support::{create_test_workspace, ids, seed, setup_test_db};
 
 struct FakeClock(Mutex<DateTime<Utc>>);
 
@@ -209,9 +212,9 @@ async fn try_claim(
     fixture
         .repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-crash",
-            claim_request_id,
-            attempt_id,
+            &RunnerId::new("runner-crash"),
+            &ClaimRequestId::new(claim_request_id),
+            &AttemptId::new(attempt_id),
             Duration::seconds(60),
             fixture.clock.now(),
             RequestSelection::Naive,
@@ -252,7 +255,11 @@ async fn claim_crash_rolls_back_then_retry_keeps_fence_at_one() {
         .await
         .expect("claim retry")
         .expect("lease after retry");
-    assert_eq!(lease.lease.fencing_token, 1, "rollback cannot burn a fence");
+    assert_eq!(
+        lease.lease.fencing_token,
+        FencingToken::new(1),
+        "rollback cannot burn a fence"
+    );
 }
 
 /// Records a recovery observation for the fixed `attempt-crash`/fence 1.
@@ -266,10 +273,10 @@ async fn recover(
         .repo
         .recover_attempt(
             RecoveryObservationInput {
-                runner_id: "runner-crash",
-                attempt_id: "attempt-crash",
-                fencing_token: 1,
-                recovery_key,
+                runner_id: &RunnerId::new("runner-crash"),
+                attempt_id: &AttemptId::new("attempt-crash"),
+                fencing_token: FencingToken::new(1),
+                recovery_key: &RecoveryKey::new(recovery_key),
                 observation,
                 details,
             },
@@ -342,11 +349,11 @@ fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
 
 fn crash_event_batch() -> EventBatch<'static> {
     EventBatch {
-        runner_id: "runner-crash",
-        attempt_id: "attempt-crash",
-        fencing_token: 1,
+        runner_id: ids::runner("runner-crash"),
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
         previous_checkpoint: None,
-        checkpoint: "checkpoint-1",
+        checkpoint: ids::checkpoint("checkpoint-1"),
     }
 }
 
@@ -455,10 +462,10 @@ async fn event_batch_replay_writes_events_exactly_once() {
 
 fn completion_crash() -> Completion<'static> {
     Completion {
-        runner_id: "runner-crash",
-        attempt_id: "attempt-crash",
-        fencing_token: 1,
-        completion_id: "completion-1",
+        runner_id: ids::runner("runner-crash"),
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
+        completion_id: ids::completion("completion-1"),
         final_event_checkpoint: None,
         terminal_state: tack_protocol::execution::ExecutionState::Succeeded,
         terminal_reason: "completed",
@@ -531,7 +538,10 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
 async fn request_cancellation(fixture: &Fixture) -> Result<bool, StoreError> {
     fixture
         .repo
-        .request_execution_cancellation("request-crash", fixture.clock.now())
+        .request_execution_cancellation(
+            &ExecutionRequestId::new("request-crash"),
+            fixture.clock.now(),
+        )
         .await
 }
 
@@ -662,8 +672,8 @@ async fn enrollment_redeem_has_one_winner_and_keeps_hash_only_token() {
 
 fn crash_heartbeat_lease() -> [HeartbeatLease<'static>; 1] {
     [HeartbeatLease {
-        attempt_id: "attempt-crash",
-        fencing_token: 1,
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
         state: ExecutionState::Running,
         journal_state: "process_observed_running",
         last_event_checkpoint: None,
@@ -680,7 +690,7 @@ async fn crash_heartbeat(
     fixture
         .repo
         .heartbeat_batch(
-            "runner-crash",
+            &RunnerId::new("runner-crash"),
             "hb-crash-1",
             observed_at,
             0,

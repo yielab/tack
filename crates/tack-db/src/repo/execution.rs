@@ -23,3 +23,4 @@ pub use decisions::*;
 pub use enqueue::*;
 pub use events::*;
 pub use recovery::*;
+pub(crate) use shared::token_column;

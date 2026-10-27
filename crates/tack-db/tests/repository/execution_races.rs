@@ -9,6 +9,7 @@ use crate::repository::execution_fixture::{
     Fixture, cancellation_input, completion_input, count_where, recovery_input,
 };
 use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, Checkpoint, RunnerId, WorkspaceId};
 
 use chrono::Duration;
 use sqlx::Row;
@@ -136,11 +137,11 @@ async fn concurrent_duplicate_transitions_have_one_applied_writer() {
         .await
         .unwrap();
     let preparing = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-concurrent-transition",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-concurrent-transition"),
         fencing_token: lease.fencing_token,
         phase: AttemptTransitionPhase::Preparing,
-        workspace_id: "workspace-1",
+        workspace_id: &WorkspaceId::new("workspace-1"),
         base_revision: "abc123",
         process_id: None,
     };
@@ -451,11 +452,11 @@ async fn concurrent_duplicate_event_batches_have_one_writer() {
         occurred_at: fx.clock.now(),
     }];
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-concurrent-events",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-concurrent-events"),
         fencing_token: fence,
         previous_checkpoint: None,
-        checkpoint: "checkpoint-concurrent",
+        checkpoint: &Checkpoint::new("checkpoint-concurrent"),
     };
     let (a, b) = tokio::join!(
         fx.apply_events_result(batch.clone(), &events),

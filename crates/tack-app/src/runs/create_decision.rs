@@ -2,16 +2,18 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tack_db::repo::execution::NewDecision;
 use tack_db::{Repository, queries};
-use tack_protocol::execution::{ExecutionState, TransitionActor, validate_transition};
+use tack_protocol::execution::{
+    AttemptId, ExecutionState, FencingToken, RunnerId, TransitionActor, validate_transition,
+};
 use uuid::Uuid;
 
 use crate::AppError;
 
 /// A question an attempt asks the person while it waits.
 pub struct DecisionRequest<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
     /// The runner's own id for the question; the same id again is a replay.
     pub decision_id: &'a str,
     pub kind: &'a str,
@@ -109,7 +111,7 @@ pub async fn create_decision(
     // conflict; an exact replay answers with the row's own state and creation time.
     let stored = queries::execution_decisions::decision_of_attempt(
         repo,
-        request.attempt_id,
+        request.attempt_id.as_str(),
         request.decision_id,
     )
     .await?

@@ -864,6 +864,68 @@ async fn stale_and_expired_fence_write_nothing() {
 }
 
 // ---------------------------------------------------------------------
+// 2b. A fencing token the store cannot hold is malformed, not stale.
+// ---------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_negative_or_too_large_fencing_token_is_invalid_request_and_writes_nothing() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, _) = fx
+        .enqueue_and_claim("bad-fence-key", "claim-bad-fence")
+        .await;
+    let auth = format!("Bearer {RUNNER_CREDENTIAL}");
+
+    // The artifact upload carries its token in the X-Tack-Fencing-Token header.
+    for token in ["-1", "9223372036854775808", "18446744073709551615", "one"] {
+        let (status, body) = send(
+            &fx.app,
+            "PUT",
+            &format!("/attempts/{attempt_id}/artifacts/art-1/content"),
+            "bytes".to_owned(),
+            &[
+                ("authorization", auth.as_str()),
+                ("x-tack-fencing-token", token),
+            ],
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "header {token}: {body}");
+        assert_eq!(body["error"]["code"], "invalid_request", "header {token}");
+    }
+
+    // Every other write carries it in the body; a recovery observation stands for them. A
+    // negative or fractional number never deserializes into the typed request (field `body`);
+    // one above `i64::MAX` parses, and is refused as the `fencing_token` itself.
+    let bodies = [
+        (json!(-1), "body"),
+        (json!(1.5), "body"),
+        (json!(9_223_372_036_854_775_808_u64), "fencing_token"),
+    ];
+    for (token, field) in bodies {
+        let (status, body) = fx
+            .post(
+                &format!("/attempts/{attempt_id}/recovery-observation"),
+                json!({
+                    "protocol_version": 1, "runner_id": RUNNER_ID, "attempt_id": attempt_id,
+                    "fencing_token": token,
+                    "recovery_key": "recovery:bad-fence",
+                    "observation": "process_stopped",
+                    "details": {"journal_state": "prepared", "process_observed": false},
+                })
+                .to_string(),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "body {token}: {body}");
+        assert_eq!(body["error"]["code"], "invalid_request", "body {token}");
+        assert_eq!(body["error"]["details"]["field"], field, "body {token}");
+    }
+    assert_eq!(
+        fx.attempt_state(&attempt_id).await,
+        "leased",
+        "a refused request leaves the attempt as it was"
+    );
+}
+
+// ---------------------------------------------------------------------
 // 4. Oversized event batch writes nothing at all.
 // ---------------------------------------------------------------------
 

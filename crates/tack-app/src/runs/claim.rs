@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{ClaimedExecution, RequestSelection};
 use tack_orch::scheduler::SchedulingPolicy;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, RunnerId};
 use uuid::Uuid;
 
 use crate::AppError;
@@ -15,13 +16,13 @@ use crate::scheduler_wiring::choose_request_for_runner;
 pub async fn claim(
     repo: &Repository,
     now: DateTime<Utc>,
-    runner_id: &str,
-    claim_request_id: &str,
+    runner_id: &RunnerId,
+    claim_request_id: &ClaimRequestId,
     lease_duration: Duration,
 ) -> Result<Option<ClaimedExecution>, AppError> {
     let scheduled_request_id =
         choose_request_for_runner(repo, runner_id, now, &SchedulingPolicy::default()).await?;
-    let attempt_id = format!("att_{}", Uuid::new_v4());
+    let attempt_id = AttemptId::new(format!("att_{}", Uuid::new_v4()));
     let claimed = repo
         .claim_execution_idempotent_with_snapshot(
             runner_id,
@@ -29,7 +30,7 @@ pub async fn claim(
             &attempt_id,
             lease_duration,
             now,
-            RequestSelection::Scheduled(scheduled_request_id.as_deref()),
+            RequestSelection::Scheduled(scheduled_request_id.as_ref()),
         )
         .await?;
     let Some(mut claimed) = claimed else {

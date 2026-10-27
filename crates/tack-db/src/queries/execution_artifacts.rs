@@ -1,6 +1,6 @@
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken, RunnerId};
 
-use crate::repo::execution::{ExecutionArtifactRow, state};
+use crate::repo::execution::{ExecutionArtifactRow, state, token_column};
 use crate::{Repository, StoreError};
 
 /// Every artifact manifested for one attempt, identified by its request id and
@@ -105,10 +105,10 @@ pub struct UploadFacts {
 /// fence does not match: every mismatch looks the same, so a caller cannot probe which was wrong.
 pub async fn upload_facts(
     repo: &Repository,
-    attempt_id: &str,
+    attempt_id: &AttemptId,
     artifact_id: &str,
-    runner_id: &str,
-    fencing_token: i64,
+    runner_id: &RunnerId,
+    fencing_token: FencingToken,
 ) -> Result<Option<UploadFacts>, StoreError> {
     type Row = (String, i64, Option<String>, Option<String>, String, String);
     let row: Option<Row> = sqlx::query_as(
@@ -118,10 +118,10 @@ pub async fn upload_facts(
          JOIN execution_attempts eat ON eat.id = ea.attempt_id \
          WHERE ea.attempt_id = ? AND ea.artifact_id = ? AND eat.runner_id = ? AND eat.fencing_token = ?",
     )
-    .bind(attempt_id)
+    .bind(attempt_id.as_str())
     .bind(artifact_id)
-    .bind(runner_id)
-    .bind(fencing_token)
+    .bind(runner_id.as_str())
+    .bind(token_column(fencing_token)?)
     .fetch_optional(repo.pool())
     .await?;
     row.map(

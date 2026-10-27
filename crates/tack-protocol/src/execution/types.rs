@@ -107,6 +107,16 @@ impl<'de> Deserialize<'de> for ProtocolVersion {
 #[serde(transparent)]
 pub struct FencingToken(pub u64);
 
+impl FencingToken {
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// Runner protocol v1's execution state vocabulary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

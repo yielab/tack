@@ -1,9 +1,11 @@
 //! Events: a runner's batches of events are appended once, read back per attempt, and purged with the replay bookkeeping.
 
+use super::shared::token_column;
 use super::state;
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
+use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
 use tracing::instrument;
 
 use crate::Repository;
@@ -22,11 +24,11 @@ pub struct NewEvent<'a> {
 
 #[derive(Debug, Clone)]
 pub struct EventBatch<'a> {
-    pub runner_id: &'a str,
-    pub attempt_id: &'a str,
-    pub fencing_token: i64,
-    pub previous_checkpoint: Option<&'a str>,
-    pub checkpoint: &'a str,
+    pub runner_id: &'a RunnerId,
+    pub attempt_id: &'a AttemptId,
+    pub fencing_token: FencingToken,
+    pub previous_checkpoint: Option<&'a Checkpoint>,
+    pub checkpoint: &'a Checkpoint,
 }
 
 /// One row of `GET /api/executions/{request_id}/attempts/{attempt_number}/events`.
@@ -61,7 +63,7 @@ pub struct PurgeStats {
 pub struct EventBatchResult {
     pub accepted_event_ids: Vec<String>,
     pub duplicate_event_ids: Vec<String>,
-    pub committed_checkpoint: String,
+    pub committed_checkpoint: Checkpoint,
     pub replayed: bool,
 }
 
@@ -103,9 +105,9 @@ fn event_batch_fingerprint(
         })
         .collect();
     serde_json::to_string(&serde_json::json!({
-        "runner_id": batch.runner_id,
-        "fencing_token": batch.fencing_token,
-        "previous_checkpoint": batch.previous_checkpoint,
+        "runner_id": batch.runner_id.as_str(),
+        "fencing_token": batch.fencing_token.get(),
+        "previous_checkpoint": batch.previous_checkpoint.map(Checkpoint::as_str),
         "events": values?,
     }))
     .map_err(|error| StoreError::malformed(error.to_string()))
@@ -164,6 +166,15 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<EventApplyResult, StoreError> {
         let now = now.to_rfc3339();
+        let (runner, attempt, fencing_token) = (
+            batch.runner_id.as_str(),
+            batch.attempt_id.as_str(),
+            token_column(batch.fencing_token)?,
+        );
+        let (checkpoint, previous) = (
+            batch.checkpoint.as_str(),
+            batch.previous_checkpoint.map(Checkpoint::as_str),
+        );
         let fingerprint = event_batch_fingerprint(&batch, events)?;
         // Serialize duplicate/replayed event batches for the same attempt
         // (e.g. a runner retrying an unacknowledged event-batch POST) before
@@ -173,7 +184,7 @@ impl Repository {
         // claim_execution_idempotent_with_snapshot fixes above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let row = sqlx::query(state::sql("SELECT event_checkpoint FROM execution_attempts WHERE id=? AND runner_id=? AND fencing_token=? AND state IN ({held}) AND lease_expires_at>?"))
-            .bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
+            .bind(attempt).bind(runner).bind(fencing_token).bind(&now).fetch_optional(&mut *tx).await?;
         let Some(row) = row else {
             tx.commit().await?;
             return Ok(EventApplyResult::Stale);
@@ -181,8 +192,8 @@ impl Repository {
         if let Some(row) = sqlx::query(
             "SELECT fingerprint,response FROM execution_event_batch_replays WHERE attempt_id=? AND checkpoint=?",
         )
-        .bind(batch.attempt_id)
-        .bind(batch.checkpoint)
+        .bind(attempt)
+        .bind(checkpoint)
         .fetch_optional(&mut *tx)
         .await?
         {
@@ -222,19 +233,19 @@ impl Repository {
             return Ok(EventApplyResult::Applied(EventBatchResult {
                 accepted_event_ids: accepted,
                 duplicate_event_ids: duplicate,
-                committed_checkpoint: batch.checkpoint.into(),
+                committed_checkpoint: batch.checkpoint.clone(),
                 replayed: true,
             }));
         }
         let current: Option<String> = row.get("event_checkpoint");
-        if current.as_deref() == Some(batch.checkpoint) {
+        if current.as_deref() == Some(checkpoint) {
             // Legacy pre-054 attempt whose checkpoint already advanced but has
             // no replay row: no fingerprint to compare, so this is not proven
             // to be a reused key with different content. Benign/retryable.
             tx.commit().await?;
             return Ok(EventApplyResult::Conflict);
         }
-        if current.as_deref() != batch.previous_checkpoint {
+        if current.as_deref() != previous {
             // The batch's claimed previous_checkpoint no longer matches the
             // attempt's actual stream position: a benign out-of-order resync,
             // not an idempotency-key reuse. Retryable once the caller re-syncs.
@@ -247,18 +258,18 @@ impl Repository {
             let exists: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM execution_events WHERE attempt_id=? AND event_id=?)",
             )
-            .bind(batch.attempt_id)
+            .bind(attempt)
             .bind(event.event_id)
             .fetch_one(&mut *tx)
             .await?;
             if exists {
                 duplicate.push(event.event_id.into())
             } else {
-                sqlx::query("INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(event.id).bind(batch.attempt_id).bind(event.event_id).bind(event.sequence).bind(event.source).bind(event.kind).bind(event.payload).bind(event.occurred_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
+                sqlx::query("INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(event.id).bind(attempt).bind(event.event_id).bind(event.sequence).bind(event.source).bind(event.kind).bind(event.payload).bind(event.occurred_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
                 accepted.push(event.event_id.into())
             }
         }
-        let changed=sqlx::query("UPDATE execution_attempts SET event_checkpoint=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ?").bind(batch.checkpoint).bind(&now).bind(batch.attempt_id).bind(batch.runner_id).bind(batch.fencing_token).bind(batch.previous_checkpoint).execute(&mut *tx).await?;
+        let changed=sqlx::query("UPDATE execution_attempts SET event_checkpoint=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ?").bind(checkpoint).bind(&now).bind(attempt).bind(runner).bind(fencing_token).bind(previous).execute(&mut *tx).await?;
         if changed.rows_affected() != 1 {
             // Defensive: near-unreachable under the BEGIN IMMEDIATE this
             // function already opens, but a lost compare-and-set is a
@@ -269,11 +280,11 @@ impl Repository {
         let result = EventBatchResult {
             accepted_event_ids: accepted,
             duplicate_event_ids: duplicate,
-            committed_checkpoint: batch.checkpoint.into(),
+            committed_checkpoint: batch.checkpoint.clone(),
             replayed: false,
         };
         let response=serde_json::json!({"accepted_event_ids":result.accepted_event_ids,"duplicate_event_ids":result.duplicate_event_ids}).to_string();
-        sqlx::query("INSERT INTO execution_event_batch_replays(attempt_id,checkpoint,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(batch.attempt_id).bind(batch.checkpoint).bind(fingerprint).bind(response).bind(&now).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO execution_event_batch_replays(attempt_id,checkpoint,fingerprint,response,created_at) VALUES(?,?,?,?,?)").bind(attempt).bind(checkpoint).bind(fingerprint).bind(response).bind(&now).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(EventApplyResult::Applied(result))
     }

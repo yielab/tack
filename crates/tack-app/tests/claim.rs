@@ -2,6 +2,7 @@
 //! `claim_request_id`, and a runner with nothing eligible gets no lease.
 
 use crate::common;
+use tack_protocol::execution::{ClaimRequestId, ExecutionRequestId, RunnerId};
 
 use chrono::Duration;
 use common::{RUNNER_ID, enqueue, world};
@@ -20,8 +21,8 @@ async fn no_queued_request_means_no_lease() {
     let claimed = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-empty",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-empty"),
         LEASE,
     )
     .await
@@ -38,16 +39,19 @@ async fn a_queued_request_is_leased_to_the_runner_and_uses_one_slot() {
     let claimed = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-one",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-one"),
         LEASE,
     )
     .await
     .expect("claim")
     .expect("work");
 
-    assert_eq!(claimed.lease.request_id, request_id);
-    assert_eq!(claimed.lease.runner_id, RUNNER_ID);
+    assert_eq!(
+        claimed.lease.request_id,
+        ExecutionRequestId::new(request_id.clone())
+    );
+    assert_eq!(claimed.lease.runner_id, RunnerId::new(RUNNER_ID));
     assert_eq!(
         execution_requests::request_state(&world.repo, &request_id)
             .await
@@ -71,8 +75,8 @@ async fn the_same_claim_request_id_returns_the_same_lease_and_takes_no_second_sl
     let first = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-replay",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-replay"),
         LEASE,
     )
     .await
@@ -81,8 +85,8 @@ async fn the_same_claim_request_id_returns_the_same_lease_and_takes_no_second_sl
     let replay = claim(
         &world.repo,
         world.clock.now(),
-        RUNNER_ID,
-        "claim-replay",
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-replay"),
         LEASE,
     )
     .await
@@ -106,15 +110,27 @@ async fn a_runner_with_no_free_capacity_gets_no_lease() {
     enqueue(&world, "b").await;
     enqueue(&world, "c").await;
     for id in ["claim-a", "claim-b"] {
-        claim(&world.repo, world.clock.now(), RUNNER_ID, id, LEASE)
-            .await
-            .expect("claim")
-            .expect("work");
+        claim(
+            &world.repo,
+            world.clock.now(),
+            &RunnerId::new(RUNNER_ID),
+            &ClaimRequestId::new(id),
+            LEASE,
+        )
+        .await
+        .expect("claim")
+        .expect("work");
     }
 
-    let third = claim(&world.repo, world.clock.now(), RUNNER_ID, "claim-c", LEASE)
-        .await
-        .expect("claim");
+    let third = claim(
+        &world.repo,
+        world.clock.now(),
+        &RunnerId::new(RUNNER_ID),
+        &ClaimRequestId::new("claim-c"),
+        LEASE,
+    )
+    .await
+    .expect("claim");
 
     assert!(third.is_none());
 }
@@ -170,17 +186,29 @@ async fn a_docket_claim_carries_only_the_level_a_person_asked_for() {
             seed::execution_request_autonomy(repo, &request_id, asked).await;
         }
 
-        let claimed = claim(repo, world.clock.now(), RUNNER_ID, "claim-level", LEASE)
-            .await
-            .expect("claim")
-            .expect("work");
+        let claimed = claim(
+            repo,
+            world.clock.now(),
+            &RunnerId::new(RUNNER_ID),
+            &ClaimRequestId::new("claim-level"),
+            LEASE,
+        )
+        .await
+        .expect("claim")
+        .expect("work");
         let sent = claimed.request_snapshot["autonomy"].as_str();
         assert_eq!(sent, expected, "{harness} {level} {team:?} {asked:?}");
         // A replay says the same.
-        let replay = claim(repo, world.clock.now(), RUNNER_ID, "claim-level", LEASE)
-            .await
-            .expect("claim")
-            .expect("work");
+        let replay = claim(
+            repo,
+            world.clock.now(),
+            &RunnerId::new(RUNNER_ID),
+            &ClaimRequestId::new("claim-level"),
+            LEASE,
+        )
+        .await
+        .expect("claim")
+        .expect("work");
         assert_eq!(replay.request_snapshot["autonomy"].as_str(), expected);
     }
 }

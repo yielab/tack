@@ -3,6 +3,7 @@
 
 use crate::support;
 use tack_protocol::Clock;
+use tack_protocol::execution::{ExecutionRequestId, RecoveryKey};
 
 use chrono::Utc;
 use support::{board, full_request, start};
@@ -11,7 +12,7 @@ use tack_app::runs::requeue::requeue;
 use tack_db::queries;
 use tack_protocol::SystemClock;
 use tack_protocol::execution::ExecutionState;
-use tack_test_support::seed;
+use tack_test_support::{ids, seed};
 
 #[tokio::test]
 async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
@@ -35,8 +36,8 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
     let denied = requeue(
         &board.repo,
         SystemClock.now(),
-        &request_id,
-        "operator-recovery-1",
+        &ExecutionRequestId::new(&request_id),
+        &RecoveryKey::new("operator-recovery-1"),
         "operator reviewed",
         "operator-1",
     )
@@ -62,8 +63,8 @@ async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
     let allowed = requeue(
         &board.repo,
         SystemClock.now(),
-        &request_id,
-        "operator-recovery-1",
+        &ExecutionRequestId::new(&request_id),
+        &RecoveryKey::new("operator-recovery-1"),
         "operator reviewed",
         "operator-1",
     )
@@ -116,8 +117,8 @@ async fn the_same_confirmation_replays_and_another_reason_under_the_key_conflict
         requeue(
             &board.repo,
             SystemClock.now(),
-            &request_id,
-            "operator-recovery-1",
+            ids::execution_request(&request_id),
+            ids::recovery_key("operator-recovery-1"),
             reason,
             "operator-1",
         )
@@ -138,8 +139,8 @@ async fn a_run_with_no_attempt_cannot_be_requeued_and_names_an_unknown_state() {
     let denied = requeue(
         &board.repo,
         SystemClock.now(),
-        &started.request_id,
-        "key",
+        &ExecutionRequestId::new(&started.request_id),
+        &RecoveryKey::new("key"),
         "reason",
         "operator-1",
     )

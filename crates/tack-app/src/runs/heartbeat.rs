@@ -1,23 +1,23 @@
 use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{HeartbeatBatchResponse, HeartbeatBatchResult, HeartbeatLease};
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, Checkpoint, ExecutionState, FencingToken, RunnerId};
 
 use crate::AppError;
 
 /// One lease a runner says it holds, as it reports it in a heartbeat.
 #[derive(Debug, Clone)]
 pub struct ReportedLease {
-    pub attempt_id: String,
-    pub fencing_token: i64,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
     pub state: ExecutionState,
     pub journal_state: String,
-    pub last_event_checkpoint: Option<String>,
+    pub last_event_checkpoint: Option<Checkpoint>,
 }
 
 /// A runner's heartbeat as it sent it.
 pub struct Beat<'a> {
-    pub runner_id: &'a str,
+    pub runner_id: &'a RunnerId,
     pub heartbeat_id: &'a str,
     pub sent_at: DateTime<Utc>,
     pub available_capacity: i64,
@@ -35,7 +35,9 @@ pub enum Heartbeat {
     /// `heartbeat_id` was already used with different content.
     IdempotencyConflict,
     /// A reported lease is no longer the runner's; names its attempt.
-    StaleLease(String),
+    StaleLease(AttemptId),
+    /// The runner is revoked or was never enrolled, so it holds nothing.
+    RunnerNotActive,
 }
 
 /// Records a runner's heartbeat: its free capacity and the leases it still holds, each extended
@@ -53,7 +55,7 @@ pub async fn heartbeat(
             fencing_token: lease.fencing_token,
             state: lease.state,
             journal_state: &lease.journal_state,
-            last_event_checkpoint: lease.last_event_checkpoint.as_deref(),
+            last_event_checkpoint: lease.last_event_checkpoint.as_ref(),
         })
         .collect();
     let result = repo
@@ -72,5 +74,6 @@ pub async fn heartbeat(
         HeartbeatBatchResult::Replayed(response) => Heartbeat::Replayed(response),
         HeartbeatBatchResult::Conflict => Heartbeat::IdempotencyConflict,
         HeartbeatBatchResult::StaleLease(attempt_id) => Heartbeat::StaleLease(attempt_id),
+        HeartbeatBatchResult::RunnerNotActive => Heartbeat::RunnerNotActive,
     })
 }

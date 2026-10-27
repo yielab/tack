@@ -2,6 +2,7 @@
 //! (pre-`request_snapshot`) schema-quarantine migration.
 
 use crate::repository::execution_fixture::{FakeClock, Fixture, request};
+use tack_protocol::execution::{AttemptId, ClaimRequestId, ExecutionRequestId, RunnerId};
 
 use chrono::Duration;
 use tack_db::{
@@ -269,9 +270,9 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
     .unwrap();
     let claimed = repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-a",
-            "claim-legacy-valid",
-            "attempt-legacy-valid",
+            &RunnerId::new("runner-a"),
+            &ClaimRequestId::new("claim-legacy-valid"),
+            &AttemptId::new("attempt-legacy-valid"),
             Duration::seconds(60),
             clock.now(),
             RequestSelection::Naive,
@@ -279,7 +280,10 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
         .await
         .unwrap()
         .expect("the later valid queued row remains claimable");
-    assert_eq!(claimed.lease.request_id, "legacy-valid");
+    assert_eq!(
+        claimed.lease.request_id,
+        ExecutionRequestId::new("legacy-valid")
+    );
 }
 
 #[tokio::test]

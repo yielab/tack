@@ -1,6 +1,7 @@
 //! Structured event batch replay under a claimed attempt's fence.
 
 use crate::repository::execution_fixture::Fixture;
+use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
 
 use chrono::Duration;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, NewEvent};
@@ -20,11 +21,11 @@ async fn structured_events_replay_is_applied_once() {
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-z",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-z"),
         fencing_token: lease.fencing_token,
         previous_checkpoint: None,
-        checkpoint: "checkpoint-z",
+        checkpoint: &Checkpoint::new("checkpoint-z"),
     };
     let first = fx
         .apply_events(batch.clone(), std::slice::from_ref(&event))
@@ -51,11 +52,11 @@ async fn event_replay_canonicalizes_equivalent_json_payloads() {
         .await
         .unwrap();
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-canonical",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-canonical"),
         fencing_token: lease.fencing_token,
         previous_checkpoint: None,
-        checkpoint: "checkpoint-canonical",
+        checkpoint: &Checkpoint::new("checkpoint-canonical"),
     };
     let initial = NewEvent {
         id: "row-canonical",
@@ -97,11 +98,11 @@ async fn event_replay_changed_payload_is_idempotency_conflict() {
         .await
         .unwrap();
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-conflict",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-conflict"),
         fencing_token: lease.fencing_token,
         previous_checkpoint: None,
-        checkpoint: "checkpoint-conflict",
+        checkpoint: &Checkpoint::new("checkpoint-conflict"),
     };
     let initial = NewEvent {
         id: "row-conflict",
@@ -148,11 +149,11 @@ async fn event_replay_out_of_order_checkpoint_is_benign_conflict() {
         .await
         .unwrap();
     let out_of_order = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-conflict",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-conflict"),
         fencing_token: lease.fencing_token,
-        previous_checkpoint: Some("not-the-current-checkpoint"),
-        checkpoint: "checkpoint-conflict-2",
+        previous_checkpoint: Some(&Checkpoint::new("not-the-current-checkpoint")),
+        checkpoint: &Checkpoint::new("checkpoint-conflict-2"),
     };
     let next = NewEvent {
         id: "row-conflict-next",
@@ -183,11 +184,11 @@ async fn event_replay_foreign_fence_is_stale_and_does_not_write() {
         .await
         .unwrap();
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-stale",
-        fencing_token: lease.fencing_token + 1,
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-stale"),
+        fencing_token: FencingToken::new(lease.fencing_token.get() + 1),
         previous_checkpoint: None,
-        checkpoint: "checkpoint-stale",
+        checkpoint: &Checkpoint::new("checkpoint-stale"),
     };
     let event = NewEvent {
         id: "row-stale",
@@ -225,11 +226,11 @@ async fn event_replay_is_idempotent_under_one_fence() {
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-a",
-        fencing_token: 1,
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-a"),
+        fencing_token: FencingToken::new(1),
         previous_checkpoint: None,
-        checkpoint: "checkpoint-1",
+        checkpoint: &Checkpoint::new("checkpoint-1"),
     };
     assert!(matches!(
         fx.apply_events(batch.clone(), std::slice::from_ref(&event)).await,

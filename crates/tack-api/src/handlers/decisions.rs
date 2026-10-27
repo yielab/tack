@@ -34,7 +34,7 @@ use tack_app::{AppError, runs};
 use tack_core::decision::DecisionResolvedBy;
 use tack_db::Repository;
 use tack_protocol::Clock;
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::{AttemptId, ProtocolErrorEnvelope, StableErrorCode};
 use utoipa::ToSchema;
 
 use crate::middleware::constant_time_eq;
@@ -278,7 +278,7 @@ fn validate_answer(value: &Value) -> Result<Value, (StatusCode, Json<Value>)> {
 pub async fn mark_decision_viewed(
     State(state): State<DecisionOperatorState>,
     headers: HeaderMap,
-    Path((attempt_id, decision_id)): Path<(String, String)>,
+    Path((attempt_id, decision_id)): Path<(AttemptId, String)>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     principal(&headers)?;
     let viewed_at = runs::mark_decision_viewed::mark_decision_viewed(
@@ -306,7 +306,7 @@ pub async fn mark_decision_viewed(
 pub async fn resolve_decision(
     State(state): State<DecisionOperatorState>,
     headers: HeaderMap,
-    Path((attempt_id, decision_id)): Path<(String, String)>,
+    Path((attempt_id, decision_id)): Path<(AttemptId, String)>,
     body: Bytes,
 ) -> Result<Json<ResolveDecisionResponse>, (StatusCode, Json<Value>)> {
     require_decision_token(&state, &headers)?;
