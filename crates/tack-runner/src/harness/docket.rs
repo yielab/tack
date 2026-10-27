@@ -299,10 +299,9 @@ impl DocketAdapter {
         if let Some(team) = Self::named_team(spec) {
             return Ok(team);
         }
-        let repository = spec
-            .work
-            .workspace_repository()
-            .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
+        let repository = spec.work.workspace_repository().map_err(|error| {
+            rejected(format!("the claim's repository facts disagree ({error})"))
+        })?;
         Ok(default_pod(
             repository
                 .repository_path
@@ -359,7 +358,7 @@ impl DocketAdapter {
             ])
             .output()
             .await
-            .map_err(|_| "git could not be run".to_owned())?;
+            .map_err(|error| format!("git could not be run ({})", error.kind()))?;
         let head = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         if output.status.success() && !head.is_empty() {
             Ok(head)
@@ -1010,10 +1009,9 @@ impl HarnessProbe for DocketAdapter {
 #[async_trait]
 impl HarnessAdapter for DocketAdapter {
     async fn validate(&self, spec: &ExecutionSpec) -> Result<(), HarnessError> {
-        let repository = spec
-            .work
-            .workspace_repository()
-            .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
+        let repository = spec.work.workspace_repository().map_err(|error| {
+            rejected(format!("the claim's repository facts disagree ({error})"))
+        })?;
         if repository.workspace_mode != crate::client::WorkspaceMode::Repository {
             return Err(rejected(WRONG_WORKSPACE.to_owned()));
         }
@@ -1043,10 +1041,9 @@ impl HarnessAdapter for DocketAdapter {
         let request = &spec.work.request;
         let attempt_id = spec.work.lease.attempt_id.as_str().to_owned();
         let pod = Self::team(spec)?;
-        let repository = spec
-            .work
-            .workspace_repository()
-            .map_err(|_| rejected("the claim's repository facts disagree".to_owned()))?;
+        let repository = spec.work.workspace_repository().map_err(|error| {
+            rejected(format!("the claim's repository facts disagree ({error})"))
+        })?;
         let location = repository
             .repository_path
             .as_deref()

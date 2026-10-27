@@ -175,6 +175,9 @@ pub enum JournalError {
     Serialization,
     #[error("runner journal is malformed")]
     Malformed,
+    /// The journal's directory could not be created or made owner-only; the kind says how.
+    #[error("runner journal could not be initialized: {0}")]
+    Layout(IoKind),
     /// A file operation failed; the kind says how and nothing else of it.
     #[error("runner journal operation failed: {0}")]
     Io(IoKind),
@@ -218,7 +221,11 @@ impl OwnerOnlyJournal {
         if self.quarantine_path(&record.attempt_id).exists() {
             return Err(JournalError::AlreadyExists);
         }
-        let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
+        let bytes = toml::to_string(record).map_err(|error| {
+            // The serializer's messages are fixed texts; none of them carries a field's value.
+            tracing::warn!(%error, "runner journal record could not be serialized");
+            JournalError::Serialization
+        })?;
         atomic_create_private(&self.journal_path(&record.attempt_id), bytes.as_bytes())
     }
 
@@ -235,7 +242,11 @@ impl OwnerOnlyJournal {
         if !path.exists() {
             return Err(JournalError::Missing);
         }
-        let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
+        let bytes = toml::to_string(record).map_err(|error| {
+            // The serializer's messages are fixed texts; none of them carries a field's value.
+            tracing::warn!(%error, "runner journal record could not be serialized");
+            JournalError::Serialization
+        })?;
         atomic_replace_private(&path, bytes.as_bytes())
     }
 
@@ -300,8 +311,11 @@ impl OwnerOnlyJournal {
                 JournalError::from(error)
             }
         })?;
-        let record: AttemptJournal =
-            toml::from_str(&contents).map_err(|_| JournalError::Malformed)?;
+        let record: AttemptJournal = toml::from_str(&contents).map_err(|error| {
+            // The parser's message quotes the offending line, so only the position is logged.
+            tracing::warn!(span = ?error.span(), "runner journal record is not valid TOML");
+            JournalError::Malformed
+        })?;
         let expected_name = format!("{}.toml", encode_id(record.attempt_id.as_str()));
         if path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str()) {
             return Err(JournalError::Malformed);
@@ -337,11 +351,11 @@ fn create_secure_directory(path: &Path) -> Result<(), JournalError> {
         }
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir(path).map_err(|_| JournalError::Initialization)?;
+            fs::create_dir(path).map_err(|error| JournalError::Layout(IoKind(error.kind())))?;
         }
-        Err(_) => return Err(JournalError::Initialization),
+        Err(error) => return Err(JournalError::Layout(IoKind(error.kind()))),
     }
-    make_owner_only(path).map_err(|_| JournalError::Initialization)
+    make_owner_only(path).map_err(|error| JournalError::Layout(IoKind(error.kind())))
 }
 
 fn encode_id(value: &str) -> String {

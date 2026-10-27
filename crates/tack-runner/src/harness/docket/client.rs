@@ -78,8 +78,8 @@ impl Client {
         query: &[(&str, &str)],
         body: Option<Value>,
     ) -> Result<Reply, String> {
-        let mut url =
-            Url::parse(&self.base).map_err(|_| "the docket URL is not valid".to_owned())?;
+        let mut url = Url::parse(&self.base)
+            .map_err(|error| format!("the docket URL is not valid ({error})"))?;
         url.path_segments_mut()
             .map_err(|()| "the docket URL cannot carry a path".to_owned())?
             .extend(segments);

@@ -248,11 +248,11 @@ async fn run(checkout: &Path, command: &str, timeout: Duration) -> Result<(), Pr
     let process = spec
         .spawn()
         .await
-        .map_err(|_| failed("could not be started".to_owned(), ""))?;
+        .map_err(|error| failed(format!("could not be started ({error})"), ""))?;
     let result = process
         .wait_with_capture(&limits, &SecretMaterial::new())
         .await
-        .map_err(|_| failed("could not be followed".to_owned(), ""))?;
+        .map_err(|error| failed(format!("could not be followed ({error})"), ""))?;
     let output = format!("{}\n{}", result.stdout.text, result.stderr.text);
     match result.exit {
         ProcessExit::Exited(0) => Ok(()),

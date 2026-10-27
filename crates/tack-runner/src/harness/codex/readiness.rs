@@ -96,8 +96,11 @@ fn parse_models(listing: &CommandOutcome, command: &str) -> Result<Vec<String>, 
         CommandOutcome::TimedOut => return Err(format!("`{command}` timed out")),
         CommandOutcome::Failed(why) => return Err(format!("`{command}` {why}")),
     };
-    let value: serde_json::Value = serde_json::from_str(stdout)
-        .map_err(|_| format!("`{command}` printed nothing readable"))?;
+    let value: serde_json::Value = serde_json::from_str(stdout).map_err(|error| {
+        // The output can hold account details, so only the JSON category is logged.
+        tracing::warn!(category = ?error.classify(), "command output is not JSON");
+        format!("`{command}` printed nothing readable")
+    })?;
     let entries = value["models"]
         .as_array()
         .ok_or_else(|| format!("`{command}` printed nothing readable"))?;

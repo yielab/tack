@@ -247,6 +247,8 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The runner's remaining failures say what kind of failure they were.** The process supervisor, the artifact stager, the verifier, the secret store, the journal's setup, the workspace and git path checks, the docket and protocol helpers and the log filter used to fail with a bare word or a dropped error; they now name the kind (a file's kind, a JSON error's category, a spawn or pipe failure). The operating system's text, secrets and file contents are still never kept or logged.
+
 - **The claim, heartbeat, event-batch and completion messages are one set of types.** `tack-protocol` now defines
   them, and the board and the runner both read and write those types instead of building and picking apart JSON by
   hand, so the shape of `claim`, `heartbeat`, `event-batch` and `completion` fixtures is written once and a test
