@@ -9,6 +9,7 @@ import RolesPanel from './RolesPanel';
 import DataPanel from './DataPanel';
 import ProjectSettings from '../ProjectSettings';
 import AutomationPanel from './AutomationPanel';
+import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import { flush } from '../../../test/flush';
 
@@ -257,6 +258,22 @@ describe('Settings panels', () => {
     go('/?tab=nonsense');
     await flush();
     expect(active()).toBe('General');
+  });
+
+  it('automation_panel_keeps_buttons_out_of_its_folded_headings', async () => {
+    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
+    const { container } = mount(() => <AutomationPanel />);
+    await flush();
+    await flush();
+    const summaries = Array.from(container.querySelectorAll('summary'));
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const summary of summaries) {
+      expect(summary.querySelector('button, a, input, select'), summary.textContent ?? '').toBeNull();
+    }
+    const how = Array.from(container.querySelectorAll('details')).find((d) =>
+      d.querySelector('summary')?.textContent?.includes('How the agent works on it'),
+    )!;
+    expect(how.querySelector('p')?.textContent).toContain(HELP.howTheAgentWorks.text);
   });
 
   it('automation_panel_saves_each_field_on_change', async () => {

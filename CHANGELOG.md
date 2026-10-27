@@ -374,6 +374,7 @@ automation a template carries, and the removal of dollars per day.
   in each change, and a release's notes are its section here.
 
 ### Fixed
+- A `(?)` help button no longer sits inside a folded heading: the help of "How the agent works on it" and "For the agent" is a line in the opened section, every `(?)` is at least 24 pixels wide, and the radio buttons of where the code lives are big enough to hit, so a keyboard or screen-reader user no longer meets a button inside a button.
 
 - **The "No role" row of Settings → Automation counts the project's default profile.** The page listed only the teams of
   the project's roles, so a task with no role, which runs with the default profile, showed no team state and its team

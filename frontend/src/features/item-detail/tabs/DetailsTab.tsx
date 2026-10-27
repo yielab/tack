@@ -8,7 +8,7 @@ import type {
   BriefRisk,
   ItemBrief,
 } from '../../../shared/api/briefs';
-import { Button, Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
+import { Button, Field, FieldShell, HelpHint, HelpNote, Select } from '../../../shared/ui';
 import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import type { Item } from '../../../shared/types';
@@ -533,7 +533,6 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
       <details class="rounded-[28px] p-5" style={panelStyle}>
         <summary class="cursor-pointer text-lg" style={{ color: 'var(--color-text-primary)' }}>
           For the agent
-          <HelpHint label="For the agent" help={HELP.forTheAgent} />
           <Show when={agentSummary()}>
             <span class="ml-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               {agentSummary()}
@@ -541,6 +540,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
           </Show>
         </summary>
         <div class="mt-3 space-y-4">
+          <HelpNote help={HELP.forTheAgent} />
           <div class="space-y-3">
             <h4 class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
               Checks a machine runs

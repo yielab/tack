@@ -57,7 +57,7 @@ export const HelpHint: Component<{ label?: string; help: FieldHelp }> = (props) 
         aria-expanded={open()}
         title={props.help.text}
         onClick={() => setOpen(!open())}
-        class="text-xs"
+        class="inline-flex min-h-6 min-w-6 items-center justify-center text-xs"
         style={{ color: 'var(--color-text-tertiary)', cursor: 'pointer' }}
       >
         (?)
@@ -84,6 +84,19 @@ export const HelpHint: Component<{ label?: string; help: FieldHelp }> = (props) 
     </span>
   );
 };
+
+/** A help text shown in the page, for a place a `(?)` button cannot go: a button inside a `<summary>` is nested. */
+export const HelpNote: Component<{ help: FieldHelp }> = (props) => (
+  <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+    {props.help.text}
+    <Show when={props.help.href}>
+      {' '}
+      <a href={props.help.href} target="_blank" rel="noreferrer" class="underline">
+        More
+      </a>
+    </Show>
+  </p>
+);
 
 export interface FieldShellProps {
   help?: FieldHelp;

@@ -7,7 +7,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, HelpHint, LoadError, Select } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, type FieldHelp } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
@@ -33,23 +33,26 @@ function checkSentence(r: FolderCheck): string {
 }
 
 /** A settings section folded into one line until opened: the heading, then what it is set to. */
-const Fold = (props: { id?: string; title: string; summary: string; help?: JSX.Element; children: JSX.Element }) => (
+const Fold = (props: { id?: string; title: string; summary: string; help?: FieldHelp; children: JSX.Element }) => (
   <details id={props.id} class={SECTION}>
-    <summary class="cursor-pointer">
+    <summary class="min-h-6 cursor-pointer">
       {/* The summary itself stays `display: list-item`: a flex summary loses its disclosure marker. */}
       <span class="inline-flex flex-wrap items-center gap-2 align-middle">
         <Heading>{props.title}</Heading>
-        {props.help}
         <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
       </span>
     </summary>
-    <div class="mt-2.5 flex flex-col gap-2.5">{props.children}</div>
+    <div class="mt-2.5 flex flex-col gap-2.5">
+      {/* The help sits in the body: a button inside the summary would be interactive inside interactive. */}
+      <Show when={props.help}>{(help) => <HelpNote help={help()} />}</Show>
+      {props.children}
+    </div>
   </details>
 );
 
 const Radio = (props: { name: string; checked: boolean; onChange: () => void; children: JSX.Element }) => (
   <label class="flex cursor-pointer items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-    <input type="radio" name={props.name} checked={props.checked} onChange={props.onChange} />
+    <input type="radio" class="size-6" name={props.name} checked={props.checked} onChange={props.onChange} />
     {props.children}
   </label>
 );
@@ -159,7 +162,7 @@ const AutomationPanel: Component = () => {
             No code yet
           </Radio>
           <details open={origin() === 'url'}>
-            <summary class="cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
+            <summary class="min-h-6 cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
             <Radio name="code-origin" checked={origin() === 'url'} onChange={() => void save({ code_origin: 'url' })}>
               A repository URL, cloned per run
             </Radio>
@@ -212,7 +215,7 @@ const AutomationPanel: Component = () => {
         </Show>
       </Fold>
 
-      <Fold title="How the agent works on it" summary={howSummary()} help={<HelpHint label="How the agent works" help={HELP.howTheAgentWorks} />}>
+      <Fold title="How the agent works on it" summary={howSummary()} help={HELP.howTheAgentWorks}>
         <Show
           when={origin() !== 'none'}
           fallback={
@@ -232,7 +235,7 @@ const AutomationPanel: Component = () => {
               In the folder, directly
             </Radio>
             <details open={mode() === 'clone'}>
-              <summary class="cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
+              <summary class="min-h-6 cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
               <Radio name="workspace-mode" checked={mode() === 'clone'} onChange={() => void save({ workspace_mode: 'clone' })}>
                 A fresh clone per run
               </Radio>
