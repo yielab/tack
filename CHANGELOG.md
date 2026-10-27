@@ -375,6 +375,9 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The pack card says whether the pack is signed.** It showed the verdict, the criteria and the review but never
+  that the verifier had signed the pack. It now reads "Signed by the verifier" with the fingerprint of what was
+  signed, or "Not signed" when the pack carries no signature.
 - **The board can record a pack in prill's store.** `prill record mrp` was handed the pack Tack shows, a translation
   prill refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now also uploads the
   pack as prill printed it (`mrp.prill.json`), and the board hands prill that one. A run whose verifier was not
