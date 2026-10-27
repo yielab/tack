@@ -47,6 +47,15 @@ pub(crate) fn poisoned<T>(_: std::sync::PoisonError<T>) -> WorkspaceError {
     WorkspaceError::Io(IoKind(std::io::ErrorKind::Other))
 }
 
+/// A path that could not be inspected. Not being there is what `UnsafePath` already means
+/// ("unresolved"), so only the other failures carry their kind.
+fn unresolved_path(error: std::io::Error) -> WorkspaceError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => WorkspaceError::UnsafePath,
+        _ => WorkspaceError::from(error),
+    }
+}
+
 impl From<std::io::Error> for WorkspaceError {
     fn from(failure: std::io::Error) -> Self {
         WorkspaceError::Io(IoKind(failure.kind()))
@@ -355,7 +364,7 @@ where
         if created {
             write_marker(&marker, workspace.attempt_id.as_str())?;
         } else {
-            let stored = fs::read_to_string(&marker).map_err(WorkspaceError::from)?;
+            let stored = fs::read_to_string(&marker).map_err(unresolved_path)?;
             if stored != workspace.attempt_id.as_str() {
                 return Err(WorkspaceError::AttemptMismatch);
             }
@@ -468,16 +477,13 @@ where
         // canonical target would make a symlink inside `root` look like an
         // ordinary directory and could delete a different workspace.
         if fs::symlink_metadata(&workspace.path)
-            .map_err(WorkspaceError::from)?
+            .map_err(unresolved_path)?
             .file_type()
             .is_symlink()
         {
             return Ok(None);
         }
-        let candidate = workspace
-            .path
-            .canonicalize()
-            .map_err(WorkspaceError::from)?;
+        let candidate = workspace.path.canonicalize().map_err(unresolved_path)?;
         if candidate == root || !candidate.starts_with(&root) {
             return Ok(None);
         }
@@ -485,7 +491,7 @@ where
             return Ok(None);
         }
         let marker = candidate.join(".tack-attempt");
-        let stored = fs::read_to_string(marker).map_err(WorkspaceError::from)?;
+        let stored = fs::read_to_string(marker).map_err(unresolved_path)?;
         if stored != workspace.attempt_id.as_str() {
             return Ok(None);
         }
