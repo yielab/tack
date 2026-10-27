@@ -263,10 +263,12 @@ jobs:
         uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2
         with:
           tool: nextest
-      # The floor is the workspace line total this job itself measured on
-      # `develop`, minus one point: 79.93 % (17 842 of 22 323 lines, summed
-      # `LH`/`LF` over the `coverage-lcov` artifact). Re-measure here, not on
-      # a workstation, before changing it.
+      # The floor is the workspace line total this job measured on `develop`,
+      # minus one point. Last measured 79.93 % (17 842 of 22 323 lines, summed
+      # `LH`/`LF` over the `coverage-lcov` artifact), so the floor is 78.93.
+      # It is re-measured from this job's artifact at the gate that closes each
+      # round of work, never on a workstation, and moved only then, here, in the
+      # Makefile and in docs/TESTING.md together.
       - name: Test + workspace coverage (>= 78.93% lines)
         run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 78.93
       - name: Upload coverage report
@@ -571,7 +573,8 @@ jobs:
   e2e:
     name: E2E (Playwright)
     # Merge tier: push to develop or main runs Chromium only. Schedule tier:
-    # the weekly cron runs all three browser projects.
+    # the weekly cron and a manual dispatch run all three browser projects.
+    # Both tiers first run the fake-mode smoke script against the binaries built here.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     # Fixed setup (checkout through `playwright install --with-deps`) plus this
@@ -592,8 +595,15 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - name: Pre-build server (warms the cache the Playwright webServer reuses)
-        run: cargo build -p tack-cli
+      # The runner too, so the smoke script's own build step compiles nothing.
+      - name: Pre-build server and runner (warms the cache the Playwright webServer reuses)
+        run: cargo build -p tack-cli -p tack-runner
+      # The whole claim-to-requeue pipeline against shim harnesses: free and
+      # deterministic, needs no agent program installed. It binds ports
+      # 3399-3402 and stops its servers on exit, so it runs before Playwright
+      # starts its own API on 3399.
+      - name: Smoke (fake harnesses)
+        run: ./scripts/smoke.sh
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
@@ -602,20 +612,20 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-      - name: Install Playwright browsers (Chromium on merge, all three on schedule)
+      - name: Install Playwright browsers (Chromium on merge, all three on schedule or dispatch)
         working-directory: frontend
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" != "push" ]; then
             npx playwright install --with-deps
           else
             npx playwright install --with-deps chromium
           fi
-      - name: Run E2E tests (Chromium on merge, cross-browser on schedule)
+      - name: Run E2E tests (Chromium on merge, cross-browser on schedule or dispatch)
         working-directory: frontend
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          if [ "${{ github.event_name }}" != "push" ]; then
             npm run test:e2e
           else
             npx playwright test --project=chromium
