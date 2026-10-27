@@ -793,6 +793,30 @@ async fn accept_is_idempotent_and_start_transitions_to_running() {
     assert_eq!(fx.request_state(&request_id).await, "running");
 }
 
+/// A heartbeat that names a state the lifecycle does not have is refused as an invalid request,
+/// not accepted and echoed back.
+#[tokio::test]
+async fn a_heartbeat_naming_an_unknown_state_is_invalid() {
+    let fx = Fixture::new().await;
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("hb-key", "claim-hb").await;
+    let beat = |state: &str| {
+        json!({
+            "protocol_version": 1, "runner_id": RUNNER_ID, "heartbeat_id": format!("hb-{state}"),
+            "sent_at": fx.clock.now().to_rfc3339(), "available_capacity": 1,
+            "active_attempts": [{
+                "attempt_id": attempt_id, "fencing_token": fencing_token,
+                "state": state, "journal_state": "prepared"
+            }],
+        })
+        .to_string()
+    };
+    let (status, body) = fx.post("/heartbeat", beat("sleeping")).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "invalid_request");
+    let (status, body) = fx.post("/heartbeat", beat("leased")).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
 // ---------------------------------------------------------------------
 // 2. Stale/expired fence writes nothing and returns `stale_lease`.
 // ---------------------------------------------------------------------

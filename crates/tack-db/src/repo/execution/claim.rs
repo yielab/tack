@@ -5,6 +5,7 @@ use super::state::{self, Move};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use tack_protocol::Clock;
+use tack_protocol::execution::ExecutionState;
 use tracing::instrument;
 
 use super::admin::conflict_on_unique;
@@ -247,7 +248,7 @@ pub struct RunnerListingRow {
 pub struct HeartbeatLease<'a> {
     pub attempt_id: &'a str,
     pub fencing_token: i64,
-    pub state: &'a str,
+    pub state: ExecutionState,
     pub journal_state: &'a str,
     pub last_event_checkpoint: Option<&'a str>,
 }
@@ -256,7 +257,7 @@ pub struct HeartbeatLease<'a> {
 pub struct HeartbeatLeaseResponse {
     pub attempt_id: String,
     pub fencing_token: i64,
-    pub state: String,
+    pub state: ExecutionState,
     pub journal_state: String,
     pub last_event_checkpoint: Option<String>,
     pub lease_expires_at: DateTime<Utc>,
@@ -295,7 +296,7 @@ fn heartbeat_fingerprint(
             (
                 lease.attempt_id,
                 lease.fencing_token,
-                lease.state,
+                state::text(lease.state),
                 lease.journal_state,
                 lease.last_event_checkpoint,
             )
@@ -363,7 +364,7 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                             "invalid heartbeat replay response field: fencing_token",
                         )
                     })?,
-                state: required_string(value, "state")?,
+                state: state::parse(&required_string(value, "state")?)?,
                 journal_state: required_string(value, "journal_state")?,
                 last_event_checkpoint: match value.get("last_event_checkpoint") {
                     Some(serde_json::Value::Null) => None,
@@ -700,7 +701,7 @@ impl Repository {
             result.push(HeartbeatLeaseResponse {
                 attempt_id: lease.attempt_id.into(),
                 fencing_token: lease.fencing_token,
-                state: lease.state.into(),
+                state: lease.state,
                 journal_state: lease.journal_state.into(),
                 last_event_checkpoint: lease.last_event_checkpoint.map(str::to_owned),
                 lease_expires_at: expires,
@@ -719,7 +720,7 @@ impl Repository {
             "leases": response.leases.iter().map(|lease| serde_json::json!({
                 "attempt_id": lease.attempt_id,
                 "fencing_token": lease.fencing_token,
-                "state": lease.state,
+                "state": state::text(lease.state),
                 "journal_state": lease.journal_state,
                 "last_event_checkpoint": lease.last_event_checkpoint,
                 "lease_expires_at": lease.lease_expires_at.to_rfc3339(),

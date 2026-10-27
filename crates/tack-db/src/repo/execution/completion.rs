@@ -16,7 +16,7 @@ use crate::canonical_json;
 use crate::{Repository, StoreError};
 use tack_core::models::UpdateItem;
 use tack_core::workflow::WorkflowConfig;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{self, ExecutionState};
 use uuid::Uuid;
 
 /// What a successful completion sets going, written in the completion's own transaction: either
@@ -85,7 +85,7 @@ pub struct AttemptTransitionInput<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttemptTransitionResponse {
     pub attempt_id: String,
-    pub state: String,
+    pub state: ExecutionState,
     pub committed_at: String,
 }
 
@@ -112,7 +112,7 @@ pub struct CancellationObservationInput<'a> {
 pub struct CancellationResponse {
     pub attempt_id: String,
     pub cancellation_request_id: String,
-    pub state: String,
+    pub state: ExecutionState,
     pub committed_at: String,
 }
 
@@ -122,14 +122,14 @@ pub enum CancellationObservation {
     Replayed(CancellationResponse),
     Conflict,
     Stale,
-    AlreadyTerminal { state: String },
-    Ambiguous { state: String },
+    AlreadyTerminal { state: ExecutionState },
+    Ambiguous { state: ExecutionState },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletionResponse {
     pub completion_id: String,
-    pub terminal_state: String,
+    pub terminal_state: ExecutionState,
     pub final_event_checkpoint: Option<String>,
     pub committed_at: String,
 }
@@ -205,7 +205,7 @@ fn replay_response(serialized: &str) -> Result<CompletionResponse, StoreError> {
     };
     Ok(CompletionResponse {
         completion_id: required("completion_id")?,
-        terminal_state: required("terminal_state")?,
+        terminal_state: state::parse(&required("terminal_state")?)?,
         final_event_checkpoint,
         committed_at: required("committed_at")?,
     })
@@ -255,7 +255,7 @@ fn cancellation_response(serialized: &str) -> Result<CancellationResponse, Store
     Ok(CancellationResponse {
         attempt_id: required("attempt_id")?,
         cancellation_request_id: required("cancellation_request_id")?,
-        state: required("state")?,
+        state: state::parse(&required("state")?)?,
         committed_at: required("committed_at")?,
     })
 }
@@ -373,13 +373,13 @@ impl Repository {
         sqlx::query("UPDATE agent_runners SET available_capacity=MIN(total_capacity,available_capacity+1),updated_at=? WHERE id=?").bind(&now).bind(runner).execute(&mut *tx).await?;
         let response = CompletionResponse {
             completion_id: completion.completion_id.into(),
-            terminal_state: state::text(completion.terminal_state).into(),
+            terminal_state: completion.terminal_state,
             final_event_checkpoint: completion.final_event_checkpoint.map(str::to_owned),
             committed_at: now.clone(),
         };
         let serialized_response = serde_json::json!({
             "completion_id": response.completion_id,
-            "terminal_state": response.terminal_state,
+            "terminal_state": state::text(response.terminal_state),
             "final_event_checkpoint": response.final_event_checkpoint,
             "committed_at": response.committed_at,
         })
@@ -492,7 +492,7 @@ impl Repository {
                 return Ok(AttemptTransitionResult::Replayed(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: state::text(ExecutionState::Preparing).into(),
+                        state: ExecutionState::Preparing,
                         committed_at,
                     },
                 ));
@@ -509,7 +509,7 @@ impl Repository {
                 return Ok(AttemptTransitionResult::Replayed(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: state::text(ExecutionState::Running).into(),
+                        state: ExecutionState::Running,
                         committed_at,
                     },
                 ));
@@ -540,7 +540,7 @@ impl Repository {
                 return Ok(AttemptTransitionResult::Applied(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: state::text(ExecutionState::Preparing).into(),
+                        state: ExecutionState::Preparing,
                         committed_at: now,
                     },
                 ));
@@ -575,7 +575,7 @@ impl Repository {
                 return Ok(AttemptTransitionResult::Applied(
                     AttemptTransitionResponse {
                         attempt_id: input.attempt_id.into(),
-                        state: state::text(ExecutionState::Running).into(),
+                        state: ExecutionState::Running,
                         committed_at: now,
                     },
                 ));
@@ -621,12 +621,12 @@ impl Repository {
         }
         let request: String = row.get("request_id");
         let owner: String = row.get("runner_id");
-        let state: String = row.get("state");
-        if terminal(&state) {
+        let state = state::parse(&row.get::<String, _>("state"))?;
+        if state.is_terminal() {
             tx.commit().await?;
             return Ok(CancellationObservation::AlreadyTerminal { state });
         }
-        if !state::is_live(&state) {
+        if !execution::lease_held().contains(&state) {
             tx.commit().await?;
             return Ok(CancellationObservation::Ambiguous { state });
         }
@@ -662,7 +662,7 @@ impl Repository {
         let response = CancellationResponse {
             attempt_id: input.attempt_id.into(),
             cancellation_request_id: input.cancellation_request_id.into(),
-            state: state::text(ExecutionState::Cancelled).into(),
+            state: ExecutionState::Cancelled,
             committed_at: now.clone(),
         };
         let serialized_response = serde_json::json!({

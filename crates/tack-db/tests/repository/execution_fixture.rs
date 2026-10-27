@@ -324,13 +324,13 @@ impl Fixture {
 
     /// A `HeartbeatLease` for `attempt_id`/`fencing_token` in the common
     /// "leased, prepared, no checkpoint" shape; override one field with
-    /// struct-update syntax (`HeartbeatLease { state: "running", ..fx.lease(a,
+    /// struct-update syntax (`HeartbeatLease { state: ExecutionState::Running, ..fx.lease(a,
     /// f) }`).
     pub fn lease<'a>(&self, attempt_id: &'a str, fencing_token: i64) -> HeartbeatLease<'a> {
         HeartbeatLease {
             attempt_id,
             fencing_token,
-            state: "leased",
+            state: ExecutionState::Leased,
             journal_state: "prepared",
             last_event_checkpoint: None,
         }

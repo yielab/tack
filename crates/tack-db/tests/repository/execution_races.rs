@@ -8,6 +8,7 @@
 use crate::repository::execution_fixture::{
     Fixture, cancellation_input, completion_input, count_where, recovery_input,
 };
+use tack_protocol::execution::ExecutionState;
 
 use chrono::Duration;
 use sqlx::Row;
@@ -197,7 +198,7 @@ async fn concurrent_duplicate_heartbeats_have_one_writer() {
         )
         .await;
     let leases = [HeartbeatLease {
-        state: "running",
+        state: ExecutionState::Running,
         journal_state: "running",
         ..fx.lease("attempt-concurrent-heartbeat", fence)
     }];

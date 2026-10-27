@@ -1,3 +1,4 @@
+use sqlx::Row;
 use tack_protocol::execution::ExecutionState;
 
 use crate::repo::execution::state;
@@ -83,11 +84,11 @@ pub async fn item_and_status_map_policy(
 
 /// What the operator's detail of one execution request shows. `instructions` is the resolved
 /// agent profile's instructions out of the stored snapshot.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequestDetailRow {
     pub id: String,
     pub item_id: String,
-    pub state: String,
+    pub state: ExecutionState,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
     pub waiting_reason: Option<String>,
@@ -102,12 +103,27 @@ pub async fn request_detail(
     repo: &Repository,
     request_id: &str,
 ) -> Result<Option<RequestDetailRow>, StoreError> {
-    Ok(sqlx::query_as(
+    let row = sqlx::query(
         "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?",
     )
     .bind(request_id)
     .fetch_optional(repo.pool())
-    .await?)
+    .await?;
+    row.map(|row| {
+        Ok(RequestDetailRow {
+            id: row.get("id"),
+            item_id: row.get("item_id"),
+            state: state::parse(&row.get::<String, _>("state"))?,
+            cancellation_requested_at: row.get("cancellation_requested_at"),
+            created_at: row.get("created_at"),
+            waiting_reason: row.get("waiting_reason"),
+            waiting_since: row.get("waiting_since"),
+            selector_kind: row.get("selector_kind"),
+            selector_id: row.get("selector_id"),
+            instructions: row.get("instructions"),
+        })
+    })
+    .transpose()
 }
 
 /// The model a request asked for. The outer `None` means no request has this id; the inner one

@@ -5,6 +5,7 @@ use super::state::{self, Move};
 use crate::StoreError;
 use chrono::{DateTime, Utc};
 use sqlx::{AssertSqlSafe, Row};
+use tack_protocol::execution::ExecutionState;
 use tracing::instrument;
 
 use crate::Repository;
@@ -128,7 +129,7 @@ pub struct FleetConcurrencySnapshot {
 pub struct ExecutionListingRow {
     pub id: String,
     pub item_id: String,
-    pub state: String,
+    pub state: ExecutionState,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
     pub waiting_reason: Option<String>,
@@ -136,6 +137,21 @@ pub struct ExecutionListingRow {
     /// `exact_runner` or `fleet`, with the runner or fleet id in `selector_id`.
     pub selector_kind: String,
     pub selector_id: String,
+}
+
+/// Reads one row of the listing's `SELECT`; a state no variant names is a corrupt row.
+fn listing_row(row: sqlx::sqlite::SqliteRow) -> Result<ExecutionListingRow, StoreError> {
+    Ok(ExecutionListingRow {
+        id: row.get("id"),
+        item_id: row.get("item_id"),
+        state: state::parse(&row.get::<String, _>("state"))?,
+        cancellation_requested_at: row.get("cancellation_requested_at"),
+        created_at: row.get("created_at"),
+        waiting_reason: row.get("waiting_reason"),
+        selector_kind: row.get("selector_kind"),
+        selector_id: row.get("selector_id"),
+        waiting_since: row.get("waiting_since"),
+    })
 }
 
 /// One row of `GET /api/executions/{request_id}/attempts` — every column
@@ -147,7 +163,7 @@ pub struct AttemptListingRow {
     pub attempt_number: i64,
     pub runner_id: String,
     pub fencing_token: i64,
-    pub state: String,
+    pub state: ExecutionState,
     pub lease_issued_at: String,
     pub lease_expires_at: String,
     pub last_heartbeat_at: Option<String>,
@@ -584,20 +600,7 @@ impl Repository {
                     .await?
             }
         };
-        Ok(rows
-            .into_iter()
-            .map(|row| ExecutionListingRow {
-                id: row.get("id"),
-                item_id: row.get("item_id"),
-                state: row.get("state"),
-                cancellation_requested_at: row.get("cancellation_requested_at"),
-                created_at: row.get("created_at"),
-                waiting_reason: row.get("waiting_reason"),
-                selector_kind: row.get("selector_kind"),
-                selector_id: row.get("selector_id"),
-                waiting_since: row.get("waiting_since"),
-            })
-            .collect())
+        rows.into_iter().map(listing_row).collect()
     }
 
     /// Backs the `item_ids` batch shape of `GET /api/executions` — exactly
@@ -631,20 +634,7 @@ impl Repository {
             q = q.bind(id);
         }
         let rows = q.fetch_all(self.pool()).await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| ExecutionListingRow {
-                id: row.get("id"),
-                item_id: row.get("item_id"),
-                state: row.get("state"),
-                cancellation_requested_at: row.get("cancellation_requested_at"),
-                created_at: row.get("created_at"),
-                waiting_reason: row.get("waiting_reason"),
-                selector_kind: row.get("selector_kind"),
-                selector_id: row.get("selector_id"),
-                waiting_since: row.get("waiting_since"),
-            })
-            .collect())
+        rows.into_iter().map(listing_row).collect()
     }
 
     /// Every attempt ever made against `request_id`, oldest first. Backs
@@ -665,32 +655,33 @@ impl Repository {
         .bind(request_id)
         .fetch_all(self.pool())
         .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| AttemptListingRow {
-                id: row.get("id"),
-                request_id: row.get("request_id"),
-                attempt_number: row.get("attempt_number"),
-                runner_id: row.get("runner_id"),
-                fencing_token: row.get("fencing_token"),
-                state: row.get("state"),
-                lease_issued_at: row.get("lease_issued_at"),
-                lease_expires_at: row.get("lease_expires_at"),
-                last_heartbeat_at: row.get("last_heartbeat_at"),
-                event_checkpoint: row.get("event_checkpoint"),
-                completion_id: row.get("completion_id"),
-                workspace_id: row.get("workspace_id"),
-                base_revision: row.get("base_revision"),
-                actual_execution: row.get("actual_execution"),
-                terminal_reason: row.get("terminal_reason"),
-                usage: row.get("usage"),
-                started_at: row.get("started_at"),
-                ended_at: row.get("ended_at"),
-                created_at: row.get("created_at"),
-                updated_at: row.get("updated_at"),
-                start_report: row.get("start_report"),
+        rows.into_iter()
+            .map(|row| {
+                Ok(AttemptListingRow {
+                    id: row.get("id"),
+                    request_id: row.get("request_id"),
+                    attempt_number: row.get("attempt_number"),
+                    runner_id: row.get("runner_id"),
+                    fencing_token: row.get("fencing_token"),
+                    state: state::parse(&row.get::<String, _>("state"))?,
+                    lease_issued_at: row.get("lease_issued_at"),
+                    lease_expires_at: row.get("lease_expires_at"),
+                    last_heartbeat_at: row.get("last_heartbeat_at"),
+                    event_checkpoint: row.get("event_checkpoint"),
+                    completion_id: row.get("completion_id"),
+                    workspace_id: row.get("workspace_id"),
+                    base_revision: row.get("base_revision"),
+                    actual_execution: row.get("actual_execution"),
+                    terminal_reason: row.get("terminal_reason"),
+                    usage: row.get("usage"),
+                    started_at: row.get("started_at"),
+                    ended_at: row.get("ended_at"),
+                    created_at: row.get("created_at"),
+                    updated_at: row.get("updated_at"),
+                    start_report: row.get("start_report"),
+                })
             })
-            .collect())
+            .collect()
     }
 
     #[instrument(skip(self, input))]

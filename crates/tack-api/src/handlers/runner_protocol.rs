@@ -850,7 +850,12 @@ pub async fn heartbeat(
             Ok(ReportedLease {
                 attempt_id: as_str(entry, "attempt_id")?.to_owned(),
                 fencing_token: as_i64(entry, "fencing_token")?,
-                state: as_str(entry, "state")?.to_owned(),
+                state: as_str(entry, "state")?.parse().map_err(|_| {
+                    invalid_request(
+                        "state",
+                        "state must be a lifecycle state of runner protocol v1",
+                    )
+                })?,
                 journal_state: as_str(entry, "journal_state")?.to_owned(),
                 last_event_checkpoint: entry
                     .get("last_event_checkpoint")

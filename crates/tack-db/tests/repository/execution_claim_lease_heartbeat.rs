@@ -2,6 +2,7 @@
 //! protocol that keeps a lease alive.
 
 use crate::repository::execution_fixture::{Fixture, recovery_input, request};
+use tack_protocol::execution::ExecutionState;
 
 use chrono::Duration;
 use sqlx::Row;
@@ -356,7 +357,7 @@ async fn heartbeat_frozen_request_mutations_conflict_without_write() {
     );
     for mutated_leases in [
         [HeartbeatLease {
-            state: "running",
+            state: ExecutionState::Running,
             ..leases[0].clone()
         }],
         [HeartbeatLease {

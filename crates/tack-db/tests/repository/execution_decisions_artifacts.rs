@@ -11,6 +11,7 @@ use tack_db::repo::execution::{
     CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
     RecoveryObservation,
 };
+use tack_protocol::execution::ExecutionState;
 
 const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 
@@ -500,7 +501,7 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
     assert_eq!(
         fx.observe_cancellation(ambiguous_input).await,
         CancellationObservation::Ambiguous {
-            state: "leased".into()
+            state: ExecutionState::Leased
         }
     );
     sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = 'attempt-cancellation-outcomes'")
@@ -516,7 +517,7 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
     assert_eq!(
         fx.observe_cancellation(terminal_input).await,
         CancellationObservation::AlreadyTerminal {
-            state: "succeeded".into()
+            state: ExecutionState::Succeeded
         }
     );
 }

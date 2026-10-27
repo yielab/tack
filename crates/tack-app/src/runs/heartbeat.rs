@@ -2,6 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{HeartbeatBatchResponse, HeartbeatBatchResult, HeartbeatLease};
 use tack_protocol::Clock;
+use tack_protocol::execution::ExecutionState;
 
 use crate::AppError;
 
@@ -10,7 +11,7 @@ use crate::AppError;
 pub struct ReportedLease {
     pub attempt_id: String,
     pub fencing_token: i64,
-    pub state: String,
+    pub state: ExecutionState,
     pub journal_state: String,
     pub last_event_checkpoint: Option<String>,
 }
@@ -51,7 +52,7 @@ pub async fn heartbeat(
         .map(|lease| HeartbeatLease {
             attempt_id: &lease.attempt_id,
             fencing_token: lease.fencing_token,
-            state: &lease.state,
+            state: lease.state,
             journal_state: &lease.journal_state,
             last_event_checkpoint: lease.last_event_checkpoint.as_deref(),
         })

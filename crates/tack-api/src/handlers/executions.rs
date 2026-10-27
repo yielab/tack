@@ -244,7 +244,8 @@ pub struct CreateExecutionResponse {
 pub struct ExecutionSummary {
     pub request_id: String,
     pub item_id: String,
-    pub state: String,
+    #[schema(value_type = String)]
+    pub state: ExecutionState,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
     /// Why no runner has claimed this request yet, as a plain sentence; null once claimed.
@@ -386,7 +387,8 @@ pub struct ExecutionDetailResponse {
     pub protocol_version: u32,
     pub request_id: String,
     pub item_id: String,
-    pub state: String,
+    #[schema(value_type = String)]
+    pub state: ExecutionState,
     pub cancellation_requested_at: Option<String>,
     pub created_at: String,
     /// The composed prompt the agent is given, as stored with the request; null when absent.
@@ -408,7 +410,8 @@ pub struct AttemptSummary {
     pub attempt_number: i64,
     pub runner_id: String,
     pub fencing_token: i64,
-    pub state: String,
+    #[schema(value_type = String)]
+    pub state: ExecutionState,
     pub lease_issued_at: String,
     pub lease_expires_at: String,
     pub last_heartbeat_at: Option<String>,
@@ -846,7 +849,11 @@ pub async fn list_executions(
         )
     })?;
     let now = state.clock.now();
-    let runners = queued_runners(&state.repo, rows.iter().any(|row| row.state == "queued")).await?;
+    let runners = queued_runners(
+        &state.repo,
+        rows.iter().any(|row| row.state == ExecutionState::Queued),
+    )
+    .await?;
     let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
     let mut limits = run_limits_of(&state.repo, &ids, now).await.map_err(|_| {
         error(
@@ -863,7 +870,7 @@ pub async fn list_executions(
                 .remove(&row.id)
                 .unwrap_or_else(|| limit_source(&Value::Null, None, None)),
             waiting_reason: queued_reason(
-                &row.state,
+                row.state,
                 row.waiting_reason,
                 &row.selector_kind,
                 &row.selector_id,
@@ -951,14 +958,14 @@ fn silent_since(
 /// it shows what a poll stored, and with nothing stored, "no runner is online" when none is. Other
 /// states show what is stored. Read at read time; never stored.
 fn queued_reason(
-    state: &str,
+    state: ExecutionState,
     stored: Option<String>,
     selector_kind: &str,
     selector_id: &str,
     runners: &[RunnerListingRow],
     now: DateTime<Utc>,
 ) -> Option<String> {
-    if state != "queued" {
+    if state != ExecutionState::Queued {
         return stored;
     }
     if let Some(since) = silent_since(selector_kind, selector_id, runners, now) {
@@ -1007,7 +1014,7 @@ pub async fn get_execution(
     };
     let now = state.clock.now();
     let request_state = row.state;
-    let runners = queued_runners(&state.repo, request_state == "queued").await?;
+    let runners = queued_runners(&state.repo, request_state == ExecutionState::Queued).await?;
     let request_id = row.id;
     let limit = run_limits_of(&state.repo, std::slice::from_ref(&request_id), now)
         .await
@@ -1026,12 +1033,12 @@ pub async fn get_execution(
         request_id,
         limit,
         item_id: row.item_id,
-        state: request_state.clone(),
+        state: request_state,
         cancellation_requested_at: row.cancellation_requested_at,
         created_at: row.created_at,
         instructions: row.instructions,
         waiting_reason: queued_reason(
-            &request_state,
+            request_state,
             row.waiting_reason,
             &row.selector_kind,
             &row.selector_id,

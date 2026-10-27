@@ -80,7 +80,7 @@ async fn an_attempt_ends_once_per_completion_id_and_other_content_conflicts() {
     else {
         panic!("the first report ends the attempt");
     };
-    assert_eq!(response.terminal_state, "failed");
+    assert_eq!(response.terminal_state, ExecutionState::Failed);
     assert_eq!(item_moved, None);
     assert_eq!(
         execution_attempts::attempt_state(&world.repo, &run.attempt_id)

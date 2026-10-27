@@ -2,6 +2,7 @@
 //! the runner no longer holds is refused.
 
 use crate::common;
+use tack_protocol::execution::ExecutionState;
 
 use chrono::{DateTime, Duration, Utc};
 use common::{RUNNER_ID, enqueue, world};
@@ -78,7 +79,7 @@ async fn a_lease_with_the_wrong_fence_is_stale() {
     let lease = ReportedLease {
         attempt_id: claimed.lease.attempt_id.clone(),
         fencing_token: claimed.lease.fencing_token + 1,
-        state: "leased".into(),
+        state: ExecutionState::Leased,
         journal_state: "prepared".into(),
         last_event_checkpoint: None,
     };

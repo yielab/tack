@@ -74,7 +74,7 @@ async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
         })
         .await,
         AttemptTransitionResult::Replayed(response)
-            if response.state == "preparing" && response.committed_at == prepared_at
+            if response.state == ExecutionState::Preparing && response.committed_at == prepared_at
     ));
     assert!(matches!(
         fx.transition(running.clone()).await,

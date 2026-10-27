@@ -536,7 +536,7 @@ async fn request_cancellation(fixture: &Fixture) -> Result<bool, StoreError> {
 }
 
 /// The request-crash row's `(state, cancellation_requested_at)`.
-async fn cancellation_state(fixture: &Fixture) -> (String, Option<String>) {
+async fn cancellation_state(fixture: &Fixture) -> (ExecutionState, Option<String>) {
     let detail = queries::execution_requests::request_detail(&fixture.repo, "request-crash")
         .await
         .expect("cancellation state")
@@ -561,7 +561,7 @@ async fn cancellation_crash_retries_without_false_terminal_state() {
 
     assert!(request_cancellation(&fixture).await.is_err());
     let (state, cancelled_at) = cancellation_state(&fixture).await;
-    assert_eq!(state, "leased");
+    assert_eq!(state, ExecutionState::Leased);
     assert_eq!(cancelled_at, None);
 
     seed::drop_trigger(&fixture.repo, "inject_cancel_crash").await;
@@ -571,7 +571,7 @@ async fn cancellation_crash_retries_without_false_terminal_state() {
             .expect("cancellation retry")
     );
     let (state, cancelled_at) = cancellation_state(&fixture).await;
-    assert_eq!(state, "leased");
+    assert_eq!(state, ExecutionState::Leased);
     assert!(
         cancelled_at.is_some(),
         "requesting cancellation must not pretend the attempt is terminal"
@@ -664,7 +664,7 @@ fn crash_heartbeat_lease() -> [HeartbeatLease<'static>; 1] {
     [HeartbeatLease {
         attempt_id: "attempt-crash",
         fencing_token: 1,
-        state: "running",
+        state: ExecutionState::Running,
         journal_state: "process_observed_running",
         last_event_checkpoint: None,
     }]

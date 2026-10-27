@@ -161,13 +161,7 @@ pub fn text(state: ExecutionState) -> &'static str {
 
 /// Whether a column's text names a state in which an attempt holds a lease.
 pub fn is_live(text: &str) -> bool {
-    matches!(
-        parse(text),
-        Ok(ExecutionState::Leased
-            | ExecutionState::Preparing
-            | ExecutionState::Running
-            | ExecutionState::WaitingDecision)
-    )
+    parse(text).is_ok_and(|state| execution::lease_held().contains(&state))
 }
 
 /// Whether a column's text names the state that waits for an operator.
