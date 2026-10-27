@@ -66,6 +66,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 
 **tack-protocol** (the contract; depends on nothing in the workspace):
 - The neutral runner-v1 types (`execution/`: request, attempt, event, artifact and decision types), the attempt lifecycle (`lifecycle::validate_transition` is the one table; `lifecycle::sources`, `lease_held` and `terminal` read the states a change may start from off it, and `tack-db`'s `Move` builds every `UPDATE` guard from those, so no query spells a state) and capability negotiation, both the server's handlers and `tack-runner` build on
+- `execution/messages.rs`: the claim, heartbeat, event-batch and completion requests and responses; the handlers in `tack-api` and the transport in `tack-runner` both serialize and deserialize these structs, and `tests/runner_contract/protocol.rs` round-trips every matching fixture through them
 - `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and keeps runner-observed wall-clock cost structurally separate from harness/vendor-reported token and dollar usage
 - `mrp.rs`: the `mrp-v1` merge-readiness pack, its types, validation and pull-request rendering, as plain data; `prepare.rs`: the prepare step
 - The one `Clock` trait and `SystemClock`; `utoipa` is behind an `openapi` feature

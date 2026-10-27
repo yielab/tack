@@ -192,6 +192,13 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The claim, heartbeat, event-batch and completion messages are one set of types.** `tack-protocol` now defines
+  them, and the board and the runner both read and write those types instead of building and picking apart JSON by
+  hand, so the shape of `claim`, `heartbeat`, `event-batch` and `completion` fixtures is written once and a test
+  checks every one of them against it. On the wire nothing changes for a valid message. A body that does not fit now
+  answers `400 invalid_request` with the field named when it is missing, where a few mistakes (a negative
+  `available_capacity`, a heartbeat `journal_state` that is not one of the runner's journal states) were accepted
+  before. A heartbeat's `journal_state` may be `terminal_report_pending`, which a runner has always been able to send.
 - **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
   the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
   the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as

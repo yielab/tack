@@ -38,6 +38,8 @@ Thirteen of them carry a JSON body with `protocol_version`; the content upload c
 
 A runner reports `concurrency { total, available }` in its capability snapshot and sends one heartbeat for all its leases (`heartbeat.request.two-active.json` shows two). The server accepts up to 64 active attempts per heartbeat (`active_attempts_per_heartbeat_max` in `limits.json`) and answers a conflict to a heartbeat whose `available_capacity` is not the runner's total capacity minus the attempts the server itself holds as active for it. A cancellation asked for an attempt arrives in the `lease_results` of that heartbeat, and the runner flips that attempt's cancel signal. A folder worked in place stays one attempt at a time, by the runner's own lock on the folder.
 
+The claim, heartbeat, event-batch and completion messages are structs in `tack-protocol` (`execution/messages.rs`): the server's handlers and the runner's transport both serialize and deserialize them, and the contract test round-trips each matching fixture through them, so a field added to a fixture without a field on the struct fails there. They do not deny unknown fields, because `protocol.json` has an unknown optional field ignored.
+
 ### Decisions
 
 A decision's `kind` is a free string. Every harness that can pause sends `tool_permission`. docket sends `approval` for a gated tool call and `consult` for a question a step has parked on. The inbox renders any kind, and the answer returns on the same decision route, so a new kind needs no protocol change.
