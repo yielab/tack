@@ -7,7 +7,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, LoadError, Select } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
@@ -35,10 +35,13 @@ function checkSentence(r: FolderCheck): string {
 /** A settings section folded into one line until opened: the heading, then what it is set to. */
 const Fold = (props: { id?: string; title: string; summary: string; help?: JSX.Element; children: JSX.Element }) => (
   <details id={props.id} class={SECTION}>
-    <summary class="flex cursor-pointer flex-wrap items-center gap-2">
-      <Heading>{props.title}</Heading>
-      {props.help}
-      <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+    <summary class="cursor-pointer">
+      {/* The summary itself stays `display: list-item`: a flex summary loses its disclosure marker. */}
+      <span class="inline-flex flex-wrap items-center gap-2 align-middle">
+        <Heading>{props.title}</Heading>
+        {props.help}
+        <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+      </span>
     </summary>
     <div class="mt-2.5 flex flex-col gap-2.5">{props.children}</div>
   </details>
@@ -95,10 +98,12 @@ const AutomationPanel: Component = () => {
     }
   };
 
-  const [check] = createResource(
+  const [folderCheck, { refetch: refetchCheck }] = createResource(
     () => (hasFolder() ? p()?.repository || null : null),
-    (path) => api.projects.checkFolder(path).catch(() => null),
+    (path) => api.projects.checkFolder(path),
   );
+  /** Reading a failed resource throws; a failed check is told of beside the folder instead. */
+  const check = () => (folderCheck.error ? undefined : folderCheck());
 
   const saveFolder = async (path: string) => {
     const value = path.trim();
@@ -113,8 +118,10 @@ const AutomationPanel: Component = () => {
     await save({ repository: value, default_branch: branch });
   };
 
-  const [runners] = createResource(() => runnersApi.list().then((r) => r.data.data).catch(() => []));
-  const [profiles] = createResource(() => agentProfilesApi.list().then((r) => r.data.data).catch(() => []));
+  const [runnerList, { refetch: refetchRunners }] = createResource(() => runnersApi.list().then((r) => r.data.data));
+  const [profileList, { refetch: refetchProfiles }] = createResource(() => agentProfilesApi.list().then((r) => r.data.data));
+  const runners = () => (runnerList.error ? undefined : runnerList());
+  const profiles = () => (profileList.error ? undefined : profileList());
   const snapshots = createMemo(() =>
     (runners() ?? []).map((r) => r.capability_snapshot as { harnesses?: SnapshotHarness[]; push_configured?: boolean } | null),
   );
@@ -177,6 +184,9 @@ const AutomationPanel: Component = () => {
             value={p()?.default_branch ?? ''}
             onChange={(e) => void save({ default_branch: e.currentTarget.value.trim() || null })}
           />
+          <Show when={hasFolder() && folderCheck.error}>
+            {(error) => <LoadError what="what is in that folder" error={error()} onRetry={() => void refetchCheck()} />}
+          </Show>
           <Show when={hasFolder() && check()}>
             <Note>{checkSentence(check()!)}</Note>
           </Show>
@@ -273,7 +283,10 @@ const AutomationPanel: Component = () => {
       <Fold title="Agent" summary={p()?.default_harness ? agentLabel(p()!.default_harness!) : 'No default agent'}>
         <FieldShell label="Agent" help={HELP.sandbox}>
           <div class="flex flex-wrap gap-2">
-            <For each={harnesses()} fallback={<Note>No runner reports an agent yet.</Note>}>
+            <Show when={runnerList.error}>
+              {(error) => <LoadError what="the runners" error={error()} onRetry={() => void refetchRunners()} />}
+            </Show>
+            <For each={harnesses()} fallback={<Show when={!runnerList.error}><Note>No runner reports an agent yet.</Note></Show>}>
               {(h) => (
                 <Pill active={p()?.default_harness === h} onClick={() => { void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
                   {agentLabel(h)}
@@ -313,7 +326,10 @@ const AutomationPanel: Component = () => {
         </Show>
         <FieldShell label="Default profile" help={HELP.profile}>
           <div class="flex flex-wrap gap-2">
-            <For each={profiles()} fallback={<Note>No agent profiles yet.</Note>}>
+            <Show when={profileList.error}>
+              {(error) => <LoadError what="the agent profiles" error={error()} onRetry={() => void refetchProfiles()} />}
+            </Show>
+            <For each={profiles()} fallback={<Show when={!profileList.error}><Note>No agent profiles yet.</Note></Show>}>
               {(pr) => (
                 <Pill
                   active={p()?.default_profile_id === pr.agent_profile_id}
@@ -331,6 +347,9 @@ const AutomationPanel: Component = () => {
         </FieldShell>
       </Fold>
 
+      <Show when={profileList.error}>
+        {(error) => <LoadError what="the agent profiles the roles choose from" error={error()} onRetry={() => void refetchProfiles()} />}
+      </Show>
       <Show when={projectId()}>
         {(id) => (
           <Ladder

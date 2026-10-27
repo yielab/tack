@@ -21,10 +21,10 @@ each until you open them: **Where the code is**, **How the agent works on it**, 
 3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
 4. **Ceiling.** See the most this project can reach, and what holds it down.
 
-The ladder as it looks, with every control that can be disabled shown with its reason:
+The ladder as it looks, with every control that can be disabled shown with its reason beside it:
 
 ```text
-1. Teams
+Teams
    Each role works with a profile. The profile names the team and the machine.
    Content      [ My SaaS content writer v ]
                 saas-content · lights-out · this computer
@@ -32,15 +32,16 @@ The ladder as it looks, with every control that can be disabled shown with its r
                 saas-dev · needs a person · this computer
    No role      [ No profile v ]
    Manage profiles →      [ Apply the repository's teams ]   (disabled)
-   Tack cannot reach the team's machine from here yet. In the project's folder, run: docket init --name <team>
+                          Tack cannot run this on the team's computer from the board yet.
+                          How to set up a team there (a link to the Administrator Guide)
 
-2. Start
+Start
    [ ] Start a task by itself
    When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
    (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
     controls disabled)
 
-3. Merge
+Merge
    (o) L3 - You merge every change yourself.
    ( ) L4 - Tack merges changes that stay inside the domains below.   (disabled while L4 and L5 are off)
    ( ) L5 - Tack merges any change that passes its checks.            (disabled while L4 and L5 are off)
@@ -49,7 +50,7 @@ The ladder as it looks, with every control that can be disabled shown with its r
    Domains, Stages the verifier must run, Public key, Times a rejected change goes back to the agent,
    Daily limits
 
-4. Ceiling
+Ceiling
    This project can reach L3.
    ✗ The team saas-dev keeps its tasks at L3. <what to change>
    ✓ The team saas-content runs lights-out.
@@ -99,12 +100,21 @@ this with `tack runner doctor`; see [Installing and Operating Runners](../admin-
 
 ### The Apply button
 
-**Apply the repository's teams** is always disabled today. Its reason line reads: "Tack cannot reach the
-team's machine from here yet. In the project's folder, run: `docket init --name <team>`". The board has no
-channel to the machine where the team lives, so you create the team there yourself. **Manage profiles** links
-to the profiles on the Agents page.
+**Apply the repository's teams** is always disabled today. Its reason reads: "Tack cannot run this on the
+team's computer from the board yet." The board has no channel to the machine where the team lives, so you
+create the team there yourself; the link beside the button, **How to set up a team there**, opens the
+[Administrator Guide](../admin-guide/runners.md#docket-teams). **Manage profiles** links to the profiles on
+the Agents page.
 
 A project with no roles says: "This project has no roles yet. Add them under Roles."
+
+### When something does not load
+
+A step that cannot read what it shows says so, in place of an empty answer: "Could not load the autonomy
+settings.", "Could not load this project's roles." or "Could not load the agent profiles", followed by the
+reason the board gave and a **Try again** button. It never reads "No roles yet" or "not available" because
+the board did not answer. The same holds for every other screen: one that cannot draw shows "This page could
+not be shown" with **Try again**, and the sidebar stays where it is.
 
 ---
 

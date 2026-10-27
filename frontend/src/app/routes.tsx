@@ -1,7 +1,7 @@
-import { lazy } from 'solid-js';
+import { lazy, type Component } from 'solid-js';
 import { useLocation } from '@solidjs/router';
 import type { RouteDefinition } from '@solidjs/router';
-import { Button, BrandMark } from '../shared/ui';
+import { Button, BrandMark, RouteBoundary } from '../shared/ui';
 import WorkLayout from './WorkLayout';
 
 const Projects      = lazy(() => import('../features/projects/Projects'));
@@ -20,33 +20,40 @@ const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings')
 const ItemPage      = lazy(() => import('../features/item-detail/ItemPage'));
 const Agents        = lazy(() => import('../features/agents/AgentsPage'));
 
+/** Each route draws inside its own boundary, so one that fails leaves the shell and the rest of the app standing. */
+const guarded = (Page: Component): Component => (props) => (
+  <RouteBoundary>
+    <Page {...props} />
+  </RouteBoundary>
+);
+
 export const routes: RouteDefinition[] = [
-  { path: '/',         component: Projects },
-  { path: '/projects', component: Projects },
-  { path: '/templates',     component: Templates },
-  { path: '/templates/new', component: TemplateCreator },
-  { path: '/agents',     component: Agents },
-  { path: '/settings', component: GlobalSettings },
+  { path: '/',         component: guarded(Projects) },
+  { path: '/projects', component: guarded(Projects) },
+  { path: '/templates',     component: guarded(Templates) },
+  { path: '/templates/new', component: guarded(TemplateCreator) },
+  { path: '/agents',     component: guarded(Agents) },
+  { path: '/settings', component: guarded(GlobalSettings) },
 
   // Project destinations
-  { path: '/projects/:id/overview',   component: Dashboard },
-  { path: '/projects/:id/factory',    component: FactoryMetrics },
-  { path: '/projects/:id/settings',   component: ProjectSettings },
+  { path: '/projects/:id/overview',   component: guarded(Dashboard) },
+  { path: '/projects/:id/factory',    component: guarded(FactoryMetrics) },
+  { path: '/projects/:id/settings',   component: guarded(ProjectSettings) },
 
   // An item on a page of its own (the drawer's "Expand")
-  { path: '/projects/:id/items/:itemId', component: ItemPage },
+  { path: '/projects/:id/items/:itemId', component: guarded(ItemPage) },
 
   // Work surface — all 5 lenses wrapped in WorkLayout
   {
     path: '/projects/:id',
-    component: WorkLayout,
+    component: guarded(WorkLayout),
     children: [
-      { path: '/board',    component: Board },
-      { path: '/list',     component: List },
-      { path: '/table',    component: Table },
-      { path: '/calendar', component: Calendar },
-      { path: '/timeline', component: Timeline },
-      { path: '/sprint',   component: Sprints },
+      { path: '/board',    component: guarded(Board) },
+      { path: '/list',     component: guarded(List) },
+      { path: '/table',    component: guarded(Table) },
+      { path: '/calendar', component: guarded(Calendar) },
+      { path: '/timeline', component: guarded(Timeline) },
+      { path: '/sprint',   component: guarded(Sprints) },
     ],
   },
 

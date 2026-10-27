@@ -403,7 +403,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
     assert!(m.get("quality").is_none(), "{m}");
     assert_eq!(
         m["quality_unavailable"],
-        "prill is not installed on the board (give the runner a [verify] table naming prill in its settings file, or set TACK_PRILL_PROGRAM to its path)"
+        "The verifier is not installed on the board. An administrator sets it up: see the Administrator Guide"
     );
     assert!(m.get("cost_usd").is_none(), "{m}");
     // No dollar figure anywhere, though the seeded usage carries one.
@@ -690,7 +690,7 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     .await;
     assert_eq!(
         m["quality_unavailable"],
-        "prill is not installed on the board (give the runner a [verify] table naming prill in its settings file, or set TACK_PRILL_PROGRAM to its path)",
+        "The verifier is not installed on the board. An administrator sets it up: see the Administrator Guide",
         "{m}"
     );
     // No rate card: no dollar anywhere, whatever the usage carried.

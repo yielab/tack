@@ -196,6 +196,69 @@ test('list, table, calendar, timeline, sprint and templates have no accessibilit
   expect(violations, `templates: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
 });
 
+// The screens a person reaches by name rather than by a lens: every tab of the project's settings
+// (the Automation tab with its folded sections open), the item on a page of its own, the factory
+// metrics, the create-project dialog and the command palette. A project of its own for the same
+// reason as the views above.
+test('project settings, every tab, has no accessibility violations', async ({ page, request }) => {
+  const projectId = await createFreshProject(request, `A11y settings ${Date.now()}`);
+  for (const tab of ['general', 'automation', 'workflow', 'vocabulary', 'fields', 'roles', 'data']) {
+    await page.goto(`/projects/${projectId}/settings?tab=${tab}`);
+    await waitForApp(page);
+    await expect(page.getByRole('tab', { name: new RegExp(`^${tab}`, 'i') })).toHaveAttribute('aria-selected', 'true');
+    if (tab === 'automation') {
+      await expect(page.getByTestId('ladder')).toBeVisible();
+      await page.evaluate(() => document.querySelectorAll('details').forEach((d) => (d.open = true)));
+    }
+    const violations = await scan(page);
+    expect(violations, `${tab}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+  }
+});
+
+test('the item on a page of its own has no accessibility violations', async ({ page, request }) => {
+  const projectId = await createFreshProject(request, `A11y item page ${Date.now()}`);
+  const itemId = await createFreshItem(request, projectId, `A11y item page ${Date.now()}`);
+  for (const query of ['', '?tab=dependencies', '?tab=execution']) {
+    await page.goto(`/projects/${projectId}/items/${itemId}${query}`);
+    await waitForApp(page);
+    await expect(page.getByRole('tablist')).toBeVisible();
+    const violations = await scan(page);
+    expect(violations, `item page ${query}: ${JSON.stringify(violations.map((v) => v.id), null, 2)}`).toEqual([]);
+  }
+});
+
+test('factory metrics has no accessibility violations', async ({ page, request }) => {
+  const projectId = await createFreshProject(request, `A11y factory ${Date.now()}`);
+  await page.goto(`/projects/${projectId}/factory`);
+  await waitForApp(page);
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('the create-project dialog has no accessibility violations', async ({ page }) => {
+  await page.goto('/projects');
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'New', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create New Project' });
+  await expect(dialog).toBeVisible();
+  // The folder row, with Browse… shown disabled in a browser tab.
+  await dialog.getByLabel('An existing folder on this computer').check();
+  await expect(dialog.getByRole('button', { name: 'Browse…' })).toBeDisabled();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
+test('the command palette has no accessibility violations', async ({ page }) => {
+  await page.goto('/projects');
+  await waitForApp(page);
+  await page.keyboard.press('Control+k');
+  await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Search items, views and commands' })).toBeFocused();
+  const violations = await scan(page);
+  expect(violations, JSON.stringify(violations.map((v) => v.id), null, 2)).toEqual([]);
+});
+
 // What axe cannot see: the keyboard alone opens an item from the Board, and
 // Tab stays inside the drawer until Escape closes it and returns focus.
 test('keyboard opens a board card, Tab stays in the drawer, Escape returns focus', async ({ page, request }) => {

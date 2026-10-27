@@ -320,9 +320,9 @@ function CostCard(props: { costUsd?: number | null; unpricedAttempts?: number | 
   );
 }
 
-/** The card's title names prill's version when prill answered. */
+/** The card's title names the verifier's version when it answered. */
 function qualityTitle(quality: Quality | null | undefined): string {
-  return quality ? `Quality (from prill ${quality.prill_version})` : 'Quality';
+  return quality ? `Quality (from the verifier, version ${quality.prill_version})` : 'Quality';
 }
 
 function QualityCard(props: { quality?: Quality | null; unavailable?: string | null }) {
@@ -335,7 +335,7 @@ function QualityCard(props: { quality?: Quality | null; unavailable?: string | n
         {(quality) => (
           <div class="flex flex-col gap-3">
             <For each={quality().repositories}>{(repo) => <RepositoryQualityBlock repo={repo} />}</For>
-            <p class="text-xs text-content-subtle">Figures come from prill. Tack shows them and does not compute them.</p>
+            <p class="text-xs text-content-subtle">Figures come from the verifier. Tack shows them and does not compute them.</p>
           </div>
         )}
       </Show>

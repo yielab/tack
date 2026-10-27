@@ -23,7 +23,7 @@ const Start: Component<Props> = (props) => {
   return (
     <div class={SECTION} id="automation-start" data-testid="rung-start">
       <div class="flex items-center gap-2">
-        <Heading>2. Start</Heading>
+        <Heading>Start</Heading>
         <HelpHint label="Start" help={HELP.ladderStart} />
       </div>
       <label class="flex items-center gap-2 text-sm" style={{ color: hasProfile() ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)' }}>

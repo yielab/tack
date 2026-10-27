@@ -1,4 +1,4 @@
-import { For, Show, type Component, type JSX } from 'solid-js';
+import { For, Show, createUniqueId, type Component, type JSX } from 'solid-js';
 
 export interface TabItem {
   id: string;
@@ -19,6 +19,9 @@ export interface TabsProps {
 /** Accessible tab bar (role=tablist) + panel slot. Arrow keys move between
  * tabs; the selected tab carries `aria-selected`. Token-driven. */
 const Tabs: Component<TabsProps> = (props) => {
+  const base = createUniqueId();
+  const tabId = (id: string) => `${base}-tab-${id}`;
+  const panelId = (id: string) => `${base}-panel-${id}`;
   const move = (dir: 1 | -1) => {
     const idx = props.tabs.findIndex((t) => t.id === props.active);
     if (idx < 0) return;
@@ -51,6 +54,8 @@ const Tabs: Component<TabsProps> = (props) => {
               <button
                 role="tab"
                 type="button"
+                id={tabId(tab.id)}
+                aria-controls={panelId(tab.id)}
                 aria-selected={selected() ? 'true' : 'false'}
                 tabindex={selected() ? 0 : -1}
                 onClick={() => props.onChange(tab.id)}
@@ -80,7 +85,7 @@ const Tabs: Component<TabsProps> = (props) => {
           }}
         </For>
       </div>
-      <div role="tabpanel" class="pt-4">
+      <div role="tabpanel" id={panelId(props.active)} aria-labelledby={tabId(props.active)} class="pt-4">
         {props.children}
       </div>
     </div>

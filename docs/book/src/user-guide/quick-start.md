@@ -98,7 +98,7 @@ If this fails, see [Troubleshooting](troubleshooting.md).
 ## First use
 
 1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and type "new project". Choose a **project type** — a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md) you can customize later. Then answer **Does this project have code?**:
-   - **An existing folder on this computer** — pick the folder once. This is the choice if you want an agent to work on code you already have.
+   - **An existing folder on this computer** — pick the folder once, by typing its path or, in the desktop app, with **Browse…** (in a browser tab the button is shown disabled, with "Available in the desktop app"). This is the choice if you want an agent to work on code you already have.
    - **A new folder Tack creates** — Tack makes the folder and starts a git repository in it.
    - **No code yet** — a plain project manager. You can change the answer later under **Settings → Automation** (see [Automation](automation.md#automation)).
 

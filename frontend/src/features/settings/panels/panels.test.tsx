@@ -49,6 +49,8 @@ const AUTONOMY = {
 };
 let autonomy: Record<string, unknown> = AUTONOMY;
 let roles: unknown[] = [];
+/** Endings of the URLs that answer 500 until the test clears the list. */
+let failing: string[] = [];
 const autonomyPuts = () =>
   fetchMock.mock.calls
     .filter((c) => (c[1] as RequestInit)?.method === 'PUT' && String(c[0]).endsWith('/api/projects/p1/autonomy'))
@@ -66,8 +68,12 @@ afterEach(() => {
 beforeEach(() => {
   autonomy = structuredClone(AUTONOMY);
   roles = [];
+  failing = [];
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
+    if (failing.some((ending) => url.endsWith(ending))) {
+      return Promise.resolve(new Response(JSON.stringify({ error: 'The board is unreachable' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+    }
     if (url.endsWith('/api/projects/p1/autonomy')) {
       if (init?.method === 'PUT') autonomy = JSON.parse(String(init.body));
       return Promise.resolve(new Response(JSON.stringify(autonomy), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -460,9 +466,34 @@ describe('Settings panels', () => {
       await flush();
       const teams = rung(container, 'teams');
       expect(teams.querySelector('[data-testid="team-row"]')!.textContent).toContain('saas-content · needs a person · this computer');
-      expect(teams.querySelector('#apply-teams-why')!.textContent).toContain(
-        "Tack cannot run this on the team's computer from the board yet. In the project's folder, run:",
-      );
+      const apply = btn(teams, "Apply the repository's teams");
+      expect(apply.disabled).toBe(true);
+      const why = teams.querySelector('#' + CSS.escape(apply.getAttribute('aria-describedby')!))!;
+      expect(why.textContent).toBe("Tack cannot run this on the team's computer from the board yet.");
+      // No command and no variable on the screen: a link to the Administrator Guide instead.
+      expect(teams.textContent).not.toMatch(/docket (init|setup)|TACK_/);
+    });
+
+    it('a_failed_load_says_so_with_a_retry_and_is_never_shown_as_empty', async () => {
+      failing = ['/api/projects/p1/autonomy', '/api/projects/p1/roles', '/api/agent-profiles'];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const alerts = Array.from(container.querySelectorAll('[data-testid="load-error"]')).map((a) => a.textContent);
+      expect(alerts.some((a) => a!.startsWith('Could not load the autonomy settings.'))).toBe(true);
+      expect(alerts.some((a) => a!.startsWith("Could not load this project's roles."))).toBe(true);
+      expect(alerts.some((a) => a!.startsWith('Could not load the agent profiles'))).toBe(true);
+      expect(rung(container, 'merge').textContent).toContain('The board is unreachable');
+      expect(container.textContent).not.toContain('not available yet');
+      expect(container.textContent).not.toContain('has no roles yet');
+
+      // The board comes back: Try again loads what was missing.
+      failing = [];
+      btn(rung(container, 'merge'), 'Try again').click();
+      await flush();
+      await flush();
+      expect(rung(container, 'merge').querySelector('[data-testid="load-error"]')).toBeNull();
+      expect(rung(container, 'merge').textContent).toContain('You merge every change yourself.');
     });
 
     it('a_lights_out_team_row_says_lights_out', async () => {
@@ -491,7 +522,7 @@ describe('Settings panels', () => {
       await flush();
       const text = rung(none.container, 'teams').querySelector('[data-testid="team-reads"]')!.textContent!;
       expect(text).toContain('reads only its own work');
-      expect(text).toContain('docket setup sandbox read add <folder>');
+      expect(text).toContain('needs its toolchain granted');
       none.dispose();
 
       // A docket that does not say adds no line, rather than claiming "nothing".
@@ -518,7 +549,7 @@ describe('Settings panels', () => {
       autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
       autonomy.automatic_merge_blocked_by = [
         'The team saas-content runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file',
-        'The project has no public key to check prill\'s signature against',
+        'The project has no public key to check the verifier\'s signature against',
       ];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
@@ -530,7 +561,7 @@ describe('Settings panels', () => {
       expect(lines[0]).toContain('✗');
       expect(lines[0]).toContain('Turn on lights-out in the team file');
       expect(Array.from(ceiling.querySelectorAll('[data-testid="ceiling-blocker"]')).map((e) => e.textContent)).toEqual([
-        "✗ The project has no public key to check prill's signature against",
+        "✗ The project has no public key to check the verifier's signature against",
       ]);
     });
   });
@@ -546,7 +577,7 @@ describe('Settings panels', () => {
       expect(autonomyPuts().at(-1)).toMatchObject({ merge_on_done: true, verify_loop_max_attempts: 2 });
     });
 
-    it('the_autonomy_section_saves_each_field_and_fills_the_prill_example', async () => {
+    it('the_autonomy_section_saves_each_field_and_fills_the_example_stages', async () => {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       const cap = withInput(container, 'Times a rejected change goes back to the agent');
@@ -561,10 +592,10 @@ describe('Settings panels', () => {
       await flush();
       expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000 });
 
-      btn(container, "Fill prill's example").click();
+      btn(container, "Fill the example stages").click();
       await flush();
       expect(autonomyPuts().at(-1).verify_require).toEqual(['criteria', 'suite', 'anti_tautology', 'static_analysis']);
-      expect(withInput(container, 'Stages prill must run').value).toBe('criteria, suite, anti_tautology, static_analysis');
+      expect(withInput(container, 'Stages the verifier must run').value).toBe('criteria, suite, anti_tautology, static_analysis');
 
       const key = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Public key"]')!;
       key.value = 'PEM';

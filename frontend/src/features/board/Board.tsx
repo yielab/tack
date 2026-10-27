@@ -185,14 +185,14 @@ const BoardColumnView: Component<{
     >
       <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', padding: '2px 8px 4px' }}>
         <span style={{ width: '8px', height: '8px', 'border-radius': '50%', 'flex-shrink': 0, background: props.dotColor }} />
-        <h3 id={headingId} style={{
-          'min-width': 0, 'overflow-wrap': 'anywhere',
+        <h3 id={headingId} title={props.column.status} style={{
+          'min-width': 0, overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap',
           'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
           'letter-spacing': 'normal', margin: 0, color: 'var(--color-text-primary)',
         }}>
           {props.column.status}
         </h3>
-        <span style={{ 'font-size': '0.75rem', 'font-weight': 500, color: 'var(--color-text-tertiary)' }}>
+        <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
           {props.column.items.length}
         </span>
         <Show when={props.column.wip_limit != null}>

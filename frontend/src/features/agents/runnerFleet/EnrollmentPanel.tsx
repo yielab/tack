@@ -5,6 +5,7 @@ import { toast } from '../../../shared/ui/toast';
 import { runnersApi, type EnrollRunnerResult } from '../../../shared/execution';
 import RunnerHealthCard, { type RunnerConnectionStatus } from './RunnerHealthCard';
 import { formatExpiresIn, parseOptionalJsonObject } from './format';
+import { BOOK } from '../../../shared/help/routes';
 
 /** One runner identity this browser session knows about — either just
  *  enrolled here, or manually revoked here after being enrolled elsewhere.
@@ -205,8 +206,7 @@ const EnrollmentPanel: Component = () => {
   return (
     <div class="space-y-3.5">
       <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
-        Enroll issues a one-time token a <code class="font-mono">tack-runner</code> process exchanges for a
-        durable credential. This page doesn't check back with the server, so it only shows runners
+        Enroll issues a one-time token a runner exchanges for a durable credential. This page doesn't check back with the server, so it only shows runners
         enrolled or revoked from this browser this session, not whether they actually connected — see the{' '}
         <A href="/agents" class="underline" style={{ color: 'var(--color-accent-ink)' }}>Agents</A> page for a live runner roster.
       </p>
@@ -366,8 +366,10 @@ const EnrollmentPanel: Component = () => {
                 </p>
               </div>
               <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                {formatExpiresIn(token().expires_at)} — set{' '}
-                <code class="font-mono">TACK_RUNNER_ENROLLMENT_TOKEN</code> on the runner before then.
+                {formatExpiresIn(token().expires_at)} — give it to the runner before then.{' '}
+                <a href={BOOK.enrolling} target="_blank" rel="noreferrer" class="underline">
+                  The Administrator Guide shows how.
+                </a>
               </p>
               <div class="flex gap-2">
                 <Button onClick={() => void copyToken()}>{copied() ? 'Copied' : 'Copy token'}</Button>

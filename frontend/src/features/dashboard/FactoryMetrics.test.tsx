@@ -291,28 +291,28 @@ describe('FactoryMetrics sources and cost', () => {
     ],
   } as unknown as FactoryMetrics['quality'];
 
-  it('without quality, one line says why and no prill block is shown', async () => {
+  it('without quality, one line says why and no verifier block is shown', async () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
       quality: null,
-      quality_unavailable: 'prill is not configured on this board.',
+      quality_unavailable: 'The verifier is not configured on this board.',
     });
     const { container } = mount();
     await flush();
     await flush();
 
-    expect(container.textContent).toContain('prill is not configured on this board.');
-    expect(container.textContent).not.toContain('Quality (from prill');
+    expect(container.textContent).toContain('The verifier is not configured on this board.');
+    expect(container.textContent).not.toContain('Quality (from the verifier');
   });
 
-  it('with quality, each repository shows prill figures under the prill version', async () => {
+  it('with quality, each repository shows the figures of the verifier under its version', async () => {
     setupFetchMock({ ...FACTORY_METRICS_FIXTURE, quality: PRILL_QUALITY, cost_usd: 12.5, rate_card_as_of: '2026-10-01' });
     const { container } = mount();
     await flush();
     await flush();
 
     const text = container.textContent ?? '';
-    expect(text).toContain('Quality (from prill 0.4.2)');
+    expect(text).toContain('Quality (from the verifier, version 0.4.2)');
     expect(text).toContain('acme/app');
     expect(text).toContain('Escalation');
     expect(text).toContain('10.0%');

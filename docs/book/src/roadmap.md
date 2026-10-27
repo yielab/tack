@@ -99,9 +99,8 @@ tree. The recordings that need a paid model were retaken on 2026-10-20: the tuto
 `workflow.gif`, `hero.gif` and `attempt.png`. Still to retake: `agents.png` and `agents-flow.gif`
 (the Agents page's test run starts Codex, whose configured model its ChatGPT login does not accept, so it
 fails), the two desktop shots (they need the desktop window) and `recovery-demo.gif` (recorded from a
-published release, so it shows the released screens). Also open, small: a long status name wraps in its board
-column header, a retried request's fingerprint still includes the composed instructions (so a
-title edit answers 409), and the Dependencies tab's links open the drawer, not the page. It gathers
+published release, so it shows the released screens). Also open, small: a retried request's fingerprint
+still includes the composed instructions (so a title edit answers 409). It gathers
 what the first runs from the desktop app found, the board screen audit, the gaps of earlier phases
 that are a fix, and the item screen's new design, and orders them so each screen and each module is
 changed by one task, once. No ADR: nothing here changes a decision; the one model change is a tick

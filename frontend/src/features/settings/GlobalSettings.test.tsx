@@ -39,6 +39,18 @@ const findButton = (c: HTMLElement, text: string) =>
   Array.from(c.querySelectorAll('button')).find((b) => b.textContent?.includes(text))!;
 
 describe('GlobalSettings', () => {
+  it('shows every cloud backup control disabled with its reason while cloud backup is not set up', async () => {
+    const { container } = mount();
+    await flush();
+    for (const name of ['Back up now', 'Restore latest', 'Verify latest']) {
+      const button = findButton(container, name);
+      expect(button.disabled).toBe(true);
+      expect(container.querySelector(`#${CSS.escape(button.getAttribute('aria-describedby')!)}`)!.textContent).toBe('Set up cloud backup first');
+    }
+    const refresh = container.querySelector<HTMLButtonElement>('button[aria-label="Refresh the list of cloud backups"]')!;
+    expect(refresh.disabled).toBe(true);
+  });
+
   it('downloads a backup from GET /backup', async () => {
     const { container } = mount();
     findButton(container, 'Download backup').click();

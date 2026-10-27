@@ -339,7 +339,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
               )}
             </For>
             <Show when={codeChoice() !== 'none'}>
-              <div class="flex items-end gap-2">
+              <div class="flex items-start gap-2">
                 <div class="flex-1">
                   <Field
                     label={codeChoice() === 'folder' ? 'Folder' : 'Where to create it'}
@@ -350,11 +350,16 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                     disabled={loading()}
                   />
                 </div>
-                <Show when={inTauri()}>
-                  <Button type="button" variant="secondary" onClick={() => void browse()} disabled={loading()}>
-                    Browse…
-                  </Button>
-                </Show>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  class="mt-5"
+                  onClick={() => void browse()}
+                  disabled={!inTauri() || loading()}
+                  reason={inTauri() ? undefined : 'Available in the desktop app'}
+                >
+                  Browse…
+                </Button>
               </div>
               <Show when={pathCheck()}>
                 <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{checkSentence(pathCheck()!)}</p>

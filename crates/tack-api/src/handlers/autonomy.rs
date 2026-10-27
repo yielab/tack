@@ -310,7 +310,9 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
         blocked.push(format!("{reason}, so a signed pack cannot be checked"));
     }
     if settings.attestation_public_key.is_none() {
-        blocked.push("The project has no public key to check prill's signature against".to_owned());
+        blocked.push(
+            "The project has no public key to check the verifier's signature against".to_owned(),
+        );
     }
     let teams = role_teams(state, project_id).await?;
     let reported_attended = |team: &TeamLine| team.profile != "unknown" && team.caps_at.is_some();

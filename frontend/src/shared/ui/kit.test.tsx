@@ -9,6 +9,8 @@ import Select from './Select';
 import Modal from './Modal';
 import Drawer from './Drawer';
 import Tabs from './Tabs';
+import RouteBoundary from './RouteBoundary';
+import LoadError from './LoadError';
 import { IconList } from './icons';
 
 const disposers: Array<() => void> = [];
@@ -46,6 +48,22 @@ describe('Button', () => {
     expect(btn.disabled).toBe(true);
     expect(btn.getAttribute('aria-busy')).toBe('true');
   });
+
+  it('shows its reason beside the button, tied to it, only while it is disabled', () => {
+    const [off, setOff] = createSignal(true);
+    const c = mount(() => (
+      <Button disabled={off()} reason="Set up cloud backup first" aria-describedby="other">
+        Back up
+      </Button>
+    ));
+    const btn = c.querySelector('button')!;
+    const reason = c.querySelector('span[id]')!;
+    expect(reason.textContent).toBe('Set up cloud backup first');
+    expect(btn.getAttribute('aria-describedby')).toBe(`other ${reason.id}`);
+    setOff(false);
+    expect(c.querySelector('span[id]')).toBeNull();
+    expect(btn.getAttribute('aria-describedby')).toBe('other');
+  });
 });
 
 describe('Badge / EmptyState / Field', () => {
@@ -70,6 +88,15 @@ describe('Badge / EmptyState / Field', () => {
     expect(label.getAttribute('for')).toBe(input.id);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(c.textContent).toContain('Required');
+  });
+
+  it('Field points aria-describedby at its error, else its hint', () => {
+    const [error, setError] = createSignal<string | undefined>('Required');
+    const c = mount(() => <Field label="Name" error={error()} hint="Three letters" value="" />);
+    const input = c.querySelector('input')!;
+    expect(c.querySelector(`#${CSS.escape(input.getAttribute('aria-describedby')!)}`)!.textContent).toBe('Required');
+    setError(undefined);
+    expect(c.querySelector(`#${CSS.escape(input.getAttribute('aria-describedby')!)}`)!.textContent).toBe('Three letters');
   });
 
   it('a_field_with_help_renders_the_hint', () => {
@@ -183,6 +210,47 @@ describe('Tabs', () => {
     expect(tabs()[0].getAttribute('aria-selected')).toBe('false');
     expect(tabs()[1].getAttribute('aria-selected')).toBe('true');
     expect(c.textContent).toContain('panel-b');
+  });
+
+  it('ties each tab to the panel it controls and the panel back to its tab', () => {
+    const c = mount(() => (
+      <Tabs tabs={[{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }]} active="b" onChange={() => {}}>
+        <span>panel</span>
+      </Tabs>
+    ));
+    const tabs = Array.from(c.querySelectorAll('[role="tab"]'));
+    const panel = c.querySelector('[role="tabpanel"]')!;
+    expect(tabs[1].getAttribute('aria-controls')).toBe(panel.id);
+    expect(panel.getAttribute('aria-labelledby')).toBe(tabs[1].id);
+  });
+});
+
+describe('RouteBoundary / LoadError', () => {
+  it('a_screen_that_throws_shows_a_message_and_draws_again_on_Try_again', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let broken = true;
+    const Screen = () => {
+      if (broken) throw new Error('The items would not draw');
+      return <p>drawn</p>;
+    };
+    const c = mount(() => (
+      <RouteBoundary>
+        <Screen />
+      </RouteBoundary>
+    ));
+    expect(c.querySelector('[role="alert"]')!.textContent).toContain('The items would not draw');
+    broken = false;
+    Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Try again')!.click();
+    expect(c.textContent).toBe('drawn');
+  });
+
+  it('LoadError says what could not load and retries', () => {
+    const onRetry = vi.fn();
+    const c = mount(() => <LoadError what="the roles" error={new Error('Timed out')} onRetry={onRetry} />);
+    expect(c.querySelector('[role="alert"]')!.textContent).toContain('Could not load the roles.');
+    expect(c.textContent).toContain('Timed out');
+    c.querySelector('button')!.click();
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });
 
