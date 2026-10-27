@@ -375,6 +375,8 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
+  published since the last run); only the lockfile changes.
 - **Stopping the server stops every background loop and waits for what a request started.** The loops
   (auto-start, the GitHub poll, due-soon, retention, the health watch, the remote backup) were
   fire-and-forget: a panic in one was lost without a line, and two of them had no stop signal at all.
