@@ -27,7 +27,6 @@ use tack_runner::{
     active::ActiveAttempts,
     bootstrap::{self, RunnerLimits},
     harness::process::ProcessLimits,
-    secrets::SecretStore,
 };
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
@@ -106,7 +105,7 @@ pub fn run_standalone(
         config_path.as_deref(),
     )?;
 
-    tack_runner::logging::init();
+    tack_runner::logging::init(config.process.var("RUST_LOG").as_deref());
     let runtime = tokio::runtime::Runtime::new()?;
     runtime.block_on(run_to_shutdown(config))
 }
@@ -278,7 +277,8 @@ impl RunnerHost for CliRunnerHost {
 
     async fn resolve_secret(&self, reference: &str) -> Result<String, String> {
         let config = self.runner_config.lock().await;
-        SecretStore::open(&config.secret_store_path())
+        config
+            .open_secret_store()
             .resolve(reference)
             .map(|value| value.expose().to_owned())
             .map_err(|error| error.to_string())

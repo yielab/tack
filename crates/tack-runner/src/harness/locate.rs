@@ -7,12 +7,13 @@
 //! so a real install reads as "not installed".
 //!
 //! [`locate`] searches `PATH` first, then a fixed list of per-user install
-//! locations. Pure over its arguments — no `std::env` read — so tests
-//! exercise it without touching the environment; [`locate_installed`] is
-//! the only impure wrapper.
+//! locations. Pure over its arguments — no `std::env` read: the caller hands
+//! it the runner's [`ProcessEnv`], so tests exercise it without touching the
+//! environment.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+
+use crate::config::ProcessEnv;
 
 /// `program` was not found on `PATH` or under any well-known install
 /// location. Carries every directory that was actually searched, so the
@@ -51,23 +52,18 @@ impl std::fmt::Display for NotFound {
 
 impl std::error::Error for NotFound {}
 
-/// Searches `path` (already snapshotted by the caller) for an executable
-/// named `program`, then falls back to well-known per-user install
-/// directories under `home`. First hit wins, so a shell that can already
+/// Searches the `PATH` of `env` for an executable named `program`, then
+/// falls back to well-known per-user install directories under its home. First hit wins, so a shell that can already
 /// see the install behaves exactly as before this locator existed.
 ///
 /// On Unix a candidate must also carry the executable bit, so a stale
 /// non-executable file doesn't shadow a real install further down the
 /// search. Symlinks (nvm installs are symlinks) are canonicalized so the
 /// resolved path is stable across whichever nvm version they point at.
-pub fn locate(
-    program: &str,
-    path: Option<&OsStr>,
-    home: Option<&Path>,
-) -> Result<PathBuf, NotFound> {
+pub fn locate(program: &str, env: &ProcessEnv) -> Result<PathBuf, NotFound> {
     let mut searched = Vec::new();
 
-    for dir in candidate_dirs(path, home) {
+    for dir in candidate_dirs(env) {
         if let Some(found) = check_dir(&dir, program) {
             return Ok(found);
         }
@@ -81,48 +77,22 @@ pub fn locate(
 }
 
 /// Every directory an agent is looked for in, in search order: the entries of
-/// `path` first, then the well-known per-user and package-manager folders
-/// under `home`. One list for claude-code, codex, opencode and docket alike,
+/// `PATH` first, then the well-known per-user and package-manager folders
+/// under the home directory. One list for claude-code, codex, opencode and docket alike,
 /// so no agent is found in more places than another.
-pub fn candidate_dirs(path: Option<&OsStr>, home: Option<&Path>) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = path
+pub fn candidate_dirs(env: &ProcessEnv) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = env
+        .search_path()
         .map(|path| {
-            std::env::split_paths(path)
+            std::env::split_paths(&path)
                 // An empty `PATH` entry means "current directory" to a shell;
                 // skipped on purpose since that's not where a harness is installed.
                 .filter(|dir| !dir.as_os_str().is_empty())
                 .collect()
         })
         .unwrap_or_default();
-    dirs.extend(well_known_dirs(home));
+    dirs.extend(well_known_dirs(env));
     dirs
-}
-
-/// Impure convenience wrapper: snapshots the runner process's own `PATH`
-/// and home directory once and calls [`locate`]. What `claude_code.rs`'s
-/// `discover()` calls, since it resolves once and caches the result.
-pub fn locate_installed(program: &str) -> Result<PathBuf, NotFound> {
-    let (path, home) = snapshot();
-    locate(program, path.as_deref(), home.as_deref())
-}
-
-/// Reads the runner process's own `PATH` and home directory once. What
-/// `codex.rs` calls at adapter construction, since it re-resolves on every
-/// spawn from the snapshot rather than re-reading the environment each
-/// time. The only place in this crate that reads `PATH` or a home-directory
-/// variable for this purpose.
-pub fn snapshot() -> (Option<std::ffi::OsString>, Option<PathBuf>) {
-    (std::env::var_os("PATH"), home_dir())
-}
-
-#[cfg(unix)]
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
-#[cfg(windows)]
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE").map(PathBuf::from)
 }
 
 fn check_dir(dir: &Path, program: &str) -> Option<PathBuf> {
@@ -147,10 +117,10 @@ fn check_dir(dir: &Path, program: &str) -> Option<PathBuf> {
 /// for it would be a flag whose off-state nothing exercises. Order: generic
 /// user-local bins first, then the version-managed installers, then the
 /// platform package managers.
-fn well_known_dirs(home: Option<&Path>) -> Vec<PathBuf> {
+fn well_known_dirs(env: &ProcessEnv) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
-    if let Some(home) = home {
+    if let Some(home) = env.home() {
         // Many installers' `--user`/default per-user location (pipx, uv
         // tool installs, and several npm-alternative tools).
         dirs.push(home.join(".local/bin"));
@@ -168,7 +138,7 @@ fn well_known_dirs(home: Option<&Path>) -> Vec<PathBuf> {
         // nvm never symlinks a version-independent "current" path outside
         // a sourced shell rc, so every installed Node version's own bin
         // directory is a candidate.
-        dirs.extend(nvm_bin_dirs(home));
+        dirs.extend(nvm_bin_dirs(&home));
     }
 
     #[cfg(unix)]
@@ -185,11 +155,11 @@ fn well_known_dirs(home: Option<&Path>) -> Vec<PathBuf> {
     #[cfg(windows)]
     {
         // npm's global install location on Windows.
-        if let Some(appdata) = std::env::var_os("APPDATA") {
+        if let Some(appdata) = env.var_os("APPDATA") {
             dirs.push(PathBuf::from(appdata).join("npm"));
         }
         // nvm-windows's install root.
-        if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
+        if let Some(local_appdata) = env.var_os("LOCALAPPDATA") {
             dirs.push(PathBuf::from(local_appdata).join("nvm"));
         }
     }
@@ -214,6 +184,8 @@ fn nvm_bin_dirs(home: &Path) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use super::*;
 
     #[cfg(unix)]
@@ -225,6 +197,14 @@ mod tests {
     fn write_file(path: &Path, contents: &str) {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
         std::fs::write(path, contents).expect("write");
+    }
+
+    fn env(path: &OsStr, home: Option<&Path>) -> ProcessEnv {
+        let mut pairs = vec![("PATH".to_owned(), path.to_owned())];
+        if let Some(home) = home {
+            pairs.push(("HOME".to_owned(), home.as_os_str().to_owned()));
+        }
+        ProcessEnv::from_pairs(pairs)
     }
 
     fn temp_home(label: &str) -> tempfile::TempDir {
@@ -250,7 +230,7 @@ mod tests {
 
         let path = std::env::join_paths([&path_dir]).expect("join paths");
         let found =
-            locate("claude", Some(path.as_os_str()), Some(home.path())).expect("found on PATH");
+            locate("claude", &env(path.as_os_str(), Some(home.path()))).expect("found on PATH");
         assert_eq!(found, path_binary.canonicalize().expect("canonicalize"));
     }
 
@@ -264,7 +244,7 @@ mod tests {
 
         let empty_path = std::ffi::OsStr::new("");
         let found =
-            locate("claude", Some(empty_path), Some(home.path())).expect("found in fallback dir");
+            locate("claude", &env(empty_path, Some(home.path()))).expect("found in fallback dir");
         assert_eq!(found, fallback_binary.canonicalize().expect("canonicalize"));
     }
 
@@ -274,7 +254,7 @@ mod tests {
         // The Homebrew prefixes are absolute, so a real one cannot be faked in
         // a temp dir: the list must carry both, and a user-level prefix under
         // `home` is searched the same way.
-        let dirs = candidate_dirs(Some(OsStr::new("")), None);
+        let dirs = candidate_dirs(&env(OsStr::new(""), None));
         assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
         assert!(dirs.contains(&PathBuf::from("/home/linuxbrew/.linuxbrew/bin")));
 
@@ -283,7 +263,7 @@ mod tests {
             let binary = home.path().join(".linuxbrew/bin").join(program);
             write_file(&binary, "#!/bin/sh\n");
             make_executable(&binary);
-            let found = locate(program, Some(OsStr::new("")), Some(home.path()))
+            let found = locate(program, &env(OsStr::new(""), Some(home.path())))
                 .expect("found in the Homebrew prefix");
             assert_eq!(found, binary.canonicalize().expect("canonicalize"));
         }
@@ -296,7 +276,7 @@ mod tests {
         std::fs::create_dir_all(&path_dir).expect("mkdir");
         let path = std::env::join_paths([&path_dir]).expect("join paths");
 
-        let error = locate("claude", Some(path.as_os_str()), Some(home.path()))
+        let error = locate("claude", &env(path.as_os_str(), Some(home.path())))
             .expect_err("claude is nowhere in this fixture");
 
         let searched = error.searched();
@@ -325,7 +305,7 @@ mod tests {
             .expect("chmod");
 
         let empty_path = std::ffi::OsStr::new("");
-        let error = locate("claude", Some(empty_path), Some(home.path()))
+        let error = locate("claude", &env(empty_path, Some(home.path())))
             .expect_err("non-executable file must not count as found");
         assert!(error.searched().contains(&home.path().join(".local/bin")));
     }
@@ -333,7 +313,7 @@ mod tests {
     #[test]
     fn nothing_panics_when_home_is_none() {
         let empty_path = std::ffi::OsStr::new("");
-        let error = locate("claude", Some(empty_path), None).expect_err("nothing to find");
+        let error = locate("claude", &env(empty_path, None)).expect_err("nothing to find");
         assert!(!error.to_string().is_empty());
     }
 }

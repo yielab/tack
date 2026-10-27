@@ -104,11 +104,8 @@ pub fn command(config: &DocketConfig) -> std::process::Command {
         Some(binary) if binary.components().count() > 1 => binary,
         named => {
             let name = named.unwrap_or_else(|| PathBuf::from("docket"));
-            let (path, home) = super::super::locate::snapshot();
             name.to_str()
-                .and_then(|name| {
-                    super::super::locate::locate(name, path.as_deref(), home.as_deref()).ok()
-                })
+                .and_then(|name| super::super::locate::locate(name, &config.process).ok())
                 .unwrap_or(name)
         }
     };
@@ -121,7 +118,7 @@ pub fn command(config: &DocketConfig) -> std::process::Command {
     }
     command.env_clear();
     for name in ["PATH", "HOME"] {
-        if let Some(value) = std::env::var_os(name) {
+        if let Some(value) = config.process.var_os(name) {
             command.env(name, value);
         }
     }

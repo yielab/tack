@@ -21,8 +21,8 @@ pub use folder::{
     DetectedInstall, FolderError, FolderFacts, check_folder, folder_path, init_folder,
 };
 pub use paths::{
-    NotLoopback, config_path_from, ensure_loopback, has_stored_session, host_name,
-    migrate_legacy_state_dir, state_dir_under,
+    NotLoopback, config_path_from, ensure_loopback, has_stored_session, migrate_legacy_state_dir,
+    state_dir_under,
 };
 pub use preference::{effective_enabled, set_enabled};
 pub use supervisor::{EmbeddedRunner, RunnerHost, RunnerProcess};

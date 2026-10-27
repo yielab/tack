@@ -61,12 +61,15 @@ pub struct AppState {
 
 impl AppState {
     /// The prill the board runs: the one place that asks the embedded runner.
-    pub async fn prill_program(&self) -> String {
+    pub async fn prill(&self) -> crate::prill::Prill {
         let runner = match &self.local_runner {
             Some(control) => control.verify_program().await,
             None => None,
         };
-        self.config.prill_program_or(runner)
+        crate::prill::Prill {
+            program: self.config.prill_program_or(runner),
+            search_path: self.config.search_path.clone(),
+        }
     }
 }
 

@@ -13,7 +13,7 @@ use tack_runner::{
         HarnessProbe,
         artifact::ArtifactStager,
         codex::{CodexAdapter, CodexGrammar},
-        locate::locate_installed,
+        locate::locate,
         process::ProcessLimits,
         sha256::sha256_hex,
     },
@@ -55,7 +55,7 @@ fn test_secret_store(dir: &std::path::Path) -> SecretStore {
 #[ignore = "opt-in: requires a real `codex` binary on PATH; run with \
             `cargo nextest run --workspace --run-ignored ignored-only -E 'binary_id(tack-runner::it) & test(/^live::/)'`"]
 async fn live_probe_and_artifact_staging_against_a_real_codex_binary_when_present() {
-    if locate_installed(CODEX_PROGRAM_NAME).is_err() {
+    if locate(CODEX_PROGRAM_NAME, &tack_runner::ProcessEnv::from_process()).is_err() {
         eprintln!("skipping live codex test: `codex` not found on PATH");
         return;
     }
@@ -66,6 +66,7 @@ async fn live_probe_and_artifact_staging_against_a_real_codex_binary_when_presen
         ProcessLimits::new(1_048_576, 1_048_576, Duration::from_secs(30)),
         scratch.path().to_path_buf(),
         test_secret_store(scratch.path()),
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("codex was located above");
 

@@ -169,8 +169,7 @@ async fn run(harness: &Harness, spec: &ExecutionSpec) -> HarnessOutcome {
 fn absent_binary() -> BinaryLocator {
     BinaryLocator::Search {
         program: PLAIN.program.to_owned(),
-        path: Some(std::ffi::OsString::new()),
-        home: None,
+        env: crate::config::ProcessEnv::from_pairs([("PATH", "")]),
     }
 }
 

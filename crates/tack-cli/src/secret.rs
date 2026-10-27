@@ -14,7 +14,8 @@ use tack_runner::{RunnerConfig, RunnerConfigSources, SecretStore};
 
 use crate::SecretAction;
 
-fn resolve_state_dir(state_dir: Option<PathBuf>) -> PathBuf {
+/// The runner's secret store, in the state directory the same configuration sources name.
+fn open_store(state_dir: Option<PathBuf>) -> SecretStore {
     RunnerConfig::from_sources(RunnerConfigSources {
         environment: RunnerConfig::environment_overrides(),
         command_line: tack_runner::ConfigOverrides {
@@ -23,15 +24,15 @@ fn resolve_state_dir(state_dir: Option<PathBuf>) -> PathBuf {
         },
         ..Default::default()
     })
-    .map(|config| config.secret_store_path())
-    .unwrap_or_else(|_| RunnerConfig::defaults().secret_store_path())
+    .unwrap_or_else(|_| RunnerConfig::defaults())
+    .open_secret_store()
 }
 
 /// Reads the secret value from `TACK_RUNNER_SECRET_VALUE` if set, otherwise
 /// from stdin. Never accepts it as a positional argument — an argv value
 /// would be visible in `ps`/`/proc/<pid>/cmdline` and in shell history.
 fn read_secret_value() -> anyhow::Result<String> {
-    if let Ok(value) = std::env::var("TACK_RUNNER_SECRET_VALUE") {
+    if let Some(value) = tack_cli::config::secret_value_from_environment() {
         return Ok(value);
     }
     let mut buffer = String::new();
@@ -54,7 +55,7 @@ pub fn run(action: SecretAction) -> anyhow::Result<()> {
 }
 
 fn cmd_set(name: String, state_dir: Option<PathBuf>) -> anyhow::Result<()> {
-    let store = SecretStore::open(&resolve_state_dir(state_dir));
+    let store = open_store(state_dir);
     let value = read_secret_value()?;
     store.set(&name, &value)?;
     println!("stored {name:?} in the {} backend", store.backend());
@@ -62,7 +63,7 @@ fn cmd_set(name: String, state_dir: Option<PathBuf>) -> anyhow::Result<()> {
 }
 
 fn cmd_list(state_dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
-    let store = SecretStore::open(&resolve_state_dir(state_dir));
+    let store = open_store(state_dir);
     let names = store.list()?;
 
     if json {
@@ -82,7 +83,7 @@ fn cmd_list(state_dir: Option<PathBuf>, json: bool) -> anyhow::Result<()> {
 }
 
 fn cmd_remove(name: String, state_dir: Option<PathBuf>) -> anyhow::Result<()> {
-    let store = SecretStore::open(&resolve_state_dir(state_dir));
+    let store = open_store(state_dir);
     store.remove(&name)?;
     println!("removed {name:?} from the {} backend", store.backend());
     Ok(())

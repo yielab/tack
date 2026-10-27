@@ -596,6 +596,7 @@ async fn the_configured_secret_allow_list_reaches_the_discovered_harness() {
                 &store,
                 &config.secrets.request_may_reference,
                 &BTreeMap::new(),
+                &crate::config::ProcessEnv::default(),
             ),
             ConfiguredGrammar,
         );

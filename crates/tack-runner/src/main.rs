@@ -65,10 +65,11 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
             enrollment_credential: cli.enrollment_token.map(EnrollmentCredential::new),
             max_concurrent_attempts: cli.max_concurrent_attempts,
             invalid: None,
+            process: None,
         },
     })?;
 
-    tack_runner::logging::init();
+    tack_runner::logging::init(config.process.var("RUST_LOG").as_deref());
 
     let limits = RunnerLimits {
         harness_process: HARNESS_PROCESS_LIMITS,

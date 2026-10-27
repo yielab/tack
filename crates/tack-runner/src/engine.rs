@@ -350,6 +350,9 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     )>,
     /// The `[git]` table; a disabled table pushes nothing.
     git: crate::config::GitConfig,
+    /// The environment the runner was started with: the verifier's `PATH` and what an install
+    /// runs with.
+    process: crate::config::ProcessEnv,
     /// The leases in flight, which the runner's ticker renews together.
     active: crate::active::ActiveAttempts,
 }
@@ -395,6 +398,7 @@ where
             data_protocol: None,
             verify: None,
             git: crate::config::GitConfig::default(),
+            process: crate::config::ProcessEnv::default(),
             active: crate::active::ActiveAttempts::new(1),
         }
     }
@@ -442,6 +446,12 @@ where
     /// attempt's captured work is pushed to the remote it was fetched from.
     pub fn with_git(mut self, config: crate::config::GitConfig) -> Self {
         self.git = config;
+        self
+    }
+
+    /// The environment the runner was started with, for the verifier and the install.
+    pub fn with_process_env(mut self, process: crate::config::ProcessEnv) -> Self {
+        self.process = process;
         self
     }
 
@@ -574,6 +584,7 @@ where
                         .state_dir()
                         .map_err(|e| rejected(e.to_string()))?,
                     std::time::Duration::from_secs(spec.work.request.timeout_seconds),
+                    &self.process,
                 )
                 .await
                 .map_err(|e| rejected(e.to_string()))?;

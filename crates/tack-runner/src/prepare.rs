@@ -17,6 +17,7 @@ use std::{
 use tack_protocol::execution::ExecutionRequestSnapshot;
 use tack_protocol::prepare::{PrepareSetting, Resolution, Why};
 
+use crate::config::ProcessEnv;
 use crate::harness::{
     process::{ProcessExit, ProcessLimits, ProcessSpec},
     redact::SecretMaterial,
@@ -94,6 +95,7 @@ pub async fn prepare(
     setting: &PrepareSetting,
     state_dir: &Path,
     timeout: Duration,
+    env: &ProcessEnv,
 ) -> Result<(), PrepareError> {
     let files = root_files(checkout)
         .map_err(|error| PrepareError(format!("Could not read the checkout: {error}")))?;
@@ -107,7 +109,7 @@ pub async fn prepare(
             Ok(())
         }
         Resolution::Run { command, lockfile } => {
-            install(checkout, &command, lockfile, state_dir, timeout).await
+            install(checkout, &command, lockfile, state_dir, timeout, env).await
         }
     }
 }
@@ -149,6 +151,7 @@ async fn install(
     lockfile: Option<&str>,
     state_dir: &Path,
     timeout: Duration,
+    env: &ProcessEnv,
 ) -> Result<(), PrepareError> {
     let installed = checkout.join(FOLDER);
     // A replaced command is the project's own and may do anything, so it always runs. A folder the
@@ -157,10 +160,10 @@ async fn install(
         .filter(|lockfile| is_kept(lockfile))
         .filter(|_| fs::symlink_metadata(&installed).is_err());
     let Some(lockfile) = kept else {
-        return run(checkout, command, timeout).await;
+        return run(checkout, command, timeout, env).await;
     };
     let Ok(lock) = fs::read(checkout.join(lockfile)) else {
-        return run(checkout, command, timeout).await;
+        return run(checkout, command, timeout, env).await;
     };
     let cache = state_dir.join("prepare-cache");
     let entry = cache.join(sha256_hex(&lock));
@@ -170,7 +173,7 @@ async fn install(
     }
     // Nothing usable was kept, or it could not be linked: whatever was half built goes.
     let _ = fs::remove_dir_all(&installed);
-    run(checkout, command, timeout).await?;
+    run(checkout, command, timeout, env).await?;
     keep(checkout, &cache, &entry);
     mark(&installed)
 }
@@ -225,7 +228,12 @@ fn link_tree(from: &Path, to: &Path) -> io::Result<()> {
 }
 
 /// Runs `command` with `sh -c` in `checkout`, bounded by `timeout`.
-async fn run(checkout: &Path, command: &str, timeout: Duration) -> Result<(), PrepareError> {
+async fn run(
+    checkout: &Path,
+    command: &str,
+    timeout: Duration,
+    env: &ProcessEnv,
+) -> Result<(), PrepareError> {
     let failed = |what: String, output: &str| {
         let tail = last_lines(output);
         let reason = format!("Could not prepare the dependencies: `{command}` {what}");
@@ -238,7 +246,7 @@ async fn run(checkout: &Path, command: &str, timeout: Duration) -> Result<(), Pr
     let spec = ProcessSpec {
         program: PathBuf::from("sh"),
         args: vec!["-c".to_owned(), command.to_owned()],
-        env: std::env::vars().collect(),
+        env: env.text_pairs(),
         stdin: None,
         working_directory: checkout.to_path_buf(),
         workspace_root: checkout.to_path_buf(),

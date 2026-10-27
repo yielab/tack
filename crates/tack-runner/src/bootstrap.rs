@@ -74,9 +74,9 @@ pub async fn build_runtime_with_active(
     // The real transport replaces `UnavailableProtocolClient`, the stub
     // that otherwise cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
-    let secrets = SecretStore::open(&config.secret_store_path());
+    let secrets = config.open_secret_store();
     let own_environment = secrets
-        .resolve_own_environment(&config.environment)
+        .resolve_own_environment(&config.environment, &config.process)
         .map_err(|error| {
             tracing::warn!(%error, "the [environment] table could not be resolved");
             RunnerError::Config(crate::ConfigError::Invalid)
@@ -88,6 +88,7 @@ pub async fn build_runtime_with_active(
         &config.secrets.request_may_reference,
         &own_environment,
         &config.docket,
+        &config.process,
     );
     // What this runner reports is probed here and again by the client later
     // (a team added after start), so one function decides how it is built.
@@ -115,6 +116,7 @@ pub async fn build_runtime_with_active(
                     &config.secrets.request_may_reference,
                     &own_environment,
                     &config.docket,
+                    &config.process,
                 );
                 let mut capabilities =
                     report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts)
@@ -134,7 +136,9 @@ pub async fn build_runtime_with_active(
         }
     };
     let capabilities = probe().await;
-    if config.verify.enabled && !crate::verify::program_found(&config.verify.program) {
+    if config.verify.enabled
+        && !crate::verify::program_found(&config.verify.program, &config.process)
+    {
         tracing::warn!(
             program = config.verify.program.as_str(),
             "the verifier is enabled but its program is not on PATH; every succeeded attempt will record a verify failure"
@@ -161,6 +165,7 @@ pub async fn build_runtime_with_active(
     .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>)
     .with_verify(config.verify.clone(), limits.harness_process.clone())
     .with_git(config.git.clone())
+    .with_process_env(config.process.clone())
     .with_active(active);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities)
         .with_reprobe(crate::client::transport::CAPABILITY_REPROBE_INTERVAL, probe);
@@ -256,6 +261,7 @@ pub async fn probe(
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
     docket: &crate::config::DocketConfig,
+    env: &crate::config::ProcessEnv,
 ) -> DiscoveryReport {
     let (adapters, missing_harnesses) = crate::harness::discover(
         process_limits,
@@ -264,6 +270,7 @@ pub async fn probe(
         &[],
         &BTreeMap::new(),
         docket,
+        env,
     );
     let capabilities = report_capabilities(&adapters, &SystemClock, 1).await;
     let declared = adapters.declared_capabilities();

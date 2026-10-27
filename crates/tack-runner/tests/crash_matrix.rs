@@ -1005,6 +1005,7 @@ async fn cancel_with_a_detached_grandchild(announces: bool) -> (CancellationEvid
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         tack_runner::SecretStore::file(dir.path().join("secrets.json")),
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable");
     let workspace = dir.path().join("workspace");
@@ -1080,6 +1081,7 @@ async fn time_out_with_an_announced_detached_group(
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         tack_runner::SecretStore::file(dir.path().join("secrets.json")),
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable");
     let workspace = dir.path().join("workspace");
@@ -1267,6 +1269,7 @@ async fn run_shell_harness(script: &'static str) -> (HarnessOutcome, Option<u32>
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         tack_runner::SecretStore::file(dir.path().join("secrets.json")),
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("/bin/sh is locatable");
     let workspace = dir.path().join("workspace");

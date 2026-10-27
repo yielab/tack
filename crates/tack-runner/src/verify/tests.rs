@@ -34,7 +34,14 @@ async fn run_with(config: &VerifyConfig) -> Result<Vec<serde_json::Value>, Verif
         base_revision: "base".to_owned(),
     };
     let limits = ProcessLimits::new(1024 * 1024, 1024 * 1024, Duration::from_secs(60));
-    run(config, &limits, &workspace, &scratch).await
+    run(
+        config,
+        &limits,
+        &workspace,
+        &scratch,
+        &crate::config::ProcessEnv::default(),
+    )
+    .await
 }
 
 #[tokio::test]

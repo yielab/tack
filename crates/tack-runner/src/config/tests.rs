@@ -18,6 +18,7 @@ fn config_precedence_is_defaults_file_environment_then_cli() {
             enrollment_credential: Some(EnrollmentCredential::new("environment-secret")),
             max_concurrent_attempts: None,
             invalid: None,
+            process: None,
         },
         command_line: ConfigOverrides {
             api_base_url: Some("https://cli.invalid".into()),
@@ -26,6 +27,7 @@ fn config_precedence_is_defaults_file_environment_then_cli() {
             enrollment_credential: Some(EnrollmentCredential::new("cli-secret")),
             max_concurrent_attempts: None,
             invalid: None,
+            process: None,
         },
     })
     .expect("configuration should load");

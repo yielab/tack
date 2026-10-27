@@ -77,13 +77,7 @@ impl Verifier for Adapter {
         public_key_pem: &str,
         commit: &str,
     ) -> Result<String, VerifierError> {
-        crate::prill::attest_verify(
-            &self.0.prill_program().await,
-            envelope,
-            public_key_pem,
-            commit,
-        )
-        .await
+        crate::prill::attest_verify(&self.0.prill().await, envelope, public_key_pem, commit).await
     }
 
     async fn pull_request_observed(&self, repo: &str, number: i64) {

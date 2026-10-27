@@ -22,9 +22,10 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
 
     // Echoed so a client attaching to an already-running server can confirm
     // that the server is the one it launched.
-    let launch_nonce = std::env::var("TACK_LAUNCH_NONCE").ok();
-
-    Json(health_body(migrations_applied, launch_nonce))
+    Json(health_body(
+        migrations_applied,
+        state.config.launch_nonce.clone(),
+    ))
 }
 
 fn health_body(migrations_applied: i64, launch_nonce: Option<String>) -> serde_json::Value {

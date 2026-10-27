@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use tack_app::loop_config::LoopConfig;
 
+/// What the prill the board runs is given as `PATH` when the process has none.
+const DEFAULT_SEARCH_PATH: &str = "/usr/local/bin:/usr/bin:/bin";
+
 /// Application configuration loaded from tack.toml or environment variables.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -61,6 +64,16 @@ pub struct AppConfig {
     #[serde(default = "default_prill_program")]
     pub prill_program: String,
 
+    /// `PATH` as the process had it at start; the only variable the prill the board runs is
+    /// given. Never in `tack.toml`.
+    #[serde(skip)]
+    pub search_path: String,
+
+    /// The nonce `/api/health` echoes (`TACK_LAUNCH_NONCE`), so a client attaching to an
+    /// already-running server can confirm that it is the one it launched. Never in `tack.toml`.
+    #[serde(skip)]
+    pub launch_nonce: Option<String>,
+
     // ── Embedded runner (ADR 0005 decisions 2 and 6) ───────────────────────
     /// The env/CLI-flag default for whether the in-process embedded runner
     /// starts. `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE` set this; the UI
@@ -111,6 +124,8 @@ impl Default for AppConfig {
             webhook_url: None,
             webhook_secret: None,
             loops: LoopConfig::default(),
+            search_path: DEFAULT_SEARCH_PATH.to_owned(),
+            launch_nonce: None,
             prill_program: default_prill_program(),
             local_runner_enable: false,
             execution_decision_token: None,
@@ -351,6 +366,9 @@ impl AppConfig {
         {
             config.webhook_secret = Some(v);
         }
+        config.search_path =
+            std::env::var("PATH").unwrap_or_else(|_| DEFAULT_SEARCH_PATH.to_owned());
+        config.launch_nonce = std::env::var("TACK_LAUNCH_NONCE").ok();
         if let Ok(v) = std::env::var("TACK_GITHUB_TOKEN")
             && !v.is_empty()
         {
@@ -554,6 +572,21 @@ pub(crate) fn validate_outbound_url(name: &str, value: &str) -> anyhow::Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The loop settings live in `tack-app` but stay top-level keys of `tack.toml`.
+    #[test]
+    fn the_loop_settings_are_read_from_the_top_level_of_the_file() {
+        let config: AppConfig = toml::from_str(
+            "port = 4000\nauto_start_seconds = 5\ngithub_poll_seconds = 9\nbackup_bucket = \"b\"\n",
+        )
+        .expect("a configuration file");
+
+        assert_eq!(config.port, 4000);
+        assert_eq!(config.loops.auto_start_seconds, 5);
+        assert_eq!(config.loops.github_poll_seconds, 9);
+        assert_eq!(config.loops.backup_bucket.as_deref(), Some("b"));
+        assert_eq!(config.loops.backup_region, "auto", "an absent key keeps its default");
+    }
 
     /// Both secrets are made the same way: a missing file is created `0600`
     /// and reused by the next start, the variable wins and leaves no file,

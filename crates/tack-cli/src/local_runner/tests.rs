@@ -100,6 +100,8 @@ async fn ensure_runner_credential_self_provisions_with_nothing_else() {
 fn control_with_state_dir(state_dir: &Path) -> EmbeddedRunner<CliRunnerHost> {
     let mut runner_config = RunnerConfig::defaults();
     runner_config.state_dir = state_dir.to_path_buf();
+    // A test never writes into the real keychain, and never waits on it.
+    runner_config.secrets.platform_store = tack_runner::PlatformStore::Off;
     EmbeddedRunner::new(CliRunnerHost {
         server_config: unreachable_database_url(),
         config_path: None,
@@ -107,21 +109,9 @@ fn control_with_state_dir(state_dir: &Path) -> EmbeddedRunner<CliRunnerHost> {
     })
 }
 
-/// Points D-Bus at nothing so `SecretStore::open` takes its file fallback:
-/// a test never writes into the real keychain, and never waits on it — a
-/// keychain call that fails under load returns before the code under test runs.
-fn force_file_secret_backend() {
-    // SAFETY: every caller writes the same value, so a concurrent reader
-    // sees either the old environment or this one.
-    unsafe {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "/dev/null");
-    }
-}
-
 #[tokio::test]
 async fn start_then_stop_round_trips_the_runtime_state() {
     let dir = unique_temp_dir("start-stop");
-    force_file_secret_backend();
     let control = control_with_state_dir(dir.path());
     // `unreachable_database_url` makes self-provisioning fail deliberately
     // (no session on disk, no manual credential) — this test only needs

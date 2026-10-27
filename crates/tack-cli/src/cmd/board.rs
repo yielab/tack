@@ -601,9 +601,7 @@ pub(crate) fn cmd_open(
         println!("{url}");
     }
 
-    if let Ok(browser) = std::env::var("BROWSER")
-        && !browser.is_empty()
-    {
+    if let Some(browser) = tack_cli::config::browser_program() {
         let _ = std::process::Command::new(browser).arg(&url).status();
     }
 
