@@ -192,6 +192,10 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
+  the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
+  the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as
+  the sidebar, with the same labels and icons, and now includes Agents.
 - **A level can only reach docket, and a run is a link.** `POST /api/executions` refuses an `autonomy` for any
   agent but docket with `400` "A level applies only to a docket run", where the level used to be kept and then
   dropped in silence. The dialog "Run again at L3" opens keeps docket and shows the other agents disabled with
