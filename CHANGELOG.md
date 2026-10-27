@@ -375,6 +375,9 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The "No role" row of Settings → Automation counts the project's default profile.** The page listed only the teams of
+  the project's roles, so a task with no role, which runs with the default profile, showed no team state and its team
+  did not hold the ceiling. That profile's team is listed and holds the ceiling like any role's.
 - **The pack card says whether the pack is signed.** It showed the verdict, the criteria and the review but never
   that the verifier had signed the pack. It now reads "Signed by the verifier" with the fingerprint of what was
   signed, or "Not signed" when the pack carries no signature.

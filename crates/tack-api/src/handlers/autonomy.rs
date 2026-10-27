@@ -239,10 +239,11 @@ pub async fn get_autonomy(
     Ok(Json(current(&state, &id.to_string()).await?))
 }
 
-/// Every team the project's roles run: attended ones cap at L3 with the runner's fix,
+/// Every team the project's tasks run, by role or, with no role, by the project's default
+/// profile: attended ones cap at L3 with the runner's fix,
 /// lights-out ones carry neither, and one no runner reports is `unknown` and capped.
-async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
-    let profiles = queries::autonomy::role_profile_teams(&state.repo, project_id).await?;
+async fn project_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
+    let profiles = queries::autonomy::project_profile_teams(&state.repo, project_id).await?;
     if profiles.iter().all(|(_, team)| team.is_none()) {
         return Ok(Vec::new());
     }
@@ -314,7 +315,7 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
             "The project has no public key to check the verifier's signature against".to_owned(),
         );
     }
-    let teams = role_teams(state, project_id).await?;
+    let teams = project_teams(state, project_id).await?;
     let reported_attended = |team: &TeamLine| team.profile != "unknown" && team.caps_at.is_some();
     for team in teams.iter().filter(|t| reported_attended(t)) {
         blocked.push(format!(

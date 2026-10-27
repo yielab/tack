@@ -802,6 +802,46 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     assert_eq!(put["ceiling"], "L3", "{put}");
 }
 
+/// A task with no role runs with the project's default profile, so that profile's team is listed
+/// with its state and holds the ceiling, though no role points at it.
+#[tokio::test]
+async fn the_default_profiles_team_is_a_team_of_the_project_too() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let url = format!("/api/projects/{}/autonomy", b.project_id);
+    let repo = &b.state.repo;
+    seed::agent_runner_reporting(repo, "ru1", &reviewers_snapshot("docket")).await;
+    let teams = || async {
+        common::send(&b.app, "GET", &url, Value::Null, &operator_headers())
+            .await
+            .1
+    };
+    // No role and no default profile: no team.
+    assert_eq!(teams().await["teams"], json!([]));
+
+    // Only the default profile names a team: it is listed, attended, and caps the ceiling.
+    seed::agent_profile_for_team(repo, "p1", "Reviewer", "reviewers").await;
+    seed::project_default_profile(repo, &b.project_id, "p1").await;
+    let got = teams().await;
+    assert_eq!(got["teams"][0]["name"], "reviewers", "{got}");
+    assert_eq!(got["teams"][0]["profile"], "Reviewer", "{got}");
+    assert_eq!(got["teams"][0]["caps_at"], "L3", "{got}");
+    assert!(
+        got["automatic_merge_blocked_by"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line
+                == "The team reviewers runs attended: its tasks stay at L3. Fix: run it lights-out"),
+        "{got}"
+    );
+
+    // A role on the same profile does not list the team twice.
+    seed::role_running(repo, "r1", &b.project_id, "review", "p1").await;
+    assert_eq!(teams().await["teams"].as_array().unwrap().len(), 1);
+}
+
 // A project-level demotion to L3 switches auto-start off and the project says why.
 #[tokio::test]
 async fn a_demotion_to_l3_switches_auto_start_off() {

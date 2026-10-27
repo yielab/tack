@@ -495,6 +495,20 @@ describe('Settings panels', () => {
       expect(rung(container, 'merge').textContent).toContain('You merge every change yourself.');
     });
 
+    it('the_no_role_row_says_the_state_of_the_default_profiles_team', async () => {
+      const mutable = PROJECT as { default_profile_id: string | null };
+      mutable.default_profile_id = 'prof1';
+      try {
+        autonomy.teams = [{ name: 'saas-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
+        const { container } = mount(() => <AutomationPanel />);
+        await flush();
+        await flush();
+        expect(rung(container, 'teams').querySelector('[data-testid="team-row-default"]')!.textContent).toContain('saas-content · needs a person · this computer');
+      } finally {
+        mutable.default_profile_id = null;
+      }
+    });
+
     it('a_lights_out_team_row_says_lights_out', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
       autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null }];
