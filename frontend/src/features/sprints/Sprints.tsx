@@ -279,7 +279,7 @@ export default function Sprints() {
             <div class="flex gap-3.5 h-full">
               <For each={activeSprints()}>
                 {(sprint) => {
-                  const stats = sprintStats(sprint.id);
+                  const stats = () => sprintStats(sprint.id);
                   const isOver = () => dragOverZone() === sprint.id;
                   const canAccept = sprint.status === 'planning' || sprint.status === 'active';
 
@@ -316,16 +316,16 @@ export default function Sprints() {
                         {/* Capacity row */}
                         <div class="flex items-center justify-between text-xs text-content">
                           <span>
-                            {stats.done}/{stats.total} items · {stats.donePts}/{stats.totalPts} pts
+                            {stats().done}/{stats().total} items · {stats().donePts}/{stats().totalPts} pts
                           </span>
-                          <span class="font-bold">{stats.pct}%</span>
+                          <span class="font-bold">{stats().pct}%</span>
                         </div>
                         <div class="h-1.5 rounded-full overflow-hidden bg-app">
                           <div
                             class="h-full rounded-full transition-all"
                             style={{
-                              width: `${stats.pct}%`,
-                              'background-color': stats.pct === 100
+                              width: `${stats().pct}%`,
+                              'background-color': stats().pct === 100
                                 ? 'var(--color-success-600)'
                                 : 'var(--color-primary-600)',
                             }}

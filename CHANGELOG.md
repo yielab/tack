@@ -356,6 +356,9 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A sprint lane's progress follows its items.** The "done/total items · points · %" line and the bar were
+  worked out once, when the lane first appeared, so a lane that appeared before the items loaded, or
+  an item dragged into it, left them at 0/0 until the page reloaded.
 - **Stopping the server stops every background loop and waits for what a request started.** The loops
   (auto-start, the GitHub poll, due-soon, retention, the health watch, the remote backup) were
   fire-and-forget: a panic in one was lost without a line, and two of them had no stop signal at all.
