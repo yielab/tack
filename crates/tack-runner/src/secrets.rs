@@ -35,6 +35,8 @@ use std::time::Duration;
 use keyring_core::api::CredentialStoreApi;
 use thiserror::Error;
 
+use crate::error::IoKind;
+
 /// Service name every keychain entry is filed under, and what a live
 /// `secret-tool`/`security` lookup on the dev machine names.
 pub const SERVICE: &str = "tack-runner";
@@ -116,8 +118,11 @@ pub enum SecretError {
     InvalidReference(String),
     #[error("secret_reference {0:?} uses a scheme a request may not use")]
     SchemeNotAllowed(String),
-    #[error("secret store I/O failed")]
-    Io,
+    /// The kind of the failure only: the operating system's own text can name a path.
+    #[error("secret store I/O failed: {0}")]
+    Io(IoKind),
+    #[error("environment variable {0} is not valid text")]
+    EnvVarNotText(String),
     #[error("secret store backend failed: {0}")]
     Backend(String),
 }
@@ -278,9 +283,15 @@ impl SecretStore {
                     .build(SERVICE, name, None)
                     .map_err(|error| SecretError::Backend(error.to_string()))?;
                 match entry.get_secret() {
-                    Ok(bytes) => String::from_utf8(bytes).map(SecretValue::new).map_err(|_| {
-                        SecretError::Backend("stored secret is not valid UTF-8".to_string())
-                    }),
+                    Ok(bytes) => String::from_utf8(bytes)
+                        .map(SecretValue::new)
+                        .map_err(|error| {
+                            // The position of the first bad byte, never the bytes themselves.
+                            SecretError::Backend(format!(
+                                "stored secret is not valid UTF-8 (first bad byte at {})",
+                                error.utf8_error().valid_up_to()
+                            ))
+                        }),
                     Err(keyring_core::Error::NoEntry) => {
                         Err(SecretError::NotFound(name.to_owned()))
                     }
@@ -363,7 +374,14 @@ impl SecretStore {
         if let Some(variable) = reference.strip_prefix("env:") {
             return std::env::var(variable)
                 .map(SecretValue::new)
-                .map_err(|_| SecretError::EnvVarNotSet(variable.to_owned()));
+                .map_err(|error| match error {
+                    std::env::VarError::NotPresent => {
+                        SecretError::EnvVarNotSet(variable.to_owned())
+                    }
+                    std::env::VarError::NotUnicode(_) => {
+                        SecretError::EnvVarNotText(variable.to_owned())
+                    }
+                });
         }
         let name = reference.strip_prefix("store:").unwrap_or(reference);
         if name.is_empty() {
@@ -396,21 +414,27 @@ impl SecretStore {
 
 fn read_file(path: &Path) -> Result<BTreeMap<String, String>, SecretError> {
     match fs::read_to_string(path) {
-        Ok(raw) => serde_json::from_str(&raw)
-            .map_err(|_| SecretError::Backend("secrets file is malformed".to_string())),
+        Ok(raw) => serde_json::from_str(&raw).map_err(|error| {
+            // The parser's text quotes the secrets file, so only its category is logged.
+            tracing::warn!(category = ?error.classify(), "secrets file is not valid JSON");
+            SecretError::Backend("secrets file is malformed".to_string())
+        }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
-        Err(_) => Err(SecretError::Io),
+        Err(error) => Err(SecretError::Io(IoKind(error.kind()))),
     }
 }
 
 fn write_file(path: &Path, entries: &BTreeMap<String, String>) -> Result<(), SecretError> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|_| SecretError::Io)?;
+        fs::create_dir_all(parent).map_err(|error| SecretError::Io(IoKind(error.kind())))?;
     }
-    let encoded = serde_json::to_string(entries).map_err(|_| SecretError::Io)?;
+    let encoded = serde_json::to_string(entries).map_err(|error| {
+        tracing::warn!(category = ?error.classify(), "secrets file could not be encoded");
+        SecretError::Backend("secrets file could not be encoded".to_string())
+    })?;
     let temporary = path.with_extension("json.tmp");
     write_owner_only(&temporary, encoded.as_bytes())?;
-    fs::rename(&temporary, path).map_err(|_| SecretError::Io)
+    fs::rename(&temporary, path).map_err(|error| SecretError::Io(IoKind(error.kind())))
 }
 
 #[cfg(unix)]
@@ -424,15 +448,17 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), SecretError> {
         .truncate(true)
         .mode(0o600)
         .open(path)
-        .map_err(|_| SecretError::Io)?;
-    file.write_all(bytes).map_err(|_| SecretError::Io)?;
-    file.sync_all().map_err(|_| SecretError::Io)?;
+        .map_err(|error| SecretError::Io(IoKind(error.kind())))?;
+    file.write_all(bytes)
+        .map_err(|error| SecretError::Io(IoKind(error.kind())))?;
+    file.sync_all()
+        .map_err(|error| SecretError::Io(IoKind(error.kind())))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
 fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), SecretError> {
-    fs::write(path, bytes).map_err(|_| SecretError::Io)
+    fs::write(path, bytes).map_err(|error| SecretError::Io(IoKind(error.kind())))
 }
 
 #[cfg(test)]
