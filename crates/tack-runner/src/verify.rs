@@ -66,6 +66,32 @@ fn failure(exit_code: Option<i32>, reason: impl Into<String>) -> VerifyFailure {
     }
 }
 
+/// A failure whose cause is an I/O error. The reason names the step and the kind of the error,
+/// never the error's own text: the operating system's text can name a path.
+fn io_failure(
+    exit_code: Option<i32>,
+    step: impl Into<String>,
+    error: &std::io::Error,
+) -> VerifyFailure {
+    failure(exit_code, format!("{} ({})", step.into(), error.kind()))
+}
+
+/// A failure whose cause is a JSON error. The reason says what kind of JSON failure it was, never
+/// the text the parser or serializer would quote.
+fn json_failure(
+    exit_code: Option<i32>,
+    step: impl Into<String>,
+    error: &serde_json::Error,
+) -> VerifyFailure {
+    let kind = match error.classify() {
+        serde_json::error::Category::Io => "read failed",
+        serde_json::error::Category::Syntax => "not valid JSON",
+        serde_json::error::Category::Data => "JSON of the wrong shape",
+        serde_json::error::Category::Eof => "cut off before the end",
+    };
+    failure(exit_code, format!("{} ({kind})", step.into()))
+}
+
 /// Whether `program` resolves: a path with a separator is looked at directly,
 /// a bare name is looked for in every `PATH` directory.
 pub fn program_found(program: &str) -> bool {
@@ -87,7 +113,7 @@ pub async fn run(
 ) -> Result<Vec<serde_json::Value>, VerifyFailure> {
     let evidence = scratch.join("evidence");
     fs::create_dir_all(&evidence)
-        .map_err(|_| failure(None, "the evidence directory could not be created"))?;
+        .map_err(|error| io_failure(None, "the evidence directory could not be created", &error))?;
     if let Ok(entries) = fs::read_dir(scratch.join("src")) {
         for entry in entries.flatten() {
             let _ = fs::copy(entry.path(), evidence.join(entry.file_name()));
@@ -121,7 +147,7 @@ pub async fn run(
     for (name, kind, media_type) in files {
         let artifact = stager
             .stage_file(attempt_id, &evidence, Path::new(name), kind, media_type)
-            .map_err(|_| failure(Some(0), format!("{name} could not be staged")))?;
+            .map_err(|error| failure(Some(0), format!("{name} could not be staged ({error})")))?;
         staged.push(serde_json::json!({
             "kind": artifact.kind,
             "name": artifact.name,
@@ -180,7 +206,8 @@ async fn run_command(
         }
     }
 
-    let bytes = fs::read(output).map_err(|_| failure(Some(0), "the verifier wrote no pack"))?;
+    let bytes = fs::read(output)
+        .map_err(|error| io_failure(Some(0), "the verifier wrote no pack", &error))?;
     if serde_json::from_slice::<MergeReadinessPack>(&bytes).is_err() {
         return Err(failure(
             Some(0),
@@ -216,11 +243,13 @@ async fn spawn_verifier(
     let process = spec
         .spawn()
         .await
-        .map_err(|_| failure(None, format!("{} could not be started", config.program)))?;
+        .map_err(|error| {
+            failure(None, format!("{} could not be started ({error})", config.program))
+        })?;
     process
         .wait_with_capture(&limits, &SecretMaterial::new())
         .await
-        .map_err(|_| failure(None, "the verifier could not be supervised"))
+        .map_err(|error| failure(None, format!("the verifier could not be supervised ({error})")))
 }
 
 fn stderr_prefix(result: &ProcessResult) -> String {

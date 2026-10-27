@@ -42,7 +42,7 @@ use tack_protocol::mrp::{
 };
 use tokio::process::Command;
 
-use super::{VerifyFailure, failure, spawn_verifier, stderr_prefix};
+use super::{VerifyFailure, failure, io_failure, json_failure, spawn_verifier, stderr_prefix};
 use crate::{
     client::workspace::Workspace,
     config::VerifyConfig,
@@ -86,9 +86,9 @@ pub(super) async fn run(
     output: &Path,
 ) -> Result<(), VerifyFailure> {
     let evidence_bytes = fs::read(evidence.join("evidence.json"))
-        .map_err(|_| failure(None, "the staged evidence.json could not be read"))?;
+        .map_err(|error| io_failure(None, "the staged evidence.json could not be read", &error))?;
     let tack_evidence: AttemptEvidence = serde_json::from_slice(&evidence_bytes)
-        .map_err(|_| failure(None, "the staged evidence.json does not parse"))?;
+        .map_err(|error| json_failure(None, "the staged evidence.json does not parse", &error))?;
     if !tack_evidence.captured {
         return Err(failure(
             None,
@@ -104,7 +104,7 @@ pub(super) async fn run(
 
     let out_dir = evidence.join(PRILL_DIR);
     fs::create_dir_all(&out_dir)
-        .map_err(|_| failure(None, "prill's output directory could not be created"))?;
+        .map_err(|error| io_failure(None, "prill's output directory could not be created", &error))?;
 
     // The commit the capture made of the work is the one verified. Only a
     // workspace that was not captured by the runner (no such file) is
@@ -148,7 +148,7 @@ pub(super) async fn run(
     let brief_sha256 = match fs::read(&brief_path) {
         Ok(bytes) => {
             let brief: Value = serde_json::from_slice(&bytes)
-                .map_err(|_| failure(None, "the staged brief.json does not parse"))?;
+                .map_err(|error| json_failure(None, "the staged brief.json does not parse", &error))?;
             let brief_document = out_dir.join("briefing.json");
             write_document(&brief_document, &briefing(&brief))?;
             args.extend(["--brief".to_owned(), brief_document.display().to_string()]);
@@ -219,16 +219,18 @@ pub(super) async fn run(
     } else {
         result.stdout.text.into_bytes()
     };
-    let prill_pack: Value = serde_json::from_slice(&printed).map_err(|_| {
-        failure(
+    let prill_pack: Value = serde_json::from_slice(&printed).map_err(|error| {
+        json_failure(
             Some(exit_code),
             format!("prill exited with a pack status but printed none: {stderr}"),
+            &error,
         )
     })?;
-    fs::write(evidence.join(ORIGINAL_FILE), &printed).map_err(|_| {
-        failure(
+    fs::write(evidence.join(ORIGINAL_FILE), &printed).map_err(|error| {
+        io_failure(
             Some(exit_code),
             "prill's own pack could not be written for the upload",
+            &error,
         )
     })?;
     let mut translated = pack(
@@ -238,35 +240,41 @@ pub(super) async fn run(
         brief_sha256,
     );
     if config.sign_key.is_some() {
-        let envelope = fs::read(out_dir.join(ENVELOPE_FILE)).map_err(|_| {
-            failure(
+        let envelope = fs::read(out_dir.join(ENVELOPE_FILE)).map_err(|error| {
+            io_failure(
                 Some(exit_code),
                 "prill was asked to sign but wrote no mrp.intoto.json",
+                &error,
             )
         })?;
         translated.signature = SignatureSection::InToto {
             statement_sha256: sha256_hex(&envelope),
         };
         fs::write(evidence.join(ENVELOPE_FILE), envelope)
-            .map_err(|_| failure(Some(exit_code), "the attestation could not be written"))?;
+            .map_err(|error| {
+                io_failure(Some(exit_code), "the attestation could not be written", &error)
+            })?;
     }
-    let mut bytes = serde_json::to_vec_pretty(&translated).map_err(|_| {
-        failure(
+    let mut bytes = serde_json::to_vec_pretty(&translated).map_err(|error| {
+        json_failure(
             Some(exit_code),
             "the translated pack could not be serialized",
+            &error,
         )
     })?;
     bytes.push(b'\n');
     fs::write(output, bytes)
-        .map_err(|_| failure(Some(exit_code), "the translated pack could not be written"))
+        .map_err(|error| {
+            io_failure(Some(exit_code), "the translated pack could not be written", &error)
+        })
 }
 
 fn write_document(path: &Path, document: &Value) -> Result<(), VerifyFailure> {
     let mut bytes = serde_json::to_vec_pretty(document)
-        .map_err(|_| failure(None, "a prill document could not be serialized"))?;
+        .map_err(|error| json_failure(None, "a prill document could not be serialized", &error))?;
     bytes.push(b'\n');
     fs::write(path, bytes)
-        .map_err(|_| failure(None, format!("{} could not be written", path.display())))
+        .map_err(|error| io_failure(None, format!("{} could not be written", path.display()), &error))
 }
 
 // ---------------------------------------------------------------------
@@ -293,7 +301,7 @@ pub(super) async fn snapshot(
         &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
     )
     .await
-    .map_err(|_| "HEAD is not a commit".to_owned())?;
+    .map_err(|reason| format!("HEAD is not a commit ({reason})"))?;
     let indexed = Some(index);
     git_output(git, workspace, indexed, &["read-tree", "HEAD"]).await?;
     let mut add = vec!["add", "-A", "--", "."];
@@ -355,10 +363,18 @@ async fn git_output(
     }
     let child = command
         .spawn()
-        .map_err(|_| format!("git could not be started for `git {}`", args[0]))?;
+        .map_err(|error| {
+            format!("git could not be started for `git {}` ({})", args[0], error.kind())
+        })?;
     let output = match tokio::time::timeout(GIT_TIMEOUT, child.wait_with_output()).await {
         Ok(Ok(output)) => output,
-        Ok(Err(_)) => return Err(format!("`git {}` could not be supervised", args[0])),
+        Ok(Err(error)) => {
+            return Err(format!(
+                "`git {}` could not be supervised ({})",
+                args[0],
+                error.kind()
+            ));
+        }
         Err(_) => return Err(format!("`git {}` did not finish in time", args[0])),
     };
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
