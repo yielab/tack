@@ -98,7 +98,7 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 | `tack-app` | `crates/tack-app/tests/` (one file per use case; `scheduling/`, `ingestion/`) | `tack_test_support::setup_test_db()` and a `ControllableClock`; a fake `Host` for the ticks | a rule of a run: call the use case or a `tick()` directly on a real store and read the result with `tack_db::queries::` — no router, no sleeping. Plant rows with `tack_test_support::seed` |
 | `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable. The project file's routes are `tests/handlers/bundle.rs` (it builds its own app, since `test_app()` seeds no built-in profiles or templates) |
 | `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. docket is a daemon and not a process: its adapter is proved against `tests/fake_docket/`, an in-process fake of API 6 that answers each route from a file under `fixtures/docket/v5/` (a capture from a real docket, or an answer marked `constructed` because a model would have to run for docket to send it) and answers `400` to a request key no captured request has; `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway home with no model (rerun it when docket changes, and commit the diff), `tests/docket_v5.rs` fails when a route the client sends has no capture, and the daemon's supervision is proved against a shell script on a scratch path that serves `/health`; no real docket and no model is ever run by a test. Vendor output of the other harnesses is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
-| `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
+| `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler and embedded-runner tests spawn a real `tack serve` on port 0 and read the port it logs (`common::spawn_serve`), so they share nothing and run alongside everything else | request shaping, error surfacing, the end-to-end scheduler path |
 
 Each crate has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
 file under `tests/` as a module, so the dependency graph is linked once per crate, not once per
@@ -197,13 +197,13 @@ file — no separate workflow per tier:
 | Tier | Trigger | Jobs |
 |---|---|---|
 | Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security`, `security-boundaries` |
-| Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (Chromium only) |
-| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (all three browsers) |
+| Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (`scripts/smoke.sh` in fake mode, then Chromium only) |
+| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (smoke, then all three browsers) |
 
 | Job | What it runs |
 |---|---|
 | `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → the OpenAPI regenerate-and-diff gate |
-| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 78.93`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (78.93%) is the workspace line total measured 2026-09-18 (75.81%, `cargo llvm-cov report --summary-only`) minus one point. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
+| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 78.93`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (78.93%) is chosen as described under Coverage below. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
 | `frontend` | schema drift, type-check, **Vitest with coverage thresholds** (70% lines/functions/statements, 60% branches — decision 7), token lint, build, entry-bundle budget |
 | `docs` | `mdbook build` + link check |
 | `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` |
@@ -212,7 +212,7 @@ file — no separate workflow per tier:
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `embed-spa` | release build with the SPA embedded, binary-size budget |
 | `security-boundaries` | `cargo nextest run --workspace --profile ci --no-tests=fail -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'` — the boundary suites; see below |
-| `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
+| `e2e` | `scripts/smoke.sh` in fake mode against the binaries the job built (a real `tack serve` and `tack-runner`, shim harnesses, no agent program installed: claim to requeue, restart recovery, `--with-runner`), then Playwright, a11y scan and API contract — Chromium only on a merge, all three browsers on the schedule run and on a manual dispatch |
 
 The suite runs exactly once per applicable trigger, in the `coverage` job's `cargo llvm-cov
 nextest` step. The `rust` job's last step *does* run one test a second time, deliberately:
@@ -228,12 +228,14 @@ updated by the repository owner (`gh api`) from the pull-request tier's job list
 
 ### Pre-push hook
 
-`git config core.hooksPath .githooks` activates it. It runs four things:
+`git config core.hooksPath .githooks` activates it. It runs five things:
 `cargo fmt --all --check` for the root workspace **and, separately, for
 `crates/tack-desktop`** (its own workspace, excluded from the root one — nothing else local
 sees that crate at all), `cargo clippy --workspace --all-targets -- -D warnings`, the four
 boundary suites below (seconds, once built), and the generated-files check (both lockfiles,
-`schema.gen.ts` and the book's `developer/api-reference.md`) — **not the
+`schema.gen.ts` and the book's `developer/api-reference.md`), and, when `frontend/node_modules`
+exists, `vitest run --changed` against what the push sends (each pushed ref against the commit
+the remote has, or against where a new branch left `develop`) — **not the
 rest of the test suite**, on purpose: a hook that takes a minute is a hook people bypass, and
 the suite is CI's job. The `schema.gen.ts` staleness check only
 runs when `frontend/node_modules` exists, so a checkout that has never run `npm install` gets
@@ -266,10 +268,15 @@ the rule.
 make coverage   # CI's coverage floors locally: one instrumented workspace run + Vitest thresholds
 ```
 
-Floors `make coverage` and CI enforce: workspace line coverage ≥ 78.93 % (the total measured
-by the command in `ci.yml`'s `coverage` job, minus one point); frontend Vitest ≥ 70 %
+Floors `make coverage` and CI enforce: workspace line coverage ≥ 78.93 %; frontend Vitest ≥ 70 %
 lines/functions/statements and ≥ 60 % branches. On a pull request CI also requires 80 % of
 the changed lines to be covered (`diff-cover`).
+
+The workspace floor is one formula: the line total the `coverage` job itself measured on
+`develop` (summed `LH`/`LF` over its `coverage-lcov` artifact), minus one point. It is
+re-measured from that artifact at the gate that closes each round of work, never on a
+workstation, and moved only then, in `ci.yml` (which also records the figure last measured),
+the `Makefile` and here together.
 
 For an HTML report instead of the pass/fail gate:
 

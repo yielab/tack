@@ -16,6 +16,13 @@ if ! cargo --version | grep -q "^cargo $pinned "; then
   exit 1
 fi
 
+# git writes one line per ref being pushed on stdin; read it before anything else can. Run by
+# hand there is none, and the gate then judges HEAD as a branch that is new on the remote.
+zero=0000000000000000000000000000000000000000
+pushed=""
+[ -t 0 ] || pushed=$(cat)
+[ -n "$pushed" ] || pushed="HEAD $(git rev-parse HEAD) HEAD $zero"
+
 echo "→ cargo fmt --all --check"
 cargo fmt --all --check
 # `--all` means the workspace, and tack-desktop is deliberately not in it, so this
@@ -58,6 +65,19 @@ if [ -d frontend/node_modules ]; then
   # only on GitHub.
   echo "→ frontend type check"
   (cd frontend && npx tsc -b)
+  # CI's Vitest step, narrowed to the tests that import what this push changes: the refs
+  # git hands the hook on stdin say what leaves, and a new branch is measured from where
+  # it left develop (or main).
+  echo "→ vitest on what this push changes"
+  while read -r _ local_sha _ remote_sha; do
+    [ "$local_sha" = "$zero" ] && continue
+    base=$remote_sha
+    if [ "$base" = "$zero" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+      base=$(git merge-base "$local_sha" origin/develop 2>/dev/null || git merge-base "$local_sha" origin/main 2>/dev/null || true)
+    fi
+    [ -n "$base" ] || continue
+    (cd frontend && npx vitest run --changed "$base" --passWithNoTests </dev/null)
+  done <<<"$pushed"
 fi
 
 python3 scripts/gen-api-reference.py >/dev/null

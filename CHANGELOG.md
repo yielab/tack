@@ -493,6 +493,16 @@ automation a template carries, and the removal of dollars per day.
   place of an older stored reason. A retry with the same idempotency key after the task's type or priority
   changed replays the request instead of answering 409, and a different request still conflicts. A run with
   no limit in a project with a daily limit is told it gets what is left of today's limit, with the tokens left.
+- **The server logs the address it bound.** "Server listening" now carries the real address, so a
+  server started on port 0 says which port it got, and the banner prints that port.
+- **CI and the gate check what the docs say they check.** The merge-tier end-to-end job runs
+  `scripts/smoke.sh` in fake mode against the binaries it built, and a manual dispatch runs all three
+  browsers as the weekly run does. `pre-push` runs `vitest run --changed` against what the push sends.
+  The tests that start a real `tack serve` take port 0 and read the port it logs, so none picks a port by
+  binding and dropping and `.config/nextest.toml` has no serial entries left. `RunWithAgentModal`'s limit
+  test moves a fake clock in place of waiting, `api.spec.ts` creates the project it exports instead of
+  skipping, and the coverage floor has one rule: the `develop` total the job measured, minus one point,
+  re-measured at each round's gate.
 
 ---
 

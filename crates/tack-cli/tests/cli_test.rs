@@ -601,17 +601,12 @@ fn serve_warns_when_the_data_folder_holds_a_database_it_does_not_use() {
     let kept = home.path().join(".local/share/tack");
     std::fs::create_dir_all(&kept).unwrap();
     std::fs::write(kept.join("tack.db"), b"").unwrap();
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
 
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_tack"))
         .arg("serve")
         .current_dir(elsewhere.path())
         .env("HOME", home.path())
-        .env("TACK_PORT", port.to_string())
+        .env("TACK_PORT", "0")
         .env_remove("XDG_DATA_HOME")
         .env_remove("TACK_DATABASE_URL")
         .env_remove("TACK_API_TOKEN")

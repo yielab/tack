@@ -6,7 +6,9 @@ import { ExecutionStoreProvider } from '../state/executionContext';
 import RunWithAgentModal from './RunWithAgentModal';
 import type { RunnerCapabilities } from '../execution';
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
+// The real timer, taken before any test fakes `setTimeout`, so a flush still waits for the event loop.
+const realSetTimeout = globalThis.setTimeout;
+const flush = () => new Promise((r) => realSetTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
 const FLEET = { fleet_id: 'fleet-1', name: 'Primary Fleet', concurrency_limit: 5, default_policy: null };
@@ -232,6 +234,7 @@ const modelOptions = () => [...select('Model').options].map((o) => o.textContent
 afterEach(() => {
   teardown();
   document.body.innerHTML = '';
+  vi.useRealTimers();
   vi.restoreAllMocks();
   lastCreateBody = undefined;
   lastItemPatch = undefined;
@@ -284,6 +287,8 @@ describe('RunWithAgentModal', () => {
   });
 
   it('prints_the_servers_limit_sentence_under_the_field_and_asks_again_when_the_field_or_the_agent_changes', async () => {
+    // The limit is sent after a pause; fake the clock so the test moves it instead of sleeping.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const both = runnerRow('runner-4', 'Both', runnerCapabilitySnapshot({
       harnesses: [...runnerCapabilitySnapshot().harnesses, { ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'claude-code' }],
     }));
@@ -301,7 +306,7 @@ describe('RunWithAgentModal', () => {
     setField(field('Token limit'), '120000');
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex');
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex&tokens=120000');
     // The agent chosen goes up too.
@@ -311,7 +316,7 @@ describe('RunWithAgentModal', () => {
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&tokens=120000');
     // A cleared field says "no limit".
     setField(field('Token limit'), '');
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&no_limit=true');
     expect(limitUrls().every((u) => u.startsWith('/api/items/item-1/agent-context?profile_id=profile-1&harness='))).toBe(true);
@@ -319,6 +324,8 @@ describe('RunWithAgentModal', () => {
   });
 
   it('prints_no_limit_sentence_while_the_token_field_holds_an_invalid_value', async () => {
+    // The limit is sent after a pause; fake the clock so the test moves it instead of sleeping.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     mount({}, { runners: [RUNNER], fleets: [], limits: { budgets: { tokens: 300000 } } });
     await flush();
     await flush();
@@ -327,14 +334,14 @@ describe('RunWithAgentModal', () => {
     setField(field('Token limit'), '0');
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-limit"]')).toBeNull();
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-limit"]')).toBeNull();
     expect(document.body.textContent).toContain('Token limit must be a whole number above zero');
     // The server was never asked about a value it would refuse.
     expect(requestedUrls.slice(before).some((u) => u.includes('tokens=0'))).toBe(false);
     setField(field('Token limit'), '5000');
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-limit"]')?.textContent).toContain('tokens=5000');
   });

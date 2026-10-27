@@ -92,14 +92,13 @@ pub async fn serve(
 
     // Start server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    info!(%addr, "Server listening");
-
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     // `bind` already puts the socket in listening state, so a connection to
     // `bound_addr` succeeds even before `axum::serve` starts its accept loop
     // (the kernel queues it) — the earliest correct place to signal ready.
     let bound_addr = listener.local_addr()?;
+    info!(addr = %bound_addr, "Server listening");
     if let Some(tx) = ready_tx {
         let _ = tx.send(bound_addr);
     }
@@ -138,7 +137,7 @@ pub async fn serve(
         "\n  Tack v{} is running.\n  Open http://{}:{} in your browser.\n  Press Ctrl+C to stop.\n",
         env!("CARGO_PKG_VERSION"),
         display_host,
-        config.port
+        bound_addr.port()
     );
 
     axum::serve(listener, app)

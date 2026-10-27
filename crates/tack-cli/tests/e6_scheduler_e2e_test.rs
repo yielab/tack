@@ -13,7 +13,6 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::common;
-use common::free_port;
 
 /// Owns the `tack serve` child process and its temp database directory;
 /// kills the process on drop, and the `TempDir` removes the directory after
@@ -46,28 +45,23 @@ fn scratch_dir() -> tempfile::TempDir {
 fn start_server() -> ServerGuard {
     let dir = scratch_dir();
     let db_path = dir.path().join("e6-cli-e2e.db");
-    let port = free_port();
-    let base_url = format!("http://127.0.0.1:{port}");
 
-    let child = Command::new(env!("CARGO_BIN_EXE_tack"))
-        .arg("serve")
-        .env("TACK_HOST", "127.0.0.1")
-        .env("TACK_PORT", port.to_string())
-        .env(
-            "TACK_DATABASE_URL",
-            format!("sqlite:{}?mode=rwc", db_path.display()),
-        )
-        .env("TACK_API_TOKEN", common::API_TOKEN)
-        .env("TACK_STORAGE_DIR", dir.path().join("storage"))
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn tack serve");
+    let served = common::spawn_serve(
+        Command::new(env!("CARGO_BIN_EXE_tack"))
+            .arg("serve")
+            .env(
+                "TACK_DATABASE_URL",
+                format!("sqlite:{}?mode=rwc", db_path.display()),
+            )
+            .env("TACK_API_TOKEN", common::API_TOKEN)
+            .env("TACK_STORAGE_DIR", dir.path().join("storage"))
+            .stderr(Stdio::null()),
+    );
 
     let mut guard = ServerGuard {
-        child,
+        child: served.child,
         _dir: dir,
-        base_url,
+        base_url: served.base_url,
     };
     wait_for_ready(&guard.base_url, &mut guard.child);
     guard
