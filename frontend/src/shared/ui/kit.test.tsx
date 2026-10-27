@@ -11,6 +11,9 @@ import Drawer from './Drawer';
 import Tabs from './Tabs';
 import RouteBoundary from './RouteBoundary';
 import LoadError from './LoadError';
+import Card from './Card';
+import Switch from './Switch';
+import { createConfirm } from './ConfirmDialog';
 import { IconList } from './icons';
 
 const disposers: Array<() => void> = [];
@@ -293,5 +296,73 @@ describe('Select', () => {
     setValue('low');
     await flush();
     expect(c.querySelector('select')!.value).toBe('low');
+  });
+});
+
+describe('Card', () => {
+  it('is the card radius on the panel surface, with the caller\'s classes and attributes added', () => {
+    const c = mount(() => <Card class="px-5 py-4" role="status" data-testid="panel">Body</Card>);
+    const el = c.querySelector('[data-testid="panel"]')!;
+    expect(el.classList.contains('rounded-card')).toBe(true);
+    expect(el.classList.contains('bg-panel')).toBe(true);
+    expect(el.classList.contains('px-5')).toBe(true);
+    expect(el.getAttribute('role')).toBe('status');
+    expect(el.textContent).toBe('Body');
+  });
+});
+
+describe('Switch', () => {
+  it('is a checkbox with role switch, named by its text, that reports the new value', () => {
+    const onChange = vi.fn();
+    const c = mount(() => <Switch checked={false} onChange={onChange}>Web tools</Switch>);
+    const input = c.querySelector<HTMLInputElement>('input')!;
+    expect(input.getAttribute('role')).toBe('switch');
+    expect(c.querySelector('label')!.textContent).toContain('Web tools');
+    input.click();
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('is disabled when told to be', () => {
+    const c = mount(() => <Switch checked disabled onChange={() => {}}>Push</Switch>);
+    expect(c.querySelector<HTMLInputElement>('input')!.disabled).toBe(true);
+  });
+});
+
+describe('createConfirm', () => {
+  function Asker(props: { onAnswer: (ok: boolean) => void }) {
+    const [ask, Host] = createConfirm();
+    const run = async () => props.onAnswer(await ask({ title: 'Delete?', message: 'Gone.', confirmLabel: 'Delete', danger: true }));
+    return (
+      <div>
+        <button id="go" onClick={() => void run()}>go</button>
+        <Host />
+      </div>
+    );
+  }
+  const dialogButton = (text: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(
+      (b) => b.textContent?.trim() === text,
+    )!;
+
+  it('resolves true when the confirm button is pressed', async () => {
+    const onAnswer = vi.fn();
+    const c = mount(() => <Asker onAnswer={onAnswer} />);
+    c.querySelector<HTMLButtonElement>('#go')!.click();
+    await flush();
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain('Gone.');
+    dialogButton('Delete').click();
+    await flush();
+    expect(onAnswer).toHaveBeenCalledWith(true);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('resolves false when cancelled', async () => {
+    const onAnswer = vi.fn();
+    const c = mount(() => <Asker onAnswer={onAnswer} />);
+    c.querySelector<HTMLButtonElement>('#go')!.click();
+    await flush();
+    dialogButton('Cancel').click();
+    await flush();
+    expect(onAnswer).toHaveBeenCalledWith(false);
   });
 });
