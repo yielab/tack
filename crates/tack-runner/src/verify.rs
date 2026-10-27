@@ -240,16 +240,21 @@ async fn spawn_verifier(
         timeout: Duration::from_secs(config.timeout_seconds),
         ..limits.clone()
     };
-    let process = spec
-        .spawn()
-        .await
-        .map_err(|error| {
-            failure(None, format!("{} could not be started ({error})", config.program))
-        })?;
+    let process = spec.spawn().await.map_err(|error| {
+        failure(
+            None,
+            format!("{} could not be started ({error})", config.program),
+        )
+    })?;
     process
         .wait_with_capture(&limits, &SecretMaterial::new())
         .await
-        .map_err(|error| failure(None, format!("the verifier could not be supervised ({error})")))
+        .map_err(|error| {
+            failure(
+                None,
+                format!("the verifier could not be supervised ({error})"),
+            )
+        })
 }
 
 fn stderr_prefix(result: &ProcessResult) -> String {

@@ -103,8 +103,13 @@ pub(super) async fn run(
     }
 
     let out_dir = evidence.join(PRILL_DIR);
-    fs::create_dir_all(&out_dir)
-        .map_err(|error| io_failure(None, "prill's output directory could not be created", &error))?;
+    fs::create_dir_all(&out_dir).map_err(|error| {
+        io_failure(
+            None,
+            "prill's output directory could not be created",
+            &error,
+        )
+    })?;
 
     // The commit the capture made of the work is the one verified. Only a
     // workspace that was not captured by the runner (no such file) is
@@ -147,8 +152,9 @@ pub(super) async fn run(
     let brief_path = evidence.join("brief.json");
     let brief_sha256 = match fs::read(&brief_path) {
         Ok(bytes) => {
-            let brief: Value = serde_json::from_slice(&bytes)
-                .map_err(|error| json_failure(None, "the staged brief.json does not parse", &error))?;
+            let brief: Value = serde_json::from_slice(&bytes).map_err(|error| {
+                json_failure(None, "the staged brief.json does not parse", &error)
+            })?;
             let brief_document = out_dir.join("briefing.json");
             write_document(&brief_document, &briefing(&brief))?;
             args.extend(["--brief".to_owned(), brief_document.display().to_string()]);
@@ -250,10 +256,13 @@ pub(super) async fn run(
         translated.signature = SignatureSection::InToto {
             statement_sha256: sha256_hex(&envelope),
         };
-        fs::write(evidence.join(ENVELOPE_FILE), envelope)
-            .map_err(|error| {
-                io_failure(Some(exit_code), "the attestation could not be written", &error)
-            })?;
+        fs::write(evidence.join(ENVELOPE_FILE), envelope).map_err(|error| {
+            io_failure(
+                Some(exit_code),
+                "the attestation could not be written",
+                &error,
+            )
+        })?;
     }
     let mut bytes = serde_json::to_vec_pretty(&translated).map_err(|error| {
         json_failure(
@@ -263,18 +272,26 @@ pub(super) async fn run(
         )
     })?;
     bytes.push(b'\n');
-    fs::write(output, bytes)
-        .map_err(|error| {
-            io_failure(Some(exit_code), "the translated pack could not be written", &error)
-        })
+    fs::write(output, bytes).map_err(|error| {
+        io_failure(
+            Some(exit_code),
+            "the translated pack could not be written",
+            &error,
+        )
+    })
 }
 
 fn write_document(path: &Path, document: &Value) -> Result<(), VerifyFailure> {
     let mut bytes = serde_json::to_vec_pretty(document)
         .map_err(|error| json_failure(None, "a prill document could not be serialized", &error))?;
     bytes.push(b'\n');
-    fs::write(path, bytes)
-        .map_err(|error| io_failure(None, format!("{} could not be written", path.display()), &error))
+    fs::write(path, bytes).map_err(|error| {
+        io_failure(
+            None,
+            format!("{} could not be written", path.display()),
+            &error,
+        )
+    })
 }
 
 // ---------------------------------------------------------------------
@@ -361,11 +378,13 @@ async fn git_output(
     if let Some(index) = index {
         command.env("GIT_INDEX_FILE", index);
     }
-    let child = command
-        .spawn()
-        .map_err(|error| {
-            format!("git could not be started for `git {}` ({})", args[0], error.kind())
-        })?;
+    let child = command.spawn().map_err(|error| {
+        format!(
+            "git could not be started for `git {}` ({})",
+            args[0],
+            error.kind()
+        )
+    })?;
     let output = match tokio::time::timeout(GIT_TIMEOUT, child.wait_with_output()).await {
         Ok(Ok(output)) => output,
         Ok(Err(error)) => {
