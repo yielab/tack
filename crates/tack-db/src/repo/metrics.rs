@@ -116,11 +116,12 @@ pub async fn attempt_totals(
          JOIN items i ON i.id = r.item_id
          WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
            AND EXISTS (SELECT 1 FROM execution_events e
-                       WHERE e.attempt_id = a.id AND e.kind = 'escalation.decided')",
+                       WHERE e.attempt_id = a.id AND e.kind = ?)",
     )
     .bind(project_id)
     .bind(since)
     .bind(since)
+    .bind(tack_protocol::event_kind::ESCALATION_DECIDED)
     .fetch_one(repo.pool())
     .await?;
     Ok(totals)

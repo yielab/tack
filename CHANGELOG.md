@@ -19,7 +19,7 @@ accessibility and the fixes from an accessibility audit, and the documentation s
 User, an Administrator and a Developer Guide.
 
 Two behaviours change for docket users: the runner needs docket `0.2.0-beta.6` (HTTP API
-version 5) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
+version 6) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
 0.2.0-beta.6". Upgrading applies migrations 088–092 on first start: a role's profile and a
 profile's fleet, a task's recurrence, the auto-start settings, the roles, profiles and
 automation a template carries, and the removal of dollars per day.
@@ -308,6 +308,19 @@ automation a template carries, and the removal of dollars per day.
 - A section of a project file that fails to write answers a 500 that names the section and says
   whether what came before stayed. An `auto_start` block that omits `enabled` leaves the
   project's switch as it is.
+- **A slow docket delays only the team it is slow for.** The runner no longer holds a lock across
+  its call that makes sure a team exists, so a docket run on one team starts while another team's
+  call is still unanswered.
+- **Every answer docket sends is read through a typed shape.** A question of a kind Tack does not
+  know is no longer taken for an approval: the timeline says docket asked something this Tack cannot
+  put to the person, and to answer it in docket. The runner accepts docket's API version 6 and
+  later (it was 5, which no docket with the escalation record answers).
+- **The timeline words docket's escalations for a person.** It says what was asked, the label of the
+  option a person picked, and "docket decided this on its own", with no option ids, policy names or
+  levels. The event kinds the runner writes and the metrics query reads are one set of constants.
+- prill's fixtures are copied again from its `mrp/v1` contracts (the `coverage` stage and the
+  `m6-fields` pack are among them), and a test covers a prill that does not answer in time.
+  prill's `coverage` section is not carried into the merge-readiness pack; its stage is.
 
 ### Removed
 

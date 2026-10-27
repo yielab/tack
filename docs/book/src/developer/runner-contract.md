@@ -84,9 +84,9 @@ Separately, each runner reports its own `runner_version` (a free-form string in 
 
 ## docket
 
-docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 5, which needs docket 0.2.0-beta.6.
+docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 6, which needs docket 0.2.0-beta.6.
 
-- An `apiVersion` below 5, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 5); this docket answers API N" and no task is posted.
+- An `apiVersion` below 6, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 6); this docket answers API N" and no task is posted.
 - `docket exec`, the contract probe, the NDJSON output parser and the stdin answers of the earlier adapter are gone. Nothing in the runner starts a throwaway docket per run.
 - One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and reads the task's branch from the repository; the runner makes no checkout for it.
 - The daemon is supervised by the runner only when `[docket].binary` is set in its configuration.

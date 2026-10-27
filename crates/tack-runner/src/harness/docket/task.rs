@@ -133,15 +133,13 @@ fn priority(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
 }
 
 /// The body of `POST /tasks/<pod>` for one attempt. `base_ref` is the branch
-/// or commit the task starts from; `sends_prepare` says this docket reads the `prepare` field.
-/// `autonomy` is the level a person asked this run for, sent as it is; docket decides when there
-/// is none.
+/// or commit the task starts from. `autonomy` is the level a person asked this run for, sent as
+/// it is; docket decides when there is none.
 pub(super) fn body(
     request: &ExecutionRequestSnapshot,
     attempt_id: &str,
     attempt_number: u32,
     base_ref: &str,
-    sends_prepare: bool,
     autonomy: Option<AutonomyLevel>,
 ) -> Value {
     let instructions = &request.resolved_agent_profile.instructions;
@@ -226,16 +224,14 @@ pub(super) fn body(
         body.insert("maxTokens".into(), json!(tokens));
     }
     // Detecting is docket's own default, so only a stated command or "off" is sent.
-    if sends_prepare {
-        match &request.repository.prepare {
-            Some(PrepareSetting::Replace { command }) => {
-                body.insert("prepare".into(), json!(command));
-            }
-            Some(PrepareSetting::Off) => {
-                body.insert("prepare".into(), json!(""));
-            }
-            Some(PrepareSetting::Detect) | None => {}
+    match &request.repository.prepare {
+        Some(PrepareSetting::Replace { command }) => {
+            body.insert("prepare".into(), json!(command));
         }
+        Some(PrepareSetting::Off) => {
+            body.insert("prepare".into(), json!(""));
+        }
+        Some(PrepareSetting::Detect) | None => {}
     }
     if let Some(level) = autonomy {
         body.insert("autonomy".into(), json!(level.as_str()));

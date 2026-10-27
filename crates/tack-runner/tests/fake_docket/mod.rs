@@ -305,7 +305,7 @@ pub struct FakeDocket {
 impl FakeDocket {
     pub async fn start() -> Self {
         let shared = Arc::new(Mutex::new(World {
-            api_version: "5".to_owned(),
+            api_version: "6".to_owned(),
             pods: BTreeMap::new(),
             tasks: Vec::new(),
             idempotency: HashMap::new(),

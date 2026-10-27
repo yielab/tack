@@ -88,7 +88,7 @@ Tack looks every 30 seconds by default, so the start can lag a little. An admini
 
 ## docket says it needs 0.2.0-beta.6
 
-**Cause.** Tack sends each docket run to a long-lived docket team over docket's HTTP interface, version 5, which needs docket 0.2.0-beta.6. Any other version is reported as "needs docket 0.2.0-beta.6" by `tack runner doctor`, and no run is sent to it.
+**Cause.** Tack sends each docket run to a long-lived docket team over docket's HTTP interface, version 6, which needs docket 0.2.0-beta.6. Any other version is reported as "needs docket 0.2.0-beta.6" by `tack runner doctor`, and no run is sent to it.
 
 **What to do.** Install docket 0.2.0-beta.6 on the computer that runs the agent, then check it with `tack runner doctor`: the docket block should show `api: 5`. The administrator's steps are in [Installing and Operating Runners](../admin-guide/runners.md).
 

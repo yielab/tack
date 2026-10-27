@@ -279,6 +279,7 @@ fn every_prill_fixture_translates_into_a_pack_that_round_trips() {
         "m2-sections",
         "reject-failed-criterion",
         "human-review-no-sandbox",
+        "m6-fields",
     ] {
         let translated = pack(&prill_fixture(name), &evidence, &evidence_sha, None);
         let bytes = serde_json::to_vec_pretty(&translated).expect("serializes");
@@ -302,7 +303,7 @@ fn prills_stages_and_next_steps_reach_the_pack() {
     let mut prill = prill_fixture("reject-failed-criterion");
     let translated = pack(&prill, &evidence, &"e".repeat(64), None);
     let stages = translated.stages.as_deref().expect("stages");
-    assert_eq!(stages.len(), 9);
+    assert_eq!(stages.len(), 10);
     assert_eq!(
         (stages[1].name.as_str(), stages[1].status.as_str()),
         ("criteria", "failed")
@@ -319,6 +320,24 @@ fn prills_stages_and_next_steps_reach_the_pack() {
     assert_eq!(steps[0].criterion_id.as_deref(), Some("unit"));
     assert_eq!(steps[0].line, Some(4));
     assert_eq!(steps[0].message.as_deref(), Some("make it pass"));
+}
+
+/// prill's `coverage` section (the share of changed lines covered, the uncovered ones) has no
+/// section in `mrp-v1`, so it is dropped by name: only its stage, which `stages` carries as prill
+/// reports it, reaches the pack.
+#[test]
+fn prills_coverage_section_is_not_translated_but_its_stage_is() {
+    let evidence = tack_evidence("att_9", &"a".repeat(40), Value::Null);
+    let prill = prill_fixture("m6-fields");
+    assert_eq!(prill["coverage"]["share"], json!(0.5));
+    let translated = pack(&prill, &evidence, &"e".repeat(64), None);
+    let text = serde_json::to_string(&translated).expect("serializes");
+    assert!(
+        !text.contains("uncovered") && !text.contains("minChanged"),
+        "{text}"
+    );
+    let stages = translated.stages.as_deref().expect("stages");
+    assert!(stages.iter().any(|stage| stage.name == "coverage"));
 }
 
 #[test]
@@ -529,6 +548,17 @@ async fn verify_with(
     with_brief: bool,
     sign_key: Option<&str>,
 ) -> Verified {
+    verify_within(knob, args, with_brief, sign_key, 60).await
+}
+
+/// [`verify_with`] giving prill `timeout_seconds` to answer.
+async fn verify_within(
+    knob: &str,
+    args: Vec<String>,
+    with_brief: bool,
+    sign_key: Option<&str>,
+    timeout_seconds: u64,
+) -> Verified {
     let dir = tempfile::tempdir().expect("temporary directory");
     let workspace_path = dir.path().join("ws");
     fs::create_dir_all(&workspace_path).expect("workspace");
@@ -553,7 +583,7 @@ async fn verify_with(
         kind: VerifyKind::Prill,
         program: launcher(dir.path(), knob).display().to_string(),
         args,
-        timeout_seconds: 60,
+        timeout_seconds,
         sign_key: sign_key.map(str::to_owned),
     };
     let workspace = Workspace {
@@ -562,7 +592,11 @@ async fn verify_with(
         path: workspace_path.clone(),
         base_revision: "main".to_owned(),
     };
-    let limits = ProcessLimits::new(1024 * 1024, 1024 * 1024, Duration::from_secs(60));
+    let limits = ProcessLimits::new(
+        1024 * 1024,
+        1024 * 1024,
+        Duration::from_secs(timeout_seconds),
+    );
     let result = run_verifier(&config, &limits, &workspace, &scratch).await;
     Verified {
         result,
@@ -698,6 +732,15 @@ async fn a_refusal_is_a_failure_naming_prills_error_code() {
         error.reason,
         "prill refused: invalid_brief: fake prill refusing on request"
     );
+    assert!(!verified.scratch.join("evidence/mrp.json").exists());
+}
+
+#[tokio::test]
+async fn a_prill_that_does_not_answer_in_time_is_a_failure_naming_the_wait() {
+    let verified = verify_within("TACK_FAKE_PRILL_HANG=1", Vec::new(), true, None, 1).await;
+    let error = verified.result.expect_err("a timeout is a failure");
+    assert_eq!(error.exit_code, None);
+    assert_eq!(error.reason, "prill did not finish within 1 seconds");
     assert!(!verified.scratch.join("evidence/mrp.json").exists());
 }
 
