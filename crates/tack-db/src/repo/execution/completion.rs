@@ -3,13 +3,53 @@
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use tack_protocol::Clock;
-use tracing::instrument;
+use tracing::{instrument, warn};
 
+use super::super::items::{AtomicItemUpdateOutcome, update_item_in};
 use super::decisions::end_attempt_decisions;
+use super::enqueue::{
+    EnqueueResult, NewExecutionRequest, enqueue_in, validate_execution_request_snapshot,
+};
 use super::shared::{canonical_json, mirror_request_state, stamp, terminal};
 use super::state;
 use crate::{Repository, StoreError};
+use tack_core::models::UpdateItem;
+use tack_core::workflow::WorkflowConfig;
 use tack_protocol::execution::ExecutionState;
+use uuid::Uuid;
+
+/// What a successful completion sets going, written in the completion's own transaction: either
+/// the attempt ends with all of it or with none of it, and the runner's retry finds the rest.
+#[derive(Debug, Default)]
+pub struct FollowUps<'a> {
+    /// The board move the project maps a finished run to.
+    pub item_update: Option<ItemUpdate<'a>>,
+    /// The run that goes back to the agent with what the verifier asked it to fix.
+    pub rework: Option<Rework<'a>>,
+}
+
+/// A move of one item, validated against `workflow` as any other edit of it is.
+#[derive(Debug)]
+pub struct ItemUpdate<'a> {
+    pub item_id: Uuid,
+    pub update: UpdateItem,
+    pub workflow: &'a WorkflowConfig,
+}
+
+/// A follow-up run to enqueue. `created_at` is the instant the request's snapshot names.
+#[derive(Debug)]
+pub struct Rework<'a> {
+    pub request: NewExecutionRequest<'a>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// What the [`FollowUps`] did; empty unless the completion was committed. A move the workflow
+/// refuses is an outcome, not an error: the completion stands and the item stays where it is.
+#[derive(Debug, Default)]
+pub struct FollowUpsOutcome {
+    pub item_update: Option<AtomicItemUpdateOutcome>,
+    pub rework: Option<EnqueueResult>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Completion<'a> {
@@ -225,11 +265,39 @@ impl Repository {
         completion: Completion<'_>,
         clock: &dyn Clock,
     ) -> Result<CompletionResult, StoreError> {
+        Ok(self
+            .complete_execution_with_follow_ups(completion, FollowUps::default(), clock)
+            .await?
+            .0)
+    }
+
+    /// [`Self::complete_execution_result`], and when it commits, the `follow_ups` in the same
+    /// transaction. A follow-up that fails with a store error undoes the completion with it (the
+    /// runner reports again); one the rules refuse is in the outcome and the completion stands.
+    #[instrument(skip(self, completion, follow_ups, clock))]
+    pub async fn complete_execution_with_follow_ups(
+        &self,
+        completion: Completion<'_>,
+        follow_ups: FollowUps<'_>,
+        clock: &dyn Clock,
+    ) -> Result<(CompletionResult, FollowUpsOutcome), StoreError> {
+        let none = FollowUpsOutcome::default;
         if !terminal(completion.terminal_state) {
-            return Ok(CompletionResult::Conflict);
+            return Ok((CompletionResult::Conflict, none()));
         }
         let now = stamp(clock);
         let fingerprint = completion_fingerprint(&completion)?;
+        // A follow-up run Tack built wrong is dropped with a warning rather than failing the
+        // completion for good: the runner would only report the same thing again.
+        let rework = follow_ups.rework.and_then(|rework| {
+            match validate_execution_request_snapshot(&rework.request) {
+                Ok(snapshot) => Some((rework, snapshot)),
+                Err(error) => {
+                    warn!(attempt_id = completion.attempt_id, %error, "rework: the follow-up request is invalid; not enqueued");
+                    None
+                }
+            }
+        });
         // Serialize duplicate completion reports (e.g. a runner retrying an
         // unacknowledged terminal POST) before either transaction reads this
         // attempt row. Two deferred readers can otherwise deadlock while
@@ -246,7 +314,7 @@ impl Repository {
         .await?;
         let Some(row) = row else {
             tx.commit().await?;
-            return Ok(CompletionResult::Stale);
+            return Ok((CompletionResult::Stale, none()));
         };
         if let Some(row) = sqlx::query(
             "SELECT fingerprint,response FROM execution_completion_replays WHERE attempt_id=? AND completion_id=?",
@@ -261,12 +329,12 @@ impl Repository {
                 // Same (attempt_id, completion_id) idempotency-scoped key,
                 // different content: this can never succeed by retrying.
                 tx.commit().await?;
-                return Ok(CompletionResult::IdempotencyConflict);
+                return Ok((CompletionResult::IdempotencyConflict, none()));
             }
             let response: String = row.get("response");
             let response = replay_response(&response)?;
             tx.commit().await?;
-            return Ok(CompletionResult::Replayed(response));
+            return Ok((CompletionResult::Replayed(response), none()));
         }
         let state: String = row.get("state");
         let expires: String = row.get("lease_expires_at");
@@ -276,11 +344,11 @@ impl Repository {
             // terminated the attempt, not a reused idempotency key with
             // different content, so it is the benign/retryable `Conflict`.
             tx.commit().await?;
-            return Ok(CompletionResult::Conflict);
+            return Ok((CompletionResult::Conflict, none()));
         }
         if expires <= now {
             tx.commit().await?;
-            return Ok(CompletionResult::Stale);
+            return Ok((CompletionResult::Stale, none()));
         }
         let request: String = row.get("request_id");
         let runner: String = row.get("runner_id");
@@ -291,7 +359,7 @@ impl Repository {
             // function already opens, but a lost compare-and-set is a
             // benign/retryable `Conflict`, not an idempotency-key reuse.
             tx.rollback().await?;
-            return Ok(CompletionResult::Conflict);
+            return Ok((CompletionResult::Conflict, none()));
         }
         end_attempt_decisions(&mut tx, completion.attempt_id, &now).await?;
         sqlx::query("UPDATE execution_requests SET state=?,updated_at=? WHERE id=?")
@@ -315,8 +383,25 @@ impl Repository {
         })
         .to_string();
         sqlx::query("INSERT INTO execution_completion_replays(attempt_id,completion_id,fingerprint,response,committed_at) VALUES(?,?,?,?,?)").bind(completion.attempt_id).bind(completion.completion_id).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
+        let mut done = FollowUpsOutcome::default();
+        if let Some(move_item) = follow_ups.item_update {
+            done.item_update = Some(
+                update_item_in(
+                    &mut tx,
+                    move_item.item_id,
+                    move_item.update,
+                    move_item.workflow,
+                    None,
+                )
+                .await?,
+            );
+        }
+        if let Some((rework, snapshot)) = rework {
+            let created_at = rework.created_at.to_rfc3339();
+            done.rework = Some(enqueue_in(&mut tx, &rework.request, &snapshot, &created_at).await?);
+        }
         tx.commit().await?;
-        Ok(CompletionResult::Committed(response))
+        Ok((CompletionResult::Committed(response), done))
     }
 
     /// Stores what a runner reported when it started the agent (`report` is JSON text) on the

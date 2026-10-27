@@ -91,6 +91,8 @@ tack-db = { path = "../tack-db" }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+# `serve.rs` owns the stop token of the background loops and the tracker of spawned use cases.
+tokio-util = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -309,7 +309,7 @@ pub async fn update_item(
             item.id.to_string(),
             item.project_id.to_string(),
         );
-        tokio::spawn(async move {
+        state.tasks.spawn(async move {
             tack_app::merge::on_done(
                 &app.repo,
                 &tack_protocol::SystemClock,
@@ -425,7 +425,7 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
     };
 
     let base = state.config.github_api_base.clone();
-    tokio::spawn(async move {
+    state.tasks.spawn(async move {
         if let Err(e) =
             tack_app::github_sync::push_issue_state(&base, &token, &repo, number, closed).await
         {

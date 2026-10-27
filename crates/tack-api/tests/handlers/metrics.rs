@@ -123,6 +123,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     }));
     let (project_id, item) = project_with_item(&repo, workspace_id, "G1a seeded").await;
     let (empty_id, _) = project_with_item(&repo, workspace_id, "G1a empty").await;
@@ -452,6 +453,7 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     }));
     let (project_id, first) = project_with_item(&repo, workspace_id, "P73 starts").await;
     let second = repo
@@ -585,6 +587,7 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
         broadcast_tx: tx.clone(),
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let (project_id, item) = project_with_item(&repo, workspace_id, "P").await;
     seed::statement(
@@ -657,6 +660,7 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     // embedded runner verifies with is the one the board uses, and `TACK_PRILL_PROGRAM` still wins.
     let by_runner = AppState {
         local_runner: Some(Arc::new(RunnerVerifyingWith(program.clone()))),
+        tasks: Default::default(),
         ..state(AppConfig::default().prill_program)
     };
     let (status, m) = common::send(
@@ -762,6 +766,7 @@ async fn an_escalation_decided_alone_is_counted_beside_decisions_and_never_insid
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     }));
     let (project_id, item) = project_with_item(&repo, workspace_id, "decided alone").await;
     let (other_id, other_item) = project_with_item(&repo, workspace_id, "another").await;

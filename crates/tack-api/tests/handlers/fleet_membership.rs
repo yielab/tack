@@ -44,6 +44,7 @@ async fn router_for(repo: Repository, workspace_id: Uuid) -> axum::Router {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     crate::common::with_default_host(build_router(state))
 }

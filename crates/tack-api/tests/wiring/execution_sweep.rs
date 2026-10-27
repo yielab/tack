@@ -1,9 +1,8 @@
-//! Proves the artifact/event retention sweep and the overdue-decision
-//! expiry sweep are wired into the real production `ExecutionRuntime`
-//! (`src/execution_runtime.rs`): both ride its own `start`/`stop` lifecycle,
-//! never a hand-rolled loop calling the sweep functions directly — a unit
-//! test can prove the sweep functions work in isolation, only this file
-//! proves the running server actually calls them.
+//! Proves the artifact retention sweep is wired into the real production
+//! `ExecutionRuntime` (`src/execution_runtime.rs`): it rides its own
+//! `start`/`stop` lifecycle, never a hand-rolled loop calling the sweep
+//! function directly — a unit test can prove the sweep function works in
+//! isolation, only this file proves the running server actually calls it.
 
 use std::future::Future;
 use std::time::Duration as StdDuration;
@@ -18,10 +17,9 @@ use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, queries,
     repo::execution::{
-        NewAgentProfile, NewArtifact, NewDecision, NewExecutionRequest, NewRunner, RequestSelection,
+        NewAgentProfile, NewArtifact, NewExecutionRequest, NewRunner, RequestSelection,
     },
 };
-use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-wiring";
 const PROFILE_ID: &str = "profile-wiring";
@@ -261,13 +259,6 @@ async fn artifact_row_exists(repo: &Repository, row_id: &str) -> bool {
         .unwrap()
 }
 
-async fn decision_state(repo: &Repository, decision_id: &str) -> String {
-    queries::execution_decisions::decision_state(repo, decision_id)
-        .await
-        .unwrap()
-        .expect("decision exists")
-}
-
 /// Records a manifest-only artifact (no content uploaded) with `created_at`
 /// backdated `days_ago` days, so a retention sweep sees it as stale.
 async fn seed_stale_manifest_only_artifact(
@@ -370,7 +361,7 @@ where
 }
 
 // ---------------------------------------------------------------------
-// sweep_artifacts/sweep_events via the real ExecutionRuntime.
+// sweep_artifacts via the real ExecutionRuntime.
 // ---------------------------------------------------------------------
 
 /// Runs the artifact-retention scenario once for a given `retention_enable`
@@ -490,111 +481,4 @@ async fn retention_enabled_purges_a_manifest_only_artifact_row() {
 
     runtime.stop().await;
     let _ = tokio::fs::remove_dir_all(storage_root_dir.path()).await;
-}
-
-// ---------------------------------------------------------------------
-// expire_overdue_decisions via the real ExecutionRuntime.
-// ---------------------------------------------------------------------
-
-async fn create_decision(
-    repo: &Repository,
-    attempt_id: &str,
-    fence: i64,
-    row_id: &str,
-    decision_id: &str,
-    expires_at: chrono::DateTime<Utc>,
-) {
-    let written = repo
-        .create_execution_decision(
-            RUNNER_ID,
-            attempt_id,
-            fence,
-            NewDecision {
-                id: row_id,
-                decision_id,
-                kind: "tool_permission",
-                prompt: "Allow the harness to run a command?",
-                options: "[]",
-                metadata: "{}",
-                expires_at: Some(expires_at),
-                recommendation: None,
-            },
-            &SystemClock,
-        )
-        .await
-        .expect("create decision");
-    assert!(written);
-}
-
-/// Runs the decision-expiry scenario once for a given `retention_enable`
-/// setting (the periodic expiry sweep currently rides the same gate as
-/// artifact retention): an overdue decision expires only when the flag is
-/// on, while a not-yet-due one always stays pending either way.
-async fn assert_decision_expiry_gate(retention_enable: bool) {
-    let (repo, item_id) = setup().await;
-    let tag = format!("decisions-{retention_enable}");
-    let (attempt_id, fence) = running_attempt(&repo, &item_id, &tag).await;
-
-    let overdue_row = format!("row-overdue-{}", Uuid::new_v4());
-    create_decision(
-        &repo,
-        &attempt_id,
-        fence,
-        &overdue_row,
-        "dec-overdue",
-        Utc::now() - Duration::seconds(5),
-    )
-    .await;
-    let future_row = format!("row-future-{}", Uuid::new_v4());
-    create_decision(
-        &repo,
-        &attempt_id,
-        fence,
-        &future_row,
-        "dec-future",
-        Utc::now() + Duration::minutes(30),
-    )
-    .await;
-
-    let storage_root_dir = temp_storage_root(&tag);
-    let runtime = start_retention_runtime(
-        &repo,
-        storage_root_dir.path().to_string_lossy().into_owned(),
-        retention_enable,
-        90,
-    )
-    .await;
-
-    if retention_enable {
-        let expired =
-            wait_for(|| async { decision_state(&repo, "dec-overdue").await == "expired" }).await;
-        assert!(
-            expired,
-            "an overdue, unresolved decision must expire via the periodic sweep"
-        );
-    } else {
-        let stayed = stays_true_for(
-            || async { decision_state(&repo, "dec-overdue").await == "pending" },
-            10,
-        )
-        .await;
-        assert!(
-            stayed,
-            "with the sweep disabled, an overdue decision is left pending"
-        );
-    }
-    assert_eq!(
-        decision_state(&repo, "dec-future").await,
-        "pending",
-        "a not-yet-overdue decision must remain pending regardless of the sweep setting"
-    );
-
-    runtime.stop().await;
-    let _ = tokio::fs::remove_dir_all(storage_root_dir.path()).await;
-}
-
-#[tokio::test]
-async fn retention_enable_gates_overdue_decision_expiry() {
-    assert_decision_expiry_gate(true).await;
-    assert_decision_expiry_gate(false).await;
 }

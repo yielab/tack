@@ -54,6 +54,7 @@ async fn board(storage: &std::path::Path, loop_cap: i64) -> Board {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = common::with_default_host(build_router(state));
     let project = repo

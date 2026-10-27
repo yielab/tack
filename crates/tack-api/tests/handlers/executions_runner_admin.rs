@@ -1193,6 +1193,7 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
         broadcast_tx: broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let text = executions::get_item_agent_context(
         axum::extract::State(state),
@@ -1273,6 +1274,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
         broadcast_tx: broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
 
     // Test the handler: should include Definition of Done section
@@ -1447,6 +1449,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         broadcast_tx: tokio::sync::broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let compose = |profile_id: Option<&str>| {
         let state = state.clone();
@@ -1563,6 +1566,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
         broadcast_tx: tokio::sync::broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let ask = |harness: Option<&str>, tokens: Option<&str>, no_limit: Option<bool>| {
         let state = state.clone();
@@ -2312,6 +2316,7 @@ async fn auto_start_board() -> (Repository, tack_api::AppState, String, Uuid) {
         broadcast_tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     (repo, state, item_id, item.project_id)
 }

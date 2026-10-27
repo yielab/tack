@@ -1,7 +1,7 @@
 //! Execution fleet health.
 //!
-//! One pass computes an id-free snapshot of runner/queue/lease/event counts; [`run`] logs
-//! stuck/ambiguous alerts from it. `tack-cli` spawns [`run`] when `TACK_EXECUTION_HEALTH_ENABLE`
+//! One pass computes an id-free snapshot of runner/queue/lease/event counts; [`spawn`] logs
+//! stuck/ambiguous alerts from it. `tack-cli` starts [`spawn`] when `TACK_EXECUTION_HEALTH_ENABLE`
 //! is on.
 //!
 //! # Cardinality is the whole point
@@ -13,7 +13,7 @@
 //! attempt id, decision id, or anything else unbounded — an unbounded label set is a defect, not
 //! a style preference. `tests::snapshot_label_set_is_bounded_and_id_free` proves it.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration as StdDuration;
 
 use chrono::Duration;
@@ -23,6 +23,7 @@ use tack_protocol::Clock;
 use tracing::{debug, info, warn};
 
 use crate::AppError;
+use crate::background::{Loops, Start};
 
 /// Trailing window used for `events_ingested_in_window` — a coarse ingestion-rate signal, not a
 /// precise metric. One hour by default.
@@ -71,7 +72,7 @@ impl AlertSummary {
 /// outlived the recovery service's own window without being reconciled; `needs_operator` is never
 /// automatically retried). `count > 0` is deliberately the entire condition — there is no
 /// "acceptable" number of ambiguous requests to stay silent about. Log-spam control is a
-/// *frequency* decision made by the caller ([`run`]'s transition-only `warn!`), not a
+/// *frequency* decision made by the caller ([`spawn`]'s transition-only `warn!`), not a
 /// *threshold* decision made here.
 pub fn evaluate_alerts(snapshot: &ExecutionFleetSnapshot) -> AlertSummary {
     AlertSummary {
@@ -93,33 +94,37 @@ pub async fn tick(
     Ok(Outcome { snapshot, alerts })
 }
 
-/// The loop `tack serve` spawns: a pass at once, then one every `interval`. Logs a `warn!` only
+/// The loop `tack serve` starts: a pass at once, then one every `interval`. Logs a `warn!` only
 /// on the *transition into* an alert condition (and an `info!` on the transition back out) — a
 /// sustained stuck condition produces one warn on onset, not one every pass, no matter how long
 /// it lasts. A `debug!`-level snapshot line is emitted every pass regardless, for anyone tailing
-/// logs at debug level. The caller does not spawn it when the health watch is off.
-pub async fn run(
+/// logs at debug level. The caller does not start it when the health watch is off.
+pub fn spawn(
+    loops: &mut Loops,
     repo: Repository,
     clock: Arc<dyn Clock>,
     settings: Settings,
     interval: StdDuration,
 ) {
-    let mut ticker = tokio::time::interval(interval.max(StdDuration::from_secs(1)));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut last_alert = AlertSummary::default();
-    loop {
-        ticker.tick().await;
-        match tick(&repo, clock.as_ref(), &settings).await {
-            Ok(outcome) => {
-                log_transitions(&last_alert, &outcome);
-                last_alert = outcome.alerts;
+    let interval = interval.max(StdDuration::from_secs(1));
+    let last_alert = Arc::new(Mutex::new(AlertSummary::default()));
+    loops.spawn_tick("observability", Start::Immediately, interval, move || {
+        let (repo, clock, last_alert) = (repo.clone(), clock.clone(), last_alert.clone());
+        async move {
+            match tick(&repo, clock.as_ref(), &settings).await {
+                Ok(outcome) => {
+                    let mut last_alert =
+                        last_alert.lock().expect("the alert state is not poisoned");
+                    log_transitions(&last_alert, &outcome);
+                    *last_alert = outcome.alerts;
+                }
+                Err(error) => warn!(
+                    %error,
+                    "execution health: snapshot query failed; will retry next cycle"
+                ),
             }
-            Err(error) => warn!(
-                %error,
-                "execution health: snapshot query failed; will retry next cycle"
-            ),
         }
-    }
+    });
 }
 
 fn log_transitions(last_alert: &AlertSummary, outcome: &Outcome) {

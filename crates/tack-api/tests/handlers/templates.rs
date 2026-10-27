@@ -588,6 +588,7 @@ async fn setup_with_pool() -> (Router, Repository) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     (
         crate::common::with_default_host(build_router(state)),
@@ -616,6 +617,7 @@ async fn setup_without_workspace() -> Router {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     crate::common::with_default_host(build_router(state))
 }
@@ -649,6 +651,7 @@ async fn setup_with_builtins() -> (Router, Repository) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     (
         crate::common::with_default_host(build_router(state)),

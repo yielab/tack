@@ -571,7 +571,7 @@ uses instead. docket is tested against an in-process fake in `tests/fake_docket/
 
 ### `serve.rs`
 
-The composition root of `tack serve`, and the only place in this crate that names `tack-db`. It loads the config, calls `tack_api::server::prepare`, opens the database, runs the migrations, builds the `Repository` and the `AppState`, spawns one `tack_app::<module>::run(..)` per background loop and hands the state to `tack_api::serve()`.
+The composition root of `tack serve`, and the only place in this crate that names `tack-db`. It loads the config, calls `tack_api::server::prepare`, opens the database, runs the migrations, builds the `Repository` and the `AppState`, starts one `tack_app::<module>::spawn(..)` per background loop into one `background::Loops`, hands the state to `tack_api::serve()` and stops the loops when it returns.
 
 ---
 

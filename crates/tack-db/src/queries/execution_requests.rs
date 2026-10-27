@@ -234,12 +234,9 @@ pub struct StatusMapFacts {
     pub item_id: String,
     /// The `status_map_policy_id` the request was stored with, when it is text.
     pub policy_id: Option<String>,
-    /// The attempt's terminal reason as stored JSON text.
-    pub terminal_reason: Option<String>,
 }
 
-/// The item, the status map policy and the terminal reason of an attempt, or `None` when no
-/// attempt has this id.
+/// The item and the status map policy of an attempt, or `None` when no attempt has this id.
 pub async fn status_map_facts_of_attempt(
     repo: &Repository,
     attempt_id: &str,
@@ -247,8 +244,7 @@ pub async fn status_map_facts_of_attempt(
     Ok(sqlx::query_as(
         "SELECT r.item_id AS item_id, \
                 CASE WHEN json_type(r.request_snapshot, '$.status_map_policy_id') = 'text' \
-                     THEN json_extract(r.request_snapshot, '$.status_map_policy_id') END AS policy_id, \
-                a.terminal_reason AS terminal_reason \
+                     THEN json_extract(r.request_snapshot, '$.status_map_policy_id') END AS policy_id \
          FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
          WHERE a.id = ?",
     )

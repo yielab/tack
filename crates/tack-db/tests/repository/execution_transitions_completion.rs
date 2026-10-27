@@ -5,10 +5,13 @@ use crate::repository::execution_fixture::{Fixture, completion_input};
 
 use chrono::Duration;
 use sqlx::Row;
+use tack_core::models::UpdateItem;
+use tack_core::workflow::WorkflowConfig;
 use tack_db::repo::execution::{
     AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult, Completion,
-    CompletionResult, EventBatch, NewEvent,
+    CompletionResult, EnqueueResult, EventBatch, FollowUps, ItemUpdate, NewEvent, Rework,
 };
+use tack_db::repo::items::AtomicItemUpdateOutcome;
 
 #[tokio::test]
 async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
@@ -428,4 +431,181 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
         !fx.complete_raw(reopen).await,
         "terminal attempt cannot reopen"
     );
+}
+
+/// The edit that moves the fixture's item to another status its workflow allows, and the
+/// project's workflow that validates it.
+async fn move_the_item(fx: &Fixture) -> (UpdateItem, WorkflowConfig, String) {
+    let item = fx
+        .repo
+        .get_item(fx.item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    let workflow = fx
+        .repo
+        .get_project(item.project_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .workflow;
+    let target = workflow
+        .statuses
+        .iter()
+        .map(|status| status.name.clone())
+        .find(|name| {
+            *name != item.status && workflow.validate_transition(&item.status, name).is_ok()
+        })
+        .expect("a status the item can move to");
+    let update = UpdateItem {
+        status: Some(target.clone()),
+        ..Default::default()
+    };
+    (update, workflow, target)
+}
+
+/// A successful completion with the JSON terminal reason a runner reports, which the item's
+/// derived columns read once it is stored.
+fn json_completion<'a>(attempt_id: &'a str, fence: i64, completion_id: &'a str) -> Completion<'a> {
+    Completion {
+        terminal_reason: r#"{"summary":"done"}"#,
+        ..completion_input(attempt_id, fence, completion_id, None)
+    }
+}
+
+async fn item_status(fx: &Fixture) -> String {
+    fx.repo
+        .get_item(fx.item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .unwrap()
+        .status
+}
+
+#[tokio::test]
+async fn a_completion_commits_its_follow_ups_with_it() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-follow", "attempt-follow")
+        .await;
+    let (update, workflow, target) = move_the_item(&fx).await;
+
+    let (result, done) = fx
+        .repo
+        .complete_execution_with_follow_ups(
+            json_completion("attempt-follow", fence, "completion-follow"),
+            FollowUps {
+                item_update: Some(ItemUpdate {
+                    item_id: fx.item_id.parse().unwrap(),
+                    update,
+                    workflow: &workflow,
+                }),
+                rework: Some(Rework {
+                    request: fx.request("request-rework", "key-rework", "same"),
+                    created_at: fx.clock.now(),
+                }),
+            },
+            &fx.clock,
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(result, CompletionResult::Committed(_)));
+    assert!(matches!(
+        done.item_update,
+        Some(AtomicItemUpdateOutcome::Updated { .. })
+    ));
+    assert_eq!(
+        done.rework,
+        Some(EnqueueResult::Created("request-rework".into()))
+    );
+    assert_eq!(item_status(&fx).await, target);
+    assert_eq!(fx.attempt_state("attempt-follow").await, "succeeded");
+    assert_eq!(fx.request_state("request-rework").await, "queued");
+}
+
+#[tokio::test]
+async fn a_follow_up_that_fails_leaves_the_attempt_open_and_the_item_where_it_was() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-undone", "attempt-undone")
+        .await;
+    let before = item_status(&fx).await;
+    let (update, workflow, _) = move_the_item(&fx).await;
+
+    // The follow-up reuses a request id under another key: the store refuses it after the
+    // item has already moved in the same transaction.
+    let failed = fx
+        .repo
+        .complete_execution_with_follow_ups(
+            json_completion("attempt-undone", fence, "completion-undone"),
+            FollowUps {
+                item_update: Some(ItemUpdate {
+                    item_id: fx.item_id.parse().unwrap(),
+                    update,
+                    workflow: &workflow,
+                }),
+                rework: Some(Rework {
+                    request: fx.request("request-undone", "key-other", "same"),
+                    created_at: fx.clock.now(),
+                }),
+            },
+            &fx.clock,
+        )
+        .await;
+
+    let refused = failed.expect_err("the duplicate request id must be refused");
+    assert!(
+        refused.to_string().contains("UNIQUE"),
+        "the store refused the duplicate id, not something else: {refused}"
+    );
+    assert_eq!(
+        fx.attempt_state("attempt-undone").await,
+        "leased",
+        "the attempt did not end without its follow-ups"
+    );
+    assert_eq!(item_status(&fx).await, before);
+    assert_eq!(
+        fx.count("execution_completion_replays", "attempt-undone")
+            .await,
+        0
+    );
+}
+
+#[tokio::test]
+async fn a_move_the_workflow_refuses_does_not_undo_the_completion() {
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_completion_attempt("request-refused", "attempt-refused")
+        .await;
+    let before = item_status(&fx).await;
+    let (_, workflow, _) = move_the_item(&fx).await;
+
+    let (result, done) = fx
+        .repo
+        .complete_execution_with_follow_ups(
+            json_completion("attempt-refused", fence, "completion-refused"),
+            FollowUps {
+                item_update: Some(ItemUpdate {
+                    item_id: fx.item_id.parse().unwrap(),
+                    update: UpdateItem {
+                        status: Some("no such status".into()),
+                        ..Default::default()
+                    },
+                    workflow: &workflow,
+                }),
+                rework: None,
+            },
+            &fx.clock,
+        )
+        .await
+        .unwrap();
+
+    assert!(matches!(result, CompletionResult::Committed(_)));
+    assert!(matches!(
+        done.item_update,
+        Some(AtomicItemUpdateOutcome::Rejected(_))
+    ));
+    assert_eq!(item_status(&fx).await, before);
+    assert_eq!(fx.attempt_state("attempt-refused").await, "succeeded");
 }

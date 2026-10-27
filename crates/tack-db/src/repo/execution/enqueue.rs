@@ -333,7 +333,7 @@ pub(super) fn parse_execution_request_snapshot(
     Ok(value)
 }
 
-fn validate_execution_request_snapshot(
+pub(super) fn validate_execution_request_snapshot(
     input: &NewExecutionRequest<'_>,
 ) -> Result<String, StoreError> {
     let snapshot = parse_execution_request_snapshot(input.request_snapshot)?;
@@ -702,45 +702,57 @@ impl Repository {
         // writers. Mirrors the redeem_enrollment_token and
         // claim_execution_idempotent_with_snapshot fixes above.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let existing: Option<(String, String, String)> = sqlx::query_as(
-            "SELECT id, request_fingerprint, request_snapshot FROM execution_requests \
-             WHERE idempotency_scope = ? AND idempotency_key = ?",
-        )
-        .bind(input.idempotency_scope)
-        .bind(input.idempotency_key)
-        .fetch_optional(&mut *tx)
-        .await?;
-        if let Some((id, fingerprint, stored_snapshot)) = existing {
-            tx.commit().await?;
-            return Ok(
-                // The claim may since have given a limitless run what was left of the day
-                // (`Repository::limit_request_to_day_room`); the fingerprint is still the one it was sent with.
-                if fingerprint == input.request_fingerprint
-                    && (same_request(&stored_snapshot, &request_snapshot)
-                        || given_the_days_room(&stored_snapshot))
-                {
-                    EnqueueResult::Replayed(id)
-                } else {
-                    EnqueueResult::Conflict
-                },
-            );
-        }
-        snapshot_created_at_matches_now(&request_snapshot, &now)?;
-        sqlx::query(
-            "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
-             request_fingerprint, selector_kind, selector_id, agent_profile_id, agent_profile_snapshot, \
-             requested_harness_kind, requested_model, repository_snapshot, \
-             permission_policy, timeout_seconds, budgets, status_map_policy_id, environment, metadata, request_snapshot, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(input.id).bind(input.item_id).bind(input.idempotency_scope).bind(input.idempotency_key)
-        .bind(input.request_fingerprint).bind(input.selector_kind).bind(input.selector_id)
-        .bind(input.agent_profile_id).bind(input.agent_profile_snapshot).bind(input.requested_harness_kind)
-        .bind(input.requested_model).bind(input.repository_snapshot)
-        .bind(input.permission_policy).bind(input.timeout_seconds).bind(input.budgets)
-        .bind(input.status_map_policy_id).bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(&now).bind(&now)
-        .execute(&mut *tx).await?;
+        let result = enqueue_in(&mut tx, &input, &request_snapshot, &now).await?;
         tx.commit().await?;
-        Ok(EnqueueResult::Created(input.id.to_string()))
+        Ok(result)
     }
+}
+
+/// The body of [`Repository::enqueue_execution`] over a transaction the caller opened with
+/// `BEGIN IMMEDIATE` and ends, so a completion can enqueue its follow-up in its own transaction.
+/// `request_snapshot` is what [`validate_execution_request_snapshot`] returned for `input`.
+pub(super) async fn enqueue_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    input: &NewExecutionRequest<'_>,
+    request_snapshot: &str,
+    now: &str,
+) -> Result<EnqueueResult, StoreError> {
+    let existing: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT id, request_fingerprint, request_snapshot FROM execution_requests \
+         WHERE idempotency_scope = ? AND idempotency_key = ?",
+    )
+    .bind(input.idempotency_scope)
+    .bind(input.idempotency_key)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((id, fingerprint, stored_snapshot)) = existing {
+        return Ok(
+            // The claim may since have given a limitless run what was left of the day
+            // (`Repository::limit_request_to_day_room`); the fingerprint is still the one it was sent with.
+            if fingerprint == input.request_fingerprint
+                && (same_request(&stored_snapshot, request_snapshot)
+                    || given_the_days_room(&stored_snapshot))
+            {
+                EnqueueResult::Replayed(id)
+            } else {
+                EnqueueResult::Conflict
+            },
+        );
+    }
+    snapshot_created_at_matches_now(request_snapshot, now)?;
+    sqlx::query(
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
+         request_fingerprint, selector_kind, selector_id, agent_profile_id, agent_profile_snapshot, \
+         requested_harness_kind, requested_model, repository_snapshot, \
+         permission_policy, timeout_seconds, budgets, status_map_policy_id, environment, metadata, request_snapshot, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(input.id).bind(input.item_id).bind(input.idempotency_scope).bind(input.idempotency_key)
+    .bind(input.request_fingerprint).bind(input.selector_kind).bind(input.selector_id)
+    .bind(input.agent_profile_id).bind(input.agent_profile_snapshot).bind(input.requested_harness_kind)
+    .bind(input.requested_model).bind(input.repository_snapshot)
+    .bind(input.permission_policy).bind(input.timeout_seconds).bind(input.budgets)
+    .bind(input.status_map_policy_id).bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(now).bind(now)
+    .execute(&mut **tx).await?;
+    Ok(EnqueueResult::Created(input.id.to_string()))
 }

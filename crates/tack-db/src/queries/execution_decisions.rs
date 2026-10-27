@@ -103,16 +103,3 @@ pub async fn decision_count_of_attempt(
             .await?,
     )
 }
-
-/// The state of the decision with this id, or `None` when there is none.
-pub async fn decision_state(
-    repo: &Repository,
-    decision_id: &str,
-) -> Result<Option<String>, StoreError> {
-    Ok(
-        sqlx::query_scalar("SELECT state FROM execution_decisions WHERE decision_id=?")
-            .bind(decision_id)
-            .fetch_optional(repo.pool())
-            .await?,
-    )
-}

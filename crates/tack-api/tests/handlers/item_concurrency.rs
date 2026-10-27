@@ -36,6 +36,7 @@ async fn app_with_state() -> (Router, AppState) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
 
     (

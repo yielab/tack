@@ -67,6 +67,7 @@ pub async fn test_app_with_local_runner(
         broadcast_tx: tx,
         webhook: None,
         local_runner,
+        tasks: Default::default(),
     };
 
     (with_default_host(build_router(state)), workspace_id)
@@ -95,6 +96,7 @@ pub async fn test_app_with_file_db(db_url: &str) -> (Router, Uuid) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
 
     (with_default_host(build_router(state)), workspace_id)

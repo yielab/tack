@@ -19,15 +19,18 @@
 //! pub async fn tick(repo: &Repository, clock: &dyn Clock, settings: &Settings)
 //!     -> Result<Outcome, AppError>;
 //!
-//! /// The loop `tack serve` spawns: wait `interval`, `tick`, log a failure, repeat.
-//! pub async fn run(repo: Repository, clock: Arc<dyn Clock>, settings: Settings, interval: Duration);
+//! /// Adds the loop to the server's [`background::Loops`]: `tick` every `interval`, a failure
+//! /// logged, the next pass awaited.
+//! pub fn spawn(loops: &mut Loops, repo: Repository, clock: Arc<dyn Clock>, settings: Settings, interval: Duration);
 //! ```
 //!
-//! `run` owns the timing and the logging of a failed pass and nothing else; `tick` owns the
-//! rule. `tack-cli`'s `serve.rs` does the `tokio::spawn(tack_app::<module>::run(..))`.
+//! `spawn` owns the logging of a failed pass and nothing else; [`background::Loops`] owns the
+//! timing, the stop signal and the panic log, and `tick` owns the rule. `tack-cli`'s `serve.rs`
+//! owns the `Loops`, calls each module's `spawn` and stops them all on shutdown.
 
 pub mod auto_start;
 pub mod autonomy;
+pub mod background;
 pub mod due_soon;
 mod error;
 pub mod github_sync;

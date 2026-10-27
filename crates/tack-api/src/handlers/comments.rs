@@ -61,7 +61,7 @@ async fn maybe_sync_github(state: &AppState, item_id: Uuid, comment: &Comment) {
     let body = comment.content.clone();
     let comment_id = comment.id;
     let db = state.repo.clone();
-    tokio::spawn(async move {
+    state.tasks.spawn(async move {
         match tack_app::github_sync::push_issue_comment(&base, &token, &repo, number, &body).await {
             Ok(github_id) => {
                 if let Err(error) = db.set_comment_github_id(comment_id, github_id).await {
