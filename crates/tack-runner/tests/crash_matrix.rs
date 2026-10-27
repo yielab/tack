@@ -22,7 +22,7 @@ use tack_runner::{
     client::{
         AttemptId, AttemptLease, AttemptState, CancelObservation, CancellationEvidence,
         CancellationReport, CancellationResponse, ClaimRequest, ClaimRequestId, ClaimResult,
-        ClaimedWork, CompletionReport, CompletionResponse, EngineError, EnrollmentRequest,
+        ClaimedWork, CompletionRequest, CompletionResponse, EngineError, EnrollmentRequest,
         EnrollmentResponse, FencingToken, HarnessAdapter, HarnessError, HarnessOutcome,
         HeartbeatRequest, HeartbeatResponse, JournalError, JournalState, LeaseResult,
         LocalRunHandle, OwnerOnlyJournal, ProtocolClientError, PullProtocol, RecoveryObservation,
@@ -174,11 +174,11 @@ impl PullProtocol for FakeProtocol {
         Ok(HeartbeatResponse {
             protocol_version: ProtocolVersion::v1(),
             heartbeat_id: request.heartbeat_id,
-            accepted_at: Timestamp::new("2026-08-07T12:00:01Z"),
+            accepted_at: "2026-08-07T12:00:01Z".parse().expect("an RFC 3339 instant"),
             lease_results: vec![LeaseResult {
                 attempt_id: active.attempt_id,
                 fencing_token: active.fencing_token,
-                lease_expires_at: Timestamp::new("2026-08-07T12:01:00Z"),
+                lease_expires_at: "2026-08-07T12:01:00Z".parse().expect("an RFC 3339 instant"),
                 cancellation_requested: self.cancellation_requested,
             }],
         })
@@ -210,7 +210,7 @@ impl PullProtocol for FakeProtocol {
     async fn report_completion(
         &self,
         _session: &RunnerSession,
-        report: CompletionReport,
+        report: CompletionRequest,
     ) -> Result<CompletionResponse, ProtocolClientError> {
         let mut evidence = self.evidence.lock().expect("protocol evidence");
         evidence.events.push("completion".into());
@@ -224,7 +224,7 @@ impl PullProtocol for FakeProtocol {
                 completion_id: report.completion_id,
                 state: report.terminal_state,
                 replayed: false,
-                committed_at: Timestamp::new("2026-08-07T12:00:01Z"),
+                committed_at: "2026-08-07T12:00:01Z".parse().expect("an RFC 3339 instant"),
             })
         }
     }

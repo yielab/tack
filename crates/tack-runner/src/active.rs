@@ -8,9 +8,10 @@ use std::{
 
 use tokio::sync::watch;
 
+use tack_protocol::execution::ExecutionState;
+
 use crate::client::{
-    ActiveAttempt, AttemptId, AttemptJournal, AttemptState, Checkpoint, FencingToken, JournalState,
-    LeaseResult,
+    ActiveAttempt, AttemptId, AttemptJournal, Checkpoint, FencingToken, JournalState, LeaseResult,
 };
 
 struct Entry {
@@ -105,8 +106,8 @@ impl ActiveAttempts {
             .map(|(attempt_id, entry)| ActiveAttempt {
                 attempt_id: attempt_id.clone(),
                 fencing_token: entry.fencing_token,
-                state: AttemptState::Running,
-                journal_state: entry.journal_state,
+                state: ExecutionState::Running,
+                journal_state: entry.journal_state.into(),
                 last_event_checkpoint: entry.last_event_checkpoint.clone(),
             })
             .collect()

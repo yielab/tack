@@ -27,6 +27,20 @@ pub enum JournalState {
     Quarantined,
 }
 
+impl From<JournalState> for tack_protocol::execution::RecoveryJournalState {
+    fn from(state: JournalState) -> Self {
+        match state {
+            JournalState::Prepared => Self::Prepared,
+            JournalState::ProcessObservedRunning => Self::ProcessObservedRunning,
+            JournalState::CancellationRequested => Self::CancellationRequested,
+            JournalState::TerminalReportPending => Self::TerminalReportPending,
+            JournalState::RecoveryObserved => Self::RecoveryObserved,
+            JournalState::Reported => Self::Reported,
+            JournalState::Quarantined => Self::Quarantined,
+        }
+    }
+}
+
 impl JournalState {
     pub const fn is_unresolved(self) -> bool {
         matches!(

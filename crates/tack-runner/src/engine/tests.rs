@@ -14,14 +14,14 @@ use super::*;
 use crate::client::{
     ArtifactManifestReport, ArtifactUploadGrant, AttemptLease, CancellationResponse,
     ClaimRequestId, ClaimResult, ClaimedWork, CompletionResponse, DecisionCreateReport,
-    DecisionCreateResponse, DecisionPollReport, DecisionPollResponse, EventBatchReport,
+    DecisionCreateResponse, DecisionPollReport, DecisionPollResponse, EventBatchRequest,
     EventBatchResponse, FencingToken, LeaseResult, PendingTerminalReport, ProtocolClientError,
     ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
 };
 use tack_protocol::execution::{
-    AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, RecoveryDisposition,
-    RecoveryJournalState, RecoveryObservationRequest, RecoveryObservationResponse,
-    RunnerId as DomainRunnerId,
+    AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
+    ProtocolVersion, RecoveryDisposition, RecoveryJournalState, RecoveryObservationRequest,
+    RecoveryObservationResponse, RunnerId as DomainRunnerId,
 };
 
 #[derive(Clone)]
@@ -94,7 +94,7 @@ struct FakeProtocol {
     received_heartbeats: Arc<Mutex<Vec<HeartbeatRequest>>>,
     reported_heartbeats: Arc<Mutex<Vec<super::super::HeartbeatResponse>>>,
     completion_reports: Arc<AtomicUsize>,
-    reported_completions: Arc<Mutex<Vec<CompletionReport>>>,
+    reported_completions: Arc<Mutex<Vec<CompletionRequest>>>,
     completion_response: Arc<Mutex<CompletionResponseConfig>>,
     fail_completion_ack_update: Arc<Mutex<Option<OwnerOnlyJournal>>>,
     cancellation_reports: Arc<AtomicUsize>,
@@ -192,11 +192,11 @@ impl PullProtocol for FakeProtocol {
             } else {
                 "mismatched-heartbeat".into()
             },
-            accepted_at: Timestamp::new("2026-08-06T12:20:16Z"),
+            accepted_at: "2026-08-06T12:20:16Z".parse().expect("an RFC 3339 instant"),
             lease_results: vec![LeaseResult {
                 attempt_id: active.attempt_id,
                 fencing_token: active.fencing_token,
-                lease_expires_at: Timestamp::new("2026-08-06T12:21:16Z"),
+                lease_expires_at: "2026-08-06T12:21:16Z".parse().expect("an RFC 3339 instant"),
                 cancellation_requested: self.cancellation_requested,
             }],
         };
@@ -227,7 +227,7 @@ impl PullProtocol for FakeProtocol {
     async fn report_completion(
         &self,
         _session: &RunnerSession,
-        report: CompletionReport,
+        report: CompletionRequest,
     ) -> Result<CompletionResponse, ProtocolClientError> {
         self.assert_terminal_payload_is_durable(
             &report.attempt_id,
@@ -249,7 +249,7 @@ impl PullProtocol for FakeProtocol {
                 completion_id: report.completion_id,
                 state: report.terminal_state,
                 replayed: config.replayed,
-                committed_at: Timestamp::new("2026-08-06T12:25:01Z"),
+                committed_at: "2026-08-06T12:25:01Z".parse().expect("an RFC 3339 instant"),
             };
             match config.mismatch {
                 CompletionAckMismatch::None => {}
@@ -259,7 +259,7 @@ impl PullProtocol for FakeProtocol {
                 CompletionAckMismatch::Completion => {
                     response.completion_id = CompletionId::new("wrong-completion")
                 }
-                CompletionAckMismatch::State => response.state = AttemptState::Running,
+                CompletionAckMismatch::State => response.state = ExecutionState::Running,
             }
             if let Some(journal) = self
                 .fail_completion_ack_update
@@ -939,7 +939,7 @@ fn completion_report_round_trips_the_frozen_payload_shape() {
         "../../../../docs/contracts/runner-v1/completion.request.json"
     ))
     .expect("completion fixture");
-    let report: CompletionReport =
+    let report: CompletionRequest =
         serde_json::from_value(fixture.clone()).expect("typed completion fixture");
     assert_eq!(report.protocol_version.as_u16(), 1);
     assert_eq!(report.runner_id.as_str(), "runr_01J00000000000000000000001");
@@ -1015,7 +1015,7 @@ fn heartbeat_retries_keep_a_canonical_payload_per_clock_instant() {
         serde_json::to_string(&first).expect("first heartbeat"),
         serde_json::to_string(&retry).expect("retry heartbeat")
     );
-    assert_eq!(first.sent_at.as_str(), "2026-08-06T12:20:15Z");
+    assert_eq!(first.sent_at.to_rfc3339(), "2026-08-06T12:20:15+00:00");
 }
 
 #[tokio::test]
@@ -1066,7 +1066,10 @@ async fn heartbeat_sent_at_comes_from_the_injected_clock() {
         .expect("fake protocol lock");
     assert_eq!(heartbeats[0].protocol_version, ProtocolVersion::v1());
     assert_eq!(heartbeats[0].runner_id.as_str(), "runner");
-    assert_eq!(heartbeats[0].sent_at.as_str(), "2026-08-06T12:20:15Z");
+    assert_eq!(
+        heartbeats[0].sent_at.to_rfc3339(),
+        "2026-08-06T12:20:15+00:00"
+    );
     std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
@@ -1126,13 +1129,13 @@ async fn assert_tampered_binding_rejected(tamper: &str) {
             }
         }
         _ => {
-            let mut report = CompletionReport {
+            let mut report = CompletionRequest {
                 protocol_version: ProtocolVersion::v1(),
                 runner_id: session().runner_id,
                 completion_id: CompletionId::new("completion:attempt:7"),
                 attempt_id: record.attempt_id.clone(),
                 fencing_token: record.fencing_token,
-                terminal_state: AttemptState::Succeeded,
+                terminal_state: ExecutionState::Succeeded,
                 terminal_reason: serde_json::json!({"code":"completed"}),
                 final_event_checkpoint: None,
                 actual_execution: actual_execution(),
@@ -1280,10 +1283,13 @@ fn assert_single_heartbeat_matches_fixture(protocol: &FakeProtocol) {
         .expect("fake protocol lock");
     assert_eq!(heartbeats.len(), 1);
     assert!(heartbeats[0].heartbeat_id.starts_with("hb_"));
-    assert_eq!(heartbeats[0].accepted_at.as_str(), "2026-08-06T12:20:16Z");
     assert_eq!(
-        heartbeats[0].lease_results[0].lease_expires_at.as_str(),
-        "2026-08-06T12:21:16Z"
+        heartbeats[0].accepted_at.to_rfc3339(),
+        "2026-08-06T12:20:16+00:00"
+    );
+    assert_eq!(
+        heartbeats[0].lease_results[0].lease_expires_at.to_rfc3339(),
+        "2026-08-06T12:21:16+00:00"
     );
 }
 
@@ -1503,7 +1509,7 @@ async fn every_failure_before_the_agent_runs_is_reported_failed_with_its_reason(
         assert!(matches!(cycle, RunCycle::Completed { .. }), "{name}");
         assert_eq!(start_calls.load(Ordering::SeqCst), starts, "{name}");
         let report = single_completion_report(&protocol);
-        assert_eq!(report.terminal_state, AttemptState::Failed, "{name}");
+        assert_eq!(report.terminal_state, ExecutionState::Failed, "{name}");
         assert_eq!(report.terminal_reason["code"], "harness_rejected", "{name}");
         assert_eq!(report.terminal_reason["message"], message, "{name}");
         assert_pre_spawn_rejection_actual_execution(&report.actual_execution);
@@ -1515,8 +1521,8 @@ async fn every_failure_before_the_agent_runs_is_reported_failed_with_its_reason(
     }
 }
 
-/// The one `CompletionReport` a run sent, asserting exactly one was sent.
-fn single_completion_report(protocol: &FakeProtocol) -> CompletionReport {
+/// The one `CompletionRequest` a run sent, asserting exactly one was sent.
+fn single_completion_report(protocol: &FakeProtocol) -> CompletionRequest {
     let completions = protocol
         .reported_completions
         .lock()
@@ -1562,7 +1568,7 @@ async fn completion_transport_loss_stays_in_terminal_outbox() {
     );
     assert_eq!(completion.actual_execution.base_revision, "revision");
     assert_eq!(completion.usage.duration_ms.value, Some(3));
-    assert_eq!(completion.terminal_state, AttemptState::Succeeded);
+    assert_eq!(completion.terminal_state, ExecutionState::Succeeded);
     assert_eq!(
         completion.terminal_reason,
         default_completion_terminal_reason()
@@ -2285,7 +2291,7 @@ async fn a_running_agent_that_outlived_the_runner_is_followed_again() {
             );
             let completions = protocol.reported_completions.lock().expect("lock");
             assert_eq!(completions.len(), 1, "{label}");
-            assert_eq!(completions[0].terminal_state, AttemptState::Succeeded);
+            assert_eq!(completions[0].terminal_state, ExecutionState::Succeeded);
             assert_eq!(completions[0].fencing_token, record.fencing_token);
         } else {
             assert!(
@@ -2467,7 +2473,7 @@ async fn post_spawn_journal_update_failure_reports_ambiguity_cancels() {
 
 #[derive(Default)]
 struct FakeDataProtocolState {
-    events: Vec<EventBatchReport>,
+    events: Vec<EventBatchRequest>,
     accepted_event_ids: BTreeSet<String>,
     manifests: Vec<ArtifactManifestReport>,
     uploads: Vec<(String, Vec<u8>, Option<String>)>,
@@ -2505,7 +2511,7 @@ impl AttemptDataProtocol for FakeDataProtocol {
     async fn submit_events(
         &self,
         _session: &RunnerSession,
-        report: EventBatchReport,
+        report: EventBatchRequest,
     ) -> Result<EventBatchResponse, ProtocolClientError> {
         if self.events_fail.load(Ordering::SeqCst) {
             return Err(ProtocolClientError::Transport);
@@ -2525,10 +2531,11 @@ impl AttemptDataProtocol for FakeDataProtocol {
             }
         }
         let response = EventBatchResponse {
+            protocol_version: ProtocolVersion::v1(),
             attempt_id: report.attempt_id.clone(),
             accepted_event_ids,
             duplicate_event_ids,
-            committed_checkpoint: Some(report.checkpoint.clone()),
+            committed_checkpoint: report.checkpoint.clone(),
         };
         state.events.push(report);
         Ok(response)
@@ -3224,7 +3231,7 @@ async fn run_evidence_attempt(
 struct EvidenceRun {
     data_protocol: FakeDataProtocol,
     survived: bool,
-    completions: Vec<CompletionReport>,
+    completions: Vec<CompletionRequest>,
     origin: PathBuf,
     item_id: String,
     /// How many times the harness was started.
@@ -3456,7 +3463,10 @@ fn reported_end(run: &EvidenceRun) -> (AttemptState, serde_json::Value) {
     let [report] = run.completions.as_slice() else {
         panic!("one completion, got {}", run.completions.len());
     };
-    (report.terminal_state, report.terminal_reason.clone())
+    (
+        AttemptState::from_execution(report.terminal_state).expect("a terminal state"),
+        report.terminal_reason.clone(),
+    )
 }
 
 const NO_CHANGE: &str =
@@ -3841,7 +3851,7 @@ async fn a_failed_push_is_one_event_and_the_attempt_still_succeeds() {
     )
     .await;
     assert_eq!(run.completions.len(), 1);
-    assert_eq!(run.completions[0].terminal_state, AttemptState::Succeeded);
+    assert_eq!(run.completions[0].terminal_state, ExecutionState::Succeeded);
     assert!(
         !run.completions[0]
             .actual_execution
@@ -3870,7 +3880,7 @@ async fn a_local_branch_attempt_keeps_its_branch_and_reports_the_skipped_push() 
     let seed = run._root_dir.path().join("seed");
     let short = run.item_id.split('-').next().expect("segment").to_owned();
     let branch = format!("tack/{short}-a1");
-    assert_eq!(run.completions[0].terminal_state, AttemptState::Succeeded);
+    assert_eq!(run.completions[0].terminal_state, ExecutionState::Succeeded);
     let reported = run.completions[0].actual_execution.additional["git"].clone();
     assert_eq!(reported["branch"], branch.as_str());
     assert_eq!(reported["pushed"], false);
@@ -3984,7 +3994,7 @@ async fn an_in_place_attempt_runs_in_the_users_folder_and_moves_nothing() {
 
     assert_eq!(
         reported.lock().expect("lock")[0].terminal_state,
-        AttemptState::Succeeded
+        ExecutionState::Succeeded
     );
     assert_eq!(
         std::fs::read_to_string(folder.join("harness.txt")).expect("in the folder"),
@@ -4064,7 +4074,7 @@ async fn a_failed_evidence_capture_keeps_the_workspace() {
 
     let completions = reported.lock().expect("lock").clone();
     assert_eq!(completions.len(), 1);
-    assert_eq!(completions[0].terminal_state, AttemptState::Succeeded);
+    assert_eq!(completions[0].terminal_state, ExecutionState::Succeeded);
     assert_eq!(
         completions[0].terminal_reason["workspace_kept_at"],
         kept.canonicalize()
@@ -4359,7 +4369,11 @@ async fn a_run_that_counts_its_token_limit_is_stopped_and_fails() {
         let label = format!("{kind} {budgets}");
         assert_eq!(cancel_calls.load(Ordering::SeqCst), stops, "{label}");
         let completions = reported.lock().expect("lock").clone();
-        assert_eq!(completions[0].terminal_state, state, "{label}");
+        assert_eq!(
+            completions[0].terminal_state,
+            state.execution_state(),
+            "{label}"
+        );
         if stops == 1 {
             let reason = &completions[0].terminal_reason;
             assert_eq!(reason["message"], "the run reached its token limit (1 000)");

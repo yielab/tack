@@ -45,9 +45,10 @@ use async_trait::async_trait;
 use reqwest::{Client, Method, StatusCode, header};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use tack_protocol::execution as wire;
 use tack_protocol::execution::{
-    ProtocolErrorEnvelope, ProtocolVersion, RecoveryObservationRequest,
-    RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
+    ClaimGranted, ClaimResponse, ExecutionState, ProtocolErrorEnvelope, ProtocolVersion,
+    RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
 };
 use tokio::task::JoinSet;
 
@@ -56,11 +57,11 @@ use crate::{
     client::engine::{EngineError, LEASE_RENEWAL_INTERVAL, RunCycle, RunnerEngine},
     client::{
         AttemptId, AttemptLease, AttemptState, CancellationReport, CancellationResponse,
-        Checkpoint, ClaimRequest, ClaimRequestId, ClaimResult, ClaimedWork, CompletionReport,
-        CompletionResponse, EnrollmentRequest, EnrollmentResponse, FencingToken, HeartbeatRequest,
-        HeartbeatResponse, ProtocolClientError, PullProtocol, RefreshRequest, RefreshResponse,
-        RunnerCredential, RunnerId, RunnerProtocolClient, RunnerSession, StartPhase, StartReport,
-        Timestamp,
+        ClaimRequest, ClaimRequestId, ClaimResult, ClaimedWork, CompletionRequest,
+        CompletionResponse, EnrollmentRequest, EnrollmentResponse, EventBatchRequest,
+        EventBatchResponse, FencingToken, HeartbeatRequest, HeartbeatResponse, ProtocolClientError,
+        PullProtocol, RefreshRequest, RefreshResponse, RunnerCredential, RunnerId,
+        RunnerProtocolClient, RunnerSession, StartPhase, StartReport, Timestamp,
     },
 };
 
@@ -184,7 +185,7 @@ impl HttpPullProtocol {
         method: Method,
         path: &str,
         credential: Option<&RunnerCredential>,
-        body: &Value,
+        body: &(impl Serialize + ?Sized),
         idempotency: Idempotency,
         timeout: Option<Duration>,
     ) -> Result<Value, ProtocolClientError> {
@@ -331,6 +332,10 @@ fn embedded_capabilities(capabilities: &RunnerCapabilities) -> Result<Value, Pro
     Ok(value)
 }
 
+fn attempt_state(state: ExecutionState) -> Result<AttemptState, ProtocolClientError> {
+    AttemptState::from_execution(state).ok_or(ProtocolClientError::Rejected)
+}
+
 fn attempt_state_from(value: &Value, name: &str) -> Result<AttemptState, ProtocolClientError> {
     typed(field(value, name)?)
 }
@@ -422,13 +427,13 @@ impl PullProtocol for HttpPullProtocol {
         let wait_ms = u64::try_from(request.wait.as_millis())
             .unwrap_or(CLAIM_WAIT_MS_MAX)
             .min(CLAIM_WAIT_MS_MAX);
-        let body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "claim_request_id": request.claim_request_id,
-            "available_capacity": request.available_capacity,
-            "wait_ms": wait_ms,
-        });
+        let body = wire::ClaimRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            claim_request_id: request.claim_request_id,
+            available_capacity: request.available_capacity,
+            wait_ms,
+        };
         let value = self
             .send_json(
                 Method::POST,
@@ -440,37 +445,42 @@ impl PullProtocol for HttpPullProtocol {
             )
             .await?;
         require_v1(&value)?;
-        let lease_value = field(&value, "lease")?;
-        if lease_value.is_null() {
-            return Ok(ClaimResult::NoWork {
-                retry_after: Duration::from_millis(as_u64(&value, "retry_after_ms")?),
-                reason: as_str(&value, "reason")?,
-            });
+        match typed::<ClaimResponse>(&value)? {
+            ClaimResponse::Idle(idle) => Ok(ClaimResult::NoWork {
+                retry_after: Duration::from_millis(idle.retry_after_ms),
+                reason: idle.reason,
+            }),
+            ClaimResponse::Work(granted) => {
+                let ClaimGranted {
+                    claim_request_id,
+                    lease,
+                    request,
+                    attempt,
+                    ..
+                } = *granted;
+                // `claim.response.json`'s `lease` carries neither `attempt_number`
+                // nor `state`; both live on the attempt snapshot beside it. Building
+                // the engine-facing `AttemptLease` from both halves is what makes
+                // `ClaimedWork::workspace_repository`'s redundancy check meaningful
+                // — it re-validates the two against each other before any local
+                // side effect.
+                let lease = AttemptLease {
+                    attempt_id: lease.attempt_id,
+                    runner_id: lease.runner_id,
+                    fencing_token: lease.fencing_token,
+                    attempt_number: attempt.attempt_number,
+                    state: attempt_state(attempt.state)?,
+                    issued_at: Timestamp::new(lease.issued_at.to_rfc3339()),
+                    expires_at: Timestamp::new(lease.expires_at.to_rfc3339()),
+                };
+                Ok(ClaimResult::Work(Box::new(ClaimedWork {
+                    claim_request_id,
+                    lease,
+                    request,
+                    attempt,
+                })))
+            }
         }
-
-        let attempt_value = field(&value, "attempt")?;
-        // `claim.response.json`'s `lease` carries neither `attempt_number`
-        // nor `state`; both live on the attempt snapshot beside it. Building
-        // the engine-facing `AttemptLease` from both halves is what makes
-        // `ClaimedWork::workspace_repository`'s redundancy check meaningful
-        // — it re-validates the two against each other before any local
-        // side effect.
-        let lease = AttemptLease {
-            attempt_id: AttemptId::new(as_str(lease_value, "attempt_id")?),
-            runner_id: RunnerId::new(as_str(lease_value, "runner_id")?),
-            fencing_token: FencingToken(as_u64(lease_value, "fencing_token")?),
-            attempt_number: u32::try_from(as_u64(attempt_value, "attempt_number")?)
-                .map_err(|_| ProtocolClientError::Rejected)?,
-            state: attempt_state_from(attempt_value, "state")?,
-            issued_at: Timestamp::new(as_str(lease_value, "issued_at")?),
-            expires_at: Timestamp::new(as_str(lease_value, "expires_at")?),
-        };
-        Ok(ClaimResult::Work(Box::new(ClaimedWork {
-            claim_request_id: ClaimRequestId::new(as_str(&value, "claim_request_id")?),
-            lease,
-            request: typed(field(&value, "request")?)?,
-            attempt: typed(attempt_value)?,
-        })))
     }
 
     async fn heartbeat(
@@ -478,13 +488,12 @@ impl PullProtocol for HttpPullProtocol {
         session: &RunnerSession,
         request: HeartbeatRequest,
     ) -> Result<HeartbeatResponse, ProtocolClientError> {
-        let body = serde_json::to_value(&request).map_err(|_| ProtocolClientError::Rejected)?;
         let value = self
             .send_json(
                 Method::POST,
                 "/heartbeat",
                 Some(session.credential()),
-                &body,
+                &request,
                 Idempotency::Replayable,
                 None,
             )
@@ -555,31 +564,21 @@ impl PullProtocol for HttpPullProtocol {
     async fn report_completion(
         &self,
         session: &RunnerSession,
-        report: CompletionReport,
+        report: CompletionRequest,
     ) -> Result<CompletionResponse, ProtocolClientError> {
-        let body = serde_json::to_value(&report).map_err(|_| ProtocolClientError::Rejected)?;
         let path = format!("/attempts/{}/completion", report.attempt_id);
         let value = self
             .send_json(
                 Method::POST,
                 &path,
                 Some(session.credential()),
-                &body,
+                &report,
                 Idempotency::Replayable,
                 None,
             )
             .await?;
         require_v1(&value)?;
-        Ok(CompletionResponse {
-            protocol_version: ProtocolVersion::v1(),
-            attempt_id: AttemptId::new(as_str(&value, "attempt_id")?),
-            completion_id: crate::client::CompletionId::new(as_str(&value, "completion_id")?),
-            state: attempt_state_from(&value, "state")?,
-            replayed: field(&value, "replayed")?
-                .as_bool()
-                .ok_or(ProtocolClientError::Rejected)?,
-            committed_at: Timestamp::new(as_str(&value, "committed_at")?),
-        })
+        typed(&value)
     }
 
     async fn report_cancellation(
@@ -654,7 +653,7 @@ pub trait AttemptDataProtocol: Send + Sync {
     async fn submit_events(
         &self,
         session: &RunnerSession,
-        report: EventBatchReport,
+        report: EventBatchRequest,
     ) -> Result<EventBatchResponse, ProtocolClientError>;
 
     async fn create_decision(
@@ -685,34 +684,6 @@ pub trait AttemptDataProtocol: Send + Sync {
         media_type: Option<&str>,
         content: Vec<u8>,
     ) -> Result<(), ProtocolClientError>;
-}
-
-/// One `event-batch.request.json` event.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProtocolEvent {
-    pub event_id: String,
-    pub sequence: u64,
-    pub occurred_at: Timestamp,
-    pub source: String,
-    pub kind: String,
-    pub payload: Value,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct EventBatchReport {
-    pub attempt_id: AttemptId,
-    pub fencing_token: FencingToken,
-    pub previous_checkpoint: Option<Checkpoint>,
-    pub checkpoint: Checkpoint,
-    pub events: Vec<ProtocolEvent>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EventBatchResponse {
-    pub attempt_id: AttemptId,
-    pub accepted_event_ids: Vec<String>,
-    pub duplicate_event_ids: Vec<String>,
-    pub committed_checkpoint: Option<Checkpoint>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -831,24 +802,15 @@ impl AttemptDataProtocol for HttpPullProtocol {
     async fn submit_events(
         &self,
         session: &RunnerSession,
-        report: EventBatchReport,
+        report: EventBatchRequest,
     ) -> Result<EventBatchResponse, ProtocolClientError> {
-        let body = json!({
-            "protocol_version": 1,
-            "runner_id": session.runner_id,
-            "attempt_id": report.attempt_id,
-            "fencing_token": report.fencing_token,
-            "previous_checkpoint": report.previous_checkpoint,
-            "checkpoint": report.checkpoint,
-            "events": report.events,
-        });
         let path = format!("/attempts/{}/events", report.attempt_id);
         let value = self
             .send_json(
                 Method::POST,
                 &path,
                 Some(session.credential()),
-                &body,
+                &report,
                 Idempotency::Replayable,
                 None,
             )
@@ -1157,8 +1119,12 @@ where
         self
     }
 
-    fn now_rfc3339(&self) -> String {
+    fn now(&self) -> chrono::DateTime<chrono::Utc> {
         chrono::DateTime::<chrono::Utc>::from(self.clock.now())
+    }
+
+    fn now_rfc3339(&self) -> String {
+        self.now()
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
     }
 
@@ -1285,7 +1251,7 @@ where
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
             heartbeat_id: self.next_id("hb"),
-            sent_at: Timestamp::new(self.now_rfc3339()),
+            sent_at: self.now(),
             // The capacity the server holds against this runner: its total less the attempts it
             // leased, which a slot still asking for work is not.
             available_capacity: active.free(),
