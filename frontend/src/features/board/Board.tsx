@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { deriveBoard } from '../../shared/api/boards';
 import type { BoardColumn, Item, BoardState, Priority } from '../../shared/types';
-import CreateItemModal from '../items/CreateItemModal';
+import CreateItemModal from './CreateItemModal';
 import { createBoardSocket, type BoardSocket, type SocketStatus } from '../../shared/realtime/boardSocket';
 import { useKeyboard, keyboardManager, type ShortcutContext } from '../../shared/keyboard/keyboard';
 import { withOptimisticUpdate } from '../../shared/state/optimistic';
