@@ -970,7 +970,7 @@ pub(crate) async fn update_item_in(
 
     let old_status = current.status.clone();
     if let Some(Some(sprint_id)) = input.sprint_id {
-        require_row(&mut **tx, Parent::Sprint, sprint_id).await?;
+        require_row(tx, Parent::Sprint, sprint_id).await?;
     }
     let addresses_a_field = input.title.is_some()
         || input.description.is_some()
