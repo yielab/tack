@@ -192,6 +192,7 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **A runner can no longer end an attempt it has not started.** The store used to accept a success report for an attempt still `leased`; every guard on a state change now comes from the lifecycle table in the protocol crate, so the store and the table cannot disagree, and no query spells a state name.
 - **A level can only reach docket, and a run is a link.** `POST /api/executions` refuses an `autonomy` for any
   agent but docket with `400` "A level applies only to a docket run", where the level used to be kept and then
   dropped in silence. The dialog "Run again at L3" opens keeps docket and shows the other agents disabled with
@@ -374,6 +375,7 @@ automation a template carries, and the removal of dollars per day.
   in each change, and a release's notes are its section here.
 
 ### Fixed
+- **A retry of a run no longer answers 409 after the card's title was edited.** The instructions composed from the card's text are no longer part of what an exact retry is compared by, so the same request after an edit replays the run it made.
 - A `(?)` help button no longer sits inside a folded heading: the help of "How the agent works on it" and "For the agent" is a line in the opened section, every `(?)` is at least 24 pixels wide, and the radio buttons of where the code lives are big enough to hit, so a keyboard or screen-reader user no longer meets a button inside a button.
 
 - **The "No role" row of Settings → Automation counts the project's default profile.** The page listed only the teams of
