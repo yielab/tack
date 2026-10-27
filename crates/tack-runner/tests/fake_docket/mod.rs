@@ -639,7 +639,7 @@ fn pod_report(state: &World, name: &str) -> Response {
     let Some(pod) = state.pods.get(name) else {
         return refusal("pod-unknown", &[("no-such-team", name)]);
     };
-    let mut report = fixture_with("pod-attended", &[("mer-dev", name)]);
+    let mut report = fixture_with("pod-attended", &[("saas-dev", name)]);
     let violations: Vec<Value> = pod
         .violations
         .iter()
@@ -670,10 +670,10 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
         return if ensure {
             reply(
                 200,
-                fixture_with("post-pods-existing", &[("mer-dev", name)]),
+                fixture_with("post-pods-existing", &[("saas-dev", name)]),
             )
         } else {
-            refusal("post-pods-conflict", &[("mer-dev", name)])
+            refusal("post-pods-conflict", &[("saas-dev", name)])
         };
     }
     state.pods.insert(
@@ -685,7 +685,10 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             read_only: None,
         },
     );
-    reply(201, fixture_with("post-pods-created", &[("mer-dev", name)]))
+    reply(
+        201,
+        fixture_with("post-pods-created", &[("saas-dev", name)]),
+    )
 }
 
 /// The body rules of `POST /tasks/<pod>` that docket's captured refusals show:
@@ -1072,7 +1075,7 @@ fn consult_schema(property: &str, options: &[String]) -> Value {
 fn get_task(state: &World, pod: &str, id: &str) -> Response {
     match state.tasks.iter().find(|t| t.pod == pod && t.id == id) {
         Some(task) => reply(200, task_record(task)),
-        None => refusal("task-unknown", &[("mer-dev", pod), ("task-unknown", id)]),
+        None => refusal("task-unknown", &[("saas-dev", pod), ("task-unknown", id)]),
     }
 }
 
@@ -1080,7 +1083,7 @@ fn cancel_task(state: &mut World, pod: &str, id: &str) -> Response {
     let Some(index) = state.tasks.iter().position(|t| t.pod == pod && t.id == id) else {
         return refusal(
             "task-cancel-unknown",
-            &[("mer-dev", pod), ("task-unknown", id)],
+            &[("saas-dev", pod), ("task-unknown", id)],
         );
     };
     let status = state.tasks[index].status.clone();
@@ -1114,7 +1117,7 @@ fn diff(state: &World, pod: &str, id: &str) -> Response {
     let Some(task) = state.tasks.iter().find(|t| t.pod == pod && t.id == id) else {
         return refusal(
             "task-diff-unknown",
-            &[("mer-dev", pod), ("task-unknown", id)],
+            &[("saas-dev", pod), ("task-unknown", id)],
         );
     };
     let (head, patch) = match &state.repository {

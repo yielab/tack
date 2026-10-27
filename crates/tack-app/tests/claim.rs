@@ -121,10 +121,10 @@ async fn a_docket_claim_carries_only_the_level_a_person_asked_for() {
         ("docket", "L3", Some("writers"), None, None),
         ("docket", "L4", Some("reviewers"), None, None),
         ("docket", "L5", Some("writers"), None, None),
-        ("docket", "L5", Some("mer-dev"), None, None),
+        ("docket", "L5", Some("saas-dev"), None, None),
         ("docket", "L5", Some("writers"), Some("L3"), Some("L3")),
         ("docket", "L3", Some("reviewers"), Some("L4"), Some("L4")),
-        ("docket", "L3", Some("mer-dev"), Some("L5"), Some("L5")),
+        ("docket", "L3", Some("saas-dev"), Some("L5"), Some("L5")),
         ("codex", "L5", None, Some("L3"), None),
     ];
     for (harness, level, team, asked, expected) in cases {

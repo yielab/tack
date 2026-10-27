@@ -4,14 +4,14 @@
 (`docs/adr/0023-what-the-first-real-project-found.md`). Written against `develop` at `d99503dd`.
 Every path and line below was read that day; re-run `rg -n` before trusting a line number.
 
-What this phase does, in one paragraph. The Meridian onboarding put a real project into Tack and
+What this phase does, in one paragraph. The My SaaS onboarding put a real project into Tack and
 docket and found twenty defects in Tack. This phase closes them at their roots, one owner per
 fact: a run that cannot start ends with its reason, and one nobody holds asks a person; the
 runner's name comes from the board and its liveness from one rule; what a runner reports about
 its teams stays current and the ceiling is per team; everything Tack runs is logged; the doctor
 reads the runner's own file; the project file round-trips the auto-start switch; the docket
 contract is proven by captures; four screens use the project's words. It ends by running the
-Meridian calibration (R0) again on the real board, which is also Phase 73's live proof.
+My SaaS calibration (R0) again on the real board, which is also Phase 73's live proof.
 
 ## The rule for every task: fix the seam, not the caller
 
@@ -228,7 +228,7 @@ shape), `crates/tack-api/src/autonomy.rs` (`ceiling_of`, `is_attended`),
 - Re-probe as "Decided" says. The comparison is on the serialized report, so nothing new is
   stored.
 - `ceiling_of`: a run whose team the snapshot reports takes that team's ceiling; a run whose team
-  it does not report is held with "Team mer-dev is not reported yet by this computer"; a run of an
+  it does not report is held with "Team saas-dev is not reported yet by this computer"; a run of an
   agent with no teams keeps today's `autonomy_ceiling`. The machine-wide fallback goes for docket.
 - `current()`: the level is the lowest `caps_at` over every listed team, and L3 when
   `automatic_merge_blocked_by` is not empty.
@@ -323,9 +323,9 @@ and the capture script ran once against docket with K7 fixed.
   "The board's log", in the Administrator guide's words (no paths, no ids).
 - `CLAUDE.md` "What's next" and the roadmap's Phase 74 status.
 - The integrated gate on `develop`.
-- R0 on the maintainer's board with docket K7 fixed: the three Meridian calibration tasks (a bug
+- R0 on the maintainer's board with docket K7 fixed: the three My SaaS calibration tasks (a bug
   with a test, a piece of content, a research note) through their teams, each run read to its end
-  in the UI, the numbers written into Meridian's `BLUEPRINT.md` by pull request. This is also
+  in the UI, the numbers written into My SaaS's `BLUEPRINT.md` by pull request. This is also
   Phase 73's live proof; `scripts/docket-prill-e2e.sh` runs once in the same round.
 - The defects list beside the test is marked with the commit that closed each row.
 
@@ -409,7 +409,7 @@ tested; otherwise the finding says why not).
 
 ### U — a run that ended says why, on every screen (Sonnet, two layers)
 
-Found in R0 on 2026-10-18: Meridian's CI1 waited an hour on an approval nobody gave and ended
+Found in R0 on 2026-10-18: My SaaS's CI1 waited an hour on an approval nobody gave and ended
 `failed` with `terminal_reason` `{"code": "timeout"}` and no message, and the item's Last run
 panel showed "Failed" alone. That panel prints what the agent said, never why a run stopped, so a
 `no_change` or a refused start reads the same way.

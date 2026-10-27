@@ -507,7 +507,7 @@ fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_no
         ("codex", vec!["*"], none.clone(), None, true),
         ("opencode", vec!["webfetch"], none.clone(), None, false),
         ("opencode", vec!["edit"], none.clone(), None, true),
-        // Meridian's researcher writes a document: its explicit list names `write`.
+        // My SaaS's researcher writes a document: its explicit list names `write`.
         (
             "docket",
             vec![],

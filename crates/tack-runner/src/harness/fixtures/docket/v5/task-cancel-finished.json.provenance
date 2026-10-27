@@ -4,7 +4,7 @@ status: 409
 request: task-cancel-finished.request.json
 tack-sends: yes
 note: cancel of a task that has ended
-command: curl -X POST http://127.0.0.1:<port>/tasks/mer-dev/task-00000000-0000-0000-0000-000000000000/cancel (bearer token from docket's --token-file) with the body in task-cancel-finished.request.json
+command: curl -X POST http://127.0.0.1:<port>/tasks/saas-dev/task-00000000-0000-0000-0000-000000000000/cancel (bearer token from docket's --token-file) with the body in task-cancel-finished.request.json
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-26

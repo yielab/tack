@@ -19,8 +19,8 @@
   "hops": [],
   "costUsd": 0.0,
   "worktree": {
-    "dir": "/scratch/home/.docket/workspaces/projects/mer-lights-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
-    "branch": "docket/mer-lights/task-00000000-0000-0000-0000-000000000000",
+    "dir": "/scratch/home/.docket/workspaces/projects/saas-lights-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/saas-lights/task-00000000-0000-0000-0000-000000000000",
     "baseCommit": "0000000000000000000000000000000000000000",
     "baseRef": "main",
     "gitDir": "/scratch/repo2/.git/worktrees/task-00000000-0000-0000-0000-000000000000",

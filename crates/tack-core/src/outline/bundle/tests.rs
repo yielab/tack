@@ -2,7 +2,7 @@ use super::*;
 use crate::models::{CodeOrigin, ItemSource, ItemType, WorkspaceMode};
 use crate::workflow::{kanban_workflow, scrum_workflow};
 
-const MERIDIAN: &str = include_str!("../../../../tack-api/tests/fixtures/bundles/meridian.yaml");
+const MY_SAAS: &str = include_str!("../../../../tack-api/tests/fixtures/bundles/my-saas.yaml");
 const HARNESSES: [&str; 4] = ["claude-code", "codex", "opencode", "docket"];
 
 fn profile_row(name: &str, builtin: bool) -> ProfileRow {
@@ -258,8 +258,8 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
 }
 
 #[test]
-fn the_meridian_file_checks_clean_but_for_its_three_autonomy_warnings() {
-    let outline = yaml(MERIDIAN);
+fn the_my_saas_file_checks_clean_but_for_its_three_autonomy_warnings() {
+    let outline = yaml(MY_SAAS);
     let mut board = Owned::empty();
     board.workflow = workflow_of(outline.project.as_ref(), &ProjectType::Web).expect("workflow");
     let plan = board.check(&outline).expect("the fixture checks clean");
@@ -309,7 +309,7 @@ fn synthetic_project() -> Project {
     Project {
         id: Uuid::new_v4(),
         workspace_id: Uuid::new_v4(),
-        name: "Meridian".into(),
+        name: "My SaaS".into(),
         description: None,
         project_type: ProjectType::Web,
         vocabulary: vocabulary_for_type(&ProjectType::Web),

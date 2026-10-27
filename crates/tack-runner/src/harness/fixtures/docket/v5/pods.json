@@ -1,7 +1,7 @@
 {
   "pods": [
     {
-      "name": "mer-dev",
+      "name": "saas-dev",
       "codebase": "/scratch/repo",
       "members": 2,
       "profile": "attended",
@@ -17,7 +17,7 @@
       }
     },
     {
-      "name": "mer-lights",
+      "name": "saas-lights",
       "codebase": "/scratch/repo2",
       "members": 2,
       "profile": "lights-out",

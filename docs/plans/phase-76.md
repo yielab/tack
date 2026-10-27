@@ -210,7 +210,7 @@ uses). Nothing else; no I/O; no new dependency (`serde_json` and `sha2` are not 
   `dev-team`; `"!!!"` → `unnamed`; 70 letters → 64; `is_key("Dev")` false, `is_key("dev-2")` true.
 - The per-field and per-entry rules of "Decided", each a row: `(base, board, file, prefer) →
   (verb, fields, conflicts, reason)`; include `base: None` rows.
-- Scenario one: Meridian's fixture (`crates/tack-api/tests/fixtures/bundles/meridian.yaml`, read
+- Scenario one: My SaaS's fixture (`crates/tack-api/tests/fixtures/bundles/my-saas.yaml`, read
   with `include_str!` as `bundle/tests.rs` line 5 does) as base and board; the file renames role
   `Contenido` to `Content` under the same key, drops a sprint, changes `automation.on_finish_status`;
   the board (a second copy) changed `roles[Contenido].color` and added a role `Ops`. Expect: one
@@ -305,7 +305,7 @@ a new `crates/tack-db/src/repo/config.rs` (+ `pub mod config;` in `repo.rs`),
 `crates/tack-api/src/handlers/export.rs` (`bundle_of`, the revision on export),
 `crates/tack-api/src/handlers/templates.rs` (`save_project_as_template` reads `bundle_of`),
 `crates/tack-api/src/handlers/outline.rs` (`read_outline` made `pub(crate)`; `board_of` is B's), a new `crates/tack-api/tests/handlers/config.rs`
-registered in `crates/tack-api/tests/handlers.rs`, a new `crates/tack-api/tests/fixtures/bundles/meridian-config-v2.yaml`,
+registered in `crates/tack-api/tests/handlers.rs`, a new `crates/tack-api/tests/fixtures/bundles/my-saas-config-v2.yaml`,
 the generated files.
 
 **Do:**
@@ -336,8 +336,8 @@ the generated files.
 
 - `an_export_records_a_revision_once`: two `scope=config` exports in a row → one revision; a role
   created through `POST …/roles` then an export → two.
-- `a_plan_from_the_second_file_names_every_change_and_its_cost`: import `meridian.yaml`, export
-  (the base), then plan `meridian-config-v2.yaml` (the fixture: role `Contenido` renamed to
+- `a_plan_from_the_second_file_names_every_change_and_its_cost`: import `my-saas.yaml`, export
+  (the base), then plan `my-saas-config-v2.yaml` (the fixture: role `Contenido` renamed to
   `Content` under its key, field `Dialecto` removed, sprint `Semana 42` removed,
   `automation.on_finish_status` changed, one new role) after setting a `Dialecto` value on two
   items: the answer has the rename as an `update` with `fields = [name]`, two `deletions` with
@@ -470,7 +470,7 @@ is open at the same time, one pass writes both phases' changelog, roadmap and `C
 
 **Do:** merge the branches in round order with one gate run per round; after round 3 copy the
 maintainer's database (`~/.local/share/tack/tack.db` or the path `tack serve` logs) to the
-scratchpad, start `tack serve` on the copy with `TACK_DATABASE_URL`, export Meridian's
+scratchpad, start `tack serve` on the copy with `TACK_DATABASE_URL`, export My SaaS's
 configuration, change a role's name and drop a sprint in the file, plan, read the costs, apply,
 check the history and revert; write what was seen in this plan's "How it went" section. Never
 against the real database.

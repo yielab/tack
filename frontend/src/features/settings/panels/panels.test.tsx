@@ -83,7 +83,7 @@ beforeEach(() => {
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/agent-profiles')) {
-      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer', tool_policy: { docket: { team: 'mer-content' } } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer', tool_policy: { docket: { team: 'saas-content' } } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/local-runner/check-folder')) {
       return Promise.resolve(new Response(JSON.stringify({ exists: true, is_dir: true, is_git: true, branch: 'main', remote_url: null, dirty_files: 3 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -454,12 +454,12 @@ describe('Settings panels', () => {
     it('a_team_row_says_what_the_server_says_and_the_apply_button_says_what_is_missing', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
       // Attended with no violation listed: the server still caps it, so the row says a person is needed.
-      autonomy.teams = [{ name: 'mer-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const teams = rung(container, 'teams');
-      expect(teams.querySelector('[data-testid="team-row"]')!.textContent).toContain('mer-content · needs a person · this computer');
+      expect(teams.querySelector('[data-testid="team-row"]')!.textContent).toContain('saas-content · needs a person · this computer');
       expect(teams.querySelector('#apply-teams-why')!.textContent).toContain(
         "Tack cannot run this on the team's computer from the board yet. In the project's folder, run:",
       );
@@ -467,16 +467,16 @@ describe('Settings panels', () => {
 
     it('a_lights_out_team_row_says_lights_out', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
-      autonomy.teams = [{ name: 'mer-content', profile: 'lights-out', caps_at: null, fix: null }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null }];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('mer-content · lights-out · this computer');
+      expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('saas-content · lights-out · this computer');
     });
 
     it('a_team_row_says_which_folders_its_sandbox_reads_and_what_to_do_when_there_are_none', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
-      autonomy.teams = [{ name: 'mer-content', profile: 'lights-out', caps_at: null, fix: null, read_only: ['/home/x/.nvm/versions/node/v22.17.1', '/home/x/venv'] }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: ['/home/x/.nvm/versions/node/v22.17.1', '/home/x/venv'] }];
       const { container, dispose } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -485,7 +485,7 @@ describe('Settings panels', () => {
       dispose();
 
       // Nothing granted: the row says so, and what an operator does about a team that runs tests.
-      autonomy.teams = [{ name: 'mer-content', profile: 'lights-out', caps_at: null, fix: null, read_only: [] }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: [] }];
       const none = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -495,7 +495,7 @@ describe('Settings panels', () => {
       none.dispose();
 
       // A docket that does not say adds no line, rather than claiming "nothing".
-      autonomy.teams = [{ name: 'mer-content', profile: 'lights-out', caps_at: null, fix: null, read_only: null }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: null }];
       const unknown = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -503,7 +503,7 @@ describe('Settings panels', () => {
     });
 
     it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {
-      autonomy.teams = [{ name: 'mer-content', profile: 'Content', caps_at: null, fix: null }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: null, fix: null }];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -515,9 +515,9 @@ describe('Settings panels', () => {
 
     it('a_team_line_with_a_fix_renders_in_the_ceiling', async () => {
       autonomy.ceiling = 'L3';
-      autonomy.teams = [{ name: 'mer-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
       autonomy.automatic_merge_blocked_by = [
-        'The team mer-content runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file',
+        'The team saas-content runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file',
         'The project has no public key to check prill\'s signature against',
       ];
       const { container } = mount(() => <AutomationPanel />);

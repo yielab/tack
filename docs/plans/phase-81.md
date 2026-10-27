@@ -86,7 +86,7 @@ it. So:
 - A contract test inside docket's CI: that is docket's work. A note to docket's maintainers is
   enough: it kept `apiVersion` "6" while removing routes, so the number cannot tell its shapes
   apart, and Tack probes the route instead.
-- Runs on a paid model, and Meridian's code card through a team: they stay the maintainer's
+- Runs on a paid model, and My SaaS's code card through a team: they stay the maintainer's
   (roadmap, "Waiting on a partner").
 
 **Done when:** the local suite of the three passes and names the docket and prill commits it

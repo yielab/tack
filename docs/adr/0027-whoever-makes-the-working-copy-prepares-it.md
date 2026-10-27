@@ -1,7 +1,7 @@
 # ADR 0027: whoever makes the agent's working copy prepares it
 
 **Status: ACCEPTED 2026-10-19.** The maintainer accepted decisions 1 to 4 on 2026-10-19, after the
-Meridian onboarding rerun, and decision 5 (token limits by kind of task) later the same day. Decision 5
+My SaaS onboarding rerun, and decision 5 (token limits by kind of task) later the same day. Decision 5
 amends ADR 0024 decision 1: a run now always has a limit. Executed by Phase 77
 (`docs/plans/phase-77.md`).
 
@@ -11,7 +11,7 @@ Tack **makes no copy of its own** for a docket run. That the install command com
 repository's lockfile**, can be replaced in one place per project, runs with network only while it
 installs, and is reused from a cache instead of being repeated on every run.
 
-**Why now:** a docket run of Meridian makes three copies of the repository and installs nothing in
+**Why now:** a docket run of My SaaS makes three copies of the repository and installs nothing in
 the one where the agent works. Measured in such a copy: `eslint` and `vitest` do not start (they
 cannot find their own configuration's packages) and `tsc` runs the machine's TypeScript 7 instead
 of the project's 5.9. Every code run would fail its check whatever the change, and spend tokens
@@ -56,7 +56,7 @@ none does.
   lights-out team. prill materializes its base, head and overlay trees from git and accepts any
   git repository with `--base`/`--head`.
 - **Nothing installs anything.** Neither Tack's runner nor docket has a setup step; git does not
-  copy ignored files, so `node_modules` is absent. Measured in a fresh worktree of Meridian:
+  copy ignored files, so `node_modules` is absent. Measured in a fresh worktree of My SaaS:
   `Cannot find package 'eslint'`, `Cannot find module 'vitest/config'`, `tsc` 7.0.2 (global)
   against 5.9.3 (the project's).
 - **prill already does it this way:** `prepare.command` runs once, with network, in a container

@@ -24,23 +24,23 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   ceiling, usage is kept per model, Settings → Automation is a ladder of four rungs, and a
   whole project goes in and out through one file (a template is that file without items).
 - **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0023, accepted) — the twenty
-  Tack defects the Meridian onboarding found, fixed where each fact is owned, ending with
-  Meridian's first runs through its teams as Phase 73's live proof. Tasks F, I, W, C, L and X are in
-  `develop` (2026-10-18); Meridian's runs on paid models wait on docket's context and token count.
+  Tack defects the My SaaS onboarding found, fixed where each fact is owned, ending with
+  My SaaS's first runs through its teams as Phase 73's live proof. Tasks F, I, W, C, L and X are in
+  `develop` (2026-10-18); My SaaS's runs on paid models wait on docket's context and token count.
 - **Opened 2026-10-18:** Phase 75 (`docs/plans/phase-75.md`, ADR 0024, accepted) — limits in
   tokens with no default and no dollars per day, cache reads never counted, every limit naming who
   applies it, and nothing sent to an agent twice. every round (A, G, B, D, E, V, L, CT, Z's screens) is in `develop`; left is
-  Z's run of Meridian, end to end through docket and prill.
+  Z's run of My SaaS, end to end through docket and prill.
 - **Proposed 2026-10-18:** Phase 76 (`docs/plans/phase-76.md`, ADR 0025, proposed) — the project
   file kept in sync like Drupal's configuration: a key on every role, field, sprint and profile, an
   import that is a three-way comparison against the last revision (removes what the file removed,
   keeps what the board changed, stops on a conflict, shows every removal's cost), revisions to go
   back to, and every import in one transaction. Waits on the maintainer's "continúa".
-- **Accepted 2026-10-19, from the Meridian rerun:** ADR 0026 (built: the runner's default settings
+- **Accepted 2026-10-19, from the My SaaS rerun:** ADR 0026 (built: the runner's default settings
   file, and a card with no check says so) and ADR 0027 (whoever makes the agent's copy installs its
   dependencies from the lockfile; Tack makes no copy of its own for a docket run; decision 5, a
   limit per profile learnt from its runs). Phase 77 (`docs/plans/phase-77.md`) built tasks S, L, N
-  and P in `develop` (2026-10-19); and K (docket API 6, `check_changed`): Phase 77 is built, its proof is Meridian's code card through a team.
+  and P in `develop` (2026-10-19); and K (docket API 6, `check_changed`): Phase 77 is built, its proof is My SaaS's code card through a team.
 - **Built 2026-10-19:** Phase 78 (the roadmap's own section, no plan file, no ADR) — every other
   open finding in one pass: the desktop app's first runs, the board audit, a page of its own for each
   item with a run card and an Execution tab, and "Done when" ticks. Rounds 1 to 4 are in `develop`,

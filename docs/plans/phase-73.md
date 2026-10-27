@@ -191,7 +191,7 @@ file and the executions file), `crates/tack-cli/tests/` (the existing execution/
   and `Resolved.harness`, from the profile's optional `tool_policy.agent` (a known harness kind,
   validated in `runner_admin.rs`); `CreateExecution.harness` becomes optional and falls back to
   the resolved profile's agent, then the project's `default_harness`, else 400
-  `select_an_agent`. Meridian needs it: Security and the Planner run on Claude Code, the rest on
+  `select_an_agent`. My SaaS needs it: Security and the Planner run on Claude Code, the rest on
   docket teams.
 - `CreateExecution.agent_profile_id: Option<String>`, `selector_kind`/`selector_id` optional.
   When the profile is absent, `create_execution` resolves it with `resolve` and writes
@@ -527,7 +527,7 @@ a new `automation.md` page linked from `SUMMARY.md` if `merging.md` is the wrong
 - The ladder sits under the three existing sections, which collapse into `<details>` with a
   one-line summary each.
 - **Teams**: one row per project role (`GET /projects/{id}/roles`): a select of profiles
-  (`PATCH /roles/{id}`), then the profile's team and machine read-only ("mer-content ·
+  (`PATCH /roles/{id}`), then the profile's team and machine read-only ("saas-content ·
   lights-out · this computer", from the runner capability's `teams` and the profile's
   `fleet_id`), a last row "No role" bound to the project's default profile. "Manage profiles →"
   to `/agents#profiles`. The button "Apply the repository's teams" is shown disabled with
@@ -586,7 +586,7 @@ enabled when the capability reports `repoConfigDir`, posts, and shows the review
   and a `warn`; on runner shutdown, one `SIGTERM` (docket finishes the running task and claims
   no other, ADR 0027 §9). Never spawned when `base_url` is set.
 - `tack runner doctor` prints, under docket: `api: 5`, `daemon: running on 127.0.0.1:7399`
-  (or why not), and one line per team: `team mer-content: lights-out` / `team mer-research:
+  (or why not), and one line per team: `team saas-content: lights-out` / `team saas-research:
   attended (fix: docket pod set network none)`.
 - The apply route, as ADR 0021 decision 2 and the spec's `POST /pods/<p>/apply`: the runner
   exposes it through its protocol as a runner-admin action (`/api/runner/v1` gains nothing: the
@@ -597,7 +597,7 @@ enabled when the capability reports `repoConfigDir`, posts, and shows the review
   `.provenance`; the `DOCKET_SETUP_HOME` sharing (`SETUP_FILES`); every doc sentence that says
   `docket exec`, `contract 1.2`, `docket setup harness`, `0.2.0-beta.5` (`rg -n 'docket exec|contract 1\.[12]|setup harness|beta\.5' docs README.md crates frontend scripts`).
 - `scripts/docket-prill-e2e.sh`: starts `docket start --dispatch` itself in the scratch HOME
-  with an isolated `DOCKET_HOME`, two pods (`mer-code`, `mer-content`) over the fixture
+  with an isolated `DOCKET_HOME`, two pods (`saas-code`, `saas-content`) over the fixture
   repository, dies before building when `GET /status.json` does not answer `apiVersion: "5"`
   ("needs docket 0.2.0-beta.6"); the spec adds two items at once (one code, one content), a
   rejection with a rework, and a screenshot of the ladder.
@@ -624,7 +624,7 @@ and the gate are green; `scripts/docket-prill-e2e.sh` exits early naming beta.6 
 ### B1 — the bundle in core and the database (Sonnet, two layers)
 
 Wave 7, ADR 0022 (`docs/adr/0022-a-whole-project-goes-in-and-out-through-one-file.md`); the
-file is `crates/tack-api/tests/fixtures/bundles/meridian.yaml`, every rule commented. Read
+file is `crates/tack-api/tests/fixtures/bundles/my-saas.yaml`, every rule commented. Read
 both before anything else.
 
 **Files:** `crates/tack-core/src/outline.rs`, a new `crates/tack-core/src/outline/bundle.rs`
@@ -759,7 +759,7 @@ whatever `rg -n "CreateProjectTemplate \{|ProjectTemplate \{" crates/ frontend/s
 
 - `bundle/tests.rs`: one table over `check` with a row per problem and per warning above,
   each asserting the message names the section, the item label or the field; one test that
-  the Meridian fixture (`include_str!` of the api fixture path) checks clean on an empty board
+  the My SaaS fixture (`include_str!` of the api fixture path) checks clean on an empty board
   with exactly the autonomy warnings (level, the content domain, auto-start); one test that
   `to_bundle` of a synthetic `Parts` with two items, a role, a field value and a blocks
   dependency gives refs `"1"`, `"2"`, `parent: "1"`, `depends_on: ["1"]`, and serializes to
@@ -1044,7 +1044,7 @@ still a control shown with its reason.
     it. Known: `metadata.item` is part of the request fingerprint, so an idempotent replay after
     the item's type or priority changed answers 409.
 - **Round 7** opened 2026-10-17: the owner answered "continua" to the file schema shown
-  2026-10-14; ADR 0022 written, the fixture `crates/tack-api/tests/fixtures/bundles/meridian.yaml`
+  2026-10-14; ADR 0022 written, the fixture `crates/tack-api/tests/fixtures/bundles/my-saas.yaml`
   is the specification, B1 cut from develop at `cff502aa`.
   - **B1 closed** 2026-10-17 in `f5999a88`: gate green in the worktree; core and db 283 passed,
     1 skipped; handlers 232 passed. B1's calls, kept: `serde-saphyr` as a dev-dependency of

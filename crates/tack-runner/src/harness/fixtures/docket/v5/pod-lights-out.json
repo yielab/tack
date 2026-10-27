@@ -1,24 +1,24 @@
 {
-  "pod": "mer-lights",
+  "pod": "saas-lights",
   "members": [
     {
-      "id": "mer-lights-lead",
+      "id": "saas-lights-lead",
       "role": "lead",
       "model": {
         "value": "anthropic/claude-haiku-4-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/mer-lights-lead",
+      "workspace": "/scratch/home/.docket/workspaces/projects/saas-lights-lead",
       "verifyCmd": ""
     },
     {
-      "id": "mer-lights-implementer",
+      "id": "saas-lights-implementer",
       "role": "implementer",
       "model": {
         "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/mer-lights-implementer",
+      "workspace": "/scratch/home/.docket/workspaces/projects/saas-lights-implementer",
       "verifyCmd": ""
     }
   ],

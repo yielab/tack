@@ -725,7 +725,7 @@ async fn templates_carry_roles_profiles_and_automation() {
     let (_, made) = crate::handlers::bundle::import(
         &app,
         "/api/projects/outline",
-        crate::handlers::bundle::MERIDIAN,
+        crate::handlers::bundle::MY_SAAS,
     )
     .await;
     let (status, saved) = common::send(
@@ -735,7 +735,7 @@ async fn templates_carry_roles_profiles_and_automation() {
             "/api/projects/{}/save-as-template",
             made["project"]["id"].as_str().unwrap()
         ),
-        json!({"name": "Meridian shape"}),
+        json!({"name": "My SaaS shape"}),
         &[],
     )
     .await;
@@ -744,6 +744,6 @@ async fn templates_carry_roles_profiles_and_automation() {
     assert_eq!(saved["profiles"].as_array().unwrap().len(), 6);
     assert_eq!(
         saved["automation"]["repository"],
-        "/home/person/Sites/meridian"
+        "/home/person/Sites/my-saas"
     );
 }

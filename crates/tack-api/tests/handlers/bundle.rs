@@ -1,5 +1,5 @@
 //! The project file (ADR 0022) through the outline, export and template
-//! routes: Meridian's whole project in one file, a dry run, a second import
+//! routes: My SaaS's whole project in one file, a dry run, a second import
 //! into the same project, the refusals, the autonomy rule and the round trip.
 
 use crate::common;
@@ -38,7 +38,7 @@ pub(crate) async fn app() -> Router {
     common::with_default_host(build_router(state))
 }
 
-pub(crate) const MERIDIAN: &str = include_str!("../fixtures/bundles/meridian.yaml");
+pub(crate) const MY_SAAS: &str = include_str!("../fixtures/bundles/my-saas.yaml");
 
 pub(crate) async fn call(
     app: &Router,
@@ -92,7 +92,7 @@ async fn count(app: &Router, uri: &str) -> usize {
 #[tokio::test]
 async fn the_fixture_makes_a_whole_project() {
     let app = app().await;
-    let (status, out) = import(&app, "/api/projects/outline", MERIDIAN).await;
+    let (status, out) = import(&app, "/api/projects/outline", MY_SAAS).await;
     assert_eq!(status, StatusCode::OK, "{out}");
     let pid = out["project"]["id"].as_str().unwrap();
     let project = get(&app, &format!("/api/projects/{pid}")).await;
@@ -100,7 +100,7 @@ async fn the_fixture_makes_a_whole_project() {
     assert_eq!(project["workflow"]["statuses"].as_array().unwrap().len(), 5);
     assert_eq!(project["vocabulary"]["epic"], "Colección");
     for (key, value) in [
-        ("repository", "/home/person/Sites/meridian"),
+        ("repository", "/home/person/Sites/my-saas"),
         ("on_finish_status", "En revisión"),
     ] {
         assert_eq!(project[key], value, "{key}");
@@ -117,14 +117,14 @@ async fn the_fixture_makes_a_whole_project() {
             .unwrap_or_else(|| panic!("no profile {name}"))["agent_profile_id"]
             .clone()
     };
-    assert_eq!(project["default_profile_id"], id_of("Meridian implementer"));
+    assert_eq!(project["default_profile_id"], id_of("My SaaS implementer"));
     assert_eq!(section(&out, "profiles")["created"], 6);
 
     let roles = get(&app, &format!("/api/projects/{pid}/roles")).await;
     let roles = roles.as_array().unwrap();
     assert_eq!(roles.len(), 7);
     for (role, profile) in [
-        ("Contenido", "Meridian content writer"),
+        ("Contenido", "My SaaS content writer"),
         ("Seguridad", "Security review"),
         ("Planificación", "Planner"),
     ] {
@@ -192,7 +192,7 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     let projects = count(&app, "/api/projects").await;
     let profiles = count(&app, "/api/agent-profiles").await;
     // An older file still says `usd_per_day`: it imports without it, and the preview says so.
-    let older = MERIDIAN.replace(
+    let older = MY_SAAS.replace(
         "tokens_per_day: 2000000,",
         "tokens_per_day: 2000000, usd_per_day: 20,",
     );
@@ -208,10 +208,10 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     assert_eq!(count(&app, "/api/projects").await, projects);
     assert_eq!(count(&app, "/api/agent-profiles").await, profiles);
 
-    let (_, out) = import(&app, "/api/projects/outline", MERIDIAN).await;
+    let (_, out) = import(&app, "/api/projects/outline", MY_SAAS).await;
     let pid = out["project"]["id"].as_str().unwrap().to_string();
     let uri = format!("/api/projects/{pid}/outline");
-    let (status, again) = import(&app, &uri, MERIDIAN).await;
+    let (status, again) = import(&app, &uri, MY_SAAS).await;
     assert_eq!(status, StatusCode::OK, "{again}");
     assert_eq!(section(&again, "roles")["updated"], 7);
     assert_eq!(section(&again, "fields")["updated"], 4);
@@ -227,7 +227,7 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
     )
     .await;
     assert!(made["id"].is_string(), "{made}");
-    let (_, third) = import(&app, &uri, MERIDIAN).await;
+    let (_, third) = import(&app, &uri, MY_SAAS).await;
     assert_eq!(section(&third, "roles")["not_mentioned"], 1);
     assert_eq!(count(&app, &format!("/api/projects/{pid}/roles")).await, 8);
 }
@@ -236,8 +236,8 @@ async fn a_dry_run_writes_nothing_and_a_second_import_adds_and_updates() {
 async fn a_file_that_cannot_be_written_is_refused_whole() {
     let app = app().await;
     let projects = count(&app, "/api/projects").await;
-    let bad_value = MERIDIAN.replacen("Edad: \"3-5\"", "Edad: \"12\"", 1);
-    let bad_role = MERIDIAN.replacen(
+    let bad_value = MY_SAAS.replacen("Edad: \"3-5\"", "Edad: \"12\"", 1);
+    let bad_role = MY_SAAS.replacen(
         "roles: [Contenido], sprint: Semana 42, fields: { Dialecto: rioplatense, Edad: \"6-8\"",
         "roles: [Nadie], sprint: Semana 42, fields: { Dialecto: rioplatense, Edad: \"6-8\"",
         1,
@@ -260,7 +260,7 @@ async fn a_file_that_cannot_be_written_is_refused_whole() {
 #[tokio::test]
 async fn an_import_never_raises_autonomy_past_the_projects_own() {
     let app = app().await;
-    let (_, out) = import(&app, "/api/projects/outline", MERIDIAN).await;
+    let (_, out) = import(&app, "/api/projects/outline", MY_SAAS).await;
     let pid = out["project"]["id"].as_str().unwrap();
     let mut settings = get(&app, &format!("/api/projects/{pid}/autonomy")).await;
     settings["level"] = json!("L5");
@@ -274,7 +274,7 @@ async fn an_import_never_raises_autonomy_past_the_projects_own() {
     .await;
     assert_eq!(status, StatusCode::OK, "{put}");
 
-    let (status, out) = import(&app, &format!("/api/projects/{pid}/outline"), MERIDIAN).await;
+    let (status, out) = import(&app, &format!("/api/projects/{pid}/outline"), MY_SAAS).await;
     assert_eq!(status, StatusCode::OK, "{out}");
     let autonomy = get(&app, &format!("/api/projects/{pid}/autonomy")).await;
     assert_eq!(autonomy["level"], "L4");
@@ -285,7 +285,7 @@ async fn an_import_never_raises_autonomy_past_the_projects_own() {
 #[tokio::test]
 async fn the_export_is_the_import() {
     let app = app().await;
-    let (_, out) = import(&app, "/api/projects/outline", MERIDIAN).await;
+    let (_, out) = import(&app, "/api/projects/outline", MY_SAAS).await;
     let pid = out["project"]["id"].as_str().unwrap();
     let uri = format!("/api/projects/{pid}/export?scope=bundle&format=yaml");
     let (status, first) = call(&app, Method::GET, &uri, "").await;

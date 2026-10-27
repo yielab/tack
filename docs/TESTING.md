@@ -91,7 +91,7 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 
 | Crate | Where | Harness | What belongs here |
 |---|---|---|---|
-| `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above. The merge policy, the profile a run gets (`run_defaults`), which tasks start (`auto_start`), recurrence and the project file's `check` and `to_bundle` (`outline/bundle/tests.rs`, which reads the Meridian fixture) are all table tests here |
+| `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above. The merge policy, the profile a run gets (`run_defaults`), which tasks start (`auto_start`), recurrence and the project file's `check` and `to_bundle` (`outline/bundle/tests.rs`, which reads the My SaaS fixture) are all table tests here |
 | `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
 | `tack-protocol` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-protocol/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; `mrp_contract` pins the merge-readiness pack | the runner-v1 contract: capability negotiation, request/attempt lifecycle, usage provenance, the pack. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract/fixtures.rs` in the same change (the test asserts the number of fixtures; `grep -c` the table, or read the assertion, rather than quoting it) |
 | `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) | plain `#[test]`; the crate has no database and no clock | the scheduler and the model policy, as tables of cases over plain values |
@@ -437,7 +437,7 @@ The default config ignores them and CI never runs them.
 `docket-prill.spec.ts` is a live test, not a CI one: `scripts/docket-prill-e2e.sh` builds `tack`
 with the SPA embedded, runs docket (0.2.0-beta.6, API 5) and prill from their own source trees
 (`DOCKET_SRC`, `PRILL_SRC`), starts `docket start --dispatch` itself in a scratch `HOME` with an
-isolated `DOCKET_HOME` and two pods (`mer-code`, `mer-content`) over the fixture repository, and
+isolated `DOCKET_HOME` and two pods (`saas-code`, `saas-content`) over the fixture repository, and
 drives the whole workflow through the UI: a project, its runner enrolled on the Agents page, its
 settings, a code item and a content item added at once, a rejection with its rework, and a
 screenshot of the ladder, with a screenshot per step in `frontend/test-results/docket-prill/`. It

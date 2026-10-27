@@ -428,11 +428,11 @@ mod tests {
             (
                 "auto, the run's team is not reported by its computer",
                 Facts {
-                    ceiling: Err("Team mer-dev is not reported yet by this computer".into()),
+                    ceiling: Err("Team saas-dev is not reported yet by this computer".into()),
                     ..base(Trigger::Auto)
                 },
                 Err(Hold::TeamNotReported(
-                    "Team mer-dev is not reported yet by this computer".into(),
+                    "Team saas-dev is not reported yet by this computer".into(),
                 )),
             ),
             (

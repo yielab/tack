@@ -1,16 +1,16 @@
 {
   "ok": true,
   "created": true,
-  "project": "mer-dev",
+  "project": "saas-dev",
   "blueprint": "software",
   "members": [
     {
-      "id": "mer-dev-lead",
+      "id": "saas-dev-lead",
       "role": "lead",
       "model": "anthropic/claude-haiku-4-5"
     },
     {
-      "id": "mer-dev-implementer",
+      "id": "saas-dev-implementer",
       "role": "implementer",
       "model": "anthropic/claude-sonnet-4-6"
     }

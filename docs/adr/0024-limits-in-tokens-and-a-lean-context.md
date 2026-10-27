@@ -15,7 +15,7 @@ shown, never counted**; that **dollars per day goes away** and dollars are only 
 that **every limit says who applies it and where it is changed**; that the daily limit is
 **reserved when a run is admitted**; and that what Tack sends an agent **carries nothing twice**.
 
-**Why now:** Meridian's first runs (2026-10-18) ended on docket's per-step limit. A profile's
+**Why now:** My SaaS's first runs (2026-10-18) ended on docket's per-step limit. A profile's
 token limit, set in the project file, never reached the run. Cache reads were 70% to 92% of the
 input and counted at full weight. A model with no price counts as free, so a dollar limit lets it
 through. And the brief reached docket's model three times, while each rework round piles another

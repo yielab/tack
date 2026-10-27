@@ -100,7 +100,7 @@ Tack looks every 30 seconds by default, so the start can lag a little. An admini
 
 **Cause.** A docket team that needs a person during a run is called *attended*. Tack caps the automatic merge at what the team allows, so tasks run by an attended team stay at L3 however high the project's level. The **Merge** button is not held back; only the automatic merge is.
 
-**What to do.** Apply the fix the Ceiling rung shows, which is a docket command for that team. `tack runner doctor` prints the same fix beside the team's name: `team mer-research: attended (fix: docket pod set network none) · reads nothing outside its work`. When the team reports `lights-out`, the ceiling lifts. The button that would apply a repository's teams for you is shown disabled, because the board has no way to reach the computer that runs the agent.
+**What to do.** Apply the fix the Ceiling rung shows, which is a docket command for that team. `tack runner doctor` prints the same fix beside the team's name: `team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work`. When the team reports `lights-out`, the ceiling lifts. The button that would apply a repository's teams for you is shown disabled, because the board has no way to reach the computer that runs the agent.
 
 ---
 

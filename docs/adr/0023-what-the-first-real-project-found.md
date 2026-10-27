@@ -13,7 +13,7 @@ switch's state**; that the docket contract is proven by **captures of a real doc
 fake written from its spec; and that four screens use **the project's words and the one import
 flow**.
 
-**Why now:** on 2026-10-17 Meridian was put into Tack and docket end to end (86 tasks, ten roles,
+**Why now:** on 2026-10-17 My SaaS was put into Tack and docket end to end (86 tasks, ten roles,
 three teams) on the maintainer's own board. The project, the roles, the profiles, the teams and
 the resolution of a run's team all worked. Not one run reached a team: docket refused the first
 request (docket's to fix, K7), and Tack swallowed the refusal. The three runs are still in
@@ -29,7 +29,7 @@ after the runner started does not exist for Tack; and the logs show none of it.
 
 | # | Decision | What a person sees |
 |---|---|---|
-| 1 | **A run that cannot start ends Failed with the reason.** Every error before the agent is seen running (the folder could not be prepared, the agent refused the run at validation or at start, the agent's service did not answer) goes through the one path that already reports a pre-start failure. Only a failure to reach the board itself stays an engine error. | "Failed: docket did not accept the team mer-dev: project is required." |
+| 1 | **A run that cannot start ends Failed with the reason.** Every error before the agent is seen running (the folder could not be prepared, the agent refused the run at validation or at start, the agent's service did not answer) goes through the one path that already reports a pre-start failure. Only a failure to reach the board itself stays an engine error. | "Failed: docket did not accept the team saas-dev: project is required." |
 | 2 | **A run nobody holds asks a person.** When an attempt's lease has expired and nobody renewed it, the claim poll moves it to `needs_operator` with a sentence, exactly as a recovery that cannot prove the agent absent does (ADR 0002: lease expiry alone never starts another process). A cancel asked of a run in `needs_operator`, or of one whose lease has expired, ends it Cancelled: that is the person's decision. | "The computer that took this run stopped answering. Run it again or cancel it." Cancel works. |
 | 3 | **A runner's name is the board's.** The row's name is set once, when the runner is provisioned or enrolled; a refresh updates capabilities and never the name. A refresh that fails for any reason other than a refused credential is retried, not answered by enrolling again. | The board's runner survives "Re-check" and every restart. |
 | 4 | **One rule says a runner is online:** active, and a heartbeat within the scheduler's `max_heartbeat_age`. The scheduler, the run dialog's default machine, the waiting reason and the Agents page all read it; the server returns `online` on every runner it lists, and the page reads that instead of computing its own. | "Runs on this computer" picks the computer that is on; the desktop app's old row no longer counts. |
@@ -88,7 +88,7 @@ Blocking: none.
 2. How long an expired lease waits before it asks a person: two lease durations (120 s).
 3. How often an idle runner probes its agents again: five minutes.
 
-## Amendment 2026-10-18: what Meridian's R0 found after the rounds
+## Amendment 2026-10-18: what My SaaS's R0 found after the rounds
 
 The maintainer chose both on 2026-10-18, inside this phase.
 

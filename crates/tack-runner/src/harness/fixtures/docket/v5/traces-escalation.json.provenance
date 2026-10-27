@@ -3,7 +3,7 @@ route: GET /traces/<pod>
 status: 200
 tack-sends: yes
 note: the events after the held enqueue: escalation_asked, escalation_resolved, and the grant
-command: curl -X GET http://127.0.0.1:<port>/traces/mer-dev?since=<the cursor the previous read ended on> (bearer token from docket's --token-file)
+command: curl -X GET http://127.0.0.1:<port>/traces/saas-dev?since=<the cursor the previous read ended on> (bearer token from docket's --token-file)
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-26

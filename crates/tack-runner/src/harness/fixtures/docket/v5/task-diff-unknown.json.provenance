@@ -3,7 +3,7 @@ route: GET /tasks/<pod>/<id>/diff
 status: 404
 tack-sends: yes
 note: the diff of a task docket does not know
-command: curl -X GET http://127.0.0.1:<port>/tasks/mer-dev/task-unknown/diff (bearer token from docket's --token-file)
+command: curl -X GET http://127.0.0.1:<port>/tasks/saas-dev/task-unknown/diff (bearer token from docket's --token-file)
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-26

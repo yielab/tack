@@ -4,8 +4,8 @@
   "channels": [],
   "agents": [
     {
-      "id": "mer-dev-implementer",
-      "name": "mer-dev implementer",
+      "id": "saas-dev-implementer",
+      "name": "saas-dev implementer",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-sonnet-4-6",
@@ -16,8 +16,8 @@
       "budgetUsd": null
     },
     {
-      "id": "mer-dev-lead",
-      "name": "mer-dev lead",
+      "id": "saas-dev-lead",
+      "name": "saas-dev lead",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-haiku-4-5",
@@ -28,8 +28,8 @@
       "budgetUsd": null
     },
     {
-      "id": "mer-lights-implementer",
-      "name": "mer-lights implementer",
+      "id": "saas-lights-implementer",
+      "name": "saas-lights implementer",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-sonnet-4-6",
@@ -40,8 +40,8 @@
       "budgetUsd": null
     },
     {
-      "id": "mer-lights-lead",
-      "name": "mer-lights lead",
+      "id": "saas-lights-lead",
+      "name": "saas-lights lead",
       "kind": "project",
       "scope": "project",
       "model": "anthropic/claude-haiku-4-5",
