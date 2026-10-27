@@ -175,7 +175,13 @@ impl HttpPullProtocol {
             .connect_timeout(request_timeout.min(Duration::from_secs(10)))
             .user_agent(concat!("tack-runner/", env!("CARGO_PKG_VERSION")))
             .build()
-            .map_err(|_| RunnerError::ProtocolTransport)?;
+            .map_err(|error| {
+                tracing::warn!(
+                    builder = error.is_builder(),
+                    "protocol HTTP client could not be built"
+                );
+                RunnerError::ProtocolTransport
+            })?;
         Ok(Self {
             http,
             base_url: normalize_base_url(api_base_url),
@@ -225,7 +231,7 @@ impl HttpPullProtocol {
                     let bytes = response.bytes().await.unwrap_or_default();
                     if status.is_success() {
                         return serde_json::from_slice::<Value>(&bytes)
-                            .map_err(|_| ProtocolClientError::Rejected);
+                            .map_err(|error| rejected_json(&error));
                     }
                     map_error_body(status, &bytes)
                 }
@@ -299,8 +305,12 @@ fn map_error_body(status: StatusCode, body: &[u8]) -> ProtocolClientError {
 fn instant(timestamp: &Timestamp) -> Result<chrono::DateTime<chrono::Utc>, ProtocolClientError> {
     chrono::DateTime::parse_from_rfc3339(timestamp.as_str())
         .map(|parsed| parsed.with_timezone(&chrono::Utc))
-        .map_err(|_| ProtocolClientError::Protocol {
-            code: StableErrorCode::InvalidRequest,
+        .map_err(|error| {
+            // The parser's message names the problem, never the timestamp it was given.
+            tracing::warn!(%error, "protocol timestamp could not be read");
+            ProtocolClientError::Protocol {
+                code: StableErrorCode::InvalidRequest,
+            }
         })
 }
 
@@ -309,8 +319,15 @@ fn timestamp(instant: chrono::DateTime<chrono::Utc>) -> Timestamp {
     Timestamp::new(instant.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
 }
 
+/// A protocol payload the runner could not encode or decode. Logs the JSON category only: the
+/// parser's own text would quote the payload.
+fn rejected_json(error: &serde_json::Error) -> ProtocolClientError {
+    tracing::warn!(category = ?error.classify(), "protocol JSON could not be read or written");
+    ProtocolClientError::Rejected
+}
+
 fn typed<T: for<'de> Deserialize<'de>>(value: &Value) -> Result<T, ProtocolClientError> {
-    serde_json::from_value(value.clone()).map_err(|_| ProtocolClientError::Rejected)
+    serde_json::from_value(value.clone()).map_err(|error| rejected_json(&error))
 }
 
 /// Rejects a response whose `protocol_version` is not v1 rather than parsing
@@ -337,8 +354,7 @@ fn require_v1(value: &Value) -> Result<(), ProtocolClientError> {
 fn embedded_capabilities(
     capabilities: &RunnerCapabilities,
 ) -> Result<wire::EmbeddedCapabilitySnapshot, ProtocolClientError> {
-    let mut value =
-        serde_json::to_value(capabilities).map_err(|_| ProtocolClientError::Rejected)?;
+    let mut value = serde_json::to_value(capabilities).map_err(|error| rejected_json(&error))?;
     if let Some(object) = value.as_object_mut() {
         object.remove("runner_version");
         object.remove("protocol_version");
@@ -636,7 +652,7 @@ impl PullProtocol for HttpPullProtocol {
         session: &RunnerSession,
         report: RecoveryObservationRequest,
     ) -> Result<RecoveryObservationResponse, ProtocolClientError> {
-        let body = serde_json::to_value(&report).map_err(|_| ProtocolClientError::Rejected)?;
+        let body = serde_json::to_value(&report).map_err(|error| rejected_json(&error))?;
         let path = format!("/attempts/{}/recovery-observation", report.attempt_id);
         let value = self
             .send_json(
@@ -921,8 +937,10 @@ impl AttemptDataProtocol for HttpPullProtocol {
         media_type: Option<&str>,
         content: Vec<u8>,
     ) -> Result<(), ProtocolClientError> {
-        let method = Method::from_bytes(grant.method.as_bytes())
-            .map_err(|_| ProtocolClientError::Rejected)?;
+        let method = Method::from_bytes(grant.method.as_bytes()).map_err(|error| {
+            tracing::warn!(%error, "protocol grant names an invalid method");
+            ProtocolClientError::Rejected
+        })?;
         // The grant's `path` is server-absolute (`/api/runner/v1/...`), so it
         // is joined to the origin, not to the protocol base.
         let url = origin_of(&self.base_url)? + &grant.path;
@@ -1229,7 +1247,10 @@ where
                 },
             )
             .await
-            .map_err(|_| RunnerError::ProtocolTransport)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "runner enrollment exchange did not complete");
+                RunnerError::ProtocolTransport
+            })?;
         tracing::info!(runner_id = %enrolled.session.runner_id, "runner enrolled");
         store_session(&self.config.state_dir, &enrolled.session)?;
         Ok(enrolled.session)
