@@ -1,6 +1,5 @@
 //! Shared router and request helpers. Each test binary includes this file whole and uses a
 //! different part of it, so what is unused in one binary is used in another.
-#![allow(dead_code)]
 
 use std::sync::Arc;
 use tack_protocol::Clock;

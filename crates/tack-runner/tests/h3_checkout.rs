@@ -38,8 +38,6 @@ use crate::common;
 use crate::usage_fixture;
 use common::temp_dir as temp_root;
 use usage_fixture::usage;
-// The fake serves more routes than these tests use.
-#[allow(dead_code)]
 use crate::fake_docket;
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.

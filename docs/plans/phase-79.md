@@ -695,10 +695,7 @@ fact a reviewer should know, not a defect.
 - **D11's three files sum to 661 lines, not under 400.** What is left needs `tack-runner` types
   and the API's `utoipa` attributes; moving it needs a `tack-app -> tack-runner` edge that would
   make `tack-api` link the runner. The 400 was an unmeasured estimate.
-- **Four test-fixture modules keep `#![allow(dead_code)]`:** `tack-api/tests/common`,
-  `tack-app/tests/common`, `tack-app/tests/support` and `h3_checkout`'s `mod fake_docket`. Each is
-  compiled into several test binaries that use different subsets. Zero would need one module per
-  binary.
+- **The four `dead_code` allowances on test-fixture modules are gone.** They were written when every file under `tests/` was its own binary and each module was compiled into several of them; with one binary per crate (ADR 0029) a helper no test uses is dead for real, and removing the allowances raised no warning.
 - **The two retention and health loops lost their stop signal.** `ExecutionRuntime::stop` used to
   join them; they now follow the `run` shape and die with the process. A purge batch is one
   transaction, so a drop rolls it back.

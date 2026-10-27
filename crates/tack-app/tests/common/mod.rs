@@ -1,6 +1,5 @@
 //! A store with one active runner, one agent profile and one item, for the tests of the
 //! runner-protocol use cases. Not every test binary uses every function.
-#![allow(dead_code)]
 
 use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{Value, json};
