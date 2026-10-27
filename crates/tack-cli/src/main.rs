@@ -374,7 +374,7 @@ fn main() -> anyhow::Result<()> {
     // Bare `tack` (no subcommand) launches the server + web UI — the primary,
     // UI-first experience. `tack serve` does the same explicitly.
     let Some(command) = cli.command else {
-        return run_server(local_runner::with_runner_enabled(false), None);
+        return run_server(false, None);
     };
 
     // Serve, Runner Start, Runner Doctor, Service, Config and Completions
@@ -388,10 +388,7 @@ fn main() -> anyhow::Result<()> {
             with_runner,
             runner_config,
         } => {
-            return run_server(
-                local_runner::with_runner_enabled(with_runner),
-                runner_config,
-            );
+            return run_server(with_runner, runner_config);
         }
         Commands::Runner {
             action:
@@ -570,28 +567,17 @@ fn main() -> anyhow::Result<()> {
 /// embedded runner always wired in — see `local_runner::serve`'s own doc
 /// comment for why even a plain `tack serve` needs one (ADR 0005 decisions
 /// 2 and 6: the UI can turn it on later, with no restart). `with_runner`
-/// only decides whether it also starts immediately at boot, folded into
-/// `TACK_LOCAL_RUNNER_ENABLE` here so `AppConfig::load()` (inside
-/// `local_runner::serve`) picks it up the same way it would from the
-/// environment — one code path, not a CLI-flag-only branch and a
-/// UI-only branch.
+/// only decides whether it also starts immediately at boot: it is folded
+/// into the loaded configuration as a value, so the flag and
+/// `TACK_LOCAL_RUNNER_ENABLE` take one path. The environment is read here,
+/// once, and handed down.
 ///
 /// The rest of the CLI is synchronous (it uses a blocking HTTP client), so we
 /// build a Tokio runtime on demand here rather than making `main` async.
 fn run_server(with_runner: bool, runner_config: Option<PathBuf>) -> anyhow::Result<()> {
-    // SAFETY: single-threaded at this point in `main` — no other code has
-    // spawned a thread yet, so nothing else can race these reads/writes of
-    // the process environment.
-    if with_runner {
-        unsafe {
-            std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", "1");
-        }
-    }
-    if let Some(path) = runner_config {
-        unsafe {
-            std::env::set_var(local_runner::RUNNER_CONFIG_ENV, path);
-        }
-    }
+    let mut config = tack_api::config::AppConfig::load();
+    config.local_runner_enable |= with_runner;
+    let environment = tack_cli::config::ServeEnvironment::from_process();
     let runtime = tokio::runtime::Runtime::new()?;
-    runtime.block_on(local_runner::serve())
+    runtime.block_on(local_runner::serve(config, runner_config, &environment))
 }

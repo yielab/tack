@@ -158,9 +158,6 @@ async fn start_then_stop_round_trips_the_runtime_state() {
 
 #[tokio::test]
 async fn the_embedded_runner_loads_the_file_tack_local_runner_config_names() {
-    // SAFETY: nothing else in this crate's tests reads `TACK_LOCAL_RUNNER_CONFIG`, and
-    // the variable is restored before the test returns.
-    let previous = std::env::var_os(RUNNER_CONFIG_ENV);
     let root = unique_temp_dir("runner-config");
     let config_path = root.path().join("runner.toml");
     std::fs::write(
@@ -173,18 +170,22 @@ async fn the_embedded_runner_loads_the_file_tack_local_runner_config_names() {
         ..tack_api::config::AppConfig::default()
     };
 
-    unsafe {
-        std::env::remove_var(RUNNER_CONFIG_ENV);
-    }
-    assert!(runner_config_path().is_none());
-    let without = CliRunnerHost::new(server_config.clone()).expect("defaults");
+    // Nothing names a file: defaults only (a unit test never reads the machine's own file).
+    assert!(runner_config_path(None, None).is_none());
+    let without = CliRunnerHost::new(server_config.clone(), None, false).expect("defaults");
     assert!(!without.runner_config.lock().await.verify.enabled);
 
-    unsafe {
-        std::env::set_var(RUNNER_CONFIG_ENV, &config_path);
-    }
-    assert_eq!(runner_config_path().as_deref(), Some(config_path.as_path()));
-    let with = CliRunnerHost::new(server_config).expect("named file");
+    // The variable names it, as does the flag, which wins.
+    let variable = Some(config_path.clone().into_os_string());
+    assert_eq!(
+        runner_config_path(None, variable).as_deref(),
+        Some(config_path.as_path())
+    );
+    assert_eq!(
+        runner_config_path(Some(config_path.clone()), Some("".into())).as_deref(),
+        Some(config_path.as_path())
+    );
+    let with = CliRunnerHost::new(server_config, Some(config_path), false).expect("named file");
     let loaded = with.runner_config.lock().await;
     assert!(loaded.verify.enabled);
     assert_eq!(loaded.verify.program, "prill");
@@ -194,12 +195,4 @@ async fn the_embedded_runner_loads_the_file_tack_local_runner_config_names() {
         root.path().join("storage").join("runner"),
         "the file names no state_dir, so the storage-scoped default still applies"
     );
-    drop(loaded);
-
-    unsafe {
-        match previous {
-            Some(value) => std::env::set_var(RUNNER_CONFIG_ENV, value),
-            None => std::env::remove_var(RUNNER_CONFIG_ENV),
-        }
-    }
 }

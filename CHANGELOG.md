@@ -11,6 +11,8 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+- Internal: `Host` is gone. `tack-app` owns the GitHub calls, the pull request an accepted attempt opens and the move an accepted pack makes; what it still needs from `tack-api` is three small traits with typed errors (the prill check, stored artifacts, board events). `tack serve --with-runner` reaches the server as a value instead of through a process-wide environment variable, and the server reads its configuration once.
+
 Phase 73 (ADR 0021): every run of the docket agent goes to a team that already exists and keeps
 existing, a role chooses who takes its tasks, a task can start by itself and repeat, and a
 project's automation is set on one screen. Then a whole project goes in and out through one file,

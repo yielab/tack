@@ -13,7 +13,7 @@ use tack_app::local_runner::{
     EmbeddedRunner, LocalRunnerControl, LocalRunnerControlError, RunnerHost, RunnerProcess,
     RuntimeState, RuntimeStatus, TestRunError, config_path_from, effective_enabled,
     ensure_loopback, has_stored_session, migrate_legacy_state_dir, set_enabled, start_test_run,
-    state_dir_under, with_runner_enabled,
+    state_dir_under,
 };
 use tack_db::queries;
 use tack_test_support::{create_test_workspace, seed, setup_test_db};
@@ -59,27 +59,6 @@ fn embedded_runner_refuses_non_loopback_bind() {
 #[test]
 fn embedded_runner_accepts_a_loopback_bind() {
     assert!(ensure_loopback("127.0.0.1", true).is_ok());
-}
-
-#[test]
-fn with_runner_enabled_reads_the_environment_gate() {
-    // SAFETY: nothing else in this test binary reads `TACK_LOCAL_RUNNER_ENABLE`, and each test
-    // runs in its own process under nextest.
-    let previous = std::env::var("TACK_LOCAL_RUNNER_ENABLE").ok();
-    assert!(!with_runner_enabled(false));
-
-    unsafe {
-        std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", "1");
-    }
-    assert!(with_runner_enabled(false));
-    assert!(with_runner_enabled(true));
-
-    unsafe {
-        match &previous {
-            Some(value) => std::env::set_var("TACK_LOCAL_RUNNER_ENABLE", value),
-            None => std::env::remove_var("TACK_LOCAL_RUNNER_ENABLE"),
-        }
-    }
 }
 
 #[test]

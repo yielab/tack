@@ -24,10 +24,10 @@ use tracing::{info, warn};
 /// address once the listener is open; `local_runner` is the embedded runner the UI can turn on
 /// (`None` leaves its routes absent).
 pub async fn run(
+    mut config: AppConfig,
     ready_tx: Option<oneshot::Sender<SocketAddr>>,
     local_runner: Option<Arc<dyn LocalRunnerControl>>,
 ) -> anyhow::Result<()> {
-    let mut config = AppConfig::load();
     prepare(&mut config)?;
 
     let pool = init_pool(&config.database_url).await?;

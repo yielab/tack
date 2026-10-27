@@ -194,16 +194,15 @@ pub async fn review_mrp(
     }
     let mut body =
         serde_json::to_value(&review).map_err(|error| ApiError::Internal(error.into()))?;
-    if input.verdict == MrpVerdict::Accept {
-        if let Some(url) = tack_app::pull_request::open_for_attempt(
+    if input.verdict == MrpVerdict::Accept
+        && let Some(url) = tack_app::pull_request::open_for_attempt(
             &state.repo,
             &state.ports(),
             &artifact.attempt_id,
         )
         .await
-        {
-            body["pull_request_url"] = serde_json::Value::String(url);
-        }
+    {
+        body["pull_request_url"] = serde_json::Value::String(url);
     }
     Ok(Json(body))
 }

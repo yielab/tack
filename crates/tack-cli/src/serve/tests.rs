@@ -1,63 +1,11 @@
 use super::*;
 
-// Serializes the tests below that must mutate process env vars to steer
-// `AppConfig::load()`, since env vars are process-global and `cargo
-// test` runs this binary's tests concurrently. An async-aware mutex
-// because the guard needs to stay held across this test's `.await`s.
-static SERVE_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-/// Puts back whatever `TACK_PORT`/`TACK_DATABASE_URL` held before the
-/// test ran, including on panic, so a failure here can't leak a stray
-/// `TACK_PORT=0` into a test that runs after it in the same process.
-struct EnvRestore {
-    port: Option<String>,
-    database_url: Option<String>,
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        // SAFETY: the caller holds `SERVE_ENV_LOCK` for the guard's
-        // whole lifetime, so no other thread in this test binary reads
-        // or writes these two vars concurrently with this restore.
-        unsafe {
-            match &self.port {
-                Some(v) => std::env::set_var("TACK_PORT", v),
-                None => std::env::remove_var("TACK_PORT"),
-            }
-            match &self.database_url {
-                Some(v) => std::env::set_var("TACK_DATABASE_URL", v),
-                None => std::env::remove_var("TACK_DATABASE_URL"),
-            }
-        }
-    }
-}
-
-/// Sets each env var, returning its previous value for `restore_env_vars`.
-///
-/// # Safety
-/// The caller must hold `SERVE_ENV_LOCK` for the whole interval between this
-/// call and the matching `restore_env_vars`.
-unsafe fn set_env_vars(pairs: &[(&'static str, &str)]) -> Vec<(&'static str, Option<String>)> {
-    pairs
-        .iter()
-        .map(|(k, v)| {
-            let previous = std::env::var(k).ok();
-            unsafe { std::env::set_var(k, v) };
-            (*k, previous)
-        })
-        .collect()
-}
-
-/// Restores env vars captured by `set_env_vars`.
-///
-/// # Safety
-/// The caller must hold `SERVE_ENV_LOCK` for the whole guarded interval.
-unsafe fn restore_env_vars(saved: Vec<(&'static str, Option<String>)>) {
-    for (k, v) in saved {
-        match v {
-            Some(v) => unsafe { std::env::set_var(k, v) },
-            None => unsafe { std::env::remove_var(k) },
-        }
+/// A server on a free port and a database in memory, the configuration a test hands `run`.
+fn test_config() -> AppConfig {
+    AppConfig {
+        port: 0,
+        database_url: "sqlite::memory:".into(),
+        ..AppConfig::default()
     }
 }
 
@@ -69,19 +17,8 @@ unsafe fn restore_env_vars(saved: Vec<(&'static str, Option<String>)>) {
 /// caller would otherwise have to poll.
 #[tokio::test]
 async fn run_signals_the_real_bound_address() {
-    let _env_guard = SERVE_ENV_LOCK.lock().await;
-    let _restore = EnvRestore {
-        port: std::env::var("TACK_PORT").ok(),
-        database_url: std::env::var("TACK_DATABASE_URL").ok(),
-    };
-    // SAFETY: serialized by `SERVE_ENV_LOCK` above.
-    unsafe {
-        std::env::set_var("TACK_PORT", "0");
-        std::env::set_var("TACK_DATABASE_URL", "sqlite::memory:");
-    }
-
     let (ready_tx, ready_rx) = oneshot::channel();
-    let server = tokio::spawn(run(Some(ready_tx), None));
+    let server = tokio::spawn(run(test_config(), Some(ready_tx), None));
 
     let addr = ready_rx.await.expect("readiness signal never arrived");
     assert_ne!(
@@ -145,27 +82,18 @@ impl LocalRunnerControl for RecordingControl {
 /// runner never actually started.
 #[tokio::test]
 async fn persisted_enable_pref_never_auto_starts_non_loopback_bind() {
-    let _env_guard = SERVE_ENV_LOCK.lock().await;
-    let _restore = EnvRestore {
-        port: std::env::var("TACK_PORT").ok(),
-        database_url: std::env::var("TACK_DATABASE_URL").ok(),
-    };
-    // SAFETY: serialized by `SERVE_ENV_LOCK` above.
-    let saved = unsafe {
-        set_env_vars(&[
-            ("TACK_PORT", "0"),
-            ("TACK_DATABASE_URL", "sqlite::memory:"),
-            ("TACK_HOST", "0.0.0.0"),
-            ("TACK_LOCAL_RUNNER_ENABLE", "1"),
-            ("TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK", "1"),
-        ])
+    let config = AppConfig {
+        host: "0.0.0.0".into(),
+        local_runner_enable: true,
+        allow_unauthenticated_nonloopback: true,
+        ..test_config()
     };
     let control = Arc::new(RecordingControl {
         started: std::sync::atomic::AtomicBool::new(false),
     });
     let local_runner: Arc<dyn LocalRunnerControl> = control.clone();
     let (ready_tx, ready_rx) = oneshot::channel();
-    let server = tokio::spawn(run(Some(ready_tx), Some(local_runner)));
+    let server = tokio::spawn(run(config, Some(ready_tx), Some(local_runner)));
     let addr = ready_rx.await.expect("readiness signal never arrived");
     // The server itself must still come up normally — refusing to
     // *start the runner* is not refusing to *serve*.
@@ -181,6 +109,4 @@ async fn persisted_enable_pref_never_auto_starts_non_loopback_bind() {
     );
 
     server.abort();
-    // SAFETY: still serialized by `SERVE_ENV_LOCK`.
-    unsafe { restore_env_vars(saved) };
 }

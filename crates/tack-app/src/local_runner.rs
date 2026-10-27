@@ -22,7 +22,7 @@ pub use folder::{
 };
 pub use paths::{
     NotLoopback, config_path_from, ensure_loopback, has_stored_session, host_name,
-    migrate_legacy_state_dir, state_dir_under, with_runner_enabled,
+    migrate_legacy_state_dir, state_dir_under,
 };
 pub use preference::{effective_enabled, set_enabled};
 pub use supervisor::{EmbeddedRunner, RunnerHost, RunnerProcess};

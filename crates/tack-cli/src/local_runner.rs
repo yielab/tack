@@ -11,6 +11,7 @@
 //! `--with-runner` says to start it now; `serve::run`'s auto-start and `PUT /api/local-runner`
 //! both reach the same `start`.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,8 +31,6 @@ use tack_runner::{
 };
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-
-pub use tack_app::local_runner::with_runner_enabled;
 
 /// The standalone `tack-runner` binary's own harness-subprocess bounds: both run the same
 /// composition root.
@@ -68,22 +67,19 @@ pub(crate) fn load_runner_config(
     })
 }
 
-/// The variable `tack serve --runner-config` sets, naming the TOML file the embedded runner
-/// loads, the one `tack runner start --config` reads. Without it the runner reads
-/// [`default_runner_config_path`] when that file exists; with neither it has defaults only, which
-/// leaves its `[docket]`, `[verify]`, `[git]`, `[secrets]` and `[environment]` tables unset.
-pub const RUNNER_CONFIG_ENV: &str = "TACK_LOCAL_RUNNER_CONFIG";
-
-/// The embedded runner's configuration file: the one [`RUNNER_CONFIG_ENV`] names, else the
-/// per-user default when that file exists.
-pub fn runner_config_path() -> Option<PathBuf> {
+/// The embedded runner's configuration file: the one `--runner-config` named (`flag`), else the
+/// one [`tack_cli::config::RUNNER_CONFIG_ENV`] holds (`variable`), else the per-user default when that file exists.
+pub fn runner_config_path(flag: Option<PathBuf>, variable: Option<OsString>) -> Option<PathBuf> {
+    if flag.is_some() {
+        return flag;
+    }
     // A unit test never reads the settings file of the machine it runs on.
     let default = if cfg!(test) {
         None
     } else {
         default_runner_config_path()
     };
-    config_path_from(std::env::var_os(RUNNER_CONFIG_ENV), default)
+    config_path_from(variable, default)
 }
 
 /// `<per-user config dir>/tack/runner.toml`, whether or not it exists.
@@ -202,9 +198,14 @@ pub struct CliRunnerHost {
 impl CliRunnerHost {
     /// The state directory defaults to one scoped to `server_config.storage_dir`, so a server
     /// opened against a different database never resolves to another server's runner state,
-    /// unless `TACK_RUNNER_STATE_DIR` is set, which wins here as for the standalone binary.
-    fn new(server_config: tack_api::config::AppConfig) -> Result<Self, ConfigError> {
-        let command_line = if std::env::var_os("TACK_RUNNER_STATE_DIR").is_some() {
+    /// unless `TACK_RUNNER_STATE_DIR` is set (`state_dir_named`), which wins here as for the
+    /// standalone binary.
+    fn new(
+        server_config: tack_api::config::AppConfig,
+        config_path: Option<PathBuf>,
+        state_dir_named: bool,
+    ) -> Result<Self, ConfigError> {
+        let command_line = if state_dir_named {
             ConfigOverrides::default()
         } else {
             let state_dir = state_dir_under(&server_config.storage_dir);
@@ -217,7 +218,6 @@ impl CliRunnerHost {
                 ..ConfigOverrides::default()
             }
         };
-        let config_path = runner_config_path();
         let runner_config = load_runner_config(command_line, config_path.as_deref())?;
         Ok(Self {
             server_config,
@@ -291,18 +291,30 @@ impl RunnerHost for CliRunnerHost {
 /// this boot's own flag or environment variable asked for `--with-runner` on one.
 /// `serve::run` re-checks loopback against the persisted preference before it starts the runner,
 /// so a stale "enabled" row from an earlier loopback session is silently not honored.
-pub async fn serve() -> anyhow::Result<()> {
-    let server_config = tack_api::config::AppConfig::load();
+pub async fn serve(
+    server_config: tack_api::config::AppConfig,
+    runner_config: Option<PathBuf>,
+    environment: &tack_cli::config::ServeEnvironment,
+) -> anyhow::Result<()> {
     if server_config.local_runner_enable {
         ensure_loopback(&server_config.host, server_config.binds_loopback())?;
     }
-    warn_if_data_folder_database_is_unused(&server_config);
+    warn_if_data_folder_database_is_unused(&server_config, environment.database_named);
 
-    let control = Arc::new(EmbeddedRunner::new(CliRunnerHost::new(server_config)?));
+    let config_path = runner_config_path(runner_config, environment.runner_config.clone());
+    let control = Arc::new(EmbeddedRunner::new(CliRunnerHost::new(
+        server_config.clone(),
+        config_path,
+        environment.runner_state_dir_named,
+    )?));
     let local_runner: Arc<dyn tack_api::LocalRunnerControl> = control.clone();
 
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-    let server_task = tokio::spawn(crate::serve::run(Some(ready_tx), Some(local_runner)));
+    let server_task = tokio::spawn(crate::serve::run(
+        server_config,
+        Some(ready_tx),
+        Some(local_runner),
+    ));
 
     let Ok(bound_addr) = ready_rx.await else {
         // The sender was dropped before sending, which only happens when `serve::run` returned
@@ -324,9 +336,11 @@ pub async fn serve() -> anyhow::Result<()> {
 /// The default database is `tack.db` in the folder the server was started in. When nothing names
 /// a database and a different `tack.db` already sits in the data folder, say which one this
 /// start uses, so starting from the wrong folder does not look like losing everything.
-fn warn_if_data_folder_database_is_unused(config: &tack_api::config::AppConfig) {
-    if std::env::var_os("TACK_DATABASE_URL").is_some()
-        || config.database_url != tack_api::config::AppConfig::default().database_url
+fn warn_if_data_folder_database_is_unused(
+    config: &tack_api::config::AppConfig,
+    database_named: bool,
+) {
+    if database_named || config.database_url != tack_api::config::AppConfig::default().database_url
     {
         return;
     }
