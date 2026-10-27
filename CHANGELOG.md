@@ -385,6 +385,15 @@ automation a template carries, and the removal of dollars per day.
   prill refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now also uploads the
   pack as prill printed it (`mrp.prill.json`), and the board hands prill that one. A run whose verifier was not
   prill, or one made before this change, holds no such pack and is not recorded.
+- **A restarted runner starts from its saved session.** With a valid `session.json` in its state folder the runner stopped
+  with "runner enrollment credential is required", so the spent single-use token had to be supplied again. The
+  credential is now needed only when there is no saved session; if the server refuses the saved session (expired or
+  revoked) and there is no credential, the runner says that the session was refused. `tack serve --with-runner` no
+  longer hands the runner a placeholder credential to get past the check.
+- **The last hop of a docket run no longer goes missing from the attempt's timeline.** docket holds back the newest
+  second of its trace, and the runner ended the attempt the moment the task was done, so a run's final
+  `agent.hop_finished` could be left out. After the task ends, the runner reads the trace again until every hop
+  on the task's record has shown its end, for at most three seconds.
 - **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
   published since the last run); only the lockfile changes.
 - **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored

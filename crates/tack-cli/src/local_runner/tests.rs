@@ -42,7 +42,7 @@ async fn ensure_runner_credential_leaves_manual_one_untouched() {
             .expect("credential must remain set")
             .expose(),
         "manually-configured-token",
-        "a manual credential must win over both the stored-session placeholder and self-provisioning"
+        "a manual credential must win over self-provisioning"
     );
     std::fs::remove_dir_all(state_dir).ok();
 }
@@ -69,8 +69,8 @@ async fn ensure_runner_credential_reuses_session_no_self_provisioning() {
         "a stored session must satisfy the credential requirement without opening the database: {result:?}"
     );
     assert!(
-        runner_config.enrollment_credential.is_some(),
-        "build_runtime's precondition still needs a credential to be present"
+        runner_config.enrollment_credential.is_none(),
+        "the runner starts from the stored session and is given no credential"
     );
     std::fs::remove_dir_all(state_dir).ok();
 }

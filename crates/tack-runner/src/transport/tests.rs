@@ -1417,6 +1417,150 @@ mod slot_loop {
             .expect("serve result");
     }
 
+    /// A runner over `state_dir` talking to `server`, with the enrollment credential given.
+    fn runner_for_session(
+        server: &MockServer,
+        root: &Path,
+        credential: Option<&str>,
+    ) -> HttpRunnerClient<GatedAdapter, NoCheckout, crate::SystemClock> {
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let engine = RunnerEngine::new(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::new(Semaphore::new(0)),
+                running: Arc::new(AtomicUsize::new(0)),
+            },
+            crate::client::journal::OwnerOnlyJournal::new(root.join("journal")),
+            WorkspaceManager::new(root.join("workspaces"), NoCheckout),
+        );
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        config.enrollment_credential = credential.map(EnrollmentCredential::new);
+        HttpRunnerClient::new(protocol, engine, config, crate::SystemClock, capabilities())
+    }
+
+    /// Answers every call with `status` and `body`, and records the paths called.
+    async fn server_answering(status: u16, body: String) -> (MockServer, Arc<Mutex<Vec<String>>>) {
+        let paths = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        let seen = Arc::clone(&paths);
+        Mock::given(any())
+            .respond_with(move |request: &Request| {
+                seen.lock()
+                    .expect("paths")
+                    .push(request.url.path().to_owned());
+                ResponseTemplate::new(status)
+                    .set_body_raw(body.clone().into_bytes(), "application/json")
+            })
+            .mount(&server)
+            .await;
+        (server, paths)
+    }
+
+    /// The enrollment token is single use: a restarted runner holding a session the server
+    /// still accepts resumes it and never needs the token again.
+    #[tokio::test]
+    async fn a_restarted_runner_resumes_its_saved_session_without_an_enrollment_credential() {
+        let (server, paths) = server_answering(200, fixture("refresh.response.json")).await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), None);
+        store_session(&root.path().join("state"), &session()).expect("session is stored");
+
+        let resumed = runner
+            .establish_session()
+            .await
+            .expect("the session resumes");
+
+        assert_eq!(resumed.runner_id, session().runner_id);
+        let paths = paths.lock().expect("paths");
+        assert_eq!(paths.len(), 1, "{paths:?}");
+        assert!(paths[0].ends_with("/refresh"), "no enrollment: {paths:?}");
+    }
+
+    /// A session the server refuses cannot be mended without the token, and the runner says
+    /// that, not that a credential was missing from the start.
+    #[tokio::test]
+    async fn a_refused_session_without_an_enrollment_credential_says_the_session_was_refused() {
+        let (server, paths) = server_answering(401, fixture("errors/unauthorized.json")).await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), None);
+        store_session(&root.path().join("state"), &session()).expect("session is stored");
+
+        let error = runner
+            .establish_session()
+            .await
+            .expect_err("the session is refused");
+
+        assert!(matches!(error, RunnerError::SessionRefused), "{error:?}");
+        let message = error.to_string();
+        assert!(message.contains("saved session was refused"), "{message}");
+        assert!(message.contains("expired or revoked"), "{message}");
+        assert!(!message.contains(SECRET_CREDENTIAL));
+        assert!(
+            paths.lock().expect("paths")[0].ends_with("/refresh"),
+            "only the refresh was tried"
+        );
+    }
+
+    /// With a session the server refuses and a token in hand, the runner enrolls again.
+    #[tokio::test]
+    async fn a_refused_session_with_an_enrollment_credential_enrolls_again() {
+        let paths = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        let seen = Arc::clone(&paths);
+        Mock::given(any())
+            .respond_with(move |request: &Request| {
+                let path = request.url.path().to_owned();
+                seen.lock().expect("paths").push(path.clone());
+                if path.ends_with("/enroll") {
+                    ResponseTemplate::new(200).set_body_raw(
+                        fixture("enrollment.response.json").into_bytes(),
+                        "application/json",
+                    )
+                } else {
+                    ResponseTemplate::new(401).set_body_raw(
+                        fixture("errors/unauthorized.json").into_bytes(),
+                        "application/json",
+                    )
+                }
+            })
+            .mount(&server)
+            .await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), Some(SECRET_ENROLLMENT));
+        store_session(&root.path().join("state"), &session()).expect("session is stored");
+
+        runner.establish_session().await.expect("enrolls again");
+
+        let paths = paths.lock().expect("paths");
+        assert!(paths[0].ends_with("/refresh"), "{paths:?}");
+        assert!(paths[1].ends_with("/enroll"), "{paths:?}");
+    }
+
+    /// Nothing saved and no token: there is no way to identify the runner, and it says so.
+    #[tokio::test]
+    async fn no_session_and_no_enrollment_credential_says_the_credential_is_required() {
+        let (server, paths) = server_answering(500, "{}".to_owned()).await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), None);
+
+        let error = runner
+            .establish_session()
+            .await
+            .expect_err("nothing to start from");
+
+        assert!(
+            matches!(error, RunnerError::MissingEnrollmentCredential),
+            "{error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "runner enrollment credential is required"
+        );
+        assert!(paths.lock().expect("paths").is_empty());
+    }
+
     /// A restart finds one agent still running and one journal behind it. The
     /// running one is followed in a slot of its own: the ticker heartbeats its
     /// lease with every other while it runs, and the journal behind it is

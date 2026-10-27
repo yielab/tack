@@ -48,9 +48,11 @@ pub struct RunnerLimits {
 /// Builds a runtime identical to the one `tack-runner`'s binary has always
 /// assembled, without starting it.
 ///
-/// Fails fast on a missing enrollment credential before any filesystem
-/// side effect or protocol work — the credential itself is never put into
-/// the returned error, a log line, or any diagnostic.
+/// Fails fast when the runner holds neither a saved session nor an
+/// enrollment credential, before any filesystem side effect or protocol
+/// work — a runner with a session starts from it and needs no credential.
+/// The credential itself is never put into the returned error, a log line,
+/// or any diagnostic.
 pub async fn build_runtime(
     config: RunnerConfig,
     limits: RunnerLimits,
@@ -67,7 +69,7 @@ pub async fn build_runtime_with_active(
     limits: RunnerLimits,
     active: crate::active::ActiveAttempts,
 ) -> Result<ProductionRunnerRuntime, RunnerError> {
-    config.require_enrollment_credential()?;
+    config.require_session_or_enrollment_credential()?;
 
     // The real transport replaces `UnavailableProtocolClient`, the stub
     // that otherwise cannot reach a server at all.

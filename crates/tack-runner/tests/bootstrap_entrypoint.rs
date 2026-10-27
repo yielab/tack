@@ -177,3 +177,34 @@ async fn build_runtime_fails_fast_on_a_missing_enrollment_credential() {
         "expected a fast, typed failure with no enrollment credential supplied"
     );
 }
+
+/// A restarted runner holds the session its enrollment gave it, and the enrollment token is
+/// spent: it builds from the session alone.
+#[tokio::test]
+async fn build_runtime_starts_from_a_saved_session_without_an_enrollment_credential() {
+    let state_dir = temp_state_dir("saved-session");
+    std::fs::write(
+        state_dir.path().join("session.json"),
+        r#"{"runner_id":"runr_01J00000000000000000000001","runner_credential":"a-credential","credential_expires_at":"2026-11-04T12:00:00Z"}"#,
+    )
+    .expect("session is written");
+    let config = RunnerConfig::from_sources(RunnerConfigSources {
+        command_line: ConfigOverrides {
+            api_base_url: Some("http://127.0.0.1:1".into()),
+            runner_id: Some("bootstrap-entrypoint-test".into()),
+            state_dir: Some(state_dir.path().to_path_buf()),
+            enrollment_credential: None,
+            ..ConfigOverrides::default()
+        },
+        ..RunnerConfigSources::default()
+    })
+    .expect("test configuration is valid");
+
+    let result = build_runtime(config, test_limits()).await;
+
+    assert!(
+        result.is_ok(),
+        "a saved session is enough to start: {:?}",
+        result.err()
+    );
+}

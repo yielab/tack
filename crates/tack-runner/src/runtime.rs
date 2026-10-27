@@ -70,7 +70,7 @@ where
     }
 
     pub async fn run(self, shutdown: Shutdown) -> Result<(), RunnerError> {
-        self.config.require_enrollment_credential()?;
+        self.config.require_session_or_enrollment_credential()?;
         self.filesystem.prepare_state_dir(&self.config.state_dir)?;
         let started_at = self.clock.now();
         tracing::info!(runner_id = %self.config.runner_id, ?started_at, "runner runtime started");

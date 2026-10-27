@@ -43,6 +43,13 @@ pub enum RunnerError {
     Config(#[from] ConfigError),
     #[error("runner enrollment credential is required")]
     MissingEnrollmentCredential,
+    /// The server no longer accepts the saved session (it expired or was revoked) and there is
+    /// no enrollment credential to enroll again with.
+    #[error(
+        "the runner's saved session was refused by the server (expired or revoked) and no \
+         enrollment credential is configured to enroll again"
+    )]
+    SessionRefused,
     #[error("harness {harness:?} is unsupported by this runner")]
     UnsupportedHarness { harness: String },
     #[error("runner protocol client is not configured")]

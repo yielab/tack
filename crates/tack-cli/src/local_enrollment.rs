@@ -19,13 +19,6 @@ pub async fn stored_session_orphaned(state_dir: &Path, database_url: &str) -> an
     Ok(!exists)
 }
 
-/// Placeholder for `enrollment_credential` when a stored session already exists, since
-/// `build_runtime` requires some credential up front. Never transmitted: `establish_session`
-/// tries the stored session's `refresh` first and only reads this on rejection.
-pub(crate) fn stored_session_placeholder() -> EnrollmentCredential {
-    EnrollmentCredential::new("stored-session-on-disk-no-token-needed")
-}
-
 /// Names the runner the stored session belongs to after this computer, when it still has the
 /// generated name an earlier version gave it; a runner a person named is left alone. Best
 /// effort: a failure is logged, never a reason not to start.

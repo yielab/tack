@@ -73,6 +73,14 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 /// How often a running task's trace, inbox and record are read.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
+/// How long after a task is seen ended its trace is still read for the hops it has not yet
+/// shown. docket hands out an event only once its second has closed and a further second has
+/// passed, so an event written before the task ended is readable within two seconds of it.
+const TRACE_SETTLE: Duration = Duration::from_secs(3);
+
+/// How often the trace is read again while it settles.
+const TRACE_SETTLE_POLL: Duration = Duration::from_millis(250);
+
 /// The task states in which docket waits for a person and the agent does no work.
 fn waiting_on_a_person(status: &str) -> bool {
     matches!(status, "waiting_input" | "waiting_approval")
@@ -233,6 +241,14 @@ impl DocketAdapter {
         std::fs::read_to_string(self.state_path(attempt_id, "cursor"))
             .map(|text| text.trim().to_owned())
             .unwrap_or_default()
+    }
+
+    /// How many finished hops of this attempt's task have reached the timeline.
+    fn read_hops_finished(&self, attempt_id: &str) -> usize {
+        std::fs::read_to_string(self.state_path(attempt_id, "hops"))
+            .ok()
+            .and_then(|text| text.trim().parse().ok())
+            .unwrap_or(0)
     }
 
     /// The `seq` below which this attempt's escalations are all settled.
@@ -1236,6 +1252,105 @@ impl HarnessAdapter for DocketAdapter {
     }
 }
 
+/// Where Tack is in docket's trace of one task: the cursor docket gave, the model the last
+/// implementer hop was served by, and how many finished hops have reached the timeline.
+struct TraceRelay {
+    cursor: String,
+    served_model: Option<String>,
+    hops_finished: usize,
+}
+
+impl TraceRelay {
+    fn new(cursor: String, hops_finished: usize) -> Self {
+        Self {
+            cursor,
+            served_model: None,
+            hops_finished,
+        }
+    }
+}
+
+impl DocketAdapter {
+    /// Reads the trace past the relay's cursor and puts the task's hops and escalation events on
+    /// the timeline.
+    async fn relay_trace(
+        &self,
+        info: &RunInfo,
+        relay: &mut TraceRelay,
+        labels: &OptionLabels,
+        progress: &mpsc::Sender<Progress>,
+    ) {
+        if let Ok(reply) = self.client.traces(&info.pod, &relay.cursor).await
+            && reply.status == 200
+            && let Ok(page) = reply.read::<TracePage>()
+        {
+            for line in &page.events {
+                let event = match TraceEvent::parse(line) {
+                    Ok(event) => event,
+                    Err(why) => {
+                        tracing::warn!(%why, "a trace event could not be read");
+                        continue;
+                    }
+                };
+                if event.task() != Some(info.task.as_str()) {
+                    continue;
+                }
+                if let TraceEvent::HopFinished(hop) = &event {
+                    relay.hops_finished += 1;
+                    if hop.role == "implementer"
+                        && let Some(model) = hop.model.as_deref().filter(|m| !m.is_empty())
+                    {
+                        relay.served_model = Some(model.to_owned());
+                    }
+                }
+                let step = match &event {
+                    TraceEvent::HopStarted(hop) => Some(hop_progress(false, hop)),
+                    TraceEvent::HopFinished(hop) => Some(hop_progress(true, hop)),
+                    other => escalation_progress(other, labels),
+                };
+                if let Some(step) = step
+                    && progress.try_send(step).is_err()
+                {
+                    tracing::warn!(harness = DESCRIPTOR.kind, "a progress line was dropped");
+                }
+            }
+            if let Some(next) = page
+                .next
+                .as_deref()
+                .filter(|n| !n.is_empty() && *n != relay.cursor)
+            {
+                self.write_state(&info.attempt_id, "cursor", next);
+                relay.cursor = next.to_owned();
+                // After the cursor: a crash between the two leaves a count too low, which only
+                // costs a wait, never one too high.
+                self.write_state(&info.attempt_id, "hops", &relay.hops_finished.to_string());
+            }
+        }
+    }
+
+    /// Reads the trace again after the task is seen ended, until every hop its record holds has
+    /// shown its end on the timeline. The newest events are held back by docket, so the last
+    /// hop's end can come a moment after the task's status; the wait is bounded by
+    /// [`TRACE_SETTLE`], which also covers a hop whose end docket never traced.
+    async fn settle_trace(
+        &self,
+        info: &RunInfo,
+        task: &TaskView,
+        relay: &mut TraceRelay,
+        labels: &OptionLabels,
+        progress: &mpsc::Sender<Progress>,
+    ) {
+        let until = tokio::time::Instant::now() + TRACE_SETTLE;
+        loop {
+            if relay.hops_finished >= task.hops.len() || tokio::time::Instant::now() >= until {
+                return;
+            }
+            tokio::time::sleep(TRACE_SETTLE_POLL).await;
+            self.relay_trace(info, relay, labels, progress).await;
+        }
+    }
+}
+
 impl DocketAdapter {
     /// Follows one task until it ends: trace page, inbox, record, then wait
     /// for the next poll or for the person's answer, whichever comes first.
@@ -1263,10 +1378,12 @@ impl DocketAdapter {
         let mut deadline = tokio::time::Instant::now() + info.timeout;
         let mut last_poll = tokio::time::Instant::now();
         let mut was_waiting = false;
-        let mut cursor = self.read_cursor(&info.attempt_id);
+        let mut relay = TraceRelay::new(
+            self.read_cursor(&info.attempt_id),
+            self.read_hops_finished(&info.attempt_id),
+        );
         // The escalations before this `seq` are settled, so docket is not asked for them again.
         let mut since = self.read_since(&info.attempt_id);
-        let mut served_model: Option<String> = None;
         // docket's ids of what was asked, and how often docket refused the answer.
         let mut asked: HashSet<String> = HashSet::new();
         let mut refused: HashMap<String, u32> = HashMap::new();
@@ -1309,47 +1426,8 @@ impl DocketAdapter {
             }
 
             // The hops and escalation events since the cursor.
-            if let Ok(reply) = self.client.traces(&info.pod, &cursor).await
-                && reply.status == 200
-                && let Ok(page) = reply.read::<TracePage>()
-            {
-                for line in &page.events {
-                    let event = match TraceEvent::parse(line) {
-                        Ok(event) => event,
-                        Err(why) => {
-                            tracing::warn!(%why, "a trace event could not be read");
-                            continue;
-                        }
-                    };
-                    if event.task() != Some(info.task.as_str()) {
-                        continue;
-                    }
-                    if let TraceEvent::HopFinished(hop) = &event
-                        && hop.role == "implementer"
-                        && let Some(model) = hop.model.as_deref().filter(|m| !m.is_empty())
-                    {
-                        served_model = Some(model.to_owned());
-                    }
-                    let step = match &event {
-                        TraceEvent::HopStarted(hop) => Some(hop_progress(false, hop)),
-                        TraceEvent::HopFinished(hop) => Some(hop_progress(true, hop)),
-                        other => escalation_progress(other, &labels),
-                    };
-                    if let Some(step) = step
-                        && side.progress.try_send(step).is_err()
-                    {
-                        tracing::warn!(harness = DESCRIPTOR.kind, "a progress line was dropped");
-                    }
-                }
-                if let Some(next) = page
-                    .next
-                    .as_deref()
-                    .filter(|n| !n.is_empty() && *n != cursor)
-                {
-                    self.write_state(&info.attempt_id, "cursor", next);
-                    cursor = next.to_owned();
-                }
-            }
+            self.relay_trace(info, &mut relay, &labels, &side.progress)
+                .await;
 
             let task = match self.client.task(&info.pod, &info.task).await {
                 Ok(reply) if reply.status == 200 => reply
@@ -1366,7 +1444,11 @@ impl DocketAdapter {
                 }
             };
             if let Some(view) = task.as_ref().filter(|view| terminal(&view.status)) {
-                let model = served_model.or_else(|| {
+                // docket holds back the newest second of its trace, so the last hop's end may
+                // not be readable yet; it is waited for before the attempt ends.
+                self.settle_trace(info, view, &mut relay, &labels, &side.progress)
+                    .await;
+                let model = relay.served_model.take().or_else(|| {
                     view.hops
                         .iter()
                         .rev()
@@ -1413,7 +1495,7 @@ impl DocketAdapter {
                            "message": super::not_answered(held_expiry),
                            "task": info.task}),
                     task.as_ref(),
-                    served_model,
+                    relay.served_model.take(),
                 ));
             }
             if now >= deadline {
@@ -1427,7 +1509,7 @@ impl DocketAdapter {
                     AttemptState::Failed,
                     json!({"code": "timeout", "message": message, "task": info.task}),
                     task.as_ref(),
-                    served_model,
+                    relay.served_model.take(),
                 ));
             }
 

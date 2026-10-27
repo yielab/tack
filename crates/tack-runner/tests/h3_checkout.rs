@@ -35,10 +35,10 @@ use tack_runner::{
 };
 
 use crate::common;
+use crate::fake_docket;
 use crate::usage_fixture;
 use common::temp_dir as temp_root;
 use usage_fixture::usage;
-use crate::fake_docket;
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///

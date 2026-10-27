@@ -1042,6 +1042,60 @@ async fn hops_reach_the_timeline_and_the_served_model_is_the_last_implementers()
     );
 }
 
+#[tokio::test]
+async fn the_last_hops_end_reaches_the_timeline_though_docket_holds_back_the_newest_trace() {
+    let fake = pods_fake().await;
+    // The task is seen done before docket hands out the trace lines it just wrote.
+    fake.hold_back_traces(Duration::from_millis(1500));
+    fake.script(Script {
+        before: vec![(
+            "hop_started".into(),
+            hop("implementer", "local/local-model", 0),
+        )],
+        after: vec![(
+            "hop_finished".into(),
+            hop_finished("implementer", "local/local-model", 0, Value::Null),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let (outcome, steps) = run_to_end(&adapter, &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(
+        steps
+            .iter()
+            .map(|(kind, _)| kind.as_str())
+            .collect::<Vec<_>>(),
+        vec!["agent.hop_started", "agent.hop_finished"]
+    );
+    assert_eq!(
+        outcome.actual_execution.model.as_deref(),
+        Some("local/local-model")
+    );
+}
+
+#[tokio::test]
+async fn a_hop_docket_never_traced_does_not_hold_the_attempt_past_the_settle_time() {
+    let fake = pods_fake().await;
+    // Held back for longer than the runner waits: the attempt still ends, without the hop's end.
+    fake.hold_back_traces(Duration::from_secs(60));
+    fake.script(Script {
+        after: vec![(
+            "hop_finished".into(),
+            hop_finished("implementer", "local/local-model", 0, Value::Null),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let started = std::time::Instant::now();
+    let (_, steps) = run_to_end(&adapter, &spec(&scene, "attempt-1", 1)).await;
+
+    assert!(steps.is_empty());
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
 /// One hop_finished and a finished task with this usage, run to the end: the
 /// hop's progress usage and the attempt's.
 async fn run_with_usage(
