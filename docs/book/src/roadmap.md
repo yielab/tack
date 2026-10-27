@@ -18,8 +18,7 @@ which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not pub
 Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79 and 80
 are built on a branch and not yet merged; Phases 76 and 81 are proposed.
 
-**Where this is going.** My SaaS, the first real project, is the proof of Phases 73 to 77: its
-code card through a team, with a real install. Phase 76 makes the project file a place the
+**Where this is going.** Phase 76 makes the project file a place the
 configuration is kept, not only imported from: a key that survives a rename, an import that
 removes what the file removed and keeps what the board changed, the cost of every removal shown
 first, and a revision to go back to. Phases 79 and 80 give the runner a crate of its own and make
@@ -32,61 +31,33 @@ still works alone, and without a verifier a project stays at Level 3.
 
 ## Open
 
-What is still to do, by who can do it. Each item is one line here and has its detail in the
-plan or the page named beside it.
+Only a card of a phase the maintainer has opened is listed here, with its detail in the plan or
+the section named beside it. What is not a card is in "Cancelled" below.
 
-**The maintainer's, by hand** (refused to agents, costs money, or needs another machine):
+- **[Phase 81](#phase-81--what-the-audit-found)**, what the 2026-10-26 audit found, in cards B, C, D, S, R, A, H, E, F, I, J and K.
+  Its last card ends with the review and merge of Phases 79, 80 and 81 into `develop`.
+- **[Phase 76](#phase-76--the-project-file-is-kept-in-sync)**, the project file kept in sync. It is
+  proposed and builds nothing until the maintainer approves it.
 
-- Publish the `v0.1.0-beta.10` release. The tag's release run did not start (2026-10-14), so
-  there is no release yet. The install commands in `README.md` look up the newest published
-  release and do not name one. `docs/LAUNCH-CHECKLIST.md` is the order of work.
-- Review and merge Phases 79 and 80 into `develop`. Phase 79's points to decide are in §8 of
-  [its plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md): the `Host`
-  trait that stays until the last callers move, and four shared test fixtures that keep a
-  dead-code allowance.
-- Rerun the local live suite (`onboarding-lab/e2e/docket-prill-e2e.sh`, not versioned) against docket's `develop`. It passed on 2026-10-18, before
-  docket's escalation record; Phase 80 changed what it expects and
-  [Phase 81](#phase-81--what-the-audit-found) card A makes it pass again.
-- Approve Phase 76 to start it. It is proposed and builds nothing until then.
+## Cancelled
 
-**Waiting on a partner:**
+Cancelled on 2026-10-27 because none of these was approved as a card. They are not scheduled and
+do not wait on anything; each can come back as a card of its own.
 
-- My SaaS's code card through a team, with a real install: the proof of Phases 74, 75 and 77.
-  docket's context and token count are fixed in docket's `develop`. Installing dependencies is
-  ADR 0027 (accepted 2026-10-19): whoever makes the agent's copy installs them from the lockfile.
-  Tack's side is in `develop` (the runner installs for Claude Code, Codex and opencode, a docket
-  run makes no runner copy, and every run has a limit learnt from its profile); docket's side is
-  docket's own ADR 0029, and Tack sends it the command from docket's API 6 on. The end-to-end
-  scenario with two teams and a rework is still to write.
-- Phase 80, built 2026-10-26: a docket run waits on a person without burning its time, and Tack
-  follows docket's one escalation record. Card G, the contract guard, waits on docket's P51-9 and
-  on the live proof above. Tack has no fallback for a docket without the escalation record: it
-  asks `GET /escalations` and fails with a sentence on a 404, because docket's `apiVersion` is
-  still `"6"` on both shapes. Measuring docket's polling stays deferred until a replacement is
-  proposed.
-- The verifier: directives learnt from a person's corrections (ADR 0020, decision 6, not built).
-  The verifier groups corrections and proposes a directive; a person approves it; Tack applies
-  the approved one to `AGENTS.md` through a pull request.
-
-**Gaps in what shipped**, each shown in the product with its reason:
-
-- "Apply the repository's teams" is disabled: the board has no channel to the runner, so the
-  Teams rung tells you the `docket init` command to run in the project's folder.
-- Only docket stops a run at its token limit. Claude Code, Codex and opencode are measured, not
-  enforced: their tokens are read when they finish, and the screen says so. Their runs keep their
-  whole limit reserved against the day until they end; a docket run reserves only what its
-  steps have not yet used.
-- The tokens a verifier spends count whole, cache included: prill reports no cache figure.
-- Only docket reports a running agent's steps on its timeline; Codex, Claude Code and opencode
-  need their tool lines captured from the real programs first.
-
-**What the 2026-10-26 audit found** (tests, structure, code design, screens, and the local suite
-of Tack, docket and prill) is [Phase 81](#phase-81--what-the-audit-found), sliced for Sonnet and
-Haiku agents.
-
-**Everything else that is open** is in [Phase 78](#phase-78--one-pass-over-what-is-still-open) below:
-what the desktop app's first runs found, the board screen audit, the earlier gaps that are a
-fix, and the item screen's new design, ordered so each screen and each module is changed once.
+- Publishing the `v0.1.0-beta.10` release, the publish list, the installs on macOS and Windows, the
+  code-signing decision and the GitHub and workstation items of Phases 65 and 69 (Wave 0). The
+  release is the maintainer's own step, written in `docs/LAUNCH-CHECKLIST.md`.
+- The live proof of My SaaS's code card through a team with a real install, which needs a paid
+  model and docket's cooperation.
+- Directives learnt from a person's corrections (ADR 0020, decision 6): Tack depends on no
+  verifier, and the feature waited on a contract from one. The reasons a person gives stay
+  stored (ADR 0013, decision 7).
+- Measuring docket's polling, and the retakes of `agents.png`, `agents-flow.gif`, the two desktop
+  screenshots and `recovery-demo.gif`.
+- Four limits that stay as limits, each already shown in the product with its reason: "Apply the
+  repository's teams" is disabled; only docket stops a run at its token limit; the tokens a
+  verifier spends count whole, cache included; only docket reports a running agent's steps on its
+  timeline.
 
 ---
 
@@ -94,11 +65,9 @@ fix, and the item screen's new design, ordered so each screen and each module is
 
 **Status:** Rounds 1 to 4 are in `develop` (2026-10-19): every task, and the gate once on the merged
 tree. The recordings that need a paid model were retaken on 2026-10-20: the tutorial's screenshots,
-`workflow.gif`, `hero.gif` and `attempt.png`. Still to retake: `agents.png` and `agents-flow.gif`
-(the Agents page's test run starts Codex, whose configured model its ChatGPT login does not accept, so it
-fails), the two desktop shots (they need the desktop window) and `recovery-demo.gif` (recorded from a
-published release, so it shows the released screens). Also open, small: a retried request's fingerprint
-still includes the composed instructions (so a title edit answers 409). It gathers
+`workflow.gif`, `hero.gif` and `attempt.png`. The retakes that were left (`agents.png`, `agents-flow.gif`, the desktop shots and
+`recovery-demo.gif`) are cancelled. One small defect stays, a retried request's fingerprint that still
+includes the composed instructions (so a title edit answers 409): card E of Phase 81 fixes it. It gathers
 what the first runs from the desktop app found, the board screen audit, the gaps of earlier phases
 that are a fix, and the item screen's new design, and orders them so each screen and each module is
 changed by one task, once. No ADR: nothing here changes a decision; the one model change is a tick
@@ -149,8 +118,9 @@ that fails on any crate edge the plan does not allow. Nothing on the wire change
 There are no store traits and no in-memory fakes: every test already runs on in-memory SQLite in
 milliseconds, and a fake would hide the transactions and fencing the store exists for.
 
-What is open is in [Open](#open) above: the review and merge of the branch, and the points §8 of
-the plan leaves to the maintainer.
+What is left is the review and merge of the branch, the last step of Phase 81. The two points §8 of
+the plan left open are settled: the dead-code allowances on test fixtures are gone, and the `Host`
+trait is split into small ports by card J of Phase 81.
 
 ---
 
@@ -177,8 +147,9 @@ The polling measurement stays deferred (nothing can replace polling while Tack h
 endpoint) and the A2A client was cut (the one answer route removes its trigger). The maintainer
 decided that lights-out is L5 and docket's own, so Tack sends an `autonomy` level only when a
 person asks for one ("Run again at L3"), never from the project's merge level, and that a
-question with no `expiresAt` holds its run until it is answered, resolved or stopped. What is
-left is in [Open](#open): card G and the live proof.
+question with no `expiresAt` holds its run until it is answered, resolved or stopped. Card G, the
+contract guard, is closed: docket removed the old shapes, Tack's code and fixtures no longer have them,
+and the live contract check is card A of Phase 81.
 
 ---
 
@@ -275,7 +246,7 @@ project's check. Whoever makes the agent's copy now installs the dependencies fr
 - **Every run has a limit and says where it comes from.** A profile with five successful runs
   offers a limit proposed from them; until then a provisional one applies.
 
-What is open is in [Open](#open): My SaaS's code card through a team.
+The live proof with a real install is cancelled (see [Cancelled](#cancelled)).
 
 ---
 
@@ -285,7 +256,7 @@ What is open is in [Open](#open): My SaaS's code card through a team.
 the same day. Every round is in `develop`, with the guides: Round 4 on one capture of Claude Code's
 and opencode's live usage, so Tack stops both at a run's token limit and counts docket's cache
 reads as docket does; Round 5's screens print the attempt's counted tokens and the run dialog's
-limit line. What is left is in [Open](#open).
+limit line. Nothing is left.
 **ADR:** 0024 (amends 0020 §5, 0021 §7 and 0012 §6). **Plan:**
 [`docs/plans/phase-75.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-75.md).
 
@@ -332,7 +303,7 @@ provider. Tokens are what every agent measures. So:
 
 **Status:** opened 2026-10-17; ADR 0023 accepted the same day, with its three defaults. Rounds 1
 to 6 are in `develop` (2026-10-18), with Round 4's pages in the book. The first runs on the real
-board reached their teams the same day; what is left is in [Open](#open).
+board reached their teams the same day; nothing is left but the live proof, which is cancelled (see [Cancelled](#cancelled)).
 **ADR:** 0023 (inside ADRs 0002, 0006 §5 and 0021). **Plan:**
 [`docs/plans/phase-74.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-74.md).
 

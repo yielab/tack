@@ -345,6 +345,8 @@ and raises the new count; `npx vitest run` on `FactoryMetrics.test.tsx` shows bo
 
 ### G. Contract guard
 
+**Closed 2026-10-27.** docket removed the old shapes before this card could wait for it; card D of this phase and card C of Phase 81 took them out of Tack, `git grep` for the old question shapes in `crates` prints nothing, and the diff of docket's answers against the captures is `docket-prill-e2e.sh --check` (Phase 81, card A). The text below is kept as it was written.
+
 **Status: BLOCKED on docket P51-9** (proposed: removal of the old shapes, only after Tack has moved),
 **and on C, D and F.** **Released when:** docket releases P51-9 and the live proof,
 `scripts/docket-prill-e2e.sh`, passes against it on the new path.

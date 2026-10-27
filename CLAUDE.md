@@ -56,8 +56,9 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   with Phases 79 and 80 found, as cards for Sonnet and Haiku agents in three rounds. CI never needs
   docket or prill; the three meet only in the local, unversioned `onboarding-lab/`.
   A card runs only the tests of what it touched; the full suites run once per round.
-- **The maintainer's:** the release. The open Wave 0 rows of `docs/plans/phase-65.md` and
-  `docs/plans/phase-69.md` were cancelled 2026-10-27. Closed plans live in `docs/closed-cycles/plans/`.
+- **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
+  the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
+  is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
 
 Rules that history taught: never add a `Co-Authored-By` trailer (the history was rewritten on
 2026-10-12 to remove 159 of them); `CHANGELOG.md`'s `[Unreleased]` is written by hand in the

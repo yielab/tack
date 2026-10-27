@@ -435,6 +435,8 @@ swallows errors.
 5. The store takes `now` as a value where it took a clock; one `FixedClock`, in test support; one
    `canonical_json`.
 6. Attempts are listed by one query in `tack-db/src/queries/`, errors returned.
+   A retried request's fingerprint stops including the composed instructions, so a title edit between
+   two tries no longer answers 409 (the last open defect of Phase 78).
 7. `./scripts/regen-generated.sh` if any response type changed.
 
 **Tests.** `cargo nextest run --workspace -E 'package(tack-db) | package(tack-app) | package(tack-protocol) | (package(tack-api) & test(/execution|^runner_protocol::/))'`.
