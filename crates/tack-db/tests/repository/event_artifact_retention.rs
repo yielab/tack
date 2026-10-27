@@ -5,9 +5,11 @@
 //! what belongs at the `tack-db` layer.
 
 use crate::common;
+use serde_json::json;
 use tack_protocol::execution::{
     AttemptId, Checkpoint, ClaimRequestId, FencingToken, RunnerId, WorkspaceId,
 };
+use tack_test_support::kept;
 
 use std::sync::Mutex;
 
@@ -199,7 +201,7 @@ fn event<'a>(
         sequence,
         source: "runner",
         kind: "progress",
-        payload: r#"{"phase":"test"}"#,
+        payload: kept(json!({"phase": "test"})),
         occurred_at,
     }
 }

@@ -1,8 +1,12 @@
+use serde_json::json;
 use std::sync::Mutex;
 use tack_protocol::Clock;
 use tack_protocol::execution::{
-    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryKey, RunnerId,
+    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryJournalState, RecoveryKey,
+    RunnerId,
 };
+use tack_test_support::completion::{actual_execution, terminal_reason, usage_not_measured};
+use tack_test_support::kept;
 
 use crate::common;
 use chrono::{DateTime, Duration, Utc};
@@ -335,7 +339,7 @@ fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
             sequence: 1,
             source: "runner",
             kind: "progress",
-            payload: r#"{"phase":"spawn"}"#,
+            payload: kept(json!({"phase": "spawn"})),
             occurred_at: fixture.clock.now(),
         },
         NewEvent {
@@ -344,7 +348,7 @@ fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
             sequence: 2,
             source: "runner",
             kind: "progress",
-            payload: r#"{"phase":"running"}"#,
+            payload: kept(json!({"phase": "running"})),
             occurred_at: fixture.clock.now(),
         },
     ]
@@ -471,9 +475,9 @@ fn completion_crash() -> Completion<'static> {
         completion_id: ids::completion("completion-1"),
         final_event_checkpoint: None,
         terminal_state: tack_protocol::execution::ExecutionState::Succeeded,
-        terminal_reason: "completed",
-        actual_execution: "{}",
-        usage: "{}",
+        terminal_reason: kept(terminal_reason("completed")),
+        actual_execution: kept(actual_execution()),
+        usage: kept(usage_not_measured()),
     }
 }
 
@@ -711,7 +715,7 @@ fn crash_heartbeat_lease() -> [HeartbeatLease<'static>; 1] {
         attempt_id: ids::attempt("attempt-crash"),
         fencing_token: FencingToken::new(1),
         state: ExecutionState::Running,
-        journal_state: "process_observed_running",
+        journal_state: RecoveryJournalState::ProcessObservedRunning,
         last_event_checkpoint: None,
     }]
 }

@@ -1,21 +1,10 @@
 use chrono::{DateTime, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{EventApplyResult, EventBatch, EventBatchResult, NewEvent};
-use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
+use tack_protocol::execution::{AttemptId, Checkpoint, EventRecord, FencingToken, RunnerId};
 use uuid::Uuid;
 
 use crate::AppError;
-
-/// One event of a batch, as the runner sent it.
-pub struct ReportedEvent<'a> {
-    pub event_id: &'a str,
-    pub sequence: i64,
-    pub source: &'a str,
-    pub kind: &'a str,
-    /// The payload, already encoded as JSON.
-    pub payload_json: &'a str,
-    pub occurred_at: DateTime<Utc>,
-}
 
 /// A batch of events a runner reports for the attempt it holds.
 pub struct EventReport<'a> {
@@ -26,7 +15,8 @@ pub struct EventReport<'a> {
     pub previous_checkpoint: Option<&'a Checkpoint>,
     /// The checkpoint the stream reaches when this batch lands.
     pub checkpoint: &'a Checkpoint,
-    pub events: &'a [ReportedEvent<'a>],
+    /// The events as the protocol's message carries them.
+    pub events: &'a [EventRecord],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,11 +53,11 @@ pub async fn report_events(
         .zip(&rows)
         .map(|(event, row_id)| NewEvent {
             id: row_id,
-            event_id: event.event_id,
+            event_id: &event.event_id,
             sequence: event.sequence,
-            source: event.source,
-            kind: event.kind,
-            payload: event.payload_json,
+            source: &event.source,
+            kind: &event.kind,
+            payload: &event.payload,
             occurred_at: event.occurred_at,
         })
         .collect();

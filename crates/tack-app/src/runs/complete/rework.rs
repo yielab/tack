@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_db::repo::execution::NewExecutionRequest;
 use tack_db::{Repository, StoreError, queries};
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{ActualExecution, ExecutionState};
 use tack_protocol::mrp::{MergeDecision, MergeReadinessPack, NextStep};
 use uuid::Uuid;
 
@@ -99,7 +99,7 @@ pub(super) async fn plan<R, Fut>(
     repo: &Repository,
     now: DateTime<Utc>,
     attempt_id: &str,
-    actual_execution: &str,
+    actual_execution: &ActualExecution,
     read_pack: &R,
 ) -> Result<Option<Rework>, StoreError>
 where
@@ -179,9 +179,11 @@ where
     metadata["rework_of"] = json!(root);
     // The branch the attempt just rejected left in the user's repository: a harness that works
     // on branches starts the follow-up from it.
-    let rejected_branch = serde_json::from_str::<Value>(actual_execution)
-        .ok()
-        .and_then(|execution| execution["git"]["branch"].as_str().map(str::to_owned));
+    let rejected_branch = actual_execution
+        .additional
+        .get("git")
+        .and_then(|git| git["branch"].as_str())
+        .map(str::to_owned);
     if let Some(branch) = rejected_branch.filter(|branch| !branch.is_empty()) {
         metadata["rework_base"] = json!(branch);
     }

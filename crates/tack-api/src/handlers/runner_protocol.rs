@@ -36,10 +36,10 @@ use tack_app::AppError;
 use tack_app::runs::complete::{Completed, CompletionReport};
 use tack_app::runs::create_decision::{DecisionCreated, DecisionRequest};
 use tack_app::runs::enroll::{Enrolled, Enrollment};
-use tack_app::runs::heartbeat::{Beat, Heartbeat, ReportedLease};
+use tack_app::runs::heartbeat::{Beat, Heartbeat};
 use tack_app::runs::observe_recovery::{Observation, RecoveryObserved};
 use tack_app::runs::refresh::{Refresh, Refreshed};
-use tack_app::runs::report_events::{EventReport, EventsReported, ReportedEvent};
+use tack_app::runs::report_events::{EventReport, EventsReported};
 use tack_app::runs::submit_artifacts::{
     ArtifactManifest, ContentUpload, ManifestSubmission, ManifestSubmitted, UploadChecked,
 };
@@ -377,7 +377,7 @@ fn normalize_datetime(instant: DateTime<Utc>) -> String {
     instant.to_rfc3339()
 }
 
-fn json_byte_len(value: &Value) -> u64 {
+fn json_byte_len(value: &impl serde::Serialize) -> u64 {
     serde_json::to_vec(value)
         .map(|bytes| bytes.len() as u64)
         .unwrap_or(u64::MAX)
@@ -850,21 +850,16 @@ pub async fn heartbeat(
             LIMITS.active_attempts_per_heartbeat_max,
         ));
     }
-    let leases = request
+    if request
         .active_attempts
-        .into_iter()
-        .map(|attempt| -> runner_auth::ProtocolResult<ReportedLease> {
-            Ok(ReportedLease {
-                fencing_token: fencing_token_from_wire(attempt.fencing_token.get()).ok_or_else(
-                    || invalid_request("fencing_token", "fencing_token must fit the store"),
-                )?,
-                attempt_id: attempt.attempt_id,
-                state: attempt.state,
-                journal_state: attempt.journal_state.as_str().to_owned(),
-                last_event_checkpoint: attempt.last_event_checkpoint,
-            })
-        })
-        .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
+        .iter()
+        .any(|attempt| fencing_token_from_wire(attempt.fencing_token.get()).is_none())
+    {
+        return Err(invalid_request(
+            "fencing_token",
+            "fencing_token must fit the store",
+        ));
+    }
     let heartbeat_id = request.heartbeat_id;
 
     let result = tack_app::runs::heartbeat::heartbeat(
@@ -875,7 +870,7 @@ pub async fn heartbeat(
             heartbeat_id: &heartbeat_id,
             sent_at: request.sent_at,
             available_capacity: i64::from(request.available_capacity),
-            leases: &leases,
+            leases: &request.active_attempts,
             lease_duration: Duration::seconds(LIMITS.lease_duration_seconds),
         },
     )
@@ -1070,15 +1065,6 @@ async fn transition_attempt(
 // rejected batch — oversized or not — writes nothing.
 // ---------------------------------------------------------------------
 
-struct PreparedEvent {
-    event_id: String,
-    sequence: i64,
-    source: String,
-    kind: String,
-    payload_json: String,
-    occurred_at: DateTime<Utc>,
-}
-
 pub async fn submit_events(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
@@ -1099,39 +1085,16 @@ pub async fn submit_events(
             LIMITS.event_batch_count_max,
         ));
     }
-    let prepared: Vec<PreparedEvent> = request
+    if request
         .events
-        .into_iter()
-        .map(|event| -> runner_auth::ProtocolResult<PreparedEvent> {
-            if json_byte_len(&event.payload) > LIMITS.event_payload_bytes_max {
-                return Err(payload_too_large(
-                    "event_payload_bytes_max",
-                    LIMITS.event_payload_bytes_max,
-                ));
-            }
-            let payload_json = serde_json::to_string(&event.payload)
-                .map_err(|_| internal_error("Could not encode event payload"))?;
-            Ok(PreparedEvent {
-                event_id: event.event_id,
-                sequence: event.sequence,
-                source: event.source,
-                kind: event.kind,
-                payload_json,
-                occurred_at: event.occurred_at,
-            })
-        })
-        .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
-    let reported: Vec<ReportedEvent> = prepared
         .iter()
-        .map(|prepared| ReportedEvent {
-            event_id: &prepared.event_id,
-            sequence: prepared.sequence,
-            source: &prepared.source,
-            kind: &prepared.kind,
-            payload_json: &prepared.payload_json,
-            occurred_at: prepared.occurred_at,
-        })
-        .collect();
+        .any(|event| json_byte_len(&event.payload) > LIMITS.event_payload_bytes_max)
+    {
+        return Err(payload_too_large(
+            "event_payload_bytes_max",
+            LIMITS.event_payload_bytes_max,
+        ));
+    }
 
     let result = tack_app::runs::report_events::report_events(
         &state.repo,
@@ -1142,7 +1105,7 @@ pub async fn submit_events(
             fencing_token,
             previous_checkpoint: previous_checkpoint.as_ref(),
             checkpoint: &checkpoint,
-            events: &reported,
+            events: &request.events,
         },
     )
     .await
@@ -1273,26 +1236,12 @@ pub async fn create_decision(
     if let Some(recommendation) = &recommendation {
         validate_decision_recommendation(recommendation, &options)?;
     }
-    let metadata = Value::Object(metadata);
     if json_byte_len(&metadata) > LIMITS.metadata_bytes_max {
         return Err(payload_too_large(
             "metadata_bytes_max",
             LIMITS.metadata_bytes_max,
         ));
     }
-    // The application layer stores the question's options and recommendation as the JSON the
-    // board shows; its typed form is the next step of the store (see the roadmap card F).
-    let options = options
-        .iter()
-        .map(serde_json::to_value)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| internal_error("Could not encode decision options"))?;
-    let recommendation = recommendation
-        .as_ref()
-        .map(serde_json::to_value)
-        .transpose()
-        .map_err(|_| internal_error("Could not encode decision recommendation"))?;
-
     let created = tack_app::runs::create_decision::create_decision(
         &state.repo,
         state.clock.now(),
@@ -1741,23 +1690,15 @@ pub async fn submit_completion(
                 "terminal_state must be succeeded, failed, or cancelled",
             )
         })?;
-    let terminal_reason = request.terminal_reason;
-    if !terminal_reason.is_object() {
+    let Value::Object(terminal_reason) = request.terminal_reason else {
         return Err(invalid_request(
             "terminal_reason",
             "terminal_reason must be an object",
         ));
-    }
+    };
     let actual_execution = request.actual_execution;
     let usage = request.usage;
     let final_event_checkpoint = request.final_event_checkpoint;
-
-    let terminal_reason_json = serde_json::to_string(&terminal_reason)
-        .map_err(|_| internal_error("Could not encode terminal_reason"))?;
-    let actual_execution_json = serde_json::to_string(&actual_execution)
-        .map_err(|_| internal_error("Could not encode actual_execution"))?;
-    let usage_json =
-        serde_json::to_string(&usage).map_err(|_| internal_error("Could not encode usage"))?;
 
     let storage = state.artifact_storage.as_ref();
     let completed = tack_app::runs::complete::complete(
@@ -1770,9 +1711,9 @@ pub async fn submit_completion(
             completion_id: &completion_id,
             final_event_checkpoint: final_event_checkpoint.as_ref(),
             terminal_state,
-            terminal_reason_json: &terminal_reason_json,
-            actual_execution_json: &actual_execution_json,
-            usage_json: &usage_json,
+            terminal_reason: &terminal_reason,
+            actual_execution: &actual_execution,
+            usage: &usage,
         },
         |reference: String| async move { read_pack(storage, &reference).await },
     )

@@ -210,6 +210,10 @@ automation a template carries, and the removal of dollars per day.
 - **A recovery observation is stored as the protocol's type.** The store takes a runner's recovery details as the
   protocol's `RecoveryDetails` and encodes them itself, and the lease sweep writes `lease_expired` as a real journal
   state of the protocol (`RecoveryJournalState::LeaseExpired`) instead of a code string dressed as one.
+- **The rest of what the store was handed as JSON text is the protocol's type.** A completion's `actual_execution` and
+  `usage`, an event's payload, a decision's options, metadata and recommendation, and a heartbeat's journal state cross
+  from the handler to the store as the protocol's values and are encoded inside the store. A report whose body the
+  protocol could not read was already refused with 400; nothing a runner sends changes.
 - **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
   the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
   the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as

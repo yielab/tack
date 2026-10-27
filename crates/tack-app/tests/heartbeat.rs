@@ -2,13 +2,14 @@
 //! the runner no longer holds is refused.
 
 use crate::common;
-use tack_protocol::execution::ExecutionState;
-use tack_protocol::execution::{ClaimRequestId, FencingToken, RunnerId};
+use tack_protocol::execution::{
+    ActiveAttempt, ClaimRequestId, ExecutionState, FencingToken, RecoveryJournalState, RunnerId,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use common::{RUNNER_ID, enqueue, world};
 use tack_app::runs::claim::claim;
-use tack_app::runs::heartbeat::{Beat, Heartbeat, ReportedLease, heartbeat};
+use tack_app::runs::heartbeat::{Beat, Heartbeat, heartbeat};
 use tack_protocol::Clock;
 
 async fn beat(
@@ -16,7 +17,7 @@ async fn beat(
     sent_at: DateTime<Utc>,
     heartbeat_id: &str,
     available_capacity: i64,
-    leases: &[ReportedLease],
+    leases: &[ActiveAttempt],
 ) -> Heartbeat {
     heartbeat(
         &world.repo,
@@ -77,11 +78,11 @@ async fn a_lease_with_the_wrong_fence_is_stale() {
     .await
     .expect("claim")
     .expect("work");
-    let lease = ReportedLease {
+    let lease = ActiveAttempt {
         attempt_id: claimed.lease.attempt_id.clone(),
         fencing_token: FencingToken::new(claimed.lease.fencing_token.get() + 1),
         state: ExecutionState::Leased,
-        journal_state: "prepared".into(),
+        journal_state: RecoveryJournalState::Prepared,
         last_event_checkpoint: None,
     };
 

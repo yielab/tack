@@ -2,10 +2,11 @@
 //! protocol that keeps a lease alive.
 
 use crate::repository::execution_fixture::{Fixture, recovery_input, request};
-use tack_protocol::execution::ExecutionState;
+use serde_json::json;
 use tack_protocol::execution::{
     AttemptId, Checkpoint, ExecutionRequestId, FencingToken, RunnerId, WorkspaceId,
 };
+use tack_protocol::execution::{ExecutionState, RecoveryJournalState};
 
 use chrono::Duration;
 use sqlx::Row;
@@ -197,7 +198,7 @@ async fn queue_and_history_indexes_are_used() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: "{}",
+        payload: &json!({}),
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
@@ -374,7 +375,7 @@ async fn heartbeat_frozen_request_mutations_conflict_without_write() {
             ..leases[0].clone()
         }],
         [HeartbeatLease {
-            journal_state: "spawned",
+            journal_state: RecoveryJournalState::ProcessObservedRunning,
             ..leases[0].clone()
         }],
         [HeartbeatLease {

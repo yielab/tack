@@ -6,6 +6,7 @@
 
 use tack_api::handlers::decisions;
 use tack_protocol::Clock;
+use tack_protocol::execution::DecisionOption;
 
 use std::sync::{Arc, Mutex};
 
@@ -108,7 +109,7 @@ async fn seed_decision(
         RUNNER_ID,
         attempt_id,
         decision_id,
-        &options.to_string(),
+        &serde_json::from_value::<Vec<DecisionOption>>(options).expect("decision options"),
         expires_at,
     )
     .await;

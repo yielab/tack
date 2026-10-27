@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use tack_db::Repository;
 use tack_db::queries::{execution_attempts, execution_decisions, execution_requests};
 use tack_protocol::Clock;
-use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{DecisionOption, ExecutionState};
 use tack_test_support::{ControllableClock, create_test_workspace, make_item, make_project, seed};
 
 pub const RUNNER_ID: &str = "runner-decisions";
@@ -65,7 +65,7 @@ pub async fn pending_decision(
         RUNNER_ID,
         attempt_id,
         decision_id,
-        &two_options().to_string(),
+        &serde_json::from_value::<Vec<DecisionOption>>(two_options()).expect("two options"),
         expires_at,
     )
     .await;

@@ -16,8 +16,8 @@ use crate::{Repository, StoreError};
 use tack_core::models::UpdateItem;
 use tack_core::workflow::WorkflowConfig;
 use tack_protocol::execution::{
-    self, AttemptId, CancellationRequestId, Checkpoint, CompletionId, ExecutionRequestId,
-    ExecutionState, FencingToken, RunnerId, WorkspaceId,
+    self, ActualExecution, AttemptId, CancellationRequestId, Checkpoint, CompletionId,
+    ExecutionRequestId, ExecutionState, FencingToken, RunnerId, Usage, WorkspaceId,
 };
 use uuid::Uuid;
 
@@ -62,9 +62,12 @@ pub struct Completion<'a> {
     pub completion_id: &'a CompletionId,
     pub final_event_checkpoint: Option<&'a Checkpoint>,
     pub terminal_state: ExecutionState,
-    pub terminal_reason: &'a str,
-    pub actual_execution: &'a str,
-    pub usage: &'a str,
+    /// An object the harness adapter fills (`code`, `message`, and whatever else that harness
+    /// can say, such as the staged artifacts). Its keys are open, so it stays a JSON object: the
+    /// board stores and shows it and branches on only the few keys it names where it reads them.
+    pub terminal_reason: &'a serde_json::Map<String, serde_json::Value>,
+    pub actual_execution: &'a ActualExecution,
+    pub usage: &'a Usage,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,18 +158,17 @@ pub enum CompletionResult {
     Stale,
 }
 
-fn canonical_json_or_string(value: &str) -> serde_json::Value {
-    match serde_json::from_str(value) {
-        Ok(value) => canonical_json(value),
-        Err(_) => serde_json::Value::String(value.into()),
-    }
+fn encode(value: &impl serde::Serialize) -> Result<String, StoreError> {
+    serde_json::to_string(value).map_err(|error| StoreError::malformed(error.to_string()))
+}
+
+fn canonical_value(value: &impl serde::Serialize) -> Result<serde_json::Value, StoreError> {
+    serde_json::to_value(value)
+        .map(canonical_json)
+        .map_err(|error| StoreError::malformed(error.to_string()))
 }
 
 fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreError> {
-    let actual_execution: serde_json::Value = serde_json::from_str(completion.actual_execution)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
-    let usage: serde_json::Value = serde_json::from_str(completion.usage)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
     serde_json::to_string(&serde_json::json!({
         "runner_id": completion.runner_id.as_str(),
         "attempt_id": completion.attempt_id.as_str(),
@@ -174,9 +176,9 @@ fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreEr
         "completion_id": completion.completion_id.as_str(),
         "final_event_checkpoint": completion.final_event_checkpoint.map(Checkpoint::as_str),
         "terminal_state": completion.terminal_state,
-        "terminal_reason": canonical_json_or_string(completion.terminal_reason),
-        "actual_execution": canonical_json(actual_execution),
-        "usage": canonical_json(usage),
+        "terminal_reason": canonical_value(completion.terminal_reason)?,
+        "actual_execution": canonical_value(completion.actual_execution)?,
+        "usage": canonical_value(completion.usage)?,
     }))
     .map_err(|error| StoreError::malformed(error.to_string()))
 }
@@ -291,6 +293,11 @@ impl Repository {
         let now = now.to_rfc3339();
         let fencing_token = token_column(completion.fencing_token)?;
         let fingerprint = completion_fingerprint(&completion)?;
+        let (terminal_reason, actual_execution, usage) = (
+            encode(completion.terminal_reason)?,
+            encode(completion.actual_execution)?,
+            encode(completion.usage)?,
+        );
         // A follow-up run Tack built wrong is dropped with a warning rather than failing the
         // completion for good: the runner would only report the same thing again.
         let rework = follow_ups.rework.and_then(|rework| {
@@ -358,7 +365,7 @@ impl Repository {
         let runner: String = row.get("runner_id");
         let guard = Move::Finish(completion.terminal_state).guard();
         let updated = sqlx::query(sqlx::AssertSqlSafe(format!("UPDATE execution_attempts SET state=?,completion_id=?,terminal_reason=?,actual_execution=?,usage=?,ended_at=?,updated_at=? WHERE id=? AND runner_id=? AND fencing_token=? AND event_checkpoint IS ? AND {guard} AND lease_expires_at > ?")))
-            .bind(state::text(completion.terminal_state)).bind(completion.completion_id.as_str()).bind(completion.terminal_reason).bind(completion.actual_execution).bind(completion.usage).bind(&now).bind(&now).bind(completion.attempt_id.as_str()).bind(completion.runner_id.as_str()).bind(fencing_token).bind(completion.final_event_checkpoint.map(Checkpoint::as_str)).bind(&now).execute(&mut *tx).await?;
+            .bind(state::text(completion.terminal_state)).bind(completion.completion_id.as_str()).bind(terminal_reason).bind(actual_execution).bind(usage).bind(&now).bind(&now).bind(completion.attempt_id.as_str()).bind(completion.runner_id.as_str()).bind(fencing_token).bind(completion.final_event_checkpoint.map(Checkpoint::as_str)).bind(&now).execute(&mut *tx).await?;
         if updated.rows_affected() != 1 {
             // Defensive: near-unreachable under the BEGIN IMMEDIATE this
             // function already opens, but a lost compare-and-set is a

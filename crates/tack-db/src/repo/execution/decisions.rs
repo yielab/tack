@@ -2,7 +2,9 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
-use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken, RunnerId};
+use tack_protocol::execution::{
+    AttemptId, DecisionOption, DecisionRecommendation, ExecutionState, FencingToken, RunnerId,
+};
 use tracing::instrument;
 
 use super::shared::{mirror_request_state, token_column};
@@ -16,11 +18,12 @@ pub struct NewDecision<'a> {
     pub decision_id: &'a str,
     pub kind: &'a str,
     pub prompt: &'a str,
-    pub options: &'a str,
-    pub metadata: &'a str,
+    pub options: &'a [DecisionOption],
+    /// What the harness says about the question, stored as the JSON object it was sent as.
+    pub metadata: &'a serde_json::Map<String, serde_json::Value>,
     pub expires_at: Option<DateTime<Utc>>,
-    /// The runner's recommended option as JSON, stored in `recommendation`.
-    pub recommendation: Option<&'a str>,
+    /// The runner's recommended option.
+    pub recommendation: Option<&'a DecisionRecommendation>,
 }
 
 /// The `resolved_by` of a decision that expired because its attempt ended.
@@ -149,6 +152,14 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         let now = now.to_rfc3339();
+        let malformed = |error: serde_json::Error| StoreError::malformed(error.to_string());
+        let options = serde_json::to_string(decision.options).map_err(malformed)?;
+        let metadata = serde_json::to_string(decision.metadata).map_err(malformed)?;
+        let recommendation = decision
+            .recommendation
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(malformed)?;
         // Serialize the eligibility check and the insert against a concurrent
         // completion, cancellation, or recovery transition for the same
         // attempt (all of which already open BEGIN IMMEDIATE). Without this,
@@ -164,7 +175,7 @@ impl Repository {
             return Ok(false);
         }
         sqlx::query("INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, options, metadata, expires_at, recommendation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(attempt_id, decision_id) DO NOTHING")
-        .bind(decision.id).bind(attempt_id.as_str()).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(decision.options).bind(decision.metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(decision.recommendation).bind(&now).bind(&now).execute(&mut *tx).await?;
+        .bind(decision.id).bind(attempt_id.as_str()).bind(decision.decision_id).bind(decision.kind).bind(decision.prompt).bind(options).bind(metadata).bind(decision.expires_at.map(|v| v.to_rfc3339())).bind(recommendation).bind(&now).bind(&now).execute(&mut *tx).await?;
         park_attempt_on_pending_decision(&mut tx, attempt_id, &now).await?;
         tx.commit().await?;
         Ok(true)

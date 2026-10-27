@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use tack_protocol::execution::{
     AttemptId, Checkpoint, ClaimRequestId, ExecutionRequestId, ExecutionState, FencingToken,
-    RunnerId,
+    RecoveryJournalState, RunnerId,
 };
 use tracing::instrument;
 
@@ -254,7 +254,7 @@ pub struct HeartbeatLease<'a> {
     pub attempt_id: &'a AttemptId,
     pub fencing_token: FencingToken,
     pub state: ExecutionState,
-    pub journal_state: &'a str,
+    pub journal_state: RecoveryJournalState,
     pub last_event_checkpoint: Option<&'a Checkpoint>,
 }
 
@@ -263,7 +263,7 @@ pub struct HeartbeatLeaseResponse {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub state: ExecutionState,
-    pub journal_state: String,
+    pub journal_state: RecoveryJournalState,
     pub last_event_checkpoint: Option<Checkpoint>,
     pub lease_expires_at: DateTime<Utc>,
     pub cancellation_requested: bool,
@@ -305,7 +305,7 @@ fn heartbeat_fingerprint(
                 lease.attempt_id.as_str(),
                 lease.fencing_token.get(),
                 state::text(lease.state),
-                lease.journal_state,
+                lease.journal_state.as_str(),
                 lease.last_event_checkpoint.map(Checkpoint::as_str),
             )
         })
@@ -374,7 +374,15 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                         )
                     })?,
                 state: state::parse(&required_string(value, "state")?)?,
-                journal_state: required_string(value, "journal_state")?,
+                journal_state: serde_json::from_value(
+                    value
+                        .get("journal_state")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                )
+                .map_err(|_| {
+                    StoreError::malformed("invalid heartbeat replay response field: journal_state")
+                })?,
                 last_event_checkpoint: match value.get("last_event_checkpoint") {
                     Some(serde_json::Value::Null) => None,
                     Some(serde_json::Value::String(value)) => Some(Checkpoint::new(value.clone())),
@@ -715,7 +723,7 @@ impl Repository {
                 attempt_id: lease.attempt_id.clone(),
                 fencing_token: lease.fencing_token,
                 state: lease.state,
-                journal_state: lease.journal_state.into(),
+                journal_state: lease.journal_state,
                 last_event_checkpoint: lease.last_event_checkpoint.cloned(),
                 lease_expires_at: expires,
                 cancellation_requested: cancellation.is_some(),
@@ -734,7 +742,7 @@ impl Repository {
                 "attempt_id": lease.attempt_id.as_str(),
                 "fencing_token": lease.fencing_token.get(),
                 "state": state::text(lease.state),
-                "journal_state": lease.journal_state,
+                "journal_state": lease.journal_state.as_str(),
                 "last_event_checkpoint": lease.last_event_checkpoint.as_ref().map(Checkpoint::as_str),
                 "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
                 "cancellation_requested": lease.cancellation_requested,
