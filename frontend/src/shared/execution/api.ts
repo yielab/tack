@@ -495,6 +495,8 @@ export interface MrpPack {
   } | null;
   risk: { tier: 'low' | 'medium' | 'high'; reasons: string[] };
   recommendation: { decision: 'merge' | 'review' | 'reject'; rationale: string };
+  /** Whether the verifier signed the pack, and the hash of the statement it signed. */
+  signature: { kind: 'none' } | { kind: 'in-toto'; statement_sha256: string };
   /** What to do next, when the verifier says. Absent from an older pack. */
   next_steps?: MrpNextStep[];
 }

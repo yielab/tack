@@ -27,8 +27,10 @@
 //!    and message.
 //!
 //! prill's own `mrp.json` and `mrp.md` stay in `<evidence>/prill/`, beside
-//! the documents it was given, for a person who wants the untranslated pack;
-//! only the translated `mrp.json` is uploaded.
+//! the documents it was given. The pack as prill printed it is also uploaded,
+//! unchanged, as `mrp.prill.json` ([`ORIGINAL_FILE`]) next to the translated
+//! `mrp.json`: the board hands that one, never the translation, to
+//! `prill record mrp`.
 
 use std::{fs, path::Path, process::Stdio, time::Duration};
 
@@ -62,6 +64,14 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(600);
 /// The in-toto envelope prill writes beside its pack when it signs, and the
 /// name it is staged under.
 pub(super) const ENVELOPE_FILE: &str = "mrp.intoto.json";
+
+/// The name prill's own pack is staged under, byte for byte as prill printed
+/// it, beside the translated `mrp.json`. prill's `record mrp` takes only this
+/// one: the translation is Tack's view of it, derived for display.
+pub(super) const ORIGINAL_FILE: &str = "mrp.prill.json";
+
+/// The media type of the staged pack as prill produced it.
+pub(super) const ORIGINAL_MEDIA_TYPE: &str = "application/vnd.prill.mrp+json";
 
 /// The name under `<evidence>` holding prill's documents and its own pack.
 const PRILL_DIR: &str = "prill";
@@ -213,6 +223,12 @@ pub(super) async fn run(
         failure(
             Some(exit_code),
             format!("prill exited with a pack status but printed none: {stderr}"),
+        )
+    })?;
+    fs::write(evidence.join(ORIGINAL_FILE), &printed).map_err(|_| {
+        failure(
+            Some(exit_code),
+            "prill's own pack could not be written for the upload",
         )
     })?;
     let mut translated = pack(

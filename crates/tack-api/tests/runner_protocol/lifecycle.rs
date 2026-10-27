@@ -576,41 +576,46 @@ fn artifact_body(
     .to_string()
 }
 
-/// A completion that carries a pack hands it to prill once: `prill record mrp
-/// --db <storage>/prill/acme__widgets.db mrp.json`, and a second try does not
-/// run prill again.
-#[tokio::test]
-async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
+/// The directory of the pack fixtures of `docs/contracts/mrp-v1`.
+fn contract_fixtures() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/contracts/mrp-v1/fixtures")
+}
+
+/// A board whose item is linked to `acme/widgets` and whose prill is a script that logs its
+/// arguments to `<root>/prill.log` and keeps a copy of the pack it was handed in
+/// `<root>/received.json`. The pack prill produced is stored as `prill-pack.json` and Tack's
+/// translation of it as `pack.json`.
+fn prill_board(fx: &mut Fixture, root: &std::path::Path) -> tack_api::AppState {
     use std::os::unix::fs::PermissionsExt;
-    let mut fx = Fixture::new().await;
-    let root = tempfile::tempdir().unwrap();
     let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prill");
-    let log = root.path().join("prill.log");
-    std::fs::create_dir_all(root.path().join("bin")).unwrap();
-    let script = root.path().join("bin/prill");
+    std::fs::create_dir_all(root.join("bin")).unwrap();
+    let script = root.join("bin/prill");
     std::fs::write(
         &script,
         format!(
-            "#!/bin/sh\necho \"$@\" >> '{}'\ncat '{}/record-mrp.stderr' >&2\n",
-            log.display(),
+            "#!/bin/sh\necho \"$@\" >> '{}'\ncp \"$5\" '{}'\ncat '{}/record-mrp.stderr' >&2\n",
+            root.join("prill.log").display(),
+            root.join("received.json").display(),
             fixtures.display()
         ),
     )
     .unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let blobs = root.path().join("execution-artifacts");
+    let blobs = root.join("execution-artifacts");
     std::fs::create_dir_all(&blobs).unwrap();
-    std::fs::copy(fixtures.join("mrp.json"), blobs.join("pack.json")).unwrap();
+    let contracts = contract_fixtures();
+    std::fs::copy(
+        contracts.join("prill/m2-sections.json"),
+        blobs.join("prill-pack.json"),
+    )
+    .unwrap();
+    std::fs::copy(contracts.join("ready.json"), blobs.join("pack.json")).unwrap();
 
-    fx.repo
-        .set_github_link(fx.item_id.parse().unwrap(), "acme/widgets", 42)
-        .await
-        .unwrap();
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
     let app = tack_api::AppState {
         repo: fx.repo.clone(),
         config: tack_api::config::AppConfig {
-            storage_dir: root.path().to_string_lossy().into_owned(),
+            storage_dir: root.to_string_lossy().into_owned(),
             prill_program: script.display().to_string(),
             ..tack_api::config::AppConfig::default()
         },
@@ -626,6 +631,22 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
             .with_app_state(app.clone()),
         usize::MAX,
     );
+    app
+}
+
+/// A completion that carries a pack hands prill its own pack once: `prill record mrp
+/// --db <storage>/prill/acme__widgets.db mrp.json`, byte for byte as the verifier produced it
+/// and not the translation Tack shows, and a second try does not run prill again.
+#[tokio::test]
+async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
+    let mut fx = Fixture::new().await;
+    let root = tempfile::tempdir().unwrap();
+    let log = root.path().join("prill.log");
+    fx.repo
+        .set_github_link(fx.item_id.parse().unwrap(), "acme/widgets", 42)
+        .await
+        .unwrap();
+    let app = prill_board(&mut fx, root.path());
 
     let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("mrp-key", "claim-mrp").await;
     seed::execution_pack_artifact(
@@ -633,6 +654,14 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
         &attempt_id,
         "mrp-1",
         "pack.json",
+        "2026-08-06T12:00:00Z",
+    )
+    .await;
+    seed::execution_prill_pack_artifact(
+        &fx.repo,
+        &attempt_id,
+        "mrp-prill-1",
+        "prill-pack.json",
         "2026-08-06T12:00:00Z",
     )
     .await;
@@ -653,6 +682,11 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
     assert_eq!(logged.lines().count(), 1, "{logged}");
     assert!(logged.starts_with(&prefix), "{logged}");
     assert!(logged.trim_end().ends_with("/mrp.json"), "{logged}");
+    assert_eq!(
+        std::fs::read(root.path().join("received.json")).unwrap(),
+        std::fs::read(contract_fixtures().join("prill/m2-sections.json")).unwrap(),
+        "prill is given the pack as prill produced it, not Tack's translation"
+    );
 
     // The attempt is recorded; asking again, or replaying the completion, runs nothing.
     tack_api::prill_store::record_mrp(&app, &attempt_id).await;
@@ -661,6 +695,30 @@ async fn a_completion_with_a_pack_records_it_in_prills_store_once() {
         .await;
     assert_eq!(replayed["replayed"], true);
     assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 1);
+}
+
+/// A pack Tack holds only in its own shape (the verifier was not prill) has nothing prill can
+/// take, so prill is not run with the translation.
+#[tokio::test]
+async fn a_pack_with_no_prill_original_is_not_handed_to_prill() {
+    let mut fx = Fixture::new().await;
+    let root = tempfile::tempdir().unwrap();
+    fx.repo
+        .set_github_link(fx.item_id.parse().unwrap(), "acme/widgets", 42)
+        .await
+        .unwrap();
+    let app = prill_board(&mut fx, root.path());
+    let (_, attempt_id, _) = fx.enqueue_and_claim("mrp-key", "claim-mrp").await;
+    seed::execution_pack_artifact(
+        &fx.repo,
+        &attempt_id,
+        "mrp-1",
+        "pack.json",
+        "2026-08-06T12:00:00Z",
+    )
+    .await;
+    tack_api::prill_store::record_mrp(&app, &attempt_id).await;
+    assert!(!root.path().join("prill.log").exists());
 }
 
 fn completion_body(

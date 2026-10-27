@@ -69,15 +69,18 @@ pub async fn domain_counts(
     Ok(rows.into_iter().map(|(d, m, u)| (d, (m, u))).collect())
 }
 
-/// The profiles a project's roles point at, as (profile name, docket team).
-pub async fn role_profile_teams(
+/// The profiles a project's tasks run with, as (profile name, docket team): the profile of each
+/// role, and the project's default profile, which a task with no role runs with.
+pub async fn project_profile_teams(
     repo: &Repository,
     project_id: &str,
 ) -> Result<Vec<(String, Option<String>)>, StoreError> {
     Ok(sqlx::query_as(
         "SELECT DISTINCT p.name, json_extract(p.tool_policy, '$.docket.team')
-         FROM roles r JOIN agent_profiles p ON p.id = r.agent_profile_id
-         WHERE r.project_id = ? ORDER BY p.name",
+         FROM agent_profiles p
+         WHERE p.id IN (SELECT agent_profile_id FROM roles WHERE project_id = ?1)
+            OR p.id = (SELECT default_profile_id FROM projects WHERE id = ?1)
+         ORDER BY p.name",
     )
     .bind(project_id)
     .fetch_all(repo.pool())

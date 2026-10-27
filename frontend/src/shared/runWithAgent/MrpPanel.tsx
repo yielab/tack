@@ -3,7 +3,7 @@ import { Badge, Button, Field } from '../ui';
 import type { BadgeTone } from '../ui';
 import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
-import { mrpApi, type MrpCriterionStatus, type MrpReview } from '../execution/api';
+import { mrpApi, type MrpCriterionStatus, type MrpPack, type MrpReview } from '../execution/api';
 import type { AttemptMerge } from '../execution/attempts';
 import { LEVEL_MEANING } from '../help/texts';
 
@@ -85,6 +85,23 @@ const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
 
 const mono = { 'font-family': 'var(--font-mono)' } as const;
 
+/** Whether the verifier signed the pack, in plain words; the pack names no key, only what was signed. */
+const SignatureState: Component<{ signature: MrpPack['signature'] | undefined }> = (props) => (
+  <p data-testid="mrp-signature" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+    <Show
+      when={props.signature?.kind === 'in-toto' ? props.signature : null}
+      fallback={<>Not signed: the verifier put no signature on this pack.</>}
+    >
+      {(signed) => (
+        <>
+          Signed by the verifier. What it signed has the fingerprint{' '}
+          <span style={mono}>{signed().statement_sha256.slice(0, 12)}</span>.
+        </>
+      )}
+    </Show>
+  </p>
+);
+
 /**
  * The verifier's merge-readiness pack for one attempt, with the accept /
  * reject verdict. A section the verifier did not run says "Not run".
@@ -162,6 +179,8 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                   </ul>
                 </Show>
               </div>
+
+              <SignatureState signature={pack().signature} />
 
               <Show when={props.merge}>{(m) => <MergeState merge={m()} />}</Show>
 

@@ -375,6 +375,16 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The "No role" row of Settings → Automation counts the project's default profile.** The page listed only the teams of
+  the project's roles, so a task with no role, which runs with the default profile, showed no team state and its team
+  did not hold the ceiling. That profile's team is listed and holds the ceiling like any role's.
+- **The pack card says whether the pack is signed.** It showed the verdict, the criteria and the review but never
+  that the verifier had signed the pack. It now reads "Signed by the verifier" with the fingerprint of what was
+  signed, or "Not signed" when the pack carries no signature.
+- **The board can record a pack in prill's store.** `prill record mrp` was handed the pack Tack shows, a translation
+  prill refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now also uploads the
+  pack as prill printed it (`mrp.prill.json`), and the board hands prill that one. A run whose verifier was not
+  prill, or one made before this change, holds no such pack and is not recorded.
 - **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
   published since the last run); only the lockfile changes.
 - **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored

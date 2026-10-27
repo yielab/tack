@@ -612,6 +612,30 @@ pub async fn execution_pack_artifact(
     .expect("seed execution_artifacts pack");
 }
 
+/// The Merge-Readiness Pack of `attempt_id` exactly as prill produced it (its own `mrp/v1`,
+/// not the pack Tack shows), stored at `content_reference`.
+pub async fn execution_prill_pack_artifact(
+    repo: &Repository,
+    attempt_id: &str,
+    artifact_id: &str,
+    content_reference: &str,
+    created_at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_artifacts \
+         (id, attempt_id, artifact_id, kind, name, media_type, size_bytes, sha256, content_reference, created_at) \
+         VALUES (?, ?, ?, 'mrp_prill', 'mrp.prill.json', 'application/vnd.prill.mrp+json', 1, 'x', ?, ?)",
+    )
+    .bind(format!("art_row_{}", Uuid::new_v4()))
+    .bind(attempt_id)
+    .bind(artifact_id)
+    .bind(content_reference)
+    .bind(created_at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_artifacts prill pack");
+}
+
 /// Sets the status a project moves an item to when a run leaves evidence.
 pub async fn project_on_finish_status(repo: &Repository, project_id: &str, status: &str) {
     sqlx::query("UPDATE projects SET on_finish_status = ? WHERE id = ?")
