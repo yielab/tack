@@ -174,6 +174,9 @@ pub enum HarnessError {
     Rejected { reason: String },
     #[error("harness process operation failed")]
     Process,
+    /// A file operation the harness needed failed; the kind says how, never the path.
+    #[error("harness file operation failed: {0}")]
+    Io(crate::error::IoKind),
     #[error("harness recovery observation is unavailable")]
     RecoveryUnavailable,
     #[error("this harness cannot take hold of a run that outlived the runner")]

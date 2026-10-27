@@ -34,6 +34,8 @@ use tack_protocol::execution::{
 };
 use tokio::sync::mpsc;
 
+use crate::error::IoKind;
+
 use crate::{
     Clock,
     client::AttemptState,
@@ -829,7 +831,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         )?);
 
         let scratch = self.scratch_dir(spec);
-        std::fs::create_dir_all(&scratch).map_err(|_| HarnessError::Process)?;
+        std::fs::create_dir_all(&scratch)
+            .map_err(|error| HarnessError::Io(IoKind(error.kind())))?;
         let invocation = self.grammar.invocation(&RunContext {
             spec,
             scratch: &scratch,
@@ -856,7 +859,8 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         };
         for (_, destination) in shared() {
             if let Some(parent) = destination.parent() {
-                std::fs::create_dir_all(parent).map_err(|_| HarnessError::Process)?;
+                std::fs::create_dir_all(parent)
+                    .map_err(|error| HarnessError::Io(IoKind(error.kind())))?;
             }
         }
         let (program, args) = match self.sandbox.wrap(
@@ -875,7 +879,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
                 #[cfg(unix)]
                 for (source, destination) in shared() {
                     std::os::unix::fs::symlink(source, destination)
-                        .map_err(|_| HarnessError::Process)?;
+                        .map_err(|error| HarnessError::Io(IoKind(error.kind())))?;
                 }
                 (program, args)
             }
