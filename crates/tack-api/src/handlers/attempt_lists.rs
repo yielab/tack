@@ -25,6 +25,7 @@ use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
 use utoipa::ToSchema;
 
 use super::executions::OperatorExecutionState;
+use crate::error::log_store_failure;
 
 /// Static request-correlation id placeholder, matching
 /// `executions::OPERATOR_REQUEST_ID`'s own convention — no per-request
@@ -361,7 +362,7 @@ pub async fn review_execution_attempt(
         )
         .await
         .map_err(|failure| match failure {
-            StoreError::NotFound => error(
+            StoreError::NotFound { .. } => error(
                 StatusCode::NOT_FOUND,
                 StableErrorCode::NotFound,
                 "Attempt does not exist",
@@ -373,12 +374,15 @@ pub async fn review_execution_attempt(
                 "This attempt already has a verdict",
                 json!({"reason": reason}),
             ),
-            StoreError::Sql(_) => error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not record the review",
-                json!({}),
-            ),
+            failure @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&failure);
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not record the review",
+                    json!({}),
+                )
+            }
         })?;
     let pull_request_url = match (input.verdict.as_str(), state.app.clone()) {
         ("accepted", Some(app)) => {

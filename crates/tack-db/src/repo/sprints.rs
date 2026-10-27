@@ -1,4 +1,4 @@
-use crate::StoreError;
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -58,7 +58,7 @@ impl Repository {
         .fetch_optional(self.pool())
         .await?;
 
-        Ok(row.map(|r| r.into_sprint()))
+        row.map(SprintRow::into_sprint).transpose()
     }
 
     #[instrument(skip(self))]
@@ -71,7 +71,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_sprint()).collect())
+        rows.into_iter().map(SprintRow::into_sprint).collect()
     }
 
     /// Replaces a sprint's editable fields and returns the stored row, or
@@ -136,30 +136,19 @@ struct SprintRow {
 }
 
 impl SprintRow {
-    fn into_sprint(self) -> Sprint {
-        Sprint {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            project_id: Uuid::parse_str(&self.project_id).unwrap(),
+    fn into_sprint(self) -> Result<Sprint, StoreError> {
+        const TABLE: &str = "sprints";
+        Ok(Sprint {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
             name: self.name,
             goal: self.goal,
-            start_date: self.start_date.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            end_date: self.end_date.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
+            start_date: decode::optional_instant(TABLE, "start_date", self.start_date.as_deref())?,
+            end_date: decode::optional_instant(TABLE, "end_date", self.end_date.as_deref())?,
             status: parse_sprint_status(&self.status),
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-        }
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
     }
 }
 

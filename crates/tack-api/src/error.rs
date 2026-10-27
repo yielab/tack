@@ -118,10 +118,10 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, message)
             }
             ApiError::Store(err) => match err {
-                StoreError::NotFound => (StatusCode::NOT_FOUND, err.to_string()),
+                StoreError::NotFound { .. } => (StatusCode::NOT_FOUND, err.to_string()),
                 StoreError::Conflict(_) => (StatusCode::CONFLICT, err.to_string()),
-                StoreError::Sql(err) => {
-                    error!(error = %err, "Database error");
+                StoreError::Sql(_) | StoreError::Corrupt { .. } => {
+                    log_store_failure(err);
                     (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Internal server error".into(),
@@ -157,11 +157,26 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// Logs what a store call failed with when the client is told only "Internal server error": the
+/// database's own error, or the table and column of a stored value that could not be decoded with
+/// the reason it failed. Never the value.
+pub(crate) fn log_store_failure(failure: &StoreError) {
+    match failure {
+        StoreError::Corrupt {
+            table,
+            column,
+            source,
+        } => error!(table, column, error = %source, "A stored value could not be decoded"),
+        StoreError::Sql(failure) => error!(error = %failure, "Database error"),
+        StoreError::NotFound { .. } | StoreError::Conflict(_) => {}
+    }
+}
+
 impl From<tack_app::AppError> for ApiError {
     fn from(error: tack_app::AppError) -> Self {
         use tack_app::AppError;
         match error {
-            AppError::NotFound => ApiError::Store(StoreError::NotFound),
+            error @ AppError::NotFound => ApiError::NotFound(error.to_string()),
             AppError::Conflict(message) => ApiError::Conflict(message),
             error @ AppError::InvalidTransition { .. } => ApiError::BadRequest(error.to_string()),
             error @ AppError::StaleLease { .. } => ApiError::Conflict(error.to_string()),
@@ -194,7 +209,7 @@ mod tests {
         let failed = |kept| ApiError::SectionFailed {
             section: "roles",
             kept,
-            source: StoreError::NotFound,
+            source: StoreError::not_found("role"),
         };
         let (status, kept) = message_of(failed(true)).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -212,16 +227,26 @@ mod tests {
 
     #[tokio::test]
     async fn a_store_error_maps_to_the_status_the_store_raised() {
-        let (status, message) = message_of(StoreError::NotFound.into()).await;
+        let (status, message) = message_of(StoreError::not_found("item").into()).await;
         assert_eq!(
             (status, message.as_str()),
-            (StatusCode::NOT_FOUND, "not found")
+            (StatusCode::NOT_FOUND, "item not found")
         );
         let (status, message) =
             message_of(StoreError::Conflict("already_reviewed".into()).into()).await;
         assert_eq!(
             (status, message.as_str()),
             (StatusCode::CONFLICT, "conflict: already_reviewed")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_corrupt_stored_value_is_an_internal_error_that_does_not_name_the_column() {
+        let corrupt = StoreError::corrupt("items", "tags", "expected value at line 1 column 1");
+        let (status, message) = message_of(corrupt.into()).await;
+        assert_eq!(
+            (status, message.as_str()),
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
         );
     }
 

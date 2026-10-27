@@ -33,8 +33,7 @@ impl Default for ProjectBudgets {
 /// 00:00 UTC of `now`'s day, as the RFC 3339 text the tables store.
 pub(crate) fn day_start(now: DateTime<Utc>) -> String {
     now.date_naive()
-        .and_hms_opt(0, 0, 0)
-        .expect("midnight exists")
+        .and_time(chrono::NaiveTime::MIN)
         .and_utc()
         .to_rfc3339()
 }

@@ -161,19 +161,27 @@ pub fn text(state: ExecutionState) -> &'static str {
 
 /// Whether a column's text names a state in which an attempt holds a lease.
 pub fn is_live(text: &str) -> bool {
-    parse(text).is_ok_and(|state| execution::lease_held().contains(&state))
+    parse("execution_attempts", "state", text)
+        .is_ok_and(|state| execution::lease_held().contains(&state))
 }
 
 /// Whether a column's text names the state that waits for an operator.
 pub fn is_needs_operator(text: &str) -> bool {
-    matches!(parse(text), Ok(ExecutionState::NeedsOperator))
+    matches!(
+        parse("execution_attempts", "state", text),
+        Ok(ExecutionState::NeedsOperator)
+    )
 }
 
-/// The state a column's text names. Text that names none is a corrupt row, so
-/// it surfaces as a decode failure rather than a guess.
-pub fn parse(text: &str) -> Result<ExecutionState, StoreError> {
+/// The state the `column` of a `table` row names. Text that names none is a
+/// corrupt row, so it surfaces as `StoreError::Corrupt` rather than a guess.
+pub fn parse(
+    table: &'static str,
+    column: &'static str,
+    text: &str,
+) -> Result<ExecutionState, StoreError> {
     text.parse::<ExecutionState>()
-        .map_err(|unknown| sqlx::Error::Decode(Box::new(unknown)).into())
+        .map_err(|unknown| StoreError::corrupt(table, column, unknown))
 }
 
 #[cfg(test)]

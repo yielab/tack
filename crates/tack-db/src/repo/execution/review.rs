@@ -22,7 +22,7 @@ impl Repository {
         .bind(attempt_number)
         .fetch_optional(&mut *tx)
         .await?;
-        let attempt_id = attempt_id.ok_or(StoreError::NotFound)?;
+        let attempt_id = attempt_id.ok_or(StoreError::not_found("attempt"))?;
         let inserted = sqlx::query(
             "INSERT OR IGNORE INTO attempt_reviews (attempt_id, verdict, note, reviewed_at) VALUES (?, ?, ?, ?)",
         )

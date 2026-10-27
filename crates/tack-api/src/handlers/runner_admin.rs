@@ -22,6 +22,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::executions::{OperatorExecutionState, RunnerV1ErrorEnvelope, runner_is_online};
+use crate::error::log_store_failure;
 
 /// Static request-correlation id placeholder. No per-request correlation
 /// id is wired into these error envelopes yet.
@@ -903,18 +904,21 @@ pub async fn revoke_enrollment_token(
                 "Enrollment token was already consumed",
                 json!({}),
             ),
-            StoreError::NotFound => error(
+            StoreError::NotFound { .. } => error(
                 StatusCode::NOT_FOUND,
                 StableErrorCode::NotFound,
                 "Enrollment token does not exist",
                 json!({"resource": "enrollment_token"}),
             ),
-            StoreError::Sql(_) => error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not revoke enrollment token",
-                json!({}),
-            ),
+            err @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&err);
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not revoke enrollment token",
+                    json!({}),
+                )
+            }
         })?;
     Ok(Json(RevokeEnrollmentTokenResponse {
         protocol_version: 1,
@@ -1216,14 +1220,17 @@ pub async fn update_profile(
         .update_agent_profile(&id, patch, state.clock.now())
         .await
         .map_err(|err| match err {
-            StoreError::NotFound => profile_not_found(),
+            StoreError::NotFound { .. } => profile_not_found(),
             StoreError::Conflict(_) => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "Agent profile name already exists",
                 json!({}),
             ),
-            StoreError::Sql(_) => profile_db_error("Could not update agent profile"),
+            err @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&err);
+                profile_db_error("Could not update agent profile")
+            }
         })?;
     let row = agent_profiles::profile_by_id(&state.repo, &id)
         .await
@@ -1306,14 +1313,17 @@ pub async fn delete_profile(
         .delete_agent_profile(&id)
         .await
         .map_err(|err| match err {
-            StoreError::NotFound => profile_not_found(),
+            StoreError::NotFound { .. } => profile_not_found(),
             StoreError::Conflict(_) => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "A built-in agent profile cannot be deleted",
                 json!({"reason": "builtin_profile"}),
             ),
-            StoreError::Sql(_) => profile_db_error("Could not delete agent profile"),
+            err @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&err);
+                profile_db_error("Could not delete agent profile")
+            }
         })?;
     Ok(Json(json!({"agent_profile_id": id, "deleted": true})))
 }

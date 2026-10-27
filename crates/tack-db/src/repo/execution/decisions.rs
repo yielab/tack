@@ -152,7 +152,7 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
         let now = now.to_rfc3339();
-        let malformed = |error: serde_json::Error| StoreError::malformed(error.to_string());
+        let malformed = |error: serde_json::Error| StoreError::unwritable(error);
         let options = serde_json::to_string(decision.options).map_err(malformed)?;
         let metadata = serde_json::to_string(decision.metadata).map_err(malformed)?;
         let recommendation = decision

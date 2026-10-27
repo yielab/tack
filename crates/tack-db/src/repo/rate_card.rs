@@ -4,7 +4,7 @@
 use sqlx::AssertSqlSafe;
 use tack_core::rate_card::RateCard;
 
-use crate::{Repository, StoreError};
+use crate::{Repository, StoreError, decode};
 
 pub(crate) const KEY: &str = "rate_card";
 
@@ -89,7 +89,7 @@ pub async fn spend_by_model(
 impl Repository {
     /// Keep `card` as the rate card, replacing the one stored.
     pub async fn save_rate_card(&self, card: &RateCard) -> Result<(), StoreError> {
-        let value = serde_json::to_string(card).expect("a rate card serializes");
+        let value = decode::to_json(card)?;
         sqlx::query(
             "INSERT INTO app_meta (key, value) VALUES (?, ?)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",

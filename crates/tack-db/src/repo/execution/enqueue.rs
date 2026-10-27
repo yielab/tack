@@ -144,7 +144,11 @@ fn listing_row(row: sqlx::sqlite::SqliteRow) -> Result<ExecutionListingRow, Stor
     Ok(ExecutionListingRow {
         id: row.get("id"),
         item_id: row.get("item_id"),
-        state: state::parse(&row.get::<String, _>("state"))?,
+        state: state::parse(
+            "execution_requests",
+            "state",
+            &row.get::<String, _>("state"),
+        )?,
         cancellation_requested_at: row.get("cancellation_requested_at"),
         created_at: row.get("created_at"),
         waiting_reason: row.get("waiting_reason"),
@@ -219,8 +223,14 @@ fn given_the_days_room(snapshot: &str) -> bool {
         .is_ok_and(|value| value["metadata"]["limit_source"] == "day")
 }
 
+/// A stored snapshot that is not shaped as this layer wrote it.
 fn snapshot_error(message: impl Into<String>) -> StoreError {
-    StoreError::malformed(format!(
+    StoreError::corrupt("execution_requests", "request_snapshot", message.into())
+}
+
+/// A snapshot offered for storing that contradicts the request it was normalized from.
+fn refused_snapshot(message: impl Into<String>) -> StoreError {
+    StoreError::unwritable(format!(
         "invalid execution request snapshot: {}",
         message.into()
     ))
@@ -363,7 +373,7 @@ pub(super) fn validate_execution_request_snapshot(
         if snapshot_string(root, field)? == expected {
             Ok(())
         } else {
-            Err(snapshot_error(format!(
+            Err(refused_snapshot(format!(
                 "{field} contradicts normalized request"
             )))
         }
@@ -373,7 +383,7 @@ pub(super) fn validate_execution_request_snapshot(
     matches("idempotency_key", input.idempotency_key)?;
     let selector = snapshot_object(snapshot_field(root, "selector")?, "selector")?;
     if snapshot_string(selector, "kind")? != input.selector_kind {
-        return Err(snapshot_error("selector contradicts normalized request"));
+        return Err(refused_snapshot("selector contradicts normalized request"));
     }
     let selector_matches = match input.selector_kind {
         "exact_runner" => snapshot_string(selector, "runner_id")? == input.selector_id,
@@ -382,7 +392,7 @@ pub(super) fn validate_execution_request_snapshot(
         _ => false,
     };
     if !selector_matches {
-        return Err(snapshot_error("selector contradicts normalized request"));
+        return Err(refused_snapshot("selector contradicts normalized request"));
     }
     if input.agent_profile_id != Some(snapshot_string(root, "agent_profile_id")?.as_str())
         || input.requested_harness_kind
@@ -392,7 +402,7 @@ pub(super) fn validate_execution_request_snapshot(
         || input.status_map_policy_id.map(str::to_owned)
             != snapshot_nullable_string(root, "status_map_policy_id")?
     {
-        return Err(snapshot_error(
+        return Err(refused_snapshot(
             "requested fields contradict normalized request",
         ));
     }
@@ -401,7 +411,7 @@ pub(super) fn validate_execution_request_snapshot(
         .filter(|value| *value >= 0)
         .map(|value| value as u64);
     if timeout != snapshot_field(root, "timeout_seconds")?.as_u64() {
-        return Err(snapshot_error(
+        return Err(refused_snapshot(
             "timeout_seconds contradicts normalized request",
         ));
     }
@@ -413,16 +423,16 @@ pub(super) fn validate_execution_request_snapshot(
         ("environment", input.environment),
         ("metadata", input.metadata),
     ] {
-        let normalized: serde_json::Value =
-            serde_json::from_str(normalized).map_err(|error| snapshot_error(error.to_string()))?;
+        let normalized: serde_json::Value = serde_json::from_str(normalized)
+            .map_err(|error| refused_snapshot(error.to_string()))?;
         if snapshot_field(root, snapshot_field_name)? != &normalized {
-            return Err(snapshot_error(format!(
+            return Err(refused_snapshot(format!(
                 "{snapshot_field_name} contradicts normalized request"
             )));
         }
     }
     serde_json::to_string(&canonical_json(snapshot))
-        .map_err(|error| snapshot_error(error.to_string()))
+        .map_err(|error| refused_snapshot(error.to_string()))
 }
 
 fn snapshot_created_at_matches_now(snapshot: &str, now: &str) -> Result<(), StoreError> {
@@ -430,12 +440,14 @@ fn snapshot_created_at_matches_now(snapshot: &str, now: &str) -> Result<(), Stor
     let root = snapshot_object(&snapshot, "snapshot")?;
     let snapshot_created_at =
         DateTime::parse_from_rfc3339(&snapshot_string(root, "created_at")?)
-            .map_err(|error| snapshot_error(format!("created_at must be RFC3339: {error}")))?;
+            .map_err(|error| refused_snapshot(format!("created_at must be RFC3339: {error}")))?;
     let normalized_created_at = DateTime::parse_from_rfc3339(now).map_err(|error| {
-        snapshot_error(format!("normalized created_at must be RFC3339: {error}"))
+        refused_snapshot(format!("normalized created_at must be RFC3339: {error}"))
     })?;
     if snapshot_created_at != normalized_created_at {
-        return Err(snapshot_error("created_at contradicts normalized request"));
+        return Err(refused_snapshot(
+            "created_at contradicts normalized request",
+        ));
     }
     Ok(())
 }
@@ -665,7 +677,11 @@ impl Repository {
                     attempt_number: row.get("attempt_number"),
                     runner_id: row.get("runner_id"),
                     fencing_token: row.get("fencing_token"),
-                    state: state::parse(&row.get::<String, _>("state"))?,
+                    state: state::parse(
+                        "execution_attempts",
+                        "state",
+                        &row.get::<String, _>("state"),
+                    )?,
                     lease_issued_at: row.get("lease_issued_at"),
                     lease_expires_at: row.get("lease_expires_at"),
                     last_heartbeat_at: row.get("last_heartbeat_at"),

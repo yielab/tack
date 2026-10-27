@@ -120,5 +120,5 @@ pub async fn runner_last_heartbeat_at(
         .bind(runner_id)
         .fetch_optional(repo.pool())
         .await?
-        .ok_or(StoreError::NotFound)
+        .ok_or(StoreError::not_found("runner"))
 }

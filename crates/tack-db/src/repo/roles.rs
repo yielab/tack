@@ -1,4 +1,4 @@
-use crate::StoreError;
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -79,7 +79,7 @@ impl Repository {
         .bind(id.to_string())
         .fetch_one(self.pool())
         .await?;
-        Ok(Some(row.into_role()))
+        row.into_role().map(Some)
     }
 
     /// The item's roles, each with the profile it names: `(role name, profile id)`, by name.
@@ -109,7 +109,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_role()).collect())
+        rows.into_iter().map(RoleRow::into_role).collect()
     }
 
     /// Every `(item, role)` pair of the project's items.
@@ -140,16 +140,21 @@ impl Repository {
         item_id: Uuid,
         role_id: Uuid,
     ) -> Result<(), StoreError> {
-        let same_project: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM items i JOIN roles r ON r.project_id = i.project_id
-                           WHERE i.id = ? AND r.id = ?)",
+        let project_id: Option<String> =
+            sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+                .bind(item_id.to_string())
+                .fetch_optional(self.pool())
+                .await?;
+        let project_id = project_id.ok_or(StoreError::not_found("item"))?;
+        let in_project: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM roles WHERE id = ? AND project_id = ?)",
         )
-        .bind(item_id.to_string())
         .bind(role_id.to_string())
+        .bind(project_id)
         .fetch_one(self.pool())
         .await?;
-        if !same_project {
-            return Err(StoreError::NotFound);
+        if !in_project {
+            return Err(StoreError::not_found("role"));
         }
         sqlx::query("INSERT OR IGNORE INTO item_roles (item_id, role_id) VALUES (?, ?)")
             .bind(item_id.to_string())
@@ -186,7 +191,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_role()).collect())
+        rows.into_iter().map(RoleRow::into_role).collect()
     }
 
     #[instrument(skip(self))]
@@ -211,17 +216,16 @@ struct RoleRow {
 }
 
 impl RoleRow {
-    fn into_role(self) -> Role {
-        Role {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            project_id: Uuid::parse_str(&self.project_id).unwrap(),
+    fn into_role(self) -> Result<Role, StoreError> {
+        const TABLE: &str = "roles";
+        Ok(Role {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
             name: self.name,
             color: self.color,
             icon: self.icon,
             agent_profile_id: self.agent_profile_id,
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
-        }
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+        })
     }
 }

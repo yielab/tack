@@ -27,7 +27,8 @@ pub async fn request_state(
             .bind(request_id)
             .fetch_optional(repo.pool())
             .await?;
-    text.map(|text| state::parse(&text)).transpose()
+    text.map(|text| state::parse("execution_requests", "state", &text))
+        .transpose()
 }
 
 /// The stored snapshot of the request an operator already created under this idempotency key,
@@ -113,7 +114,11 @@ pub async fn request_detail(
         Ok(RequestDetailRow {
             id: row.get("id"),
             item_id: row.get("item_id"),
-            state: state::parse(&row.get::<String, _>("state"))?,
+            state: state::parse(
+                "execution_requests",
+                "state",
+                &row.get::<String, _>("state"),
+            )?,
             cancellation_requested_at: row.get("cancellation_requested_at"),
             created_at: row.get("created_at"),
             waiting_reason: row.get("waiting_reason"),
@@ -215,7 +220,7 @@ pub async fn request_of_attempt(
     .bind(attempt_id)
     .fetch_optional(repo.pool())
     .await?
-    .ok_or(StoreError::NotFound)
+    .ok_or(StoreError::not_found("attempt"))
 }
 
 /// A request in the chain of follow-ups one run started.
@@ -238,7 +243,7 @@ pub async fn rework_chain(repo: &Repository, root: &str) -> Result<Vec<ChainLink
         .map(|(id, state_text)| {
             Ok(ChainLink {
                 id,
-                state: state::parse(&state_text)?,
+                state: state::parse("execution_requests", "state", &state_text)?,
             })
         })
         .collect()
@@ -368,5 +373,5 @@ pub async fn waiting_of_request(
     .bind(request_id)
     .fetch_optional(repo.pool())
     .await?
-    .ok_or(StoreError::NotFound)
+    .ok_or(StoreError::not_found("request"))
 }

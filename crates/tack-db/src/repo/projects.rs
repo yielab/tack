@@ -1,10 +1,10 @@
-use crate::StoreError;
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::auto_start::DROPPED_TO_L3;
-use tack_core::models::{CreateProject, Project, ProjectType, UpdateProject};
+use tack_core::models::{CreateProject, Project, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
 
@@ -21,8 +21,8 @@ impl Repository {
         let now = Utc::now();
         let vocabulary = vocabulary_for_type(&input.project_type);
         let workflow = workflow_for_type(&input.project_type);
-        let vocab_json = serde_json::to_string(&vocabulary).unwrap();
-        let workflow_json = serde_json::to_string(&workflow).unwrap();
+        let vocab_json = decode::to_json(&vocabulary)?;
+        let workflow_json = decode::to_json(&workflow)?;
         let project_type_str = input.project_type.to_string();
         let now_str = now.to_rfc3339();
         let code_origin = input.code_origin.unwrap_or_default();
@@ -150,7 +150,7 @@ impl Repository {
                 .await?;
         }
         if let Some(ref vocab) = input.vocabulary {
-            let json = serde_json::to_string(vocab).unwrap();
+            let json = decode::to_json(vocab)?;
             sqlx::query("UPDATE projects SET vocabulary = ?, updated_at = ? WHERE id = ?")
                 .bind(&json)
                 .bind(&now)
@@ -159,7 +159,7 @@ impl Repository {
                 .await?;
         }
         if let Some(ref workflow) = input.workflow {
-            let json = serde_json::to_string(workflow).unwrap();
+            let json = decode::to_json(workflow)?;
             sqlx::query("UPDATE projects SET workflow = ?, updated_at = ? WHERE id = ?")
                 .bind(&json)
                 .bind(&now)
@@ -310,31 +310,24 @@ struct ProjectRow {
 
 impl ProjectRow {
     fn into_project(self) -> Result<Project, StoreError> {
+        const TABLE: &str = "projects";
         Ok(Project {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            workspace_id: Uuid::parse_str(&self.workspace_id).unwrap(),
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            workspace_id: decode::uuid(TABLE, "workspace_id", &self.workspace_id)?,
             name: self.name,
             description: self.description,
-            project_type: serde_json::from_str(&format!("\"{}\"", self.project_type))
-                .unwrap_or(ProjectType::Custom),
-            vocabulary: serde_json::from_str(&self.vocabulary).unwrap_or_default(),
-            workflow: serde_json::from_str(&self.workflow)
-                .unwrap_or_else(|_| tack_core::workflow::simple_workflow()),
+            project_type: decode::variant(TABLE, "project_type", &self.project_type)?,
+            vocabulary: decode::json(TABLE, "vocabulary", &self.vocabulary)?,
+            workflow: decode::json(TABLE, "workflow", &self.workflow)?,
             default_model: self.default_model,
             github_token_ref: self.github_token_ref,
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
             archived: self.archived != 0,
-            code_origin: serde_json::from_str(&format!("\"{}\"", self.code_origin))
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?,
+            code_origin: decode::variant(TABLE, "code_origin", &self.code_origin)?,
             repository: self.repository,
             default_branch: self.default_branch,
-            workspace_mode: serde_json::from_str(&format!("\"{}\"", self.workspace_mode))
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?,
+            workspace_mode: decode::variant(TABLE, "workspace_mode", &self.workspace_mode)?,
             push_after_run: self.push_after_run != 0,
             default_harness: self.default_harness,
             default_profile_id: self.default_profile_id,
@@ -369,8 +362,7 @@ impl Repository {
             .fetch_optional(self.pool())
             .await?;
         if let Some(id) = existing {
-            return Uuid::parse_str(&id)
-                .map_err(|e| crate::StoreError::Sql(sqlx::Error::Decode(Box::new(e))));
+            return decode::uuid("workspaces", "id", &id);
         }
         let id = Uuid::new_v4();
         let now = Utc::now();

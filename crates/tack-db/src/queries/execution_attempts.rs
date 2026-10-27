@@ -92,7 +92,8 @@ pub async fn attempt_state(
             .bind(attempt_id)
             .fetch_optional(repo.pool())
             .await?;
-    text.map(|text| state::parse(&text)).transpose()
+    text.map(|text| state::parse("execution_attempts", "state", &text))
+        .transpose()
 }
 
 /// When the attempt's runner last sent a heartbeat for it, or `None` when none was recorded.
@@ -105,7 +106,7 @@ pub async fn last_heartbeat_at(
         .bind(attempt_id)
         .fetch_optional(repo.pool())
         .await?
-        .ok_or(StoreError::NotFound)
+        .ok_or(StoreError::not_found("attempt"))
 }
 
 /// The state of the newest attempt of a request, or `None` when the request has no attempt.
@@ -119,7 +120,8 @@ pub async fn latest_state_of_request(
     .bind(request_id)
     .fetch_optional(repo.pool())
     .await?;
-    text.map(|text| state::parse(&text)).transpose()
+    text.map(|text| state::parse("execution_attempts", "state", &text))
+        .transpose()
 }
 
 /// How many `operator_requeue` audits an attempt has.
@@ -171,7 +173,7 @@ pub async fn attempt_lease(
     .await?;
     row.map(|(state_text, lease_expires_at)| {
         Ok(AttemptLease {
-            state: state::parse(&state_text)?,
+            state: state::parse("execution_attempts", "state", &state_text)?,
             lease_expires_at,
         })
     })
@@ -202,7 +204,7 @@ pub async fn attempt_number(repo: &Repository, attempt_id: &str) -> Result<i64, 
         .bind(attempt_id)
         .fetch_optional(repo.pool())
         .await?
-        .ok_or(StoreError::NotFound)
+        .ok_or(StoreError::not_found("attempt"))
 }
 
 /// The request an attempt belongs to. An id no attempt has is `StoreError::NotFound`.
@@ -214,7 +216,7 @@ pub async fn request_id_of_attempt(
         .bind(attempt_id)
         .fetch_optional(repo.pool())
         .await?
-        .ok_or(StoreError::NotFound)
+        .ok_or(StoreError::not_found("attempt"))
 }
 
 /// The event checkpoint an attempt's stream has reached, or `None` before the first batch. An id
@@ -227,7 +229,7 @@ pub async fn event_checkpoint(
         .bind(attempt_id)
         .fetch_optional(repo.pool())
         .await?
-        .ok_or(StoreError::NotFound)
+        .ok_or(StoreError::not_found("attempt"))
 }
 
 /// How many attempts a request has.
@@ -332,7 +334,7 @@ pub async fn completion_id_of_attempt(
         .bind(attempt_id)
         .fetch_optional(repo.pool())
         .await?
-        .ok_or(StoreError::NotFound)
+        .ok_or(StoreError::not_found("attempt"))
 }
 
 /// How many attempts were ended by this completion id and sit in `state`.

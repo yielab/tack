@@ -1,5 +1,5 @@
 use crate::Repository;
-use crate::StoreError;
+use crate::{StoreError, decode};
 use sqlx::FromRow;
 use tack_core::models::*;
 use tracing::instrument;
@@ -20,6 +20,29 @@ struct CustomFieldRow {
     updated_at: String,
 }
 
+impl CustomFieldRow {
+    fn into_definition(self) -> Result<CustomFieldDefinition, StoreError> {
+        const TABLE: &str = "custom_field_definitions";
+        Ok(CustomFieldDefinition {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::optional_uuid(TABLE, "project_id", self.project_id.as_deref())?,
+            name: self.name,
+            field_type: decode::variant(TABLE, "field_type", &self.field_type)?,
+            description: self.description,
+            required: self.required != 0,
+            default_value: decode::optional_json(
+                TABLE,
+                "default_value",
+                self.default_value.as_deref(),
+            )?,
+            options: decode::optional_json(TABLE, "options", self.options.as_deref())?,
+            validation: decode::optional_json(TABLE, "validation", self.validation.as_deref())?,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
+    }
+}
+
 #[derive(FromRow)]
 struct CustomFieldValueRow {
     id: String,
@@ -28,6 +51,20 @@ struct CustomFieldValueRow {
     value: String,
     created_at: String,
     updated_at: String,
+}
+
+impl CustomFieldValueRow {
+    fn into_value(self) -> Result<CustomFieldValue, StoreError> {
+        const TABLE: &str = "custom_field_values";
+        Ok(CustomFieldValue {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            item_id: decode::uuid(TABLE, "item_id", &self.item_id)?,
+            field_id: decode::uuid(TABLE, "field_id", &self.field_id)?,
+            value: decode::json(TABLE, "value", &self.value)?,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
+    }
 }
 
 /// Create a custom field definition for a project
@@ -55,7 +92,8 @@ pub async fn create_field(
     let default_value = data.default_value.map(|v| v.to_string());
     let options = data
         .options
-        .map(|opts| serde_json::to_string(&opts).unwrap());
+        .map(|opts| decode::to_json(&opts))
+        .transpose()?;
     let validation = data.validation.map(|v| v.to_string());
 
     sqlx::query(
@@ -89,55 +127,11 @@ pub async fn get_field(repo: &Repository, id: Uuid) -> Result<CustomFieldDefinit
          WHERE id = ?"
     )
     .bind(id.to_string())
-    .fetch_one(repo.pool())
-    .await?;
+    .fetch_optional(repo.pool())
+    .await?
+    .ok_or(StoreError::not_found("custom field"))?;
 
-    let field_type = match row.field_type.as_str() {
-        "text" => CustomFieldType::Text,
-        "number" => CustomFieldType::Number,
-        "date" => CustomFieldType::Date,
-        "boolean" => CustomFieldType::Boolean,
-        "select" => CustomFieldType::Select,
-        "multi_select" => CustomFieldType::MultiSelect,
-        "url" => CustomFieldType::Url,
-        "email" => CustomFieldType::Email,
-        "long_text" => CustomFieldType::LongText,
-        _ => CustomFieldType::Text,
-    };
-
-    let default_value = row
-        .default_value
-        .as_ref()
-        .and_then(|v| serde_json::from_str(v).ok());
-    let options = row
-        .options
-        .as_ref()
-        .and_then(|o| serde_json::from_str(o).ok());
-    let validation = row
-        .validation
-        .as_ref()
-        .and_then(|v| serde_json::from_str(v).ok());
-
-    Ok(CustomFieldDefinition {
-        id: Uuid::parse_str(&row.id).unwrap(),
-        project_id: row
-            .project_id
-            .as_ref()
-            .map(|pid| Uuid::parse_str(pid).unwrap()),
-        name: row.name,
-        field_type,
-        description: row.description,
-        required: row.required != 0,
-        default_value,
-        options,
-        validation,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-            .unwrap()
-            .into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-            .unwrap()
-            .into(),
-    })
+    row.into_definition()
 }
 
 /// List all custom fields for a project
@@ -156,59 +150,9 @@ pub async fn list_fields_for_project(
     .fetch_all(repo.pool())
     .await?;
 
-    let fields = rows
-        .into_iter()
-        .map(|row| {
-            let field_type = match row.field_type.as_str() {
-                "text" => CustomFieldType::Text,
-                "number" => CustomFieldType::Number,
-                "date" => CustomFieldType::Date,
-                "boolean" => CustomFieldType::Boolean,
-                "select" => CustomFieldType::Select,
-                "multi_select" => CustomFieldType::MultiSelect,
-                "url" => CustomFieldType::Url,
-                "email" => CustomFieldType::Email,
-                "long_text" => CustomFieldType::LongText,
-                _ => CustomFieldType::Text,
-            };
-
-            let default_value = row
-                .default_value
-                .as_ref()
-                .and_then(|v| serde_json::from_str(v).ok());
-            let options = row
-                .options
-                .as_ref()
-                .and_then(|o| serde_json::from_str(o).ok());
-            let validation = row
-                .validation
-                .as_ref()
-                .and_then(|v| serde_json::from_str(v).ok());
-
-            CustomFieldDefinition {
-                id: Uuid::parse_str(&row.id).unwrap(),
-                project_id: row
-                    .project_id
-                    .as_ref()
-                    .map(|pid| Uuid::parse_str(pid).unwrap()),
-                name: row.name,
-                field_type,
-                description: row.description,
-                required: row.required != 0,
-                default_value,
-                options,
-                validation,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                    .unwrap()
-                    .into(),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                    .unwrap()
-                    .into(),
-            }
-        })
-        .collect();
-
-    Ok(fields)
+    rows.into_iter()
+        .map(CustomFieldRow::into_definition)
+        .collect()
 }
 
 /// Update a custom field definition
@@ -264,7 +208,7 @@ pub async fn update_field(
     }
 
     if let Some(options) = data.options {
-        let options_str = serde_json::to_string(&options).unwrap();
+        let options_str = decode::to_json(&options)?;
         sqlx::query("UPDATE custom_field_definitions SET options = ?, updated_at = ? WHERE id = ?")
             .bind(options_str)
             .bind(now.to_rfc3339())
@@ -346,24 +290,11 @@ pub async fn get_field_value(
     )
     .bind(item_id.to_string())
     .bind(field_id.to_string())
-    .fetch_one(repo.pool())
-    .await?;
+    .fetch_optional(repo.pool())
+    .await?
+    .ok_or(StoreError::not_found("custom field value"))?;
 
-    let value: serde_json::Value =
-        serde_json::from_str(&row.value).unwrap_or(serde_json::Value::Null);
-
-    Ok(CustomFieldValue {
-        id: Uuid::parse_str(&row.id).unwrap(),
-        item_id: Uuid::parse_str(&row.item_id).unwrap(),
-        field_id: Uuid::parse_str(&row.field_id).unwrap(),
-        value,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-            .unwrap()
-            .into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-            .unwrap()
-            .into(),
-    })
+    row.into_value()
 }
 
 /// Get all custom field values for an item
@@ -381,28 +312,9 @@ pub async fn get_all_field_values_for_item(
     .fetch_all(repo.pool())
     .await?;
 
-    let values = rows
-        .into_iter()
-        .map(|row| {
-            let value: serde_json::Value =
-                serde_json::from_str(&row.value).unwrap_or(serde_json::Value::Null);
-
-            CustomFieldValue {
-                id: Uuid::parse_str(&row.id).unwrap(),
-                item_id: Uuid::parse_str(&row.item_id).unwrap(),
-                field_id: Uuid::parse_str(&row.field_id).unwrap(),
-                value,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                    .unwrap()
-                    .into(),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                    .unwrap()
-                    .into(),
-            }
-        })
-        .collect();
-
-    Ok(values)
+    rows.into_iter()
+        .map(CustomFieldValueRow::into_value)
+        .collect()
 }
 
 /// Delete a custom field value
@@ -436,19 +348,7 @@ pub async fn field_values_for_project(
     .fetch_all(repo.pool())
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(|row| CustomFieldValue {
-            id: Uuid::parse_str(&row.id).unwrap(),
-            item_id: Uuid::parse_str(&row.item_id).unwrap(),
-            field_id: Uuid::parse_str(&row.field_id).unwrap(),
-            value: serde_json::from_str(&row.value).unwrap_or(serde_json::Value::Null),
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                .unwrap()
-                .into(),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                .unwrap()
-                .into(),
-        })
-        .collect())
+    rows.into_iter()
+        .map(CustomFieldValueRow::into_value)
+        .collect()
 }

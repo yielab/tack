@@ -159,13 +159,13 @@ pub enum CompletionResult {
 }
 
 fn encode(value: &impl serde::Serialize) -> Result<String, StoreError> {
-    serde_json::to_string(value).map_err(|error| StoreError::malformed(error.to_string()))
+    serde_json::to_string(value).map_err(|error| StoreError::unwritable(error))
 }
 
 fn canonical_value(value: &impl serde::Serialize) -> Result<serde_json::Value, StoreError> {
     serde_json::to_value(value)
         .map(canonical_json)
-        .map_err(|error| StoreError::malformed(error.to_string()))
+        .map_err(|error| StoreError::unwritable(error))
 }
 
 fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreError> {
@@ -180,36 +180,50 @@ fn completion_fingerprint(completion: &Completion<'_>) -> Result<String, StoreEr
         "actual_execution": canonical_value(completion.actual_execution)?,
         "usage": canonical_value(completion.usage)?,
     }))
-    .map_err(|error| StoreError::malformed(error.to_string()))
+    .map_err(|error| StoreError::unwritable(error))
 }
 
 fn replay_response(serialized: &str) -> Result<CompletionResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| StoreError::malformed("invalid completion replay response"))?;
+        .map_err(|error| StoreError::corrupt("execution_completion_replays", "response", error))?;
+    let object = value.as_object().ok_or_else(|| {
+        StoreError::corrupt(
+            "execution_completion_replays",
+            "response",
+            "invalid completion replay response",
+        )
+    })?;
     let required = |field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                StoreError::malformed(format!("invalid completion replay response field: {field}"))
+                StoreError::corrupt(
+                    "execution_completion_replays",
+                    "response",
+                    format!("invalid completion replay response field: {field}"),
+                )
             })
     };
     let final_event_checkpoint = match object.get("final_event_checkpoint") {
         Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::String(value)) => Some(Checkpoint::new(value.clone())),
         _ => {
-            return Err(StoreError::malformed(
+            return Err(StoreError::corrupt(
+                "execution_completion_replays",
+                "response",
                 "invalid completion replay response field: final_event_checkpoint",
             ));
         }
     };
     Ok(CompletionResponse {
         completion_id: CompletionId::new(required("completion_id")?),
-        terminal_state: state::parse(&required("terminal_state")?)?,
+        terminal_state: state::parse(
+            "execution_completion_replays",
+            "response",
+            &required("terminal_state")?,
+        )?,
         final_event_checkpoint,
         committed_at: required("committed_at")?,
     })
@@ -218,12 +232,12 @@ fn replay_response(serialized: &str) -> Result<CompletionResponse, StoreError> {
 fn cancellation_fingerprint(
     input: &CancellationObservationInput<'_>,
 ) -> Result<String, StoreError> {
-    let details: serde_json::Value = serde_json::from_str(input.details)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
-    let observation: serde_json::Value = serde_json::from_str(input.observation)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
+    let details: serde_json::Value =
+        serde_json::from_str(input.details).map_err(|error| StoreError::unwritable(error))?;
+    let observation: serde_json::Value =
+        serde_json::from_str(input.observation).map_err(|error| StoreError::unwritable(error))?;
     if observation != serde_json::Value::String("process_stopped".into()) {
-        return Err(StoreError::malformed(
+        return Err(StoreError::unwritable(
             "cancellation observation must be JSON string process_stopped",
         ));
     }
@@ -236,30 +250,41 @@ fn cancellation_fingerprint(
         "details": canonical_json(details),
         "observation": canonical_json(observation),
     }))
-    .map_err(|error| StoreError::malformed(error.to_string()))
+    .map_err(|error| StoreError::unwritable(error))
 }
 
 fn cancellation_response(serialized: &str) -> Result<CancellationResponse, StoreError> {
-    let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| StoreError::malformed("invalid cancellation replay response"))?;
+    let value: serde_json::Value = serde_json::from_str(serialized).map_err(|error| {
+        StoreError::corrupt("execution_cancellation_replays", "response", error)
+    })?;
+    let object = value.as_object().ok_or_else(|| {
+        StoreError::corrupt(
+            "execution_cancellation_replays",
+            "response",
+            "invalid cancellation replay response",
+        )
+    })?;
     let required = |field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                StoreError::malformed(format!(
-                    "invalid cancellation replay response field: {field}"
-                ))
+                StoreError::corrupt(
+                    "execution_cancellation_replays",
+                    "response",
+                    format!("invalid cancellation replay response field: {field}"),
+                )
             })
     };
     Ok(CancellationResponse {
         attempt_id: AttemptId::new(required("attempt_id")?),
         cancellation_request_id: CancellationRequestId::new(required("cancellation_request_id")?),
-        state: state::parse(&required("state")?)?,
+        state: state::parse(
+            "execution_cancellation_replays",
+            "response",
+            &required("state")?,
+        )?,
         committed_at: required("committed_at")?,
     })
 }
@@ -485,7 +510,11 @@ impl Repository {
             return Ok(AttemptTransitionResult::Stale);
         };
 
-        let state = state::parse(&row.get::<String, _>("state"))?;
+        let state = state::parse(
+            "execution_attempts",
+            "state",
+            &row.get::<String, _>("state"),
+        )?;
         let workspace_id: Option<String> = row.get("workspace_id");
         let base_revision: Option<String> = row.get("base_revision");
         let process_id: Option<String> = row.get("process_id");
@@ -633,7 +662,11 @@ impl Repository {
         }
         let request: String = row.get("request_id");
         let owner: String = row.get("runner_id");
-        let state = state::parse(&row.get::<String, _>("state"))?;
+        let state = state::parse(
+            "execution_attempts",
+            "state",
+            &row.get::<String, _>("state"),
+        )?;
         if state.is_terminal() {
             tx.commit().await?;
             return Ok(CancellationObservation::AlreadyTerminal { state });
@@ -741,7 +774,10 @@ impl Repository {
         Ok(match (applied, state) {
             (_, None) => CancellationOutcome::NotFound,
             (false, Some(_)) => CancellationOutcome::AlreadyTerminal,
-            (true, Some(state)) if state::parse(&state)? == ExecutionState::Cancelled => {
+            (true, Some(state))
+                if state::parse("execution_requests", "state", &state)?
+                    == ExecutionState::Cancelled =>
+            {
                 CancellationOutcome::Ended
             }
             (true, Some(_)) => CancellationOutcome::Requested,

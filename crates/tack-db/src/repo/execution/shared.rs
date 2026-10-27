@@ -5,19 +5,19 @@ use sqlx::SqliteConnection;
 use tack_protocol::execution::{AttemptId, ExecutionState, FencingToken};
 
 pub(super) fn terminal(state: &str) -> bool {
-    super::state::parse(state).is_ok_and(ExecutionState::is_terminal)
+    super::state::parse("execution_attempts", "state", state).is_ok_and(ExecutionState::is_terminal)
 }
 
 /// A fencing token as the integer column holds it.
 pub(crate) fn token_column(token: FencingToken) -> Result<i64, StoreError> {
-    i64::try_from(token.get()).map_err(|_| StoreError::malformed("fencing token is out of range"))
+    i64::try_from(token.get()).map_err(|_| StoreError::unwritable("fencing token is out of range"))
 }
 
 /// A fencing token read from the integer column; a negative one is a corrupt row.
 pub(super) fn token_from_column(value: i64) -> Result<FencingToken, StoreError> {
     u64::try_from(value)
         .map(FencingToken::new)
-        .map_err(|_| StoreError::malformed("fencing token column is negative"))
+        .map_err(|error| StoreError::corrupt("execution_attempts", "fencing_token", error))
 }
 
 /// Sets the request that owns `attempt_id` to `state`. A request's state

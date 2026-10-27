@@ -104,7 +104,7 @@ pub enum RecoveryObservationResult {
 
 /// The details as the audit row stores them: the JSON the protocol's struct encodes to.
 fn recovery_details_json(details: &RecoveryDetails) -> Result<String, StoreError> {
-    serde_json::to_string(details).map_err(|error| StoreError::malformed(error.to_string()))
+    serde_json::to_string(details).map_err(|error| StoreError::unwritable(error))
 }
 
 fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
@@ -116,8 +116,8 @@ fn recovery_observation_name(observation: RecoveryObservation) -> &'static str {
 }
 
 fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, StoreError> {
-    let details = serde_json::to_value(input.details)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
+    let details =
+        serde_json::to_value(input.details).map_err(|error| StoreError::unwritable(error))?;
     serde_json::to_string(&serde_json::json!({
         "runner_id": input.runner_id.as_str(),
         "attempt_id": input.attempt_id.as_str(),
@@ -126,7 +126,7 @@ fn recovery_fingerprint(input: &RecoveryObservationInput<'_>) -> Result<String, 
         "observation": recovery_observation_name(input.observation),
         "details": canonical_json(details),
     }))
-    .map_err(|error| StoreError::malformed(error.to_string()))
+    .map_err(|error| StoreError::unwritable(error))
 }
 
 /// Everything `recover_attempt` does once it holds the open transaction and
@@ -260,22 +260,36 @@ async fn apply_recovery(
 
 fn recovery_response(serialized: &str) -> Result<RecoveryResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| StoreError::malformed("invalid recovery replay response"))?;
+        .map_err(|error| StoreError::corrupt("execution_recovery_audits", "response", error))?;
+    let object = value.as_object().ok_or_else(|| {
+        StoreError::corrupt(
+            "execution_recovery_audits",
+            "response",
+            "invalid recovery replay response",
+        )
+    })?;
     let required = |field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                StoreError::malformed(format!("invalid recovery replay response field: {field}"))
+                StoreError::corrupt(
+                    "execution_recovery_audits",
+                    "response",
+                    format!("invalid recovery replay response field: {field}"),
+                )
             })
     };
     let disposition = required("disposition")?
         .parse::<RecoveryDisposition>()
-        .map_err(|_| StoreError::malformed("invalid recovery replay response disposition"))?;
+        .map_err(|_| {
+            StoreError::corrupt(
+                "execution_recovery_audits",
+                "response",
+                "invalid recovery replay response disposition",
+            )
+        })?;
     Ok(RecoveryResponse {
         attempt_id: AttemptId::new(required("attempt_id")?),
         recovery_key: RecoveryKey::new(required("recovery_key")?),

@@ -171,7 +171,13 @@ where
         "exec_{}",
         hex::encode(Sha256::digest(format!("{scope}\0{key}").as_bytes()))
     );
-    let root_object = snapshot.as_object_mut().ok_or(StoreError::NotFound)?;
+    let root_object = snapshot.as_object_mut().ok_or_else(|| {
+        StoreError::corrupt(
+            "execution_requests",
+            "request_snapshot",
+            "the request snapshot is not a JSON object",
+        )
+    })?;
     root_object.insert("request_id".into(), json!(new_id));
     root_object.insert("idempotency_key".into(), json!(key));
     root_object.insert("created_at".into(), json!(now.to_rfc3339()));

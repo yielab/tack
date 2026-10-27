@@ -26,15 +26,16 @@ impl AppError {
     /// raise appear here; everything else a caller sends is its own to name.
     pub fn code(&self) -> StableErrorCode {
         match self {
-            AppError::NotFound | AppError::Store(StoreError::NotFound) => StableErrorCode::NotFound,
+            AppError::NotFound | AppError::Store(StoreError::NotFound { .. }) => {
+                StableErrorCode::NotFound
+            }
             AppError::Conflict(_) | AppError::Store(StoreError::Conflict(_)) => {
                 StableErrorCode::Conflict
             }
             AppError::InvalidTransition { .. } => StableErrorCode::InvalidTransition,
             AppError::StaleLease { .. } => StableErrorCode::StaleLease,
-            AppError::Store(StoreError::Sql(_)) | AppError::Core(_) => {
-                StableErrorCode::InternalError
-            }
+            AppError::Store(StoreError::Sql(_) | StoreError::Corrupt { .. })
+            | AppError::Core(_) => StableErrorCode::InternalError,
         }
     }
 }
