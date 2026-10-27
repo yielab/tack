@@ -3000,6 +3000,16 @@
                 "schema": {}
               }
             }
+          },
+          "404": {
+            "description": "The item or the role does not exist, or they belong to different projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       },

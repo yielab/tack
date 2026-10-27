@@ -66,6 +66,7 @@ pub async fn list_roles(
     ),
     responses(
         (status = 200, description = "Role assigned to item", body = serde_json::Value),
+        (status = 404, description = "The item or the role does not exist, or they belong to different projects", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn assign_role(

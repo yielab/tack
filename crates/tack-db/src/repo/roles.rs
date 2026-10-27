@@ -140,6 +140,17 @@ impl Repository {
         item_id: Uuid,
         role_id: Uuid,
     ) -> Result<(), StoreError> {
+        let same_project: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM items i JOIN roles r ON r.project_id = i.project_id
+                           WHERE i.id = ? AND r.id = ?)",
+        )
+        .bind(item_id.to_string())
+        .bind(role_id.to_string())
+        .fetch_one(self.pool())
+        .await?;
+        if !same_project {
+            return Err(StoreError::NotFound);
+        }
         sqlx::query("INSERT OR IGNORE INTO item_roles (item_id, role_id) VALUES (?, ?)")
             .bind(item_id.to_string())
             .bind(role_id.to_string())

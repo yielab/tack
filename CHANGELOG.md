@@ -356,6 +356,9 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored
+  the item in its path, so a dependency of one item could be deleted through another's. It answers 404 now.
+- **Assigning a role that does not exist, or one from another project, answers 404**, not a server error, and assigns nothing.
 - **A sprint lane's progress follows its items.** The "done/total items · points · %" line and the bar were
   worked out once, when the lane first appeared, so a lane that appeared before the items loaded, or
   an item dragged into it, left them at 0/0 until the page reloaded.

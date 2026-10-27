@@ -230,7 +230,6 @@ async fn deleting_a_dependency_with_a_bad_id_is_refused() {
 
 /// The dependency belongs to item A's path; item C's path must not reach it.
 #[tokio::test]
-#[ignore = "defect: DELETE /api/items/{item_id}/dependencies/{dep_id} ignores item_id and deletes a dependency of another item"]
 async fn deleting_a_dependency_through_another_items_path_is_refused() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;
@@ -331,7 +330,6 @@ async fn assigning_and_removing_a_role_shows_on_the_item() {
 
 /// The role is for another item's project, or gone: a client error, not a server fault.
 #[tokio::test]
-#[ignore = "defect: PUT /api/items/{item_id}/roles/{role_id} answers 500 (foreign-key failure) for a role that does not exist; it should be 404"]
 async fn assigning_a_role_that_does_not_exist_is_404_and_nothing_is_assigned() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;

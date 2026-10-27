@@ -65,11 +65,15 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_dependency(&self, id: Uuid) -> Result<bool, StoreError> {
-        let result = sqlx::query("DELETE FROM dependencies WHERE id = ?")
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
+    pub async fn delete_dependency(&self, item_id: Uuid, id: Uuid) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "DELETE FROM dependencies WHERE id = ? AND (source_item_id = ? OR target_item_id = ?)",
+        )
+        .bind(id.to_string())
+        .bind(item_id.to_string())
+        .bind(item_id.to_string())
+        .execute(self.pool())
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 
