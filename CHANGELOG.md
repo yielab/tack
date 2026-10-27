@@ -61,6 +61,10 @@ automation a template carries, and the removal of dollars per day.
   that does not exist answered 500 from the database's foreign key, and so did a dependency on an
   item that does not exist; the store now checks the project or the item first and raises
   `NotFound`, and a test drives each such route to a missing parent.
+  The same holds for a new item that names a parent item, a sprint or a project that is not
+  there, and for a `PATCH` that moves an item to a sprint that is not there (both were 500s), and
+  a test drives the briefs, boards, GitHub link, plan, autonomy, imports, outline, execution,
+  decision, review and attachment routes to a missing parent.
 - **The runner's file failures keep their kind.** A workspace or journal operation that failed on a
   file now says how (`runner workspace operation failed: entity not found`) instead of a bare
   "failed", and a poisoned lock is logged; the operating system's own text, which can name a path,

@@ -1,4 +1,5 @@
 use crate::repo::execution::state;
+use crate::repo::{Parent, require_row};
 use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
@@ -296,6 +297,9 @@ impl Repository {
     ) -> Result<Option<Item>, StoreError> {
         let now = Utc::now().to_rfc3339();
 
+        if let Some(Some(sprint_id)) = input.sprint_id {
+            self.require_sprint(sprint_id).await?;
+        }
         if let Some(ref title) = input.title {
             sqlx::query(
                 "UPDATE items SET title = ?, updated_at = ?, version = version + 1 WHERE id = ?",
@@ -830,6 +834,13 @@ async fn insert_item(
     input: CreateItem,
     source: ItemSource,
 ) -> Result<Item, StoreError> {
+    require_row(conn, Parent::Project, project_id).await?;
+    if let Some(parent_id) = input.parent_id {
+        require_row(conn, Parent::Item, parent_id).await?;
+    }
+    if let Some(sprint_id) = input.sprint_id {
+        require_row(conn, Parent::Sprint, sprint_id).await?;
+    }
     let id = Uuid::new_v4();
     let now = Utc::now();
     let now_str = now.to_rfc3339();
@@ -958,6 +969,9 @@ pub(crate) async fn update_item_in(
     }
 
     let old_status = current.status.clone();
+    if let Some(Some(sprint_id)) = input.sprint_id {
+        require_row(&mut **tx, Parent::Sprint, sprint_id).await?;
+    }
     let addresses_a_field = input.title.is_some()
         || input.description.is_some()
         || input.item_type.is_some()
