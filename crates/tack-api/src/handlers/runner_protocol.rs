@@ -19,6 +19,7 @@
 //! notes below and the acceptance tests in
 //! `tests/runner_protocol/lifecycle.rs`).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tack_protocol::Clock;
 
@@ -53,9 +54,11 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::{
-    ActualExecution, AttemptId, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId,
-    EmbeddedCapabilitySnapshot, ExecutionState, FencingToken, ProtocolVersion,
-    RecoveryObservationRequest, RecoveryObservationResponse, StableErrorCode, Usage, WorkspaceId,
+    AttemptId, AttemptSnapshot, CancellationRequestId, ClaimGranted, ClaimIdle, ClaimLease,
+    ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, EmbeddedCapabilitySnapshot,
+    EventBatchRequest, EventBatchResponse, ExecutionRequestSnapshot, ExecutionState, FencingToken,
+    HeartbeatRequest, HeartbeatResponse, LeaseResult, ProtocolVersion, RecoveryObservationRequest,
+    RecoveryObservationResponse, StableErrorCode, WorkspaceId,
 };
 use uuid::Uuid;
 
@@ -309,6 +312,30 @@ fn check_protocol_version(value: &Value) -> runner_auth::ProtocolResult<()> {
             "protocol_version must be the integer 1",
         )),
     }
+}
+
+/// Reads a request body as one of the protocol's message structs. A body that does not fit
+/// is `invalid_request`, naming the field when serde can; the message never repeats what the
+/// body held, since a field's value can be a credential or a prompt.
+fn parse_message<T: serde::de::DeserializeOwned>(value: Value) -> runner_auth::ProtocolResult<T> {
+    serde_json::from_value(value).map_err(|error| {
+        let text = error.to_string();
+        let field = text
+            .strip_prefix("missing field `")
+            .and_then(|rest| rest.split('`').next())
+            .unwrap_or("body");
+        invalid_request(
+            field,
+            "The request does not match the runner-v1 message shape",
+        )
+    })
+}
+
+/// A response as the message struct that defines it.
+fn message_json<T: serde::Serialize>(message: &T) -> HandlerResult {
+    serde_json::to_value(message)
+        .map(Json)
+        .map_err(|_| internal_error("Could not encode the response"))
 }
 
 fn field<'a>(value: &'a Value, name: &str) -> runner_auth::ProtocolResult<&'a Value> {
@@ -742,22 +769,18 @@ pub async fn claim(
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
-    let claim_request_id = ClaimRequestId::new(as_str(&value, "claim_request_id")?);
+    let request: ClaimRequest = parse_message(value)?;
     // `available_capacity` is part of the wire contract (`claim.request.json`
     // requires it) but has no effect here: unlike `heartbeat`, whose
     // `heartbeat_batch` repository call cross-checks a runner's reported
     // capacity against its actual active reservations atomically (and can
     // return `Conflict`), `claim_execution_idempotent_with_snapshot` does
-    // not accept a capacity argument at all. A vestigial type-check here
-    // would validate a value that is never used, implying an enforcement
-    // that does not exist. A real
-    // cross-check would have to run either inside that same atomic claim
-    // transaction, or as a
-    // separate, non-atomic read of `agent_runners.available_capacity`
-    // racing exactly the concurrent-claim hazard the `BEGIN IMMEDIATE` fix
-    // closes. Deliberately dropped rather than kept as a vestigial shape check.
-    let wait_ms = as_u64(&value, "wait_ms")?;
-    if wait_ms > LIMITS.claim_wait_ms_max {
+    // not accept a capacity argument at all. A real cross-check would have to
+    // run inside that same atomic claim transaction, or as a separate,
+    // non-atomic read racing exactly the concurrent-claim hazard the
+    // `BEGIN IMMEDIATE` fix closes; the field is read for the shape and not used.
+    let claim_request_id = request.claim_request_id;
+    if request.wait_ms > LIMITS.claim_wait_ms_max {
         return Err(payload_too_large(
             "claim_wait_ms_max",
             LIMITS.claim_wait_ms_max,
@@ -781,58 +804,48 @@ pub async fn claim(
             lease,
             request_snapshot,
         }) => {
-            // `base_revision` is a required, immutable field on the frozen
-            // request snapshot. `unwrap_or_default()`
-            // would silently turn "missing/unreadable" into `""` — a
-            // structural zero standing in for unknown.
-            // Surface it as `internal_error` instead:
-            // `claim_execution_idempotent_with_snapshot` already validates
-            // the full snapshot shape before a request can be enqueued
-            // (quarantining anything incomplete as `needs_operator` rather
-            // than leasing it),
-            // so reaching this branch with an absent/malformed
-            // `base_revision` indicates a persistence-layer contract
-            // violation, not a client input error.
-            let base_revision = request_snapshot
-                .get("repository")
-                .and_then(|repository| repository.get("base_revision"))
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    internal_error(
-                        "The claimed request snapshot is missing its required base_revision",
-                    )
-                })?
-                .to_owned();
-            Ok(Json(json!({
-                "protocol_version": 1,
-                "claim_request_id": claim_request_id,
-                "lease": {
-                    "attempt_id": lease.attempt_id,
-                    "runner_id": lease.runner_id,
-                    "fencing_token": lease.fencing_token,
-                    "issued_at": lease.issued_at.to_rfc3339(),
-                    "expires_at": lease.expires_at.to_rfc3339(),
+            // `claim_execution_idempotent_with_snapshot` validates the snapshot's shape
+            // before a request can be enqueued (quarantining anything incomplete as
+            // `needs_operator` rather than leasing it), so a stored snapshot that does not
+            // parse here is a persistence-layer contract violation, not a client error.
+            let request: ExecutionRequestSnapshot = serde_json::from_value(request_snapshot)
+                .map_err(|_| internal_error("The claimed request snapshot is not readable"))?;
+            let attempt_number = u32::try_from(lease.attempt_number)
+                .map_err(|_| internal_error("The claimed attempt number is out of range"))?;
+            message_json(&ClaimResponse::Work(Box::new(ClaimGranted {
+                protocol_version: ProtocolVersion::v1(),
+                claim_request_id,
+                lease: ClaimLease {
+                    attempt_id: lease.attempt_id.clone(),
+                    runner_id: lease.runner_id.clone(),
+                    fencing_token: lease.fencing_token,
+                    issued_at: lease.issued_at,
+                    expires_at: lease.expires_at,
                 },
-                "request": request_snapshot,
-                "attempt": {
-                    "attempt_id": lease.attempt_id,
-                    "request_id": lease.request_id,
-                    "attempt_number": lease.attempt_number,
-                    "runner_id": lease.runner_id,
-                    "fencing_token": lease.fencing_token,
-                    "state": execution_state::text(ExecutionState::Leased),
-                    "workspace_id": Value::Null,
-                    "base_revision": base_revision,
+                attempt: AttemptSnapshot {
+                    attempt_id: lease.attempt_id,
+                    request_id: lease.request_id,
+                    attempt_number,
+                    runner_id: lease.runner_id,
+                    fencing_token: lease.fencing_token,
+                    state: ExecutionState::Leased,
+                    workspace_id: None,
+                    base_revision: request.repository.base_revision.clone(),
+                    lease_issued_at: None,
+                    lease_expires_at: None,
+                    last_heartbeat_at: None,
+                    additional: BTreeMap::new(),
                 },
+                request,
             })))
         }
-        None => Ok(Json(json!({
-            "protocol_version": 1,
-            "claim_request_id": claim_request_id,
-            "lease": Value::Null,
-            "retry_after_ms": NO_WORK_RETRY_AFTER_MS,
-            "reason": "no_eligible_work",
-        }))),
+        None => message_json(&ClaimResponse::Idle(ClaimIdle {
+            protocol_version: ProtocolVersion::v1(),
+            claim_request_id,
+            lease: (),
+            retry_after_ms: NO_WORK_RETRY_AFTER_MS,
+            reason: "no_eligible_work".to_owned(),
+        })),
     }
 }
 
@@ -850,36 +863,29 @@ pub async fn heartbeat(
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
-    let heartbeat_id = as_str(&value, "heartbeat_id")?.to_owned();
-    let sent_at = as_datetime(&value, "sent_at")?;
-    let available_capacity = as_i64(&value, "available_capacity")?;
-    let active_attempts = as_array(&value, "active_attempts")?.clone();
-    if active_attempts.len() as u64 > LIMITS.active_attempts_per_heartbeat_max {
+    let request: HeartbeatRequest = parse_message(value)?;
+    if request.active_attempts.len() as u64 > LIMITS.active_attempts_per_heartbeat_max {
         return Err(payload_too_large(
             "active_attempts_per_heartbeat_max",
             LIMITS.active_attempts_per_heartbeat_max,
         ));
     }
-    let leases: Vec<ReportedLease> = active_attempts
-        .iter()
-        .map(|entry| -> runner_auth::ProtocolResult<ReportedLease> {
+    let leases = request
+        .active_attempts
+        .into_iter()
+        .map(|attempt| -> runner_auth::ProtocolResult<ReportedLease> {
             Ok(ReportedLease {
-                attempt_id: AttemptId::new(as_str(entry, "attempt_id")?),
-                fencing_token: as_fencing_token(entry, "fencing_token")?,
-                state: as_str(entry, "state")?.parse().map_err(|_| {
-                    invalid_request(
-                        "state",
-                        "state must be a lifecycle state of runner protocol v1",
-                    )
-                })?,
-                journal_state: as_str(entry, "journal_state")?.to_owned(),
-                last_event_checkpoint: entry
-                    .get("last_event_checkpoint")
-                    .and_then(Value::as_str)
-                    .map(Checkpoint::new),
+                fencing_token: fencing_token_from_wire(attempt.fencing_token.get()).ok_or_else(
+                    || invalid_request("fencing_token", "fencing_token must fit the store"),
+                )?,
+                attempt_id: attempt.attempt_id,
+                state: attempt.state,
+                journal_state: attempt.journal_state.as_str().to_owned(),
+                last_event_checkpoint: attempt.last_event_checkpoint,
             })
         })
         .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
+    let heartbeat_id = request.heartbeat_id;
 
     let result = tack_app::runs::heartbeat::heartbeat(
         &state.repo,
@@ -887,8 +893,8 @@ pub async fn heartbeat(
         Beat {
             runner_id: &principal.runner_id,
             heartbeat_id: &heartbeat_id,
-            sent_at,
-            available_capacity,
+            sent_at: request.sent_at,
+            available_capacity: i64::from(request.available_capacity),
             leases: &leases,
             lease_duration: Duration::seconds(LIMITS.lease_duration_seconds),
         },
@@ -897,17 +903,21 @@ pub async fn heartbeat(
     .map_err(|_| internal_error("Could not record heartbeat"))?;
 
     match result {
-        Heartbeat::Accepted(resp) | Heartbeat::Replayed(resp) => Ok(Json(json!({
-            "protocol_version": 1,
-            "heartbeat_id": resp.heartbeat_id,
-            "accepted_at": resp.accepted_at.to_rfc3339(),
-            "lease_results": resp.leases.iter().map(|lease| json!({
-                "attempt_id": lease.attempt_id,
-                "fencing_token": lease.fencing_token,
-                "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
-                "cancellation_requested": lease.cancellation_requested,
-            })).collect::<Vec<_>>(),
-        }))),
+        Heartbeat::Accepted(resp) | Heartbeat::Replayed(resp) => message_json(&HeartbeatResponse {
+            protocol_version: ProtocolVersion::v1(),
+            heartbeat_id: resp.heartbeat_id,
+            accepted_at: resp.accepted_at,
+            lease_results: resp
+                .leases
+                .into_iter()
+                .map(|lease| LeaseResult {
+                    attempt_id: lease.attempt_id,
+                    fencing_token: lease.fencing_token,
+                    lease_expires_at: lease.lease_expires_at,
+                    cancellation_requested: lease.cancellation_requested,
+                })
+                .collect(),
+        }),
         Heartbeat::IdempotencyConflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
@@ -1092,37 +1102,34 @@ pub async fn submit_events(
     // this endpoint's whole-batch byte cap; no separate check is needed.
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let checkpoint = Checkpoint::new(as_str(&value, "checkpoint")?);
-    let previous_checkpoint = value
-        .get("previous_checkpoint")
-        .and_then(Value::as_str)
-        .map(Checkpoint::new);
-    let events = as_array(&value, "events")?.clone();
-    if events.len() as u64 > LIMITS.event_batch_count_max {
+    let request: EventBatchRequest = parse_message(value)?;
+    let checkpoint = request.checkpoint;
+    let previous_checkpoint = request.previous_checkpoint;
+    if request.events.len() as u64 > LIMITS.event_batch_count_max {
         return Err(payload_too_large(
             "event_batch_count_max",
             LIMITS.event_batch_count_max,
         ));
     }
-    let prepared: Vec<PreparedEvent> = events
-        .iter()
+    let prepared: Vec<PreparedEvent> = request
+        .events
+        .into_iter()
         .map(|event| -> runner_auth::ProtocolResult<PreparedEvent> {
-            let payload = field(event, "payload")?.clone();
-            if json_byte_len(&payload) > LIMITS.event_payload_bytes_max {
+            if json_byte_len(&event.payload) > LIMITS.event_payload_bytes_max {
                 return Err(payload_too_large(
                     "event_payload_bytes_max",
                     LIMITS.event_payload_bytes_max,
                 ));
             }
-            let payload_json = serde_json::to_string(&payload)
+            let payload_json = serde_json::to_string(&event.payload)
                 .map_err(|_| internal_error("Could not encode event payload"))?;
             Ok(PreparedEvent {
-                event_id: as_str(event, "event_id")?.to_owned(),
-                sequence: as_i64(event, "sequence")?,
-                source: as_str(event, "source")?.to_owned(),
-                kind: as_str(event, "kind")?.to_owned(),
+                event_id: event.event_id,
+                sequence: event.sequence,
+                source: event.source,
+                kind: event.kind,
                 payload_json,
-                occurred_at: as_datetime(event, "occurred_at")?,
+                occurred_at: event.occurred_at,
             })
         })
         .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
@@ -1154,13 +1161,13 @@ pub async fn submit_events(
     .map_err(|_| internal_error("Could not record events"))?;
 
     match result {
-        EventsReported::Applied(batch) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "accepted_event_ids": batch.accepted_event_ids,
-            "duplicate_event_ids": batch.duplicate_event_ids,
-            "committed_checkpoint": batch.committed_checkpoint,
-        }))),
+        EventsReported::Applied(batch) => message_json(&EventBatchResponse {
+            protocol_version: ProtocolVersion::v1(),
+            attempt_id,
+            accepted_event_ids: batch.accepted_event_ids,
+            duplicate_event_ids: batch.duplicate_event_ids,
+            committed_checkpoint: batch.committed_checkpoint,
+        }),
         // Two causes, carried by distinct variants: the
         // same `(attempt_id, checkpoint)` idempotency-scoped key reused with
         // different content (this can never succeed by retrying — the
@@ -1758,13 +1765,12 @@ pub async fn submit_completion(
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let completion_id = CompletionId::new(as_str(&value, "completion_id")?);
-    let terminal_state = as_str(&value, "terminal_state")?
-        .parse::<ExecutionState>()
-        .ok()
-        .filter(|parsed| {
+    let request: CompletionRequest = parse_message(value)?;
+    let completion_id = request.completion_id;
+    let terminal_state = Some(request.terminal_state)
+        .filter(|state| {
             matches!(
-                parsed,
+                state,
                 ExecutionState::Succeeded | ExecutionState::Failed | ExecutionState::Cancelled
             )
         })
@@ -1774,31 +1780,16 @@ pub async fn submit_completion(
                 "terminal_state must be succeeded, failed, or cancelled",
             )
         })?;
-    let terminal_reason = field(&value, "terminal_reason")?.clone();
+    let terminal_reason = request.terminal_reason;
     if !terminal_reason.is_object() {
         return Err(invalid_request(
             "terminal_reason",
             "terminal_reason must be an object",
         ));
     }
-    // Reused directly from the frozen domain (`tack_protocol::execution`) —
-    // both shapes match `completion.request.json`'s `actual_execution` and
-    // `usage` exactly, so parsing into these typed values (rather than a
-    // parallel DTO) is the strongest
-    // available guarantee that this handler matches the frozen fixture.
-    let actual_execution: ActualExecution =
-        serde_json::from_value(field(&value, "actual_execution")?.clone()).map_err(|_| {
-            invalid_request(
-                "actual_execution",
-                "actual_execution does not match the runner-v1 shape",
-            )
-        })?;
-    let usage: Usage = serde_json::from_value(field(&value, "usage")?.clone())
-        .map_err(|_| invalid_request("usage", "usage does not match the runner-v1 shape"))?;
-    let final_event_checkpoint = value
-        .get("final_event_checkpoint")
-        .and_then(Value::as_str)
-        .map(Checkpoint::new);
+    let actual_execution = request.actual_execution;
+    let usage = request.usage;
+    let final_event_checkpoint = request.final_event_checkpoint;
 
     let terminal_reason_json = serde_json::to_string(&terminal_reason)
         .map_err(|_| internal_error("Could not encode terminal_reason"))?;
@@ -1851,22 +1842,8 @@ pub async fn submit_completion(
     }
 
     match completed {
-        Completed::Committed { response, .. } => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "completion_id": response.completion_id,
-            "state": response.terminal_state,
-            "replayed": false,
-            "committed_at": response.committed_at,
-        }))),
-        Completed::Replayed(response) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "completion_id": response.completion_id,
-            "state": response.terminal_state,
-            "replayed": true,
-            "committed_at": response.committed_at,
-        }))),
+        Completed::Committed { response, .. } => completion_json(attempt_id, response, false),
+        Completed::Replayed(response) => completion_json(attempt_id, response, true),
         // Same split as `submit_events` above: the same
         // `(attempt_id, completion_id)` idempotency-scoped key
         // reused with different content can never succeed by retrying
@@ -1888,6 +1865,25 @@ pub async fn submit_completion(
         )),
         Completed::Stale => Err(stale_lease(attempt_id.as_str())),
     }
+}
+
+/// The answer to a completion, from the response the store kept.
+fn completion_json(
+    attempt_id: AttemptId,
+    response: tack_db::repo::execution::CompletionResponse,
+    replayed: bool,
+) -> HandlerResult {
+    let committed_at = DateTime::parse_from_rfc3339(&response.committed_at)
+        .map_err(|_| internal_error("The stored completion time is not readable"))?
+        .with_timezone(&Utc);
+    message_json(&CompletionResponse {
+        protocol_version: ProtocolVersion::v1(),
+        attempt_id,
+        completion_id: response.completion_id,
+        state: response.terminal_state,
+        replayed,
+        committed_at,
+    })
 }
 
 /// The merge-readiness pack stored at `reference`, when it can be read and parses.

@@ -220,6 +220,21 @@ pub enum RecoveryJournalState {
     Quarantined,
 }
 
+impl RecoveryJournalState {
+    /// The name this state has on the wire and in storage.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Prepared => "prepared",
+            Self::ProcessObservedRunning => "process_observed_running",
+            Self::CancellationRequested => "cancellation_requested",
+            Self::TerminalReportPending => "terminal_report_pending",
+            Self::RecoveryObserved => "recovery_observed",
+            Self::Reported => "reported",
+            Self::Quarantined => "quarantined",
+        }
+    }
+}
+
 /// What the runner observed while reconciling a prior local process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
