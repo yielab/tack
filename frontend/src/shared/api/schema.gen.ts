@@ -7355,6 +7355,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description The item or the role does not exist, or they belong to different projects */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     remove_role: {
