@@ -7,7 +7,7 @@ import {
 } from 'solid-js';
 import { useParams, useNavigate, useSearchParams } from '@solidjs/router';
 import { api } from '../../shared/api';
-import { Button, EmptyState } from '../../shared/ui';
+import { Button, EmptyState, LoadError } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
@@ -57,11 +57,11 @@ export default function Timeline() {
 
   const { items, refetch } = useProjectItems();
 
-  const [blockedIds] = createResource(items, async (its) => {
+  const [blockedResource, { refetch: refetchBlocked }] = createResource(items, async (its) => {
     const blocked = new Set<string>();
     await Promise.all(
       (its ?? []).map(async (it) => {
-        const deps = await api.dependencies.list(it.id).catch(() => []);
+        const deps = await api.dependencies.list(it.id);
         for (const d of deps) {
           const blockedHere =
             (d.target_item_id === it.id && d.dependency_type === 'blocks') ||
@@ -72,7 +72,7 @@ export default function Timeline() {
     );
     return blocked;
   });
-  const isBlocked = (id: string) => blockedIds()?.has(id) ?? false;
+  const isBlocked = (id: string) => (blockedResource.error ? false : blockedResource()?.has(id) ?? false);
 
   const [currentDate, setCurrentDate] = createSignal(new Date());
   const [viewMode, setViewMode] = createSignal<'week' | 'month' | 'quarter'>('month');
@@ -291,6 +291,9 @@ export default function Timeline() {
           Drag bars to shift dates. Drag the left/right edge to resize start or due date.
         </p>
       </div>
+      <Show when={blockedResource.error}>
+        {(error) => <LoadError what="which items are blocked" error={error()} onRetry={() => void refetchBlocked()} />}
+      </Show>
       <Show when={!(items as any).loading && (items() ?? []).length === 0}>
         <div class="rounded-[28px] bg-panel">
           <EmptyState

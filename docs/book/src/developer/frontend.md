@@ -111,6 +111,18 @@ and the items inside them take `--radius-item` (20px) back on the page ground.
    `*.ts` and unit-test it (`shared/ui/primitives.test.ts` is the pattern).
 4. Consume it from a feature — never reach into another feature.
 
+## Failures and disabled controls
+
+A screen never turns a failed load into an empty state. Do not end a request with
+`.catch(() => [])` or `.catch(() => null)`: let the resource fail, and where it is read
+check `resource.error` before `resource()` (reading a failed resource throws), then show
+`<LoadError what="the roles" error={resource.error} onRetry={refetch} />` in place of
+the empty answer. Anything left to throw is caught by `RouteBoundary`: the app has one at its root and
+`app/routes.tsx` wraps every route in its own, so a screen that fails leaves the shell standing and offers
+"Try again". A control that cannot be used is shown disabled, never hidden; give `Button` a `reason`
+and the text appears beside it while it is disabled and is tied to it with `aria-describedby`. Screen text
+names no environment variable or command: it links to the Administrator Guide (`shared/help/routes.ts`).
+
 ## Design source
 
 The current visual language was imported from a Claude Design project

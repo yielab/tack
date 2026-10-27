@@ -218,7 +218,7 @@ Use this tab to record how an item relates to others in the same project. Two di
 - **Blocks** — this item must be done before the linked item can proceed.
 - **Blocked by** — the linked item must be done before this one can proceed.
 
-The tab lists current **Blocks** and **Blocked by** links. Click a linked item's title to open *its* drawer. Click the `×` to remove a link.
+The tab lists current **Blocks** and **Blocked by** links. Click a linked item's title to open *its* page, which is a link you can also open in a new tab. Click the `×` to remove a link.
 
 To add a dependency, pick a **direction**, choose the other **item** from the picker, and select **Add**.
 

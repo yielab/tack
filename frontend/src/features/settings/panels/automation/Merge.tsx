@@ -1,6 +1,6 @@
 import { type Accessor, type Component, For, Show } from 'solid-js';
 import { toast } from '../../../../shared/ui/toast';
-import { FieldShell, HelpHint } from '../../../../shared/ui';
+import { FieldShell, HelpHint, LoadError } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { AutonomyDomain, AutonomySettings } from '../../../../shared/api/autonomy';
 import { Heading, Note, SECTION, inputClass, inputStyle } from './parts';
@@ -13,7 +13,7 @@ const LEVELS = [
 
 const PROVISIONAL = 'provisional_tokens_per_run';
 
-/** prill's L4 example for the stages it must run. */
+/** The verifier's L4 example for the stages it must run. */
 const PRILL_STAGES = ['criteria', 'suite', 'anti_tautology', 'static_analysis'];
 
 const list = (text: string) => text.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -32,7 +32,13 @@ const BUDGETS = [
  * Rung 3, Merge: how much Tack may merge by itself. Every field saves on change
  * (`PUT /projects/{id}/autonomy`, the whole object, through the ladder's `save`).
  */
-const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>; save: (patch: Partial<AutonomySettings>) => Promise<void> }> = (props) => {
+const Merge: Component<{
+  settings: Accessor<AutonomySettings | null | undefined>;
+  /** Set when the settings did not load: they are not "unavailable". */
+  loadError: Accessor<unknown>;
+  onRetry: () => void;
+  save: (patch: Partial<AutonomySettings>) => Promise<void>;
+}> = (props) => {
   const settings = props.settings;
   const save = props.save;
   const blocked = () => settings()?.automatic_merge_blocked_by ?? [];
@@ -61,10 +67,17 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
   return (
     <div class={SECTION} id="automation-autonomy" data-testid="rung-merge">
       <div class="flex items-center gap-2">
-        <Heading>3. Merge</Heading>
+        <Heading>Merge</Heading>
         <HelpHint label="Autonomy" help={HELP.autonomyLevel} />
       </div>
-      <Show when={settings()} fallback={<Note>Autonomy settings are not available yet.</Note>}>
+      <Show
+        when={settings()}
+        fallback={
+          <Show when={props.loadError()} fallback={<Note>Loading the autonomy settings…</Note>}>
+            {(error) => <LoadError what="the autonomy settings" error={error()} onRetry={props.onRetry} />}
+          </Show>
+        }
+      >
         {(s) => (
           <>
             <div class="flex flex-col gap-2">
@@ -175,12 +188,12 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
               </div>
             </FieldShell>
 
-            <FieldShell label="Stages prill must run" help={HELP.verifyRequire}>
+            <FieldShell label="Stages the verifier must run" help={HELP.verifyRequire}>
               <div class="flex flex-col gap-1.5">
                 <input
                   class={inputClass}
                   style={inputStyle}
-                  aria-label="Stages prill must run"
+                  aria-label="Stages the verifier must run"
                   value={s().verify_require.join(', ')}
                   onChange={(e) => void save({ verify_require: list(e.currentTarget.value) })}
                 />
@@ -191,7 +204,7 @@ const Merge: Component<{ settings: Accessor<AutonomySettings | null | undefined>
                     style={inputStyle}
                     onClick={() => void save({ verify_require: PRILL_STAGES })}
                   >
-                    Fill prill's example
+                    Fill the example stages
                   </button>
                 </div>
               </div>

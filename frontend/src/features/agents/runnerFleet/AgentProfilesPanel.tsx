@@ -1,6 +1,6 @@
 import { type Component, For, Show, createResource, createSignal, createUniqueId } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import { Badge, Button, EmptyState, Field, FieldShell, Skeleton } from '../../../shared/ui';
+import { Badge, Button, EmptyState, Field, FieldShell, LoadError, Skeleton } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
 import { agentProfilesApi, teamOf, type AgentProfileSummary, type ProfileHistory } from '../../../shared/execution';
@@ -126,10 +126,11 @@ const AgentProfilesPanel: Component = () => {
     [...new Set([...rows().map((p) => teamOf(p)), team()].filter((t): t is string => !!t))].sort();
 
   // The history of the profile being edited; a new profile has none.
-  const [history, { refetch: refetchHistory }] = createResource(
+  const [historyResource, { refetch: refetchHistory }] = createResource(
     () => (showForm() ? editing()?.agent_profile_id : undefined),
-    (id) => agentProfilesApi.history(id).catch(() => null),
+    (id) => agentProfilesApi.history(id),
   );
+  const history = () => (historyResource.error ? undefined : historyResource());
 
   // Writes the proposed limit to the profile now, through the same update the form's Save uses.
   const applyProposal = async (tokens: number) => {
@@ -360,6 +361,9 @@ const AgentProfilesPanel: Component = () => {
             value={tokenLimit()}
             onInput={(e) => setTokenLimit(e.currentTarget.value)}
           />
+          <Show when={historyResource.error}>
+            {(error) => <LoadError what="this profile's run history" error={error()} onRetry={() => void refetchHistory()} />}
+          </Show>
           <Show when={history()}>
             {(h) => <HistoryLine history={h()} onApply={(tokens) => void applyProposal(tokens)} busy={saving()} />}
           </Show>

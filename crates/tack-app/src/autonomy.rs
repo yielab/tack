@@ -203,7 +203,7 @@ pub async fn rerun_at_l3(repo: &Repository, attempt_id: &str) -> (bool, Option<S
     };
     let snapshot: Value = serde_json::from_str(&context.request_snapshot).unwrap_or(Value::Null);
     if snapshot["requested_harness_kind"].as_str() != Some(DOCKET) {
-        return no("Only a docket run can be run again with a level");
+        return no("Only a run by a docket team can be run again at L3");
     }
     if requested_level(&snapshot) == Some(Level::L3) {
         return no("This run already ran at L3");

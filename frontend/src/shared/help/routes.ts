@@ -7,6 +7,11 @@ export const BOOK = {
   runDialog: `${BOOK_BASE}user-guide/running-agents.html#the-run-with-agent-dialog`,
   workspace: `${BOOK_BASE}user-guide/automation.html#where-the-agent-works`,
   items: `${BOOK_BASE}user-guide/items.html`,
+  teamsAdmin: `${BOOK_BASE}admin-guide/runners.html#docket-teams`,
+  toolchain: `${BOOK_BASE}admin-guide/runners.html#what-a-teams-sandbox-can-read`,
+  enrolling: `${BOOK_BASE}admin-guide/runners.html#redeeming-the-token-on-the-runner`,
+  runnerSettings: `${BOOK_BASE}admin-guide/runners.html#standalone-mode-tack-serve---with-runner`,
+  verifier: `${BOOK_BASE}admin-guide/runners.html#after-a-succeeded-attempt`,
   importFiles: `${BOOK_BASE}user-guide/import-export.html#the-project-file`,
 };
 

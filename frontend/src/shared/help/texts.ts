@@ -8,7 +8,7 @@ export const HELP = {
   pushTheBranch: { text: 'After a run, push the branch to your remote with your own git credentials. Off keeps everything local.', href: BOOK.automation },
   mergeOnDone: { text: 'When you move a finished task to Done, Tack merges its pull request for you, once CI has passed.', href: BOOK.automation },
   autonomyLevel: { text: 'How much Tack may merge without you. At L3 you press Merge yourself. L4 and L5 let Tack merge when a check you trust has passed.', href: BOOK.automation },
-  verifyRequire: { text: 'The checks prill must have run before Tack merges on its own. Leave empty to ask for none.', href: BOOK.automation },
+  verifyRequire: { text: 'The checks the verifier must have run before Tack merges on its own. Leave empty to ask for none.', href: BOOK.automation },
   loopCap: { text: 'How many times a rejected change goes back to the agent to be fixed. 0 sends it back never.', href: BOOK.automation },
   budgets: { text: 'Limits for work Tack does by itself, per day. Empty means no limit.', href: BOOK.automation },
   model: { text: "The agent's default is what it uses when you run it yourself. Pick a specific one only if you need to.", href: BOOK.automation },

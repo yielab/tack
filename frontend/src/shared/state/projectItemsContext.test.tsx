@@ -57,6 +57,20 @@ function mount(Child: () => unknown) {
 }
 
 describe('ProjectItemsProvider', () => {
+  it('a_failed_load_is_an_error_and_not_an_empty_list', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'The board is unreachable' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+    let error: () => unknown = () => undefined;
+    const { container } = mount(() => {
+      const ctx = useProjectItems();
+      error = ctx.error;
+      return <span data-testid="count">{String(ctx.items()?.length ?? -1)}</span>;
+    });
+    await flush();
+    await flush();
+    expect(container.querySelector('[data-testid="count"]')!.textContent).toBe('-1');
+    expect((error() as Error).message).toBe('The board is unreachable');
+  });
+
   it('fetches items from GET /api/projects/{id}/items on mount', async () => {
     const { dispose } = mount(() => <Consumer />);
     await flush();

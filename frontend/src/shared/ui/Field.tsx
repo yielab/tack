@@ -96,6 +96,14 @@ export interface FieldShellProps {
   children: JSX.Element;
 }
 
+/** The id of the error or hint line under the control `id`; the control points at it with `aria-describedby`. */
+export const noteId = (id: string, kind: 'error' | 'hint') => `${id}-${kind}`;
+
+/** What `aria-describedby` of a control says: its error, else its hint, after any id the caller gave. */
+export const describedBy = (id: string, note: { error?: string; hint?: string; given?: string }) =>
+  [note.given, note.error ? noteId(id, 'error') : note.hint ? noteId(id, 'hint') : undefined].filter(Boolean).join(' ') ||
+  undefined;
+
 /** Label + hint/error frame shared by every form control. */
 export const FieldShell: Component<FieldShellProps> = (props) => (
   <div class={clsx('flex flex-col gap-1', props.class)}>
@@ -116,12 +124,12 @@ export const FieldShell: Component<FieldShellProps> = (props) => (
     </Show>
     {props.children}
     <Show when={props.error}>
-      <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+      <p id={props.for ? noteId(props.for, 'error') : undefined} class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
         {props.error}
       </p>
     </Show>
     <Show when={props.hint && !props.error}>
-      <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <p id={props.for ? noteId(props.for, 'hint') : undefined} class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
         {props.hint}
       </p>
     </Show>
@@ -164,6 +172,7 @@ const Field: Component<FieldProps> = (props) => {
         id={id}
         required={local.required}
         aria-invalid={local.error ? 'true' : undefined}
+        aria-describedby={describedBy(id, { error: local.error, hint: local.hint, given: rest['aria-describedby'] })}
         class={controlClass}
         style={{
           ...controlStyle,

@@ -80,6 +80,29 @@ async function createWithFolder(fetchSpy: ReturnType<typeof mockFetch>) {
 }
 
 describe('CreateProjectModal', () => {
+  it('shows Browse… disabled with its reason in a browser tab, and enabled in the desktop app', async () => {
+    mockFetch();
+    mount();
+    await flush();
+    radio('An existing folder on this computer').click();
+    await flush();
+    const browse = () => Array.from(dialog().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Browse…')!;
+    expect(browse().disabled).toBe(true);
+    expect(dialog().querySelector(`#${CSS.escape(browse().getAttribute('aria-describedby')!)}`)!.textContent).toBe('Available in the desktop app');
+
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    try {
+      document.body.innerHTML = '';
+      mount();
+      await flush();
+      radio('An existing folder on this computer').click();
+      await flush();
+      expect(browse().disabled).toBe(false);
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+
   it('creates a project with its folder in the one POST, with no PATCH afterwards', async () => {
     folderCheck = { ...folderCheck, is_git: true, branch: 'main' };
     const requests = await createWithFolder(mockFetch());

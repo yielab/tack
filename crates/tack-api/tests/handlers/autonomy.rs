@@ -896,7 +896,7 @@ async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_can
             "L4",
             None,
             None,
-            Some("Only a docket run can be run again"),
+            Some("Only a run by a docket team can be run again"),
         ),
     ];
     for (harness, level, team, asked, reason) in cases {

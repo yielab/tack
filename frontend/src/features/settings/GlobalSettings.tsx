@@ -306,7 +306,7 @@ const GlobalSettings: Component = () => {
           />
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-start gap-2">
           <Button onClick={() => void saveCloud()} loading={savingCloud()} disabled={savingCloud()}>
             Save settings
           </Button>
@@ -315,7 +315,8 @@ const GlobalSettings: Component = () => {
             onClick={() => void backupNow()}
             loading={cloudBackingUp()}
             disabled={!configured() || cloudBackingUp()}
-            title={configured() ? 'Sync the database to cloud storage now' : 'Configure cloud storage first'}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
+            title="Sync the database to cloud storage now"
           >
             <FiUploadCloud size={16} /> Back up now
           </Button>
@@ -324,6 +325,7 @@ const GlobalSettings: Component = () => {
             onClick={() => void restoreFromCloud()}
             loading={cloudRestoring()}
             disabled={!configured() || cloudRestoring()}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
             title="Restore the latest cloud backup (applied on next restart)"
           >
             <FiDownloadCloud size={16} /> Restore latest
@@ -333,20 +335,22 @@ const GlobalSettings: Component = () => {
             onClick={() => void verifyCloud()}
             loading={cloudVerifying()}
             disabled={!configured() || cloudVerifying()}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
             title="Download and validate the latest cloud backup without restoring it"
           >
             <FiCheckCircle size={16} /> Verify latest
           </Button>
-          <Show when={configured()}>
-            <Button
-              variant="secondary"
-              class="px-2.5!"
-              onClick={() => void refetchBackups()}
-              title="Refresh the list of cloud backups"
-            >
-              <FiRefreshCw size={16} />
-            </Button>
-          </Show>
+          <Button
+            variant="secondary"
+            class="px-2.5!"
+            onClick={() => void refetchBackups()}
+            disabled={!configured()}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
+            aria-label="Refresh the list of cloud backups"
+            title="Refresh the list of cloud backups"
+          >
+            <FiRefreshCw size={16} />
+          </Button>
         </div>
 
         {/* Existing cloud backups */}

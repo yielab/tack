@@ -192,6 +192,24 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **A screen that cannot load says so, with "Try again".** A failed load is no longer shown as "nothing
+  here": the Automation ladder, the folder check, the runners and profiles, the roles, a task's Automation
+  row, a profile's run history, the Timeline's blocked marks and a project's items each say what could not
+  load, and why when the board said. Every route draws inside its own error boundary, and the app has one
+  more around it, so a screen that fails to draw leaves the sidebar standing and offers "Try again".
+- **A disabled button says why.** `Button` takes a `reason`, shown beside the button while it is disabled and
+  tied to it for screen readers. "Browse…" in the new-project dialog is shown in a browser tab, disabled,
+  with "Available in the desktop app", and the cloud backup buttons (Back up now, Restore latest, Verify
+  latest, refresh) are shown with "Set up cloud backup first" until it is set up; none is hidden any more.
+- **Screens say "the verifier", and name no variable or command.** The Merge step, Factory metrics, the
+  enrolment token and the runner's settings file link to the Administrator Guide in place of `prill`,
+  `TACK_RUNNER_ENROLLMENT_TOKEN`, `docket init` and `docket setup sandbox read add`. The board's "not
+  installed" sentence for the verifier and the "Run again at L3" reason follow the same rule.
+- **The Automation ladder reads as one list.** Its folded sections have their disclosure marker back, and the
+  four steps lose the numbers 1 to 4, which sat beside the levels L3 to L5.
+- **Fields and tabs are tied for assistive technology.** A field's error or hint is its `aria-describedby`,
+  each tab names the panel it controls, and the accessibility scan also covers the project's settings tabs,
+  the item's own page, Factory metrics, the create-project dialog and the command palette.
 - **The install commands name no release.** The README, the quick start and the deployment guide look up the
   newest published release (pre-releases included) and install it from that release's own installer, so they
   stay true after every release and never point at a tag that has no release yet.

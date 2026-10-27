@@ -2,6 +2,7 @@ import { type Component, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button, Skeleton } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { isLocalRunnerUnavailable, localRunnerApi } from './api';
+import { BOOK } from '../../shared/help/routes';
 
 /**
  * One switch — *Agent execution on this machine* (ADR 0005 decision 6). No
@@ -104,8 +105,10 @@ const ExecutionToggle: Component = () => {
             when={status()!.config_file}
             fallback={
               <>
-                No settings file: this computer runs no docket team and verifies nothing. Write{' '}
-                <code>~/.config/tack/runner.toml</code> and restart Tack.
+                No settings file: this computer runs no docket team and verifies nothing.{' '}
+                <a href={BOOK.runnerSettings} target="_blank" rel="noreferrer" class="underline">
+                  The Administrator Guide shows how to write one.
+                </a>
               </>
             }
           >
