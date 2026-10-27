@@ -28,14 +28,6 @@ pub fn ensure_loopback(host: &str, binds_loopback: bool) -> Result<(), NotLoopba
     }
 }
 
-/// Whether the embedded runner should start at boot: `--with-runner`, or its environment
-/// equivalent. Off unless one explicitly says on.
-pub fn with_runner_enabled(flag: bool) -> bool {
-    flag || std::env::var("TACK_LOCAL_RUNNER_ENABLE")
-        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
-}
-
 /// Where the embedded runner's on-disk state (credential, attempt journal, secret store) lives
 /// by default: one level under this server's own `storage_dir`, so a server on a different
 /// database never resolves to another server's runner state.

@@ -19,7 +19,7 @@ use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::background::{Loops, Start};
-use crate::host::Host;
+use crate::ports::Ports;
 use crate::runs::start_run::{
     PermissionRequest, RunRequest, default_selector, resolve_profile, start_run,
 };
@@ -43,13 +43,13 @@ pub fn spawn(
     loops: &mut Loops,
     repo: Repository,
     clock: Arc<dyn Clock>,
-    host: Arc<dyn Host>,
+    ports: Ports,
     interval: Duration,
 ) {
     loops.spawn_tick("auto_start", Start::AfterInterval, interval, move || {
-        let (repo, clock, host) = (repo.clone(), clock.clone(), host.clone());
+        let (repo, clock, ports) = (repo.clone(), clock.clone(), ports.clone());
         async move {
-            if let Err(error) = tick(&repo, clock.as_ref(), host.as_ref()).await {
+            if let Err(error) = tick(&repo, clock.as_ref(), &ports).await {
                 tracing::warn!(%error, "auto-start: could not list projects");
             }
         }
@@ -60,13 +60,13 @@ pub fn spawn(
 pub async fn tick(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
 ) -> Result<Outcome, AppError> {
     let ids = queries::projects::auto_start_project_ids(repo).await?;
     let mut outcome = Outcome::default();
     for id in ids.iter().filter_map(|id| id.parse::<Uuid>().ok()) {
         match repo.get_project(id).await {
-            Ok(Some(project)) => match project_tick(repo, clock, host, &project).await {
+            Ok(Some(project)) => match project_tick(repo, clock, ports, &project).await {
                 Ok(started) => outcome.started += started,
                 Err(error) => {
                     tracing::warn!(project_id = %id, %error, "auto-start: project pass failed");
@@ -85,7 +85,7 @@ pub async fn tick(
 async fn project_tick(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
     project: &Project,
 ) -> Result<usize, AppError> {
     let Some(waiting_in) = project.auto_start_status.as_deref() else {
@@ -192,7 +192,7 @@ async fn project_tick(
     let mut count = 0;
     for item_id in picked {
         if let Some(candidate) = candidates.iter().find(|c| c.item_id == item_id)
-            && start(repo, clock, host, project, candidate, &started.name).await
+            && start(repo, clock, ports, project, candidate, &started.name).await
         {
             count += 1;
         }
@@ -205,7 +205,7 @@ async fn project_tick(
 async fn start(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
     project: &Project,
     candidate: &Candidate,
     started: &str,
@@ -293,7 +293,7 @@ async fn start(
             return true;
         }
     };
-    host.item_moved(
+    ports.events.item_moved(
         item.project_id,
         item.id,
         old_status.clone(),

@@ -80,7 +80,7 @@ of linking against it. `scripts/arch-facts.sh` prints the crate, route, migratio
 - `tack-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions: planning and runs policy. You can run every test in it without a database process.
 - `tack-orch` is pure too: the runner scheduler and the model-policy resolver over plain values, with no database, no clock and no HTTP. See [Crate Tour](crate-tour.md#tack-orch).
 - `tack-db` is the only crate that names `sqlx`. Commands are `Repository` methods, read models are functions in `queries/`, and every call fails with `StoreError`, so no SQL driver type crosses its edge. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables.
-- `tack-app` is the application layer. It holds the use cases of a run (`runs/`) and every background tick (`tick()` is one pass, which tests call; `run()` is the loop `tack serve` spawns). It names `reqwest`, never `axum` or `sqlx`, and reaches back into what still lives in `tack-api` through one trait, `tack_app::host::Host`.
+- `tack-app` is the application layer. It holds the use cases of a run (`runs/`) and every background tick (`tick()` is one pass, which tests call; `run()` is the loop `tack serve` spawns). It names `reqwest`, never `axum` or `sqlx`, and reaches back into what still lives in `tack-api` through three small traits in `tack_app::ports` (`Verifier`, `Artifacts`, `BoardEvents`).
 - `tack-api` is the only crate that names `axum`: HTTP concerns (status codes, request extraction, CORS) live here, and a handler extracts, calls a `tack-app` use case or a `tack-db` method, maps the error and responds. It names `tack-db` because `AppState.repo` is the `Repository` and `ApiError` wraps `StoreError`.
 - `tack-cli` is the single `tack` binary and the composition root: `serve.rs` builds the `Repository`, hands it to the server and spawns the ticks. It also depends on `tack-runner` so that `--with-runner` and `tack runner doctor` can use the runner's code. Its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
 - `tack-runner` is a separate binary entirely. It depends on `tack-protocol` and `tack-core` for the shared types, and never on `tack-db` or `tack-api`; it speaks the runner-v1 protocol to `tack-api` over loopback or the network, the same way a remote runner would.
@@ -260,7 +260,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
 │   │       │   retention.rs, observability.rs  Ticks: tick() is one pass, run() is the loop
 │   │       ├── autonomy.rs, merge.rs  Gathering merge facts and merging
-│   │       ├── host.rs      The Host trait: what tack-app needs back from tack-api
+│   │       ├── ports.rs     The Verifier, Artifacts and BoardEvents traits: what tack-app needs back from tack-api
 │   │       ├── scheduler_wiring.rs, model_policy_wiring.rs  The live callers of tack-orch
 │   │       ├── local_runner/ The embedded runner as the rest of Tack sees it
 │   │       └── error.rs     AppError
@@ -273,7 +273,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── error.rs     ApiError → HTTP status code mapping
 │   │       ├── debug.rs     /api/health, /api/debug/* endpoints
 │   │       ├── middleware.rs Token gate, origin and host checks
-│   │       ├── host.rs      Implements tack_app::host::Host over AppState
+│   │       ├── ports.rs     Implements tack_app::ports over AppState
 │   │       └── handlers/    One file per entity group + websocket.rs
 │   │
 │   ├── tack-cli/          CLI (clap), talks to API over HTTP

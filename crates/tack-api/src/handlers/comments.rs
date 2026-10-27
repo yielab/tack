@@ -40,7 +40,7 @@ pub async fn create_comment(
 /// comment onto its item's linked GitHub issue, and store the returned id
 /// so the inbound poll never mirrors it back in. No-op unless a token
 /// resolves (the item's project's own `github_token_ref`, else
-/// `TACK_GITHUB_TOKEN` — see `github_sync::github_token_for_project`) and the
+/// `TACK_GITHUB_TOKEN` — see `GitHub::token_for_project`) and the
 /// item has a `github_links` row. Only ever called for a comment created
 /// through this handler, so a comment mirrored in from GitHub (created
 /// directly via the db repo by `github_sync::tick`) is never a
@@ -52,12 +52,10 @@ async fn maybe_sync_github(state: &AppState, item_id: Uuid, comment: &Comment) {
     let Ok(Some(item)) = state.repo.get_item(item_id).await else {
         return;
     };
-    let Some(token) =
-        crate::handlers::pull_requests::github_token_for_project(state, item.project_id).await
-    else {
+    let Some(token) = state.github_token(item.project_id).await else {
         return;
     };
-    let base = state.config.github_api_base.clone();
+    let base = state.github().api_base;
     let body = comment.content.clone();
     let comment_id = comment.id;
     let db = state.repo.clone();

@@ -24,10 +24,10 @@ use tracing::{info, warn};
 /// address once the listener is open; `local_runner` is the embedded runner the UI can turn on
 /// (`None` leaves its routes absent).
 pub async fn run(
+    mut config: AppConfig,
     ready_tx: Option<oneshot::Sender<SocketAddr>>,
     local_runner: Option<Arc<dyn LocalRunnerControl>>,
 ) -> anyhow::Result<()> {
-    let mut config = AppConfig::load();
     prepare(&mut config)?;
 
     let pool = init_pool(&config.database_url).await?;
@@ -76,7 +76,7 @@ pub async fn run(
             &mut loops,
             state.repo.clone(),
             Arc::new(SystemClock),
-            Arc::new(state.host()),
+            state.ports(),
             Duration::from_secs(state.config.auto_start_seconds),
         );
     }
@@ -86,11 +86,7 @@ pub async fn run(
         &mut loops,
         state.repo.clone(),
         Arc::new(tack_protocol::SystemClock),
-        tack_app::github_sync::Settings {
-            github_token: state.config.github_token.clone(),
-            api_base: state.config.github_api_base.clone(),
-        },
-        Arc::new(state.host()),
+        state.ports(),
         Duration::from_secs(state.config.github_poll_seconds),
     );
 

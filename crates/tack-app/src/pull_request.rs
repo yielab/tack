@@ -1,25 +1,14 @@
 //! The pull request an accepted attempt opens on GitHub.
 
-use super::runner_protocol::artifact_storage::ArtifactStorage;
 use chrono::Utc;
 use serde_json::Value;
+use tack_db::Repository;
 use tack_db::queries::{execution_artifacts, execution_attempts, pull_requests};
 
-/// A project's GitHub token: its own `github_token_ref` resolved through the embedded
-/// runner's secret store, else the environment's `TACK_GITHUB_TOKEN`. See
-/// [`tack_app::github_sync::github_token_for_project`].
-pub(crate) async fn github_token_for_project(
-    state: &crate::router::AppState,
-    project_id: uuid::Uuid,
-) -> Option<String> {
-    tack_app::github_sync::github_token_for_project(
-        &state.repo,
-        &state.host(),
-        state.config.github_token.as_deref(),
-        project_id,
-    )
-    .await
-}
+use crate::github_sync;
+use crate::ports::Ports;
+
+const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 
 /// When an accepted attempt pushed its branch and its item is linked to a
 /// GitHub issue, opens a pull request from that branch to the repository's
@@ -28,17 +17,15 @@ pub(crate) async fn github_token_for_project(
 /// merge-readiness pack rendered as Markdown, else a plain note; the title
 /// carries only numbers, never item or agent text. Every refusal is logged and
 /// returns `None`, never failing the review.
-pub(crate) async fn open_pull_request_for_attempt(
-    app: crate::router::AppState,
-    storage: &ArtifactStorage,
+pub async fn open_for_attempt(
+    repo: &Repository,
+    ports: &Ports,
     attempt_id: &str,
 ) -> Option<String> {
-    const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
-    if let Ok(Some(existing)) = pull_requests::pull_request_of_attempt(&app.repo, attempt_id).await
-    {
+    if let Ok(Some(existing)) = pull_requests::pull_request_of_attempt(repo, attempt_id).await {
         return Some(existing.url);
     }
-    let git = execution_attempts::actual_execution_of_attempt(&app.repo, attempt_id)
+    let git = execution_attempts::actual_execution_of_attempt(repo, attempt_id)
         .await
         .ok()
         .flatten()
@@ -48,7 +35,7 @@ pub(crate) async fn open_pull_request_for_attempt(
         return None;
     }
     let branch = git.get("branch").and_then(Value::as_str)?;
-    let row = execution_attempts::item_of_attempt(&app.repo, attempt_id).await;
+    let row = execution_attempts::item_of_attempt(repo, attempt_id).await;
     let Ok(Some(execution_attempts::AttemptItem {
         item_id,
         attempt_number,
@@ -63,7 +50,7 @@ pub(crate) async fn open_pull_request_for_attempt(
     let Ok(item_uuid) = item_id.parse::<uuid::Uuid>() else {
         return None;
     };
-    let link = match app.repo.get_github_link(item_uuid).await {
+    let link = match repo.get_github_link(item_uuid).await {
         Ok(Some(link)) => link,
         Ok(None) => {
             tracing::debug!(
@@ -78,33 +65,33 @@ pub(crate) async fn open_pull_request_for_attempt(
         }
     };
     let (repo_name, issue_number) = link;
-    let Ok(Some(item)) = app.repo.get_item(item_uuid).await else {
+    let Ok(Some(item)) = repo.get_item(item_uuid).await else {
         return None;
     };
-    let Some(token) = github_token_for_project(&app, item.project_id).await else {
+    let Some(token) = ports
+        .github
+        .token_for_project(repo, ports.runner.as_deref(), item.project_id)
+        .await
+    else {
         tracing::debug!(attempt_id, "pull request: no GitHub token, none opened");
         return None;
     };
 
-    let reference =
-        execution_artifacts::latest_content_reference(&app.repo, attempt_id, MRP_MEDIA_TYPE)
+    let reference = execution_artifacts::latest_content_reference(repo, attempt_id, MRP_MEDIA_TYPE)
+        .await
+        .ok()
+        .flatten();
+    let pack_body = match reference {
+        Some(reference) => ports
+            .artifacts
+            .read(&reference)
             .await
-            .ok()
-            .flatten();
-    let mut pack_body = None;
-    if let Some(reference) = reference
-        && let Ok(mut file) = storage.open_for_read(&reference).await
-    {
-        let mut bytes = Vec::new();
-        if tokio::io::AsyncReadExt::read_to_end(&mut file, &mut bytes)
-            .await
-            .is_ok()
-            && let Ok(pack) =
-                serde_json::from_slice::<tack_protocol::mrp::MergeReadinessPack>(&bytes)
-        {
-            pack_body = Some(tack_protocol::mrp::render_markdown(&pack));
-        }
-    }
+            .and_then(|bytes| {
+                serde_json::from_slice::<tack_protocol::mrp::MergeReadinessPack>(&bytes).ok()
+            })
+            .map(|pack| tack_protocol::mrp::render_markdown(&pack)),
+        None => None,
+    };
     let body = pack_body.unwrap_or_else(|| {
         format!(
             "No merge-readiness pack was reported for this attempt.\n\nBranch `{branch}` at `{}`.",
@@ -114,10 +101,8 @@ pub(crate) async fn open_pull_request_for_attempt(
         )
     });
 
-    let api_base = app.config.github_api_base.as_str();
-    let base_branch = match tack_app::github_sync::default_branch(api_base, &token, &repo_name)
-        .await
-    {
+    let api_base = ports.github.api_base.as_str();
+    let base_branch = match github_sync::default_branch(api_base, &token, &repo_name).await {
         Ok(branch) => branch,
         Err(error) => {
             tracing::warn!(attempt_id, %error, "pull request: could not read the default branch");
@@ -125,7 +110,7 @@ pub(crate) async fn open_pull_request_for_attempt(
         }
     };
     let title = format!("Tack: attempt {attempt_number} for #{issue_number}");
-    match tack_app::github_sync::open_pull_request(
+    match github_sync::open_pull_request(
         api_base,
         &token,
         &repo_name,
@@ -138,8 +123,7 @@ pub(crate) async fn open_pull_request_for_attempt(
     {
         Ok((number, url)) => {
             let opened_at = Utc::now().to_rfc3339();
-            if let Err(error) = app
-                .repo
+            if let Err(error) = repo
                 .record_pull_request(attempt_id, &repo_name, number, &url, &opened_at)
                 .await
             {

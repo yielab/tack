@@ -381,11 +381,7 @@ pub async fn review_execution_attempt(
         })?;
     let pull_request_url = match (input.verdict.as_str(), state.app.clone()) {
         ("accepted", Some(app)) => {
-            let storage = super::runner_protocol::artifact_storage::ArtifactStorage::new(format!(
-                "{}/execution-artifacts",
-                app.config.storage_dir
-            ));
-            super::pull_requests::open_pull_request_for_attempt(app, &storage, &attempt_id).await
+            tack_app::pull_request::open_for_attempt(&app.repo, &app.ports(), &attempt_id).await
         }
         _ => None,
     };

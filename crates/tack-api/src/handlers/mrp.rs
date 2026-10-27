@@ -13,15 +13,11 @@ use tokio::io::AsyncReadExt;
 use tracing::instrument;
 use utoipa::ToSchema;
 
-use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
-use tack_db::queries::execution_requests::RequestItemPolicy;
-use tack_db::queries::{execution_artifacts, execution_requests};
+use tack_db::queries::execution_artifacts;
 use tack_db::repo::execution::ExecutionArtifactRow;
 use tack_protocol::mrp::MergeReadinessPack;
 
 use crate::error::{ApiError, ApiResult};
-use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
-use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
 
 const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
@@ -75,7 +71,7 @@ async fn read_pack(
         .content_reference
         .as_deref()
         .ok_or_else(|| ApiError::NotFound("The pack's content has not been uploaded".into()))?;
-    let storage = ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
+    let storage = state.artifact_storage();
     let mut file = storage
         .open_for_read(reference)
         .await
@@ -189,80 +185,24 @@ pub async fn review_mrp(
         .await?
         .ok_or_else(|| ApiError::Conflict("This pack was already reviewed".into()))?;
     if input.verdict == MrpVerdict::Accept {
-        apply_mrp_accepted(&state, &request_id).await?;
+        tack_app::mrp::apply_accepted_checked(
+            &state.repo,
+            state.ports().events.as_ref(),
+            &request_id,
+        )
+        .await?;
     }
     let mut body =
         serde_json::to_value(&review).map_err(|error| ApiError::Internal(error.into()))?;
-    if input.verdict == MrpVerdict::Accept {
-        let storage =
-            ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
-        if let Some(url) = super::pull_requests::open_pull_request_for_attempt(
-            state.clone(),
-            &storage,
+    if input.verdict == MrpVerdict::Accept
+        && let Some(url) = tack_app::pull_request::open_for_attempt(
+            &state.repo,
+            &state.ports(),
             &artifact.attempt_id,
         )
         .await
-        {
-            body["pull_request_url"] = serde_json::Value::String(url);
-        }
+    {
+        body["pull_request_url"] = serde_json::Value::String(url);
     }
     Ok(Json(body))
-}
-
-/// Moves the request's item to the first Done status when the request's
-/// `status_map_policy_id` is `done_on_mrp_accepted`; any other policy leaves it.
-pub(crate) async fn apply_mrp_accepted(state: &AppState, request_id: &str) -> ApiResult<()> {
-    let row = execution_requests::item_and_status_map_policy(&state.repo, request_id).await?;
-    let Some(RequestItemPolicy {
-        item_id,
-        status_map_policy_id: Some(policy_id),
-    }) = row
-    else {
-        return Ok(());
-    };
-    let Ok(policy) = policy_id.parse::<StatusMapPolicy>() else {
-        return Ok(());
-    };
-    let Ok(item_id) = item_id.parse::<uuid::Uuid>() else {
-        return Ok(());
-    };
-    let Some(item) = state.repo.get_item(item_id).await? else {
-        return Ok(());
-    };
-    let Some(project) = state.repo.get_project(item.project_id).await? else {
-        return Ok(());
-    };
-    let Some(target) = policy.target_status(&project.workflow, StatusMapEvent::MrpAccepted) else {
-        return Ok(());
-    };
-    if item.status == target {
-        return Ok(());
-    }
-    let update = tack_core::models::UpdateItem {
-        status: Some(target.clone()),
-        ..Default::default()
-    };
-    match state
-        .repo
-        .update_item_atomically(item_id, update, &project.workflow, None)
-        .await?
-    {
-        tack_db::repo::items::AtomicItemUpdateOutcome::Updated {
-            item, old_status, ..
-        } => {
-            websocket::broadcast_event(
-                state,
-                BoardEvent::ItemUpdated {
-                    project_id: item.project_id,
-                    item_id: item.id,
-                    old_status: Some(old_status),
-                    new_status: item.status.clone(),
-                },
-            );
-        }
-        outcome => {
-            tracing::warn!(request_id, %item_id, target, ?outcome, "mrp accepted: transition refused, item untouched");
-        }
-    }
-    Ok(())
 }

@@ -1,6 +1,36 @@
 use anyhow::Context;
 use serde::Deserialize;
 
+/// The variable `tack serve --runner-config` stands in for, naming the TOML file the embedded
+/// runner loads, the one `tack runner start --config` reads. Without it the runner reads its
+/// per-user default when that file exists; with neither it has defaults only, which leaves its
+/// `[docket]`, `[verify]`, `[git]`, `[secrets]` and `[environment]` tables unset.
+pub const RUNNER_CONFIG_ENV: &str = "TACK_LOCAL_RUNNER_CONFIG";
+
+/// What the process environment says about the embedded runner and the database, read once by
+/// whoever starts the server and handed down as values.
+#[derive(Debug, Clone, Default)]
+pub struct ServeEnvironment {
+    /// `TACK_LOCAL_RUNNER_CONFIG`: the settings file the embedded runner loads. Set but empty,
+    /// it names none.
+    pub runner_config: Option<std::ffi::OsString>,
+    /// `TACK_RUNNER_STATE_DIR` is set: the runner's state directory is the operator's, not the
+    /// one scoped to the server's storage.
+    pub runner_state_dir_named: bool,
+    /// `TACK_DATABASE_URL` is set: the operator named the database.
+    pub database_named: bool,
+}
+
+impl ServeEnvironment {
+    pub fn from_process() -> Self {
+        Self {
+            runner_config: std::env::var_os(RUNNER_CONFIG_ENV),
+            runner_state_dir_named: std::env::var_os("TACK_RUNNER_STATE_DIR").is_some(),
+            database_named: std::env::var_os("TACK_DATABASE_URL").is_some(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct RcFile {
     base_url: Option<String>,

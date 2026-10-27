@@ -306,7 +306,7 @@ pub async fn update_item(
             tack_app::merge::on_done(
                 &app.repo,
                 &tack_protocol::SystemClock,
-                &app.host(),
+                &app.ports(),
                 &item_id,
                 &project_id,
                 over_mcp,
@@ -393,7 +393,7 @@ async fn create_next_recurrence(
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the
 /// Done boundary, close (or reopen) its GitHub issue. No-op unless a token
 /// resolves (the item's project's own `github_token_ref`, else
-/// `TACK_GITHUB_TOKEN` — see `github_sync::github_token_for_project`) and the
+/// `TACK_GITHUB_TOKEN` — see `GitHub::token_for_project`) and the
 /// item has a `github_links` row.
 pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status: &str) {
     if item.status == old_status {
@@ -405,9 +405,7 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
     let Ok(Some(proj)) = state.repo.get_project(item.project_id).await else {
         return;
     };
-    let Some(token) =
-        crate::handlers::pull_requests::github_token_for_project(state, item.project_id).await
-    else {
+    let Some(token) = state.github_token(item.project_id).await else {
         return;
     };
     let Some(closed) = tack_app::github_sync::state_change(
@@ -417,7 +415,7 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
         return;
     };
 
-    let base = state.config.github_api_base.clone();
+    let base = state.github().api_base;
     state.tasks.spawn(async move {
         if let Err(e) =
             tack_app::github_sync::push_issue_state(&base, &token, &repo, number, closed).await

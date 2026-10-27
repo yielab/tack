@@ -107,7 +107,7 @@ Tack/
 │   │   │   ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
 │   │   │   │   retention.rs, observability.rs   # Ticks: tick() is one pass, run() the loop
 │   │   │   ├── autonomy.rs, merge.rs   # The merge ceiling and the merge itself
-│   │   │   ├── host.rs         # Host: what tack-app needs back from tack-api
+│   │   │   ├── ports.rs        # Verifier, Artifacts, BoardEvents: what tack-app needs back from tack-api
 │   │   │   ├── scheduler_wiring.rs, model_policy_wiring.rs   # Live callers of tack-orch
 │   │   │   ├── local_runner/   # The embedded runner as the rest of Tack sees it
 │   │   │   └── error.rs        # AppError
@@ -119,7 +119,7 @@ Tack/
 │   │   │   ├── router.rs       # All routes, AppState, middleware
 │   │   │   ├── config.rs       # TOML/env config
 │   │   │   ├── error.rs        # ApiError → HTTP status mapping
-│   │   │   ├── host.rs         # tack_app::host::Host over AppState
+│   │   │   ├── ports.rs        # tack_app::ports over AppState
 │   │   │   ├── debug.rs        # /api/health, /api/debug/*
 │   │   │   ├── middleware.rs   # Bearer token auth
 │   │   │   ├── webhook.rs      # Outbound webhook delivery
@@ -221,7 +221,7 @@ dev-dependencies are exempt: every crate may test with `tack-test-support`.
 - `tack-protocol`, `tack-core` and `tack-orch` do no I/O. Keep business logic testable without a database.
 - `sqlx` and `Repository::pool()` live in `tack-db` and `tack-test-support` only; everything else gets `StoreError`. `axum` lives in `tack-api` (and the runner's own server) only. The script's second check and the bans in `deny.toml` enforce both.
 - A rule of a run is a `tack-app` use case (`pub async fn <verb>(repo, clock, ..) -> Result<T, AppError>`); a handler extracts, calls, maps the error and responds. A background loop is a module with `tick()` (one pass, called by tests) and `spawn()` (adds the tick to the `background::Loops` that `tack-cli/src/serve.rs` owns and stops on shutdown); a use case a handler starts after answering goes on `AppState::tasks`, never a bare `tokio::spawn`.
-- What `tack-app` needs from things that still live in `tack-api` goes through `tack_app::host::Host`.
+- What `tack-app` needs from things that still live in `tack-api` goes through the small traits in `tack_app::ports`.
 - `tack-runner` must never import `tack-db`. `tack-cli`'s client commands never open the database; only `serve.rs` builds the `Repository`.
 - Tests plant rows with `tack_test_support::seed` and read them with `tack_db::queries::`.
 

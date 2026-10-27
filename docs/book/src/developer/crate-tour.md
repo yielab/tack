@@ -354,9 +354,9 @@ event counts and logs alerts from it — keyed only by the domain's two small, c
 state vocabularies (`agent_runners.state`, `execution_requests.state`), never by
 attempt/request/runner id, so the label set stays bounded regardless of fleet size.
 
-### `host.rs`
+### `ports.rs`
 
-`Host` is the one trait through which `tack-app` calls back into things that still live in `tack-api`: `github_token`, `ci_state`, `resolve_secret`, `pull_request_observed`, `merge_pull_request`, `open_pull_request`, `apply_mrp_accepted`, `verify_attestation`, `read_artifact` and `item_moved`. `tack-api` implements it over its `AppState` (`host.rs` there). A method goes away when the thing it reaches moves into this crate. Tests of the ticks use a fake `Host`.
+Three small traits are how `tack-app` calls back into things that still live in `tack-api`: `Verifier` (prill's attestation check and the outcome of a pull request, failing with `VerifierError`), `Artifacts` (the bytes of a stored file) and `BoardEvents` (an item moved). `Ports` bundles them with `github_sync::GitHub`, which holds the GitHub API root and token and makes the GitHub calls, and with the embedded runner, which resolves secret references. `tack-api` builds a `Ports` over its `AppState` (`ports.rs` there). A port stays a trait only where its implementor names an HTTP type `tack-app` may not.
 
 ### `scheduler_wiring.rs` and `model_policy_wiring.rs`
 
@@ -420,7 +420,7 @@ pub struct AppState {
 
 One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `resolve_profile`, `default_selector` and `create_as`, which a run started by the board itself goes through), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
 
-The board's own timed work (the auto-start tick, the autonomy tick that merges and demotes, the merge itself, the GitHub poll and the remote backup) is in `tack-app`; a handler that needs one of them calls it. What `tack-app` needs back from this crate is `host.rs`, the implementation of `tack_app::host::Host` over `AppState`.
+The board's own timed work (the auto-start tick, the autonomy tick that merges and demotes, the merge itself, the GitHub poll and the remote backup) is in `tack-app`; a handler that needs one of them calls it. What `tack-app` needs back from this crate is `ports.rs`, the implementation of `tack_app::ports` over `AppState`.
 
  A typical handler follows this shape:
 

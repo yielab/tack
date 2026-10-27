@@ -11,8 +11,8 @@ use tack_protocol::execution::{HarnessCapability, TeamReport};
 use tack_protocol::mrp::{MergeDecision, MergeReadinessPack};
 
 use crate::AppError;
-use crate::host::Host;
 use crate::merge::{self, FactsExtra};
+use crate::ports::Ports;
 
 pub(crate) const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
 
@@ -32,7 +32,7 @@ pub struct Outcome {
 pub async fn tick(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
 ) -> Result<Outcome, AppError> {
     let mut outcome = Outcome::default();
     let mut failure = None;
@@ -53,7 +53,7 @@ pub async fn tick(
         let merged = merge::attempt(
             repo,
             clock,
-            host,
+            ports,
             &attempt_id,
             Trigger::Done,
             FactsExtra::default(),
@@ -64,9 +64,9 @@ pub async fn tick(
     match queries::autonomy::auto_candidates(repo).await {
         Ok(candidates) => {
             for attempt_id in candidates {
-                if let Some(extra) = gather(repo, clock, host, &attempt_id).await {
+                if let Some(extra) = gather(repo, clock, ports, &attempt_id).await {
                     let merged =
-                        merge::attempt(repo, clock, host, &attempt_id, Trigger::Auto, extra).await;
+                        merge::attempt(repo, clock, ports, &attempt_id, Trigger::Auto, extra).await;
                     outcome.merged += usize::from(merged.is_ok());
                 }
             }
@@ -220,7 +220,7 @@ fn fail(reason: &str) -> Check {
 async fn gather(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
     attempt_id: &str,
 ) -> Option<FactsExtra> {
     let context = queries::autonomy::attempt_context(repo, attempt_id)
@@ -234,7 +234,7 @@ async fn gather(
             .await
             .ok()??;
     let pack: MergeReadinessPack =
-        serde_json::from_slice(&host.read_artifact(&pack_ref).await?).ok()?;
+        serde_json::from_slice(&ports.artifacts.read(&pack_ref).await?).ok()?;
     if pack.recommendation.decision != MergeDecision::Merge {
         return None;
     }
@@ -244,8 +244,9 @@ async fn gather(
             .await
             .ok()?
         {
-            Some((_, reference)) => host
-                .read_artifact(&reference)
+            Some((_, reference)) => ports
+                .artifacts
+                .read(&reference)
                 .await
                 .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
                 .and_then(|evidence| {
@@ -313,7 +314,7 @@ async fn gather(
     let envelope =
         match queries::autonomy::newest_artifact_of_kind(repo, attempt_id, "mrp_attestation").await
         {
-            Ok(Some((_, reference))) => host.read_artifact(&reference).await,
+            Ok(Some((_, reference))) => ports.artifacts.read(&reference).await,
             _ => None,
         };
     extra.attestation = match (envelope, settings.attestation_public_key.as_deref()) {
@@ -335,7 +336,12 @@ async fn gather(
                 .and_then(|row| row.attestation_keyid);
             let checked = match verified {
                 Some(keyid) => Ok(keyid),
-                None => host.verify_attestation(&envelope, key, head).await,
+                None => {
+                    ports
+                        .verifier
+                        .verify_attestation(&envelope, key, head)
+                        .await
+                }
             };
             match checked {
                 Ok(keyid) => {

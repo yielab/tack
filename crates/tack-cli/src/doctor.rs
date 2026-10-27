@@ -34,7 +34,10 @@ const PROCESS_LIMITS: ProcessLimits =
 /// human-readable rendering, so it can be diffed byte-for-byte against
 /// whatever a real enrollment or refresh sent a server.
 pub fn run(as_json: bool, config_path: Option<PathBuf>) -> anyhow::Result<()> {
-    let config_path = config_path.or_else(crate::local_runner::runner_config_path);
+    let config_path = crate::local_runner::runner_config_path(
+        config_path,
+        tack_cli::config::ServeEnvironment::from_process().runner_config,
+    );
     let config = read_config(config_path.clone())?;
     let runtime = tokio::runtime::Runtime::new()?;
     let (report, verify, daemon) = runtime.block_on(probe(config));

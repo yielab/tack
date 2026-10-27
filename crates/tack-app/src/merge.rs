@@ -13,7 +13,7 @@ use tack_protocol::Clock;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeDecision;
 
-use crate::host::Host;
+use crate::ports::Ports;
 
 /// What only the caller can gather: the checks the automatic merge adds and the
 /// facts the ledger keeps. The default is what a person's trigger needs, which
@@ -57,14 +57,6 @@ const NO_TOKEN: &str = "GitHub is not reachable from this board (no GitHub token
 const ALREADY_MERGED: &str = "Already merged";
 const TOKEN_REFUSED: &str = "The GitHub token can't merge";
 
-fn github_client() -> reqwest::Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .user_agent("Tack/1.0 (github.com/yielab/tack)")
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-}
-
 fn ci_text(ci: CiState) -> &'static str {
     match ci {
         CiState::Green => "green",
@@ -79,7 +71,7 @@ fn ci_text(ci: CiState) -> &'static str {
 pub async fn attempt(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
     attempt_id: &str,
     trigger: Trigger,
     extra: FactsExtra,
@@ -142,7 +134,11 @@ pub async fn attempt(
     }
 
     let project = context.project_id.parse().unwrap_or_default();
-    let Some(token) = host.github_token(project).await else {
+    let Some(token) = ports
+        .github
+        .token_for_project(repo, ports.runner.as_deref(), project)
+        .await
+    else {
         return held(repo, &context.item_id, row, previous, NO_TOKEN.to_owned()).await;
     };
     let mut pr = queries::pull_requests::pull_request_of_attempt(repo, attempt_id)
@@ -150,7 +146,7 @@ pub async fn attempt(
         .ok()
         .flatten();
     if pr.is_none() {
-        host.open_pull_request(attempt_id).await;
+        crate::pull_request::open_for_attempt(repo, ports, attempt_id).await;
         pr = queries::pull_requests::pull_request_of_attempt(repo, attempt_id)
             .await
             .ok()
@@ -169,11 +165,7 @@ pub async fn attempt(
         return held(repo, &context.item_id, row, previous, reason.to_owned()).await;
     };
 
-    let client = match github_client() {
-        Ok(client) => client,
-        Err(error) => return held(repo, &context.item_id, row, previous, error.to_string()).await,
-    };
-    let ci = match host.ci_state(&client, &token, &pr.repo, &head).await {
+    let ci = match ports.github.ci_state(&token, &pr.repo, &head).await {
         Ok(ci) => ci,
         Err(error) => {
             let reason = format!("Tack could not read CI on the head commit: {error}");
@@ -186,11 +178,12 @@ pub async fn attempt(
         return held(repo, &context.item_id, row, previous, hold.to_string()).await;
     }
 
-    match host
-        .merge_pull_request(&client, &token, &pr.repo, pr.number, &head)
+    match ports
+        .github
+        .merge_pull_request(&token, &pr.repo, pr.number, &head)
         .await
     {
-        Err(refused) => held(repo, &context.item_id, row, previous, refused).await,
+        Err(refused) => held(repo, &context.item_id, row, previous, refused.0).await,
         Ok(sha) => {
             let now = clock.now().to_rfc3339_opts(SecondsFormat::Secs, true);
             row.held_reason = None;
@@ -217,7 +210,7 @@ pub async fn attempt(
             )
             .await;
             if trigger == Trigger::Auto {
-                host.apply_mrp_accepted(&context.request_id).await;
+                crate::mrp::apply_accepted(repo, ports.events.as_ref(), &context.request_id).await;
             }
             Ok(sha)
         }
@@ -227,11 +220,7 @@ pub async fn attempt(
 /// Why the Merge button cannot be pressed on this attempt now; `None` when it
 /// can. It reads the ledger, the pull request and, for an open one, CI on the
 /// head commit; it never opens a pull request or merges.
-pub async fn disabled_reason(
-    repo: &Repository,
-    host: &dyn Host,
-    attempt_id: &str,
-) -> Option<String> {
+pub async fn disabled_reason(repo: &Repository, ports: &Ports, attempt_id: &str) -> Option<String> {
     let Ok(Some(context)) = queries::autonomy::attempt_context(repo, attempt_id).await else {
         return Some("The attempt could not be read".to_owned());
     };
@@ -278,7 +267,12 @@ pub async fn disabled_reason(
         return Some(reason);
     }
     let project = context.project_id.parse().unwrap_or_default();
-    if host.github_token(project).await.is_none() {
+    if ports
+        .github
+        .token_for_project(repo, ports.runner.as_deref(), project)
+        .await
+        .is_none()
+    {
         return Some(NO_TOKEN.to_owned());
     }
     // CI is read when the button is pressed, never to draw it: a list of
@@ -288,12 +282,8 @@ pub async fn disabled_reason(
 
 /// The button as the attempts list draws it: enabled when nothing local stops
 /// a merge, with what held the last press as its reason; disabled with why.
-pub async fn button(
-    repo: &Repository,
-    host: &dyn Host,
-    attempt_id: &str,
-) -> (bool, Option<String>) {
-    if let Some(reason) = disabled_reason(repo, host, attempt_id).await {
+pub async fn button(repo: &Repository, ports: &Ports, attempt_id: &str) -> (bool, Option<String>) {
+    if let Some(reason) = disabled_reason(repo, ports, attempt_id).await {
         return (false, Some(reason));
     }
     let last_hold = queries::autonomy::merge_of_attempt(repo, attempt_id)
@@ -311,7 +301,7 @@ pub async fn button(
 pub async fn on_done(
     repo: &Repository,
     clock: &dyn Clock,
-    host: &dyn Host,
+    ports: &Ports,
     item_id: &str,
     project_id: &str,
     moved_over_mcp: bool,
@@ -343,7 +333,7 @@ pub async fn on_done(
     let _ = attempt(
         repo,
         clock,
-        host,
+        ports,
         &attempt_id,
         Trigger::Done,
         FactsExtra::default(),
