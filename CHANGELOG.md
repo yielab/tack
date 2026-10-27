@@ -375,6 +375,10 @@ automation a template carries, and the removal of dollars per day.
 
 ### Fixed
 
+- **The last hop of a docket run no longer goes missing from the attempt's timeline.** docket holds back the newest
+  second of its trace, and the runner ended the attempt the moment the task was done, so a run's final
+  `agent.hop_finished` could be left out. After the task ends, the runner reads the trace again until every hop
+  on the task's record has shown its end, for at most three seconds.
 - **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
   published since the last run); only the lockfile changes.
 - **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored

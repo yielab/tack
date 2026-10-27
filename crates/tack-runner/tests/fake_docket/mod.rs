@@ -282,7 +282,10 @@ struct World {
     tasks: Vec<Task>,
     idempotency: HashMap<(String, String), String>,
     script: Script,
-    trace: Vec<(String, Value)>,
+    /// Every trace line with its pod and the moment it was written.
+    trace: Vec<(String, Value, std::time::Instant)>,
+    /// How long docket holds back a trace line after it is written (none by default).
+    trace_hold_back: std::time::Duration,
     requests: Vec<Recorded>,
     next: u32,
     repository: Option<PathBuf>,
@@ -311,6 +314,7 @@ impl FakeDocket {
             idempotency: HashMap::new(),
             script: Script::default(),
             trace: Vec::new(),
+            trace_hold_back: std::time::Duration::ZERO,
             requests: Vec::new(),
             next: 0,
             repository: None,
@@ -402,6 +406,12 @@ impl FakeDocket {
         self.shared.lock().unwrap().answers_refused = count;
     }
 
+    /// Makes docket hold each trace line back for `duration` after it is written, as it holds
+    /// back the newest second.
+    pub fn hold_back_traces(&self, duration: std::time::Duration) {
+        self.shared.lock().expect("world").trace_hold_back = duration;
+    }
+
     pub fn script(&self, script: Script) {
         self.shared.lock().unwrap().script = script;
     }
@@ -489,7 +499,9 @@ fn trace_event(state: &mut World, pod: &str, task: &str, event_type: &str, paylo
     line["agent_role"] = json!(payload["role"].as_str().unwrap_or("implementer"));
     line["event_type"] = json!(event_type);
     line["payload"] = payload;
-    state.trace.push((pod.to_owned(), line));
+    state
+        .trace
+        .push((pod.to_owned(), line, std::time::Instant::now()));
 }
 
 /// `400` for a key the captured requests to this route never carry, or one
@@ -955,6 +967,13 @@ fn finish(state: &mut World, index: usize) {
         (task.pod.clone(), task.id.clone(), task.script.clone())
     };
     for (event_type, payload) in script.after.clone() {
+        if event_type == "hop_finished" {
+            // The hop is on the task's record as well as in the trace.
+            state.tasks[index].hops.push(json!({
+                "role": payload["role"],
+                "model": payload["model"],
+            }));
+        }
         trace_event(state, &pod, &id, &event_type, payload);
     }
     if script.status == "done"
@@ -1141,8 +1160,10 @@ fn diff(state: &World, pod: &str, id: &str) -> Response {
 }
 
 /// `GET /traces/<pod>?since=`: verbatim JSONL lines and the compound
-/// `<ts>:<n>` cursor. The one-second hold-back is not implemented: the fake's
-/// timestamps are all in the past.
+/// `<ts>:<n>` cursor. docket's hold-back of the newest events is kept in
+/// real time (the fake's timestamps are all in the past): a line is handed out
+/// once `trace_hold_back` has passed since it was written, which is none unless
+/// a test asks for one.
 fn traces(state: &World, pod: &str, query: &str) -> Response {
     let since = query
         .split('&')
@@ -1159,8 +1180,10 @@ fn traces(state: &World, pod: &str, query: &str) -> Response {
     let lines: Vec<(&str, String)> = state
         .trace
         .iter()
-        .filter(|(event_pod, _)| event_pod == pod)
-        .map(|(_, line)| (line["ts"].as_str().unwrap_or_default(), line.to_string()))
+        .filter(|(event_pod, _, written)| {
+            event_pod == pod && written.elapsed() >= state.trace_hold_back
+        })
+        .map(|(_, line, _)| (line["ts"].as_str().unwrap_or_default(), line.to_string()))
         .collect();
     let mut events = Vec::new();
     let mut next = since.clone();

@@ -240,7 +240,8 @@ provenance says. A script run replaces every capture; the constructed files stay
 - `GET /tasks/<pod>` and its `externalRef`/`status` filters, `POST .../retry`,
   `POST /pods/<p>/apply`, `GET /pods/<p>/corrections`, `/metrics`, `/runs`,
   `POST /dispatch/<pod>`, `GET .../evidence`.
-- The one-second hold-back of `GET /traces` (the fake's timestamps are all in the past), the
+- The one-second hold-back of `GET /traces` by the clock (the fake holds a line back for a time a test
+  sets, `hold_back_traces`, and none by default), the
   `413` for bodies over 1 MiB, and `409` for a task that ran in place.
 - `restrictions.policies` validation, `baseRef` failures other than an unresolvable ref, and
   `pipeline` resolution: the fake stores the name and never fails a task with
