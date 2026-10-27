@@ -68,14 +68,14 @@ brew install yielab/tap/tack
 Or with the install script, which checks the download against the release's checksums:
 
 ```bash
-TAG=v0.1.0-beta.10
+TAG=$(curl -fsSL "https://api.github.com/repos/yielab/tack/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-$tag = 'v0.1.0-beta.10'; $env:TACK_VERSION = $tag; irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
+$tag = (irm "https://api.github.com/repos/yielab/tack/releases?per_page=1")[0].tag_name; $env:TACK_VERSION = $tag; irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 ```
 
 Then start it and open <http://localhost:3210>:

@@ -192,6 +192,9 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The install commands name no release.** The README, the quick start and the deployment guide look up the
+  newest published release (pre-releases included) and install it from that release's own installer, so they
+  stay true after every release and never point at a tag that has no release yet.
 - **A build of the tests takes a third of the disk.** Each crate's integration tests are one binary, `it`,
   with each file under `tests/` a module of it, and dependencies carry no debug info: a clean build of
   every test went from 7.6 GB to 2.4 GB and from 107 s to 91 s (ADR 0029). Select a file of tests with

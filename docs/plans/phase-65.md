@@ -43,6 +43,8 @@ reverse:
 
 ## Wave 0 — the user, no agent
 
+**Cancelled 2026-10-27:** the rows still open (0.3, 0.7, 0.8, 0.9) were never approved as work and are no longer tracked. The rows marked done stay as history.
+
 Each of these was refused to an agent by the permission classifier, costs money, or needs
 a machine this one is not. They are listed once, here, with the command.
 

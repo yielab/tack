@@ -52,7 +52,7 @@ gh attestation verify tack --repo yielab/tack   # provenance (optional)
 ### Option B — one-line installer
 
 ```bash
-TAG=v0.1.0-beta.10
+TAG=$(curl -fsSL "https://api.github.com/repos/yielab/tack/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 curl --proto '=https' --tlsv1.2 -fsSL \
   "https://github.com/yielab/tack/releases/download/$TAG/install.sh" \
   | TACK_VERSION="$TAG" sh

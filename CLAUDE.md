@@ -16,8 +16,8 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 "Open" section first. In short, as of 2026-10-18:
 
 - **Released:** `v0.1.0-beta.9` (2026-09-21). `v0.1.0-beta.10` (Phases 66–72) is tagged
-  2026-10-14 but its GitHub release is not published, so the README's install commands 404
-  until the maintainer publishes it (`docs/LAUNCH-CHECKLIST.md`).
+  2026-10-14 but its GitHub release is not published, so the README's install commands install
+  `v0.1.0-beta.9` until the maintainer publishes it (`docs/LAUNCH-CHECKLIST.md`).
 - **In `develop`, unreleased:** Phase 73 (`docs/plans/phase-73.md`, ADRs 0021 and 0022) — every
   docket run goes to a long-lived team over docket's HTTP API version 5, a role chooses the
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
@@ -56,8 +56,8 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   with Phases 79 and 80 found, as cards for Sonnet and Haiku agents in three rounds. CI never needs
   docket or prill; the three meet only in the local, unversioned `onboarding-lab/`.
   A card runs only the tests of what it touched; the full suites run once per round.
-- **The maintainer's:** the release, and the Wave 0 items of `docs/plans/phase-65.md` and
-  `docs/plans/phase-69.md`. Closed plans live in `docs/closed-cycles/plans/`.
+- **The maintainer's:** the release. The open Wave 0 rows of `docs/plans/phase-65.md` and
+  `docs/plans/phase-69.md` were cancelled 2026-10-27. Closed plans live in `docs/closed-cycles/plans/`.
 
 Rules that history taught: never add a `Co-Authored-By` trailer (the history was rewritten on
 2026-10-12 to remove 159 of them); `CHANGELOG.md`'s `[Unreleased]` is written by hand in the

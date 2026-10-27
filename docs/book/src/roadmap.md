@@ -38,17 +38,8 @@ plan or the page named beside it.
 **The maintainer's, by hand** (refused to agents, costs money, or needs another machine):
 
 - Publish the `v0.1.0-beta.10` release. The tag's release run did not start (2026-10-14), so
-  there is no release yet, and the install commands in `README.md`, which name
-  `v0.1.0-beta.10`, answer 404 until there is. `docs/LAUNCH-CHECKLIST.md` is the order of work.
-- The publish list (seven issues, four posts, two Discussions), one install on macOS and one on
-  Windows, and the code-signing decision: Wave 0 of
-  [`docs/plans/phase-65.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-65.md).
-- The GitHub settings and workstation items of Wave 0 of
-  [`docs/plans/phase-69.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-69.md):
-  a tag ruleset, a `release` environment holding the Homebrew token, `security-boundaries` as
-  a required check, a garbage collection asked of GitHub support, the tunnel and its DNS
-  record, the local permission list, and the `.env` file, which Tack no longer reads since it
-  holds no model key.
+  there is no release yet. The install commands in `README.md` look up the newest published
+  release and do not name one. `docs/LAUNCH-CHECKLIST.md` is the order of work.
 - Review and merge Phases 79 and 80 into `develop`. Phase 79's points to decide are in §8 of
   [its plan](https://github.com/yielab/tack/blob/develop/docs/plans/phase-79.md): the `Host`
   trait that stays until the last callers move, and four shared test fixtures that keep a

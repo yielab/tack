@@ -124,6 +124,8 @@ ADR 0018's table stands in full. Added here, each one line to reverse:
 
 ## Wave 0 — the maintainer's, by hand
 
+**Cancelled 2026-10-27:** the rows still marked open were never approved as work and are no longer tracked. The rows marked done stay as history.
+
 | Item | State |
 |---|---|
 | Delete the `v0.1.0-beta.10` release and tag on GitHub | done 2026-10-12 |

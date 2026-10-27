@@ -13,11 +13,11 @@ Tack is a single self-contained binary — the web UI, REST API, and SQLite engi
 **One line (Linux / macOS):**
 
 ```sh
-TAG=v0.1.0-beta.10
+TAG=$(curl -fsSL "https://api.github.com/repos/yielab/tack/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 ```
 
-Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. The line above already names the release it installs (`TAG`); change it to install another; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
+Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. The first line looks up the newest published release; set `TAG` to a release name to install another; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
 
 **Homebrew (macOS and Linux):**
 
@@ -28,7 +28,7 @@ brew install yielab/tap/tack
 **Windows:**
 
 ```powershell
-$tag = 'v0.1.0-beta.10'
+$tag = (irm "https://api.github.com/repos/yielab/tack/releases?per_page=1")[0].tag_name
 $env:TACK_VERSION = $tag
 irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 ```

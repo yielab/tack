@@ -38,7 +38,7 @@ automatically — every step under "Publish list" is a human action.
    workflow again on the tag cannot work, since it uses the tag's own copy of the file: either
    move the tag to a commit after `b8821c37` (delete it on GitHub and push it again, after
    `main` is fast-forwarded), or tag the next version. Until then the install commands in
-   `README.md`, which name `v0.1.0-beta.10`, answer 404.
+   `README.md` look up the newest published release, so they install `v0.1.0-beta.9`.
    `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs,
    and refuses the tag outright if it doesn't match `Cargo.toml`.
 
