@@ -14,6 +14,7 @@ use tack_app::runs::complete::{Completed, CompletionReport, complete};
 use tack_db::queries::{execution_attempts, execution_request_rows, execution_requests};
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::mrp::MergeReadinessPack;
+use tack_test_support::completion::{actual_execution, terminal_reason_of, usage_not_measured};
 use tack_test_support::seed;
 use uuid::Uuid;
 
@@ -48,9 +49,9 @@ where
             completion_id: &CompletionId::new(completion_id),
             final_event_checkpoint: None,
             terminal_state,
-            terminal_reason_json: &terminal_reason.to_string(),
-            actual_execution_json: "{}",
-            usage_json: "{}",
+            terminal_reason: &terminal_reason_of(terminal_reason),
+            actual_execution: &actual_execution(),
+            usage: &usage_not_measured(),
         },
         read_pack,
     )

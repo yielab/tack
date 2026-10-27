@@ -1,8 +1,7 @@
+use crate::extract::{Json, Path, Query, RawBody};
 use std::collections::HashMap;
 
-use axum::Json;
-use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -326,7 +325,7 @@ struct ImportPayload {
 pub async fn import_project(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!("Import endpoint called");
 

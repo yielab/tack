@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::{Repository, StoreError};
+use crate::{Repository, StoreError, decode};
 
 impl Repository {
     /// The id of the one workspace this board runs. A first boot creates it; finding it and
@@ -11,8 +11,7 @@ impl Repository {
             .fetch_optional(&mut *tx)
             .await?;
         if let Some(id) = existing {
-            return Uuid::parse_str(&id)
-                .map_err(|error| sqlx::Error::Decode(Box::new(error)).into());
+            return decode::uuid("workspaces", "id", &id);
         }
         let id = Uuid::new_v4();
         let vocabulary = serde_json::to_string(&tack_core::vocabulary::default_vocabulary())

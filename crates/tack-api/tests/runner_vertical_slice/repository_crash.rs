@@ -1,8 +1,12 @@
+use serde_json::json;
 use std::sync::Mutex;
 use tack_protocol::Clock;
 use tack_protocol::execution::{
-    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryKey, RunnerId,
+    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryJournalState, RecoveryKey,
+    RunnerId,
 };
+use tack_test_support::completion::{actual_execution, terminal_reason, usage_not_measured};
+use tack_test_support::kept;
 
 use crate::common;
 use chrono::{DateTime, Duration, Utc};
@@ -10,9 +14,10 @@ use tack_core::models::{CreateItem, CreateProject, ItemType, Priority, ProjectTy
 use tack_db::{
     Repository, StoreError, queries,
     repo::execution::{
-        ClaimedExecution, Completion, EnrollmentToken, EventApplyResult, EventBatch,
-        HeartbeatBatchResult, HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest,
-        NewRunner, RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
+        AttemptTransitionInput, AttemptTransitionPhase, AttemptTransitionResult, ClaimedExecution,
+        Completion, EnrollmentToken, EventApplyResult, EventBatch, HeartbeatBatchResult,
+        HeartbeatLease, NewAgentProfile, NewEvent, NewExecutionRequest, NewRunner,
+        RecoveryDisposition, RecoveryObservation, RecoveryObservationInput,
         RecoveryObservationResult, RedeemEnrollmentResult, RequestSelection,
     },
 };
@@ -269,6 +274,8 @@ async fn recover(
     recovery_key: &'static str,
     details: &'static str,
 ) -> RecoveryObservationResult {
+    let details: tack_protocol::execution::RecoveryDetails =
+        serde_json::from_str(details).expect("details the protocol accepts");
     fixture
         .repo
         .recover_attempt(
@@ -278,7 +285,7 @@ async fn recover(
                 fencing_token: FencingToken::new(1),
                 recovery_key: &RecoveryKey::new(recovery_key),
                 observation,
-                details,
+                details: &details,
             },
             fixture.clock.now(),
         )
@@ -332,7 +339,7 @@ fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
             sequence: 1,
             source: "runner",
             kind: "progress",
-            payload: r#"{"phase":"spawn"}"#,
+            payload: kept(json!({"phase": "spawn"})),
             occurred_at: fixture.clock.now(),
         },
         NewEvent {
@@ -341,7 +348,7 @@ fn crash_events(fixture: &Fixture) -> [NewEvent<'static>; 2] {
             sequence: 2,
             source: "runner",
             kind: "progress",
-            payload: r#"{"phase":"running"}"#,
+            payload: kept(json!({"phase": "running"})),
             occurred_at: fixture.clock.now(),
         },
     ]
@@ -468,9 +475,40 @@ fn completion_crash() -> Completion<'static> {
         completion_id: ids::completion("completion-1"),
         final_event_checkpoint: None,
         terminal_state: tack_protocol::execution::ExecutionState::Succeeded,
-        terminal_reason: "completed",
-        actual_execution: "{}",
-        usage: "{}",
+        terminal_reason: kept(terminal_reason("completed")),
+        actual_execution: kept(actual_execution()),
+        usage: kept(usage_not_measured()),
+    }
+}
+
+/// Accepts and starts the claimed `attempt-crash` through the real transitions, so it reads
+/// `running` and a completion is a transition the lifecycle table allows.
+async fn start_claimed_attempt(fixture: &Fixture) {
+    let preparing = AttemptTransitionInput {
+        runner_id: ids::runner("runner-crash"),
+        attempt_id: ids::attempt("attempt-crash"),
+        fencing_token: FencingToken::new(1),
+        phase: AttemptTransitionPhase::Preparing,
+        workspace_id: &tack_protocol::execution::WorkspaceId::new("workspace-crash"),
+        base_revision: "abc123",
+        process_id: None,
+    };
+    for input in [
+        preparing.clone(),
+        AttemptTransitionInput {
+            phase: AttemptTransitionPhase::Running,
+            process_id: Some("process-crash"),
+            ..preparing
+        },
+    ] {
+        assert!(matches!(
+            fixture
+                .repo
+                .transition_attempt_with_facts(input, fixture.clock.now())
+                .await
+                .expect("transition"),
+            AttemptTransitionResult::Applied(_)
+        ));
     }
 }
 
@@ -479,6 +517,7 @@ async fn completion_crash_rolls_back_attempt_and_request() {
     let fixture = fixture().await;
     enqueue(&fixture).await;
     common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    start_claimed_attempt(&fixture).await;
     seed::failure_trigger(
         &fixture.repo,
         "inject_completion_crash",
@@ -500,9 +539,9 @@ async fn completion_crash_rolls_back_attempt_and_request() {
         queries::execution_attempts::completion_id_of_attempt(&fixture.repo, "attempt-crash")
             .await
             .expect("terminal state");
-    assert_eq!(attempt_state(&fixture).await, ExecutionState::Leased);
+    assert_eq!(attempt_state(&fixture).await, ExecutionState::Running);
     assert_eq!(completion_id, None);
-    assert_eq!(request_state(&fixture).await, ExecutionState::Leased);
+    assert_eq!(request_state(&fixture).await, ExecutionState::Running);
 }
 
 #[tokio::test]
@@ -510,6 +549,7 @@ async fn completion_replay_is_idempotent_and_terminal_once() {
     let fixture = fixture().await;
     enqueue(&fixture).await;
     common::claim_execution_for_test(&fixture.repo, &fixture.clock).await;
+    start_claimed_attempt(&fixture).await;
     assert!(
         fixture
             .repo
@@ -675,7 +715,7 @@ fn crash_heartbeat_lease() -> [HeartbeatLease<'static>; 1] {
         attempt_id: ids::attempt("attempt-crash"),
         fencing_token: FencingToken::new(1),
         state: ExecutionState::Running,
-        journal_state: "process_observed_running",
+        journal_state: RecoveryJournalState::ProcessObservedRunning,
         last_event_checkpoint: None,
     }]
 }

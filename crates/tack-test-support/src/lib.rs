@@ -17,6 +17,7 @@ use tack_core::{
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
+pub mod completion;
 pub mod ids;
 pub mod seed;
 
@@ -24,6 +25,13 @@ mod clock;
 mod poll;
 pub use clock::FixedClock;
 pub use poll::{poll_until, poll_until_sync};
+
+/// A value that lives for the whole test process, for a store input that borrows it (such as
+/// `Completion<'a>`) when the helper that builds the input cannot own what it borrows. Like the
+/// interned ids in [`ids`], the handful of values a test run keeps makes the leak irrelevant.
+pub fn kept<T>(value: T) -> &'static T {
+    Box::leak(Box::new(value))
+}
 
 /// Create an in-memory SQLite pool with all migrations applied.
 pub async fn setup_test_db() -> Repository {

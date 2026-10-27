@@ -8,8 +8,10 @@
 use crate::repository::execution_fixture::{
     Fixture, cancellation_input, completion_input, count_where, recovery_input,
 };
-use tack_protocol::execution::ExecutionState;
+use serde_json::json;
 use tack_protocol::execution::{AttemptId, Checkpoint, RunnerId, WorkspaceId};
+use tack_protocol::execution::{ExecutionState, RecoveryJournalState};
+use tack_test_support::kept;
 
 use chrono::Duration;
 use sqlx::Row;
@@ -200,7 +202,7 @@ async fn concurrent_duplicate_heartbeats_have_one_writer() {
         .await;
     let leases = [HeartbeatLease {
         state: ExecutionState::Running,
-        journal_state: "running",
+        journal_state: RecoveryJournalState::ProcessObservedRunning,
         ..fx.lease("attempt-concurrent-heartbeat", fence)
     }];
     let sent_at = fx.clock.now();
@@ -448,7 +450,7 @@ async fn concurrent_duplicate_event_batches_have_one_writer() {
         sequence: 1,
         source: "runner",
         kind: "log",
-        payload: r#"{"line":"hello"}"#,
+        payload: kept(json!({"line": "hello"})),
         occurred_at: fx.clock.now(),
     }];
     let batch = EventBatch {

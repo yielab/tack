@@ -15,7 +15,7 @@
 //! bearer value is never logged, never echoed in an error body, and never
 //! passed to `tracing`. Only the resolved `runner_id` is ever logged.
 
-use axum::Json;
+use crate::extract::Json;
 use axum::http::{HeaderMap, StatusCode, header};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -43,11 +43,6 @@ pub struct RunnerPrincipal {
 pub type ProtocolErrorResponse = (StatusCode, Json<Value>);
 pub type ProtocolResult<T> = Result<T, ProtocolErrorResponse>;
 
-/// Static request-correlation id placeholder. No per-request correlation id
-/// is wired into the runner protocol's error envelopes yet — mirrors the
-/// identical `OPERATOR_REQUEST_ID` convention on the operator side.
-pub const RUNNER_REQUEST_ID: &str = "req_runner";
-
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so
 /// it can never drift from `docs/contracts/runner-v1/errors/*.json` —
@@ -61,7 +56,12 @@ pub fn protocol_error(
     message: &str,
     details: Value,
 ) -> ProtocolErrorResponse {
-    let envelope = ProtocolErrorEnvelope::new(code, message, RUNNER_REQUEST_ID, details);
+    let envelope = ProtocolErrorEnvelope::new(
+        code,
+        message,
+        crate::request_id::current_request_id(),
+        details,
+    );
     (
         status,
         Json(serde_json::to_value(envelope).expect("envelope serializes")),
@@ -146,7 +146,8 @@ pub async fn authenticate(
     let hash = credential_hash(token);
     let row = agent_runners::runner_by_credential_hash(repo, &hash)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify runner credential");
             protocol_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -185,7 +186,8 @@ pub async fn authenticate(
     if let Some(expires_at) = expires_at {
         let expires_at = DateTime::parse_from_rfc3339(&expires_at)
             .map(|value| value.with_timezone(&Utc))
-            .map_err(|_| {
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Stored credential expiry is corrupt");
                 protocol_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,

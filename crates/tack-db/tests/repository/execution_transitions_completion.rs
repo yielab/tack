@@ -8,6 +8,7 @@ use tack_protocol::execution::{
 };
 
 use chrono::Duration;
+use serde_json::json;
 use sqlx::Row;
 use tack_core::models::UpdateItem;
 use tack_core::workflow::WorkflowConfig;
@@ -16,6 +17,11 @@ use tack_db::repo::execution::{
     CompletionResult, EnqueueResult, EventBatch, FollowUps, ItemUpdate, NewEvent, Rework,
 };
 use tack_db::repo::items::AtomicItemUpdateOutcome;
+use tack_test_support::completion::{
+    actual_execution, actual_execution_with_result, terminal_reason, terminal_reason_of, usage,
+    usage_not_measured,
+};
+use tack_test_support::kept;
 
 #[tokio::test]
 async fn attempt_start_transitions_are_idempotent_and_freeze_facts() {
@@ -211,8 +217,8 @@ async fn completion_replay_canonicalizes_structured_json() {
     );
     fx.complete(completion.clone()).await;
     let canonical_retry = Completion {
-        actual_execution: r#"{"result":{"a":1,"b":2}}"#,
-        usage: r#"{"input_tokens":1,"output_tokens":2}"#,
+        actual_execution: &actual_execution_with_result(json!({"a": 1, "b": 2})),
+        usage: &usage(1, 2),
         ..completion
     };
     assert!(matches!(
@@ -228,7 +234,9 @@ async fn completion_replay_canonicalizes_structured_terminal_reason() {
         .ready_running_attempt("request-completion-reason", "attempt-completion-reason")
         .await;
     let completion = Completion {
-        terminal_reason: r#"{"detail":{"b":2,"a":1},"code":"done"}"#,
+        terminal_reason: kept(terminal_reason_of(
+            json!({"detail": {"b": 2, "a": 1}, "code": "done"}),
+        )),
         ..completion_input(
             "attempt-completion-reason",
             fence,
@@ -238,7 +246,7 @@ async fn completion_replay_canonicalizes_structured_terminal_reason() {
     };
     fx.complete(completion.clone()).await;
     let semantic_retry = Completion {
-        terminal_reason: r#"{"code":"done","detail":{"a":1,"b":2}}"#,
+        terminal_reason: &terminal_reason_of(json!({"code": "done", "detail": {"a": 1, "b": 2}})),
         ..completion
     };
     assert!(matches!(
@@ -299,7 +307,7 @@ async fn completion_changed_after_replay_is_idempotency_conflict() {
     );
     fx.complete(base.clone()).await;
     let changed_fields = Completion {
-        terminal_reason: "changed",
+        terminal_reason: &terminal_reason("changed"),
         ..base.clone()
     };
     let changed_checkpoint = Completion {
@@ -400,7 +408,7 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: "{}",
+        payload: &json!({}),
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
@@ -418,9 +426,9 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
         completion_id: &CompletionId::new("complete-1"),
         final_event_checkpoint: Some(&Checkpoint::new("checkpoint-1")),
         terminal_state: ExecutionState::Succeeded,
-        terminal_reason: "completed",
-        actual_execution: "{}",
-        usage: "{}",
+        terminal_reason: &terminal_reason("completed"),
+        actual_execution: &actual_execution(),
+        usage: &usage_not_measured(),
     };
     assert!(fx.complete_raw(base.clone()).await);
     assert!(
@@ -430,7 +438,7 @@ async fn completion_replay_is_idempotent_and_terminal_lock_holds() {
     let reopen = Completion {
         completion_id: &CompletionId::new("complete-2"),
         terminal_state: ExecutionState::Failed,
-        terminal_reason: "changed",
+        terminal_reason: &terminal_reason("changed"),
         ..base
     };
     assert!(
@@ -478,7 +486,7 @@ fn json_completion<'a>(
     completion_id: &'a str,
 ) -> Completion<'a> {
     Completion {
-        terminal_reason: r#"{"summary":"done"}"#,
+        terminal_reason: kept(terminal_reason_of(json!({"summary": "done"}))),
         ..completion_input(attempt_id, fence, completion_id, None)
     }
 }

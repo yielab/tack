@@ -1,10 +1,14 @@
 use std::{fmt, path::PathBuf, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+pub use tack_protocol::execution::{
+    ActiveAttempt, AttemptId, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId,
+    CompletionRequest, CompletionResponse, EventBatchRequest, EventBatchResponse, EventRecord,
+    FencingToken, HeartbeatRequest, HeartbeatResponse, LeaseResult, RunnerId, WorkspaceId,
+};
 use tack_protocol::execution::{
-    ActualExecution, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, ProtocolVersion,
+    AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState, ProtocolVersion,
     RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
-    Usage,
 };
 
 use crate::{EnrollmentCredential, RunnerError, Shutdown};
@@ -30,9 +34,8 @@ pub use tack_protocol::execution::RecoveryObservation;
 pub use transport::{
     ArtifactManifestItem, ArtifactManifestReport, ArtifactUploadGrant, AttemptDataProtocol,
     DecisionAnswer, DecisionCreateReport, DecisionCreateResponse, DecisionOption,
-    DecisionPollReport, DecisionPollResponse, EventBatchReport, EventBatchResponse,
-    HttpPullProtocol, HttpRunnerClient, ProtocolEvent, Recommendation, ResolvedDecision,
-    RetryPolicy, persisted_session_runner_id,
+    DecisionPollReport, DecisionPollResponse, HttpPullProtocol, HttpRunnerClient, Recommendation,
+    ResolvedDecision, RetryPolicy, persisted_session_runner_id,
 };
 pub use workspace::{
     CleanupResult, UnavailableWorktreeProvisioner, Workspace, WorkspaceError, WorkspaceManager,
@@ -65,27 +68,9 @@ macro_rules! opaque_value {
 }
 
 opaque_value!(
-    RunnerId,
-    "An opaque runner identity used by this local client seam."
-);
-opaque_value!(AttemptId, "An opaque execution attempt identity.");
-opaque_value!(ClaimRequestId, "An opaque claim idempotency identity.");
-opaque_value!(CompletionId, "An opaque completion idempotency identity.");
-opaque_value!(
-    CancellationRequestId,
-    "An opaque cancellation idempotency identity."
-);
-opaque_value!(WorkspaceId, "An opaque isolated workspace identity.");
-opaque_value!(Checkpoint, "An opaque event-stream checkpoint.");
-opaque_value!(
     Timestamp,
     "An RFC 3339 timestamp preserved without local interpretation."
 );
-
-/// A lease token is intentionally not interchangeable with an opaque ID.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
-pub struct FencingToken(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -102,7 +87,24 @@ pub enum AttemptState {
 }
 
 impl AttemptState {
-    const fn execution_state(self) -> ExecutionState {
+    /// The state of the protocol's vocabulary that a runner can hold an attempt in; a
+    /// `queued` attempt belongs to no runner.
+    pub(crate) const fn from_execution(state: ExecutionState) -> Option<Self> {
+        Some(match state {
+            ExecutionState::Queued => return None,
+            ExecutionState::Leased => Self::Leased,
+            ExecutionState::Preparing => Self::Preparing,
+            ExecutionState::Running => Self::Running,
+            ExecutionState::WaitingDecision => Self::WaitingDecision,
+            ExecutionState::Succeeded => Self::Succeeded,
+            ExecutionState::Failed => Self::Failed,
+            ExecutionState::Cancelled => Self::Cancelled,
+            ExecutionState::Lost => Self::Lost,
+            ExecutionState::NeedsOperator => Self::NeedsOperator,
+        })
+    }
+
+    pub(crate) const fn execution_state(self) -> ExecutionState {
         match self {
             Self::Leased => ExecutionState::Leased,
             Self::Preparing => ExecutionState::Preparing,
@@ -341,45 +343,6 @@ pub enum ClaimResult {
     },
 }
 
-/// The exact v1 heartbeat attempt fact sent to the runner API.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ActiveAttempt {
-    pub attempt_id: AttemptId,
-    pub fencing_token: FencingToken,
-    pub state: AttemptState,
-    pub journal_state: JournalState,
-    pub last_event_checkpoint: Option<Checkpoint>,
-}
-
-/// The exact v1 heartbeat request payload.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct HeartbeatRequest {
-    pub protocol_version: ProtocolVersion,
-    pub runner_id: RunnerId,
-    pub heartbeat_id: String,
-    /// RFC 3339 instant originated from the runner's injected `Clock`.
-    pub sent_at: Timestamp,
-    pub available_capacity: u32,
-    pub active_attempts: Vec<ActiveAttempt>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LeaseResult {
-    pub attempt_id: AttemptId,
-    pub fencing_token: FencingToken,
-    pub lease_expires_at: Timestamp,
-    pub cancellation_requested: bool,
-}
-
-/// The exact v1 heartbeat response payload.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct HeartbeatResponse {
-    pub protocol_version: ProtocolVersion,
-    pub heartbeat_id: String,
-    pub accepted_at: Timestamp,
-    pub lease_results: Vec<LeaseResult>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartPhase {
     Preparing,
@@ -407,20 +370,6 @@ pub struct StartReport {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CompletionReport {
-    pub protocol_version: ProtocolVersion,
-    pub runner_id: RunnerId,
-    pub completion_id: CompletionId,
-    pub attempt_id: AttemptId,
-    pub fencing_token: FencingToken,
-    pub terminal_state: AttemptState,
-    pub terminal_reason: serde_json::Value,
-    pub final_event_checkpoint: Option<Checkpoint>,
-    pub actual_execution: ActualExecution,
-    pub usage: Usage,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CancellationReport {
     pub protocol_version: ProtocolVersion,
     pub runner_id: RunnerId,
@@ -439,16 +388,6 @@ pub struct CancellationResponse {
     pub protocol_version: ProtocolVersion,
     pub attempt_id: AttemptId,
     pub cancellation_request_id: CancellationRequestId,
-    pub state: AttemptState,
-    pub replayed: bool,
-    pub committed_at: Timestamp,
-}
-
-#[derive(Debug, Clone)]
-pub struct CompletionResponse {
-    pub protocol_version: ProtocolVersion,
-    pub attempt_id: AttemptId,
-    pub completion_id: CompletionId,
     pub state: AttemptState,
     pub replayed: bool,
     pub committed_at: Timestamp,
@@ -492,7 +431,7 @@ pub trait PullProtocol: Send + Sync {
     async fn report_completion(
         &self,
         session: &RunnerSession,
-        report: CompletionReport,
+        report: CompletionRequest,
     ) -> Result<CompletionResponse, ProtocolClientError>;
 
     async fn report_cancellation(
@@ -559,7 +498,7 @@ where
     async fn report_completion(
         &self,
         session: &RunnerSession,
-        report: CompletionReport,
+        report: CompletionRequest,
     ) -> Result<CompletionResponse, ProtocolClientError> {
         (**self).report_completion(session, report).await
     }

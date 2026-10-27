@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tack_core::models::UpdateItem;
 use tack_core::workflow::{StatusMapEvent, StatusMapPolicy, WorkflowConfig};
 use tack_db::repo::execution::ItemUpdate;
@@ -67,7 +67,7 @@ impl Move {
 pub(super) async fn plan(
     repo: &Repository,
     attempt_id: &str,
-    terminal_reason: &str,
+    terminal_reason: &Map<String, Value>,
 ) -> Option<Move> {
     let facts = match queries::execution_requests::status_map_facts_of_attempt(repo, attempt_id)
         .await
@@ -98,16 +98,17 @@ pub(super) async fn plan(
     let item_uuid = facts.item_id.parse::<Uuid>().ok()?;
     let item = repo.get_item(item_uuid).await.ok()??;
     let project = repo.get_project(item.project_id).await.ok()??;
-    let left_evidence = serde_json::from_str::<Value>(terminal_reason)
-        .ok()
-        .is_some_and(|reason| {
-            reason["workspace_kept_at"].is_string()
-                || reason["artifacts"].as_array().is_some_and(|artifacts| {
-                    artifacts.iter().any(|artifact| {
-                        artifact["kind"] == "patch" && artifact["size_bytes"].as_i64() > Some(0)
-                    })
+    let left_evidence = terminal_reason
+        .get("workspace_kept_at")
+        .is_some_and(Value::is_string)
+        || terminal_reason
+            .get("artifacts")
+            .and_then(Value::as_array)
+            .is_some_and(|artifacts| {
+                artifacts.iter().any(|artifact| {
+                    artifact["kind"] == "patch" && artifact["size_bytes"].as_i64() > Some(0)
                 })
-        });
+            });
     let on_finish = project
         .on_finish_status
         .as_deref()

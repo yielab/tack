@@ -1,8 +1,5 @@
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-};
+use crate::extract::{Json, Path};
+use axum::{extract::State, http::StatusCode};
 use tack_core::models::*;
 use tack_db::repo;
 use tracing::instrument;
@@ -37,7 +34,10 @@ pub async fn create_field(
         .repo
         .get_project(project_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     repo::custom_fields::create_field(&state.repo, project_id, data)
@@ -96,10 +96,7 @@ pub async fn get_field(
     repo::custom_fields::get_field(&state.repo, id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, field_id = %id, "Failed to get custom field");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// PATCH /api/custom-fields/:id - Update a custom field
@@ -186,13 +183,16 @@ pub async fn set_field_value(
         .repo
         .get_item(item_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Verify field exists and validate value against its type
     let field = repo::custom_fields::get_field(&state.repo, field_id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|failure| crate::error::status_of_store_failure(&failure))?;
 
     if let Err(msg) = field.validate_value(&data) {
         tracing::warn!(field_id = %field_id, error = %msg, "Custom field value validation failed");
@@ -256,10 +256,7 @@ pub async fn get_field_value(
     repo::custom_fields::get_field_value(&state.repo, item_id, field_id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, item_id = %item_id, field_id = %field_id, "Custom field value not found");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// DELETE /api/items/:item_id/custom-fields/:field_id - Delete a custom field value

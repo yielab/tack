@@ -28,6 +28,8 @@
 // a richer UI has a stable type to code against once a read endpoint for
 // it lands, instead of a second reconciliation later.
 
+import type { components } from '../api/schema.gen';
+
 // ─── Lifecycle (docs/contracts/runner-v1/lifecycle-transitions.json;
 //     crates/tack-orch/src/execution/types.rs `ExecutionState`) ─────────────
 
@@ -265,19 +267,4 @@ export interface Usage {
  * `shared/api/client.ts` enhancement this file can't make without editing
  * that module.
  */
-export type StableErrorCode =
-  | 'invalid_request'
-  | 'unauthorized'
-  | 'forbidden'
-  | 'not_found'
-  | 'conflict'
-  | 'idempotency_conflict'
-  | 'invalid_transition'
-  | 'stale_lease'
-  | 'runner_revoked'
-  | 'decision_expired'
-  | 'artifact_checksum_mismatch'
-  | 'payload_too_large'
-  | 'rate_limited'
-  | 'unsupported_protocol'
-  | 'internal_error';
+export type StableErrorCode = components['schemas']['StableErrorCode'];

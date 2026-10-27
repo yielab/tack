@@ -85,7 +85,7 @@ impl Repository {
         Err(if exists {
             StoreError::Conflict("already_consumed".into())
         } else {
-            StoreError::NotFound
+            StoreError::not_found("enrollment token")
         })
     }
 
@@ -162,7 +162,7 @@ impl Repository {
         .await
         .map_err(|err| conflict_on_unique(err, "profile_name_taken"))?;
         if done.rows_affected() == 0 {
-            return Err(StoreError::NotFound);
+            return Err(StoreError::not_found("agent profile"));
         }
         Ok(())
     }
@@ -177,7 +177,7 @@ impl Repository {
             .fetch_optional(&mut *tx)
             .await?;
         let Some(row) = row else {
-            return Err(StoreError::NotFound);
+            return Err(StoreError::not_found("agent profile"));
         };
         if row.get::<i64, _>("builtin") != 0 {
             return Err(StoreError::Conflict("builtin_profile".into()));

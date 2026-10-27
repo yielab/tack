@@ -240,7 +240,13 @@ async fn a_create_answers_the_request_and_refuses_in_the_error_envelope() {
     let (status, conflict) = snd(&app, "POST", "/executions", changed).await;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(conflict["error"]["code"], "idempotency_conflict");
-    assert_eq!(conflict["error"]["request_id"], "req_operator");
+    assert!(
+        conflict["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        conflict
+    );
 
     let mut other_repo: Value = serde_json::from_str(&create_body(&item_id)).unwrap();
     other_repo["repository_snapshot"] = json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null});
@@ -255,7 +261,7 @@ async fn a_create_answers_the_request_and_refuses_in_the_error_envelope() {
     let unavailable = create_body(&item_id).replace("same-key", "new-key");
     let (status, body) = snd(&app, "POST", "/executions", unavailable).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["error"]["code"], "runner_revoked");
+    assert_eq!(body["error"]["code"], "machine_revoked");
 }
 
 #[tokio::test]
@@ -370,7 +376,13 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     .await;
     assert_eq!(overflow_status, StatusCode::BAD_REQUEST);
     assert_eq!(overflow_body["error"]["code"], "invalid_request");
-    assert_eq!(overflow_body["error"]["request_id"], "req_operator");
+    assert!(
+        overflow_body["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        overflow_body
+    );
 
     let (status, created) = snd(&app, "POST", "/runners/enrollment", enrollment.to_string()).await;
     assert_eq!(status, StatusCode::OK);
@@ -482,7 +494,13 @@ async fn duplicate_fleet_name_conflict_has_empty_details() {
     assert_eq!(second_body["error"]["code"], "conflict");
     assert_eq!(second_body["error"]["retryable"], true);
     assert_eq!(second_body["error"]["details"], serde_json::json!({}));
-    assert_eq!(second_body["error"]["request_id"], "req_operator");
+    assert!(
+        second_body["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        second_body
+    );
 }
 
 /// Companion to the conflict test above for a non-retryable code that also
@@ -507,7 +525,13 @@ async fn missing_execution_not_found_has_resource_detail() {
         body["error"]["details"],
         serde_json::json!({"resource": "execution_request"})
     );
-    assert_eq!(body["error"]["request_id"], "req_operator");
+    assert!(
+        body["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        body
+    );
 }
 
 /// `idempotency_conflict` is non-retryable but, unlike `conflict`, carries a
@@ -1198,8 +1222,8 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
     };
     let text = executions::get_item_agent_context(
         axum::extract::State(state),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery::default()),
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery::default()),
     )
     .await
     .expect("agent context")
@@ -1281,8 +1305,8 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     // Test the handler: should include Definition of Done section
     let response = executions::get_item_agent_context(
         axum::extract::State(state.clone()),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery::default()),
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery::default()),
     )
     .await;
 
@@ -1311,8 +1335,8 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     // Test again: should NOT include Definition of Done section
     let response = executions::get_item_agent_context(
         axum::extract::State(state),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery::default()),
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery::default()),
     )
     .await;
 
@@ -1458,8 +1482,8 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         async move {
             executions::get_item_agent_context(
                 axum::extract::State(state),
-                axum::extract::Path(item_uuid),
-                axum::extract::Query(executions::AgentContextQuery {
+                tack_api::extract::Path(item_uuid),
+                tack_api::extract::Query(executions::AgentContextQuery {
                     profile_id,
                     ..Default::default()
                 }),
@@ -1522,8 +1546,8 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     assert!(!for_b.contains("work safely"), "{for_b}");
     let context = executions::get_item_agent_context(
         axum::extract::State(state.clone()),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery {
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery {
             profile_id: Some("profile-b".into()),
             ..Default::default()
         }),
@@ -1580,8 +1604,8 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
         async move {
             executions::get_item_agent_context(
                 axum::extract::State(state),
-                axum::extract::Path(item_uuid),
-                axum::extract::Query(query),
+                tack_api::extract::Path(item_uuid),
+                tack_api::extract::Query(query),
             )
             .await
         }

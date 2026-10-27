@@ -5,12 +5,15 @@
 //! `SELECT COUNT(*)`) collapses to one line instead of rustfmt stacking
 //! every argument of the underlying repository call one per line.
 
+use serde_json::json;
 use std::sync::Mutex;
 use tack_protocol::execution::ExecutionState;
 use tack_protocol::execution::{
-    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryKey, RunnerId, WorkspaceId,
+    AttemptId, ClaimRequestId, ExecutionRequestId, FencingToken, RecoveryJournalState, RecoveryKey,
+    RunnerId, WorkspaceId,
 };
-use tack_test_support::ids;
+use tack_test_support::completion::{actual_execution_with_result, terminal_reason, usage};
+use tack_test_support::{ids, kept};
 
 use chrono::{DateTime, Duration, Utc};
 use tack_db::repo::execution::{
@@ -343,7 +346,7 @@ impl Fixture {
             attempt_id: ids::attempt(attempt_id),
             fencing_token,
             state: ExecutionState::Leased,
-            journal_state: "prepared",
+            journal_state: RecoveryJournalState::Prepared,
             last_event_checkpoint: None,
         }
     }
@@ -709,8 +712,8 @@ pub fn new_decision<'a>(row_id: &'a str, decision_id: &'a str) -> NewDecision<'a
         decision_id,
         kind: "approval",
         prompt: "Continue?",
-        options: "[]",
-        metadata: "{}",
+        options: &[],
+        metadata: kept(serde_json::Map::new()),
         expires_at: None,
         recommendation: None,
     }
@@ -731,9 +734,9 @@ pub fn completion_input<'a>(
         completion_id: ids::completion(completion_id),
         final_event_checkpoint: final_event_checkpoint.map(ids::checkpoint),
         terminal_state: ExecutionState::Succeeded,
-        terminal_reason: "completed",
-        actual_execution: r#"{"result":{"b":2,"a":1}}"#,
-        usage: r#"{"output_tokens":2,"input_tokens":1}"#,
+        terminal_reason: kept(terminal_reason("completed")),
+        actual_execution: kept(actual_execution_with_result(json!({"b": 2, "a": 1}))),
+        usage: kept(usage(1, 2)),
     }
 }
 
@@ -773,6 +776,15 @@ pub fn expect_replayed_cancellation(
     }
 }
 
+/// Recovery details as a runner would send them, read through the protocol's own type so a
+/// state the protocol does not know cannot be written into a test. Leaked: a test's input
+/// borrows its details for the length of the test.
+pub fn recovery_details(json: &str) -> &'static tack_protocol::execution::RecoveryDetails {
+    Box::leak(Box::new(
+        serde_json::from_str(json).expect("details the protocol accepts"),
+    ))
+}
+
 /// A `RecoveryObservationInput` for "runner-a".
 pub fn recovery_input<'a>(
     attempt_id: &'a str,
@@ -786,7 +798,9 @@ pub fn recovery_input<'a>(
         fencing_token,
         recovery_key: ids::recovery_key(recovery_key),
         observation,
-        details: r#"{"journal_state":"prepared","process_observed":false,"observer":{"b":2,"a":1}}"#,
+        details: recovery_details(
+            r#"{"journal_state":"prepared","process_observed":false,"observer":{"b":2,"a":1}}"#,
+        ),
     }
 }
 

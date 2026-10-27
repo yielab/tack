@@ -1,5 +1,5 @@
+use crate::extract::{Json, RawBody};
 use axum::{
-    Json,
     body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode, header},
@@ -94,7 +94,7 @@ pub async fn get_backup(State(state): State<AppState>) -> ApiResult<Response> {
 pub async fn post_restore(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let media_type = headers
         .get(header::CONTENT_TYPE)
@@ -207,6 +207,7 @@ fn backup_err(e: remote_backup::BackupError) -> ApiError {
         | B::RestoreWouldLoseWork { .. }
         | B::GenerationConflict { .. } => ApiError::Conflict(e.to_string()),
         B::UnsafePath(_) | B::CorruptBundle | B::InMemoryDb => ApiError::BadRequest(e.to_string()),
+        B::UnreadableArchive(_) => ApiError::UnreadableArchive(e.to_string()),
         _ => {
             tracing::error!(error = %e, "remote backup error");
             ApiError::Internal(anyhow::anyhow!("{e}"))
@@ -242,7 +243,7 @@ fn parse_force(raw_body: &Bytes) -> bool {
 )]
 pub async fn post_remote_backup(
     State(state): State<AppState>,
-    raw_body: Bytes,
+    RawBody(raw_body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let cfg = effective_config(&state).await;
     if !cfg.enabled() {
@@ -308,11 +309,12 @@ pub struct RestoreRemoteRequest {
         (status = 200, description = "Restore staged for next restart", body = serde_json::Value),
         (status = 404, description = "No remote backups found", body = crate::openapi::ErrorEnvelope),
         (status = 409, description = "Not configured, or restore would lose newer work", body = crate::openapi::ErrorEnvelope),
+        (status = 422, description = "The archive or its manifest cannot be read (`unreadable_archive`)", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn post_remote_restore(
     State(state): State<AppState>,
-    raw_body: Bytes,
+    RawBody(raw_body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let cfg = effective_config(&state).await;
     if !cfg.enabled() {
@@ -352,7 +354,11 @@ pub async fn post_remote_restore(
         .await
         .map_err(backup_err)?;
     let manifest: remote_backup::BackupManifest =
-        serde_json::from_slice(&sidecar_bytes).map_err(|e| backup_err(e.into()))?;
+        serde_json::from_slice(&sidecar_bytes).map_err(|e| {
+            backup_err(remote_backup::BackupError::UnreadableArchive(format!(
+                "manifest: {e}"
+            )))
+        })?;
 
     // Conflict guard: refuse to clobber newer local work unless forced.
     let local_gen = state
@@ -422,7 +428,7 @@ pub async fn post_remote_restore(
 )]
 pub async fn post_remote_verify(
     State(state): State<AppState>,
-    raw_body: Bytes,
+    RawBody(raw_body): RawBody,
 ) -> ApiResult<Json<serde_json::Value>> {
     let cfg = effective_config(&state).await;
     if !cfg.enabled() {

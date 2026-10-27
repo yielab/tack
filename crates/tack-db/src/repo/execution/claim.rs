@@ -6,14 +6,14 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::Row;
 use tack_protocol::execution::{
     AttemptId, Checkpoint, ClaimRequestId, ExecutionRequestId, ExecutionState, FencingToken,
-    RunnerId,
+    RecoveryJournalState, RunnerId,
 };
 use tracing::instrument;
 
 use super::admin::conflict_on_unique;
 use super::enqueue::parse_execution_request_snapshot;
 use super::shared::{token_column, token_from_column};
-use crate::{Repository, StoreError};
+use crate::{Repository, StoreError, decode};
 
 #[derive(Debug, Clone)]
 pub struct NewRunner<'a> {
@@ -254,7 +254,7 @@ pub struct HeartbeatLease<'a> {
     pub attempt_id: &'a AttemptId,
     pub fencing_token: FencingToken,
     pub state: ExecutionState,
-    pub journal_state: &'a str,
+    pub journal_state: RecoveryJournalState,
     pub last_event_checkpoint: Option<&'a Checkpoint>,
 }
 
@@ -263,7 +263,7 @@ pub struct HeartbeatLeaseResponse {
     pub attempt_id: AttemptId,
     pub fencing_token: FencingToken,
     pub state: ExecutionState,
-    pub journal_state: String,
+    pub journal_state: RecoveryJournalState,
     pub last_event_checkpoint: Option<Checkpoint>,
     pub lease_expires_at: DateTime<Utc>,
     pub cancellation_requested: bool,
@@ -297,7 +297,7 @@ fn heartbeat_fingerprint(
 ) -> Result<String, StoreError> {
     let lease_duration_nanoseconds = lease_duration
         .num_nanoseconds()
-        .ok_or_else(|| StoreError::malformed("heartbeat lease duration is out of range"))?;
+        .ok_or_else(|| StoreError::unwritable("heartbeat lease duration is out of range"))?;
     let mut leases = leases
         .iter()
         .map(|lease| {
@@ -305,7 +305,7 @@ fn heartbeat_fingerprint(
                 lease.attempt_id.as_str(),
                 lease.fencing_token.get(),
                 state::text(lease.state),
-                lease.journal_state,
+                lease.journal_state.as_str(),
                 lease.last_event_checkpoint.map(Checkpoint::as_str),
             )
         })
@@ -328,40 +328,60 @@ fn heartbeat_fingerprint(
             }))
             .collect::<Vec<_>>(),
     }))
-    .map_err(|error| StoreError::malformed(error.to_string()))
+    .map_err(StoreError::unwritable)
 }
 
 fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreError> {
     let value: serde_json::Value = serde_json::from_str(serialized)
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
-    let object = value
-        .as_object()
-        .ok_or_else(|| StoreError::malformed("invalid heartbeat replay response"))?;
+        .map_err(|error| StoreError::corrupt("execution_heartbeat_replays", "response", error))?;
+    let object = value.as_object().ok_or_else(|| {
+        StoreError::corrupt(
+            "execution_heartbeat_replays",
+            "response",
+            "invalid heartbeat replay response",
+        )
+    })?;
     let required_string = |object: &serde_json::Map<String, serde_json::Value>, field: &str| {
         object
             .get(field)
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
             .ok_or_else(|| {
-                StoreError::malformed(format!("invalid heartbeat replay response field: {field}"))
+                StoreError::corrupt(
+                    "execution_heartbeat_replays",
+                    "response",
+                    format!("invalid heartbeat replay response field: {field}"),
+                )
             })
     };
     let accepted_at = DateTime::parse_from_rfc3339(&required_string(object, "accepted_at")?)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|error| StoreError::malformed(error.to_string()))?;
+        .map_err(|error| StoreError::corrupt("execution_heartbeat_replays", "response", error))?;
     let leases = object
         .get("leases")
         .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| StoreError::malformed("invalid heartbeat replay response field: leases"))?
+        .ok_or_else(|| {
+            StoreError::corrupt(
+                "execution_heartbeat_replays",
+                "response",
+                "invalid heartbeat replay response field: leases",
+            )
+        })?
         .iter()
         .map(|value| {
-            let value = value
-                .as_object()
-                .ok_or_else(|| StoreError::malformed("invalid heartbeat replay response lease"))?;
+            let value = value.as_object().ok_or_else(|| {
+                StoreError::corrupt(
+                    "execution_heartbeat_replays",
+                    "response",
+                    "invalid heartbeat replay response lease",
+                )
+            })?;
             let lease_expires_at =
                 DateTime::parse_from_rfc3339(&required_string(value, "lease_expires_at")?)
                     .map(|value| value.with_timezone(&Utc))
-                    .map_err(|error| StoreError::malformed(error.to_string()))?;
+                    .map_err(|error| {
+                        StoreError::corrupt("execution_heartbeat_replays", "response", error)
+                    })?;
             Ok(HeartbeatLeaseResponse {
                 attempt_id: AttemptId::new(required_string(value, "attempt_id")?),
                 fencing_token: value
@@ -369,17 +389,33 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                     .and_then(serde_json::Value::as_u64)
                     .map(FencingToken::new)
                     .ok_or_else(|| {
-                        StoreError::malformed(
+                        StoreError::corrupt(
+                            "execution_heartbeat_replays",
+                            "response",
                             "invalid heartbeat replay response field: fencing_token",
                         )
                     })?,
-                state: state::parse(&required_string(value, "state")?)?,
-                journal_state: required_string(value, "journal_state")?,
+                state: state::parse(
+                    "execution_heartbeat_replays",
+                    "response",
+                    &required_string(value, "state")?,
+                )?,
+                journal_state: serde_json::from_value(
+                    value
+                        .get("journal_state")
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                )
+                .map_err(|error| {
+                    StoreError::corrupt("execution_heartbeat_replays", "response", error)
+                })?,
                 last_event_checkpoint: match value.get("last_event_checkpoint") {
                     Some(serde_json::Value::Null) => None,
                     Some(serde_json::Value::String(value)) => Some(Checkpoint::new(value.clone())),
                     _ => {
-                        return Err(StoreError::malformed(
+                        return Err(StoreError::corrupt(
+                            "execution_heartbeat_replays",
+                            "response",
                             "invalid heartbeat replay response field: last_event_checkpoint",
                         ));
                     }
@@ -389,7 +425,9 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
                     .get("cancellation_requested")
                     .and_then(serde_json::Value::as_bool)
                     .ok_or_else(|| {
-                        StoreError::malformed(
+                        StoreError::corrupt(
+                            "execution_heartbeat_replays",
+                            "response",
                             "invalid heartbeat replay response field: cancellation_requested",
                         )
                     })?,
@@ -406,19 +444,14 @@ fn heartbeat_response(serialized: &str) -> Result<HeartbeatBatchResponse, StoreE
 fn lease_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<Lease, StoreError> {
     let issued: String = row.get("lease_issued_at");
     let expires: String = row.get("lease_expires_at");
-    let parse = |value: String| {
-        DateTime::parse_from_rfc3339(&value)
-            .map(|value| value.with_timezone(&Utc))
-            .map_err(|error| StoreError::malformed(error.to_string()))
-    };
     Ok(Lease {
         attempt_id: AttemptId::new(row.get::<String, _>("id")),
         request_id: ExecutionRequestId::new(row.get::<String, _>("request_id")),
         attempt_number: row.get("attempt_number"),
         runner_id: RunnerId::new(row.get::<String, _>("runner_id")),
         fencing_token: token_from_column(row.get("fencing_token"))?,
-        issued_at: parse(issued)?,
-        expires_at: parse(expires)?,
+        issued_at: decode::instant("execution_attempts", "lease_issued_at", &issued)?,
+        expires_at: decode::instant("execution_attempts", "lease_expires_at", &expires)?,
     })
 }
 
@@ -465,7 +498,7 @@ impl Repository {
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         if !pending_runner_input_is_valid(&runner, &token, now) {
-            return Err(StoreError::malformed("invalid pending runner/token input"));
+            return Err(StoreError::unwritable("invalid pending runner/token input"));
         }
         let now = now.to_rfc3339();
         let mut tx = self.pool().begin().await?;
@@ -715,7 +748,7 @@ impl Repository {
                 attempt_id: lease.attempt_id.clone(),
                 fencing_token: lease.fencing_token,
                 state: lease.state,
-                journal_state: lease.journal_state.into(),
+                journal_state: lease.journal_state,
                 last_event_checkpoint: lease.last_event_checkpoint.cloned(),
                 lease_expires_at: expires,
                 cancellation_requested: cancellation.is_some(),
@@ -734,7 +767,7 @@ impl Repository {
                 "attempt_id": lease.attempt_id.as_str(),
                 "fencing_token": lease.fencing_token.get(),
                 "state": state::text(lease.state),
-                "journal_state": lease.journal_state,
+                "journal_state": lease.journal_state.as_str(),
                 "last_event_checkpoint": lease.last_event_checkpoint.as_ref().map(Checkpoint::as_str),
                 "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
                 "cancellation_requested": lease.cancellation_requested,
@@ -855,11 +888,7 @@ impl Repository {
         };
         let stored: Option<String> = row.get("credential_expires_at");
         let credential_expires_at = stored
-            .map(|raw| {
-                DateTime::parse_from_rfc3339(&raw)
-                    .map(|value| value.with_timezone(&Utc))
-                    .map_err(|error| sqlx::Error::Decode(Box::new(error)))
-            })
+            .map(|raw| decode::instant("agent_runners", "credential_expires_at", &raw))
             .transpose()?;
         let updated = sqlx::query(
             "UPDATE agent_runners SET runner_version=?, labels=?, capability_snapshot=?, updated_at=? \

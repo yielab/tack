@@ -86,7 +86,7 @@ pub async fn content_reference(
     .bind(artifact_id)
     .fetch_optional(repo.pool())
     .await?
-    .ok_or(StoreError::NotFound)
+    .ok_or(StoreError::not_found("artifact"))
 }
 
 /// What an upload of one artifact's content is checked against: the manifest row and the
@@ -131,7 +131,7 @@ pub async fn upload_facts(
                 size_bytes,
                 media_type,
                 content_reference,
-                attempt_state: state::parse(&attempt_state)?,
+                attempt_state: state::parse("execution_attempts", "state", &attempt_state)?,
                 lease_expires_at,
             })
         },

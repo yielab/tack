@@ -90,8 +90,14 @@ where
         self.processes.terminate_all().await?;
 
         let client_result = match client_result {
-            Some(result) => result.map_err(|_| RunnerError::ClientTaskJoin)?,
-            None => client_task.await.map_err(|_| RunnerError::ClientTaskJoin)?,
+            Some(result) => result.map_err(|failure| RunnerError::ClientTaskJoin {
+                panicked: failure.is_panic(),
+            })?,
+            None => client_task
+                .await
+                .map_err(|failure| RunnerError::ClientTaskJoin {
+                    panicked: failure.is_panic(),
+                })?,
         };
 
         match client_result {

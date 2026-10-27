@@ -1,4 +1,4 @@
-use crate::StoreError;
+use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::Row;
 use tracing::instrument;
@@ -67,15 +67,7 @@ impl<'a> AttachmentRepo<'a> {
         .fetch_optional(self.repo.pool())
         .await?;
 
-        Ok(row.map(|r| Attachment {
-            id: Uuid::parse_str(&r.get::<String, _>("id")).unwrap(),
-            item_id: Uuid::parse_str(&r.get::<String, _>("item_id")).unwrap(),
-            filename: r.get("filename"),
-            mime_type: r.get("mime_type"),
-            storage_path: r.get("storage_path"),
-            size_bytes: r.get::<i64, _>("size_bytes") as u64,
-            uploaded_at: r.get::<String, _>("uploaded_at").parse().unwrap(),
-        }))
+        row.as_ref().map(attachment_of).transpose()
     }
 
     /// List attachments for an item
@@ -89,18 +81,7 @@ impl<'a> AttachmentRepo<'a> {
         .fetch_all(self.repo.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|r| Attachment {
-                id: Uuid::parse_str(&r.get::<String, _>("id")).unwrap(),
-                item_id: Uuid::parse_str(&r.get::<String, _>("item_id")).unwrap(),
-                filename: r.get("filename"),
-                mime_type: r.get("mime_type"),
-                storage_path: r.get("storage_path"),
-                size_bytes: r.get::<i64, _>("size_bytes") as u64,
-                uploaded_at: r.get::<String, _>("uploaded_at").parse().unwrap(),
-            })
-            .collect())
+        rows.iter().map(attachment_of).collect()
     }
 
     /// Delete attachment
@@ -113,4 +94,17 @@ impl<'a> AttachmentRepo<'a> {
 
         Ok(result.rows_affected() > 0)
     }
+}
+
+fn attachment_of(row: &sqlx::sqlite::SqliteRow) -> Result<Attachment, StoreError> {
+    const TABLE: &str = "attachments";
+    Ok(Attachment {
+        id: decode::uuid(TABLE, "id", &row.get::<String, _>("id"))?,
+        item_id: decode::uuid(TABLE, "item_id", &row.get::<String, _>("item_id"))?,
+        filename: row.get("filename"),
+        mime_type: row.get("mime_type"),
+        storage_path: row.get("storage_path"),
+        size_bytes: row.get::<i64, _>("size_bytes") as u64,
+        uploaded_at: decode::instant(TABLE, "uploaded_at", &row.get::<String, _>("uploaded_at"))?,
+    })
 }

@@ -1,6 +1,6 @@
 //! Recovery observations and the operator-requeue path they can unblock.
 
-use crate::repository::execution_fixture::{Fixture, recovery_input};
+use crate::repository::execution_fixture::{Fixture, recovery_details, recovery_input};
 use tack_protocol::execution::{AttemptId, FencingToken, RunnerId, WorkspaceId};
 
 use chrono::Duration;
@@ -31,7 +31,9 @@ async fn recovery_stopped_without_start_requeues_fence_and_replays() {
         RecoveryDisposition::SafePreSpawnRequeue
     );
     let semantic_retry = RecoveryObservationInput {
-        details: r#"{"observer":{"a":1,"b":2},"process_observed":false,"journal_state":"prepared"}"#,
+        details: recovery_details(
+            r#"{"observer":{"a":1,"b":2},"process_observed":false,"journal_state":"prepared"}"#,
+        ),
         ..input.clone()
     };
     let replayed = fx.recover(semantic_retry).await;
@@ -40,7 +42,9 @@ async fn recovery_stopped_without_start_requeues_fence_and_replays() {
     };
     assert_eq!(replayed, applied);
     let changed = RecoveryObservationInput {
-        details: r#"{"journal_state":"prepared","process_observed":true,"observer":"changed"}"#,
+        details: recovery_details(
+            r#"{"journal_state":"prepared","process_observed":true,"observer":"changed"}"#,
+        ),
         ..input
     };
     assert_eq!(
@@ -106,7 +110,9 @@ async fn recovery_running_ambiguous_and_spawn_evidence_need_operator() {
         ));
     }
     let post_spawn = RecoveryObservationInput {
-        details: r#"{"journal_state":"spawned","process_observed":false}"#,
+        details: recovery_details(
+            r#"{"journal_state":"process_observed_running","process_observed":false}"#,
+        ),
         ..recovery_input(
             "attempt-recovery-post-spawn",
             post_spawn_fence,
@@ -173,7 +179,7 @@ async fn recovery_terminal_replay_is_idempotent_and_rejects_changes() {
             if response.disposition == RecoveryDisposition::AlreadyTerminal
     ));
     let changed_terminal = RecoveryObservationInput {
-        details: r#"{"journal_state":"prepared","process_observed":true}"#,
+        details: recovery_details(r#"{"journal_state":"prepared","process_observed":true}"#),
         ..terminal
     };
     assert_eq!(

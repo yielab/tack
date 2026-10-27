@@ -26,6 +26,59 @@ automation a template carries, and the removal of dollars per day.
 
 ### Added
 
+- **The artifact upload's answer is a message struct.** `PUT .../artifacts/{id}/content` was the
+  last runner-protocol message the board built with `json!`; it is now `ArtifactContentResponse` in
+  `tack-protocol`, like every other request and response of the protocol.
+
+- **A request the server cannot read answers the same error body as any other failure.** A body
+  that is not JSON, a field that is missing, a wrong content type, a body over the limit, a path
+  or query parameter that is not valid, a route that is not there and a method a route does not
+  accept used to get axum's plain text (or nothing) with no code. Every handler now reads its
+  request through `tack_api::extract` (`Json`, `Path`, `Query`, `RawBody`, `Multipart`,
+  `Upgrade`), which refuses with `invalid_request` (400, `details.field` when the failing field is
+  known), `unsupported_media_type` (415), `payload_too_large` (413) or the new `method_not_allowed`
+  (405). A body whose shape is wrong answers 400, not axum's 422. Every error body, on the `/api`
+  routes and the runner routes alike, now carries `retryable`, `request_id` and `details` beside
+  `status`, `code` and `message`, and every request has a request id (the `x-request-id` it sent,
+  or one the board makes) that the body and the response header name; the four fixed
+  `req_operator...` ids are gone.
+
+- **Every error body has a `code` a client can match on.** `StableErrorCode` is the one enum of
+  codes, and it knows its HTTP status (`status()`), so no handler names a status beside a code.
+  `AppError` carries a code, a refused run (`Refusal`) is one of its variants, and turning it into
+  an `ApiError` keeps the code, where it used to be dropped. Each rule of the core answers a code of
+  its own instead of the shared 400: `wip_limit_exceeded`, `invalid_status_transition`,
+  `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`,
+  `has_children`, `invalid_workflow` and `validation_failed`; the HTTP layer's failures
+  (`misdirected_host`, `cross_site_request`, `unsupported_media_type`, `unreadable_archive`,
+  `precondition_failed`, `section_failed`) and the plain kinds (`not_found`, `conflict`,
+  `internal_error`, ...) are in the same enum, and the OpenAPI error envelope documents `code` as
+  that enum. The frontend's list of codes is the generated type. One status moved to the
+  code's: a lifecycle transition the board refuses (`AppError::InvalidTransition`) is 409 like the
+  runner routes, not 400. A run sent to a revoked machine keeps its 409 under the new code
+  `machine_revoked` (`runner_revoked` is the runner's own credential, 403).
+- **A write to a parent that is not there answers 404.** Creating a sprint or a role in a project
+  that does not exist answered 500 from the database's foreign key, and so did a dependency on an
+  item that does not exist; the store now checks the project or the item first and raises
+  `NotFound`, and a test drives each such route to a missing parent.
+  The same holds for a new item that names a parent item, a sprint or a project that is not
+  there, and for a `PATCH` that moves an item to a sprint that is not there (both were 500s), and
+  a test drives the briefs, boards, GitHub link, plan, autonomy, imports, outline, execution,
+  decision, review and attachment routes to a missing parent.
+- **The runner's file failures keep their kind.** A workspace or journal operation that failed on a
+  file now says how (`runner workspace operation failed: entity not found`) instead of a bare
+  "failed", and a poisoned lock is logged; the operating system's own text, which can name a path,
+  is still never kept. About 50 of the `map_err(|_| …)` that dropped their cause are gone, and the
+  runner's state-directory, session-file, config-file, client-task and shutdown-signal failures
+  (`RunnerError::Filesystem`, `ConfigError::Unreadable`, `ClientTaskJoin`, `ShutdownSignal`) now say
+  which kind of failure it was.
+- **The store says what is wrong with a stored value.** `StoreError` gains `Corrupt { table, column }`
+  for a value that cannot be read back and `NotFound { entity }` for a row of a named kind that is
+  not there; row mapping returns them instead of panicking on a corrupt row or inventing a default
+  (the 78 `unwrap`s in the store's row mapping are gone), and the 500 for a corrupt row is logged
+  with the table and the column. A restore whose archive or manifest cannot be read answers 422
+  with the code `unreadable_archive` instead of 500, and the server-side failures that used to
+  drop their cause (`map_err(|_| …)`) now log it.
 - **A run that needed a person is its own outcome.** An attempt of the docket agent that ends because a
   tool call needs a person shows "Needs a person" with docket's sentence and offers **Run again at L3**,
   which opens the Run dialog for the same task with the run attended from the start; it is disabled, with
@@ -192,6 +245,28 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The claim, heartbeat, event-batch and completion messages are one set of types.** `tack-protocol` now defines
+  them, and the board and the runner both read and write those types instead of building and picking apart JSON by
+  hand, so the shape of `claim`, `heartbeat`, `event-batch` and `completion` fixtures is written once and a test
+  checks every one of them against it. On the wire nothing changes for a valid message. A body that does not fit now
+  answers `400 invalid_request` with the field named when it is missing, where a few mistakes (a negative
+  `available_capacity`, a heartbeat `journal_state` that is not one of the runner's journal states) were accepted
+  before. A heartbeat's `journal_state` may be `terminal_report_pending`, which a runner has always been able to send.
+- **Every runner message is one set of types, and every runner request has an id of its own.** Enrollment, refresh,
+  accept and start, decisions, the artifact manifest and the cancellation observation join the claim, heartbeat,
+  event-batch and completion messages in `tack-protocol`, and the board and the runner read and write them with no
+  hand-built JSON left. On the wire nothing changes for a valid message (the board's timestamps in these answers are
+  written with a `Z` instead of `+00:00`). A request that does not fit answers `400 invalid_request` and names the
+  field, such as `options[0].label` or `fencing_token`, where a few mistakes were named only as `body`. The runner now
+  sends an `x-request-id` it makes anew for every request; the board puts it in the error body's `request_id` (it was
+  always `req_runner`), echoes it in its answer and logs it.
+- **A recovery observation is stored as the protocol's type.** The store takes a runner's recovery details as the
+  protocol's `RecoveryDetails` and encodes them itself, and the lease sweep writes `lease_expired` as a real journal
+  state of the protocol (`RecoveryJournalState::LeaseExpired`) instead of a code string dressed as one.
+- **The rest of what the store was handed as JSON text is the protocol's type.** A completion's `actual_execution` and
+  `usage`, an event's payload, a decision's options, metadata and recommendation, and a heartbeat's journal state cross
+  from the handler to the store as the protocol's values and are encoded inside the store. A report whose body the
+  protocol could not read was already refused with 400; nothing a runner sends changes.
 - **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
   the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
   the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as

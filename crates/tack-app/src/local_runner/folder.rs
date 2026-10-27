@@ -115,9 +115,10 @@ pub async fn init_folder(path: &Path) -> Result<(), FolderError> {
             return Err(FolderError::NotEmpty);
         }
     }
-    tokio::fs::create_dir_all(path)
-        .await
-        .map_err(|_| FolderError::CouldNotCreate)?;
+    tokio::fs::create_dir_all(path).await.map_err(|failure| {
+        tracing::warn!(error = %failure, "Could not create the project folder");
+        FolderError::CouldNotCreate
+    })?;
     run_git(path, &["init"])
         .await
         .map(drop)

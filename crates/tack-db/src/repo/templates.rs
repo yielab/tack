@@ -1,5 +1,5 @@
 use super::Repository;
-use crate::StoreError;
+use crate::{StoreError, decode};
 use serde_json::json;
 use sqlx::FromRow;
 use tack_core::models::*;
@@ -24,6 +24,28 @@ struct TemplateRow {
     is_builtin: i32,
     created_at: String,
     updated_at: String,
+}
+
+impl TemplateRow {
+    fn into_template(self) -> Result<ProjectTemplate, StoreError> {
+        const TABLE: &str = "project_templates";
+        Ok(ProjectTemplate {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            name: self.name,
+            description: self.description,
+            project_type: decode::variant(TABLE, "project_type", &self.project_type)?,
+            vocabulary: decode::json(TABLE, "vocabulary", &self.vocabulary)?,
+            workflow: decode::json(TABLE, "workflow", &self.workflow)?,
+            custom_fields: decode::json(TABLE, "custom_fields", &self.custom_fields)?,
+            default_boards: decode::json(TABLE, "default_boards", &self.default_boards)?,
+            roles: decode::json(TABLE, "roles", &self.roles)?,
+            profiles: decode::json(TABLE, "profiles", &self.profiles)?,
+            automation: decode::optional_json(TABLE, "automation", self.automation.as_deref())?,
+            is_builtin: self.is_builtin != 0,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
+    }
 }
 
 /// Create a new project template
@@ -92,43 +114,9 @@ pub async fn get_template(repo: &Repository, id: Uuid) -> Result<ProjectTemplate
     .bind(id.to_string())
     .fetch_optional(repo.pool())
     .await?
-    .ok_or(StoreError::NotFound)?;
+    .ok_or(StoreError::not_found("project template"))?;
 
-    let vocabulary: serde_json::Value =
-        serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
-
-    let workflow: serde_json::Value =
-        serde_json::from_str(&row.workflow).unwrap_or(serde_json::json!({}));
-
-    let custom_fields: Vec<CustomFieldDefinition> =
-        serde_json::from_str(&row.custom_fields).unwrap_or_default();
-
-    let default_boards: Vec<BoardTemplate> =
-        serde_json::from_str(&row.default_boards).unwrap_or_default();
-
-    Ok(ProjectTemplate {
-        id: Uuid::parse_str(&row.id).unwrap(),
-        name: row.name,
-        description: row.description,
-        project_type: serde_json::from_value(serde_json::Value::String(row.project_type)).unwrap(),
-        vocabulary: serde_json::from_value(vocabulary).unwrap(),
-        workflow: serde_json::from_value(workflow).unwrap(),
-        custom_fields,
-        default_boards,
-        roles: serde_json::from_str(&row.roles).unwrap_or_default(),
-        profiles: serde_json::from_str(&row.profiles).unwrap_or_default(),
-        automation: row
-            .automation
-            .as_deref()
-            .and_then(|a| serde_json::from_str(a).ok()),
-        is_builtin: row.is_builtin != 0,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-            .unwrap()
-            .into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-            .unwrap()
-            .into(),
-    })
+    row.into_template()
 }
 
 /// List all templates, optionally filtered by project type
@@ -159,49 +147,7 @@ pub async fn list_templates(
         .await?
     };
 
-    let templates: Vec<ProjectTemplate> = rows
-        .into_iter()
-        .map(|row| {
-            let vocabulary: serde_json::Value =
-                serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
-
-            let workflow: serde_json::Value =
-                serde_json::from_str(&row.workflow).unwrap_or(serde_json::json!({}));
-
-            let custom_fields: Vec<CustomFieldDefinition> =
-                serde_json::from_str(&row.custom_fields).unwrap_or_default();
-
-            let default_boards: Vec<BoardTemplate> =
-                serde_json::from_str(&row.default_boards).unwrap_or_default();
-
-            ProjectTemplate {
-                id: Uuid::parse_str(&row.id).unwrap(),
-                name: row.name,
-                description: row.description,
-                project_type: serde_json::from_value(serde_json::Value::String(row.project_type))
-                    .unwrap(),
-                vocabulary: serde_json::from_value(vocabulary).unwrap(),
-                workflow: serde_json::from_value(workflow).unwrap(),
-                custom_fields,
-                default_boards,
-                roles: serde_json::from_str(&row.roles).unwrap_or_default(),
-                profiles: serde_json::from_str(&row.profiles).unwrap_or_default(),
-                automation: row
-                    .automation
-                    .as_deref()
-                    .and_then(|a| serde_json::from_str(a).ok()),
-                is_builtin: row.is_builtin != 0,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                    .unwrap()
-                    .into(),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                    .unwrap()
-                    .into(),
-            }
-        })
-        .collect();
-
-    Ok(templates)
+    rows.into_iter().map(TemplateRow::into_template).collect()
 }
 
 /// Delete a template (only non-builtin templates can be deleted)

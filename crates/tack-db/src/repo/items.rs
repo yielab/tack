@@ -1,5 +1,6 @@
-use crate::StoreError;
 use crate::repo::execution::state;
+use crate::repo::{Parent, require_row};
+use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, instrument, warn};
@@ -7,7 +8,7 @@ use uuid::Uuid;
 
 use tack_core::CoreError;
 use tack_core::models::{
-    CreateItem, DependencyType, Item, ItemFilter, ItemSource, ItemType, Priority, UpdateItem,
+    CreateItem, DependencyType, Item, ItemFilter, ItemSource, ItemType, UpdateItem,
 };
 use tack_core::outline::{PlannedParent, ResolvedOutline};
 use tack_core::workflow::{StatusCategory, WorkflowConfig};
@@ -167,7 +168,7 @@ impl Repository {
         .fetch_optional(self.pool())
         .await?;
 
-        Ok(row.map(|r| r.into_item()))
+        row.map(ItemRow::into_item).transpose()
     }
 
     /// The optimistic-concurrency counter an `ETag` is derived from
@@ -203,10 +204,14 @@ impl Repository {
             .fetch_optional(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(row.zip(version).map(|(row, version)| ItemSnapshot {
-            item: row.into_item(),
-            version,
-        }))
+        row.zip(version)
+            .map(|(row, version)| {
+                Ok(ItemSnapshot {
+                    item: row.into_item()?,
+                    version,
+                })
+            })
+            .transpose()
     }
 
     #[instrument(skip(self))]
@@ -234,7 +239,7 @@ impl Repository {
         }
 
         let rows = q.fetch_all(self.pool()).await?;
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     /// Total number of items matching `filter` (ignoring pagination). Used to
@@ -275,7 +280,7 @@ impl Repository {
         .bind(to.to_rfc3339())
         .fetch_all(self.pool())
         .await?;
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     /// Every branch below bumps `version`, not just the
@@ -292,6 +297,9 @@ impl Repository {
     ) -> Result<Option<Item>, StoreError> {
         let now = Utc::now().to_rfc3339();
 
+        if let Some(Some(sprint_id)) = input.sprint_id {
+            self.require_sprint(sprint_id).await?;
+        }
         if let Some(ref title) = input.title {
             sqlx::query(
                 "UPDATE items SET title = ?, updated_at = ?, version = version + 1 WHERE id = ?",
@@ -353,7 +361,7 @@ impl Repository {
             .await?;
         }
         if let Some(ref tags) = input.tags {
-            let tags_json = serde_json::to_string(tags).unwrap();
+            let tags_json = decode::to_json(tags)?;
             sqlx::query(
                 "UPDATE items SET tags = ?, updated_at = ?, version = version + 1 WHERE id = ?",
             )
@@ -417,7 +425,7 @@ impl Repository {
         }
         if let Some(estimate_unit) = input.estimate_unit {
             // `estimate_unit` is stored as a JSON string; `None` clears it to SQL NULL.
-            let value = estimate_unit.map(|u| serde_json::to_string(&u).unwrap());
+            let value = estimate_unit.map(|u| decode::to_json(&u)).transpose()?;
             sqlx::query(
                 "UPDATE items SET estimate_unit = ?, updated_at = ?, version = version + 1 WHERE id = ?",
             )
@@ -547,7 +555,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     #[instrument(skip(self))]
@@ -570,7 +578,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     #[instrument(skip(self))]
@@ -583,7 +591,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     /// Returns true if every direct child of `parent_id` has exactly `done_status` as its status.
@@ -700,29 +708,38 @@ struct ItemRow {
 }
 
 impl ItemRow {
-    fn into_item(self) -> Item {
-        Item {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            project_id: Uuid::parse_str(&self.project_id).unwrap(),
-            parent_id: self.parent_id.and_then(|s| Uuid::parse_str(&s).ok()),
+    fn into_item(self) -> Result<Item, StoreError> {
+        const TABLE: &str = "items";
+        Ok(Item {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
+            parent_id: decode::optional_uuid(TABLE, "parent_id", self.parent_id.as_deref())?,
             title: self.title,
             description: self.description,
             item_type: parse_item_type(&self.item_type),
             status: self.status,
-            priority: parse_priority(&self.priority),
+            priority: decode::variant(TABLE, "priority", &self.priority)?,
             estimate: self.estimate,
-            estimate_unit: serde_json::from_str(&self.estimate_unit).unwrap_or_default(),
-            tags: serde_json::from_str(&self.tags).unwrap_or_default(),
+            // The column's default is the bare variant name, which is not JSON.
+            estimate_unit: decode::json(TABLE, "estimate_unit", &self.estimate_unit)
+                .or_else(|_| decode::variant(TABLE, "estimate_unit", &self.estimate_unit))?,
+            tags: decode::json(TABLE, "tags", &self.tags)?,
             sort_order: self.sort_order,
-            sprint_id: self.sprint_id.and_then(|s| Uuid::parse_str(&s).ok()),
+            sprint_id: decode::optional_uuid(TABLE, "sprint_id", self.sprint_id.as_deref())?,
             assignee: self.assignee,
-            due_date: self.due_date.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            recurrence: self.recurrence.and_then(|s| s.parse().ok()),
-            recurrence_of: self.recurrence_of.and_then(|s| Uuid::parse_str(&s).ok()),
+            due_date: decode::optional_instant(TABLE, "due_date", self.due_date.as_deref())?,
+            recurrence: self
+                .recurrence
+                .map(|text| {
+                    text.parse()
+                        .map_err(|()| StoreError::corrupt(TABLE, "recurrence", "not a recurrence"))
+                })
+                .transpose()?,
+            recurrence_of: decode::optional_uuid(
+                TABLE,
+                "recurrence_of",
+                self.recurrence_of.as_deref(),
+            )?,
             // `FromStr` for `ItemSource` is infallible (unrecognised text
             // degrades to `Unknown`, i.e. untrusted) — see its own doc
             // comment for why that's the safe direction.
@@ -749,23 +766,15 @@ impl ItemRow {
             started_by: self.started_by,
             team: self.team,
             merged_by: self.merged_by,
-            started_at: self.started_at.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            completed_at: self.completed_at.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-        }
+            started_at: decode::optional_instant(TABLE, "started_at", self.started_at.as_deref())?,
+            completed_at: decode::optional_instant(
+                TABLE,
+                "completed_at",
+                self.completed_at.as_deref(),
+            )?,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
     }
 }
 
@@ -778,17 +787,6 @@ fn parse_item_type(s: &str) -> ItemType {
         "bug" => ItemType::Bug,
         "requirement" => ItemType::Requirement,
         other => ItemType::Custom(other.to_string()),
-    }
-}
-
-fn parse_priority(s: &str) -> Priority {
-    match s {
-        "critical" => Priority::Critical,
-        "high" => Priority::High,
-        "medium" => Priority::Medium,
-        "low" => Priority::Low,
-        "none" => Priority::None,
-        _ => Priority::Medium,
     }
 }
 
@@ -836,6 +834,13 @@ async fn insert_item(
     input: CreateItem,
     source: ItemSource,
 ) -> Result<Item, StoreError> {
+    require_row(conn, Parent::Project, project_id).await?;
+    if let Some(parent_id) = input.parent_id {
+        require_row(conn, Parent::Item, parent_id).await?;
+    }
+    if let Some(sprint_id) = input.sprint_id {
+        require_row(conn, Parent::Sprint, sprint_id).await?;
+    }
     let id = Uuid::new_v4();
     let now = Utc::now();
     let now_str = now.to_rfc3339();
@@ -843,10 +848,10 @@ async fn insert_item(
     let priority = input.priority.unwrap_or_default();
     let estimate_unit = input.estimate_unit.unwrap_or_default();
     let tags = input.tags.unwrap_or_default();
-    let tags_json = serde_json::to_string(&tags).unwrap();
+    let tags_json = decode::to_json(&tags)?;
     let item_type_str = item_type.to_string();
     let priority_str = priority.to_string();
-    let estimate_unit_str = serde_json::to_string(&estimate_unit).unwrap();
+    let estimate_unit_str = decode::to_json(&estimate_unit)?;
 
     // Get next sort order
     let max_sort: Option<i32> =
@@ -964,6 +969,9 @@ pub(crate) async fn update_item_in(
     }
 
     let old_status = current.status.clone();
+    if let Some(Some(sprint_id)) = input.sprint_id {
+        require_row(tx, Parent::Sprint, sprint_id).await?;
+    }
     let addresses_a_field = input.title.is_some()
         || input.description.is_some()
         || input.item_type.is_some()
@@ -981,7 +989,7 @@ pub(crate) async fn update_item_in(
     // Match the pre-A2 no-op PATCH behavior: without an addressed field
     // there is no logical mutation and therefore no version to consume.
     if !addresses_a_field {
-        let item = current.into_item();
+        let item = current.into_item()?;
         return Ok(AtomicItemUpdateOutcome::Updated {
             item: Box::new(item),
             version: current_version,
@@ -1038,16 +1046,11 @@ pub(crate) async fn update_item_in(
             fields.push("estimate = ").push_bind_unseparated(estimate);
         }
         if let Some(estimate_unit) = input.estimate_unit.as_ref() {
-            let value = estimate_unit
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            let value = estimate_unit.as_ref().map(decode::to_json).transpose()?;
             fields.push("estimate_unit = ").push_bind_unseparated(value);
         }
         if let Some(tags) = input.tags.as_ref() {
-            let value = serde_json::to_string(tags)
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+            let value = decode::to_json(tags)?;
             fields.push("tags = ").push_bind_unseparated(value);
         }
         if let Some(due_date) = input.due_date.as_ref() {
@@ -1124,7 +1127,7 @@ pub(crate) async fn update_item_in(
     .bind(id.to_string())
     .fetch_one(&mut **tx)
     .await?
-    .into_item();
+    .into_item()?;
     Ok(AtomicItemUpdateOutcome::Updated {
         item: Box::new(item),
         version: current_version + 1,
@@ -1186,7 +1189,7 @@ mod tests {
             status: "todo".to_owned(),
             priority: "medium".to_owned(),
             estimate: None,
-            estimate_unit: "\"points\"".to_owned(),
+            estimate_unit: "\"story_points\"".to_owned(),
             tags: "[]".to_owned(),
             sort_order: 0,
             sprint_id: None,
@@ -1215,7 +1218,8 @@ mod tests {
         let row = row(Some(r#"{"timeout_seconds": "ten"}"#));
         let id = row.id.clone();
 
-        let item = tracing::subscriber::with_default(Capture(events.clone()), || row.into_item());
+        let item =
+            tracing::subscriber::with_default(Capture(events.clone()), || row.into_item().unwrap());
 
         assert!(item.run_settings.is_none());
         let events = events.lock().unwrap();

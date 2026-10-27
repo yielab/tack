@@ -1,7 +1,8 @@
 //! The rate card's routes. The card and its pricing are
 //! `tack_core::rate_card`; where it is kept is `tack_db::repo::rate_card`.
 
-use axum::{Json, extract::State};
+use crate::extract::Json;
+use axum::extract::State;
 use tack_db::Repository;
 use tracing::instrument;
 

@@ -1,19 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 use tack_db::Repository;
 use tack_db::repo::execution::{HeartbeatBatchResponse, HeartbeatBatchResult, HeartbeatLease};
-use tack_protocol::execution::{AttemptId, Checkpoint, ExecutionState, FencingToken, RunnerId};
+use tack_protocol::execution::{ActiveAttempt, AttemptId, RunnerId};
 
 use crate::AppError;
-
-/// One lease a runner says it holds, as it reports it in a heartbeat.
-#[derive(Debug, Clone)]
-pub struct ReportedLease {
-    pub attempt_id: AttemptId,
-    pub fencing_token: FencingToken,
-    pub state: ExecutionState,
-    pub journal_state: String,
-    pub last_event_checkpoint: Option<Checkpoint>,
-}
 
 /// A runner's heartbeat as it sent it.
 pub struct Beat<'a> {
@@ -21,7 +11,8 @@ pub struct Beat<'a> {
     pub heartbeat_id: &'a str,
     pub sent_at: DateTime<Utc>,
     pub available_capacity: i64,
-    pub leases: &'a [ReportedLease],
+    /// The leases the runner says it holds, as the protocol's message carries them.
+    pub leases: &'a [ActiveAttempt],
     /// How far each reported lease is extended.
     pub lease_duration: Duration,
 }
@@ -54,7 +45,7 @@ pub async fn heartbeat(
             attempt_id: &lease.attempt_id,
             fencing_token: lease.fencing_token,
             state: lease.state,
-            journal_state: &lease.journal_state,
+            journal_state: lease.journal_state,
             last_event_checkpoint: lease.last_event_checkpoint.as_ref(),
         })
         .collect();

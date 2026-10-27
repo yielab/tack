@@ -255,8 +255,11 @@ pub async fn metrics(program: &str, db: &std::path::Path) -> Result<Value, Strin
         "--json".to_owned(),
     ];
     match run(program, &args, TIMEOUT).await {
-        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
-            .map_err(|_| "prill answered with something that is not JSON".to_owned()),
+        Ok(output) if output.status.success() => {
+            serde_json::from_slice(&output.stdout).map_err(|failure| {
+                format!("prill answered with something that is not JSON: {failure}")
+            })
+        }
         Ok(output) => Err(format!("prill metrics failed ({})", output.status)),
         Err(Unavailable) => Err(crate::prill::NOT_INSTALLED.to_owned()),
     }

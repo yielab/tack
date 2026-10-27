@@ -1,6 +1,7 @@
 //! Structured event batch replay under a claimed attempt's fence.
 
 use crate::repository::execution_fixture::Fixture;
+use serde_json::json;
 use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
 
 use chrono::Duration;
@@ -17,7 +18,7 @@ async fn structured_events_replay_is_applied_once() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: "{}",
+        payload: &json!({}),
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {
@@ -64,12 +65,12 @@ async fn event_replay_canonicalizes_equivalent_json_payloads() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: r#"{"outer":{"b":2,"a":1},"z":0}"#,
+        payload: &json!({"outer":{"b":2,"a":1},"z":0}),
         occurred_at: fx.clock.now(),
     };
     let replay = NewEvent {
         id: "row-canonical-retry",
-        payload: r#"{"z":0,"outer":{"a":1,"b":2}}"#,
+        payload: &json!({"z":0,"outer":{"a":1,"b":2}}),
         ..initial
     };
     assert!(matches!(
@@ -110,12 +111,12 @@ async fn event_replay_changed_payload_is_idempotency_conflict() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: r#"{"state":"original"}"#,
+        payload: &json!({"state":"original"}),
         occurred_at: fx.clock.now(),
     };
     let changed = NewEvent {
         id: "row-conflict-retry",
-        payload: r#"{"state":"changed"}"#,
+        payload: &json!({"state":"changed"}),
         ..initial
     };
     fx.apply_events(batch.clone(), &[initial]).await;
@@ -161,7 +162,7 @@ async fn event_replay_out_of_order_checkpoint_is_benign_conflict() {
         sequence: 2,
         source: "runner",
         kind: "progress",
-        payload: r#"{"state":"next"}"#,
+        payload: &json!({"state":"next"}),
         occurred_at: fx.clock.now(),
     };
     assert_eq!(
@@ -196,7 +197,7 @@ async fn event_replay_foreign_fence_is_stale_and_does_not_write() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: "{}",
+        payload: &json!({}),
         occurred_at: fx.clock.now(),
     };
     assert_eq!(
@@ -222,7 +223,7 @@ async fn event_replay_is_idempotent_under_one_fence() {
         sequence: 1,
         source: "runner",
         kind: "progress",
-        payload: "{}",
+        payload: &json!({}),
         occurred_at: fx.clock.now(),
     };
     let batch = EventBatch {

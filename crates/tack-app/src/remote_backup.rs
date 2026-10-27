@@ -56,6 +56,10 @@ pub enum BackupError {
     SchemaTooNew { snapshot: u32, local: u32 },
     #[error("bundle is corrupt or unrecognised format")]
     CorruptBundle,
+    /// The downloaded archive or its manifest cannot be read at all: not zstd, not a tar, a
+    /// truncated entry, a manifest that is not JSON of the expected shape.
+    #[error("the backup archive cannot be read: {0}")]
+    UnreadableArchive(String),
     #[error(
         "restore rejected: unsupported bundle format_version {0} (this binary understands version 1)"
     )]
@@ -739,21 +743,21 @@ fn parse_bundle(
     bundle_bytes: &[u8],
     restore_storage_path: &Path,
 ) -> Result<(Vec<u8>, Vec<ExtractedFile>), BackupError> {
-    let decompressed = zstd::decode_all(Cursor::new(bundle_bytes))
-        .map_err(|e| BackupError::Zstd(e.to_string()))?;
+    let unreadable = |e: std::io::Error| BackupError::UnreadableArchive(e.to_string());
+    let decompressed = zstd::decode_all(Cursor::new(bundle_bytes)).map_err(unreadable)?;
 
     let mut archive = tar::Archive::new(Cursor::new(decompressed));
     let mut db_bytes: Option<Vec<u8>> = None;
     let mut attachments: Vec<ExtractedFile> = Vec::new();
 
-    for entry in archive.entries()? {
-        let mut entry = entry?;
-        let entry_path = entry.path()?.into_owned();
+    for entry in archive.entries().map_err(unreadable)? {
+        let mut entry = entry.map_err(unreadable)?;
+        let entry_path = entry.path().map_err(unreadable)?.into_owned();
         let name = entry_path.to_string_lossy();
 
         if name == "database.db" {
             let mut buf = Vec::new();
-            entry.read_to_end(&mut buf)?;
+            entry.read_to_end(&mut buf).map_err(unreadable)?;
             db_bytes = Some(buf);
         } else if name.starts_with("attachments/") {
             let rel = entry_path
@@ -776,7 +780,7 @@ fn parse_bundle(
             }
             let dest = restore_storage_path.join(rel);
             let mut buf = Vec::new();
-            entry.read_to_end(&mut buf)?;
+            entry.read_to_end(&mut buf).map_err(unreadable)?;
             attachments.push(ExtractedFile { dest, data: buf });
         }
     }

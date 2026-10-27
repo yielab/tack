@@ -1,9 +1,10 @@
 use chrono::{DateTime, Utc};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tack_db::repo::execution::NewDecision;
 use tack_db::{Repository, queries};
 use tack_protocol::execution::{
-    AttemptId, ExecutionState, FencingToken, RunnerId, TransitionActor, validate_transition,
+    AttemptId, DecisionOption, DecisionRecommendation, ExecutionState, FencingToken, RunnerId,
+    TransitionActor, validate_transition,
 };
 use uuid::Uuid;
 
@@ -18,9 +19,10 @@ pub struct DecisionRequest<'a> {
     pub decision_id: &'a str,
     pub kind: &'a str,
     pub prompt: &'a str,
-    pub options: &'a [Value],
-    pub metadata: &'a Value,
-    pub recommendation: Option<&'a Value>,
+    pub options: &'a [DecisionOption],
+    /// What the harness says about the question; shown, never branched on.
+    pub metadata: &'a Map<String, Value>,
+    pub recommendation: Option<&'a DecisionRecommendation>,
     pub expires_at: Option<DateTime<Utc>>,
 }
 
@@ -80,9 +82,6 @@ pub async fn create_decision(
     }
 
     let row_id = format!("dec_row_{}", Uuid::new_v4());
-    let options_json = Value::Array(request.options.to_vec()).to_string();
-    let metadata_json = request.metadata.to_string();
-    let recommendation_json = request.recommendation.map(Value::to_string);
     let written = repo
         .create_execution_decision(
             request.runner_id,
@@ -93,10 +92,10 @@ pub async fn create_decision(
                 decision_id: request.decision_id,
                 kind: request.kind,
                 prompt: request.prompt,
-                options: &options_json,
-                metadata: &metadata_json,
+                options: request.options,
+                metadata: request.metadata,
                 expires_at: request.expires_at,
-                recommendation: recommendation_json.as_deref(),
+                recommendation: request.recommendation,
             },
             now,
         )
@@ -116,17 +115,17 @@ pub async fn create_decision(
     )
     .await?
     .ok_or(AppError::NotFound)?;
-    let stored_options: Value = serde_json::from_str(&stored.options).unwrap_or(Value::Null);
-    let stored_metadata: Value = serde_json::from_str(&stored.metadata).unwrap_or(Value::Null);
-    let stored_recommendation: Option<Value> = stored
+    let stored_options: Option<Vec<DecisionOption>> = serde_json::from_str(&stored.options).ok();
+    let stored_metadata: Option<Map<String, Value>> = serde_json::from_str(&stored.metadata).ok();
+    let stored_recommendation: Option<DecisionRecommendation> = stored
         .recommendation
         .as_deref()
         .and_then(|raw| serde_json::from_str(raw).ok());
     let requested_expires_at = request.expires_at.map(|value| value.to_rfc3339());
     if stored.kind != request.kind
         || stored.prompt != request.prompt
-        || stored_options != Value::Array(request.options.to_vec())
-        || stored_metadata != *request.metadata
+        || stored_options.as_deref() != Some(request.options)
+        || stored_metadata.as_ref() != Some(request.metadata)
         || stored_recommendation.as_ref() != request.recommendation
         || stored.expires_at != requested_expires_at
     {

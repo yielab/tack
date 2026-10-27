@@ -199,6 +199,31 @@ fn every_error_fixture_file_on_disk_is_in_the_conformance_list() {
     );
 }
 
+/// The status of each code is one table; the operator codes serialize as the words a client
+/// matches on, and none of them is retryable.
+#[test]
+fn every_stable_error_code_names_its_status_and_its_wire_word() {
+    use StableErrorCode::*;
+    for (code, word, status) in [
+        (NotFound, "not_found", 404),
+        (StaleLease, "stale_lease", 409),
+        (RunnerRevoked, "runner_revoked", 403),
+        (WipLimitExceeded, "wip_limit_exceeded", 400),
+        (DependencyCycle, "dependency_cycle", 400),
+        (InvalidStatusTransition, "invalid_status_transition", 400),
+        (MisdirectedHost, "misdirected_host", 421),
+        (CrossSiteRequest, "cross_site_request", 403),
+        (UnsupportedMediaType, "unsupported_media_type", 415),
+        (UnreadableArchive, "unreadable_archive", 422),
+        (SectionFailed, "section_failed", 500),
+        (InternalError, "internal_error", 500),
+    ] {
+        assert_eq!(serde_json::to_value(code).unwrap(), word);
+        assert_eq!(code.status(), status, "{word}");
+    }
+    assert!(!WipLimitExceeded.retryable() && !UnreadableArchive.retryable());
+}
+
 #[test]
 fn stable_error_code_retryable_matches_every_fixture() {
     for (name, fixture) in ERROR_FIXTURES {

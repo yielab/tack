@@ -1,8 +1,9 @@
 //! Operator fleet, runner, and profile handlers, mounted into the global router.
 
+use crate::extract::{Json, Path, Query};
 use axum::{
-    Json, Router,
-    extract::{Path, Query, State},
+    Router,
+    extract::State,
     http::StatusCode,
     routing::{delete, get, patch, post},
 };
@@ -16,16 +17,13 @@ use tack_db::repo::execution::{
 };
 use tack_db::repo::execution::{AgentProfilePatch, pending_runner_input_is_valid};
 use tack_db::{Repository, StoreError};
-use tack_protocol::execution::{ProtocolErrorEnvelope, RunnerId, StableErrorCode};
+use tack_protocol::execution::{RunnerId, StableErrorCode};
 use tack_protocol::{Clock, SystemClock};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 use super::executions::{OperatorExecutionState, RunnerV1ErrorEnvelope, runner_is_online};
-
-/// Static request-correlation id placeholder. No per-request correlation
-/// id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator";
+use crate::error::log_store_failure;
 
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
@@ -38,11 +36,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 pub fn routes(state: OperatorExecutionState) -> Router {
@@ -331,7 +325,8 @@ pub async fn list_fleets(
 ) -> Result<Json<FleetListResponse>, (StatusCode, Json<Value>)> {
     let rows = agent_fleets::fleets_by_name(&state.repo)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list fleets");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -342,7 +337,8 @@ pub async fn list_fleets(
     let data: Vec<FleetSummary> = rows
         .into_iter()
         .map(|r| -> Result<FleetSummary, (StatusCode, Json<Value>)> {
-            let policy = serde_json::from_str::<Value>(&r.default_policy).map_err(|_| {
+            let policy = serde_json::from_str::<Value>(&r.default_policy).map_err(|failure| {
+                tracing::error!(error = %failure, "Fleet policy is corrupt");
                 error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,
@@ -406,7 +402,8 @@ pub async fn add_fleet_member(
         .repo
         .add_fleet_member(&fleet_id, &input.runner_id, state.clock.now())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not add fleet member");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -463,7 +460,8 @@ pub async fn remove_fleet_member(
         .repo
         .remove_fleet_member(&fleet_id, &runner_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not remove fleet member");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -516,7 +514,8 @@ pub async fn list_runners(
     State(state): State<OperatorExecutionState>,
     Query(query): Query<ListRunnersQuery>,
 ) -> Result<Json<RunnerListResponse>, (StatusCode, Json<Value>)> {
-    let runners = state.repo.list_runners().await.map_err(|_| {
+    let runners = state.repo.list_runners().await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not list runners");
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
@@ -580,7 +579,8 @@ pub async fn revoke_runner(
         .repo
         .revoke_runner(&runner_id, state.clock.now())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not revoke runner");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -717,10 +717,14 @@ pub async fn provision_pending_runner(
     let expires_at = now
         .checked_add_signed(enrollment_lifetime)
         .ok_or(ProvisionError::LifetimeOutOfRange)?;
-    let labels =
-        serde_json::to_string(&input.labels).map_err(|_| ProvisionError::LabelsNotSerializable)?;
-    let capabilities = serde_json::to_string(&input.capability_snapshot)
-        .map_err(|_| ProvisionError::CapabilitySnapshotNotSerializable)?;
+    let labels = serde_json::to_string(&input.labels).map_err(|failure| {
+        tracing::warn!(error = %failure, "Could not encode the runner provisioning");
+        ProvisionError::LabelsNotSerializable
+    })?;
+    let capabilities = serde_json::to_string(&input.capability_snapshot).map_err(|failure| {
+        tracing::warn!(error = %failure, "Could not encode the runner provisioning");
+        ProvisionError::CapabilitySnapshotNotSerializable
+    })?;
     let enrollment_token_hash = token_hash(&raw_token);
     let runner = NewRunner {
         id: &runner_id,
@@ -903,18 +907,21 @@ pub async fn revoke_enrollment_token(
                 "Enrollment token was already consumed",
                 json!({}),
             ),
-            StoreError::NotFound => error(
+            StoreError::NotFound { .. } => error(
                 StatusCode::NOT_FOUND,
                 StableErrorCode::NotFound,
                 "Enrollment token does not exist",
                 json!({"resource": "enrollment_token"}),
             ),
-            StoreError::Sql(_) => error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not revoke enrollment token",
-                json!({}),
-            ),
+            err @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&err);
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not revoke enrollment token",
+                    json!({}),
+                )
+            }
         })?;
     Ok(Json(RevokeEnrollmentTokenResponse {
         protocol_version: 1,
@@ -947,7 +954,8 @@ pub async fn create_profile(
     .await?;
     check_limits(&input.limits)?;
     let id = format!("ap_{}", Uuid::new_v4());
-    let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|_| {
+    let tool_policy = serde_json::to_string(&input.tool_policy).map_err(|failure| {
+        tracing::warn!(error = %failure, "tool_policy cannot be serialized");
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -955,7 +963,8 @@ pub async fn create_profile(
             json!({"field": "tool_policy"}),
         )
     })?;
-    let limits = serde_json::to_string(&input.limits).map_err(|_| {
+    let limits = serde_json::to_string(&input.limits).map_err(|failure| {
+        tracing::warn!(error = %failure, "limits cannot be serialized");
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -1017,7 +1026,8 @@ pub async fn list_profiles(
 ) -> Result<Json<AgentProfileListResponse>, (StatusCode, Json<Value>)> {
     let rows = agent_profiles::profiles_by_name(&state.repo)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list agent profiles");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1046,16 +1056,20 @@ fn profile_from_row(
             json!({}),
         )
     };
-    let tool_policy: Value = serde_json::from_str(&r.tool_policy)
-        .map_err(|_| corrupt("Agent profile policy is corrupt"))?;
+    let tool_policy: Value = serde_json::from_str(&r.tool_policy).map_err(|failure| {
+        tracing::error!(error = %failure, "Agent profile policy is corrupt");
+        corrupt("Agent profile policy is corrupt")
+    })?;
     let caps = tack_core::run_defaults::profile_capabilities(&tool_policy);
     Ok(AgentProfileSummary {
         agent_profile_id: r.id,
         name: r.name,
         instructions: r.instructions,
         tool_policy,
-        limits: serde_json::from_str(&r.limits)
-            .map_err(|_| corrupt("Agent profile limits are corrupt"))?,
+        limits: serde_json::from_str(&r.limits).map_err(|failure| {
+            crate::error::log_unreadable_document("Agent profile limits are corrupt", &failure);
+            corrupt("Agent profile limits are corrupt")
+        })?,
         kind: r.kind,
         builtin: r.builtin != 0,
         summary: r.summary,
@@ -1139,7 +1153,10 @@ async fn check_profile_fields(
     if let Some(fleet_id) = fleet_id {
         let exists = agent_fleets::fleet_exists(repo, fleet_id)
             .await
-            .map_err(|_| profile_db_error("Could not verify fleet"))?;
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not verify fleet");
+                profile_db_error("Could not verify fleet")
+            })?;
         if !exists {
             return Err(error(
                 StatusCode::BAD_REQUEST,
@@ -1216,14 +1233,17 @@ pub async fn update_profile(
         .update_agent_profile(&id, patch, state.clock.now())
         .await
         .map_err(|err| match err {
-            StoreError::NotFound => profile_not_found(),
+            StoreError::NotFound { .. } => profile_not_found(),
             StoreError::Conflict(_) => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "Agent profile name already exists",
                 json!({}),
             ),
-            StoreError::Sql(_) => profile_db_error("Could not update agent profile"),
+            err @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&err);
+                profile_db_error("Could not update agent profile")
+            }
         })?;
     let row = agent_profiles::profile_by_id(&state.repo, &id)
         .await
@@ -1264,13 +1284,19 @@ pub async fn profile_history(
 ) -> Result<Json<ProfileHistory>, (StatusCode, Json<Value>)> {
     let exists = agent_profiles::profile_exists(&state.repo, &id)
         .await
-        .map_err(|_| profile_db_error("Could not read agent profile"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read agent profile");
+            profile_db_error("Could not read agent profile")
+        })?;
     if !exists {
         return Err(profile_not_found());
     }
     let mut runs = agent_profiles::successful_run_tokens(&state.repo, &id, 20)
         .await
-        .map_err(|_| profile_db_error("Could not read the profile's runs"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read the profile's runs");
+            profile_db_error("Could not read the profile's runs")
+        })?;
     runs.sort_unstable();
     let p90 = tack_core::run_defaults::percentile(&runs, 90);
     Ok(Json(ProfileHistory {
@@ -1306,14 +1332,17 @@ pub async fn delete_profile(
         .delete_agent_profile(&id)
         .await
         .map_err(|err| match err {
-            StoreError::NotFound => profile_not_found(),
+            StoreError::NotFound { .. } => profile_not_found(),
             StoreError::Conflict(_) => error(
                 StatusCode::CONFLICT,
                 StableErrorCode::Conflict,
                 "A built-in agent profile cannot be deleted",
                 json!({"reason": "builtin_profile"}),
             ),
-            StoreError::Sql(_) => profile_db_error("Could not delete agent profile"),
+            err @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&err);
+                profile_db_error("Could not delete agent profile")
+            }
         })?;
     Ok(Json(json!({"agent_profile_id": id, "deleted": true})))
 }

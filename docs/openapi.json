@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tack API",
-    "description": "REST + WebSocket API for Tack, a lightweight, workflow-agnostic project-management tool. This contract is generated from the Rust handlers and domain models; it is the single source of truth for the wire format. All failing responses share the `{ \"error\": { \"status\", \"message\" } }` envelope, with an additional `code` field on a narrow set of responses (e.g. `stale_lease`) where a caller needs to branch on the reason without parsing `message`.",
+    "description": "REST + WebSocket API for Tack, a lightweight, workflow-agnostic project-management tool. This contract is generated from the Rust handlers and domain models; it is the single source of truth for the wire format. Every failing response, including one for a request the server could not read, shares the `{ \"error\": { \"status\", \"code\", \"message\", \"retryable\", \"request_id\", \"details\" } }` envelope; a caller branches on `code`, never on `message`.",
     "contact": {
       "name": "Tack",
       "email": "info@yielab.com"
@@ -592,6 +592,16 @@
           },
           "409": {
             "description": "Not configured, or restore would lose newer work",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The archive or its manifest cannot be read (`unreadable_archive`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -10012,20 +10022,34 @@
         "type": "object",
         "required": [
           "status",
-          "message"
+          "message",
+          "code",
+          "retryable",
+          "request_id",
+          "details"
         ],
         "properties": {
           "code": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Stable, machine-readable error code. Present on a narrow set of\nresponses where a caller needs to branch on *why* without parsing\n`message`. Absent on ordinary errors."
+            "$ref": "#/components/schemas/StableErrorCode",
+            "description": "Stable, machine-readable error code, on every error: a caller branches on *why* with it,\nnever by parsing `message`. The code decides `status`."
+          },
+          "details": {
+            "$ref": "#/components/schemas/ErrorDetails",
+            "description": "What the error blames. `details.field` names the request field, path parameter or query\nparameter that failed, when one did."
           },
           "message": {
             "type": "string",
             "description": "Human-readable, end-user-facing message.",
             "example": "Item not found"
+          },
+          "request_id": {
+            "type": "string",
+            "description": "The id of the request this answers, the one the client sent in `x-request-id` when it was\nusable; the response carries it in the same header.",
+            "example": "req_6f1c0d2a9b7e4c3f8a5d1e0b2c4a6f80"
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether repeating the same request can succeed (`StableErrorCode::retryable`)."
           },
           "status": {
             "type": "integer",
@@ -10036,9 +10060,22 @@
           }
         }
       },
+      "ErrorDetails": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The request field the error blames.",
+            "example": "title"
+          }
+        }
+      },
       "ErrorEnvelope": {
         "type": "object",
-        "description": "Structured error envelope returned by every failing endpoint — see\n`crate::error::ApiError`. The body is always `{ \"error\": { status, message } }`.",
+        "description": "Structured error envelope returned by every failing endpoint — see\n`crate::error::ApiError`. The body is always\n`{ \"error\": { status, code, message, retryable, request_id, details } }`.",
         "required": [
           "error"
         ],
@@ -12793,6 +12830,47 @@
           "active",
           "review",
           "closed"
+        ]
+      },
+      "StableErrorCode": {
+        "type": "string",
+        "description": "Stable error codes: the only values a client may branch on; error text and `details` remain\ndisplay and diagnostic data. The first fifteen are the runner-v1 contract\n(`docs/contracts/runner-v1/errors/*.json`); the rest are the operator API's own, which the\nrunner routes never answer: one per rule the board enforces and one per failure of the HTTP\nlayer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.",
+        "enum": [
+          "invalid_request",
+          "unauthorized",
+          "forbidden",
+          "not_found",
+          "conflict",
+          "idempotency_conflict",
+          "invalid_transition",
+          "stale_lease",
+          "runner_revoked",
+          "decision_expired",
+          "artifact_checksum_mismatch",
+          "payload_too_large",
+          "rate_limited",
+          "unsupported_protocol",
+          "internal_error",
+          "unprocessable",
+          "validation_failed",
+          "invalid_status_transition",
+          "wip_limit_exceeded",
+          "dependency_cycle",
+          "duplicate_dependency",
+          "invalid_vocabulary_key",
+          "empty_workflow",
+          "has_children",
+          "invalid_workflow",
+          "misdirected_host",
+          "cross_site_request",
+          "unsupported_media_type",
+          "unreadable_archive",
+          "section_failed",
+          "machine_revoked",
+          "precondition_failed",
+          "local_runner_unavailable",
+          "folder_not_empty",
+          "method_not_allowed"
         ]
       },
       "StatusCategory": {

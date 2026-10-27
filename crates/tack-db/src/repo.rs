@@ -37,6 +37,27 @@ impl Repository {
         Self { pool }
     }
 
+    /// The project a write names must be there: `NotFound { entity: "project" }` when it is not,
+    /// so a write whose foreign key would point at nothing answers 404 and never the database's
+    /// constraint error as a 500.
+    pub(crate) async fn require_project(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut conn = self.pool.acquire().await?;
+        require_row(&mut conn, Parent::Project, id).await
+    }
+
+    /// The item a write names must be there: `NotFound { entity: "item" }` when it is not (see
+    /// [`Repository::require_project`]).
+    pub(crate) async fn require_item(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut conn = self.pool.acquire().await?;
+        require_row(&mut conn, Parent::Item, id).await
+    }
+
+    /// The sprint a write names must be there (see [`Repository::require_project`]).
+    pub(crate) async fn require_sprint(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut conn = self.pool.acquire().await?;
+        require_row(&mut conn, Parent::Sprint, id).await
+    }
+
     /// The raw connection pool, for the seeds and assertions of `tack-test-support`.
     /// Only that crate turns the `raw-pool` feature on; cargo unifies features across a
     /// build, so the feature alone does not keep other crates out, and the real gate is
@@ -238,4 +259,40 @@ impl Repository {
         let repo = attachments::AttachmentRepo::new(self);
         repo.delete_attachment(id).await
     }
+}
+
+/// The rows a write can name as its parent.
+#[derive(Clone, Copy)]
+pub(crate) enum Parent {
+    Project,
+    Item,
+    Sprint,
+}
+
+/// A row a write names must be there: `NotFound { entity }` when it is not, on whatever
+/// connection the write holds (a pooled one, or a transaction's).
+pub(crate) async fn require_row(
+    conn: &mut sqlx::SqliteConnection,
+    parent: Parent,
+    id: Uuid,
+) -> Result<(), StoreError> {
+    let (query, entity) = match parent {
+        Parent::Project => (
+            sqlx::query_scalar("SELECT 1 FROM projects WHERE id = ?"),
+            "project",
+        ),
+        Parent::Item => (
+            sqlx::query_scalar("SELECT 1 FROM items WHERE id = ?"),
+            "item",
+        ),
+        Parent::Sprint => (
+            sqlx::query_scalar("SELECT 1 FROM sprints WHERE id = ?"),
+            "sprint",
+        ),
+    };
+    let found: Option<i64> = query
+        .bind(id.to_string())
+        .fetch_optional(&mut *conn)
+        .await?;
+    found.map(|_| ()).ok_or(StoreError::not_found(entity))
 }

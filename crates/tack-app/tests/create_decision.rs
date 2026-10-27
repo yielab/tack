@@ -5,11 +5,10 @@
 
 use crate::common;
 use tack_protocol::Clock;
-use tack_protocol::execution::{AttemptId, FencingToken, RunnerId};
+use tack_protocol::execution::{AttemptId, DecisionOption, FencingToken, RunnerId};
 
 use chrono::Duration;
 use common::{RUNNER_ID, running_attempt, world};
-use serde_json::json;
 use tack_app::runs::create_decision::{DecisionCreated, DecisionRequest, create_decision};
 use tack_db::queries::{execution_attempts, execution_decisions, execution_requests};
 use tack_protocol::execution::ExecutionState;
@@ -22,7 +21,13 @@ async fn open(
     decision_id: &str,
     prompt: &str,
 ) -> DecisionCreated {
-    let options = [json!({"option_id": "allow", "label": "Allow"})];
+    let options = [DecisionOption {
+        option_id: "allow".into(),
+        label: "Allow".into(),
+        description: None,
+        risks: None,
+        estimated_tokens: None,
+    }];
     create_decision(
         &world.repo,
         world.clock.now(),
@@ -34,7 +39,7 @@ async fn open(
             kind: "tool_permission",
             prompt,
             options: &options,
-            metadata: &json!({}),
+            metadata: &serde_json::Map::new(),
             recommendation: None,
             expires_at: None,
         },

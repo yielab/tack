@@ -1,12 +1,13 @@
 //! Operator execution handlers, mounted into the global router.
 
+use crate::extract::{Json, Path, Query};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tack_protocol::Clock;
 
 use axum::{
-    Json, Router,
-    extract::{Path, Query, State},
+    Router,
+    extract::State,
     http::HeaderMap,
     http::StatusCode,
     routing::{get, post},
@@ -21,9 +22,7 @@ use tack_db::{
     Repository, StoreError,
     repo::execution::{AttemptListingRow, RunnerListingRow},
 };
-use tack_protocol::execution::{
-    ExecutionRequestId, ExecutionState, ProtocolErrorEnvelope, RecoveryKey, StableErrorCode,
-};
+use tack_protocol::execution::{ExecutionRequestId, ExecutionState, RecoveryKey, StableErrorCode};
 use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -100,10 +99,6 @@ impl OperatorExecutionState {
     }
 }
 
-/// Static request-correlation id placeholder. No per-request correlation
-/// id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator";
-
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so it
 /// can never drift from `docs/contracts/runner-v1/errors/*.json`. `details`
@@ -115,11 +110,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
@@ -346,7 +337,10 @@ impl ListExecutionsQuery {
             .split(',')
             .map(|part| {
                 let part = part.trim();
-                Uuid::parse_str(part).map_err(|_| part.to_string())
+                Uuid::parse_str(part).map_err(|failure| {
+                    tracing::warn!(error = %failure, "Request refused");
+                    part.to_string()
+                })
             })
             .collect::<Result<Vec<_>, _>>()?;
         if ids.len() > Self::MAX_LIMIT as usize {
@@ -746,7 +740,7 @@ async fn run_limits_of(
 /// A refusal of the run use cases, as the operator API's error envelope.
 pub(crate) fn refused(refusal: Refusal) -> (StatusCode, Json<Value>) {
     error(
-        StatusCode::from_u16(refusal.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+        StatusCode::from_u16(refusal.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         refusal.code,
         &refusal.message,
         refusal.details,
@@ -845,7 +839,8 @@ pub async fn list_executions(
         let item_id = query.item_id.map(|id| id.to_string());
         state.repo.list_executions(item_id.as_deref(), limit).await
     }
-    .map_err(|_| {
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not list executions");
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
@@ -860,14 +855,17 @@ pub async fn list_executions(
     )
     .await?;
     let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
-    let mut limits = run_limits_of(&state.repo, &ids, now).await.map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not read the runs' limits",
-            json!({}),
-        )
-    })?;
+    let mut limits = run_limits_of(&state.repo, &ids, now)
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read the runs' limits");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not read the runs' limits",
+                json!({}),
+            )
+        })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| ExecutionSummary {
@@ -923,7 +921,8 @@ async fn queued_runners(
     if !any_queued {
         return Ok(Vec::new());
     }
-    repo.list_runners().await.map_err(|_| {
+    repo.list_runners().await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not list runners");
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
@@ -1001,7 +1000,8 @@ pub async fn get_execution(
 ) -> Result<Json<ExecutionDetailResponse>, (StatusCode, Json<Value>)> {
     let row = execution_requests::request_detail(&state.repo, &request_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load execution");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1023,7 +1023,8 @@ pub async fn get_execution(
     let request_id = row.id;
     let limit = run_limits_of(&state.repo, std::slice::from_ref(&request_id), now)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read the run's limit");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1083,7 +1084,8 @@ pub async fn list_execution_attempts(
     // instead of two.
     let requested_model = execution_requests::requested_model_of_request(&state.repo, &request_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify execution");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1101,7 +1103,8 @@ pub async fn list_execution_attempts(
     };
     let attempts = execution_attempts::attempts_with_outcomes(&state.repo, &request_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list attempts");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1346,7 +1349,8 @@ pub async fn list_execution_attempt_events(
 ) -> Result<Json<EventListResponse>, (StatusCode, Json<Value>)> {
     let exists = execution_requests::execution_request_exists(&state.repo, &request_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify execution");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1366,7 +1370,8 @@ pub async fn list_execution_attempt_events(
         .repo
         .list_events_for_attempt_number(&request_id, attempt_number)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list events");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1569,7 +1574,8 @@ pub async fn get_item_agent_context(
         .repo
         .get_item(item_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load item");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1590,7 +1596,8 @@ pub async fn get_item_agent_context(
         .repo
         .get_project(item.project_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load project");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1618,7 +1625,7 @@ pub async fn get_item_agent_context(
     let profile = if let Some(resolved) = resolved {
         let profile = agent_profiles::profile_by_id(&state.repo, &resolved.profile_id)
             .await
-            .map_err(|_| {
+            .map_err(|failure| { tracing::error!(error = %failure, "Could not load agent profile"); 
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1654,16 +1661,22 @@ pub async fn get_item_agent_context(
         .unwrap_or_default();
 
     // Load the brief
-    let brief = state.repo.get_item_brief(item_id).await.map_err(|_| {
-        error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not load item brief",
-            json!({}),
-        )
-    })?;
+    let brief = state
+        .repo
+        .get_item_brief(item_id)
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load item brief");
+            error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not load item brief",
+                json!({}),
+            )
+        })?;
 
-    let comments = state.repo.list_comments(item_id).await.map_err(|_| {
+    let comments = state.repo.list_comments(item_id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load item comments");
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
@@ -1686,7 +1699,8 @@ pub async fn get_item_agent_context(
     let profile_tokens = profile["limits"]["budgets"]["tokens"].as_u64();
     let provisional = budgets::provisional_tokens(&state.repo, &project.id.to_string())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load the project's limits");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -1730,7 +1744,8 @@ pub async fn get_item_agent_context(
         .or_else(|| profile["tool_policy"]["agent"].as_str());
     let day_room = budgets::day_room(&state.repo, &item.project_id.to_string(), Utc::now())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load the project's limits");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,

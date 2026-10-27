@@ -4,10 +4,11 @@
 //! writes nothing.
 
 use crate::common;
-use tack_protocol::execution::{AttemptId, Checkpoint, FencingToken, RunnerId};
+use tack_protocol::execution::{AttemptId, Checkpoint, EventRecord, FencingToken, RunnerId};
 
 use common::{RUNNER_ID, running_attempt, world};
-use tack_app::runs::report_events::{EventReport, EventsReported, ReportedEvent, report_events};
+use serde_json::{Value, json};
+use tack_app::runs::report_events::{EventReport, EventsReported, report_events};
 use tack_db::queries::{execution_attempts, execution_events};
 use tack_protocol::Clock;
 
@@ -18,7 +19,7 @@ async fn report(
     previous: Option<&str>,
     checkpoint: &str,
     event_id: &str,
-    payload: &str,
+    payload: Value,
 ) -> EventsReported {
     report_events(
         &world.repo,
@@ -29,13 +30,13 @@ async fn report(
             fencing_token: fence,
             previous_checkpoint: previous.map(Checkpoint::new).as_ref(),
             checkpoint: &Checkpoint::new(checkpoint),
-            events: &[ReportedEvent {
-                event_id,
+            events: &[EventRecord {
+                event_id: event_id.into(),
                 sequence: 1,
-                source: "runner",
-                kind: "log",
-                payload_json: payload,
                 occurred_at: world.clock.now(),
+                source: "runner".into(),
+                kind: "log".into(),
+                payload,
             }],
         },
     )
@@ -55,7 +56,7 @@ async fn a_batch_lands_once_and_the_same_batch_again_is_a_replay() {
         None,
         "cp-1",
         "evt-1",
-        r#"{"note":"original"}"#,
+        json!({"note": "original"}),
     )
     .await
     else {
@@ -71,7 +72,7 @@ async fn a_batch_lands_once_and_the_same_batch_again_is_a_replay() {
         None,
         "cp-1",
         "evt-1",
-        r#"{"note":"original"}"#,
+        json!({"note": "original"}),
     )
     .await
     else {
@@ -100,7 +101,7 @@ async fn other_events_under_a_used_checkpoint_conflict_for_good_and_a_misplaced_
         None,
         "cp-1",
         "evt-1",
-        r#"{"note":"original"}"#,
+        json!({"note": "original"}),
     )
     .await;
 
@@ -111,7 +112,7 @@ async fn other_events_under_a_used_checkpoint_conflict_for_good_and_a_misplaced_
         None,
         "cp-1",
         "evt-1",
-        r#"{"note":"CHANGED"}"#,
+        json!({"note": "CHANGED"}),
     )
     .await;
     assert_eq!(changed, EventsReported::IdempotencyConflict);
@@ -124,7 +125,7 @@ async fn other_events_under_a_used_checkpoint_conflict_for_good_and_a_misplaced_
         None,
         "cp-2",
         "evt-reordered",
-        "{}",
+        json!({}),
     )
     .await;
     assert_eq!(reordered, EventsReported::Conflict);
@@ -157,7 +158,7 @@ async fn a_fence_that_is_not_current_writes_nothing() {
         None,
         "cp-1",
         "evt-1",
-        "{}",
+        json!({}),
     )
     .await;
     assert_eq!(stale, EventsReported::Stale);

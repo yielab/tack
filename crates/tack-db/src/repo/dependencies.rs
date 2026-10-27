@@ -1,4 +1,4 @@
-use crate::StoreError;
+use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::SqliteConnection;
 use tracing::{debug, instrument};
@@ -17,6 +17,8 @@ impl Repository {
         source_item_id: Uuid,
         input: CreateDependency,
     ) -> Result<Dependency, DependencyError> {
+        self.require_item(source_item_id).await?;
+        self.require_item(input.target_item_id).await?;
         // Load existing dependency graph for cycle detection
         let edges = self
             .load_dependency_edges(source_item_id)
@@ -61,7 +63,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+        rows.into_iter().map(DepRow::into_dependency).collect()
     }
 
     #[instrument(skip(self))]
@@ -93,7 +95,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+        rows.into_iter().map(DepRow::into_dependency).collect()
     }
 
     /// Every dependency row that touches **any** of `item_ids`, as either
@@ -127,7 +129,7 @@ impl Repository {
             q = q.bind(id.to_string());
         }
         let rows = q.fetch_all(self.pool()).await?;
-        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+        rows.into_iter().map(DepRow::into_dependency).collect()
     }
 
     /// Load all dependency edges from the same project as the given item.
@@ -146,15 +148,16 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
+        rows.into_iter()
             .filter(|r| r.dependency_type == "blocks" || r.dependency_type == "is_blocked_by")
-            .map(|r| DependencyEdge {
-                source: Uuid::parse_str(&r.source_item_id).unwrap(),
-                target: Uuid::parse_str(&r.target_item_id).unwrap(),
-                dep_type: parse_dep_type(&r.dependency_type),
+            .map(|r| {
+                Ok(DependencyEdge {
+                    source: decode::uuid("dependencies", "source_item_id", &r.source_item_id)?,
+                    target: decode::uuid("dependencies", "target_item_id", &r.target_item_id)?,
+                    dep_type: parse_dep_type(&r.dependency_type)?,
+                })
             })
-            .collect())
+            .collect()
     }
 }
 
@@ -176,27 +179,20 @@ struct DepRow {
 }
 
 impl DepRow {
-    fn into_dependency(self) -> Dependency {
-        Dependency {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            source_item_id: Uuid::parse_str(&self.source_item_id).unwrap(),
-            target_item_id: Uuid::parse_str(&self.target_item_id).unwrap(),
-            dependency_type: parse_dep_type(&self.dependency_type),
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
-        }
+    fn into_dependency(self) -> Result<Dependency, StoreError> {
+        const TABLE: &str = "dependencies";
+        Ok(Dependency {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            source_item_id: decode::uuid(TABLE, "source_item_id", &self.source_item_id)?,
+            target_item_id: decode::uuid(TABLE, "target_item_id", &self.target_item_id)?,
+            dependency_type: parse_dep_type(&self.dependency_type)?,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+        })
     }
 }
 
-fn parse_dep_type(s: &str) -> DependencyType {
-    match s {
-        "blocks" => DependencyType::Blocks,
-        "is_blocked_by" => DependencyType::IsBlockedBy,
-        "relates_to" => DependencyType::RelatesTo,
-        "duplicates" => DependencyType::Duplicates,
-        _ => DependencyType::RelatesTo,
-    }
+fn parse_dep_type(s: &str) -> Result<DependencyType, StoreError> {
+    decode::variant("dependencies", "dependency_type", s)
 }
 
 /// The dependency `INSERT`, with no cycle check: callers that cannot have

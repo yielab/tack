@@ -11,7 +11,20 @@ use tack_test_support::seed;
 
 #[test]
 fn a_store_error_names_what_it_is_and_wraps_sqlx() {
-    assert_eq!(StoreError::NotFound.to_string(), "not found");
+    assert_eq!(
+        StoreError::not_found("attempt").to_string(),
+        "attempt not found"
+    );
+    let corrupt = StoreError::corrupt("items", "tags", "expected a list");
+    assert_eq!(
+        corrupt.to_string(),
+        "the stored tags of a items row cannot be decoded"
+    );
+    assert_eq!(
+        std::error::Error::source(&corrupt).unwrap().to_string(),
+        "expected a list",
+        "the cause is kept"
+    );
     assert_eq!(
         StoreError::Conflict("already_reviewed".into()).to_string(),
         "conflict: already_reviewed"
@@ -34,11 +47,21 @@ fn every_state_round_trips_through_its_column_text() {
         ExecutionState::Lost,
         ExecutionState::NeedsOperator,
     ] {
-        assert_eq!(state::parse(state::text(state)).unwrap(), state);
+        assert_eq!(
+            state::parse("execution_attempts", "state", state::text(state)).unwrap(),
+            state
+        );
     }
-    let corrupt = state::parse("sleeping").unwrap_err();
+    let corrupt = state::parse("execution_attempts", "state", "sleeping").unwrap_err();
     assert!(
-        matches!(corrupt, StoreError::Sql(sqlx::Error::Decode(_))),
+        matches!(
+            corrupt,
+            StoreError::Corrupt {
+                table: "execution_attempts",
+                column: "state",
+                ..
+            }
+        ),
         "{corrupt:?}"
     );
 }
@@ -97,7 +120,10 @@ async fn a_review_is_recorded_once_and_the_store_says_why_not() {
         .repo
         .record_attempt_review("request-r", 9, "accepted", None, "2026-01-01T00:00:00Z")
         .await;
-    assert!(matches!(missing, Err(StoreError::NotFound)), "{missing:?}");
+    assert!(
+        matches!(missing, Err(StoreError::NotFound { entity: "attempt" })),
+        "{missing:?}"
+    );
 
     let attempt_id = fx
         .repo

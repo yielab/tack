@@ -19,13 +19,15 @@
 //! notes below and the acceptance tests in
 //! `tests/runner_protocol/lifecycle.rs`).
 
+use crate::extract::{Json, Path, RawBody};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tack_protocol::Clock;
 
 use axum::{
-    Json, Router,
+    Router,
     body::{Body, Bytes},
-    extract::{DefaultBodyLimit, Path, State},
+    extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode, header},
     routing::{post, put},
 };
@@ -35,10 +37,10 @@ use tack_app::AppError;
 use tack_app::runs::complete::{Completed, CompletionReport};
 use tack_app::runs::create_decision::{DecisionCreated, DecisionRequest};
 use tack_app::runs::enroll::{Enrolled, Enrollment};
-use tack_app::runs::heartbeat::{Beat, Heartbeat, ReportedLease};
+use tack_app::runs::heartbeat::{Beat, Heartbeat};
 use tack_app::runs::observe_recovery::{Observation, RecoveryObserved};
 use tack_app::runs::refresh::{Refresh, Refreshed};
-use tack_app::runs::report_events::{EventReport, EventsReported, ReportedEvent};
+use tack_app::runs::report_events::{EventReport, EventsReported};
 use tack_app::runs::submit_artifacts::{
     ArtifactManifest, ContentUpload, ManifestSubmission, ManifestSubmitted, UploadChecked,
 };
@@ -53,9 +55,17 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::{
-    ActualExecution, AttemptId, CancellationRequestId, Checkpoint, ClaimRequestId, CompletionId,
-    EmbeddedCapabilitySnapshot, ExecutionState, FencingToken, ProtocolVersion,
-    RecoveryObservationRequest, RecoveryObservationResponse, StableErrorCode, Usage, WorkspaceId,
+    ArtifactContentResponse, ArtifactGrant, ArtifactManifestRequest, ArtifactManifestResponse,
+    ArtifactUpload, AttemptId, AttemptSnapshot, AttemptTransitionRequest,
+    AttemptTransitionResponse, CancelObservation, CancellationObservationRequest,
+    CancellationObservationResponse, ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest,
+    ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer, DecisionCreateRequest,
+    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
+    DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot, EnrollmentRequest,
+    EnrollmentResponse, EventBatchRequest, EventBatchResponse, ExecutionRequestSnapshot,
+    ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse, LeaseResult,
+    ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse, RefreshRequest,
+    RefreshResponse, RunnerId, StableErrorCode,
 };
 use uuid::Uuid;
 
@@ -201,6 +211,9 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
         .layer(DefaultBodyLimit::max(effective_body_limit_bytes(
             configured_max_body_size_bytes,
         )))
+        .layer(axum::middleware::from_fn(
+            crate::request_id::with_request_id,
+        ))
         .with_state(state)
 }
 
@@ -286,8 +299,10 @@ fn parse_body(bytes: &[u8]) -> runner_auth::ProtocolResult<Value> {
             LIMITS.json_body_bytes_max,
         ));
     }
-    serde_json::from_slice(bytes)
-        .map_err(|_| invalid_request("body", "Request body is not valid JSON"))
+    serde_json::from_slice(bytes).map_err(|failure| {
+        tracing::warn!(error = %failure, "body");
+        invalid_request("body", "Request body is not valid JSON")
+    })
 }
 
 /// `unsupported_protocol` is checked against the raw JSON value (not a typed
@@ -311,69 +326,65 @@ fn check_protocol_version(value: &Value) -> runner_auth::ProtocolResult<()> {
     }
 }
 
-fn field<'a>(value: &'a Value, name: &str) -> runner_auth::ProtocolResult<&'a Value> {
-    value
-        .get(name)
-        .ok_or_else(|| invalid_request(name, &format!("{name} is required")))
+/// Reads a request body as one of the protocol's message structs. A body that does not fit
+/// is `invalid_request`, naming the field when serde can; the message never repeats what the
+/// body held, since a field's value can be a credential or a prompt.
+fn parse_message<T: serde::de::DeserializeOwned>(value: Value) -> runner_auth::ProtocolResult<T> {
+    serde_path_to_error::deserialize(value).map_err(|error| {
+        // The path says where serde stopped (`options[1].label`); a missing field is reported
+        // against its parent, so the field's own name is added.
+        let mut path = error.path().to_string();
+        if let Some(missing) = error
+            .inner()
+            .to_string()
+            .strip_prefix("missing field `")
+            .and_then(|rest| rest.split('`').next())
+        {
+            path = if path == "." {
+                missing.to_owned()
+            } else {
+                format!("{path}.{missing}")
+            };
+        }
+        let field = if path == "." { "body" } else { path.as_str() };
+        invalid_request(
+            field,
+            "The request does not match the runner-v1 message shape",
+        )
+    })
 }
 
-fn as_str<'a>(value: &'a Value, name: &str) -> runner_auth::ProtocolResult<&'a str> {
-    field(value, name)?
-        .as_str()
-        .ok_or_else(|| invalid_request(name, &format!("{name} must be a string")))
-}
-
-fn as_i64(value: &Value, name: &str) -> runner_auth::ProtocolResult<i64> {
-    field(value, name)?
-        .as_i64()
-        .ok_or_else(|| invalid_request(name, &format!("{name} must be an integer")))
-}
-
-fn as_u64(value: &Value, name: &str) -> runner_auth::ProtocolResult<u64> {
-    field(value, name)?
-        .as_u64()
-        .ok_or_else(|| invalid_request(name, &format!("{name} must be a non-negative integer")))
-}
-
-/// A fencing token as the wire carries it, or `None` when the store's integer column cannot
-/// hold it.
-fn fencing_token_from_wire(token: u64) -> Option<FencingToken> {
-    i64::try_from(token).ok().map(|_| FencingToken::new(token))
+/// A response as the message struct that defines it.
+fn message_json<T: serde::Serialize>(message: &T) -> HandlerResult {
+    serde_json::to_value(message).map(Json).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode the response");
+        internal_error("Could not encode the response")
+    })
 }
 
 /// A fencing token, which is unsigned on the wire; one the store's integer column cannot hold
 /// is as malformed as a negative one.
-fn as_fencing_token(value: &Value, name: &str) -> runner_auth::ProtocolResult<FencingToken> {
-    as_u64(value, name)
-        .ok()
-        .and_then(fencing_token_from_wire)
-        .ok_or_else(|| invalid_request(name, &format!("{name} must be a non-negative integer")))
+fn fencing_token_from_wire(token: u64) -> Option<FencingToken> {
+    i64::try_from(token).ok().map(|_| FencingToken::new(token))
 }
 
-fn as_array<'a>(value: &'a Value, name: &str) -> runner_auth::ProtocolResult<&'a Vec<Value>> {
-    field(value, name)?
-        .as_array()
-        .ok_or_else(|| invalid_request(name, &format!("{name} must be an array")))
+/// The fence every attempt-scoped request carries, as the one field the common prefix reads
+/// before the handler parses its own message.
+#[derive(serde::Deserialize)]
+struct Fenced {
+    fencing_token: FencingToken,
 }
 
-fn as_datetime(value: &Value, name: &str) -> runner_auth::ProtocolResult<DateTime<Utc>> {
-    let raw = as_str(value, name)?;
-    DateTime::parse_from_rfc3339(raw)
-        .map(|parsed| parsed.with_timezone(&Utc))
-        .map_err(|_| invalid_request(name, &format!("{name} must be an RFC3339 timestamp")))
+/// Re-formats a client-supplied instant through chrono's own `Utc` `to_rfc3339()` before it is
+/// ever used in a TEXT comparison against stored timestamps. Every stored timestamp in this
+/// schema is written via that same normalization; comparing an un-normalized `Z`-suffixed input
+/// against a stored `+00:00`-suffixed value would sort incorrectly even though both denote the
+/// same instant.
+fn normalize_datetime(instant: DateTime<Utc>) -> String {
+    instant.to_rfc3339()
 }
 
-/// Re-formats a client-supplied RFC3339 timestamp through chrono's own
-/// `Utc` `to_rfc3339()` before it is ever used in a TEXT comparison against
-/// stored timestamps. Every stored timestamp in this schema is written via
-/// that same normalization; comparing an un-normalized `Z`-suffixed input
-/// against a stored `+00:00`-suffixed value would sort incorrectly even
-/// though both denote the same instant.
-fn normalize_datetime(value: &Value, name: &str) -> runner_auth::ProtocolResult<String> {
-    Ok(as_datetime(value, name)?.to_rfc3339())
-}
-
-fn json_byte_len(value: &Value) -> u64 {
+fn json_byte_len(value: &impl serde::Serialize) -> u64 {
     serde_json::to_vec(value)
         .map(|bytes| bytes.len() as u64)
         .unwrap_or(u64::MAX)
@@ -432,7 +443,13 @@ async fn authenticate_attempt_request(
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
     runner_auth::require_matching_attempt(&value, attempt_id)?;
-    let fencing_token = as_fencing_token(&value, "fencing_token")?;
+    let Fenced { fencing_token } = parse_message(value.clone())?;
+    let fencing_token = fencing_token_from_wire(fencing_token.get()).ok_or_else(|| {
+        invalid_request(
+            "fencing_token",
+            "fencing_token must be a non-negative integer",
+        )
+    })?;
     Ok((principal, value, fencing_token))
 }
 
@@ -452,21 +469,18 @@ async fn authenticate_attempt_request(
 /// so an oversized payload never pays deserialization cost) and the
 /// `available <= total` business rule.
 fn validate_capability_payload(
-    capabilities: &Value,
+    parsed: &EmbeddedCapabilitySnapshot,
 ) -> runner_auth::ProtocolResult<(String, i64, i64)> {
-    if json_byte_len(capabilities) > LIMITS.capabilities_bytes_max {
+    let encoded = serde_json::to_value(parsed).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode capabilities");
+        internal_error("Could not encode capabilities")
+    })?;
+    if json_byte_len(&encoded) > LIMITS.capabilities_bytes_max {
         return Err(payload_too_large(
             "capabilities_bytes_max",
             LIMITS.capabilities_bytes_max,
         ));
     }
-    let parsed: EmbeddedCapabilitySnapshot =
-        serde_json::from_value(capabilities.clone()).map_err(|_| {
-            invalid_request(
-                "capabilities",
-                "capabilities does not match the runner-v1 embedded capability shape",
-            )
-        })?;
     if parsed.concurrency.available > parsed.concurrency.total {
         return Err(invalid_request(
             "concurrency",
@@ -490,8 +504,10 @@ fn validate_capability_payload(
             ));
         }
     }
-    let labels_json = serde_json::to_string(&parsed.labels)
-        .map_err(|_| internal_error("Could not encode labels"))?;
+    let labels_json = serde_json::to_string(&parsed.labels).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode labels");
+        internal_error("Could not encode labels")
+    })?;
     Ok((
         labels_json,
         parsed.concurrency.total as i64,
@@ -504,17 +520,25 @@ fn validate_capability_payload(
 // the body, never a bearer header — there is no runner identity yet.
 // ---------------------------------------------------------------------
 
-pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> HandlerResult {
+pub async fn enroll(
+    State(state): State<RunnerProtocolState>,
+    RawBody(body): RawBody,
+) -> HandlerResult {
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
-    let enrollment_token = as_str(&value, "enrollment_token")?.to_owned();
-    let runner_name = as_str(&value, "runner_name")?.to_owned();
-    let runner_version = as_str(&value, "runner_version")?.to_owned();
-    let capabilities = field(&value, "capabilities")?.clone();
+    let EnrollmentRequest {
+        enrollment_token,
+        runner_name,
+        runner_version,
+        capabilities,
+        ..
+    } = parse_message(value)?;
     let (labels_json, total_capacity, available_capacity) =
         validate_capability_payload(&capabilities)?;
-    let capability_snapshot_json = serde_json::to_string(&capabilities)
-        .map_err(|_| internal_error("Could not encode capabilities"))?;
+    let capability_snapshot_json = serde_json::to_string(&capabilities).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode capabilities");
+        internal_error("Could not encode capabilities")
+    })?;
 
     let raw_credential = generate_raw_credential();
     let credential_hash_value = runner_auth::credential_hash(&raw_credential);
@@ -559,15 +583,15 @@ pub async fn enroll(State(state): State<RunnerProtocolState>, body: Bytes) -> Ha
             server_time,
         } => {
             tracing::info!(runner_id = %runner_id, "runner enrolled");
-            Ok(Json(json!({
-                "protocol_version": 1,
-                "runner_id": runner_id,
-                "runner_credential": raw_credential,
-                "credential_expires_at": credential_expires_at.to_rfc3339(),
-                "heartbeat_interval_seconds": LIMITS.heartbeat_interval_seconds,
-                "lease_duration_seconds": LIMITS.lease_duration_seconds,
-                "server_time": server_time.to_rfc3339(),
-            })))
+            message_json(&EnrollmentResponse {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: RunnerId::new(runner_id),
+                runner_credential: raw_credential,
+                credential_expires_at,
+                heartbeat_interval_seconds: LIMITS.heartbeat_interval_seconds.unsigned_abs(),
+                lease_duration_seconds: LIMITS.lease_duration_seconds.unsigned_abs(),
+                server_time,
+            })
         }
         Enrolled::InvalidToken => {
             tracing::warn!("enrollment token rejected: invalid, expired, or already used");
@@ -643,7 +667,7 @@ fn reclassify_refresh_auth_error(
 pub async fn refresh(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now)
@@ -654,17 +678,18 @@ pub async fn refresh(
     runner_auth::require_matching_runner(&value, &principal)?;
     // The name is validated as present but never written: the board's row owns it
     // (see `redeem_enrollment_token`), and a runner's self-report must not rename it.
-    as_str(&value, "runner_name")?;
-    let runner_version = as_str(&value, "runner_version")?.to_owned();
-    let rotate_credential = value
-        .get("rotate_credential")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let capabilities = field(&value, "capabilities")?.clone();
+    let RefreshRequest {
+        runner_version,
+        rotate_credential,
+        capabilities,
+        ..
+    } = parse_message(value)?;
     let (labels_json, _total_capacity, _available_capacity) =
         validate_capability_payload(&capabilities)?;
-    let capability_snapshot_json = serde_json::to_string(&capabilities)
-        .map_err(|_| internal_error("Could not encode capabilities"))?;
+    let capability_snapshot_json = serde_json::to_string(&capabilities).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode capabilities");
+        internal_error("Could not encode capabilities")
+    })?;
 
     let raw_credential = rotate_credential.then(generate_raw_credential);
     let new_credential_hash = raw_credential.as_deref().map(runner_auth::credential_hash);
@@ -702,13 +727,13 @@ pub async fn refresh(
             accepted_at,
         } => {
             tracing::info!(runner_id = %principal.runner_id, rotated = rotate_credential, "runner capability refresh accepted");
-            Ok(Json(json!({
-                "protocol_version": 1,
-                "runner_id": principal.runner_id,
-                "runner_credential": raw_credential,
-                "credential_expires_at": credential_expires_at.to_rfc3339(),
-                "accepted_at": accepted_at.to_rfc3339(),
-            })))
+            message_json(&RefreshResponse {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: principal.runner_id,
+                runner_credential: raw_credential,
+                credential_expires_at,
+                accepted_at,
+            })
         }
         // The compare-and-set cannot tell a lost rotation race from a runner revoked between
         // authentication and the write, so both answer the retryable `conflict`; a retry
@@ -735,29 +760,25 @@ pub async fn refresh(
 pub async fn claim(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
-    let claim_request_id = ClaimRequestId::new(as_str(&value, "claim_request_id")?);
+    let request: ClaimRequest = parse_message(value)?;
     // `available_capacity` is part of the wire contract (`claim.request.json`
     // requires it) but has no effect here: unlike `heartbeat`, whose
     // `heartbeat_batch` repository call cross-checks a runner's reported
     // capacity against its actual active reservations atomically (and can
     // return `Conflict`), `claim_execution_idempotent_with_snapshot` does
-    // not accept a capacity argument at all. A vestigial type-check here
-    // would validate a value that is never used, implying an enforcement
-    // that does not exist. A real
-    // cross-check would have to run either inside that same atomic claim
-    // transaction, or as a
-    // separate, non-atomic read of `agent_runners.available_capacity`
-    // racing exactly the concurrent-claim hazard the `BEGIN IMMEDIATE` fix
-    // closes. Deliberately dropped rather than kept as a vestigial shape check.
-    let wait_ms = as_u64(&value, "wait_ms")?;
-    if wait_ms > LIMITS.claim_wait_ms_max {
+    // not accept a capacity argument at all. A real cross-check would have to
+    // run inside that same atomic claim transaction, or as a separate,
+    // non-atomic read racing exactly the concurrent-claim hazard the
+    // `BEGIN IMMEDIATE` fix closes; the field is read for the shape and not used.
+    let claim_request_id = request.claim_request_id;
+    if request.wait_ms > LIMITS.claim_wait_ms_max {
         return Err(payload_too_large(
             "claim_wait_ms_max",
             LIMITS.claim_wait_ms_max,
@@ -774,65 +795,66 @@ pub async fn claim(
         Duration::seconds(LIMITS.lease_duration_seconds),
     )
     .await
-    .map_err(|_| internal_error("Could not claim work"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not claim work");
+        internal_error("Could not claim work")
+    })?;
 
     match claimed {
         Some(ClaimedExecution {
             lease,
             request_snapshot,
         }) => {
-            // `base_revision` is a required, immutable field on the frozen
-            // request snapshot. `unwrap_or_default()`
-            // would silently turn "missing/unreadable" into `""` — a
-            // structural zero standing in for unknown.
-            // Surface it as `internal_error` instead:
-            // `claim_execution_idempotent_with_snapshot` already validates
-            // the full snapshot shape before a request can be enqueued
-            // (quarantining anything incomplete as `needs_operator` rather
-            // than leasing it),
-            // so reaching this branch with an absent/malformed
-            // `base_revision` indicates a persistence-layer contract
-            // violation, not a client input error.
-            let base_revision = request_snapshot
-                .get("repository")
-                .and_then(|repository| repository.get("base_revision"))
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    internal_error(
-                        "The claimed request snapshot is missing its required base_revision",
-                    )
-                })?
-                .to_owned();
-            Ok(Json(json!({
-                "protocol_version": 1,
-                "claim_request_id": claim_request_id,
-                "lease": {
-                    "attempt_id": lease.attempt_id,
-                    "runner_id": lease.runner_id,
-                    "fencing_token": lease.fencing_token,
-                    "issued_at": lease.issued_at.to_rfc3339(),
-                    "expires_at": lease.expires_at.to_rfc3339(),
+            // `claim_execution_idempotent_with_snapshot` validates the snapshot's shape
+            // before a request can be enqueued (quarantining anything incomplete as
+            // `needs_operator` rather than leasing it), so a stored snapshot that does not
+            // parse here is a persistence-layer contract violation, not a client error.
+            let request: ExecutionRequestSnapshot = serde_json::from_value(request_snapshot)
+                .map_err(|failure| {
+                    crate::error::log_unreadable_document(
+                        "The claimed request snapshot is not readable",
+                        &failure,
+                    );
+                    internal_error("The claimed request snapshot is not readable")
+                })?;
+            let attempt_number = u32::try_from(lease.attempt_number).map_err(|failure| {
+                tracing::error!(error = %failure, "The claimed attempt number is out of range");
+                internal_error("The claimed attempt number is out of range")
+            })?;
+            message_json(&ClaimResponse::Work(Box::new(ClaimGranted {
+                protocol_version: ProtocolVersion::v1(),
+                claim_request_id,
+                lease: ClaimLease {
+                    attempt_id: lease.attempt_id.clone(),
+                    runner_id: lease.runner_id.clone(),
+                    fencing_token: lease.fencing_token,
+                    issued_at: lease.issued_at,
+                    expires_at: lease.expires_at,
                 },
-                "request": request_snapshot,
-                "attempt": {
-                    "attempt_id": lease.attempt_id,
-                    "request_id": lease.request_id,
-                    "attempt_number": lease.attempt_number,
-                    "runner_id": lease.runner_id,
-                    "fencing_token": lease.fencing_token,
-                    "state": execution_state::text(ExecutionState::Leased),
-                    "workspace_id": Value::Null,
-                    "base_revision": base_revision,
+                attempt: AttemptSnapshot {
+                    attempt_id: lease.attempt_id,
+                    request_id: lease.request_id,
+                    attempt_number,
+                    runner_id: lease.runner_id,
+                    fencing_token: lease.fencing_token,
+                    state: ExecutionState::Leased,
+                    workspace_id: None,
+                    base_revision: request.repository.base_revision.clone(),
+                    lease_issued_at: None,
+                    lease_expires_at: None,
+                    last_heartbeat_at: None,
+                    additional: BTreeMap::new(),
                 },
+                request,
             })))
         }
-        None => Ok(Json(json!({
-            "protocol_version": 1,
-            "claim_request_id": claim_request_id,
-            "lease": Value::Null,
-            "retry_after_ms": NO_WORK_RETRY_AFTER_MS,
-            "reason": "no_eligible_work",
-        }))),
+        None => message_json(&ClaimResponse::Idle(ClaimIdle {
+            protocol_version: ProtocolVersion::v1(),
+            claim_request_id,
+            lease: (),
+            retry_after_ms: NO_WORK_RETRY_AFTER_MS,
+            reason: "no_eligible_work".to_owned(),
+        })),
     }
 }
 
@@ -843,43 +865,31 @@ pub async fn claim(
 pub async fn heartbeat(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
     let value = parse_body(&body)?;
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
-    let heartbeat_id = as_str(&value, "heartbeat_id")?.to_owned();
-    let sent_at = as_datetime(&value, "sent_at")?;
-    let available_capacity = as_i64(&value, "available_capacity")?;
-    let active_attempts = as_array(&value, "active_attempts")?.clone();
-    if active_attempts.len() as u64 > LIMITS.active_attempts_per_heartbeat_max {
+    let request: HeartbeatRequest = parse_message(value)?;
+    if request.active_attempts.len() as u64 > LIMITS.active_attempts_per_heartbeat_max {
         return Err(payload_too_large(
             "active_attempts_per_heartbeat_max",
             LIMITS.active_attempts_per_heartbeat_max,
         ));
     }
-    let leases: Vec<ReportedLease> = active_attempts
+    if request
+        .active_attempts
         .iter()
-        .map(|entry| -> runner_auth::ProtocolResult<ReportedLease> {
-            Ok(ReportedLease {
-                attempt_id: AttemptId::new(as_str(entry, "attempt_id")?),
-                fencing_token: as_fencing_token(entry, "fencing_token")?,
-                state: as_str(entry, "state")?.parse().map_err(|_| {
-                    invalid_request(
-                        "state",
-                        "state must be a lifecycle state of runner protocol v1",
-                    )
-                })?,
-                journal_state: as_str(entry, "journal_state")?.to_owned(),
-                last_event_checkpoint: entry
-                    .get("last_event_checkpoint")
-                    .and_then(Value::as_str)
-                    .map(Checkpoint::new),
-            })
-        })
-        .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
+        .any(|attempt| fencing_token_from_wire(attempt.fencing_token.get()).is_none())
+    {
+        return Err(invalid_request(
+            "fencing_token",
+            "fencing_token must fit the store",
+        ));
+    }
+    let heartbeat_id = request.heartbeat_id;
 
     let result = tack_app::runs::heartbeat::heartbeat(
         &state.repo,
@@ -887,27 +897,34 @@ pub async fn heartbeat(
         Beat {
             runner_id: &principal.runner_id,
             heartbeat_id: &heartbeat_id,
-            sent_at,
-            available_capacity,
-            leases: &leases,
+            sent_at: request.sent_at,
+            available_capacity: i64::from(request.available_capacity),
+            leases: &request.active_attempts,
             lease_duration: Duration::seconds(LIMITS.lease_duration_seconds),
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record heartbeat"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record heartbeat");
+        internal_error("Could not record heartbeat")
+    })?;
 
     match result {
-        Heartbeat::Accepted(resp) | Heartbeat::Replayed(resp) => Ok(Json(json!({
-            "protocol_version": 1,
-            "heartbeat_id": resp.heartbeat_id,
-            "accepted_at": resp.accepted_at.to_rfc3339(),
-            "lease_results": resp.leases.iter().map(|lease| json!({
-                "attempt_id": lease.attempt_id,
-                "fencing_token": lease.fencing_token,
-                "lease_expires_at": lease.lease_expires_at.to_rfc3339(),
-                "cancellation_requested": lease.cancellation_requested,
-            })).collect::<Vec<_>>(),
-        }))),
+        Heartbeat::Accepted(resp) | Heartbeat::Replayed(resp) => message_json(&HeartbeatResponse {
+            protocol_version: ProtocolVersion::v1(),
+            heartbeat_id: resp.heartbeat_id,
+            accepted_at: resp.accepted_at,
+            lease_results: resp
+                .leases
+                .into_iter()
+                .map(|lease| LeaseResult {
+                    attempt_id: lease.attempt_id,
+                    fencing_token: lease.fencing_token,
+                    lease_expires_at: lease.lease_expires_at,
+                    cancellation_requested: lease.cancellation_requested,
+                })
+                .collect(),
+        }),
         Heartbeat::IdempotencyConflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
@@ -931,7 +948,7 @@ pub async fn accept_attempt(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     transition_attempt(
         state,
@@ -947,7 +964,7 @@ pub async fn start_attempt(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     transition_attempt(
         state,
@@ -962,24 +979,49 @@ pub async fn start_attempt(
 /// The part of a running-phase start report the server keeps: variable names
 /// (strings of at most 128 characters, 256 at most) and the sandbox, which is
 /// `bwrap` or `none` and nothing else.
-fn start_report(body: &Value) -> Value {
-    let names: Vec<&str> = body
-        .get("environment_names")
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(Value::as_str)
-                .filter(|name| name.chars().count() <= 128)
-                .take(256)
-                .collect()
-        })
-        .unwrap_or_default();
-    let sandbox = body
-        .get("sandbox")
-        .and_then(Value::as_str)
+fn start_report(request: &AttemptTransitionRequest) -> Value {
+    let names: Vec<&str> = request
+        .environment_names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| name.chars().count() <= 128)
+        .take(256)
+        .collect();
+    let sandbox = request
+        .sandbox
+        .as_deref()
         .filter(|sandbox| matches!(*sandbox, "bwrap" | "harness" | "none"));
     json!({"environment_names": names, "sandbox": sandbox})
+}
+
+/// An instant read back from a stored RFC 3339 column; one that does not parse is a corrupt row.
+fn stored_instant(raw: &str, column: &str) -> runner_auth::ProtocolResult<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(raw)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            internal_error(&format!("Stored {column} is corrupt"))
+        })
+}
+
+/// The answer to an accepted or started attempt, from the stored response.
+fn transition_json(
+    resp: tack_db::repo::execution::AttemptTransitionResponse,
+    replayed: bool,
+) -> HandlerResult {
+    let committed_at = DateTime::parse_from_rfc3339(&resp.committed_at)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Stored committed_at is corrupt");
+            internal_error("Stored committed_at is corrupt")
+        })?;
+    message_json(&AttemptTransitionResponse {
+        protocol_version: ProtocolVersion::v1(),
+        attempt_id: resp.attempt_id,
+        state: resp.state,
+        replayed,
+        committed_at,
+    })
 }
 
 async fn transition_attempt(
@@ -991,12 +1033,13 @@ async fn transition_attempt(
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let workspace_id = WorkspaceId::new(as_str(&value, "workspace_id")?);
-    let base_revision = as_str(&value, "base_revision")?.to_owned();
-    let process_id = value
-        .get("process_id")
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    let request: AttemptTransitionRequest = parse_message(value)?;
+    let AttemptTransitionRequest {
+        workspace_id,
+        base_revision,
+        process_id,
+        ..
+    } = request.clone();
     let phase_name = match phase {
         AttemptTransitionPhase::Preparing => execution_state::text(ExecutionState::Preparing),
         AttemptTransitionPhase::Running => execution_state::text(ExecutionState::Running),
@@ -1025,7 +1068,10 @@ async fn transition_attempt(
             state.clock.now(),
         )
         .await
-        .map_err(|_| internal_error("Could not record attempt transition"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not record attempt transition");
+            internal_error("Could not record attempt transition")
+        })?;
 
     if matches!(phase, AttemptTransitionPhase::Running)
         && matches!(result, AttemptTransitionResult::Applied(_))
@@ -1036,27 +1082,18 @@ async fn transition_attempt(
                 &principal.runner_id,
                 &attempt_id,
                 fencing_token,
-                &start_report(&value).to_string(),
+                &start_report(&request).to_string(),
             )
             .await
-            .map_err(|_| internal_error("Could not record the start report"))?;
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not record the start report");
+                internal_error("Could not record the start report")
+            })?;
     }
 
     match result {
-        AttemptTransitionResult::Applied(resp) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": resp.attempt_id,
-            "state": resp.state,
-            "replayed": false,
-            "committed_at": resp.committed_at,
-        }))),
-        AttemptTransitionResult::Replayed(resp) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": resp.attempt_id,
-            "state": resp.state,
-            "replayed": true,
-            "committed_at": resp.committed_at,
-        }))),
+        AttemptTransitionResult::Applied(resp) => transition_json(resp, false),
+        AttemptTransitionResult::Replayed(resp) => transition_json(resp, true),
         AttemptTransitionResult::Stale => Err(stale_lease(attempt_id.as_str())),
         AttemptTransitionResult::Conflict => Err(protocol_error(
             StatusCode::CONFLICT,
@@ -1072,71 +1109,36 @@ async fn transition_attempt(
 // rejected batch — oversized or not — writes nothing.
 // ---------------------------------------------------------------------
 
-struct PreparedEvent {
-    event_id: String,
-    sequence: i64,
-    source: String,
-    kind: String,
-    payload_json: String,
-    occurred_at: DateTime<Utc>,
-}
-
 pub async fn submit_events(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     // `event_batch_bytes_max` (1 MiB) equals `json_body_bytes_max`, so
     // `parse_body` inside `authenticate_attempt_request` already enforces
     // this endpoint's whole-batch byte cap; no separate check is needed.
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let checkpoint = Checkpoint::new(as_str(&value, "checkpoint")?);
-    let previous_checkpoint = value
-        .get("previous_checkpoint")
-        .and_then(Value::as_str)
-        .map(Checkpoint::new);
-    let events = as_array(&value, "events")?.clone();
-    if events.len() as u64 > LIMITS.event_batch_count_max {
+    let request: EventBatchRequest = parse_message(value)?;
+    let checkpoint = request.checkpoint;
+    let previous_checkpoint = request.previous_checkpoint;
+    if request.events.len() as u64 > LIMITS.event_batch_count_max {
         return Err(payload_too_large(
             "event_batch_count_max",
             LIMITS.event_batch_count_max,
         ));
     }
-    let prepared: Vec<PreparedEvent> = events
+    if request
+        .events
         .iter()
-        .map(|event| -> runner_auth::ProtocolResult<PreparedEvent> {
-            let payload = field(event, "payload")?.clone();
-            if json_byte_len(&payload) > LIMITS.event_payload_bytes_max {
-                return Err(payload_too_large(
-                    "event_payload_bytes_max",
-                    LIMITS.event_payload_bytes_max,
-                ));
-            }
-            let payload_json = serde_json::to_string(&payload)
-                .map_err(|_| internal_error("Could not encode event payload"))?;
-            Ok(PreparedEvent {
-                event_id: as_str(event, "event_id")?.to_owned(),
-                sequence: as_i64(event, "sequence")?,
-                source: as_str(event, "source")?.to_owned(),
-                kind: as_str(event, "kind")?.to_owned(),
-                payload_json,
-                occurred_at: as_datetime(event, "occurred_at")?,
-            })
-        })
-        .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
-    let reported: Vec<ReportedEvent> = prepared
-        .iter()
-        .map(|prepared| ReportedEvent {
-            event_id: &prepared.event_id,
-            sequence: prepared.sequence,
-            source: &prepared.source,
-            kind: &prepared.kind,
-            payload_json: &prepared.payload_json,
-            occurred_at: prepared.occurred_at,
-        })
-        .collect();
+        .any(|event| json_byte_len(&event.payload) > LIMITS.event_payload_bytes_max)
+    {
+        return Err(payload_too_large(
+            "event_payload_bytes_max",
+            LIMITS.event_payload_bytes_max,
+        ));
+    }
 
     let result = tack_app::runs::report_events::report_events(
         &state.repo,
@@ -1147,20 +1149,23 @@ pub async fn submit_events(
             fencing_token,
             previous_checkpoint: previous_checkpoint.as_ref(),
             checkpoint: &checkpoint,
-            events: &reported,
+            events: &request.events,
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record events"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record events");
+        internal_error("Could not record events")
+    })?;
 
     match result {
-        EventsReported::Applied(batch) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "accepted_event_ids": batch.accepted_event_ids,
-            "duplicate_event_ids": batch.duplicate_event_ids,
-            "committed_checkpoint": batch.committed_checkpoint,
-        }))),
+        EventsReported::Applied(batch) => message_json(&EventBatchResponse {
+            protocol_version: ProtocolVersion::v1(),
+            attempt_id,
+            accepted_event_ids: batch.accepted_event_ids,
+            duplicate_event_ids: batch.duplicate_event_ids,
+            committed_checkpoint: batch.committed_checkpoint,
+        }),
         // Two causes, carried by distinct variants: the
         // same `(attempt_id, checkpoint)` idempotency-scoped key reused with
         // different content (this can never succeed by retrying — the
@@ -1187,132 +1192,96 @@ pub async fn submit_events(
 // Decision create + poll.
 // ---------------------------------------------------------------------
 
-/// Optional per-option fields: `description` (string), `risks` (strings),
-/// `estimated_tokens` (non-negative integer). Text is bounded by
-/// `decision_prompt_bytes_max`, list length by `decision_options_max`.
-fn validate_decision_option_extras(option: &Value) -> runner_auth::ProtocolResult<()> {
-    bounded_optional_text(option, "description")?;
-    bounded_string_list(option, "risks")?;
-    match option.get("estimated_tokens") {
-        None | Some(Value::Null) => {}
-        Some(value) if value.is_u64() => {}
-        Some(_) => {
-            return Err(invalid_request(
-                "estimated_tokens",
-                "estimated_tokens must be a non-negative integer",
-            ));
-        }
+/// A text a runner supplies is bounded by `decision_prompt_bytes_max`.
+fn bounded_text(text: &str) -> runner_auth::ProtocolResult<()> {
+    if text.len() as u64 > LIMITS.decision_prompt_bytes_max {
+        return Err(payload_too_large(
+            "decision_prompt_bytes_max",
+            LIMITS.decision_prompt_bytes_max,
+        ));
     }
     Ok(())
 }
 
-/// `recommendation.option_id` must name one of the request's `options`.
-fn validate_decision_recommendation(
-    recommendation: &Value,
-    options: &[Value],
-) -> runner_auth::ProtocolResult<()> {
-    if !recommendation.is_object() {
-        return Err(invalid_request(
-            "recommendation",
-            "recommendation must be an object",
+/// A list of texts is bounded in length by `decision_options_max` and each text as above.
+fn bounded_string_list(items: &[String]) -> runner_auth::ProtocolResult<()> {
+    if items.len() as u64 > LIMITS.decision_options_max {
+        return Err(payload_too_large(
+            "decision_options_max",
+            LIMITS.decision_options_max,
         ));
     }
-    let option_id = as_str(recommendation, "option_id")?;
+    items.iter().try_for_each(|item| bounded_text(item))
+}
+
+/// Optional per-option fields are bounded: text by `decision_prompt_bytes_max`, list length by
+/// `decision_options_max`.
+fn validate_decision_option_extras(option: &DecisionOption) -> runner_auth::ProtocolResult<()> {
+    option
+        .description
+        .iter()
+        .try_for_each(|text| bounded_text(text))?;
+    option
+        .risks
+        .iter()
+        .try_for_each(|risks| bounded_string_list(risks))
+}
+
+/// `recommendation.option_id` must name one of the request's `options`.
+fn validate_decision_recommendation(
+    recommendation: &DecisionRecommendation,
+    options: &[DecisionOption],
+) -> runner_auth::ProtocolResult<()> {
     if !options
         .iter()
-        .any(|option| option.get("option_id").and_then(Value::as_str) == Some(option_id))
+        .any(|option| option.option_id == recommendation.option_id)
     {
         return Err(invalid_request(
             "recommendation.option_id",
             "recommendation.option_id must name one of options",
         ));
     }
-    bounded_optional_text(recommendation, "rationale")?;
-    bounded_string_list(recommendation, "evidence_refs")
-}
-
-fn bounded_optional_text(object: &Value, field: &str) -> runner_auth::ProtocolResult<()> {
-    match object.get(field) {
-        None | Some(Value::Null) => Ok(()),
-        Some(Value::String(text)) => {
-            if text.len() as u64 > LIMITS.decision_prompt_bytes_max {
-                return Err(payload_too_large(
-                    "decision_prompt_bytes_max",
-                    LIMITS.decision_prompt_bytes_max,
-                ));
-            }
-            Ok(())
-        }
-        Some(_) => Err(invalid_request(field, "must be a string")),
-    }
-}
-
-fn bounded_string_list(object: &Value, field: &str) -> runner_auth::ProtocolResult<()> {
-    match object.get(field) {
-        None | Some(Value::Null) => Ok(()),
-        Some(Value::Array(items)) => {
-            if items.len() as u64 > LIMITS.decision_options_max {
-                return Err(payload_too_large(
-                    "decision_options_max",
-                    LIMITS.decision_options_max,
-                ));
-            }
-            for item in items {
-                let Some(text) = item.as_str() else {
-                    return Err(invalid_request(field, "must be an array of strings"));
-                };
-                if text.len() as u64 > LIMITS.decision_prompt_bytes_max {
-                    return Err(payload_too_large(
-                        "decision_prompt_bytes_max",
-                        LIMITS.decision_prompt_bytes_max,
-                    ));
-                }
-            }
-            Ok(())
-        }
-        Some(_) => Err(invalid_request(field, "must be an array of strings")),
-    }
+    recommendation
+        .rationale
+        .iter()
+        .try_for_each(|text| bounded_text(text))?;
+    recommendation
+        .evidence_refs
+        .iter()
+        .try_for_each(|refs| bounded_string_list(refs))
 }
 
 pub async fn create_decision(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let decision_id = as_str(&value, "decision_id")?.to_owned();
-    let kind = as_str(&value, "kind")?.to_owned();
-    let prompt = as_str(&value, "prompt")?.to_owned();
-    if prompt.len() as u64 > LIMITS.decision_prompt_bytes_max {
-        return Err(payload_too_large(
-            "decision_prompt_bytes_max",
-            LIMITS.decision_prompt_bytes_max,
-        ));
-    }
-    let options = as_array(&value, "options")?.clone();
+    let request: DecisionCreateRequest = parse_message(value)?;
+    let DecisionCreateRequest {
+        decision_id,
+        kind,
+        prompt,
+        options,
+        recommendation,
+        expires_at,
+        metadata,
+        ..
+    } = request;
+    bounded_text(&prompt)?;
     if options.len() as u64 > LIMITS.decision_options_max {
         return Err(payload_too_large(
             "decision_options_max",
             LIMITS.decision_options_max,
         ));
     }
-    for option in &options {
-        as_str(option, "option_id")?;
-        as_str(option, "label")?;
-        validate_decision_option_extras(option)?;
-    }
-    let recommendation = match value.get("recommendation") {
-        None | Some(Value::Null) => None,
-        Some(recommendation) => {
-            validate_decision_recommendation(recommendation, &options)?;
-            Some(recommendation.clone())
-        }
-    };
-    let metadata = value.get("metadata").cloned().unwrap_or_else(|| json!({}));
-    if !metadata.is_object() {
-        return Err(invalid_request("metadata", "metadata must be an object"));
+    options
+        .iter()
+        .try_for_each(validate_decision_option_extras)?;
+    if let Some(recommendation) = &recommendation {
+        validate_decision_recommendation(recommendation, &options)?;
     }
     if json_byte_len(&metadata) > LIMITS.metadata_bytes_max {
         return Err(payload_too_large(
@@ -1320,11 +1289,6 @@ pub async fn create_decision(
             LIMITS.metadata_bytes_max,
         ));
     }
-    let expires_at = match value.get("expires_at") {
-        None | Some(Value::Null) => None,
-        Some(_) => Some(as_datetime(&value, "expires_at")?),
-    };
-
     let created = tack_app::runs::create_decision::create_decision(
         &state.repo,
         state.clock.now(),
@@ -1342,18 +1306,21 @@ pub async fn create_decision(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record decision"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record decision");
+        internal_error("Could not record decision")
+    })?;
 
     match created {
         DecisionCreated::Created {
             state: decision_state,
             created_at,
-        } => Ok(Json(json!({
-            "protocol_version": 1,
-            "decision_id": decision_id,
-            "state": decision_state,
-            "created_at": created_at,
-        }))),
+        } => message_json(&DecisionCreateResponse {
+            protocol_version: ProtocolVersion::v1(),
+            decision_id,
+            state: decision_state,
+            created_at: stored_instant(&created_at, "created_at")?,
+        }),
         DecisionCreated::Stale => Err(stale_lease(attempt_id.as_str())),
         DecisionCreated::Ineligible {
             state: attempt_state,
@@ -1376,11 +1343,12 @@ pub async fn poll_decisions(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let after = normalize_datetime(&value, "after")?;
+    let DecisionPollRequest { after, .. } = parse_message(value)?;
+    let after = normalize_datetime(after);
 
     let holds_fence = queries::execution_attempts::holds_fence(
         &state.repo,
@@ -1389,7 +1357,10 @@ pub async fn poll_decisions(
         fencing_token,
     )
     .await
-    .map_err(|_| internal_error("Could not verify attempt"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify attempt");
+        internal_error("Could not verify attempt")
+    })?;
     if !holds_fence {
         return Err(stale_lease(attempt_id.as_str()));
     }
@@ -1400,30 +1371,41 @@ pub async fn poll_decisions(
         &after,
     )
     .await
-    .map_err(|_| internal_error("Could not poll decisions"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not poll decisions");
+        internal_error("Could not poll decisions")
+    })?;
 
     let mut next_after = after.clone();
-    let decisions: Vec<Value> = rows
+    let decisions = rows
         .into_iter()
-        .map(|row| {
+        .map(|row| -> runner_auth::ProtocolResult<DecisionUpdate> {
             if row.updated_at > next_after {
                 next_after = row.updated_at.clone();
             }
-            json!({
-                "decision_id": row.decision_id,
-                "state": row.state,
-                "answer": row.answer.and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
-                "resolved_at": row.resolved_at,
-                "resolved_by": row.resolved_by.and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
+            Ok(DecisionUpdate {
+                decision_id: row.decision_id,
+                state: row.state,
+                answer: row
+                    .answer
+                    .and_then(|raw| serde_json::from_str::<DecisionAnswer>(&raw).ok()),
+                resolved_at: row
+                    .resolved_at
+                    .as_deref()
+                    .map(|raw| stored_instant(raw, "resolved_at"))
+                    .transpose()?,
+                resolved_by: row
+                    .resolved_by
+                    .and_then(|raw| serde_json::from_str::<Value>(&raw).ok()),
             })
         })
-        .collect();
+        .collect::<runner_auth::ProtocolResult<Vec<_>>>()?;
 
-    Ok(Json(json!({
-        "protocol_version": 1,
-        "decisions": decisions,
-        "next_after": next_after,
-    })))
+    message_json(&DecisionPollResponse {
+        protocol_version: ProtocolVersion::v1(),
+        decisions,
+        next_after: stored_instant(&next_after, "next_after")?,
+    })
 }
 
 // ---------------------------------------------------------------------
@@ -1436,11 +1418,11 @@ pub async fn submit_artifacts(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let artifacts = as_array(&value, "artifacts")?.clone();
+    let ArtifactManifestRequest { artifacts, .. } = parse_message(value)?;
     if artifacts.len() as u64 > LIMITS.artifact_manifest_count_max {
         return Err(payload_too_large(
             "artifact_manifest_count_max",
@@ -1448,19 +1430,24 @@ pub async fn submit_artifacts(
         ));
     }
     let manifest: Vec<ArtifactManifest> = artifacts
-        .iter()
+        .into_iter()
         .map(
             |artifact| -> runner_auth::ProtocolResult<ArtifactManifest> {
-                let size_bytes = as_i64(artifact, "size_bytes")?;
-                if size_bytes < 0 || size_bytes as u64 > LIMITS.artifact_content_bytes_max {
+                if artifact.size_bytes > LIMITS.artifact_content_bytes_max {
                     return Err(payload_too_large(
                         "artifact_content_bytes_max",
                         LIMITS.artifact_content_bytes_max,
                     ));
                 }
-                let sha256 = as_str(artifact, "sha256")?.to_owned();
-                if sha256.len() != 64
-                    || !sha256.bytes().all(|byte| {
+                let size_bytes = i64::try_from(artifact.size_bytes).map_err(|failure| {
+                    tracing::warn!(error = %failure, "artifact_content_bytes_max");
+                    payload_too_large(
+                        "artifact_content_bytes_max",
+                        LIMITS.artifact_content_bytes_max,
+                    )
+                })?;
+                if artifact.sha256.len() != 64
+                    || !artifact.sha256.bytes().all(|byte| {
                         byte.is_ascii_hexdigit() && !(byte as char).is_ascii_uppercase()
                     })
                 {
@@ -1469,13 +1456,7 @@ pub async fn submit_artifacts(
                         "sha256 must be 64 lowercase hex characters",
                     ));
                 }
-                let metadata = artifact
-                    .get("metadata")
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                if !metadata.is_object() {
-                    return Err(invalid_request("metadata", "metadata must be an object"));
-                }
+                let metadata = Value::Object(artifact.metadata);
                 if json_byte_len(&metadata) > LIMITS.artifact_metadata_bytes_max {
                     return Err(payload_too_large(
                         "artifact_metadata_bytes_max",
@@ -1488,7 +1469,7 @@ pub async fn submit_artifacts(
                 // a plausible `type/subtype` MIME shape and a modest length
                 // cap, catching both garbage values and an unbounded-length
                 // field slipping through unmeasured.
-                if let Some(media_type) = artifact.get("media_type").and_then(Value::as_str)
+                if let Some(media_type) = artifact.media_type.as_deref()
                     && !is_plausible_media_type(media_type)
                 {
                     return Err(invalid_request(
@@ -1497,19 +1478,13 @@ pub async fn submit_artifacts(
                     ));
                 }
                 Ok(ArtifactManifest {
-                    artifact_id: as_str(artifact, "artifact_id")?.to_owned(),
-                    kind: as_str(artifact, "kind")?.to_owned(),
-                    name: as_str(artifact, "name")?.to_owned(),
-                    media_type: artifact
-                        .get("media_type")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
+                    artifact_id: artifact.artifact_id,
+                    kind: artifact.kind,
+                    name: artifact.name,
+                    media_type: artifact.media_type,
                     size_bytes,
-                    sha256,
-                    content_disposition: artifact
-                        .get("content_disposition")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
+                    sha256: artifact.sha256,
+                    content_disposition: artifact.content_disposition,
                     metadata,
                 })
             },
@@ -1529,36 +1504,38 @@ pub async fn submit_artifacts(
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record artifact"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record artifact");
+        internal_error("Could not record artifact")
+    })?;
 
     match submitted {
         ManifestSubmitted::Accepted { upload_expires_at } => {
-            let accepted: Vec<Value> = manifest
+            let expires_at = stored_instant(&upload_expires_at, "upload_expires_at")?;
+            let granted = manifest
                 .iter()
-                .map(|item| {
-                    json!({
-                        "artifact_id": item.artifact_id,
-                        "state": "manifest_accepted",
-                        "upload": {
-                            "method": "PUT",
-                            // Attempt-scoped — `artifact_id` alone cannot disambiguate
-                            // between two different attempts that happen to choose the
-                            // same runner-supplied id, and the real endpoint needs the
-                            // attempt to authenticate/fence against.
-                            "path": format!(
-                                "/api/runner/v1/attempts/{attempt_id}/artifacts/{}/content",
-                                item.artifact_id
-                            ),
-                            "expires_at": upload_expires_at,
-                        },
-                    })
+                .map(|item| ArtifactGrant {
+                    artifact_id: item.artifact_id.clone(),
+                    state: "manifest_accepted".to_owned(),
+                    upload: ArtifactUpload {
+                        method: "PUT".to_owned(),
+                        // Attempt-scoped — `artifact_id` alone cannot disambiguate
+                        // between two different attempts that happen to choose the
+                        // same runner-supplied id, and the real endpoint needs the
+                        // attempt to authenticate/fence against.
+                        path: format!(
+                            "/api/runner/v1/attempts/{attempt_id}/artifacts/{}/content",
+                            item.artifact_id
+                        ),
+                        expires_at: Some(expires_at),
+                    },
                 })
                 .collect();
-            Ok(Json(json!({
-                "protocol_version": 1,
-                "attempt_id": attempt_id,
-                "artifacts": accepted,
-            })))
+            message_json(&ArtifactManifestResponse {
+                protocol_version: ProtocolVersion::v1(),
+                attempt_id,
+                artifacts: granted,
+            })
         }
         ManifestSubmitted::Stale => Err(stale_lease(attempt_id.as_str())),
         ManifestSubmitted::Ineligible {
@@ -1628,8 +1605,10 @@ pub async fn put_artifact_content(
         upload,
     )
     .await
-    .map_err(|_| internal_error("Could not verify artifact"))?
-    {
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify artifact");
+        internal_error("Could not verify artifact")
+    })? {
         UploadChecked::Ready(target) => target,
         // Covers every "this write is not currently valid" case in one stable code, matching
         // `submit_artifacts`'s own precedent: an unknown artifact_id, a fencing mismatch, or a
@@ -1709,16 +1688,19 @@ pub async fn put_artifact_content(
         &stored.content_reference,
     )
     .await
-    .map_err(|_| internal_error("Could not record artifact content"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record artifact content");
+        internal_error("Could not record artifact content")
+    })?;
     match commit {
-        ArtifactContentCommitResult::Committed => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "artifact_id": artifact_id,
-            "state": "content_verified",
-            "size_bytes": stored.bytes_written,
-            "sha256": target.sha256,
-        }))),
+        ArtifactContentCommitResult::Committed => message_json(&ArtifactContentResponse {
+            protocol_version: ProtocolVersion::v1(),
+            attempt_id,
+            artifact_id,
+            state: "content_verified".to_owned(),
+            size_bytes: stored.bytes_written,
+            sha256: target.sha256,
+        }),
         ArtifactContentCommitResult::AlreadySet => {
             // Lost a race to a concurrent upload of the same artifact_id
             // after fully streaming and verifying our own copy: the bytes we
@@ -1754,17 +1736,16 @@ pub async fn submit_completion(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let completion_id = CompletionId::new(as_str(&value, "completion_id")?);
-    let terminal_state = as_str(&value, "terminal_state")?
-        .parse::<ExecutionState>()
-        .ok()
-        .filter(|parsed| {
+    let request: CompletionRequest = parse_message(value)?;
+    let completion_id = request.completion_id;
+    let terminal_state = Some(request.terminal_state)
+        .filter(|state| {
             matches!(
-                parsed,
+                state,
                 ExecutionState::Succeeded | ExecutionState::Failed | ExecutionState::Cancelled
             )
         })
@@ -1774,38 +1755,15 @@ pub async fn submit_completion(
                 "terminal_state must be succeeded, failed, or cancelled",
             )
         })?;
-    let terminal_reason = field(&value, "terminal_reason")?.clone();
-    if !terminal_reason.is_object() {
+    let Value::Object(terminal_reason) = request.terminal_reason else {
         return Err(invalid_request(
             "terminal_reason",
             "terminal_reason must be an object",
         ));
-    }
-    // Reused directly from the frozen domain (`tack_protocol::execution`) —
-    // both shapes match `completion.request.json`'s `actual_execution` and
-    // `usage` exactly, so parsing into these typed values (rather than a
-    // parallel DTO) is the strongest
-    // available guarantee that this handler matches the frozen fixture.
-    let actual_execution: ActualExecution =
-        serde_json::from_value(field(&value, "actual_execution")?.clone()).map_err(|_| {
-            invalid_request(
-                "actual_execution",
-                "actual_execution does not match the runner-v1 shape",
-            )
-        })?;
-    let usage: Usage = serde_json::from_value(field(&value, "usage")?.clone())
-        .map_err(|_| invalid_request("usage", "usage does not match the runner-v1 shape"))?;
-    let final_event_checkpoint = value
-        .get("final_event_checkpoint")
-        .and_then(Value::as_str)
-        .map(Checkpoint::new);
-
-    let terminal_reason_json = serde_json::to_string(&terminal_reason)
-        .map_err(|_| internal_error("Could not encode terminal_reason"))?;
-    let actual_execution_json = serde_json::to_string(&actual_execution)
-        .map_err(|_| internal_error("Could not encode actual_execution"))?;
-    let usage_json =
-        serde_json::to_string(&usage).map_err(|_| internal_error("Could not encode usage"))?;
+    };
+    let actual_execution = request.actual_execution;
+    let usage = request.usage;
+    let final_event_checkpoint = request.final_event_checkpoint;
 
     let storage = state.artifact_storage.as_ref();
     let completed = tack_app::runs::complete::complete(
@@ -1818,14 +1776,17 @@ pub async fn submit_completion(
             completion_id: &completion_id,
             final_event_checkpoint: final_event_checkpoint.as_ref(),
             terminal_state,
-            terminal_reason_json: &terminal_reason_json,
-            actual_execution_json: &actual_execution_json,
-            usage_json: &usage_json,
+            terminal_reason: &terminal_reason,
+            actual_execution: &actual_execution,
+            usage: &usage,
         },
         |reference: String| async move { read_pack(storage, &reference).await },
     )
     .await
-    .map_err(|_| internal_error("Could not record completion"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record completion");
+        internal_error("Could not record completion")
+    })?;
 
     if let Completed::Committed { item_moved, .. } = &completed {
         if let (Some(app), Some(moved)) = (state.app.as_ref(), item_moved) {
@@ -1851,22 +1812,8 @@ pub async fn submit_completion(
     }
 
     match completed {
-        Completed::Committed { response, .. } => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "completion_id": response.completion_id,
-            "state": response.terminal_state,
-            "replayed": false,
-            "committed_at": response.committed_at,
-        }))),
-        Completed::Replayed(response) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "completion_id": response.completion_id,
-            "state": response.terminal_state,
-            "replayed": true,
-            "committed_at": response.committed_at,
-        }))),
+        Completed::Committed { response, .. } => completion_json(attempt_id, response, false),
+        Completed::Replayed(response) => completion_json(attempt_id, response, true),
         // Same split as `submit_events` above: the same
         // `(attempt_id, completion_id)` idempotency-scoped key
         // reused with different content can never succeed by retrying
@@ -1890,6 +1837,28 @@ pub async fn submit_completion(
     }
 }
 
+/// The answer to a completion, from the response the store kept.
+fn completion_json(
+    attempt_id: AttemptId,
+    response: tack_db::repo::execution::CompletionResponse,
+    replayed: bool,
+) -> HandlerResult {
+    let committed_at = DateTime::parse_from_rfc3339(&response.committed_at)
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "The stored completion time is not readable");
+            internal_error("The stored completion time is not readable")
+        })?
+        .with_timezone(&Utc);
+    message_json(&CompletionResponse {
+        protocol_version: ProtocolVersion::v1(),
+        attempt_id,
+        completion_id: response.completion_id,
+        state: response.terminal_state,
+        replayed,
+        committed_at,
+    })
+}
+
 /// The merge-readiness pack stored at `reference`, when it can be read and parses.
 async fn read_pack(
     storage: &ArtifactStorage,
@@ -1906,32 +1875,50 @@ async fn read_pack(
 // Cancellation observation.
 // ---------------------------------------------------------------------
 
+fn cancellation_json(
+    attempt_id: AttemptId,
+    resp: tack_db::repo::execution::CancellationResponse,
+    replayed: bool,
+) -> HandlerResult {
+    message_json(&CancellationObservationResponse {
+        protocol_version: ProtocolVersion::v1(),
+        attempt_id,
+        cancellation_request_id: resp.cancellation_request_id,
+        state: resp.state,
+        replayed,
+        committed_at: stored_instant(&resp.committed_at, "committed_at")?,
+    })
+}
+
 pub async fn observe_cancellation_report(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let (principal, value, fencing_token) =
         authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
-    let cancellation_request_id =
-        CancellationRequestId::new(as_str(&value, "cancellation_request_id")?);
-    let observation = as_str(&value, "observation")?;
-    if observation != "process_stopped" {
+    let CancellationObservationRequest {
+        cancellation_request_id,
+        observation,
+        observed_at,
+        details,
+        ..
+    } = parse_message(value)?;
+    if observation != CancelObservation::ProcessStopped {
         return Err(invalid_request(
             "observation",
             "observation must be process_stopped",
         ));
     }
-    let observed_at = as_datetime(&value, "observed_at")?;
-    let details = field(&value, "details")?.clone();
-    if !details.is_object() {
-        return Err(invalid_request("details", "details must be an object"));
-    }
-    let details_json =
-        serde_json::to_string(&details).map_err(|_| internal_error("Could not encode details"))?;
-    let observation_json = serde_json::to_string(&Value::String("process_stopped".into()))
-        .expect("a static string literal always serializes");
+    let details_json = serde_json::to_string(&details).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode details");
+        internal_error("Could not encode details")
+    })?;
+    let observation_json = serde_json::to_string(&observation).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode observation");
+        internal_error("Could not encode observation")
+    })?;
 
     let result = state
         .repo
@@ -1948,25 +1935,14 @@ pub async fn observe_cancellation_report(
             state.clock.now(),
         )
         .await
-        .map_err(|_| internal_error("Could not record cancellation observation"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not record cancellation observation");
+            internal_error("Could not record cancellation observation")
+        })?;
 
     match result {
-        CancellationObservation::Cancelled(resp) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "cancellation_request_id": resp.cancellation_request_id,
-            "state": resp.state,
-            "replayed": false,
-            "committed_at": resp.committed_at,
-        }))),
-        CancellationObservation::Replayed(resp) => Ok(Json(json!({
-            "protocol_version": 1,
-            "attempt_id": attempt_id,
-            "cancellation_request_id": resp.cancellation_request_id,
-            "state": resp.state,
-            "replayed": true,
-            "committed_at": resp.committed_at,
-        }))),
+        CancellationObservation::Cancelled(resp) => cancellation_json(attempt_id, resp, false),
+        CancellationObservation::Replayed(resp) => cancellation_json(attempt_id, resp, true),
         CancellationObservation::Conflict => Err(protocol_error(
             StatusCode::CONFLICT,
             StableErrorCode::IdempotencyConflict,
@@ -2000,7 +1976,7 @@ pub async fn observe_recovery(
     State(state): State<RunnerProtocolState>,
     headers: HeaderMap,
     Path(attempt_id): Path<AttemptId>,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> HandlerResult {
     let now = state.clock.now();
     let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
@@ -2008,12 +1984,7 @@ pub async fn observe_recovery(
     check_protocol_version(&value)?;
     runner_auth::require_matching_runner(&value, &principal)?;
     runner_auth::require_matching_attempt(&value, &attempt_id)?;
-    let request: RecoveryObservationRequest = serde_json::from_value(value).map_err(|_| {
-        invalid_request(
-            "body",
-            "The recovery-observation request does not match the runner-v1 shape",
-        )
-    })?;
+    let request: RecoveryObservationRequest = parse_message(value)?;
     if request.attempt_id != attempt_id {
         return Err(invalid_request(
             "attempt_id",
@@ -2026,9 +1997,6 @@ pub async fn observe_recovery(
             "fencing_token must be a non-negative integer",
         )
     })?;
-    let details_json = serde_json::to_string(&request.details)
-        .map_err(|_| internal_error("Could not encode details"))?;
-
     let observed = tack_app::runs::observe_recovery::observe_recovery(
         &state.repo,
         state.clock.now(),
@@ -2038,11 +2006,14 @@ pub async fn observe_recovery(
             fencing_token,
             recovery_key: &request.recovery_key,
             observation: request.observation,
-            details_json: &details_json,
+            details: &request.details,
         },
     )
     .await
-    .map_err(|_| internal_error("Could not record recovery observation"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not record recovery observation");
+        internal_error("Could not record recovery observation")
+    })?;
 
     let recovered = match observed {
         RecoveryObserved::Recorded(recovered) => recovered,
@@ -2058,7 +2029,10 @@ pub async fn observe_recovery(
     };
     let committed_at = DateTime::parse_from_rfc3339(&recovered.committed_at)
         .map(|value| value.with_timezone(&Utc))
-        .map_err(|_| internal_error("Stored committed_at is corrupt"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Stored committed_at is corrupt");
+            internal_error("Stored committed_at is corrupt")
+        })?;
     let response = RecoveryObservationResponse {
         protocol_version: ProtocolVersion::v1(),
         attempt_id: recovered.attempt_id,
@@ -2068,7 +2042,8 @@ pub async fn observe_recovery(
         committed_at,
         additional: Default::default(),
     };
-    Ok(Json(serde_json::to_value(response).map_err(|_| {
+    Ok(Json(serde_json::to_value(response).map_err(|failure| {
+        tracing::error!(error = %failure, "Could not encode response");
         internal_error("Could not encode response")
     })?))
 }
@@ -2158,12 +2133,55 @@ mod tests {
         assert_eq!(body.0["error"]["code"], "invalid_request");
     }
 
+    /// What the handlers do with a capabilities value: read it as the protocol's snapshot,
+    /// then apply the business rules.
+    fn validate_capability_payload(
+        capabilities: &Value,
+    ) -> runner_auth::ProtocolResult<(String, i64, i64)> {
+        let parsed: EmbeddedCapabilitySnapshot = parse_message(capabilities.clone())?;
+        super::validate_capability_payload(&parsed)
+    }
+
     #[test]
     fn normalize_datetime_makes_z_and_offset_suffixes_comparable() {
-        let z = normalize_datetime(&json!({"after": "2026-08-06T12:20:59Z"}), "after").unwrap();
-        let offset =
-            normalize_datetime(&json!({"after": "2026-08-06T12:20:59+00:00"}), "after").unwrap();
+        let instant = |raw: &str| {
+            DateTime::parse_from_rfc3339(raw)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        let z = normalize_datetime(instant("2026-08-06T12:20:59Z"));
+        let offset = normalize_datetime(instant("2026-08-06T12:20:59+00:00"));
         assert_eq!(z, offset);
+    }
+
+    #[test]
+    fn a_message_that_does_not_fit_names_the_field_serde_stopped_at() {
+        let (status, body) = parse_message::<DecisionCreateRequest>(json!({
+            "protocol_version": 1,
+            "runner_id": "r",
+            "attempt_id": "a",
+            "fencing_token": 7,
+            "decision_id": "d",
+            "kind": "k",
+            "prompt": "p",
+            "options": [{"option_id": "x"}],
+        }))
+        .unwrap_err();
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body.0["error"]["code"], "invalid_request");
+        assert_eq!(body.0["error"]["details"]["field"], "options[0].label");
+        let (_, body) =
+            parse_message::<EnrollmentRequest>(json!({"protocol_version": 1})).unwrap_err();
+        assert_eq!(body.0["error"]["details"]["field"], "enrollment_token");
+        let (_, body) = parse_message::<DecisionPollRequest>(json!({
+            "protocol_version": 1,
+            "runner_id": "r",
+            "attempt_id": "a",
+            "fencing_token": -1,
+            "after": "2026-08-06T12:20:59Z",
+        }))
+        .unwrap_err();
+        assert_eq!(body.0["error"]["details"]["field"], "fencing_token");
     }
 
     #[test]

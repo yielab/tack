@@ -6,8 +6,8 @@
 //! store and named as prill's. Dollars are Tack's estimate: tokens priced by the
 //! operator's rate card; a harness's own `cost_usd` is never read or summed.
 
-use axum::Json;
-use axum::extract::{Path, Query, State};
+use crate::extract::{Json, Path, Query};
+use axum::extract::State;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
@@ -345,7 +345,10 @@ async fn prill_quality(
     let version = crate::prill_store::version(program).await?;
     let repos = tack_db::queries::pull_requests::repos_of_project(&state.repo, project)
         .await
-        .map_err(|_| "the board could not list the project's repositories".to_owned())?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list the project's repositories");
+            "the board could not list the project's repositories".to_owned()
+        })?;
     let mut found = Vec::new();
     let mut failure = None;
     for repo in repos {

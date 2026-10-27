@@ -85,13 +85,14 @@ export const tokenStore = {
   },
 };
 
-/** Typed error carrying the HTTP status, the server's message text, and — when
- *  the server's error envelope includes one — a machine-readable `code`
- *  (`error.code` in the `{ "error": { status, message, code? } }` envelope).
- *  `code` is `undefined` for the large majority of errors, which still only
- *  carry `status`/`message`; callers that need to distinguish two failures
- *  sharing an HTTP status should check `code` first and fall back to
- *  `status` only when `code` is absent. */
+/** Typed error carrying the HTTP status, the server's message text and the
+ *  machine-readable `code` (`error.code` in the `{ "error": { status, message,
+ *  code } }` envelope; `StableErrorCode` in the OpenAPI schema). The board
+ *  puts a code on every error it answers, so callers that need to tell two
+ *  failures apart — a full column from a forbidden move, both a 400 — match
+ *  `code`, never the message, which is plain words for people. `code` is
+ *  `undefined` only for a body that is not the board's envelope (a proxy's
+ *  error page). */
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -130,9 +131,8 @@ async function toApiError(res: Response): Promise<ApiError> {
   }
 
   // Preferred shape: the unified envelope `{ "error": { "status", "message",
-  // "code"? } }`. `code` is optional — most errors don't carry one — and is
-  // only ever a machine-readable string (never surfaced to the user
-  // directly). Fall back to the raw body text (or status text) for non-JSON
+  // "code" } }`. `code` is a machine-readable string (never surfaced to the
+  // user directly). Fall back to the raw body text (or status text) for non-JSON
   // error bodies so users never see raw JSON in a toast.
   let message = raw;
   let code: string | undefined;

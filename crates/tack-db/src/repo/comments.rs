@@ -1,4 +1,4 @@
-use crate::StoreError;
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -14,6 +14,7 @@ impl Repository {
         item_id: Uuid,
         input: CreateComment,
     ) -> Result<Comment, StoreError> {
+        self.require_item(item_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();
@@ -54,7 +55,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_comment()).collect())
+        rows.into_iter().map(CommentRow::into_comment).collect()
     }
 
     /// Create a system comment for audit trail (status changes, edits, etc.)
@@ -144,10 +145,11 @@ struct CommentRow {
 }
 
 impl CommentRow {
-    fn into_comment(self) -> Comment {
-        Comment {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            item_id: Uuid::parse_str(&self.item_id).unwrap(),
+    fn into_comment(self) -> Result<Comment, StoreError> {
+        const TABLE: &str = "comments";
+        Ok(Comment {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            item_id: decode::uuid(TABLE, "item_id", &self.item_id)?,
             author: self.author,
             content: self.content,
             comment_type: match self.comment_type.as_str() {
@@ -156,12 +158,8 @@ impl CommentRow {
                 "system" => CommentType::System,
                 _ => CommentType::Comment,
             },
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-        }
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
     }
 }

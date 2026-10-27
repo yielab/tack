@@ -1,9 +1,7 @@
-use axum::Json;
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::StableErrorCode;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -64,17 +62,7 @@ fn repository_problem(code_origin: CodeOrigin, repository: Option<&str>) -> Opti
 /// The 400 for a rejected `repository`: the protocol envelope naming the
 /// field, so a form can show the message under that one input.
 fn repository_rejected(message: &str) -> Response {
-    let envelope = ProtocolErrorEnvelope::new(
-        StableErrorCode::InvalidRequest,
-        message,
-        "req_operator_projects",
-        json!({"field": "repository"}),
-    );
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
-        .into_response()
+    ApiError::field(StableErrorCode::InvalidRequest, "repository", message).into_response()
 }
 
 #[utoipa::path(

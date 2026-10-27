@@ -4,9 +4,9 @@
 use std::collections::{BTreeMap, HashSet};
 
 use tack_protocol::execution::{
-    AttemptId as DomainAttemptId, FencingToken as DomainFencingToken, ProtocolVersion,
-    RecoveryDetails as DomainRecoveryDetails, RecoveryDisposition, RecoveryJournalState,
-    RecoveryKey, RecoveryObservation, RecoveryObservationRequest, RecoveryObservationResponse,
+    AttemptId as DomainAttemptId, ExecutionState, FencingToken as DomainFencingToken,
+    ProtocolVersion, RecoveryDetails as DomainRecoveryDetails, RecoveryDisposition, RecoveryKey,
+    RecoveryObservation, RecoveryObservationRequest, RecoveryObservationResponse,
     RunnerId as DomainRunnerId,
 };
 
@@ -15,7 +15,7 @@ use super::{
     POLL_FROM_THE_START, ResumedRun, RunCycle, RunnerEngine,
 };
 use crate::client::{
-    AttemptState, CancellationReport, CancellationRequestId, CompletionId, CompletionReport,
+    AttemptState, CancellationReport, CancellationRequestId, CompletionId, CompletionRequest,
     CompletionResponse, DecisionPollReport, PendingTerminalReport, PendingTerminalReportKind,
     ProtocolClientError, PullProtocol, RunnerSession, Timestamp,
     journal::{AttemptJournal, JournalError, JournalState},
@@ -206,7 +206,7 @@ where
         };
         match pending.kind {
             PendingTerminalReportKind::Completion => {
-                let report: CompletionReport = serde_json::from_str(&pending.canonical_json)
+                let report: CompletionRequest = serde_json::from_str(&pending.canonical_json)
                     .map_err(|_| EngineError::Journal(JournalError::Malformed))?;
                 if report.protocol_version != ProtocolVersion::v1()
                     || report.runner_id != session.runner_id
@@ -223,7 +223,9 @@ where
                     || report.actual_execution.base_revision != record.workspace.base_revision
                     || !matches!(
                         report.terminal_state,
-                        AttemptState::Succeeded | AttemptState::Failed | AttemptState::Cancelled
+                        ExecutionState::Succeeded
+                            | ExecutionState::Failed
+                            | ExecutionState::Cancelled
                     )
                 {
                     return Err(EngineError::Journal(JournalError::Malformed));
@@ -440,24 +442,11 @@ where
             )),
             observation,
             details: DomainRecoveryDetails {
-                journal_state: Self::recovery_journal_state(record.state),
+                journal_state: record.state.into(),
                 process_observed: record.process_id.is_some(),
                 additional: BTreeMap::new(),
             },
             additional: BTreeMap::new(),
-        }
-    }
-
-    const fn recovery_journal_state(state: JournalState) -> RecoveryJournalState {
-        match state {
-            JournalState::Prepared => RecoveryJournalState::Prepared,
-            JournalState::ProcessObservedRunning => RecoveryJournalState::ProcessObservedRunning,
-            JournalState::CancellationRequested => RecoveryJournalState::CancellationRequested,
-            // Pending terminal payloads are handled before recovery mapping.
-            JournalState::TerminalReportPending => RecoveryJournalState::Reported,
-            JournalState::RecoveryObserved => RecoveryJournalState::RecoveryObserved,
-            JournalState::Reported => RecoveryJournalState::Reported,
-            JournalState::Quarantined => RecoveryJournalState::Quarantined,
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, sync::Mutex, time::UNIX_EPOCH};
 
+use serde_json::json;
 use tack_protocol::execution::{
     CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities,
 };
@@ -9,6 +10,7 @@ use tokio::{
 };
 
 use super::*;
+use crate::client::{Checkpoint, EventRecord};
 
 // -----------------------------------------------------------------
 // A local mock HTTP/1.1 server. Rule 8 allows local mock HTTP only —
@@ -434,13 +436,13 @@ async fn reporting_running_without_a_process_id_is_typed_not_sent() {
 /// Round-trips the frozen completion, cancellation and recovery fixtures
 /// through `protocol`, asserting each typed response in turn.
 async fn run_completion_cancellation_and_recovery(protocol: &impl PullProtocol) {
-    let completion: CompletionReport =
+    let completion: CompletionRequest =
         serde_json::from_str(&fixture("completion.request.json")).expect("frozen completion");
     let response = protocol
         .report_completion(&session(), completion)
         .await
         .expect("completion succeeds");
-    assert_eq!(response.state, AttemptState::Succeeded);
+    assert_eq!(response.state, ExecutionState::Succeeded);
     assert!(!response.replayed);
 
     let cancellation: CancellationReport =
@@ -495,12 +497,14 @@ async fn run_events_decisions_and_artifacts_exchange(
 ) -> (Value, Value) {
     let frozen_events: Value =
         serde_json::from_str(&fixture("event-batch.request.json")).expect("frozen events");
-    let events: Vec<ProtocolEvent> =
+    let events: Vec<EventRecord> =
         serde_json::from_value(frozen_events["events"].clone()).expect("frozen event list");
     let response = protocol
         .submit_events(
             &session(),
-            EventBatchReport {
+            EventBatchRequest {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session().runner_id.clone(),
                 attempt_id: attempt.clone(),
                 fencing_token: FencingToken(7),
                 previous_checkpoint: Some(Checkpoint::new("checkpoint-0002")),
@@ -513,7 +517,7 @@ async fn run_events_decisions_and_artifacts_exchange(
     assert_eq!(response.accepted_event_ids.len(), 2);
     assert_eq!(
         response.committed_checkpoint,
-        Some(Checkpoint::new("checkpoint-0004"))
+        Checkpoint::new("checkpoint-0004")
     );
 
     let frozen_decision: Value =
@@ -1706,4 +1710,32 @@ mod slot_loop {
             .expect("serve task")
             .expect("serve result");
     }
+}
+
+#[tokio::test]
+async fn every_request_carries_a_request_id_of_its_own() {
+    let reply = fixture("claim.no-work.response.json");
+    let server = spawn_mock(vec![(200, reply.clone()), (200, reply)]);
+    let protocol = client(&server.base_url);
+    for nth in 1..=2 {
+        protocol
+            .claim(
+                &session(),
+                ClaimRequest {
+                    claim_request_id: ClaimRequestId::new(format!("claim_{nth}")),
+                    available_capacity: 1,
+                    wait: Duration::from_secs(1),
+                },
+            )
+            .await
+            .expect("no work");
+    }
+    let recorded = server.requests.lock().expect("requests").clone();
+    let ids: Vec<&String> = recorded
+        .iter()
+        .map(|request| request.headers.get("x-request-id").expect("a request id"))
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.iter().all(|id| id.starts_with("req_") && id.len() > 8));
+    assert_ne!(ids[0], ids[1]);
 }

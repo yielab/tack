@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use tack_protocol::execution::ProtocolVersion;
+use tack_protocol::execution::{ExecutionState, ProtocolVersion};
 
 use super::decisions::scrub_with_prompt;
 use super::{
@@ -13,8 +13,8 @@ use super::{
 };
 use crate::client::{
     ArtifactManifestItem, ArtifactManifestReport, AttemptState, Checkpoint, CompletionId,
-    CompletionReport, EventBatchReport, PendingTerminalReportKind, ProtocolEvent, PullProtocol,
-    RunnerSession, Timestamp, WorkspaceMode,
+    CompletionRequest, EventBatchRequest, EventRecord, PendingTerminalReportKind, PullProtocol,
+    RunnerSession, WorkspaceMode,
     journal::AttemptJournal,
     workspace::{Workspace, WorkspaceError, WorktreeProvisioner},
 };
@@ -523,23 +523,24 @@ where
         let Some(data_protocol) = self.data_protocol.as_ref() else {
             return;
         };
-        let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now());
         let event_id = Self::event_id(record, kind);
         let checkpoint = Checkpoint::new(format!(
             "chk:{}:{}:{kind}",
             record.attempt_id.as_str(),
             record.fencing_token.0
         ));
-        let report = EventBatchReport {
+        let report = EventBatchRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
             attempt_id: record.attempt_id.clone(),
             fencing_token: record.fencing_token,
             previous_checkpoint: record.last_event_checkpoint.clone(),
             checkpoint: checkpoint.clone(),
-            events: vec![ProtocolEvent {
+            events: vec![EventRecord {
                 event_id,
-                sequence: record.events_submitted,
-                occurred_at: Timestamp::new(sent_at),
+                sequence: i64::try_from(record.events_submitted).unwrap_or(i64::MAX),
+                occurred_at: sent_at,
                 source: "runner".to_owned(),
                 kind: kind.to_owned(),
                 payload,
@@ -547,7 +548,7 @@ where
         };
         match data_protocol.submit_events(session, report).await {
             Ok(response) => {
-                record.last_event_checkpoint = response.committed_checkpoint.or(Some(checkpoint));
+                record.last_event_checkpoint = Some(response.committed_checkpoint);
                 record.events_submitted += 1;
                 // Best-effort: the event already reached the server; a local
                 // journal-write failure here only affects this runner's own
@@ -582,8 +583,7 @@ where
             return;
         };
         for chunk in steps.chunks(PROGRESS_BATCH_MAX) {
-            let occurred_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+            let occurred_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now());
             let first = record.events_submitted;
             let checkpoint = Checkpoint::new(format!(
                 "chk:{}:{}:progress:{first}",
@@ -593,10 +593,10 @@ where
             let events = chunk
                 .iter()
                 .zip(first..)
-                .map(|(step, sequence)| ProtocolEvent {
+                .map(|(step, sequence)| EventRecord {
                     event_id: Self::event_id(record, &format!("progress:{sequence}")),
-                    sequence,
-                    occurred_at: Timestamp::new(occurred_at.clone()),
+                    sequence: i64::try_from(sequence).unwrap_or(i64::MAX),
+                    occurred_at,
                     source: "runner".to_owned(),
                     kind: step.kind.clone(),
                     payload: {
@@ -610,7 +610,9 @@ where
                     },
                 })
                 .collect();
-            let report = EventBatchReport {
+            let report = EventBatchRequest {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session.runner_id.clone(),
                 attempt_id: record.attempt_id.clone(),
                 fencing_token: record.fencing_token,
                 previous_checkpoint: record.last_event_checkpoint.clone(),
@@ -619,8 +621,7 @@ where
             };
             match data_protocol.submit_events(session, report).await {
                 Ok(response) => {
-                    record.last_event_checkpoint =
-                        response.committed_checkpoint.or(Some(checkpoint));
+                    record.last_event_checkpoint = Some(response.committed_checkpoint);
                     record.events_submitted += chunk.len() as u64;
                     let _ = self.journal.update(record);
                 }
@@ -709,7 +710,7 @@ where
                 media_type: Some(media_type.to_owned()),
                 size_bytes: content.len() as u64,
                 sha256: sha256.to_owned(),
-                content_disposition: "inline_upload".to_owned(),
+                content_disposition: Some("inline_upload".to_owned()),
                 metadata: Default::default(),
             }],
         };
@@ -808,7 +809,7 @@ where
             None => (None, crate::harness::ModelSource::AgentDefault),
         };
 
-        let report = CompletionReport {
+        let report = CompletionRequest {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
             completion_id: CompletionId::new(format!(
@@ -818,7 +819,7 @@ where
             )),
             attempt_id: record.attempt_id.clone(),
             fencing_token: record.fencing_token,
-            terminal_state: AttemptState::Failed,
+            terminal_state: ExecutionState::Failed,
             terminal_reason: serde_json::json!({
                 "code": "harness_rejected",
                 "message": reason,

@@ -18,7 +18,8 @@ pub struct NewEvent<'a> {
     pub sequence: i64,
     pub source: &'a str,
     pub kind: &'a str,
-    pub payload: &'a str,
+    /// Whatever the source emitted for `kind`; the store encodes it.
+    pub payload: &'a serde_json::Value,
     pub occurred_at: DateTime<Utc>,
 }
 
@@ -92,14 +93,12 @@ fn event_batch_fingerprint(
     let values: Result<Vec<serde_json::Value>, StoreError> = events
         .iter()
         .map(|event| {
-            let payload: serde_json::Value = serde_json::from_str(event.payload)
-                .map_err(|error| StoreError::malformed(error.to_string()))?;
             Ok(serde_json::json!({
                 "event_id": event.event_id,
                 "sequence": event.sequence,
                 "source": event.source,
                 "kind": event.kind,
-                "payload": canonical_json(payload),
+                "payload": canonical_json(event.payload.clone()),
                 "occurred_at": event.occurred_at.to_rfc3339(),
             }))
         })
@@ -110,7 +109,7 @@ fn event_batch_fingerprint(
         "previous_checkpoint": batch.previous_checkpoint.map(Checkpoint::as_str),
         "events": values?,
     }))
-    .map_err(|error| StoreError::malformed(error.to_string()))
+    .map_err(StoreError::unwritable)
 }
 
 impl Repository {
@@ -206,26 +205,26 @@ impl Repository {
             }
             let response: String = row.get("response");
             let value: serde_json::Value = serde_json::from_str(&response)
-                .map_err(|error| StoreError::malformed(error.to_string()))?;
+                .map_err(|error| StoreError::corrupt("execution_event_batch_replays", "response", error))?;
             let accepted = value["accepted_event_ids"]
                 .as_array()
-                .ok_or_else(|| StoreError::malformed("invalid event replay response"))?
+                .ok_or_else(|| StoreError::corrupt("execution_event_batch_replays", "response", "invalid event replay response"))?
                 .iter()
                 .map(|value| {
                     value
                         .as_str()
-                        .ok_or_else(|| StoreError::malformed("invalid event replay id"))
+                        .ok_or_else(|| StoreError::corrupt("execution_event_batch_replays", "response", "invalid event replay id"))
                         .map(str::to_owned)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let duplicate = value["duplicate_event_ids"]
                 .as_array()
-                .ok_or_else(|| StoreError::malformed("invalid event replay response"))?
+                .ok_or_else(|| StoreError::corrupt("execution_event_batch_replays", "response", "invalid event replay response"))?
                 .iter()
                 .map(|value| {
                     value
                         .as_str()
-                        .ok_or_else(|| StoreError::malformed("invalid event replay id"))
+                        .ok_or_else(|| StoreError::corrupt("execution_event_batch_replays", "response", "invalid event replay id"))
                         .map(str::to_owned)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -265,7 +264,9 @@ impl Repository {
             if exists {
                 duplicate.push(event.event_id.into())
             } else {
-                sqlx::query("INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(event.id).bind(attempt).bind(event.event_id).bind(event.sequence).bind(event.source).bind(event.kind).bind(event.payload).bind(event.occurred_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
+                let payload =
+                    serde_json::to_string(event.payload).map_err(StoreError::unwritable)?;
+                sqlx::query("INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) VALUES(?,?,?,?,?,?,?,?,?)").bind(event.id).bind(attempt).bind(event.event_id).bind(event.sequence).bind(event.source).bind(event.kind).bind(payload).bind(event.occurred_at.to_rfc3339()).bind(&now).execute(&mut *tx).await?;
                 accepted.push(event.event_id.into())
             }
         }

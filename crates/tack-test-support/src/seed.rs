@@ -528,14 +528,14 @@ pub async fn running_attempt(
 }
 
 /// Raises a pending decision against a running attempt through the real insert path (which also
-/// parks the attempt in `waiting_decision`). `options` is JSON text.
+/// parks the attempt in `waiting_decision`).
 pub async fn pending_decision(
     repo: &Repository,
     clock: &dyn tack_protocol::Clock,
     runner_id: &str,
     attempt_id: &str,
     decision_id: &str,
-    options: &str,
+    options: &[tack_protocol::execution::DecisionOption],
     expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) {
     use tack_db::repo::execution::NewDecision;
@@ -552,7 +552,7 @@ pub async fn pending_decision(
                 kind: "tool_permission",
                 prompt: "Allow the harness to run the focused test suite?",
                 options,
-                metadata: "{}",
+                metadata: &serde_json::Map::new(),
                 expires_at,
                 recommendation: None,
             },

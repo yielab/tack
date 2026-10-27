@@ -78,18 +78,29 @@ async fn run(cli: Cli) -> Result<(), tack_runner::RunnerError> {
     let mut runtime_task = tokio::spawn(bootstrap::run(config, limits, shutdown));
 
     tokio::select! {
-        result = &mut runtime_task => result.map_err(|_| tack_runner::RunnerError::ClientTaskJoin)?,
+        result = &mut runtime_task => result.map_err(|failure| tack_runner::RunnerError::ClientTaskJoin {
+            panicked: failure.is_panic(),
+        })?,
         signal = tokio::signal::ctrl_c() => {
-            signal.map_err(|_| tack_runner::RunnerError::ClientTaskJoin)?;
+            signal.map_err(|failure| {
+                tack_runner::RunnerError::ShutdownSignal(tack_runner::error::IoKind(failure.kind()))
+            })?;
             tracing::info!("shutdown signal received");
             shutdown_handle.request();
-            runtime_task.await.map_err(|_| tack_runner::RunnerError::ClientTaskJoin)??;
+            runtime_task
+                .await
+                .map_err(|failure| tack_runner::RunnerError::ClientTaskJoin {
+                    panicked: failure.is_panic(),
+                })??;
             Ok(())
         }
     }
 }
 
 fn read_config(path: Option<&std::path::Path>) -> Result<Option<String>, ConfigError> {
-    path.map(|path| std::fs::read_to_string(path).map_err(|_| ConfigError::Unreadable))
-        .transpose()
+    path.map(|path| {
+        std::fs::read_to_string(path)
+            .map_err(|failure| ConfigError::Unreadable(tack_runner::error::IoKind(failure.kind())))
+    })
+    .transpose()
 }

@@ -1,5 +1,5 @@
 use super::Repository;
-use crate::StoreError;
+use crate::{StoreError, decode};
 use sqlx::FromRow;
 use tack_core::models::*;
 use tracing::instrument;
@@ -17,6 +17,31 @@ struct BoardRow {
     is_default: i32,
     created_at: String,
     updated_at: String,
+}
+
+impl BoardRow {
+    fn into_board(self) -> Result<Board, StoreError> {
+        const TABLE: &str = "boards";
+        Ok(Board {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
+            name: self.name,
+            description: self.description,
+            filters: decode::optional_json(TABLE, "filters", self.filters.as_deref())?,
+            grouping: self
+                .grouping
+                .as_deref()
+                .map(|text| {
+                    parse_grouping(text).ok_or_else(|| {
+                        StoreError::corrupt(TABLE, "grouping", "not a board grouping")
+                    })
+                })
+                .transpose()?,
+            is_default: self.is_default != 0,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
+    }
 }
 
 /// Create a new board for a project
@@ -78,29 +103,9 @@ pub async fn get_board(repo: &Repository, id: Uuid) -> Result<Board, StoreError>
     .bind(id.to_string())
     .fetch_optional(repo.pool())
     .await?
-    .ok_or(StoreError::NotFound)?;
+    .ok_or(StoreError::not_found("board"))?;
 
-    let filters = row
-        .filters
-        .as_ref()
-        .and_then(|f| serde_json::from_str(f).ok());
-    let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
-
-    Ok(Board {
-        id: Uuid::parse_str(&row.id).unwrap(),
-        project_id: Uuid::parse_str(&row.project_id).unwrap(),
-        name: row.name,
-        description: row.description,
-        filters,
-        grouping,
-        is_default: row.is_default != 0,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-            .unwrap()
-            .into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-            .unwrap()
-            .into(),
-    })
+    row.into_board()
 }
 
 /// Get default board for a project
@@ -119,31 +124,7 @@ pub async fn get_default_board(
     .fetch_optional(repo.pool())
     .await?;
 
-    if let Some(row) = row {
-        let filters = row
-            .filters
-            .as_ref()
-            .and_then(|f| serde_json::from_str(f).ok());
-        let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
-
-        Ok(Some(Board {
-            id: Uuid::parse_str(&row.id).unwrap(),
-            project_id: Uuid::parse_str(&row.project_id).unwrap(),
-            name: row.name,
-            description: row.description,
-            filters,
-            grouping,
-            is_default: row.is_default != 0,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                .unwrap()
-                .into(),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                .unwrap()
-                .into(),
-        }))
-    } else {
-        Ok(None)
-    }
+    row.map(BoardRow::into_board).transpose()
 }
 
 /// List all boards for a project
@@ -159,34 +140,7 @@ pub async fn list_boards(repo: &Repository, project_id: Uuid) -> Result<Vec<Boar
     .fetch_all(repo.pool())
     .await?;
 
-    let boards = rows
-        .into_iter()
-        .map(|row| {
-            let filters = row
-                .filters
-                .as_ref()
-                .and_then(|f| serde_json::from_str(f).ok());
-            let grouping = row.grouping.as_ref().and_then(|g| parse_grouping(g));
-
-            Board {
-                id: Uuid::parse_str(&row.id).unwrap(),
-                project_id: Uuid::parse_str(&row.project_id).unwrap(),
-                name: row.name,
-                description: row.description,
-                filters,
-                grouping,
-                is_default: row.is_default != 0,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                    .unwrap()
-                    .into(),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                    .unwrap()
-                    .into(),
-            }
-        })
-        .collect();
-
-    Ok(boards)
+    rows.into_iter().map(BoardRow::into_board).collect()
 }
 
 /// Update a board

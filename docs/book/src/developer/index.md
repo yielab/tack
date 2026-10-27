@@ -150,7 +150,7 @@ A few things worth noting:
 
 - Step 3 calls pure functions in `tack-core`. No extra database round-trip is needed to validate the transition: the entire workflow config was loaded with the project in step 2, and it lives in memory as a `WorkflowConfig` struct. The repository runs them in the same transaction as the write, so a rejected move leaves the item's version untouched.
 - The handler owns the orchestration. It decides the order of validation, persistence, and notification. The repository and the core crate do not know about each other.
-- Errors propagate upward via Rust's `?` operator. The `ApiError` type (in `tack-api/src/error.rs`) implements `IntoResponse`, mapping each `CoreError` variant to the appropriate HTTP status code.
+- Errors propagate upward via Rust's `?` operator. The `ApiError` type (in `tack-api/src/error.rs`) implements `IntoResponse`, giving every failure a `StableErrorCode` (one per rule of `CoreError`), which decides the HTTP status and is in the body as `code`.
 
 ---
 
@@ -243,7 +243,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   ├── tack-db/           SQLite persistence; the only crate that names sqlx
 │   │   └── src/
 │   │       ├── lib.rs       init_pool() — WAL mode, foreign keys on
-│   │       ├── error.rs     StoreError — NotFound, Conflict, Sql
+│   │       ├── error.rs     StoreError — NotFound, Conflict, Corrupt, Sql
 │   │       ├── migrations.rs Ordered migrations as embedded SQL strings
 │   │       ├── repo.rs      Repository struct — delegates to submodules
 │   │       ├── repo/        Commands: one file or directory per aggregate (items, projects, execution/, …)

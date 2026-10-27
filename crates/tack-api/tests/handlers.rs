@@ -39,6 +39,8 @@ mod local_runner;
 mod merge_button;
 #[path = "handlers/metrics.rs"]
 mod metrics;
+#[path = "handlers/missing_parents.rs"]
+mod missing_parents;
 #[path = "handlers/mrp.rs"]
 mod mrp;
 #[path = "handlers/operator_read_routes.rs"]
@@ -47,6 +49,8 @@ mod operator_read_routes;
 mod outline;
 #[path = "handlers/production_router.rs"]
 mod production_router;
+#[path = "handlers/rejections.rs"]
+mod rejections;
 #[path = "handlers/remote_backup.rs"]
 mod remote_backup;
 #[path = "handlers/rework.rs"]

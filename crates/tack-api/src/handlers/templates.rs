@@ -1,9 +1,6 @@
+use crate::extract::{Json, Path, Query};
 use axum::response::IntoResponse;
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode};
 use serde::Deserialize;
 use tack_core::models::*;
 use tack_core::outline::bundle::{Parts, ProfileRow, to_bundle};
@@ -125,10 +122,7 @@ pub async fn get_template(
     repo::templates::get_template(&state.repo, id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, template_id = %id, "Failed to get template");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// DELETE /api/templates/:id - Delete a template (user-created only)
@@ -175,16 +169,15 @@ pub(crate) async fn build_project_from_template(
     template_id: Uuid,
     data: CreateProjectFromTemplate,
 ) -> Result<Project, StatusCode> {
-    data.validate()
-        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    data.validate().map_err(|failure| {
+        tracing::warn!(error = %failure, "Request body failed validation");
+        StatusCode::UNPROCESSABLE_ENTITY
+    })?;
 
     // Get the template
     let template = repo::templates::get_template(&state.repo, template_id)
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, template_id = %template_id, "Template not found");
-            StatusCode::NOT_FOUND
-        })?;
+        .map_err(|e| crate::error::status_of_store_failure(&e))?;
 
     // The template is a project file without items: the same code an import
     // runs makes the project, its fields, profiles, roles and automation.

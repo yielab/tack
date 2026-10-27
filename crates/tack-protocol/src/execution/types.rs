@@ -213,9 +213,30 @@ pub enum RecoveryJournalState {
     Prepared,
     ProcessObservedRunning,
     CancellationRequested,
+    /// The attempt ended locally and its terminal report has not been acknowledged yet.
+    TerminalReportPending,
     RecoveryObserved,
     Reported,
     Quarantined,
+    /// Written by the board, never by a runner: the lease ran out with no one holding it, and
+    /// the board asked about the attempt itself.
+    LeaseExpired,
+}
+
+impl RecoveryJournalState {
+    /// The name this state has on the wire and in storage.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Prepared => "prepared",
+            Self::ProcessObservedRunning => "process_observed_running",
+            Self::CancellationRequested => "cancellation_requested",
+            Self::TerminalReportPending => "terminal_report_pending",
+            Self::RecoveryObserved => "recovery_observed",
+            Self::Reported => "reported",
+            Self::Quarantined => "quarantined",
+            Self::LeaseExpired => "lease_expired",
+        }
+    }
 }
 
 /// What the runner observed while reconciling a prior local process.
@@ -671,9 +692,13 @@ pub struct ActualExecution {
     pub additional: BTreeMap<String, serde_json::Value>,
 }
 
-/// Stable protocol error codes. These are the only values clients may branch
-/// on; error text and `details` remain display/diagnostic data.
+/// Stable error codes: the only values a client may branch on; error text and `details` remain
+/// display and diagnostic data. The first fifteen are the runner-v1 contract
+/// (`docs/contracts/runner-v1/errors/*.json`); the rest are the operator API's own, which the
+/// runner routes never answer: one per rule the board enforces and one per failure of the HTTP
+/// layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum StableErrorCode {
     InvalidRequest,
@@ -691,6 +716,48 @@ pub enum StableErrorCode {
     RateLimited,
     UnsupportedProtocol,
     InternalError,
+    /// A request the board understood and refuses for what it says.
+    Unprocessable,
+    /// A field failed its rule (a title that is empty, a value outside a field's type).
+    ValidationFailed,
+    /// An item's status may not change to the one asked for in its workflow.
+    InvalidStatusTransition,
+    /// The column holds as many items as its work-in-progress limit allows.
+    WipLimitExceeded,
+    /// The dependency would make an item wait, through others, on itself.
+    DependencyCycle,
+    /// The two items already have this dependency.
+    DuplicateDependency,
+    /// A vocabulary key is not one of the words the board knows.
+    InvalidVocabularyKey,
+    /// A workflow has no statuses.
+    EmptyWorkflow,
+    /// The item still has children, so it cannot be deleted.
+    HasChildren,
+    /// A workflow's statuses or transitions contradict each other.
+    InvalidWorkflow,
+    /// The `Host` header does not name this server.
+    MisdirectedHost,
+    /// A state-changing request that a page on another site sent.
+    CrossSiteRequest,
+    /// The body's `Content-Type` is not one this route accepts.
+    UnsupportedMediaType,
+    /// A restore's archive or manifest cannot be read, so retrying it cannot succeed.
+    UnreadableArchive,
+    /// One section of a project file could not be written.
+    SectionFailed,
+    /// The machine a run was told to go to has been revoked, so no run can start there. The
+    /// operator's conflict with the machine's state; `runner_revoked` is the runner's own
+    /// credential refused.
+    MachineRevoked,
+    /// An `If-Match` named a version of the item that is no longer the current one.
+    PreconditionFailed,
+    /// The runner that ships inside this server is not configured, not running or not enrolled.
+    LocalRunnerUnavailable,
+    /// The folder to create is not empty.
+    FolderNotEmpty,
+    /// The path exists but not for the method the request used.
+    MethodNotAllowed,
 }
 
 impl StableErrorCode {
@@ -712,6 +779,44 @@ impl StableErrorCode {
                 | Self::RateLimited
                 | Self::ArtifactChecksumMismatch
         )
+    }
+
+    /// The HTTP status every answer that carries this code uses: the one table, so a handler
+    /// names a code and never a status beside it.
+    pub const fn status(self) -> u16 {
+        match self {
+            Self::InvalidRequest
+            | Self::UnsupportedProtocol
+            | Self::ValidationFailed
+            | Self::InvalidStatusTransition
+            | Self::WipLimitExceeded
+            | Self::DependencyCycle
+            | Self::DuplicateDependency
+            | Self::InvalidVocabularyKey
+            | Self::EmptyWorkflow
+            | Self::HasChildren
+            | Self::InvalidWorkflow => 400,
+            Self::Unauthorized => 401,
+            Self::Forbidden | Self::RunnerRevoked | Self::CrossSiteRequest => 403,
+            Self::NotFound => 404,
+            Self::Conflict
+            | Self::MachineRevoked
+            | Self::LocalRunnerUnavailable
+            | Self::FolderNotEmpty
+            | Self::IdempotencyConflict
+            | Self::InvalidTransition
+            | Self::StaleLease
+            | Self::DecisionExpired
+            | Self::ArtifactChecksumMismatch => 409,
+            Self::MethodNotAllowed => 405,
+            Self::PreconditionFailed => 412,
+            Self::PayloadTooLarge => 413,
+            Self::UnsupportedMediaType => 415,
+            Self::MisdirectedHost => 421,
+            Self::Unprocessable | Self::UnreadableArchive => 422,
+            Self::RateLimited => 429,
+            Self::InternalError | Self::SectionFailed => 500,
+        }
     }
 }
 

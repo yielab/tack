@@ -11,9 +11,10 @@
 //! write. Reading what decisions exist is an ordinary operator read, same
 //! gate as every other route merged in `router.rs#operator_execution_routes`.
 
+use crate::extract::{Json, Path};
 use axum::{
-    Json, Router,
-    extract::{Path, State},
+    Router,
+    extract::State,
     http::StatusCode,
     routing::{get, post},
 };
@@ -21,15 +22,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tack_db::StoreError;
 use tack_db::queries::{execution_decisions, execution_requests};
-use tack_protocol::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_protocol::execution::StableErrorCode;
 use utoipa::ToSchema;
 
 use super::executions::OperatorExecutionState;
-
-/// Static request-correlation id placeholder, matching
-/// `executions::OPERATOR_REQUEST_ID`'s own convention — no per-request
-/// correlation id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator_attempt_lists";
+use crate::error::log_store_failure;
 
 fn error(
     status: StatusCode,
@@ -37,11 +34,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 async fn execution_request_exists(
@@ -50,7 +43,8 @@ async fn execution_request_exists(
 ) -> Result<bool, (StatusCode, Json<Value>)> {
     execution_requests::execution_request_exists(&state.repo, request_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify execution");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -119,7 +113,8 @@ pub async fn list_execution_attempt_artifacts(
         .repo
         .list_execution_artifacts_for_attempt_number(&request_id, attempt_number)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list artifacts");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
@@ -241,7 +236,8 @@ pub async fn list_execution_attempt_decisions(
     let decisions =
         execution_decisions::decisions_of_attempt(&state.repo, &request_id, attempt_number)
             .await
-            .map_err(|_| {
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not list decisions");
                 error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,
@@ -361,7 +357,7 @@ pub async fn review_execution_attempt(
         )
         .await
         .map_err(|failure| match failure {
-            StoreError::NotFound => error(
+            StoreError::NotFound { .. } => error(
                 StatusCode::NOT_FOUND,
                 StableErrorCode::NotFound,
                 "Attempt does not exist",
@@ -373,12 +369,15 @@ pub async fn review_execution_attempt(
                 "This attempt already has a verdict",
                 json!({"reason": reason}),
             ),
-            StoreError::Sql(_) => error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                StableErrorCode::InternalError,
-                "Could not record the review",
-                json!({}),
-            ),
+            failure @ (StoreError::Sql(_) | StoreError::Corrupt { .. }) => {
+                log_store_failure(&failure);
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not record the review",
+                    json!({}),
+                )
+            }
         })?;
     let pull_request_url = match (input.verdict.as_str(), state.app.clone()) {
         ("accepted", Some(app)) => {

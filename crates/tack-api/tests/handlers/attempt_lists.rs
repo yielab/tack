@@ -631,15 +631,15 @@ async fn the_start_report_reads_back_on_the_attempt() {
     let cases = [
         (
             "kept",
-            json!({"environment_names": ["B", "A", 7, null], "sandbox": "bwrap"}),
+            json!({"environment_names": ["B", "A"], "sandbox": "bwrap"}),
             json!(["B", "A"]),
             json!("bwrap"),
         ),
         ("none", json!({"sandbox": "none"}), json!([]), json!("none")),
         ("absent", json!({}), json!([]), Value::Null),
         (
-            "bogus",
-            json!({"environment_names": "A", "sandbox": "rm -rf"}),
+            "unknown sandbox",
+            json!({"sandbox": "rm -rf"}),
             json!([]),
             Value::Null,
         ),
@@ -701,6 +701,40 @@ async fn the_start_report_reads_back_on_the_attempt() {
         .await;
         assert_eq!(listed["data"][0]["environment_names"], names, "{label}");
         assert_eq!(listed["data"][0]["sandbox"], sandbox, "{label}");
+    }
+}
+
+/// The start request is the protocol's struct: a list of names with anything but strings in it is
+/// refused with 400 and the field it got wrong, as the contract fixture and every runner say.
+#[tokio::test]
+async fn a_start_report_whose_names_are_not_strings_is_refused() {
+    for (label, names) in [("mixed", json!(["B", 7, null])), ("not a list", json!("A"))] {
+        let (app, _repo, item_id) = setup().await;
+        let claimed = claim_as_runner(&app, &item_id, "start-report-types").await;
+        let (status, refused, _) = common::send_with_raw(
+            &app,
+            "POST",
+            &format!("/api/runner/v1/attempts/{}/start", claimed.attempt_id),
+            json!({
+                "protocol_version": 1,
+                "runner_id": claimed.runner_id,
+                "attempt_id": claimed.attempt_id,
+                "fencing_token": claimed.fencing_token,
+                "workspace_id": "ws-1",
+                "base_revision": BASE_REVISION,
+                "process_id": "pid-1",
+                "environment_names": names,
+            }),
+            &headers_ref(&claimed.auth),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{label}: {refused}");
+        assert!(
+            refused["error"]["details"]["field"]
+                .as_str()
+                .is_some_and(|field| field.starts_with("environment_names")),
+            "{label}: {refused}"
+        );
     }
 }
 

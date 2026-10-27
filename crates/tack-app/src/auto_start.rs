@@ -265,7 +265,7 @@ async fn start(
         Err(refusal) => {
             tracing::warn!(
                 item_id = %candidate.item_id,
-                status = refusal.status,
+                status = refusal.status(),
                 code = ?refusal.code,
                 message = %refusal.message,
                 "auto-start: could not create the run"

@@ -66,6 +66,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 
 **tack-protocol** (the contract; depends on nothing in the workspace):
 - The neutral runner-v1 types (`execution/`: request, attempt, event, artifact and decision types), the attempt lifecycle (`lifecycle::validate_transition` is the one table; `lifecycle::sources`, `lease_held` and `terminal` read the states a change may start from off it, and `tack-db`'s `Move` builds every `UPDATE` guard from those, so no query spells a state) and capability negotiation, both the server's handlers and `tack-runner` build on
+- `execution/messages.rs`: every runner request and response (enrollment, refresh, claim, heartbeat, accept and start, events, decisions, artifact manifest, cancellation observation and completion; the recovery observation is in `types.rs`); the handlers in `tack-api` and the transport in `tack-runner` both serialize and deserialize these structs, and `tests/runner_contract/protocol.rs` round-trips every matching fixture through them. A runner request carries an `x-request-id` the runner makes per request; `runner_auth::with_request_id` scopes it around the handler so every error envelope names it
 - `usage_provenance.rs`: compares an execution request's resolved model against what the attempt actually ran on, and keeps runner-observed wall-clock cost structurally separate from harness/vendor-reported token and dollar usage
 - `mrp.rs`: the `mrp-v1` merge-readiness pack, its types, validation and pull-request rendering, as plain data; `prepare.rs`: the prepare step
 - The one `Clock` trait and `SystemClock`; `utoipa` is behind an `openapi` feature
@@ -89,11 +90,11 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - The live callers that read rows and write the outcome are `tack-app`'s `scheduler_wiring` and `model_policy_wiring`
 
 **tack-db** (the only crate that names `sqlx`; depends on `tack-protocol` and `tack-core`):
-- SQLite via `sqlx` (async), behind `StoreError` (`NotFound`, `Conflict`, `Sql`): no `sqlx` type crosses the crate's edge
+- SQLite via `sqlx` (async), behind `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }`, `Sql`): no `sqlx` type crosses the crate's edge. A stored value that cannot be decoded is `Corrupt`, never a panic and never a default (`decode.rs` is the one place that reads ids, instants, enums and JSON back)
 - Migrations (`migrations.rs`; `scripts/arch-facts.sh` prints how many, and the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
 - **Commands are `Repository` methods**, one directory or file per aggregate under `repo/` (`items.rs`, `projects.rs`, `execution/`, …). **Read models are functions in `queries/`**, one file per table, one `pub async fn` per question the rest of the program asks of it, each taking the `Repository` and returning a row struct under the columns' names
 - A state read from a row is converted to its typed enum at this crate's edge
-- The runner-protocol half of the execution store (`repo/execution/`: claim, heartbeat, transitions, events, artifacts, decisions, completion, recovery, cancellation) takes and returns `tack-protocol`'s `RunnerId`, `AttemptId`, `FencingToken`, `Checkpoint`, `CompletionId`, `CancellationRequestId`, `RecoveryKey`, `WorkspaceId` and `ExecutionRequestId`, never a bare `&str` or `i64`; the conversion to a column happens inside the crate. The operator and read-model methods (runner administration, `AttemptListingRow`, MRP reviews) still take plain text
+- The runner-protocol half of the execution store (`repo/execution/`: claim, heartbeat, transitions, events, artifacts, decisions, completion, recovery, cancellation) takes and returns `tack-protocol`'s `RunnerId`, `AttemptId`, `FencingToken`, `Checkpoint`, `CompletionId`, `CancellationRequestId`, `RecoveryKey`, `WorkspaceId` and `ExecutionRequestId`, never a bare `&str` or `i64`; and the JSON it stores is the protocol's too: a completion's `ActualExecution` and `Usage`, an event's payload, a decision's `DecisionOption`s and `DecisionRecommendation`, a recovery's `RecoveryDetails` and a heartbeat's `RecoveryJournalState` cross the boundary as those values and are encoded inside the crate (a completion's `terminal_reason` stays one JSON object, because each harness adapter fills different keys). The conversion to a column happens inside the crate. The operator and read-model methods (runner administration, `AttemptListingRow`, MRP reviews) still take plain text
 - `Repository::pool()` exists publicly only behind the `raw-pool` feature, which only `tack-test-support` enables; `scripts/check-crate-graph.sh` fails on any `.pool()` or `sqlx` use outside `tack-db` and `tack-test-support`, and the bans `scripts/gen-deny-toml.sh` writes into `deny.toml` name the same two crates
 - Auto-runs migrations on startup; the database is created automatically if missing
 
@@ -111,7 +112,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - WebSocket support for real-time board updates
 - Request handlers in `handlers/` (per entity): they extract, call a `tack-app` use case or a `tack-db` method, map the error and respond
 - Config loading: TOML + env vars
-- Error mapping: `CoreError`, `StoreError` and `AppError` → `ApiError` → HTTP status codes (`ApiError` wraps `StoreError`, which is why this crate names `tack-db`)
+- Error mapping: `CoreError`, `StoreError` and `AppError` each have a `code()`, a `StableErrorCode` from `tack-protocol` that knows its HTTP status; `ApiError` keeps the code (`ApiError::code()`) and every error body carries it, including the answer to a request no extractor could read (handlers use `extract::{Json, Path, Query, ...}`, never axum's, so a rejection is the same body) and a request id (`ApiError` wraps `StoreError`, which is why this crate names `tack-db`)
 - `host.rs` is the implementation of `tack_app::host::Host` over `AppState`
 - Debug endpoints: `/api/health`, `/api/debug/info`, `/api/debug/db-stats`
 - File upload support: multipart/form-data (max 50MB)

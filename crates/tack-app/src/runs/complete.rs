@@ -8,10 +8,12 @@ mod status_map;
 use chrono::{DateTime, Utc};
 use std::future::Future;
 
+use serde_json::{Map, Value};
 use tack_db::Repository;
 use tack_db::repo::execution::{Completion, CompletionResponse, CompletionResult, FollowUps};
 use tack_protocol::execution::{
-    AttemptId, Checkpoint, CompletionId, ExecutionState, FencingToken, RunnerId,
+    ActualExecution, AttemptId, Checkpoint, CompletionId, ExecutionState, FencingToken, RunnerId,
+    Usage,
 };
 use tack_protocol::mrp::MergeReadinessPack;
 
@@ -29,10 +31,10 @@ pub struct CompletionReport<'a> {
     pub final_event_checkpoint: Option<&'a Checkpoint>,
     /// `Succeeded`, `Failed` or `Cancelled`.
     pub terminal_state: ExecutionState,
-    /// The reason, the execution and the usage, already encoded as JSON.
-    pub terminal_reason_json: &'a str,
-    pub actual_execution_json: &'a str,
-    pub usage_json: &'a str,
+    /// The adapter's reason: an object with open keys (see `Completion::terminal_reason`).
+    pub terminal_reason: &'a Map<String, Value>,
+    pub actual_execution: &'a ActualExecution,
+    pub usage: &'a Usage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,17 +75,13 @@ where
     Fut: Future<Output = Option<MergeReadinessPack>>,
 {
     let (item_move, rework) = if report.terminal_state == ExecutionState::Succeeded {
-        let item_move = status_map::plan(
-            repo,
-            report.attempt_id.as_str(),
-            report.terminal_reason_json,
-        )
-        .await;
+        let item_move =
+            status_map::plan(repo, report.attempt_id.as_str(), report.terminal_reason).await;
         let rework = rework::plan(
             repo,
             now,
             report.attempt_id.as_str(),
-            report.actual_execution_json,
+            report.actual_execution,
             &read_pack,
         )
         .await
@@ -108,9 +106,9 @@ where
                 completion_id: report.completion_id,
                 final_event_checkpoint: report.final_event_checkpoint,
                 terminal_state: report.terminal_state,
-                terminal_reason: report.terminal_reason_json,
-                actual_execution: report.actual_execution_json,
-                usage: report.usage_json,
+                terminal_reason: report.terminal_reason,
+                actual_execution: report.actual_execution,
+                usage: report.usage,
             },
             FollowUps {
                 item_update: item_move.as_ref().map(status_map::Move::item_update),

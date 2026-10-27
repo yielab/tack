@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 
 use super::{
     AttemptDataProtocol, AttemptId, AttemptState, CancellationReport, CancellationRequestId,
-    ClaimRequest, ClaimResult, ClaimedWork, ClaimedWorkError, CompletionId, CompletionReport,
+    ClaimRequest, ClaimResult, ClaimedWork, ClaimedWorkError, CompletionId, CompletionRequest,
     DecisionAnswer, DecisionOption, EnrollmentRequest, EnrollmentResponse, HeartbeatRequest,
     PendingTerminalReportKind, ProtocolClientError, PullProtocol, Recommendation, RefreshRequest,
     RefreshResponse, RunnerSession, StartPhase, StartReport, Timestamp, WorkspaceMode,
@@ -205,13 +205,7 @@ pub struct LocalRunHandle {
     pub process_id: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CancelObservation {
-    ProcessStopped,
-    AlreadyTerminal,
-    Ambiguous,
-}
+pub use tack_protocol::execution::CancelObservation;
 
 /// Typed, non-secret evidence supplied by the harness after a cancellation
 /// attempt. The adapter owns the observation time and details; the engine only
@@ -901,7 +895,7 @@ where
         if let Some(scratch) = evidence_scratch {
             let _ = std::fs::remove_dir_all(scratch);
         }
-        let report = CompletionReport {
+        let report = CompletionRequest {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
             completion_id: CompletionId::new(format!(
@@ -911,7 +905,7 @@ where
             )),
             attempt_id: record.attempt_id.clone(),
             fencing_token: record.fencing_token,
-            terminal_state: outcome.terminal_state,
+            terminal_state: outcome.terminal_state.execution_state(),
             terminal_reason: outcome.terminal_reason,
             // NOT `outcome.final_checkpoint` (always `None` — no
             // adapter ever sets it). `complete_execution_result`'s own
@@ -954,13 +948,15 @@ where
         record: &AttemptJournal,
     ) -> HeartbeatRequest {
         self.active.sync(record);
-        let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now())
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+        let sent_at = chrono::DateTime::<chrono::Utc>::from(self.clock.now());
         HeartbeatRequest {
             protocol_version: ProtocolVersion::v1(),
             runner_id: session.runner_id.clone(),
-            heartbeat_id: Self::heartbeat_id(record, &sent_at),
-            sent_at: Timestamp::new(sent_at),
+            heartbeat_id: Self::heartbeat_id(
+                record,
+                &sent_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            ),
+            sent_at,
             available_capacity: self.active.free(),
             active_attempts: self.active.snapshot(),
         }

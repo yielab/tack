@@ -5,7 +5,7 @@
 //! `tack_api::serve()`, or a test): every route here then treats it exactly like a non-loopback
 //! bind, absent rather than refusing (see `router.rs`'s `local_runner_routes`).
 
-use axum::Json;
+use crate::extract::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use tack_app::local_runner::{
     self as app, FolderError, LocalRunnerControl, LocalRunnerControlError, TestRunError,
 };
+use tack_protocol::execution::StableErrorCode;
 use tracing::instrument;
 
 use crate::error::{ApiError, ApiResult};
@@ -129,7 +130,8 @@ impl From<app::FolderFacts> for FolderCheck {
 
 type FolderReply = (StatusCode, Json<Value>);
 
-fn folder_error(status: StatusCode, code: &str, message: &str, details: Value) -> FolderReply {
+fn folder_error(code: StableErrorCode, message: &str, details: Value) -> FolderReply {
+    let status = StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let error = json!({
         "status": status.as_u16(), "code": code, "message": message, "details": details,
     });
@@ -137,25 +139,15 @@ fn folder_error(status: StatusCode, code: &str, message: &str, details: Value) -
 }
 
 fn folder_reply(error: FolderError) -> FolderReply {
-    let (status, code, details) = match error {
-        FolderError::Unavailable => (StatusCode::CONFLICT, "local_runner_unavailable", json!({})),
-        FolderError::NotAbsolute => (
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            json!({ "field": "path" }),
-        ),
-        FolderError::NotEmpty => (
-            StatusCode::CONFLICT,
-            "folder_not_empty",
-            json!({ "field": "path" }),
-        ),
-        FolderError::CouldNotCreate | FolderError::GitInitFailed => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "internal_error",
-            json!({}),
-        ),
+    let (code, details) = match error {
+        FolderError::Unavailable => (StableErrorCode::LocalRunnerUnavailable, json!({})),
+        FolderError::NotAbsolute => (StableErrorCode::InvalidRequest, json!({ "field": "path" })),
+        FolderError::NotEmpty => (StableErrorCode::FolderNotEmpty, json!({ "field": "path" })),
+        FolderError::CouldNotCreate | FolderError::GitInitFailed => {
+            (StableErrorCode::InternalError, json!({}))
+        }
     };
-    folder_error(status, code, &error.to_string(), details)
+    folder_error(code, &error.to_string(), details)
 }
 
 /// POST /api/local-runner/check-folder — what is at `path`; writes nothing.
@@ -209,15 +201,15 @@ pub struct TestRun {
 
 fn test_run_reply(error: TestRunError) -> FolderReply {
     let message = error.to_string();
-    let (status, code) = match error {
+    let code = match error {
         TestRunError::NotConfigured | TestRunError::NotRunning | TestRunError::NotEnrolled => {
-            (StatusCode::CONFLICT, "local_runner_unavailable")
+            StableErrorCode::LocalRunnerUnavailable
         }
-        TestRunError::NoImplementerProfile => (StatusCode::NOT_FOUND, "not_found"),
-        TestRunError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
+        TestRunError::NoImplementerProfile => StableErrorCode::NotFound,
+        TestRunError::Internal(_) => StableErrorCode::InternalError,
         TestRunError::Refused(refusal) => return super::executions::refused(refusal),
     };
-    folder_error(status, code, &message, json!({}))
+    folder_error(code, &message, json!({}))
 }
 
 /// POST /api/local-runner/test-run — runs the harness once on this machine from an empty

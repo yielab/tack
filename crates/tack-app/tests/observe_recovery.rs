@@ -31,7 +31,7 @@ async fn observe(
             fencing_token,
             recovery_key: &RecoveryKey::new(recovery_key),
             observation,
-            details_json: DETAILS,
+            details: &serde_json::from_str(DETAILS).expect("details the protocol accepts"),
         },
     )
     .await

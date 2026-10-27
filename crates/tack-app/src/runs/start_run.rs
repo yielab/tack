@@ -72,7 +72,6 @@ impl PermissionRequest {
     pub fn from_value(value: Value) -> Result<Self, Refusal> {
         serde_json::from_value(value).map_err(|err| {
             error(
-                status::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 &format!("permission_policy is invalid: {err}"),
                 json!({"field": "permission_policy"}),
@@ -113,13 +112,11 @@ pub fn selector_from(
         })),
         (Some("fleet"), Some(fleet_id)) => Ok(Some(RunnerSelector::Fleet { fleet_id })),
         (Some("exact_runner" | "fleet") | None, _) => Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "selector_kind, selector_id, agent_profile_id and timeout_seconds must be resolved before enqueue",
             json!({"field": "selector_kind"}),
         )),
         (Some(_), _) => Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "selector_kind must be exact_runner or fleet",
             json!({"field": "selector_kind"}),
@@ -130,9 +127,9 @@ pub fn selector_from(
 /// The level a request body names, `L3`, `L4` or `L5`.
 pub fn level_from(text: Option<String>) -> Result<Option<AutonomyLevel>, Refusal> {
     text.map(|text| {
-        text.parse().map_err(|_| {
+        text.parse().map_err(|failure| {
+            tracing::warn!(error = %failure, "autonomy must be L3, L4 or L5");
             error(
-                status::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 "autonomy must be L3, L4 or L5",
                 json!({"field": "autonomy"}),
@@ -150,27 +147,32 @@ pub struct Started {
     pub replayed: bool,
 }
 
-/// Why a run was not started: the status, the runner-v1 code, the sentence and the code's
-/// structured details, exactly as the operator API answers them.
+/// Why a run was not started: the runner-v1 code (which decides the HTTP status), the sentence and
+/// the code's structured details, exactly as the operator API answers them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Refusal {
-    pub status: u16,
     pub code: StableErrorCode,
     pub message: String,
     pub details: Value,
 }
 
-/// The HTTP statuses a [`Refusal`] carries, as numbers, so this crate names no HTTP type.
-mod status {
-    pub const BAD_REQUEST: u16 = 400;
-    pub const NOT_FOUND: u16 = 404;
-    pub const CONFLICT: u16 = 409;
-    pub const INTERNAL_SERVER_ERROR: u16 = 500;
+impl Refusal {
+    /// The HTTP status the code is answered with.
+    pub fn status(&self) -> u16 {
+        self.code.status()
+    }
 }
 
-fn error(status: u16, code: StableErrorCode, message: &str, details: Value) -> Refusal {
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Refusal {}
+
+fn error(code: StableErrorCode, message: &str, details: Value) -> Refusal {
     Refusal {
-        status,
         code,
         message: message.to_owned(),
         details,
@@ -181,9 +183,9 @@ fn error(status: u16, code: StableErrorCode, message: &str, details: Value) -> R
 /// `invalid_request`'s contract-shaped `{"field": ...}` detail rather than an
 /// empty object.
 fn canonical_string(value: Value, field: &str) -> Result<String, Refusal> {
-    serde_json::to_string(&tack_db::canonical_json(value)).map_err(|_| {
+    serde_json::to_string(&tack_db::canonical_json(value)).map_err(|failure| {
+        tracing::warn!(error = %failure, "Request cannot be canonicalized");
         error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "Request cannot be canonicalized",
             json!({"field": field}),
@@ -312,22 +314,15 @@ async fn with_item_context(
     mut profile: Value,
     definition_of_done: Option<&str>,
 ) -> Result<(Value, Option<Value>), Refusal> {
-    let fail = |message: &str| {
-        error(
-            status::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            message,
-            json!({}),
-        )
-    };
-    let brief = repo
-        .get_item_brief(item.id)
-        .await
-        .map_err(|_| fail("Could not load the item's brief"))?;
-    let comments = repo
-        .list_comments(item.id)
-        .await
-        .map_err(|_| fail("Could not load the item's comments"))?;
+    let fail = |message: &str| error(StableErrorCode::InternalError, message, json!({}));
+    let brief = repo.get_item_brief(item.id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load the item's brief");
+        fail("Could not load the item's brief")
+    })?;
+    let comments = repo.list_comments(item.id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load the item's comments");
+        fail("Could not load the item's comments")
+    })?;
     if let Some(object) = profile.as_object_mut() {
         let base = object
             .get("instructions")
@@ -340,7 +335,10 @@ async fn with_item_context(
     let brief = brief
         .map(serde_json::to_value)
         .transpose()
-        .map_err(|_| fail("Could not serialize the item's brief"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not serialize the item's brief");
+            fail("Could not serialize the item's brief")
+        })?;
     Ok((profile, brief))
 }
 
@@ -349,9 +347,9 @@ async fn with_item_context(
 async fn load_project(repo: &Repository, project_id: Uuid) -> Result<models::Project, Refusal> {
     repo.get_project(project_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load project");
             error(
-                status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
                 "Could not load project",
                 json!({}),
@@ -359,7 +357,6 @@ async fn load_project(repo: &Repository, project_id: Uuid) -> Result<models::Pro
         })?
         .ok_or_else(|| {
             error(
-                status::NOT_FOUND,
                 StableErrorCode::NotFound,
                 "Project does not exist",
                 json!({"resource": "project"}),
@@ -394,7 +391,6 @@ fn resolve_repository(
         .is_none_or(|mode| *mode == derived["workspace_mode"]);
     if !(same_remote && same_mode) {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "The repository is not the project's; change the project to run elsewhere",
             json!({"field": "repository_snapshot", "reason": "repository_differs_from_project"}),
@@ -420,7 +416,6 @@ fn project_repository(project: &models::Project) -> Result<Value, Refusal> {
         project.code_origin != CodeOrigin::None,
     ) else {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "The project has no code to run against; set its folder or repository first",
             json!({"field": "repository_snapshot", "reason": "project_has_no_code"}),
@@ -493,7 +488,6 @@ fn run_limits(
 ) -> Result<(Value, u64, LimitSource), Refusal> {
     let refused = |message: &str, field: &str| {
         error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             message,
             json!({"field": field}),
@@ -511,7 +505,6 @@ fn run_limits(
     };
     if object.contains_key("cost_usd") {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "budgets.cost_usd was removed; a run's limit is in tokens (budgets.tokens)",
             json!({"field": "budgets.cost_usd", "reason": "field_removed"}),
@@ -543,7 +536,6 @@ fn run_limits(
 
 fn select_an_agent() -> Refusal {
     error(
-        status::BAD_REQUEST,
         StableErrorCode::InvalidRequest,
         "Name the agent this runs with: the agent profile names none and the project has no default agent",
         json!({"field": "requested_harness_kind", "reason": "select_an_agent"}),
@@ -569,9 +561,9 @@ pub async fn resolve_profile(
     project: &models::Project,
     explicit: Option<&str>,
 ) -> Result<Option<Resolved>, Refusal> {
-    fn internal<E>(_: E) -> Refusal {
+    fn internal(failure: tack_db::StoreError) -> Refusal {
+        tracing::error!(error = %failure, "Could not resolve the agent profile");
         error(
-            status::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
             "Could not resolve the agent profile",
             json!({}),
@@ -618,9 +610,9 @@ pub async fn default_selector(
     let mut runners: Vec<_> = repo
         .list_runners()
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list runners");
             error(
-                status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
                 "Could not list runners",
                 json!({}),
@@ -640,7 +632,6 @@ pub async fn default_selector(
             runner_id: RunnerId::new(only),
         }),
         Err(_) => Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "Name the runner or fleet this runs on: the agent profile has no fleet and there is not exactly one active runner",
             json!({"field": "selector_kind", "reason": "select_where_this_runs"}),
@@ -659,9 +650,9 @@ async fn load_profile(
 ) -> Result<Value, Refusal> {
     let row = queries::agent_profiles::profile_by_id(repo, profile_id)
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load agent profile");
             error(
-                status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
                 "Could not load agent profile",
                 json!({}),
@@ -669,7 +660,6 @@ async fn load_profile(
         })?;
     let Some(row) = row else {
         return Err(error(
-            status::NOT_FOUND,
             StableErrorCode::NotFound,
             "Agent profile does not exist",
             json!({"resource": "agent_profile", "reason": "agent_profile_not_found"}),
@@ -701,7 +691,6 @@ async fn load_profile(
 
 fn item_not_found() -> Refusal {
     error(
-        status::NOT_FOUND,
         StableErrorCode::NotFound,
         "Item does not exist",
         json!({"resource": "item"}),
@@ -712,7 +701,6 @@ fn item_not_found() -> Refusal {
 fn check_level_applies(requested_harness_kind: &str) -> Result<(), Refusal> {
     if requested_harness_kind != crate::autonomy::DOCKET {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "A level applies only to a docket run",
             json!({"field": "autonomy", "reason": "level_needs_docket"}),
@@ -722,12 +710,7 @@ fn check_level_applies(requested_harness_kind: &str) -> Result<(), Refusal> {
 }
 
 fn internal(message: &str) -> Refusal {
-    error(
-        status::INTERNAL_SERVER_ERROR,
-        StableErrorCode::InternalError,
-        message,
-        json!({}),
-    )
+    error(StableErrorCode::InternalError, message, json!({}))
 }
 
 fn stored_snapshot_invalid() -> Refusal {
@@ -756,7 +739,6 @@ fn validate_request(input: &RunRequest) -> Result<Settled, Refusal> {
         input.permission_policy.network,
     ) else {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "selector_kind, selector_id, agent_profile_id and timeout_seconds must be resolved before enqueue",
             json!({"field": "selector_kind"}),
@@ -770,7 +752,6 @@ fn validate_request(input: &RunRequest) -> Result<Settled, Refusal> {
         RunnerSelector::Fleet { fleet_id } => ("fleet", fleet_id.clone()),
         RunnerSelector::Any => {
             return Err(error(
-                status::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 "selector_kind must be exact_runner or fleet",
                 json!({"field": "selector_kind"}),
@@ -807,7 +788,10 @@ fn request_identity(
     // A stored replay row that fails to parse means the *persisted* snapshot is corrupt, not that
     // the caller's idempotency key collided with a different payload (that client-caused case is
     // `EnqueueResult::Conflict`, below). An unreadable row we wrote ourselves is a server fault.
-    let value: Value = serde_json::from_str(&snapshot).map_err(|_| stored_snapshot_invalid())?;
+    let value: Value = serde_json::from_str(&snapshot).map_err(|failure| {
+        tracing::error!(error = %failure, "A store call failed");
+        stored_snapshot_invalid()
+    })?;
     let request_id = value["request_id"]
         .as_str()
         .ok_or_else(stored_snapshot_invalid)?;
@@ -834,13 +818,15 @@ async fn check_runner_usable(
     }
     let eligible = queries::agent_runners::runner_is_active(repo, runner_id.as_str())
         .await
-        .map_err(|_| internal("Could not verify runner"))?;
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify runner");
+            internal("Could not verify runner")
+        })?;
     if eligible {
         Ok(())
     } else {
         Err(error(
-            status::CONFLICT,
-            StableErrorCode::RunnerRevoked,
+            StableErrorCode::MachineRevoked,
             "The selected runner is unavailable or revoked",
             json!({"runner_id": runner_id}),
         ))
@@ -930,15 +916,14 @@ async fn build_snapshot(
     }
     let typed: ExecutionRequestSnapshot = serde_json::from_value(snapshot).map_err(|err| {
         error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "Execution request snapshot is incomplete or invalid",
             json!({"field": err.to_string()}),
         )
     })?;
-    serde_json::to_value(typed).map_err(|_| {
+    serde_json::to_value(typed).map_err(|failure| {
+        tracing::warn!(error = %failure, "Execution request snapshot is invalid");
         error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "Execution request snapshot is invalid",
             json!({"field": "execution_request_snapshot"}),
@@ -962,7 +947,6 @@ impl StoredColumns {
     fn from_snapshot(snapshot: &Value) -> Result<Self, Refusal> {
         let root = snapshot.as_object().ok_or_else(|| {
             error(
-                status::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 "Execution request snapshot is invalid",
                 json!({"field": "execution_request_snapshot"}),
@@ -999,7 +983,10 @@ pub async fn enqueue_run(
     let item = repo
         .get_item(input.item_id)
         .await
-        .map_err(|_| internal("Could not verify item"))?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify item");
+            internal("Could not verify item")
+        })?
         .ok_or_else(item_not_found)?;
     let project = load_project(repo, item.project_id).await?;
     let existing = queries::execution_requests::snapshot_of_idempotency_key(
@@ -1008,7 +995,10 @@ pub async fn enqueue_run(
         &input.idempotency_key,
     )
     .await
-    .map_err(|_| internal("Could not load idempotency replay"))?;
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not load idempotency replay");
+        internal("Could not load idempotency replay")
+    })?;
     check_runner_usable(repo, &settled.selector, existing.is_some()).await?;
     // The request's own model is used as is; only a request naming none reads the project's
     // default model.
@@ -1019,7 +1009,10 @@ pub async fn enqueue_run(
         input.requested_model.as_deref(),
     )
     .await
-    .map_err(|_| internal("Could not resolve model policy"))?
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not resolve model policy");
+        internal("Could not resolve model policy")
+    })?
     .model;
     let (request_id, created_at) = request_identity(now, &scope, &input.idempotency_key, existing)?;
     let draft = Draft {
@@ -1036,9 +1029,9 @@ pub async fn enqueue_run(
     let columns = StoredColumns::from_snapshot(&snapshot)?;
     let model = draft.model;
     let item_id = input.item_id.to_string();
-    let timeout_seconds = i64::try_from(settled.timeout_seconds).map_err(|_| {
+    let timeout_seconds = i64::try_from(settled.timeout_seconds).map_err(|failure| {
+        tracing::warn!(error = %failure, "timeout_seconds is out of range");
         error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "timeout_seconds is out of range",
             json!({"field": "timeout_seconds"}),
@@ -1093,7 +1086,6 @@ pub async fn enqueue_run(
             replayed: true,
         }),
         EnqueueResult::Conflict => Err(error(
-            status::CONFLICT,
             StableErrorCode::IdempotencyConflict,
             "The idempotency key was used with a different request",
             json!({"idempotency_key": input.idempotency_key}),
@@ -1113,7 +1105,6 @@ pub async fn start_run(
         && let Err(message) = id.parse::<tack_core::workflow::StatusMapPolicy>()
     {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             &message,
             json!({"field": "status_map_policy_id"}),
@@ -1121,15 +1112,14 @@ pub async fn start_run(
     }
     if input.agent_profile_snapshot.is_some() {
         return Err(error(
-            status::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
             "agent_profile_snapshot was removed; the server records the profile named by agent_profile_id",
             json!({"field": "agent_profile_snapshot", "reason": "field_removed"}),
         ));
     }
-    let Some(item) = repo.get_item(input.item_id).await.map_err(|_| {
+    let Some(item) = repo.get_item(input.item_id).await.map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify item");
         error(
-            status::INTERNAL_SERVER_ERROR,
             StableErrorCode::InternalError,
             "Could not verify item",
             json!({}),
@@ -1160,7 +1150,6 @@ pub async fn start_run(
         .await?
         .ok_or_else(|| {
             error(
-                status::BAD_REQUEST,
                 StableErrorCode::InvalidRequest,
                 "No agent profile was named and none could be chosen",
                 json!({"field": "agent_profile_id"}),
@@ -1187,9 +1176,9 @@ pub async fn start_run(
     }
     let provisional = queries::budgets::provisional_tokens(repo, &item.project_id.to_string())
         .await
-        .map_err(|_| {
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not load the project's limits");
             error(
-                status::INTERNAL_SERVER_ERROR,
                 StableErrorCode::InternalError,
                 "Could not load the project's limits",
                 json!({}),
