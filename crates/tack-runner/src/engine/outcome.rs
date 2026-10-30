@@ -232,8 +232,31 @@ where
         }
         // The verifier may run for its whole `timeout_seconds`; the runner's
         // ticker renews the lease meanwhile.
-        let result =
-            crate::verify::run(config, limits, &spec.workspace, scratch, &self.process).await;
+        // Where the board will serve the run's steps once they are uploaded: the artifact's id
+        // is a function of the attempt, the fencing token and the digest, so the link is known
+        // before the upload.
+        let trajectory_uri = staged
+            .iter()
+            .find(|artifact| artifact["name"] == crate::evidence::TRAJECTORY_FILE)
+            .and_then(|artifact| artifact["sha256"].as_str())
+            .map(|sha256| {
+                format!(
+                    "{}/api/executions/{}/attempts/{}/artifacts/{}/content",
+                    self.board_url.as_deref().unwrap_or_default(),
+                    spec.work.request.request_id.as_str(),
+                    spec.work.lease.attempt_number,
+                    Self::artifact_id(record, sha256)
+                )
+            });
+        let result = crate::verify::run(
+            config,
+            limits,
+            &spec.workspace,
+            scratch,
+            &self.process,
+            trajectory_uri.as_deref(),
+        )
+        .await;
         match result {
             Ok(artifacts) => staged.extend(artifacts),
             Err(error) => {

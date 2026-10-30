@@ -40,6 +40,7 @@ async fn run_with(config: &VerifyConfig) -> Result<Vec<serde_json::Value>, Verif
         &workspace,
         &scratch,
         &crate::config::ProcessEnv::default(),
+        None,
     )
     .await
 }

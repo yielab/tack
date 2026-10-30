@@ -85,6 +85,7 @@ pub(super) async fn run(
     evidence: &Path,
     output: &Path,
     env: &crate::config::ProcessEnv,
+    trajectory_uri: Option<&str>,
 ) -> Result<(), VerifyFailure> {
     let evidence_bytes = fs::read(evidence.join("evidence.json"))
         .map_err(|error| io_failure(None, "the staged evidence.json could not be read", &error))?;
@@ -137,10 +138,17 @@ pub(super) async fn run(
         })?,
     };
 
+    // The run's steps, as the one artifact the engine staged and will upload: prill is told
+    // where the board serves it and the digest of exactly these bytes.
+    let trajectory = trajectory_uri.and_then(|uri| {
+        fs::read(evidence.join(crate::evidence::TRAJECTORY_FILE))
+            .ok()
+            .map(|bytes| (uri, sha256_hex(&bytes)))
+    });
     let evidence_document = out_dir.join("attempt-evidence.json");
     write_document(
         &evidence_document,
-        &attempt_evidence(&tack_evidence, &head_commit),
+        &attempt_evidence(&tack_evidence, &head_commit, trajectory),
     )?;
 
     let mut args = vec![
@@ -433,7 +441,11 @@ fn non_empty(value: &Value) -> Option<&str> {
 
 /// `evidence.json` (evidence-v1) as an `attempt-evidence/v0` document whose
 /// head is the snapshot commit.
-pub(super) fn attempt_evidence(tack: &AttemptEvidence, head_commit: &str) -> Value {
+pub(super) fn attempt_evidence(
+    tack: &AttemptEvidence,
+    head_commit: &str,
+    trajectory: Option<(&str, String)>,
+) -> Value {
     let usage = &tack.usage;
     let mut document = json!({
         "contract": "attempt-evidence/v0",
@@ -449,6 +461,21 @@ pub(super) fn attempt_evidence(tack: &AttemptEvidence, head_commit: &str) -> Val
     }
     if let Some(model) = non_empty(&usage["model"]) {
         document["generator"] = json!({ "model": model });
+    }
+    // The family of the model the last implementer step ran on, when the harness recorded the
+    // prompts of its steps. It is declared by the harness and never inferred from the model.
+    let steps = tack.terminal_reason["steps"].as_array();
+    if let Some(family) = steps
+        .into_iter()
+        .flatten()
+        .rev()
+        .filter(|step| step["role"] == "implementer")
+        .find_map(|step| non_empty(&step["family"]))
+    {
+        document["generator"]["family"] = json!(family);
+    }
+    if let Some((uri, sha256)) = trajectory {
+        document["trajectory"] = json!({ "uri": uri, "digest": format!("sha256:{sha256}") });
     }
     let tokens_in = measured(&usage["tokens_in"]).and_then(Value::as_u64);
     let tokens_out = measured(&usage["tokens_out"]).and_then(Value::as_u64);

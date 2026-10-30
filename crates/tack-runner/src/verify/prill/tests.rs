@@ -112,6 +112,7 @@ fn tack_evidence_becomes_an_attempt_evidence_document() {
     let full = attempt_evidence(
         &tack_evidence("att_1", &"a".repeat(40), measured_usage()),
         &head,
+        None,
     );
     assert_eq!(
         full,
@@ -134,11 +135,19 @@ fn tack_evidence_becomes_an_attempt_evidence_document() {
         "tokens_in": {"source": "not_measured", "value": null},
         "tokens_out": {"source": "not_measured", "value": null},
     });
-    let minimal = attempt_evidence(&tack_evidence("att_2", &"a".repeat(40), unmeasured), &head);
+    let minimal = attempt_evidence(
+        &tack_evidence("att_2", &"a".repeat(40), unmeasured),
+        &head,
+        None,
+    );
     assert_eq!(minimal["harness"], json!({"name": "codex"}));
     assert!(minimal.get("generator").is_none());
     assert!(minimal.get("usage").is_none());
-    let null_usage = attempt_evidence(&tack_evidence("att_3", &"a".repeat(40), Value::Null), &head);
+    let null_usage = attempt_evidence(
+        &tack_evidence("att_3", &"a".repeat(40), Value::Null),
+        &head,
+        None,
+    );
     assert!(null_usage.get("usage").is_none());
 }
 
@@ -559,13 +568,47 @@ async fn verify_within(
     sign_key: Option<&str>,
     timeout_seconds: u64,
 ) -> Verified {
+    verify_run(knob, args, with_brief, sign_key, timeout_seconds, None).await
+}
+
+/// The whole sequence for a run whose harness recorded `steps`, as the engine hands it over: the
+/// steps in the evidence's `terminal_reason`, staged as `trajectory.json`, and the address the
+/// board will serve it from.
+async fn verify_steps(steps: &Value, uri: Option<&str>) -> Verified {
+    verify_run(
+        "TACK_FAKE_PRILL_FIXTURE=human-review-no-sandbox",
+        Vec::new(),
+        false,
+        None,
+        60,
+        Some((steps, uri)),
+    )
+    .await
+}
+
+async fn verify_run(
+    knob: &str,
+    args: Vec<String>,
+    with_brief: bool,
+    sign_key: Option<&str>,
+    timeout_seconds: u64,
+    steps: Option<(&Value, Option<&str>)>,
+) -> Verified {
     let dir = tempfile::tempdir().expect("temporary directory");
     let workspace_path = dir.path().join("ws");
     fs::create_dir_all(&workspace_path).expect("workspace");
     let base = harness_left_work(&workspace_path);
     let scratch = dir.path().join("scratch");
     fs::create_dir_all(scratch.join("src")).expect("scratch");
-    let evidence = tack_evidence("att_1", &base, measured_usage());
+    let mut evidence = tack_evidence("att_1", &base, measured_usage());
+    if let Some((steps, _)) = steps {
+        evidence.terminal_reason = json!({"code": "done", "steps": steps});
+        fs::write(
+            scratch.join("src/trajectory.json"),
+            serde_json::to_vec_pretty(steps).expect("json"),
+        )
+        .expect("trajectory");
+    }
     fs::write(
         scratch.join("src/evidence.json"),
         serde_json::to_vec_pretty(&evidence).expect("json"),
@@ -603,6 +646,7 @@ async fn verify_within(
         &workspace,
         &scratch,
         &crate::config::ProcessEnv::default(),
+        steps.and_then(|(_, uri)| uri),
     )
     .await;
     Verified {
@@ -697,6 +741,92 @@ async fn a_prill_pack_is_translated_and_staged() {
     assert_eq!(argv[7], "--out");
     assert_eq!(Path::new(argv[8]), prill_dir);
     assert_eq!(&argv[9..], ["--json", "--no-sandbox"]);
+}
+
+fn recorded_steps() -> Value {
+    json!([
+        {"role": "lead", "model": "big", "class": "strong", "family": "anthropic", "prompts": []},
+        {"role": "implementer", "model": "qwen2.5-coder:7b", "class": "cheap", "family": "qwen",
+         "prompts": [{"layer": "hop", "name": "implementer", "version": "1.0.0",
+                      "sha256": "ab", "scope": "shipped", "tokens": 12}]},
+        {"role": "reviewer", "model": "big", "class": "strong", "family": "anthropic", "prompts": []},
+    ])
+}
+
+#[test]
+fn the_family_is_the_last_implementer_steps_and_never_inferred() {
+    let mut evidence = tack_evidence("att_1", &"a".repeat(40), measured_usage());
+    evidence.terminal_reason = json!({"code": "done", "steps": recorded_steps()});
+    let document = attempt_evidence(&evidence, &"b".repeat(40), None);
+    assert_eq!(
+        document["generator"],
+        json!({"model": "claude-x", "family": "qwen"})
+    );
+    assert!(document.get("trajectory").is_none());
+
+    // A step that recorded no family, or a run with no step at all, declares none.
+    evidence.terminal_reason =
+        json!({"code": "done", "steps": [{"role": "implementer", "family": null}]});
+    let document = attempt_evidence(&evidence, &"b".repeat(40), None);
+    assert_eq!(document["generator"], json!({"model": "claude-x"}));
+    evidence.terminal_reason = json!({"code": "done"});
+    assert_eq!(
+        attempt_evidence(&evidence, &"b".repeat(40), None)["generator"],
+        json!({"model": "claude-x"})
+    );
+}
+
+#[tokio::test]
+async fn prill_is_given_the_trajectory_with_the_digest_of_the_stored_artifact() {
+    let steps = recorded_steps();
+    let uri = "http://board.test/api/executions/req_1/attempts/1/artifacts/art_1/content";
+    let verified = verify_steps(&steps, Some(uri)).await;
+    verified.result.expect("a pack");
+    let stored = fs::read(verified.scratch.join("src/trajectory.json")).expect("stored artifact");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stored).expect("json"),
+        steps
+    );
+    let document = read_json(
+        &verified
+            .scratch
+            .join("evidence/prill/attempt-evidence.json"),
+    );
+    assert_eq!(
+        document["trajectory"],
+        json!({"uri": uri, "digest": format!("sha256:{}", sha256_hex(&stored))})
+    );
+    assert_eq!(document["generator"]["family"], "qwen");
+    assert!(document.get("claims").is_none());
+}
+
+#[tokio::test]
+async fn a_run_with_no_steps_sends_neither_family_nor_trajectory() {
+    let verified = verify_with(
+        "TACK_FAKE_PRILL_FIXTURE=human-review-no-sandbox",
+        Vec::new(),
+        false,
+        None,
+    )
+    .await;
+    verified.result.expect("a pack");
+    let document = read_json(
+        &verified
+            .scratch
+            .join("evidence/prill/attempt-evidence.json"),
+    );
+    assert!(document.get("trajectory").is_none());
+    assert!(document["generator"].get("family").is_none());
+
+    // Steps with no address to serve them from: the file is not described either.
+    let verified = verify_steps(&recorded_steps(), None).await;
+    verified.result.expect("a pack");
+    let document = read_json(
+        &verified
+            .scratch
+            .join("evidence/prill/attempt-evidence.json"),
+    );
+    assert!(document.get("trajectory").is_none());
 }
 
 #[tokio::test]
@@ -802,6 +932,7 @@ async fn a_workspace_that_is_not_a_repository_cannot_be_verified() {
         &workspace,
         &scratch,
         &crate::config::ProcessEnv::default(),
+        None,
     )
     .await
     .expect_err("no snapshot, no verification");

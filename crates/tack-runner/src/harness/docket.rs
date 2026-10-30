@@ -43,6 +43,7 @@ use crate::{
 mod client;
 pub mod daemon;
 mod probe;
+mod steps;
 mod task;
 mod wire;
 
@@ -851,6 +852,14 @@ impl DocketAdapter {
         }
         if !by_model.is_empty() {
             additional.insert("by_model".to_owned(), json!(by_model));
+        }
+        // What each step was made of, from the record of a task that has ended.
+        let mut reason = reason;
+        if let Some(task) = task.filter(|task| terminal(&task.status))
+            && !task.hops.is_empty()
+            && let Some(object) = reason.as_object_mut()
+        {
+            object.insert("steps".to_owned(), Value::Array(steps::steps(&task.hops)));
         }
         let ended_at = Utc::now();
         let elapsed =

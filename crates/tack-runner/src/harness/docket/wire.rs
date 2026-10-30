@@ -114,10 +114,65 @@ pub(super) struct Worktree {
     pub base_commit: Option<String>,
 }
 
+/// A hop of the task record. Every key after `model` is absent from a hop recorded by an older
+/// docket, and docket adds keys in minor versions, so none is required and none is refused.
 #[derive(Debug, Deserialize)]
 pub(super) struct TaskHop {
     pub role: Option<String>,
     pub model: Option<String>,
+    #[serde(default)]
+    pub ok: Option<bool>,
+    #[serde(default)]
+    pub verdict: Option<String>,
+    #[serde(default, rename = "promptManifest")]
+    pub prompt_manifest: Option<PromptManifest>,
+    #[serde(default)]
+    pub artifact: Option<HopArtifact>,
+}
+
+/// The prompts a hop's turn was composed from (`promptManifest`), in composition order, and the
+/// model's family and class (its `profile` is not kept).
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct PromptManifest {
+    #[serde(default)]
+    pub layers: Vec<PromptLayer>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub family: Option<String>,
+    #[serde(default)]
+    pub class: Option<String>,
+}
+
+/// One prompt of a manifest. `sha256` is the hash of its text as the prompt's file holds it and
+/// `tokens` the compiler's estimate, not a measurement.
+#[derive(Debug, Deserialize)]
+pub(super) struct PromptLayer {
+    pub layer: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub sha256: String,
+    #[serde(default)]
+    pub scope: String,
+    #[serde(default)]
+    pub tokens: Option<u64>,
+}
+
+/// What a hop's `handoff` call said: the keys Tack reads of the hop's `artifact`. A list docket
+/// has nothing for is absent.
+#[derive(Debug, Default, Deserialize)]
+pub(super) struct HopArtifact {
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub verdict: Option<String>,
+    #[serde(default)]
+    pub assumptions: Vec<String>,
+    #[serde(default)]
+    pub questions: Vec<String>,
 }
 
 /// `GET /tasks/<pod>/<id>/diff`.

@@ -217,6 +217,7 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `task-diff-failed` | `GET /tasks/<pod>/<id>/diff` | 200 | captured |
 | `task-diff-unknown` | `GET /tasks/<pod>/<id>/diff` | 404 | captured |
 | `task-done` | `GET /tasks/<pod>/<id>` | 200 | constructed |
+| `task-with-manifest` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-failed-after-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-needs-human` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-pipeline` | `GET /tasks/<pod>/<id>` | 200 | captured |
@@ -249,6 +250,22 @@ provenance says. A script run replaces every capture; the constructed files stay
 - A task's full lifecycle (running, parked on a consult or an input, done) is constructed; no
   capture runs a model. A consult or an input answered, `check_changed`, an expired question and
   `L4` or `L5` pauses decided by `recommendation` are constructed or absent.
+
+## The hop's prompt manifest
+
+Each hop of a task record may carry `promptManifest` (`layers`, each `layer`, `name`,
+`version`, `sha256`, `scope`, `tokens`, then `model`, `family`, `class`, `profile`) and an
+`artifact` with `assumptions` and `questions` (`operator-api.spec.md`, "Task answers";
+`pod-dispatch.spec.md`, "Hop prompt manifest"). No capture reaches a hop, so
+`task-with-manifest` is `constructed` from the spec alone, with a lead and an implementer that
+carry a manifest and a reviewer that predates it; it is replaced by a record of a real run when
+the local suite is next run against docket. The fake writes the manifest and the handoff on the
+record's hop and never on the trace event.
+
+The evidence Tack gives prill follows `attempt-evidence/v0` at prill's `1cafe8d`
+(`contracts/attempt-evidence-v0/schema.json`, 2026-10-13): `generator.family` is the family the
+last implementer step's manifest names, and `trajectory` is `{uri, digest}` with the digest as
+`sha256:<hex>`. `claims` is not sent.
 
 ## docket's cache figures
 

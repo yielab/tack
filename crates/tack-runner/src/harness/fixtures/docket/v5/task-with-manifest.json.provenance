@@ -1,0 +1,8 @@
+constructed
+route: GET /tasks/<pod>/<id>
+status: 200
+built-from: task-done.json with three hops: a lead and an implementer that carry promptManifest (the implementer's artifact also carries assumptions and questions) and a reviewer recorded before the manifest existed, with no promptManifest key
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+source: specs/api/operator-api.spec.md "Task answers" (the paragraph on promptManifest, assumptions and questions) and specs/functional/pod-dispatch.spec.md "Hop prompt manifest" (layers, model, family, class, profile; scopes shipped, operator, pod, repository, task, generated; the task layer has version "")
+date: 2026-10-30
+note: from the spec, recaptured by D. Not captured, because a hop would have to run on a model for docket to send it; every key is one the spec lists and the values are made up (the hashes are not hashes of a prompt). D replaces the file with the record of a real run.
