@@ -208,3 +208,47 @@ describe('LatestRunSummary', () => {
     expect(c.querySelector('[data-testid="latest-run-limit"]')!.textContent).toBe(sentence);
   });
 });
+
+describe('LatestRunSummary: questions the agent asked and a folder team', () => {
+  const question = (questions: string[]) => ({
+    role: 'lead', model: null, class: null, family: null, verdict: null, ok: true, summary: null,
+    prompts: [], assumptions: [], questions,
+  });
+
+  it('a run whose steps asked questions says how many, and the line opens the tab', async () => {
+    const onOpen = vi.fn();
+    const steps = [question(['Which tone?']), question(['Which date?', 'Which city?'])];
+    const c = mount([RUN], onOpen, [{ ...ATTEMPT, terminal_reason: { ...ATTEMPT.terminal_reason, steps } }]);
+    for (let i = 0; i < 4; i++) await flush();
+    const line = c.querySelector('[data-testid="latest-run-questions"]')!;
+    expect(line.textContent).toBe('The agent asked 3 questions');
+    line.querySelector('button')!.click();
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('a run whose steps asked nothing shows no questions line', async () => {
+    const c = mount([RUN], () => {}, [{ ...ATTEMPT, terminal_reason: { ...ATTEMPT.terminal_reason, steps: [question([])] } }]);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run"]')).not.toBeNull();
+    expect(c.querySelector('[data-testid="latest-run-questions"]')).toBeNull();
+  });
+
+  it('a folder team run is done: nothing to merge, what its last step did, and no Accept, Reject or Merge', async () => {
+    const folder = {
+      ...ATTEMPT,
+      terminal_reason: { code: 'done', outside_repository: true, team: 'brief', task: 'k', summary: 'Wrote the brief to the folder.' },
+      merge: { enabled: false, reason: 'No branch was pushed' },
+    };
+    const c = mount([RUN], () => {}, [folder]);
+    for (let i = 0; i < 4; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.getAttribute('data-state')).toBe('done');
+    expect(card.querySelector('[data-testid="latest-run-folder"]')!.textContent).toBe('This team works in a folder: nothing to merge');
+    expect(card.textContent).toContain('What it did');
+    expect(card.querySelector('[data-testid="latest-run-said"]')!.textContent).toContain('Wrote the brief to the folder.');
+    const labels = [...card.querySelectorAll('button')].map((b) => b.textContent);
+    expect(labels).not.toContain('Accept');
+    expect(labels).not.toContain('Reject…');
+    expect(labels).not.toContain('Merge');
+  });
+});

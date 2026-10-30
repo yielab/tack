@@ -2,7 +2,7 @@ import { type Component, For, type JSX, Show, createEffect, createMemo, createRe
 import { Badge, Button, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
-import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
+import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
 import {
   NOT_MEASURED_TEXT,
   changedNoFile,
@@ -118,11 +118,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
   // What the agent said at the end: the opening of its report, or, for a run that changed
   // no file, the answer it delivered.
+  // A folder team's run says what its last step did instead, and has nothing to merge.
+  const folder = () => !!attempt() && isFolderRun(attempt()!.terminal_reason);
   const said = () => {
-    const result = (attempt()?.terminal_reason as { result?: unknown } | null)?.result;
+    const reason = attempt()?.terminal_reason;
+    const result = folder() ? folderRunSummary(reason) : (reason as { result?: unknown } | null | undefined)?.result;
     if (typeof result !== 'string' || result.trim() === '') return null;
     return excerpt(result, noChange() ? ANSWER_CHARS : EXCERPT_CHARS);
   };
+  // The questions the agent asked across its steps: one line that opens the tab.
+  const questionCount = () => (readRunSteps(attempt()?.terminal_reason) ?? []).reduce((n, step) => n + step.questions.length, 0);
   const whyStopped = () => {
     const a = attempt();
     return a ? describeAttemptOutcome(a.state, a.terminal_reason).whyStopped : null;
@@ -298,11 +303,14 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             <Show when={whyStopped()}>
               {(why) => <p data-testid="latest-run-why" class="text-sm" style={{ color: 'var(--color-danger-600)' }}>{why()}</p>}
             </Show>
+            <Show when={folder()}>
+              <p data-testid="latest-run-folder" class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This team works in a folder: nothing to merge</p>
+            </Show>
             <Show when={said()}>
               {(text) => (
                 <>
                   <Show when={noChange()}>
-                    <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>What it delivered</p>
+                    <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
                   </Show>
                   <p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>
                 </>
@@ -321,6 +329,13 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 {line()}
               </p>
             )}
+          </Show>
+          <Show when={questionCount() > 0}>
+            <p data-testid="latest-run-questions" class="text-xs">
+              <button type="button" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => props.onOpen()}>
+                The agent asked {questionCount()} {questionCount() === 1 ? 'question' : 'questions'}
+              </button>
+            </p>
           </Show>
           <Show when={latest()?.limit}>
             {(limit) => (
