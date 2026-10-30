@@ -274,8 +274,9 @@ async fn a_fresh_supervisor_is_stopped_and_has_no_runner_id() {
 }
 
 #[tokio::test]
-async fn start_fails_typed_before_the_bound_address_is_known() {
+async fn start_fails_typed_when_the_bound_address_never_comes() {
     let (control, counters) = supervisor();
+    let control = control.with_address_wait(std::time::Duration::from_millis(50));
 
     let result = control.start().await;
 
@@ -284,6 +285,28 @@ async fn start_fails_typed_before_the_bound_address_is_known() {
         Err(LocalRunnerControlError::StartFailed(_))
     ));
     assert_eq!(counters.launched.load(Ordering::SeqCst), 0);
+}
+
+/// The server announces its address and boots the runner one after the other, and the
+/// announcement is handled on another task: a start that is ahead of it waits for it.
+#[tokio::test]
+async fn start_waits_for_the_bound_address_that_is_announced_a_moment_later() {
+    let (control, counters) = supervisor();
+    let control = Arc::new(control);
+    let starting = tokio::spawn({
+        let control = control.clone();
+        async move { control.start().await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(
+        !starting.is_finished(),
+        "start must be waiting for the address"
+    );
+
+    control.set_bound_addr(bound()).await;
+
+    starting.await.unwrap().unwrap();
+    assert_eq!(counters.launched.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]

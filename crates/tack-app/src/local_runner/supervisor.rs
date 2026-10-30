@@ -6,7 +6,8 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::net::SocketAddr;
-use tokio::sync::Mutex;
+use std::time::Duration;
+use tokio::sync::{Mutex, watch};
 
 use super::{LocalRunnerControl, LocalRunnerControlError, RuntimeState, RuntimeStatus};
 
@@ -41,10 +42,12 @@ struct Running {
     since: DateTime<Utc>,
 }
 
+/// How long `start` waits for the server to say where it listens. The server announces the
+/// address and boots the runner one after the other, so the wait is a scheduling hop; the
+/// bound only keeps a server that never says from hanging its own boot.
+const ADDRESS_WAIT: Duration = Duration::from_secs(10);
+
 struct State {
-    /// `None` until the server has bound its listener and said so: before that `start` has
-    /// nowhere to point the runner's HTTP client and fails rather than guess.
-    bound_addr: Option<SocketAddr>,
     running: Option<Running>,
 }
 
@@ -53,17 +56,28 @@ struct State {
 pub struct EmbeddedRunner<H: RunnerHost> {
     host: H,
     state: Mutex<State>,
+    /// `None` until the server has bound its listener and said so: before that `start` has
+    /// nowhere to point the runner's HTTP client. It waits for the address rather than guess,
+    /// because the server boots the runner right after it announces the address and the
+    /// announcement is handled on another task.
+    bound_addr: watch::Sender<Option<SocketAddr>>,
+    address_wait: Duration,
 }
 
 impl<H: RunnerHost> EmbeddedRunner<H> {
     pub fn new(host: H) -> Self {
         Self {
             host,
-            state: Mutex::new(State {
-                bound_addr: None,
-                running: None,
-            }),
+            state: Mutex::new(State { running: None }),
+            bound_addr: watch::Sender::new(None),
+            address_wait: ADDRESS_WAIT,
         }
+    }
+
+    /// How long `start` waits for the address before it fails.
+    pub fn with_address_wait(mut self, wait: Duration) -> Self {
+        self.address_wait = wait;
+        self
     }
 
     pub fn host(&self) -> &H {
@@ -72,7 +86,19 @@ impl<H: RunnerHost> EmbeddedRunner<H> {
 
     /// Told the server's own loopback address once it is known.
     pub async fn set_bound_addr(&self, addr: SocketAddr) {
-        self.state.lock().await.bound_addr = Some(addr);
+        self.bound_addr.send_replace(Some(addr));
+    }
+
+    /// The address once it is known, waiting up to the configured bound for it.
+    async fn bound_addr(&self) -> Result<SocketAddr, LocalRunnerControlError> {
+        let mut known = self.bound_addr.subscribe();
+        let waited = tokio::time::timeout(self.address_wait, known.wait_for(Option::is_some)).await;
+        match waited {
+            Ok(Ok(addr)) => Ok(addr.expect("wait_for returned a known address")),
+            _ => Err(LocalRunnerControlError::StartFailed(
+                "the server's own address is not yet known".to_owned(),
+            )),
+        }
     }
 }
 
@@ -108,17 +134,14 @@ impl<H: RunnerHost> LocalRunnerControl for EmbeddedRunner<H> {
     }
 
     async fn start(&self) -> Result<(), LocalRunnerControlError> {
+        // Before the lock: a status read must not queue behind a wait for the address.
+        let bound_addr = self.bound_addr().await?;
         let mut state = self.state.lock().await;
         if state.running.is_some() {
             // A second `enabled: true`, or the boot-time check racing a UI toggle, must never
             // spawn a duplicate runner.
             return Ok(());
         }
-        let bound_addr = state.bound_addr.ok_or_else(|| {
-            LocalRunnerControlError::StartFailed(
-                "the server's own address is not yet known".to_owned(),
-            )
-        })?;
         let process = self
             .host
             .launch(&format!("http://{bound_addr}/api/runner/v1"))
