@@ -447,13 +447,19 @@ docket or prill; the three meet only here. The script builds `tack` with the SPA
 docket (API 6) and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`), and starts docket
 in a scratch `HOME` with an isolated `DOCKET_HOME`, three teams over the fixture repository (two
 attended, one lights-out with an approval step) and a prill key that signs every pack. It dies
-before building when `GET /escalations?since=0` does not answer 200. Fourteen serial tests drive
+before building when `GET /escalations?since=0` does not answer 200. Fifteen serial tests drive
 the workflow through the UI, as a person would:
 
 - A project, its runner enrolled on the Agents page, and a code, a content and a plain item.
 - Each run goes to the team its role's profile names: docket holds one task for the attempt there
   and none in another team, every step reaches the timeline in order, and the usage per model
   equals docket's own, with cache reads out of the counted tokens and the limit.
+- The card reaches docket once, as fields: its record of the code and feature runs holds the
+  objective, the acceptance criteria and the done-when of the card, and the description holds the
+  profile's words and the card's text and none of them again. A run again carries the question the
+  person answered in the run before, so the team is not asked twice; a run before which nobody
+  answered (the level decided) carries none. Each hop docket ran carries the manifest of the prompts
+  that made it, and the Execution tab lists, for every step, those prompts.
 - A policy parks a task with no model: the card says "Needs a person", the question survives a
   restart of the runner and of docket, and the answer is given on screen. Cancelling a parked
   run closes its question.
@@ -473,8 +479,19 @@ profile already names, so the first profile of a team is made over the API.
 against real docket, compares the keys of its answers with the fixtures under
 `crates/tack-runner/src/harness/fixtures/docket/`, compares `docs/contracts/mrp-v1/fixtures/prill/`
 with prill's own contract fixtures, and runs the `briefing_schema` test, which is `#[ignore]`d in
-CI because it needs `prill` on `PATH`. It exits non-zero when any of them drifted. Rerun the
+CI because it needs `prill` on `PATH`; the same run runs the fake docket's tests against the
+captures, so a key docket sends that the fake does not, or the reverse, fails by name. It exits
+non-zero when any of them drifted. Rerun the
 script with `DOCKET_PRILL_SKIP_BUILD=1` when nothing in Tack changed; it lists its knobs at the top.
+At its end a run prints the commits and versions of docket and prill and how many of the hops docket
+ran carry a prompt manifest.
+
+The captures reach every answer docket gives without a model: its refusals, a held enqueue and the
+escalation it opens, a pipeline whose only step is a wait, a hop that starts and cannot reach a model
+(the manifest of its prompts is written before the model is asked), a team that works in a folder
+and the record sets it declares. What stays `constructed` needs a model's reply (a finished hop with
+the agent's assumptions and questions, usage) or an agent's call that leaves the machine; each says
+so in its provenance, and the live run is where a real one is read.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it

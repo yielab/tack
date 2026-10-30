@@ -14,7 +14,10 @@
 # any agent turn, with two exceptions that still run no model: one enqueue a team policy of the
 # throwaway home holds for approval (a pending escalation, then answered), and one task at L5 on
 # the lights-out team whose pipeline has an approval step, which docket fails at once with
-# `failureKind: needs_human`. It refuses to run when DOCKET_HOME is unset or is the operator's
+# `failureKind: needs_human`. Three more need no model either: a pipeline whose only step is a wait
+# (its escalation), a task on the team's own pipeline whose first hop writes its prompt manifest and
+# then finds no model to ask, and a routine team in a plain folder with the records recipe applied
+# (a team with no codebase, its record sets and one row). It refuses to run when DOCKET_HOME is unset or is the operator's
 # ~/.docket, and it never reads that folder. The bearer token docket writes is read from its
 # file and is never printed or recorded; the script fails if it shows up in a capture.
 #
@@ -183,6 +186,8 @@ rec() {
   # The route as the client names it: the ids in the path become placeholders.
   local route=${path%%\?*}
   case "$route" in
+    /pods/*/records/*) route=/pods/'<pod>'/records/'<set>' ;;
+    /pods/*/records) route=/pods/'<pod>'/records ;;
     /pods/*) route=/pods/'<pod>' ;;
     /tasks/*/*/cancel) route=/tasks/'<pod>'/'<id>'/cancel ;;
     /tasks/*/*/diff) route=/tasks/'<pod>'/'<id>'/diff ;;
@@ -238,14 +243,14 @@ for repo in repo repo2; do
   git -C "$SCRATCH/$repo" add -A
   git -C "$SCRATCH/$repo" -c user.name=capture -c user.email=capture@localhost commit -q -m seed
 done
-DEV_BODY=$(jq -cn --arg location "$SCRATCH/repo" '{name: "saas-dev", location: $location, blueprint: "software", ensure: true}')
+DEV_BODY=$(jq -cn --arg location "$SCRATCH/repo" '{name: "saas-dev", location: $location, ensure: true}')
 rec post-pods-old-fields POST /pods no "the fields before docket read name and location: refused" \
-  --body "$(jq -cn --arg path "$SCRATCH/repo" '{project: "saas-dev", path: $path, blueprint: "software", ensure: true}')"; expect 400 old-fields
-rec post-pods-created POST /pods yes "the body Tack sends; the answer still names the team project" --body "$DEV_BODY"; expect 201 post-pods
+  --body "$(jq -cn --arg path "$SCRATCH/repo" '{project: "saas-dev", path: $path, ensure: true}')"; expect 400 old-fields
+rec post-pods-created POST /pods yes "the body Tack sends (no shape is named: docket defaults it); the answer still names the team project and its blueprint" --body "$DEV_BODY"; expect 201 post-pods
 rec post-pods-existing POST /pods yes "the same body again: ensure answers 200, created false" --body "$DEV_BODY"; expect 200 post-pods-again
 rec post-pods-conflict POST /pods no "the same body without ensure (Tack always sends ensure)" \
   --body "$(jq -c 'del(.ensure)' <<<"$DEV_BODY")"; expect 409 post-pods-conflict
-LIGHTS_BODY=$(jq -cn --arg location "$SCRATCH/repo2" '{name: "saas-lights", location: $location, blueprint: "software", ensure: true}')
+LIGHTS_BODY=$(jq -cn --arg location "$SCRATCH/repo2" '{name: "saas-lights", location: $location, ensure: true}')
 rec post-pods-created-second POST /pods no "a second team, set to lights-out below so its profile carries violations" --body "$LIGHTS_BODY"; expect 201 second-pod
 guard
 (cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set profile lights-out --pod saas-lights </dev/null >"$SCRATCH/pod-set.log" 2>&1) \
@@ -275,6 +280,8 @@ refuse post-tasks-max-tokens-zero 400 "maxTokens must be above 0" /tasks/saas-de
 refuse post-tasks-empty-external-ref 400 "externalRef must have a character" /tasks/saas-dev '{"description":"x","externalRef":""}'
 refuse post-tasks-gate-without-command 400 "gate needs a command" /tasks/saas-dev '{"description":"x","gate":{}}'
 refuse post-tasks-brief-without-objective 422 "a brief with an empty objective" /tasks/saas-dev '{"description":"x","brief":{"objective":""}}'
+refuse post-tasks-task-unknown-key 400 "task names a field docket does not have" /tasks/saas-dev '{"description":"x","task":{"objective":"x","colour":"red"}}'
+refuse post-tasks-task-bad-type 400 "a task field of the wrong type" /tasks/saas-dev '{"description":"x","task":{"paths":"src/"}}'
 refuse post-tasks-denied-tool-unknown 422 "deniedTools names a tool docket does not have" /tasks/saas-dev '{"description":"x","restrictions":{"deniedTools":["no-such-tool"]}}'
 refuse post-tasks-network-open 422 "restrictions.network may only be none" /tasks/saas-dev '{"description":"x","restrictions":{"network":"open"}}'
 refuse post-tasks-autonomy-above-ceiling 422 "autonomy L5 on an attended team, whose ceiling is L3" /tasks/saas-dev '{"description":"x","autonomy":"L5"}'
@@ -287,8 +294,10 @@ TASK_BODY=$(jq -cn '{description: "Capture only: this task fails at claim, no ag
   pipeline: "no-such-pipeline", maxTokens: 1000, priority: "normal", trusted: false, autonomy: "L3",
   restrictions: {network: "none", deniedTools: ["bash"]},
   gate: {command: "true", timeoutS: 600},
-  brief: {objective: "Capture only", acceptance: ["nothing"], constraints: ["nothing"]}}')
-rec post-task-created POST /tasks/saas-dev yes "a task as Tack posts it, with every key it can send; the pipeline does not exist" --body "$TASK_BODY"; expect 201 post-task
+  task: {objective: "Capture only", doneWhen: "nothing is asked of it", acceptance: ["nothing"],
+    constraints: ["nothing"], paths: ["README.md"], risk: "low", kind: "Feature",
+    answers: [{question: "Which client?", answer: "The HTTP one"}]}}')
+rec post-task-created POST /tasks/saas-dev yes "a task as Tack posts it, with every key it can send, the card as `task` fields and the answers of a previous attempt; the pipeline does not exist" --body "$TASK_BODY"; expect 201 post-task
 TASK_ID=$(jq -r '.task' <<<"$LAST_BODY")
 wait_for saas-dev "$TASK_ID" failed
 rec post-task-existing POST /tasks/saas-dev yes "the same idempotencyKey again: 200, created false" --body "$TASK_BODY"; expect 200 post-task-again
@@ -323,8 +332,8 @@ trace_cursor() {
 # A `pre_input` policy that asks holds the enqueue itself; docket opens the escalation and
 # answers 201 with its id. The policy is a file of the throwaway home, on the saas-dev team only.
 guard
-mkdir -p "$DOCKET_HOME/workspaces/pods/saas-dev/config/policies"
-cat >"$DOCKET_HOME/workspaces/pods/saas-dev/config/policies/capture-needs-approval.yaml" <<'POLICY'
+mkdir -p "$DOCKET_HOME/config/pods/saas-dev/policies"
+cat >"$DOCKET_HOME/config/pods/saas-dev/policies/capture-needs-approval.yaml" <<'POLICY'
 kind: policy
 name: capture-needs-approval
 description: Capture only; holds an enqueue that names it until a person answers
@@ -348,6 +357,7 @@ case "$ESC_ID" in esc-*) ;; *) die "no escalation id in the answer: $LAST_BODY" 
 rec escalations-pending GET '/escalations?since=0' yes "one pending escalation of kind approval, with its options, affordances and expiry"; expect 200 escalations-pending
 [ "$(jq -r '.escalations[0].id' <<<"$LAST_BODY")" = "$ESC_ID" ] || die "the list does not hold $ESC_ID: $LAST_BODY"
 NEXT=$(jq -r '.next' <<<"$LAST_BODY")
+rec escalation-pending GET "/escalations/$ESC_ID" yes "the one record of a pending approval, the view the list holds (a call that leaves is shown whole here only for an outward approval)"; expect 200 escalation-pending
 rec escalations-task-since GET "/escalations?since=$NEXT&task=$GATED_ID" yes "the cursor and the task filter together: nothing newer, next equal to since"; expect 200 escalations-since
 [ "$(jq '.escalations | length' <<<"$LAST_BODY")" = 0 ] || die "the cursor returned a record: $LAST_BODY"
 rec task-waiting-escalation GET "/tasks/saas-dev/$GATED_ID" yes "a task waiting on an escalation: escalations lists the ids opened for it, and the keys of the retired shapes are gone"; expect 200 task-waiting
@@ -385,8 +395,8 @@ guard
   || die "docket setup sandbox on failed; see $SCRATCH/sandbox-on.log"
 "${DOCKET_ENV[@]}" "$DOCKET_BIN" setup sandbox network none </dev/null >"$SCRATCH/sandbox-network.log" 2>&1 \
   || die "docket setup sandbox network none failed; see $SCRATCH/sandbox-network.log"
-mkdir -p "$DOCKET_HOME/workspaces/pods/saas-lights/config/pipelines"
-cat >"$DOCKET_HOME/workspaces/pods/saas-lights/config/pipelines/capture-approval.yaml" <<'PIPELINE'
+mkdir -p "$DOCKET_HOME/config/pods/saas-lights/pipelines"
+cat >"$DOCKET_HOME/config/pods/saas-lights/pipelines/capture-approval.yaml" <<'PIPELINE'
 name: capture-approval
 steps:
   - ask: lead
@@ -406,6 +416,66 @@ rec task-failed-needs-human GET "/tasks/saas-lights/$L5_ID" yes "a task at L5 wh
 rec escalations-settled GET '/escalations?since=0' yes "every record whatever its state: one resolved by a person, one closed by a cancel, one decided by the level"; expect 200 escalations-settled
 sleep 2
 rec traces-escalation-decided GET /traces/saas-lights yes "the events of the L5 task: escalation_decided"; expect 200 traces-decided
+
+# ── A wait step: a pause that asks nobody, no model ────────────────────────────
+# A pipeline whose only step is a timer parks the task in `waiting_input` with an escalation of
+# kind `wait`, one option (`resume`) and the due time as its expiry. No agent turn runs.
+guard
+mkdir -p "$DOCKET_HOME/config/pods/saas-dev/pipelines"
+cat >"$DOCKET_HOME/config/pods/saas-dev/pipelines/capture-wait.yaml" <<'PIPELINE'
+name: capture-wait
+steps:
+  - hold: {wait: "1h"}
+PIPELINE
+WAIT_BODY=$(jq -cn '{description: "Capture only: a timer, nothing else.",
+  externalRef: "capture-item/attempt-7", idempotencyKey: "capture-attempt-7", baseRef: "main",
+  pipeline: "capture-wait"}')
+WAITING=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' -d "$WAIT_BODY" "$BASE/tasks/saas-dev")
+WAIT_ID=$(jq -r '.task' <<<"$WAITING")
+case "$WAIT_ID" in task-*) ;; *) die "docket did not accept the task of the wait: $WAITING" ;; esac
+wait_for saas-dev "$WAIT_ID" waiting_input
+WAIT_ESC=$(curl -s -m 5 -K "$CURL_AUTH" "$BASE/tasks/saas-dev/$WAIT_ID" | jq -r '.escalations[0]')
+rec escalation-wait GET "/escalations/$WAIT_ESC" yes "the escalation of a wait step: kind wait, policy machine, the one option resume, expiresAt the due time"; expect 200 escalation-wait
+[ "$(jq -r '.kind' <<<"$LAST_BODY")" = wait ] || die "the escalation is not a wait: $LAST_BODY"
+
+# ── A hop that starts and cannot reach a model: its prompt manifest, no model ──
+# A task with no pipeline runs the team's own, and its first hop composes its prompt before it asks
+# a model. The throwaway home has no provider, so the hop fails there; docket has written the
+# manifest of what it was made of, and the task view carries it. Nothing is sent anywhere.
+HOP_BODY=$(jq -cn '{description: "Capture only: the hop starts and cannot reach a model.",
+  task: {objective: "Capture only", acceptance: ["nothing"]},
+  externalRef: "capture-item/attempt-6", idempotencyKey: "capture-attempt-6", baseRef: "main"}')
+HOP=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' -d "$HOP_BODY" "$BASE/tasks/saas-dev")
+HOP_ID=$(jq -r '.task' <<<"$HOP")
+case "$HOP_ID" in task-*) ;; *) die "docket did not accept the task of the hop: $HOP" ;; esac
+wait_for saas-dev "$HOP_ID" failed
+rec task-failed-hop GET "/tasks/saas-dev/$HOP_ID" yes "a task whose first hop could not reach a model: the hop carries promptManifest (layers, model, family, class, profile) and an artifact without assumptions or questions, which only a reply writes"; expect 200 task-hop
+[ "$(jq '.hops[0].promptManifest.layers | length' <<<"$LAST_BODY")" -gt 0 ] || die "the hop carries no prompt manifest: $LAST_BODY"
+
+# ── A team with no codebase and the records it declares: no model ───────────────
+# A routine team works in a plain folder, so it has no codebase. The records recipe declares one
+# set, which `pod update` makes. A row is written only by a hop's tool, so one is inserted into the
+# set's own table, with the columns docket fills itself, to show a row as the read route answers it.
+mkdir -p "$SCRATCH/notes"
+guard
+rec_note=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' \
+  -d "$(jq -cn --arg location "$SCRATCH/notes" '{name: "saas-notes", location: $location, blueprint: "routine", ensure: true}')" "$BASE/pods")
+[ "$(jq -r '.created' <<<"$rec_note")" = true ] || die "docket would not make the folder team: $rec_note"
+(cd "$SCRATCH/notes" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod update records --pod saas-notes </dev/null >"$SCRATCH/pod-update-records.log" 2>&1) \
+  || die "docket pod update records failed; see $SCRATCH/pod-update-records.log"
+rec pod-folder GET /pods/saas-notes yes "a team with no codebase: repoConfigDir is empty, and the report carries no codebase key (the list of teams does)"; expect 200 pod-folder
+rec records GET /pods/saas-notes/records yes "the sets the team declares, with their columns and row counts"; expect 200 records
+SETS_DB=$(find "$DOCKET_HOME/state/workspaces/pods/saas-notes" -name records.sqlite | head -1)
+[ -n "$SETS_DB" ] || die "the team has no records.sqlite"
+python3 -I - "$SETS_DB" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("INSERT INTO entries (_at, _task, _session, _step, _updated_at, ref, title, amount) VALUES "
+           "('2026-01-01T00:00:00+00:00', 'task-00000000-0000-0000-0000-000000000000', 'session-0', 'capture', "
+           "'2026-01-01T00:00:00+00:00', 'story-1', 'A story', 12.5)")
+db.commit()
+PY
+rec records-rows GET '/pods/saas-notes/records/entries?limit=50&sql=SELECT%20*%20FROM%20entries' yes "one set's rows with the system columns docket fills; cut says how many rows the limit left out"; expect 200 records-rows
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

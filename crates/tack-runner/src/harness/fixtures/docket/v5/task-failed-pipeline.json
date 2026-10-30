@@ -1,23 +1,29 @@
 {
   "id": "task-00000000-0000-0000-0000-000000000000",
-  "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
+  "description": "Capture only: this task fails at claim, no agent runs.",
   "priority": "normal",
   "created": "2026-01-01T00:00:00Z",
   "channel": "http",
-  "brief": {
+  "task": {
     "objective": "Capture only",
+    "doneWhen": "nothing is asked of it",
     "acceptance": [
       "nothing"
     ],
-    "context": [],
     "constraints": [
       "nothing"
     ],
-    "assumptions": [],
-    "questions": [],
-    "resources": [],
-    "expectedRiskyActions": [],
-    "answers": []
+    "risk": "low",
+    "answers": [
+      {
+        "question": "Which client?",
+        "answer": "The HTTP one"
+      }
+    ],
+    "kind": "Feature",
+    "paths": [
+      "README.md"
+    ]
   },
   "externalRef": "capture-item/attempt-1",
   "idempotencyKey": "capture-attempt-1",
@@ -45,7 +51,7 @@
   "hops": [],
   "costUsd": 0.0,
   "worktree": {
-    "dir": "/scratch/home/.docket/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "dir": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
     "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
     "baseCommit": "0000000000000000000000000000000000000000",
     "baseRef": "main",

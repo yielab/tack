@@ -2,8 +2,9 @@
 
 The files in this directory are **captures from a real docket**, plus the answers that are
 marked `constructed`. Captured from `docket 0.2.0b6` (operator API version `6`, with the
-escalation record), source checkout `9954b4f8`, on 2026-10-26. The directory keeps the name
-`v5` from the first capture; the answers say `apiVersion: "6"`.
+escalation record, the task as fields, the prompt manifest, the two-level home and the four
+blueprints), source checkout `115e9027`, on 2026-10-30. The directory keeps the name `v5` from the
+first capture; the answers say `apiVersion: "6"`.
 
 `scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a
 throwaway `HOME` and `DOCKET_HOME` under `/var/tmp`, with no model, no provider key and an
@@ -34,7 +35,8 @@ are rewritten to fixed values. The bearer token is read from the file docket wri
 never printed or recorded; the script fails if it finds the token in a capture.
 
 A `constructed` file is an answer docket only sends while a model runs or a person answers (a
-finished task, a hop's trace event, a pending consult or input).
+finished task, a hop's trace event, a pending consult or input), or an agent's call that leaves
+the machine.
 Its keys are the ones docket writes, and its provenance names the exact source: a file of
 docket's own `tests/fixtures/operator-v2/` (recorded from a real run on a fake model), a section
 of `specs/api/operator-api.spec.md`, or a model in docket's source, always with docket's commit.
@@ -71,6 +73,15 @@ by the script); a constructed file is replaced by a capture when the script can 
   `gateApplied`, `usage` and `tokenBudget` when they apply. A pod's queue counts are `pending`,
   `running`, `waitingApproval`, `waitingInput`, `blocked`, `failed`, `done`, `cancelled` (no
   `completed`).
+- `POST /pods` names no shape in Tack's body, and docket's default is `build`; the blueprint the
+  first capture sent, `software`, is an unknown name now (the four are `build`, `respond`,
+  `operate`, `routine`).
+- A task posted with `task` is echoed back as `task`; docket's record has no `brief` key unless the
+  caller sent one, and Tack no longer does.
+- `GET /pods/<pod>` carries no `codebase`: the list (`GET /pods`) does, `""` for a team that works
+  in a folder. The detail says it with `repoConfigDir`, `""` for a folder team.
+- `cut` on a set's rows is the count of rows the limit left out (`0` for none), not a flag.
+- A hop that cannot reach a model still carries `promptManifest`: docket writes it before it asks.
 - `GET /traces/<pod>` holds back the newest second: a read made right after a hop's last event
   is empty, so the script waits two seconds before each one.
 
@@ -129,10 +140,13 @@ a docket without the record.
 ## Where a pause comes from without a model
 
 Four of docket's pauses need a model (a consult, an in-turn tool approval) or a protected-path
-diff (`check_changed`), and none is reachable here. Two are, and the script records them:
+diff (`check_changed`), and none is reachable here. Three are, and the script records them:
 
+- **A wait step.** A pipeline whose only step is `wait: 1h` parks the task in `waiting_input`
+  with an escalation of kind `wait`, policy `machine`, one option `resume` and the due time as its
+  expiry (`escalation-wait`). No agent turn runs.
 - **An enqueue a policy holds.** The script writes one `pre_input` policy to the saas-dev team's
-  `config/policies/` in the throwaway home (`then: ask`, matching one word). `POST /tasks/<pod>`
+  `config/pods/saas-dev/policies/` in the throwaway home (`then: ask`, matching one word). `POST /tasks/<pod>`
   with that word answers `201`, `status: "waiting_approval"` and the id of the escalation it
   opened (`post-task-gated`); a person's answer is then `approve_once` (`escalation-accepted`).
   A second held task is cancelled (`cancel-accepted`).
@@ -172,9 +186,12 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `escalation-accepted-consult` | `POST /escalations/<id>` | 200 | constructed |
 | `escalation-accepted` | `POST /escalations/<id>` | 200 | captured |
 | `escalation-bad-option-type` | `POST /escalations/<id>` | 400 | captured |
+| `escalation-outward` | `GET /escalations/<id>` | 200 | constructed |
+| `escalation-pending` | `GET /escalations/<id>` | 200 | captured |
 | `escalation-settled` | `POST /escalations/<id>` | 409 | captured |
 | `escalation-unknown-option` | `POST /escalations/<id>` | 422 | captured |
 | `escalation-unknown` | `POST /escalations/<id>` | 404 | captured |
+| `escalation-wait` | `GET /escalations/<id>` | 200 | captured |
 | `escalations-consult` | `GET /escalations` | 200 | constructed |
 | `escalations-empty` | `GET /escalations` | 200 | captured |
 | `escalations-input` | `GET /escalations` | 200 | constructed |
@@ -184,7 +201,7 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
-| `pod-folder` | `GET /pods/<pod>` | 200 | constructed |
+| `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |
 | `pods-empty` | `GET /pods` | 200 | captured |
@@ -209,9 +226,11 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `post-tasks-max-tokens-zero` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-network-open` | `POST /tasks/<pod>` | 422 | captured |
 | `post-tasks-no-description` | `POST /tasks/<pod>` | 400 | captured |
+| `post-tasks-task-bad-type` | `POST /tasks/<pod>` | 400 | captured |
+| `post-tasks-task-unknown-key` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-unknown-pod` | `POST /tasks/<pod>` | 404 | captured |
-| `records-rows` | `GET /pods/<pod>/records/<set>` | 200 | constructed |
-| `records` | `GET /pods/<pod>/records` | 200 | constructed |
+| `records-rows` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records` | `GET /pods/<pod>/records` | 200 | captured |
 | `status-empty` | `GET /status.json` | 200 | captured |
 | `status` | `GET /status.json` | 200 | captured |
 | `task-blocked-input-expired` | `GET /tasks/<pod>/<id>` | 200 | constructed |
@@ -220,14 +239,15 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `task-diff-failed` | `GET /tasks/<pod>/<id>/diff` | 200 | captured |
 | `task-diff-unknown` | `GET /tasks/<pod>/<id>/diff` | 404 | captured |
 | `task-done` | `GET /tasks/<pod>/<id>` | 200 | constructed |
-| `task-with-manifest` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-failed-after-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
+| `task-failed-hop` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-needs-human` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-pipeline` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-unknown` | `GET /tasks/<pod>/<id>` | 404 | captured |
 | `task-usage-by-model` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-usage-cached` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-waiting-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
+| `task-with-manifest` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `traces-after-failure` | `GET /traces/<pod>` | 200 | captured |
 | `traces-empty` | `GET /traces/<pod>` | 200 | captured |
 | `traces-escalation-decided` | `GET /traces/<pod>` | 200 | captured |
@@ -236,11 +256,10 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `traces-since-empty` | `GET /traces/<pod>` | 200 | captured |
 | `unauthorized` | `GET /pods` | 401 | captured |
 
-`pod-folder`, `records` and `records-rows` are written from docket's spec (a team with no repository
-has `codebase` `""`, and a team's record sets are read over two routes), not captured: the captured
-pods predate both, so the fake adds `codebase` to them. They are recaptured when the script runs
-against a docket that has the routes. The two `post-pods-created`/`-existing` requests were captured
-with a `blueprint`, which Tack no longer sends, so their provenance lists it as optional.
+`pod-folder`, `records` and `records-rows` are captured from a `routine` team in a plain folder with
+the `records` recipe applied by `docket pod update`; the one row of `records-rows` is inserted into
+the set's own table, because only an agent's tool call writes one. The requests of `POST /pods` carry
+no `blueprint`, as Tack sends none.
 
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.
@@ -265,11 +284,12 @@ provenance says. A script run replaces every capture; the constructed files stay
 Each hop of a task record may carry `promptManifest` (`layers`, each `layer`, `name`,
 `version`, `sha256`, `scope`, `tokens`, then `model`, `family`, `class`, `profile`) and an
 `artifact` with `assumptions` and `questions` (`operator-api.spec.md`, "Task answers";
-`pod-dispatch.spec.md`, "Hop prompt manifest"). No capture reaches a hop, so
-`task-with-manifest` is `constructed` from the spec alone, with a lead and an implementer that
-carry a manifest and a reviewer that predates it; it is replaced by a record of a real run when
-the local suite is next run against docket. The fake writes the manifest and the handoff on the
-record's hop and never on the trace event.
+`pod-dispatch.spec.md`, "Hop prompt manifest"). `task-failed-hop` is a capture: the first hop
+composes its prompt and then finds no model to ask, so the record has the manifest and an artifact
+with neither list. `task-with-manifest` stays `constructed`, because the lists are a reply's; its
+hops carry every key of the captured hop, a test compares them, and the local suite's run is where a
+real one is read. The fake writes the manifest and the handoff on the record's hop and never on the
+trace event.
 
 The evidence Tack gives prill follows `attempt-evidence/v0` at prill's `1cafe8d`
 (`contracts/attempt-evidence-v0/schema.json`, 2026-10-13): `generator.family` is the family the

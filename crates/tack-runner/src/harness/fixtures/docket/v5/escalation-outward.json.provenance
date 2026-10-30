@@ -4,6 +4,6 @@ status: 200
 tack-sends: yes
 built-from: escalations-pending.json's approval view with outward true and, because the approval is still pending, the whole call as text
 source: specs/api/operator-api.spec.md "GET /escalations/<id>" and specs/functional/operator-loop.spec.md area 11 items 1 and 16
-docket: docket develop at 28c3cf65 (API 6), read and not run
+docket: docket develop at 115e9027 (API 6), source read and not run
 date: 2026-10-30
-note: from the spec. Not captured, because a send call is made by an agent on a model; every key is one the spec lists and the values (the prompt, the call) are made up. GET /escalations never carries call, and neither does this answer once the approval is settled. D replaces the file with the record of a real run.
+note: from the spec. Not captured, because a send call is made by an agent on a model; every key is one the spec lists and the values (the prompt, the call) are made up. GET /escalations never carries call, and neither does this answer once the approval is settled. It stays from the spec, which docket's later commits did not change in this section.

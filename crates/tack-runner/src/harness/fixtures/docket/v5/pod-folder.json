@@ -8,24 +8,44 @@
         "value": "anthropic/claude-haiku-4-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/saas-notes-lead",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-lead",
       "verifyCmd": ""
     },
     {
-      "id": "saas-notes-implementer",
-      "role": "implementer",
+      "id": "saas-notes-reviewer",
+      "role": "reviewer",
       "model": {
         "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/saas-notes-implementer",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-reviewer",
+      "verifyCmd": ""
+    },
+    {
+      "id": "saas-notes-analyst",
+      "role": "analyst",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-analyst",
+      "verifyCmd": ""
+    },
+    {
+      "id": "saas-notes-writer",
+      "role": "writer",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-writer",
       "verifyCmd": ""
     }
   ],
   "settings": {
     "budgetUsd": {
-      "value": 0.0,
-      "source": "default"
+      "value": 15.0,
+      "source": "set"
     },
     "maxReworkCycles": {
       "value": 1,
@@ -113,24 +133,23 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "blueprint 'software'"
+    "source": "blueprint 'routine'"
   },
   "network": {
     "mode": "none",
-    "scope": "default"
+    "scope": "global"
   },
   "budgetUnpriced": [],
-  "configSource": "",
-  "configDigest": "",
-  "drift": "",
+  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
+  "configDigest": "0790bbef5f4a0437c99afae99374bdae69e1675ec7ca5f7a6dbfd5f37b05f6d0",
+  "drift": "no",
   "profile": {
     "name": "attended",
     "violations": []
   },
-  "pipelineSource": "blueprint 'software'",
+  "pipelineSource": "blueprint 'routine'",
   "repoConfigDir": "",
   "readOnly": [
     "/scratch/toolchain/node"
-  ],
-  "codebase": ""
+  ]
 }

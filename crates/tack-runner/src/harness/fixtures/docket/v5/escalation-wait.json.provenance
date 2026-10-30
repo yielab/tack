@@ -1,9 +1,10 @@
-constructed
+captured
 route: GET /escalations/<id>
 status: 200
 tack-sends: yes
-built-from: escalations-pending.json's view with the keys of a pipeline wait step: kind wait, policy machine, the one option resume, expiresAt the due time
-source: specs/api/operator-api.spec.md "Wait" (items 1 and 3) and specs/functional/operator-loop.spec.md area 11 item 2
-docket: docket develop at 28c3cf65 (API 6), read and not run
+note: the escalation of a wait step: kind wait, policy machine, the one option resume, expiresAt the due time
+command: curl -X GET http://127.0.0.1:<port>/escalations/esc-000000000000 (bearer token from docket's --token-file)
+docket: docket 0.2.0b6 (API 6), source checkout 115e9027
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-30
-note: from the spec. Not captured, because a wait step needs a pipeline that has one; every key is one the spec lists and the values (the prompt, the label and description of resume, causedBy, onExpiry) are made up. D replaces the file with the record of a real run.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

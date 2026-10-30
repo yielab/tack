@@ -303,7 +303,7 @@ struct RecordSet {
 
 struct Pod {
     codebase: String,
-    /// The team has no repository: `codebase` is `""` on its report.
+    /// The team has no repository: `repoConfigDir` is `""` on its report and `codebase` on its row of the list.
     folder: bool,
     profile: String,
     violations: Vec<(String, String)>,
@@ -337,7 +337,7 @@ struct World {
     calls_withheld: bool,
     /// The record sets of each team, by team.
     records: BTreeMap<String, Vec<RecordSet>>,
-    /// A docket before folders and records: a team's report has no `codebase` and the records
+    /// A docket before folders and records: a team's report has no `repoConfigDir` and the records
     /// routes answer `404`.
     without_records: bool,
     /// Sets whose statement docket refuses with `400`.
@@ -417,7 +417,7 @@ impl FakeDocket {
         );
     }
 
-    /// A team that works in a folder, with no repository: its report says `codebase` is `""` and
+    /// A team that works in a folder, with no repository: its report says `repoConfigDir` is `""` and
     /// a task it finishes has no worktree.
     pub fn add_folder_pod(&self, name: &str) {
         self.add_pod(name, "lights-out", &[]);
@@ -789,16 +789,14 @@ fn pod_report(state: &World, name: &str) -> Response {
         fixture_with("pod-folder", &[("saas-notes", name)])
     } else {
         let mut report = fixture_with("pod-attended", &[("saas-dev", name)]);
-        // The capture is from before docket said where a team works.
-        report["codebase"] = json!(if pod.codebase.is_empty() {
-            "/scratch/repo"
-        } else {
-            pod.codebase.as_str()
-        });
+        // docket says where a team works with `repoConfigDir`, which is `""` for a folder team.
+        if !pod.codebase.is_empty() {
+            report["repoConfigDir"] = json!(format!("{}/.docket", pod.codebase));
+        }
         report
     };
     if state.without_records {
-        report.as_object_mut().unwrap().remove("codebase");
+        report.as_object_mut().unwrap().remove("repoConfigDir");
     }
     let violations: Vec<Value> = pod
         .violations
@@ -832,7 +830,12 @@ fn write_row(state: &mut World, pod: &str, set: &str, task: &str, row: Value) {
         .iter_mut()
         .find(|found| found.name == set)
         .unwrap_or_else(|| panic!("{pod} declares no set {set}"));
+    // The system columns of a captured row; the team's own are the set's.
     let mut stored = fixture("records-rows")["rows"][0].clone();
+    stored
+        .as_object_mut()
+        .expect("a row")
+        .retain(|column, _| column.starts_with('_'));
     stored["_id"] = json!(set.rows.len() + 1);
     stored["_task"] = json!(task);
     for column in &set.columns {
@@ -861,7 +864,7 @@ fn pod_records(state: &World, pod: &str) -> Response {
             entry["columns"] = json!(
                 set.columns
                     .iter()
-                    .map(|column| json!({"name": column, "type": "text", "required": false}))
+                    .map(|column| json!({"name": column, "type": "string", "required": false}))
                     .collect::<Vec<_>>()
             );
             entry
@@ -916,7 +919,8 @@ fn record_rows(state: &World, pod: &str, set: &str, query: &str) -> Response {
             rows.retain(|row| row["_task"] == json!(task));
         }
     }
-    let cut = rows.len() > limit;
+    // docket counts the rows the limit left out.
+    let cut = rows.len().saturating_sub(limit);
     rows.truncate(limit);
     let mut answer = fixture("records-rows");
     answer["set"] = json!(set);

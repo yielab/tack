@@ -384,8 +384,8 @@ impl DocketAdapter {
             || reply
                 .read::<PodReport>()
                 .ok()
-                .and_then(|report| report.codebase)
-                .is_none_or(|codebase| !codebase.is_empty())
+                .and_then(|report| report.repo_config_dir)
+                .is_none_or(|dir| !dir.is_empty())
     }
 
     /// The commit the request's base revision names in the repository, which

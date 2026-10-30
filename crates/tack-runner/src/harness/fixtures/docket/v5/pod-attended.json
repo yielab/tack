@@ -8,7 +8,7 @@
         "value": "anthropic/claude-haiku-4-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/saas-dev-lead",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-lead",
       "verifyCmd": ""
     },
     {
@@ -18,7 +18,7 @@
         "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/saas-dev-implementer",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer",
       "verifyCmd": ""
     }
   ],
@@ -113,7 +113,7 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "blueprint 'software'"
+    "source": "blueprint 'build'"
   },
   "network": {
     "mode": "none",
@@ -127,7 +127,7 @@
     "name": "attended",
     "violations": []
   },
-  "pipelineSource": "blueprint 'software'",
+  "pipelineSource": "blueprint 'build'",
   "repoConfigDir": "/scratch/repo/.docket",
   "readOnly": [
     "/scratch/toolchain/node"

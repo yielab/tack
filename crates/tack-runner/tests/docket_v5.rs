@@ -672,16 +672,33 @@ async fn a_rerun_sends_the_answers_already_given_and_a_first_run_sends_none() {
 #[tokio::test]
 async fn the_fake_refuses_a_task_key_or_type_docket_refuses() {
     let fake = pods_fake().await;
-    let fields = fake_docket::provenances()
-        .into_iter()
-        .find(|found| found.name == "post-task-fields")
-        .and_then(|found| found.get("request").map(str::to_owned))
-        .expect("the constructed task with fields");
-    let valid: Value = serde_json::from_str(&fields).expect("JSON");
+    // docket's own refusals are captured; the fake answers the same status and the same opening,
+    // naming the field it refuses.
+    for (name, named) in [
+        ("post-tasks-task-unknown-key", "colour"),
+        ("post-tasks-task-bad-type", "paths"),
+    ] {
+        let captured = fixture(name)["error"]
+            .as_str()
+            .expect("a sentence")
+            .to_owned();
+        assert!(
+            captured.starts_with("invalid task:") && captured.contains(named),
+            "{captured}"
+        );
+        let mut body = request_file("post-task-created");
+        body["task"] = request_file(name)["task"].clone();
+        let (status, answer) = ask(&fake, "POST", &format!("/tasks/{POD}"), Some(body)).await;
+        assert_eq!(status, 400, "{name}: {answer}");
+        let sentence = answer["error"].as_str().expect("a sentence");
+        assert!(
+            sentence.starts_with("invalid task:") && sentence.contains(named),
+            "{name}: {answer}"
+        );
+    }
+    let valid = request_file("post-task-created");
     for (task, named) in [
-        (json!({"objective": "x", "colour": "red"}), "colour"),
         (json!({"objective": 7}), "objective"),
-        (json!({"paths": "src/"}), "paths"),
         (json!({"answers": ["yes"]}), "answers"),
     ] {
         let mut body = valid.clone();
@@ -727,7 +744,7 @@ async fn a_422_fails_the_attempt_with_the_bodys_text_and_posts_nothing_again() {
     let (outcome, steps) = run_to_end(&adapter, &refused).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
-    let message = "restrictions.deniedTools: 'zap' is not a known tool (bash, consult, edit, fetch, glob, grep, read, skill, write)";
+    let message = "restrictions.deniedTools: 'zap' is not a known tool (bash, consult, edit, fetch, glob, grep, process_output, process_stop, read, skill, write)";
     assert_eq!(outcome.terminal_reason["message"], json!(message));
     assert!(
         steps.iter().any(|(_, text)| text == message),
@@ -1421,6 +1438,32 @@ fn hops_with_their_manifests() -> Vec<(String, Value)> {
         .collect()
 }
 
+/// The hop of a task whose first step could not reach a model is a capture; the constructed record
+/// of a finished run carries the same keys on each hop it has, apart from what a reply writes.
+#[test]
+fn the_constructed_hops_have_the_keys_of_a_captured_hop() {
+    let captured = &fixture("task-failed-hop")["hops"][0];
+    let built = &fixture("task-with-manifest")["hops"];
+    let with_manifest = built
+        .as_array()
+        .expect("hops")
+        .iter()
+        .find(|hop| hop.get("promptManifest").is_some())
+        .expect("a hop with a manifest");
+    same_shape(
+        &with_manifest["promptManifest"],
+        &captured["promptManifest"],
+        "promptManifest",
+    )
+    .expect("the manifest");
+    for key in captured.as_object().expect("a hop").keys() {
+        assert!(
+            with_manifest.get(key).is_some(),
+            "task-with-manifest: a hop lacks {key}, which docket sends"
+        );
+    }
+}
+
 async fn steps_of(after: Vec<(String, Value)>) -> Option<Value> {
     let fake = pods_fake().await;
     fake.script(Script {
@@ -1740,7 +1783,7 @@ async fn an_older_docket_has_no_records_and_its_teams_say_neither_where_they_wor
         },
     )
     .await;
-    // A team with no `codebase` key is taken to have a repository, as before.
+    // A team with no `repoConfigDir` key is taken to have a repository, as before.
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
     assert!(outcome.terminal_reason.get("records").is_none());
 
@@ -3444,14 +3487,6 @@ const CLIENT_ROUTES: [&str; 15] = [
 /// `GET /health` is sent by the daemon's supervision, not by `client.rs`.
 const NOT_IN_CLIENT: [&str; 1] = ["GET /health"];
 
-/// Routes of a docket later than the captures, whose files are written from its spec until the
-/// capture script is run against it.
-const NOT_CAPTURED_YET: [&str; 3] = [
-    "GET /escalations/<id>",
-    "GET /pods/<pod>/records",
-    "GET /pods/<pod>/records/<set>",
-];
-
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {
     let client = include_str!("../src/harness/docket/client.rs");
@@ -3462,15 +3497,9 @@ fn every_route_the_client_sends_has_a_captured_file() {
     );
     let provenances = fake_docket::provenances();
     for route in CLIENT_ROUTES {
-        // A route written from the spec until a capture of it is made has a constructed file.
-        let state = if NOT_CAPTURED_YET.contains(&route) {
-            "constructed"
-        } else {
-            "captured"
-        };
         let captured: Vec<_> = provenances
             .iter()
-            .filter(|found| found.state == state && found.get("route") == Some(route))
+            .filter(|found| found.state == "captured" && found.get("route") == Some(route))
             .collect();
         assert!(
             !captured.is_empty(),
@@ -3801,6 +3830,16 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
         ask(&fake, "GET", "/escalations?since=0", None).await,
     );
     get(
+        "escalation-pending",
+        ask(
+            &fake,
+            "GET",
+            &format!("/escalations/{held_escalation}"),
+            None,
+        )
+        .await,
+    );
+    get(
         "escalations-task-since",
         ask(
             &fake,
@@ -3960,13 +3999,6 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     }
 
     let mut wrong = Vec::new();
-    for (name, answer) in &mut seen {
-        // The captures of a team report are from before docket said where a team works; the
-        // spec's own files are compared in `the_fake_answers_a_folder_team_and_its_records_...`.
-        if matches!(*name, "pod-attended" | "pod-lights-out") {
-            answer.as_object_mut().unwrap().remove("codebase");
-        }
-    }
     for (name, answer) in &seen {
         if let Err(why) = same_shape(answer, &fake_docket::fixture(name), name) {
             wrong.push(why);
@@ -3976,21 +4008,26 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
 }
 
 #[tokio::test]
-async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_spec_files() {
+async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_captures() {
     let fake = FakeDocket::start().await;
     fake.add_folder_pod("saas-notes");
-    fake.add_record_set("saas-notes", "leads", "People", &["email", "stage"]);
+    fake.add_record_set(
+        "saas-notes",
+        "entries",
+        "Things",
+        &["ref", "title", "amount"],
+    );
     fake.add_record_row(
         "saas-notes",
-        "leads",
+        "entries",
         "task-a",
-        json!({"email": "a@example.test", "stage": "new"}),
+        json!({"ref": "story-1", "title": "A story", "amount": 12.5}),
     );
     let mut wrong = Vec::new();
     for (name, path) in [
         ("pod-folder", "/pods/saas-notes"),
         ("records", "/pods/saas-notes/records"),
-        ("records-rows", "/pods/saas-notes/records/leads"),
+        ("records-rows", "/pods/saas-notes/records/entries"),
     ] {
         let (status, answer) = ask(&fake, "GET", path, None).await;
         assert_eq!(status, 200, "{name}: {answer}");
@@ -3999,13 +4036,17 @@ async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_spe
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
-    // A team in a repository says where it works too, and the captures' two pods do not.
+    // A team in a repository says where it works too: its configuration directory is inside it.
     fake.add_pod("saas-code", "lights-out", &[]);
     let (_, answer) = ask(&fake, "GET", "/pods/saas-code", None).await;
     assert!(
-        answer["codebase"]
+        answer["repoConfigDir"]
             .as_str()
             .is_some_and(|path| !path.is_empty())
+    );
+    assert_eq!(
+        ask(&fake, "GET", "/pods/saas-notes", None).await.1["repoConfigDir"],
+        json!("")
     );
 }
 
@@ -4017,7 +4058,7 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
         &fake,
         "POST",
         "/pods",
-        Some(json!({"project": "saas-dev", "path": "/x", "blueprint": "software", "ensure": true})),
+        Some(json!({"project": "saas-dev", "path": "/x", "ensure": true})),
     )
     .await;
     assert_eq!(old.0, 400);

@@ -1,19 +1,24 @@
 {
   "records": [
     {
-      "name": "leads",
-      "description": "People the team found and what it wrote about each",
-      "key": "email",
-      "rows": 3,
+      "name": "entries",
+      "description": "One row per thing the pod has captured, found again by its ref.",
+      "key": "ref",
+      "rows": 0,
       "columns": [
         {
-          "name": "email",
-          "type": "text",
+          "name": "ref",
+          "type": "string",
           "required": true
         },
         {
-          "name": "stage",
-          "type": "text",
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "amount",
+          "type": "number",
           "required": false
         }
       ]

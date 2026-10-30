@@ -470,6 +470,7 @@ automation a template carries, and the removal of dollars per day.
   in each change, and a release's notes are its section here.
 
 ### Fixed
+- **A docket team that works in a folder is recognised.** Tack read where a team works from a key docket's report of one team does not carry, so a folder team counted as having a repository; it now reads the report's configuration directory, which is empty for a team with no codebase, and Settings → Automation → Teams and a run's end tell a folder team from one in a repository.
 - **A retry of a run no longer answers 409 after the card's title was edited.** The instructions composed from the card's text are no longer part of what an exact retry is compared by, so the same request after an edit replays the run it made.
 - A `(?)` help button no longer sits inside a folded heading: the help of "How the agent works on it" and "For the agent" is a line in the opened section, every `(?)` is at least 24 pixels wide, and the radio buttons of where the code lives are big enough to hit, so a keyboard or screen-reader user no longer meets a button inside a button.
 

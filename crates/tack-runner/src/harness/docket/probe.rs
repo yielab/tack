@@ -136,9 +136,9 @@ async fn team(client: &Client, name: &str) -> Result<TeamReport, String> {
             .collect(),
         // An older docket sends no key; that stays unknown rather than becoming "none".
         read_only: report.read_only,
-        // Likewise: no `codebase` key is an older docket, not a team without a repository.
-        works_in: report.codebase.as_deref().map(|codebase| {
-            if codebase.is_empty() {
+        // Likewise: no `repoConfigDir` key is an older docket, not a team without a repository.
+        works_in: report.repo_config_dir.as_deref().map(|dir| {
+            if dir.is_empty() {
                 WorksIn::Folder
             } else {
                 WorksIn::Repository

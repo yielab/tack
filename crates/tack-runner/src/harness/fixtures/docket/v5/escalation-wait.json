@@ -2,16 +2,16 @@
   "id": "esc-000000000000",
   "task": "task-00000000-0000-0000-0000-000000000000",
   "pod": "saas-dev",
-  "step": "wait",
+  "step": "hold",
   "role": "",
   "kind": "wait",
-  "causedBy": "pipeline-wait",
-  "prompt": "The pipeline waits until 2026-01-01T00:00:00Z.",
+  "causedBy": "hold",
+  "prompt": "waiting until 2026-01-01T00:00:00Z at step 'hold'",
   "options": [
     {
       "id": "resume",
-      "label": "Resume now",
-      "description": "End the wait early and run the step after it.",
+      "label": "Resume",
+      "description": "End the wait now and run the next step.",
       "risks": [],
       "estimatedTokens": null
     }
@@ -25,7 +25,7 @@
   "level": "L3",
   "state": "pending",
   "resolution": null,
-  "seq": 1,
+  "seq": 4,
   "affordances": {
     "options": [
       "resume"

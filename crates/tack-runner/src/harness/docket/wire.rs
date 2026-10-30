@@ -48,9 +48,10 @@ pub(super) struct PodRow {
 pub(super) struct PodReport {
     pub profile: Profile,
     pub read_only: Option<Vec<String>>,
-    /// The repository the team works in; `""` for a team that works in a folder. Absent from a
+    /// Where the team's configuration of record lives, inside its repository; `""` for a team that
+    /// works in a folder (`GET /pods/<pod>` carries no `codebase`; the list does). Absent from a
     /// docket before that was possible.
-    pub codebase: Option<String>,
+    pub repo_config_dir: Option<String>,
 }
 
 /// `GET /pods/<pod>/records`: the sets the team declares. `problems` (documents that do not

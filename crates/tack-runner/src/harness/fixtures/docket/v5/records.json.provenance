@@ -1,8 +1,10 @@
-constructed
+captured
 route: GET /pods/<pod>/records
 status: 200
-built-from: the shape of requirement 50; no capture
-source: specs/functional/pod-records.spec.md requirements 33 and 50-53, specs/functional/serve-read-api.spec.md "GET /pods/<pod>", at docket develop 28c3cf65
-docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+tack-sends: yes
+note: the sets the team declares, with their columns and row counts
+command: curl -X GET http://127.0.0.1:<port>/pods/saas-notes/records (bearer token from docket's --token-file)
+docket: docket 0.2.0b6 (API 6), source checkout 115e9027
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-30
-note: from the spec, recaptured by D. One set the team declares, with the columns as {name, type, required}; rows counts the whole set, whichever task wrote them.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

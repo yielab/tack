@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "invalid task: 1 validation error for TaskRequest\npaths\n  Input should be a valid list [type=list_type, input_value='src/', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/list_type"
+}
