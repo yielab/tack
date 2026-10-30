@@ -96,6 +96,86 @@ async fn the_same_decision_again_is_a_replay_and_other_content_conflicts_without
 }
 
 #[tokio::test]
+async fn a_replay_of_a_settled_decision_that_carried_a_call_is_a_replay_not_a_conflict() {
+    use tack_db::repo::execution::DecisionSettlement;
+
+    let world = world().await;
+    let run = running_attempt(&world, "decision-call").await;
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        "call".into(),
+        serde_json::json!("send_email to=ana@example.com"),
+    );
+    metadata.insert("outward".into(), serde_json::json!(true));
+    let ask = |metadata: &serde_json::Map<String, serde_json::Value>| {
+        let (world, run) = (&world, &run);
+        let metadata = metadata.clone();
+        async move {
+            create_decision(
+                &world.repo,
+                world.clock.now(),
+                DecisionRequest {
+                    runner_id: &RunnerId::new(RUNNER_ID),
+                    attempt_id: &AttemptId::new(&run.attempt_id),
+                    fencing_token: run.fence,
+                    decision_id: "dec-call",
+                    kind: "approval",
+                    prompt: "send: an email (cut)",
+                    options: &[],
+                    metadata: &metadata,
+                    recommendation: None,
+                    expires_at: None,
+                },
+            )
+            .await
+            .expect("create")
+        }
+    };
+    assert!(matches!(
+        ask(&metadata).await,
+        DecisionCreated::Created { .. }
+    ));
+
+    world
+        .repo
+        .settle_execution_decision(
+            &AttemptId::new(&run.attempt_id),
+            "dec-call",
+            world.clock.now(),
+            |_| {
+                (
+                    DecisionSettlement::Resolve {
+                        answer: r#"{"option_id":"approve_once"}"#.into(),
+                        resolved_by: r#"{"kind":"operator","subject_id":"ana"}"#.into(),
+                    },
+                    (),
+                )
+            },
+        )
+        .await
+        .unwrap();
+    let stored = execution_decisions::decision_of_attempt(&world.repo, &run.attempt_id, "dec-call")
+        .await
+        .unwrap()
+        .expect("the decision exists");
+    assert!(
+        !stored.metadata.contains("ana@example.com"),
+        "{}",
+        stored.metadata
+    );
+
+    // The runner retries its create after the answer: the same request, which the erased call
+    // does not turn into a different one.
+    let DecisionCreated::Created { state, .. } = ask(&metadata).await else {
+        panic!("a replay of a settled decision is answered with the stored one");
+    };
+    assert_eq!(state, "resolved");
+    // And a different call is still a different request.
+    metadata.insert("role".into(), serde_json::json!("other"));
+    assert_eq!(ask(&metadata).await, DecisionCreated::IdempotencyConflict);
+}
+
+#[tokio::test]
 async fn a_stale_fence_or_an_ended_lease_is_stale_and_writes_nothing() {
     let world = world().await;
     let run = running_attempt(&world, "decision-stale").await;

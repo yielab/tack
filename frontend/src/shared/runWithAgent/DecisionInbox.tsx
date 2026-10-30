@@ -84,6 +84,14 @@ const DecisionRow: Component<{
   const isExpired = () => props.decision.state === 'expired';
   const isResolved = () => props.decision.state === 'resolved';
   const hasOptions = () => props.decision.options.length > 0;
+  // An approval of an action that leaves the team (an email, a post, a write to a service) is
+  // marked by the runner, and carries the whole action while it is pending.
+  const metadata = () => (props.decision.metadata && typeof props.decision.metadata === 'object' ? (props.decision.metadata as Record<string, unknown>) : {});
+  const leaves = () => metadata().outward === true;
+  const call = () => {
+    const text = metadata().call;
+    return typeof text === 'string' && text.trim() !== '' ? text : null;
+  };
 
   onMount(() => {
     if (isPending() && !props.decision.viewed_at) props.onView(props.decision.decision_id);
@@ -137,9 +145,40 @@ const DecisionRow: Component<{
         </span>
       </div>
 
+      <Show when={leaves()}>
+        <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
+          This action leaves the team
+        </h4>
+      </Show>
       <p class="text-sm font-semibold" style={{ color: isPending() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>
         {props.decision.prompt}
       </p>
+
+      {/* The action as it would be made, uncut. Tack keeps it only while this question is
+          open; it is erased when the question is answered or expires. */}
+      <Show when={isPending() && call()}>
+        <div class="space-y-1">
+          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Exactly what happens if you approve:
+          </p>
+          <pre
+            data-testid="decision-call"
+            tabindex="0"
+            aria-label="The action that would leave the team"
+            class="overflow-auto whitespace-pre-wrap break-words rounded-item p-3 text-xs"
+            style={{
+              'font-family': 'var(--font-mono)',
+              'line-height': '1.5',
+              // Twenty lines at a line height of 1.5 show at once; a longer action scrolls.
+              'max-height': '30em',
+              'background-color': 'var(--color-bg-panel)',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {call()}
+          </pre>
+        </div>
+      </Show>
 
       <Show when={isResolved()}>
         <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>

@@ -180,6 +180,16 @@ pub enum Gate {
         property: String,
         options: Vec<String>,
     },
+    /// A pipeline step parks the task until a time (`waiting_input`): an escalation of kind
+    /// `wait`, policy `machine`, with the one option `resume`. The script's `expires_at` is the
+    /// due time (an hour from now without one). Nobody is asked: `end_waits` plays docket's sweep.
+    Wait,
+    /// An approval of a `send` call: the view is marked `outward`, and `GET /escalations/<id>`
+    /// answers with `call` while it is pending.
+    Outward {
+        prompt: String,
+        call: String,
+    },
     /// Never finishes by itself; only a cancel ends it.
     Hold,
 }
@@ -265,6 +275,9 @@ struct Escalation {
     task: String,
     pod: String,
     view: Value,
+    /// The whole call of an `outward` approval, which only `GET /escalations/<id>` shows and
+    /// only while the escalation is pending.
+    call: Option<String>,
 }
 
 struct Pod {
@@ -297,6 +310,8 @@ struct World {
     without_escalations: bool,
     /// How many of the next answers to an escalation docket refuses with `422`.
     answers_refused: u32,
+    /// `GET /escalations/<id>` leaves out `call`, as a docket that does not show it.
+    calls_withheld: bool,
 }
 
 pub struct FakeDocket {
@@ -323,6 +338,7 @@ impl FakeDocket {
             escalations: Vec::new(),
             without_escalations: false,
             answers_refused: 0,
+            calls_withheld: false,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -392,6 +408,38 @@ impl FakeDocket {
             if escalation.view["state"] == json!("pending") {
                 escalation.view["state"] = json!("expired");
             }
+        }
+    }
+
+    /// Makes `GET /escalations/<id>` answer without a `call`, as a docket that does not show it.
+    pub fn withhold_calls(&self) {
+        self.shared.lock().unwrap().calls_withheld = true;
+    }
+
+    /// Plays docket's sweep for the tasks parked on a `wait`: the wait ends, its escalation is
+    /// closed (`expired` when the script leaves the task `blocked`, `resolved` otherwise), and the
+    /// task takes the script's end.
+    pub fn end_waits(&self) {
+        let mut world = self.shared.lock().unwrap();
+        let state = &mut *world;
+        for index in 0..state.tasks.len() {
+            let task = &state.tasks[index];
+            if !(task.gate_open && matches!(task.script.gate, Gate::Wait)) {
+                continue;
+            }
+            let closing = if task.script.status == "blocked" {
+                "expired"
+            } else {
+                "resolved"
+            };
+            let id = task.id.clone();
+            for escalation in &mut state.escalations {
+                if escalation.task == id && escalation.view["state"] == json!("pending") {
+                    escalation.view["state"] = json!(closing);
+                    escalation.view["affordances"]["options"] = json!([]);
+                }
+            }
+            finish(state, index);
         }
     }
 
@@ -593,6 +641,7 @@ async fn handle(
         ("GET", ["tasks", pod, id, "diff"]) => diff(&state, pod, id),
         ("GET", ["traces", pod]) => traces(&state, pod, &query),
         ("GET", ["escalations"]) => escalations(&state, &query),
+        ("GET", ["escalations", id]) => escalation_detail(&state, id),
         ("POST", ["escalations", id]) => resolve(&mut state, id, &parsed),
         _ => error(404, "not found"),
     }
@@ -890,11 +939,11 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     let index = state.tasks.len() - 1;
     match state.tasks[index].script.gate {
         Gate::None => finish(state, index),
-        Gate::Consult { .. } => {
+        Gate::Consult { .. } | Gate::Wait => {
             state.tasks[index].status = "waiting_input".to_owned();
             open_escalation(state, index);
         }
-        Gate::Approval { .. } => {
+        Gate::Approval { .. } | Gate::Outward { .. } => {
             state.tasks[index].status = "waiting_approval".to_owned();
             open_escalation(state, index);
         }
@@ -923,7 +972,28 @@ fn open_escalation(state: &mut World, index: usize) {
     let seq = state.escalations.len() as u64 + 1;
     let task = &state.tasks[index];
     let id = escalation_id(&task.id);
+    let mut call = None;
     let mut view = match &task.script.gate {
+        Gate::Wait => {
+            let mut view = fixture("escalation-wait");
+            view["expiresAt"] = json!(task.script.expires_at.clone().unwrap_or_else(|| {
+                (chrono::Utc::now() + chrono::Duration::hours(1)).to_rfc3339()
+            }));
+            view
+        }
+        Gate::Outward {
+            prompt,
+            call: whole,
+        } => {
+            let mut view = fixture("escalation-outward");
+            view.as_object_mut().expect("a view").remove("call");
+            view["prompt"] = json!(prompt);
+            view["expiresAt"] = json!(task.script.expires_at.clone().unwrap_or_else(|| {
+                (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339()
+            }));
+            call = Some(whole.clone());
+            view
+        }
         Gate::Approval { kind, prompt } => {
             let mut view = fixture("escalations-pending")["escalations"][0].clone();
             view["kind"] = json!(kind);
@@ -984,9 +1054,11 @@ fn open_escalation(state: &mut World, index: usize) {
     view["id"] = json!(id);
     view["task"] = json!(task.id);
     view["pod"] = json!(task.pod);
-    view["step"] = json!("implementer");
-    if view["role"] != json!("") {
-        view["role"] = json!("implementer");
+    if !matches!(task.script.gate, Gate::Wait | Gate::Outward { .. }) {
+        view["step"] = json!("implementer");
+        if view["role"] != json!("") {
+            view["role"] = json!("implementer");
+        }
     }
     view["seq"] = json!(seq);
     view["state"] = json!("pending");
@@ -997,6 +1069,7 @@ fn open_escalation(state: &mut World, index: usize) {
         task: task_id,
         pod,
         view,
+        call,
     });
 }
 
@@ -1288,6 +1361,29 @@ fn escalations(state: &World, query: &str) -> Response {
         .and_then(|view| view["seq"].as_u64())
         .unwrap_or(since);
     reply(200, json!({"escalations": listed, "next": next}))
+}
+
+/// `GET /escalations/<id>`: the one record, and for an `outward` approval still pending the
+/// whole call, which no list carries.
+fn escalation_detail(state: &World, id: &str) -> Response {
+    if state.without_escalations {
+        return error(404, "not found");
+    }
+    let Some(found) = state
+        .escalations
+        .iter()
+        .find(|found| found.view["id"] == json!(id))
+    else {
+        return refusal("escalation-unknown", &[("esc-000000000000", id)]);
+    };
+    let mut view = found.view.clone();
+    if let Some(call) = &found.call
+        && view["state"] == json!("pending")
+        && !state.calls_withheld
+    {
+        view["call"] = json!(call);
+    }
+    reply(200, view)
 }
 
 /// `POST /escalations/<id>`: the one route that settles a pause, with docket's refusals as the

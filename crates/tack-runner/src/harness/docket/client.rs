@@ -174,6 +174,13 @@ impl Client {
         self.send(Method::GET, &["escalations"], &query, None).await
     }
 
+    /// `GET /escalations/<id>`: the one record, which for a pending approval of a call that
+    /// leaves carries the call itself. The list never does.
+    pub async fn escalation(&self, id: &str) -> Result<Reply, String> {
+        self.send(Method::GET, &["escalations", id], &[], None)
+            .await
+    }
+
     /// `POST /escalations/<id>`: the one route that settles a pause.
     pub async fn resolve(&self, id: &str, body: Value) -> Result<Reply, String> {
         self.send(Method::POST, &["escalations", id], &[], Some(body))

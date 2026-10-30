@@ -1,0 +1,9 @@
+constructed
+route: GET /escalations/<id>
+status: 200
+tack-sends: yes
+built-from: escalations-pending.json's view with the keys of a pipeline wait step: kind wait, policy machine, the one option resume, expiresAt the due time
+source: specs/api/operator-api.spec.md "Wait" (items 1 and 3) and specs/functional/operator-loop.spec.md area 11 item 2
+docket: docket develop at 28c3cf65 (API 6), read and not run
+date: 2026-10-30
+note: from the spec. Not captured, because a wait step needs a pipeline that has one; every key is one the spec lists and the values (the prompt, the label and description of resume, causedBy, onExpiry) are made up. D replaces the file with the record of a real run.

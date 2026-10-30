@@ -2445,6 +2445,175 @@ async fn a_question_with_no_expiry_is_never_ended_by_the_clock() {
     assert_eq!(outcome.terminal_state, AttemptState::Cancelled);
 }
 
+/// Waits until the adapter has read the task `reads` times more than it had.
+async fn polls_more(fake: &FakeDocket, reads: usize) {
+    let first = task_reads(fake);
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while task_reads(fake) < first + reads {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("more polls");
+}
+
+#[tokio::test]
+async fn a_wait_asks_nobody_says_so_once_and_is_not_cut_by_the_time_limit() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::Wait,
+        expires_at: Some(in_seconds(3600)),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut attempt = spec(&scene, "attempt-1", 1);
+    attempt.work.request.timeout_seconds = 1;
+    let mut parked = park(&fake, &scene, &attempt).await;
+    // Open for at least three polls, each longer than the attempt's own time limit.
+    polls_more(&fake, 3).await;
+    assert!(
+        !parked.waiting.is_finished(),
+        "the wait was cut by the time limit"
+    );
+    assert!(
+        parked.questions.try_recv().is_err(),
+        "a wait is no question"
+    );
+    assert!(answers_posted(&fake).is_empty());
+    fake.end_waits();
+    let (outcome, lines) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    let waiting: Vec<_> = lines
+        .iter()
+        .filter(|(kind, _)| kind == "escalation.waiting")
+        .collect();
+    assert_eq!(waiting.len(), 1, "once per escalation: {lines:?}");
+    let text = &waiting[0].1;
+    assert!(
+        text.starts_with("The team waits until ") && text.ends_with(". Nobody needs to answer."),
+        "{text}"
+    );
+    assert!(
+        lines
+            .iter()
+            .all(|(kind, _)| kind != "escalation.unreadable"),
+        "{lines:?}"
+    );
+    assert!(fake.requests_to("POST", "/escalations/").is_empty());
+    assert!(
+        fake.requests_to("POST", &format!("/tasks/{POD}/"))
+            .iter()
+            .all(|request| !request.path.ends_with("/cancel"))
+    );
+}
+
+#[tokio::test]
+async fn a_wait_that_ran_out_with_no_route_ends_with_wait_expired() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::Wait,
+        expires_at: Some(in_seconds(3600)),
+        status: "blocked".into(),
+        reason: "the wait at step 'settle' expired".into(),
+        blocked_reason: Some("wait_expired".into()),
+        ..Script::default()
+    });
+    let scene = scene();
+    let parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    polls_more(&fake, 1).await;
+    fake.end_waits();
+    let (outcome, _) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("wait_expired"));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!("The team's wait ran out and its pipeline does not say what comes next.")
+    );
+}
+
+const THE_CALL: &str = "send_email\nto: ana@example.com\nsubject: Your order\n\nHello Ana,\nYour order shipped today.\n";
+const THE_REDACTED_PROMPT: &str = "tool call 'send_email': ask before every send (cut)";
+
+fn outward(call: &str) -> Gate {
+    Gate::Outward {
+        prompt: THE_REDACTED_PROMPT.into(),
+        call: call.into(),
+    }
+}
+
+#[tokio::test]
+async fn an_action_that_leaves_is_asked_with_its_whole_call_and_the_call_goes_nowhere_else() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: outward(THE_CALL),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    let question = parked.question().await;
+    assert_eq!(question.kind, "approval");
+    assert_eq!(question.prompt, THE_REDACTED_PROMPT);
+    assert_eq!(question.metadata["call"], json!(THE_CALL));
+    assert_eq!(question.metadata["outward"], json!(true));
+    let id = escalation_of(&fake);
+    assert_eq!(
+        fake.requests_to("GET", &format!("/escalations/{id}")).len(),
+        1,
+        "the one record is read once, before the question"
+    );
+    parked.answer(granting("approve_once")).await;
+    let (outcome, lines) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    // Neither a timeline line nor the answer posted back holds a byte of the call.
+    for (kind, text) in &lines {
+        assert!(
+            !text.contains("ana@example.com") && !text.contains("Hello Ana"),
+            "{kind}: {text}"
+        );
+    }
+    let posted = serde_json::to_string(&answers_posted(&fake)).expect("JSON");
+    assert!(!posted.contains("ana@example.com"), "{posted}");
+    // docket itself stops showing it once the approval is settled.
+    let (status, record) = ask(&fake, "GET", &format!("/escalations/{id}"), None).await;
+    assert_eq!(status, 200);
+    assert!(record.get("call").is_none(), "{record}");
+    assert_eq!(record["outward"], json!(true));
+}
+
+#[tokio::test]
+async fn an_action_that_leaves_whose_call_docket_does_not_show_is_not_asked() {
+    let fake = pods_fake().await;
+    fake.withhold_calls();
+    fake.script(Script {
+        gate: outward(THE_CALL),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    let line = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let step = parked.progress.recv().await.expect("a line");
+            if step.kind == "escalation.unreadable" {
+                break step.text;
+            }
+        }
+    })
+    .await
+    .expect("the sentence in time");
+    assert_eq!(
+        line,
+        "docket did not show the call that would leave; answer it in docket, where it is shown"
+    );
+    assert!(parked.questions.try_recv().is_err(), "nothing was asked");
+    parked
+        .adapter
+        .cancel(&parked.handle)
+        .await
+        .expect("cancels");
+    let (outcome, _) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Cancelled);
+}
+
 #[tokio::test]
 async fn docket_blocking_an_expired_question_ends_with_not_answered() {
     let rows = [
@@ -2972,7 +3141,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 12] = [
+const CLIENT_ROUTES: [&str; 13] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -2984,8 +3153,12 @@ const CLIENT_ROUTES: [&str; 12] = [
     "GET /tasks/<pod>/<id>/diff",
     "GET /traces/<pod>",
     "GET /escalations",
+    "GET /escalations/<id>",
     "POST /escalations/<id>",
 ];
+
+/// Routes whose files are written from docket's spec until a capture of a real run replaces them.
+const FROM_THE_SPEC_ONLY: [&str; 1] = ["GET /escalations/<id>"];
 
 /// `GET /health` is sent by the daemon's supervision, not by `client.rs`.
 const NOT_IN_CLIENT: [&str; 1] = ["GET /health"];
@@ -3002,7 +3175,10 @@ fn every_route_the_client_sends_has_a_captured_file() {
     for route in CLIENT_ROUTES {
         let captured: Vec<_> = provenances
             .iter()
-            .filter(|found| found.state == "captured" && found.get("route") == Some(route))
+            .filter(|found| {
+                (found.state == "captured" || FROM_THE_SPEC_ONLY.contains(&route))
+                    && found.get("route") == Some(route)
+            })
             .collect();
         assert!(
             !captured.is_empty(),
@@ -3147,6 +3323,37 @@ fn request_file(name: &str) -> Value {
         std::fs::read_to_string(fake_docket::fixtures_dir().join(format!("{name}.request.json")))
             .expect("request file");
     serde_json::from_str(&text).expect("JSON")
+}
+
+#[tokio::test]
+async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_spec_files() {
+    for (name, gate) in [
+        ("escalation-wait", Gate::Wait),
+        ("escalation-outward", outward("x")),
+    ] {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            gate,
+            ..Script::default()
+        });
+        let posted = ask(
+            &fake,
+            "POST",
+            &format!("/tasks/{POD}"),
+            Some(request_file("post-task-created")),
+        )
+        .await;
+        assert_eq!(posted.0, 201, "{posted:?}");
+        let id = fake.escalation_id(posted.1["task"].as_str().unwrap());
+        let (status, record) = ask(&fake, "GET", &format!("/escalations/{id}"), None).await;
+        assert_eq!(status, 200, "{name}");
+        if let Err(why) = same_shape(&record, &fake_docket::fixture(name), name) {
+            panic!("{why}");
+        }
+        // The list never carries the call, whatever the record shows.
+        let (_, listed) = ask(&fake, "GET", "/escalations?since=0", None).await;
+        assert!(listed["escalations"][0].get("call").is_none(), "{name}");
+    }
 }
 
 #[tokio::test]

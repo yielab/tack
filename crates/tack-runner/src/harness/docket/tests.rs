@@ -1,7 +1,8 @@
+use chrono::{Local, TimeZone, Utc};
 use serde_json::json;
 
 use super::{
-    OptionLabels, escalation_progress, escalation_question,
+    OptionLabels, escalation_progress, escalation_question, wait_line,
     wire::{Escalation, TraceEvent},
 };
 
@@ -22,7 +23,7 @@ fn a_change_to_its_own_check_is_asked_in_dockets_words_and_answered_with_a_reaso
         "recommendation": null, "requestedSchema": null, "expiresAt": null,
         "affordances": {"options": ["approve_once", "deny"], "acceptsText": false},
     });
-    let (question, pending) = escalation_question(&escalation(record)).expect("a question");
+    let (question, pending) = escalation_question(&escalation(record), None).expect("a question");
     assert_eq!(question.vendor_id, "esc-1");
     assert_eq!(question.kind, "check_changed");
     assert_eq!(
@@ -48,7 +49,7 @@ fn a_question_that_only_declines_but_takes_text_is_offered_an_answer_first() {
                             "required": ["answer"]},
         "affordances": {"options": ["decline"], "acceptsText": true},
     });
-    let (question, pending) = escalation_question(&escalation(record)).expect("a question");
+    let (question, pending) = escalation_question(&escalation(record), None).expect("a question");
     let ids: Vec<_> = question
         .options
         .iter()
@@ -68,7 +69,7 @@ fn a_kind_tack_does_not_know_is_not_guessed_and_is_named() {
         "requestedSchema": null, "expiresAt": null,
         "affordances": {"options": ["approve_once", "deny"], "acceptsText": false},
     });
-    let Err(sentence) = escalation_question(&escalation(record)) else {
+    let Err(sentence) = escalation_question(&escalation(record), None) else {
         panic!("a kind Tack does not know is not turned into an approval");
     };
     assert!(sentence.contains("\"teleport\""), "{sentence}");
@@ -118,4 +119,82 @@ fn an_event_type_tack_does_not_follow_is_not_a_line() {
     let other = event(json!({"event_type": "llm_call", "payload": {"task": "t"}}));
     assert!(escalation_progress(&other, &OptionLabels::new()).is_none());
     assert_eq!(other.task(), None);
+}
+
+/// A moment on the person's own clock, so the lines below read the same in any time zone.
+fn local(day: u32, hour: u32, minute: u32) -> chrono::DateTime<Utc> {
+    Local
+        .with_ymd_and_hms(2026, 10, day, hour, minute, 0)
+        .single()
+        .expect("a local time")
+        .with_timezone(&Utc)
+}
+
+#[test]
+fn a_wait_is_one_line_with_its_time_and_asks_nobody() {
+    let today = wait_line(Some(local(30, 14, 0)), local(30, 9, 5));
+    assert_eq!(today, "The team waits until 14:00. Nobody needs to answer.");
+    let later = wait_line(Some(local(31, 8, 30)), local(30, 9, 5));
+    assert_eq!(
+        later,
+        "The team waits until 2026-10-31 08:30. Nobody needs to answer."
+    );
+    // A wait with no due time (a probe) still says nobody is asked.
+    assert_eq!(
+        wait_line(None, local(30, 9, 5)),
+        "The team waits. Nobody needs to answer."
+    );
+    // Not a question: the kind is not one Tack puts to a person.
+    let record = json!({
+        "id": "esc-w", "kind": "wait", "state": "pending", "seq": 4, "policy": "machine",
+        "prompt": "waiting", "options": [option("resume")], "recommendation": null,
+        "requestedSchema": null, "expiresAt": "2026-10-30T14:00:00Z",
+        "affordances": {"options": ["resume"], "acceptsText": false},
+    });
+    assert!(escalation_question(&escalation(record), None).is_err());
+}
+
+fn outward_approval() -> serde_json::Value {
+    json!({
+        "id": "esc-4", "kind": "approval", "state": "pending", "seq": 4, "role": "actor",
+        "outward": true, "policy": "person",
+        "prompt": "send: an email to a customer (the call is cut here)",
+        "options": [option("approve_once"), option("deny")],
+        "recommendation": null, "requestedSchema": null, "expiresAt": null,
+        "affordances": {"options": ["approve_once", "deny"], "acceptsText": false},
+    })
+}
+
+#[test]
+fn an_outward_approval_with_its_call_carries_the_call_and_the_mark() {
+    let call = "send_email to=ana@example.com\nsubject: Your order\n\nHello, Ana.";
+    let (question, _) =
+        escalation_question(&escalation(outward_approval()), Some(call)).expect("a question");
+    assert_eq!(question.metadata["call"], json!(call));
+    assert_eq!(question.metadata["outward"], json!(true));
+    // The prompt stays docket's redacted, cut one: it is what the timeline line is made of.
+    assert_eq!(
+        question.prompt,
+        "send: an email to a customer (the call is cut here)"
+    );
+    assert!(!question.prompt.contains("Hello, Ana"));
+}
+
+#[test]
+fn an_outward_approval_without_its_call_is_not_asked() {
+    for call in [None, Some(""), Some("  \n")] {
+        let Err(sentence) = escalation_question(&escalation(outward_approval()), call) else {
+            panic!("an approval whose call is not shown is not put to a person");
+        };
+        assert_eq!(
+            sentence,
+            "docket did not show the call that would leave; answer it in docket, where it is shown"
+        );
+    }
+    // An ordinary approval needs no call and carries none.
+    let mut ordinary = outward_approval();
+    ordinary["outward"] = json!(false);
+    let (question, _) = escalation_question(&escalation(ordinary), Some("ignored")).expect("asked");
+    assert!(question.metadata.get("call").is_none());
+    assert!(question.metadata.get("outward").is_none());
 }

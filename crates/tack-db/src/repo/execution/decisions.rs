@@ -26,6 +26,12 @@ pub struct NewDecision<'a> {
     pub recommendation: Option<&'a DecisionRecommendation>,
 }
 
+/// The metadata a settled decision keeps. A question about an action that leaves carries the whole
+/// call there while it is pending, so a person can read it before approving; the call is erased in
+/// the same statement that settles or expires the row, and nothing else is kept of it.
+const WITHOUT_CALL: &str =
+    "metadata=CASE WHEN json_valid(metadata) THEN json_remove(metadata,'$.call') ELSE metadata END";
+
 /// The `resolved_by` of a decision that expired because its attempt ended.
 const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 
@@ -40,10 +46,10 @@ pub(super) async fn end_attempt_decisions(
     attempt_id: &AttemptId,
     now: &str,
 ) -> Result<(), StoreError> {
-    sqlx::query(
-        "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
-         WHERE attempt_id=? AND state='pending'",
-    )
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=?,{WITHOUT_CALL} \
+         WHERE attempt_id=? AND state='pending'"
+    )))
     .bind(now)
     .bind(ATTEMPT_ENDED)
     .bind(now)
@@ -125,7 +131,7 @@ impl Repository {
     ) -> Result<u64, StoreError> {
         let now = now.to_rfc3339();
         let closed = sqlx::query(
-            state::sql("UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=? \
+            state::sql("UPDATE execution_decisions SET state='expired',answer=NULL,resolved_at=?,resolved_by=?,updated_at=?,metadata=CASE WHEN json_valid(metadata) THEN json_remove(metadata,'$.call') ELSE metadata END \
              WHERE state='pending' AND attempt_id IN (SELECT id FROM execution_attempts \
              WHERE state IN ({terminal},{lost},{needs_operator}))"),
         )
@@ -254,10 +260,10 @@ impl Repository {
         match settlement {
             DecisionSettlement::Keep => {}
             DecisionSettlement::Expire { resolved_by } => {
-                sqlx::query(
-                    "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
-                     WHERE id=? AND state='pending'",
-                )
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=?, {WITHOUT_CALL} \
+                     WHERE id=? AND state='pending'"
+                )))
                 .bind(&now_s)
                 .bind(&resolved_by)
                 .bind(&now_s)
@@ -270,10 +276,10 @@ impl Repository {
                 answer,
                 resolved_by,
             } => {
-                sqlx::query(
-                    "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? \
-                     WHERE id=? AND state='pending'",
-                )
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=?, {WITHOUT_CALL} \
+                     WHERE id=? AND state='pending'"
+                )))
                 .bind(&answer)
                 .bind(&now_s)
                 .bind(&resolved_by)
@@ -300,9 +306,11 @@ impl Repository {
         let now_s = now.to_rfc3339();
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let expired: Vec<String> = sqlx::query_scalar(
-            "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
-             WHERE state='pending' AND expires_at IS NOT NULL AND expires_at <= ? \
-             RETURNING attempt_id",
+            sqlx::AssertSqlSafe(format!(
+                "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=?, {WITHOUT_CALL} \
+                 WHERE state='pending' AND expires_at IS NOT NULL AND expires_at <= ? \
+                 RETURNING attempt_id"
+            )),
         )
         .bind(&now_s)
         .bind(resolved_by)

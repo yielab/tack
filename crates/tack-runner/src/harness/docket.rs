@@ -19,7 +19,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, Utc};
 use serde_json::{Value, json};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
@@ -49,8 +49,8 @@ mod wire;
 
 use client::Client;
 use wire::{
-    Enqueued, Escalation, EscalationEvent, EscalationList, EscalationState, HopEvent, TaskDiff,
-    TaskUsage, TaskView, Tokens, TraceEvent, TracePage,
+    Enqueued, Escalation, EscalationDetail, EscalationEvent, EscalationList, EscalationState,
+    HopEvent, TaskDiff, TaskUsage, TaskView, Tokens, TraceEvent, TracePage,
 };
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
@@ -622,16 +622,53 @@ const KNOWN_KINDS: [&str; 5] = ["approval", "gate", "check_changed", "consult", 
 /// The kinds whose answer's text is a reason.
 const REASON_KINDS: [&str; 3] = ["approval", "gate", "check_changed"];
 
+/// A pipeline step that parks the task until a time. docket's sweep ends it and nobody is asked,
+/// so it is never one of the questions above.
+const WAIT_KIND: &str = "wait";
+
+/// What a person reads when docket marks an approval as leaving the machine but does not show the
+/// call: approving what cannot be seen is the one thing this asks nobody to do.
+const CALL_NOT_SHOWN: &str =
+    "docket did not show the call that would leave; answer it in docket, where it is shown";
+
+/// The timeline line for a wait: when it ends, in the person's own clock, with the date only when
+/// it is not today.
+fn wait_line(until: Option<DateTime<Utc>>, now: DateTime<Utc>) -> String {
+    let Some(until) = until else {
+        return "The team waits. Nobody needs to answer.".to_owned();
+    };
+    let (until, now) = (until.with_timezone(&Local), now.with_timezone(&Local));
+    let format = if until.date_naive() == now.date_naive() {
+        "%H:%M"
+    } else {
+        "%Y-%m-%d %H:%M"
+    };
+    format!(
+        "The team waits until {}. Nobody needs to answer.",
+        until.format(format)
+    )
+}
+
 /// The question one of docket's escalations is, and what answering it posts. The options are
 /// docket's own, in its order, so the last one is the way out; a question whose only option is to
 /// decline but which takes text is offered an answer in text beside it. A kind Tack does not know
-/// is the sentence saying so, and nothing is asked.
-fn escalation_question(record: &Escalation) -> Result<(Question, Pending), String> {
+/// is the sentence saying so, and nothing is asked. An approval docket marks `outward` is asked
+/// only with the `call` it would make, which rides in the question's metadata; without it the
+/// sentence says to answer in docket.
+fn escalation_question(
+    record: &Escalation,
+    call: Option<&str>,
+) -> Result<(Question, Pending), String> {
     let kind = record.kind.clone();
     if !KNOWN_KINDS.contains(&kind.as_str()) {
         return Err(format!(
             "docket asked something of kind {kind:?}, which this Tack cannot put to you; answer it in docket"
         ));
+    }
+    let leaving = record.outward && kind == "approval";
+    let call = call.filter(|call| !call.trim().is_empty());
+    if leaving && call.is_none() {
+        return Err(CALL_NOT_SHOWN.to_owned());
     }
     let mut options: Vec<DecisionOption> = record.options.iter().map(escalation_option).collect();
     let docket_ids: Vec<String> = options
@@ -672,6 +709,10 @@ fn escalation_question(record: &Escalation) -> Result<(Question, Pending), Strin
             metadata.insert(key.to_owned(), value.into());
         }
     }
+    if let Some(call) = call.filter(|_| leaving) {
+        metadata.insert("outward".to_owned(), true.into());
+        metadata.insert("call".to_owned(), call.into());
+    }
     Ok((
         Question {
             vendor_id: record.id.clone(),
@@ -697,6 +738,13 @@ fn escalation_question(record: &Escalation) -> Result<(Question, Pending), Strin
     ))
 }
 
+/// What the one record of an `outward` approval shows of the call.
+enum Call {
+    Shown(String),
+    Missing,
+    Settled,
+}
+
 /// What one read of the task's escalations found.
 #[derive(Default)]
 struct Escalations {
@@ -704,6 +752,8 @@ struct Escalations {
     next: Option<(Question, Pending)>,
     /// Pending ones Tack cannot put to a person, by docket's id, and the sentence saying why.
     unaskable: Vec<(String, String)>,
+    /// Pending waits not yet reported, by docket's id, and the time each ends.
+    waits: Vec<(String, Option<DateTime<Utc>>)>,
     /// The label of every option of every record read.
     labels: OptionLabels,
     /// The held one has expired in docket's own record.
@@ -773,8 +823,22 @@ impl DocketAdapter {
             }
             if matches!(record.state, EscalationState::Pending) {
                 open = true;
-                if held.is_none() && found.next.is_none() && !asked.contains(&record.id) {
-                    match escalation_question(&record) {
+                if record.kind == WAIT_KIND {
+                    if !asked.contains(&record.id) {
+                        found.waits.push((record.id.clone(), record.expires_at));
+                    }
+                } else if held.is_none() && found.next.is_none() && !asked.contains(&record.id) {
+                    let call = if record.outward && record.kind == "approval" {
+                        match self.call_that_leaves(&record.id).await {
+                            Call::Shown(call) => Some(call),
+                            Call::Missing => None,
+                            // Answered in docket between the list and this read.
+                            Call::Settled => continue,
+                        }
+                    } else {
+                        None
+                    };
+                    match escalation_question(&record, call.as_deref()) {
                         Ok(question) => found.next = Some(question),
                         Err(sentence) => found.unaskable.push((record.id.clone(), sentence)),
                     }
@@ -784,6 +848,23 @@ impl DocketAdapter {
             }
         }
         Some(found)
+    }
+
+    /// The call an `outward` approval would make, from the one record that carries it. A read
+    /// that fails, a `404` or an answer with no call is `Missing`: the person is never asked to
+    /// approve what Tack cannot show.
+    async fn call_that_leaves(&self, id: &str) -> Call {
+        let detail = match self.client.escalation(id).await {
+            Ok(reply) if reply.status == 200 => reply.read::<EscalationDetail>().ok(),
+            _ => None,
+        };
+        match detail {
+            Some(detail) if !matches!(detail.view.state, EscalationState::Pending) => Call::Settled,
+            Some(EscalationDetail {
+                call: Some(call), ..
+            }) if !call.trim().is_empty() => Call::Shown(call),
+            _ => Call::Missing,
+        }
     }
 
     /// Posts the person's answer where docket reads it. A `409` or a `404` means docket had
@@ -969,6 +1050,13 @@ impl DocketAdapter {
                 AttemptState::Failed,
                 json!({"code": "not_answered",
                        "message": super::not_answered(unanswered_until),
+                       "task": info.task}),
+            ),
+            // A wait ran out and the pipeline names no step to go to next.
+            "blocked" if task.blocked_reason.as_deref() == Some("wait_expired") => (
+                AttemptState::Failed,
+                json!({"code": "wait_expired",
+                       "message": "The team's wait ran out and its pipeline does not say what comes next.",
                        "task": info.task}),
             ),
             "blocked" => (
@@ -1410,6 +1498,14 @@ impl DocketAdapter {
                     let _ = side.progress.try_send(Progress {
                         kind: event_kind::ESCALATION_UNREADABLE.to_owned(),
                         text: sentence,
+                        usage: None,
+                    });
+                    asked.insert(id);
+                }
+                for (id, until) in read.waits {
+                    let _ = side.progress.try_send(Progress {
+                        kind: event_kind::ESCALATION_WAITING.to_owned(),
+                        text: wait_line(until, Utc::now()),
                         usage: None,
                     });
                     asked.insert(id);

@@ -317,6 +317,17 @@ can carry a short description, its risks and a rough cost in tokens. When the ag
 that option is preselected and marked **Recommended**, with the reason and the files it looked at beneath it.
 Nothing is applied until you press **Resolve**, and you can pick any option.
 
+Some of docket's steps are not questions at all. A step that waits until a set time shows on the timeline as
+*The team waits until 14:00. Nobody needs to answer.*; there is nothing to press, and the run's time limit
+does not run while the team waits.
+
+When the team is about to do something that leaves it, such as sending an email, posting somewhere or writing to
+another service, the question is titled **This action leaves the team** and shows exactly what would happen,
+whole and in a block of its own above the options. A long one scrolls. Read it before you answer. Tack keeps that
+text only while the question is open and erases it the moment you answer or the question expires, so it is not on
+the timeline, in the run's log or in an export afterwards. If docket does not show the action, Tack does not ask
+you to approve it blind; the timeline says to answer it in docket, where it is shown.
+
 <img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary

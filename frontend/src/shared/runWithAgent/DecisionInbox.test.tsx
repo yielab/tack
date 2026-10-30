@@ -400,4 +400,50 @@ describe('DecisionInbox — the consultation pack', () => {
     const viewedCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/viewed'));
     expect(viewedCalls.map((call) => String(call[0]))).toEqual(['/api/attempts/att_1/decisions/dec_pack/viewed']);
   });
+  describe('an action that leaves the team', () => {
+    const CALL = Array.from({ length: 30 }, (_, i) => `line ${i + 1} to ana@example.com`).join('\n');
+    const LEAVING: DecisionRecord = {
+      ...PENDING_WITH_OPTIONS,
+      decision_id: 'dec_leaves',
+      kind: 'approval',
+      prompt: 'tool call send_email: ask before every send (cut)',
+      metadata: { outward: true, call: CALL },
+    };
+
+    it('is titled as one, and its whole call sits above the options in a block that scrolls', async () => {
+      mockFetch([LEAVING], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+
+      expect(c.textContent).toContain('This action leaves the team');
+      const block = c.querySelector('[data-testid="decision-call"]') as HTMLElement;
+      expect(block.textContent).toBe(CALL);
+      expect(block.style.fontFamily).toContain('mono');
+      expect(block.style.maxHeight).toBe('30em'); // twenty lines of 1.5
+      expect(block.style.overflow || block.className).toMatch(/overflow/);
+      const options = c.querySelector('fieldset') as HTMLElement;
+      expect(block.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('once answered is still titled as one but holds no call', async () => {
+      mockFetch([{ ...LEAVING, state: 'resolved', answer: { option_id: 'allow_once' }, metadata: { outward: true } }], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+
+      expect(c.textContent).toContain('This action leaves the team');
+      expect(c.querySelector('[data-testid="decision-call"]')).toBeNull();
+    });
+
+    it('an ordinary question has neither the title nor the block', async () => {
+      mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+
+      expect(c.textContent).not.toContain('leaves the team');
+      expect(c.querySelector('[data-testid="decision-call"]')).toBeNull();
+    });
+  });
 });
