@@ -4,7 +4,7 @@ This page is for contributors and integrators who want to know why Tack is built
 
 ## What an ADR is here
 
-An architecture decision record (ADR) is a short document in [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr) that asks the maintainer to decide something and keeps the answer. Each file is named `NNNN-slug.md` and numbered in the order it was written, from 0001 since the renumbering of 2026-10-26 (see the table at the end). Numbers are never reused. An ADR with nothing left to decide moves to [`docs/closed-cycles/adr/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/adr) and keeps its number, which is always above 0030.
+An architecture decision record (ADR) is a short document in [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr) that asks the maintainer to decide something and keeps the answer. Each file is named `NNNN-slug.md` and numbered in the order it was written, from 0001 since the renumbering of 2026-10-26 (see the table at the end). Numbers are never reused. An ADR with nothing left to decide moves to [`docs/closed-cycles/adr/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/adr) and keeps its number, which is always above 0031.
 
 The recent records open the same way, so that the person who must approve one reads a single screen and no more:
 
@@ -30,6 +30,7 @@ The Status line in each file is the authority. The "Superseded by" column below 
 
 | ADR | Title | Status | Superseded by |
 |---|---|---|---|
+| 0031 | [a docket team may work outside the repository, and what leaves is seen before it leaves](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md) | Proposed 2026-10-30 | — |
 | 0030 | [the task goes to docket as fields, and a run says which prompts made it](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md) | Proposed 2026-10-29 | — |
 | 0029 | [one test binary per crate, dependencies without debug info, agent builds without the incremental cache](https://github.com/yielab/tack/blob/develop/docs/adr/0029-one-test-binary-per-crate.md) | Accepted 2026-10-26 | — |
 | 0028 | [the protocol is a crate, and the SQL has one home](https://github.com/yielab/tack/blob/develop/docs/adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md) | Accepted 2026-10-26 | — |

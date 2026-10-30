@@ -34,8 +34,9 @@ the section named beside it. What is not a card is in "Cancelled" below.
 - **[Phase 81](#phase-81--what-the-audit-found)**, what the 2026-10-26 audit found: every card (B, C, D, S, R, A, H, E, F, I, J and K)
   is built and merged on the Phase 79 branch. What is left is the review and merge of Phases 79, 80 and 81 into `develop`.
 - **[Phase 82](#phase-82--the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it)**,
-  the task goes to docket as fields, and a run says which prompts made it: four cards (A, B, C, D),
-  none started. It reads what docket shipped on 2026-10-29 and changes nothing in docket.
+  the task goes to docket as fields, and a run says which prompts made it; widened 2026-10-30 with
+  what docket's Phases 55 and 56 ask of Tack: six cards (A, B, E, F, C, D), none started. It reads
+  what docket shipped and changes nothing in docket.
 
 ## Future, not planned
 
@@ -76,8 +77,12 @@ do not wait on anything; each can come back as a card of its own.
 day (its Phases 52 to 54: a prompt is a versioned file with a hash, a step closes with a handoff, a
 task can arrive as fields, every step records which prompts composed it, and the Anthropic provider
 reports its cache reads). docket's API number is unchanged and every addition is optional, so
-nothing here waits on docket or on the verifier. **ADR:**
-[0030](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md).
+nothing here waits on docket or on the verifier. Widened 2026-10-30 with docket's Phase 55 (a team
+works outward: in a folder instead of a repository, with steps that wait, and actions that leave the
+machine only after a person approves them) and its Phase 56 (a declared service, a team's own
+records, one judge instead of a critic and a tester, the team shapes renamed). **ADRs:**
+[0030](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md),
+[0031](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md).
 **Plan:** [`docs/plans/phase-82.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-82.md).
 
 **What changes for a person.** A docket run no longer sends the card twice (as prose and as a
@@ -87,22 +92,33 @@ carries the answers a person already gave, so the same question is not asked twi
 settles, the Execution tab shows, per step, which prompts ran at which version, what the agent
 assumed and what it asked, in words. The verifier's evidence names the model's family and the steps
 that produced the change. Tack still writes no prompt for a team: a team's prompts are edited where
-docket keeps them, and Tack reads them back by name, version and hash.
+docket keeps them, and Tack reads them back by name, version and hash. An item given to a team that
+works in a folder ends Succeeded with what the team did, nothing to merge, and the records it wrote
+shown on the Execution tab; the Teams panel says which teams work in a folder and what they keep. A
+step that waits reads as a wait with its time, never as a question, and the run's time limit does
+not run meanwhile. Before approving an action that leaves the team (an email, a post, a write to a
+service), the person sees the whole call; Tack keeps no copy once it is answered. Tack creates a
+team without naming a shape, so docket's renaming does not break it.
 
 | Id | Card | Model | Waits on |
 |---|---|---|---|
 | A | The item goes to docket as fields: a typed task document in the protocol, the prose renderer kept for the other agents, `task` sent instead of a brief in prose, previous answers on a rerun, the fake refusing what docket refuses | Sonnet | — |
 | B | A run keeps what each step was made of, and the verifier gets it: the hop record read at settle into one `steps` value (prompts by layer, verdict, assumptions, questions), the family and a trajectory in the attempt evidence, the fake writing the same shape | Sonnet | — |
-| C | The Execution tab says which prompts ran and what the agent asked: one section per run, a row per step, a line on the run card | Haiku | B |
-| D | The local suite proves it against the new docket: fixtures recaptured, three tests assert the fields and the manifest, the onboarding skill on docket's new home layout | Sonnet | A, B, C |
+| E | A wait is not a question, and an action that leaves is seen before it is approved: a wait as a timeline line with its time, the whole call of an outward approval shown while pending and erased when it settles | Sonnet | — |
+| F | A team may work in a folder, and a run keeps the records it wrote: a folder team's run succeeds with its summary and no merge, the rows the task wrote kept beside the steps, the Teams panel's two lines, no shape named on create | Sonnet | B |
+| C | The Execution tab says which prompts ran, what the agent asked and what the team recorded: a section per run, a row per step, a table per record set, a line on the run card | Haiku | B, F |
+| D | The local suite proves it against the new docket: fixtures recaptured, three tests assert the fields and the manifest, the onboarding skill on docket's new home layout with one judge and its shapes | Sonnet | A, B, C, E, F |
 
-Rounds: **1** = A beside B; **2** = C beside D. The full suites run once per round on the merged tree;
-the local suite of the three runs inside D, at its end.
+Rounds: **1** = A beside B; **2** = E beside F; **3** = C beside D (D's local run after C merges).
+The full suites run once per round on the merged tree; the local suite of the three runs inside D,
+at its end.
 
 **Left out:** Tack writing prompt files or a team overlay, versioning a profile's instructions in
 Tack, a model class per item type, reading docket's metrics, claims to the verifier, a second
-timeline line per step, and a measurement card: each with its reason in the ADR. The measurements
-the audit asks for become possible with B and are the maintainer's run.
+timeline line per step, and a measurement card (ADR 0030); configuring services, secrets, quotas or
+a team's network from Tack, showing routines, task variables, a "Resume now" for a wait, reading every
+record of a team, and creating a folder team from Tack (ADR 0031): each with its reason in the ADR.
+The measurements the audit asks for become possible with B and are the maintainer's run.
 
 ---
 

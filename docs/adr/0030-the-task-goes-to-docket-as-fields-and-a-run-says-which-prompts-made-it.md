@@ -93,7 +93,7 @@ JSON value, `steps`, in the run's structured result, beside what the Execution t
   "steps": [
     {
       "role": "implementer", "model": "qwen2.5-coder:7b", "class": "cheap", "family": "qwen",
-      "verdict": null, "ok": true,
+      "verdict": null, "ok": true, "summary": "<what the handoff said it did>",
       "prompts": [
         {"layer": "identity", "name": "implementer", "version": "1.0.0", "sha256": "…", "scope": "shipped", "tokens": 410},
         {"layer": "task", "name": "task", "version": "", "sha256": "…", "scope": "task", "tokens": 1280},
@@ -106,7 +106,8 @@ JSON value, `steps`, in the run's structured result, beside what the Execution t
 ```
 
 A hop with no manifest has `prompts: []`; the screen then says the step recorded no prompt, never
-an empty list. The same value is the `trajectory` artifact of decision 4.
+an empty list. The same value is the `trajectory` artifact of decision 4. ADR 0031 adds `records`
+beside `steps` (the rows the run wrote) and reads the last step's `summary` as a folder team's result.
 
 ## Considered and not adopted
 
