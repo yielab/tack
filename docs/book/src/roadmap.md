@@ -33,6 +33,9 @@ the section named beside it. What is not a card is in "Cancelled" below.
 
 - **[Phase 81](#phase-81--what-the-audit-found)**, what the 2026-10-26 audit found: every card (B, C, D, S, R, A, H, E, F, I, J and K)
   is built and merged on the Phase 79 branch. What is left is the review and merge of Phases 79, 80 and 81 into `develop`.
+- **[Phase 82](#phase-82--the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it)**,
+  the task goes to docket as fields, and a run says which prompts made it: four cards (A, B, C, D),
+  none started. It reads what docket shipped on 2026-10-29 and changes nothing in docket.
 
 ## Future, not planned
 
@@ -64,6 +67,42 @@ do not wait on anything; each can come back as a card of its own.
   repository's teams" is disabled; only docket stops a run at its token limit; the tokens a
   verifier spends count whole, cache included; only docket reports a running agent's steps on its
   timeline.
+
+---
+
+## Phase 82 — the task goes to docket as fields, and a run says which prompts made it
+
+**Status:** proposed 2026-10-29, from the prompt audit of 2026-10-28 and what docket shipped the next
+day (its Phases 52 to 54: a prompt is a versioned file with a hash, a step closes with a handoff, a
+task can arrive as fields, every step records which prompts composed it, and the Anthropic provider
+reports its cache reads). docket's API number is unchanged and every addition is optional, so
+nothing here waits on docket or on the verifier. **ADR:**
+[0030](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md).
+**Plan:** [`docs/plans/phase-82.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-82.md).
+
+**What changes for a person.** A docket run no longer sends the card twice (as prose and as a
+brief): the title, the checks, the constraints, the risk, the kind, the paths the checks name and
+the done-when go as fields, and the agent reads them once in a fixed order. Pressing Run again
+carries the answers a person already gave, so the same question is not asked twice. When a run
+settles, the Execution tab shows, per step, which prompts ran at which version, what the agent
+assumed and what it asked, in words. The verifier's evidence names the model's family and the steps
+that produced the change. Tack still writes no prompt for a team: a team's prompts are edited where
+docket keeps them, and Tack reads them back by name, version and hash.
+
+| Id | Card | Model | Waits on |
+|---|---|---|---|
+| A | The item goes to docket as fields: a typed task document in the protocol, the prose renderer kept for the other agents, `task` sent instead of a brief in prose, previous answers on a rerun, the fake refusing what docket refuses | Sonnet | — |
+| B | A run keeps what each step was made of, and the verifier gets it: the hop record read at settle into one `steps` value (prompts by layer, verdict, assumptions, questions), the family and a trajectory in the attempt evidence, the fake writing the same shape | Sonnet | — |
+| C | The Execution tab says which prompts ran and what the agent asked: one section per run, a row per step, a line on the run card | Haiku | B |
+| D | The local suite proves it against the new docket: fixtures recaptured, three tests assert the fields and the manifest, the onboarding skill on docket's new home layout | Sonnet | A, B, C |
+
+Rounds: **1** = A beside B; **2** = C beside D. The full suites run once per round on the merged tree;
+the local suite of the three runs inside D, at its end.
+
+**Left out:** Tack writing prompt files or a team overlay, versioning a profile's instructions in
+Tack, a model class per item type, reading docket's metrics, claims to the verifier, a second
+timeline line per step, and a measurement card: each with its reason in the ADR. The measurements
+the audit asks for become possible with B and are the maintainer's run.
 
 ---
 
