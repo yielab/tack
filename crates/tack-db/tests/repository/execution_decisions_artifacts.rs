@@ -751,3 +751,107 @@ async fn completion_from_waiting_decision_is_terminal_and_never_resumed() {
         "succeeded"
     );
 }
+
+/// The whole call of an action that leaves rides in the decision's metadata while it is pending,
+/// so a person can read it before approving. Settling or expiring the row, by an answer, by the
+/// rule that closes it or by the sweep of overdue ones, erases it in the same statement.
+#[tokio::test]
+async fn the_call_of_a_decision_is_erased_when_it_settles_by_any_road() {
+    use tack_db::repo::execution::{DecisionSettlement, NewDecision};
+
+    let call = "send_email to=ana@example.com\nHello Ana, your order shipped.";
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("call".to_owned(), serde_json::json!(call));
+    metadata.insert("outward".to_owned(), serde_json::json!(true));
+    metadata.insert("role".to_owned(), serde_json::json!("actor"));
+
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_running_attempt("request-call", "attempt-call")
+        .await;
+    let now = fx.clock.now();
+    let attempt = tack_protocol::execution::AttemptId::new("attempt-call");
+    for decision_id in ["answered", "ruled", "overdue"] {
+        let row_id = format!("row-{decision_id}");
+        let created = fx
+            .repo
+            .create_execution_decision(
+                &tack_protocol::execution::RunnerId::new("runner-a"),
+                &attempt,
+                fence,
+                NewDecision {
+                    id: &row_id,
+                    decision_id,
+                    kind: "approval",
+                    prompt: "send: an email (cut)",
+                    options: &[],
+                    metadata: &metadata,
+                    expires_at: (decision_id == "overdue").then(|| now + Duration::minutes(5)),
+                    recommendation: None,
+                },
+                now,
+            )
+            .await
+            .unwrap();
+        assert!(created);
+    }
+    let stored = |id: &'static str| {
+        let pool = fx.repo.pool().clone();
+        async move {
+            sqlx::query_scalar::<_, String>(
+                "SELECT metadata FROM execution_decisions WHERE attempt_id='attempt-call' AND decision_id=?",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    for id in ["answered", "ruled", "overdue"] {
+        assert!(stored(id).await.contains("ana@example.com"), "{id}");
+    }
+
+    let by = r#"{"kind":"operator","subject_id":"ana"}"#.to_owned();
+    fx.repo
+        .settle_execution_decision(&attempt, "answered", now, |_| {
+            (
+                DecisionSettlement::Resolve {
+                    answer: r#"{"option_id":"approve_once"}"#.to_owned(),
+                    resolved_by: by.clone(),
+                },
+                (),
+            )
+        })
+        .await
+        .unwrap();
+    fx.repo
+        .settle_execution_decision(&attempt, "ruled", now, |_| {
+            (
+                DecisionSettlement::Expire {
+                    resolved_by: by.clone(),
+                },
+                (),
+            )
+        })
+        .await
+        .unwrap();
+    let swept = fx
+        .repo
+        .expire_overdue_execution_decisions(now + Duration::hours(1), &by)
+        .await
+        .unwrap();
+    assert_eq!(swept, 1);
+
+    for id in ["answered", "ruled", "overdue"] {
+        let kept = stored(id).await;
+        assert!(
+            !kept.contains("ana@example.com") && !kept.contains("Hello"),
+            "{id}: {kept}"
+        );
+        assert!(!kept.contains("call"), "{id}: {kept}");
+        assert!(
+            kept.contains("outward") && kept.contains("actor"),
+            "{id}: {kept}"
+        );
+    }
+}

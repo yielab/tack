@@ -1,5 +1,5 @@
 import { type Component, For, Show, createEffect, createResource, createSignal, on, onCleanup } from 'solid-js';
-import { Badge, EmptyState, LoadError } from '../ui';
+import { Badge, EmptyState, Icons, LoadError } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
 import { NEEDS_A_PERSON_TEXT, inProject } from './attemptFormat';
@@ -42,7 +42,7 @@ function describeEventPayload(payload: unknown): string {
 }
 
 /** Each runner event kind in words; an unknown kind shows as reported. */
-const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
+const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: boolean }> = {
   'attempt.terminal': { label: 'The run ended' },
   'attempt.cancelled': { label: 'Cancelled' },
   'attempt.verify_skipped': { label: 'Verification skipped' },
@@ -63,6 +63,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
   'escalation.asked': { label: 'docket asked a person' },
   'escalation.resolved': { label: 'A person answered' },
   'escalation.expired': { label: 'Nobody answered before it expired' },
+  'escalation.waiting': { label: 'The team is waiting', clock: true },
   'escalation.decided': { label: 'docket decided on its own' },
   'escalation.unreadable': { label: 'docket asked for something Tack cannot put to a person', failed: true },
 };
@@ -102,6 +103,9 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
     </div>
     <div class="min-w-0 pb-3.5">
       <div class="flex flex-wrap items-center gap-1.5">
+        <Show when={known()?.clock}>
+          <Icons.IconClock size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+        </Show>
         <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }} title={props.event.kind}>
           {known()?.label ?? props.event.kind}
         </span>

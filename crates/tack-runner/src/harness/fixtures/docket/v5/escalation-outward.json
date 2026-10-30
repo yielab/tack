@@ -1,0 +1,46 @@
+{
+  "id": "esc-000000000000",
+  "task": "task-00000000-0000-0000-0000-000000000000",
+  "pod": "saas-dev",
+  "step": "actor",
+  "role": "actor",
+  "kind": "approval",
+  "causedBy": "outward-needs-approval",
+  "prompt": "tool call 'send_email': ask before every send; to=a***@example.com subject='Your order' (cut)",
+  "options": [
+    {
+      "id": "approve_once",
+      "label": "Approve once",
+      "description": "Run this call now; ask again next time.",
+      "risks": [],
+      "estimatedTokens": null
+    },
+    {
+      "id": "deny",
+      "label": "Deny",
+      "description": "Refuse this call; a reason can be given.",
+      "risks": [],
+      "estimatedTokens": null
+    }
+  ],
+  "recommendation": null,
+  "requestedSchema": null,
+  "askedAt": "2026-01-01T00:00:00Z",
+  "expiresAt": "2026-01-01T00:00:00Z",
+  "onExpiry": "deny",
+  "policy": "person",
+  "level": "L3",
+  "outward": true,
+  "state": "pending",
+  "resolution": null,
+  "seq": 1,
+  "affordances": {
+    "options": [
+      "approve_once",
+      "deny"
+    ],
+    "acceptsText": false,
+    "resolveUrl": "/escalations/esc-000000000000"
+  },
+  "call": "send_email\nto: ana@example.com\nsubject: Your order\n\nHello Ana,\nYour order shipped today.\n"
+}

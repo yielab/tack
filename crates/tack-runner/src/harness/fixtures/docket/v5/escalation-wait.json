@@ -1,0 +1,36 @@
+{
+  "id": "esc-000000000000",
+  "task": "task-00000000-0000-0000-0000-000000000000",
+  "pod": "saas-dev",
+  "step": "wait",
+  "role": "",
+  "kind": "wait",
+  "causedBy": "pipeline-wait",
+  "prompt": "The pipeline waits until 2026-01-01T00:00:00Z.",
+  "options": [
+    {
+      "id": "resume",
+      "label": "Resume now",
+      "description": "End the wait early and run the step after it.",
+      "risks": [],
+      "estimatedTokens": null
+    }
+  ],
+  "recommendation": null,
+  "requestedSchema": null,
+  "askedAt": "2026-01-01T00:00:00Z",
+  "expiresAt": "2026-01-01T00:00:00Z",
+  "onExpiry": "block",
+  "policy": "machine",
+  "level": "L3",
+  "state": "pending",
+  "resolution": null,
+  "seq": 1,
+  "affordances": {
+    "options": [
+      "resume"
+    ],
+    "acceptsText": false,
+    "resolveUrl": "/escalations/esc-000000000000"
+  }
+}

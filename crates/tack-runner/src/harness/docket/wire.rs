@@ -304,6 +304,18 @@ pub(super) struct Escalation {
     pub policy: Option<String>,
     pub level: Option<String>,
     pub affordances: Affordances,
+    /// The approval of a call that leaves the machine (a `send`); absent otherwise.
+    #[serde(default)]
+    pub outward: bool,
+}
+
+/// `GET /escalations/<id>`: the view, and for an `outward` approval that is still pending the
+/// whole call as text, credentials removed. No other route carries the call.
+#[derive(Debug, Deserialize)]
+pub(super) struct EscalationDetail {
+    #[serde(flatten)]
+    pub view: Escalation,
+    pub call: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

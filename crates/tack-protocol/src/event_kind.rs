@@ -20,5 +20,7 @@ pub const ESCALATION_RESOLVED: &str = "escalation.resolved";
 pub const ESCALATION_EXPIRED: &str = "escalation.expired";
 /// docket's policy answered by itself, without asking anyone.
 pub const ESCALATION_DECIDED: &str = "escalation.decided";
+/// The team waits until a time and nobody is asked: a line, never a question.
+pub const ESCALATION_WAITING: &str = "escalation.waiting";
 /// docket asked for something Tack cannot put to a person.
 pub const ESCALATION_UNREADABLE: &str = "escalation.unreadable";

@@ -122,10 +122,16 @@ pub async fn create_decision(
         .as_deref()
         .and_then(|raw| serde_json::from_str(raw).ok());
     let requested_expires_at = request.expires_at.map(|value| value.to_rfc3339());
+    // A settled decision no longer holds the call it was asked with, so a replay of the create
+    // that carries it is the same request, not a different one.
+    let mut requested_metadata = request.metadata.clone();
+    if stored.state != "pending" {
+        requested_metadata.remove("call");
+    }
     if stored.kind != request.kind
         || stored.prompt != request.prompt
         || stored_options.as_deref() != Some(request.options)
-        || stored_metadata.as_ref() != Some(request.metadata)
+        || stored_metadata.as_ref() != Some(&requested_metadata)
         || stored_recommendation.as_ref() != request.recommendation
         || stored.expires_at != requested_expires_at
     {
