@@ -1,0 +1,23 @@
+{
+  "records": [
+    {
+      "name": "leads",
+      "description": "People the team found and what it wrote about each",
+      "key": "email",
+      "rows": 3,
+      "columns": [
+        {
+          "name": "email",
+          "type": "text",
+          "required": true
+        },
+        {
+          "name": "stage",
+          "type": "text",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "problems": []
+}

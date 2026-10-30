@@ -62,8 +62,10 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 |---|---|---|
 | Version | `GET /status.json`; `apiVersion` must be a number, 6 or later | `probe::status` |
 | The escalation record | `GET /escalations?since=0` must answer `200` | `probe::escalation_record` |
-| Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each | `probe::teams` |
-| Make the team once per process | `POST /pods` with `ensure: true`, `blueprint: "software"` | `Client::ensure_pod` |
+| Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each, and `GET /pods/<pod>/records` for the record sets (`404` on an older docket) | `probe::teams` |
+| Make the team once per process | `POST /pods` with `ensure: true` and no `blueprint`: docket's own default shape stands | `Client::ensure_pod` |
+| Where the team works | `GET /pods/<pod>` once when the run starts: `codebase` is `""` for a folder team; a missing key counts as a repository | `DocketAdapter::has_repository` |
+| What the team wrote in this task | `GET /pods/<pod>/records/<set>?limit=50&sql=SELECT * FROM <set> WHERE _task = '<task>'`, once per declared set, after the task ends | `records::kept` |
 | Post the attempt | `POST /tasks/<pod>` | `Client::enqueue_task` |
 | Read the task | `GET /tasks/<pod>/<id>` | `Client::task` |
 | Follow the hops | `GET /traces/<pod>?since=<cursor>` | `follow` |
@@ -114,19 +116,23 @@ The runner stages the same value as one artifact of the attempt, `trajectory.jso
 
 On `done`, the adapter reads the commit of `refs/heads/<task branch>` in the repository and names it as the run's `head_commit`; nothing is checked out or reset, and the user's working tree, index and `HEAD` are never touched. Evidence is the difference from the base commit to that commit, the verifier is given the repository, and the push sends that commit. Files docket reports as untracked produce one timeline line ("N files docket did not commit are not in the evidence"). When the branch is not in the repository the attempt fails with `branch_not_applied`.
 
+A `done` task with no `worktree` on a team whose `codebase` is `""` is a folder team's: the attempt succeeds with `{"code": "done", "outside_repository": true, "team", "task", "summary"}`, `summary` being the last step's (`null` when it wrote none), and carries no `branch` or `head_commit`. `Engine::fail_without_change` leaves an outcome with `outside_repository` alone, and with no head commit nothing is published and no merge is proposed from it.
+
+When the task has ended, `records` is added beside `steps` in the result: `[{"set", "columns", "rows", "cut"}]`, one entry per declared set that holds a row of this task, `rows` being objects keyed by column (docket's `_task`, `_session`, `_step` among them) and `cut` true when the set held more than 50. It is absent when no set has a row. The statement is built only from a set name and a task id made of letters, digits, `-` and `_`; any other name is skipped. A set docket refuses (`400`) is skipped with a warning in the log.
+
 ### Capabilities
 
 `capabilities()` declares `cancel`, `decisions`, `artifacts`, `usage` and `policy` as supported, `resume` as unsupported. `sandbox()` returns `"harness"`, which the server accepts beside `bwrap` and `none` and the UI renders as "Sandboxed by docket in its own jail". `probe::probe` adds the teams to the capability snapshot and sets `autonomy_ceiling` to `L3` when any team is capped, else `L5`.
 
 ## The ceiling
 
-`probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport { name, profile, violations, read_only }`; `read_only` is `GET /pods/<team>`'s `readOnly`, the folders the team's sandbox may read, and stays absent for a docket that sends no such key).
+`probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport { name, profile, violations, read_only, works_in, records }`; `read_only` is `GET /pods/<team>`'s `readOnly`, the folders the team's sandbox may read, `works_in` is `repository` or `folder` from `codebase`, and `records` the team's record sets with their row counts from `GET /pods/<team>/records`; each stays absent for a docket that sends no such key).
 
 The ceiling is read at merge time, never frozen in the request. `tack_db::queries::autonomy::attempt_ceiling_inputs` joins the attempt to its runner's capability snapshot and to `resolved_agent_profile.tool_policy.docket.team` in the request. `tack_app::autonomy::ceiling_of` then returns `L3` when the profile names a team the runner reports and that team is attended. When the profile names no team, or the runner does not report the one it names, it falls back to the agent's own `autonomy_ceiling`: `L3` when any team the runner reports is capped, else `L5`. An agent that reports neither leaves the ceiling unknown (`None`), and an unknown ceiling is no hold.
 
 `tack_core::autonomy::Facts.ceiling` carries it. In `evaluate`, `Hold::HarnessCeiling { ceiling, wanted }` is checked in the `Trigger::Auto` branch only, right after `LevelBelowL4`. The Merge button and the merge on Done are not held by the ceiling. The reason is that the policy must say what will actually happen next time, and a team's profile can change between the run and the merge.
 
-`GET /api/projects/{id}/autonomy` reports `ceiling` and a `teams` line for each team a role uses (`TeamLine { name, profile, caps_at, fix }`). The Ceiling rung of the UI reads it.
+`GET /api/projects/{id}/autonomy` reports `ceiling` and a `teams` line for each team a role uses (`TeamLine { name, profile, caps_at, fix, read_only, works_in, records }`). The Ceiling rung of the UI reads it.
 
 When a demotion takes the whole project to L3, `tack_app::autonomy::demote` also sets `auto_start_enabled = 0` and writes the system comment `DROPPED_TO_L3`. `Project.auto_start_disabled_reason` is computed in the SELECT from that comment while auto-start is off and the level is L3.
 

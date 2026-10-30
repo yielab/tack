@@ -128,6 +128,32 @@ pub struct TeamReport {
     /// Absent when the harness did not say, which is not the same as none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub read_only: Option<Vec<String>>,
+    /// Whether the team works in a repository or in a plain folder. Absent when the harness did
+    /// not say, which is not the same as a repository.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub works_in: Option<WorksIn>,
+    /// The record sets the team keeps, with how many rows each holds. Absent when the harness
+    /// has no such thing or did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub records: Option<Vec<TeamRecordSet>>,
+}
+
+/// Where a team does its work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorksIn {
+    /// A repository: its work comes back as a branch.
+    Repository,
+    /// A folder with no repository: its work stays there and there is nothing to merge.
+    Folder,
+}
+
+/// One set of records a team keeps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TeamRecordSet {
+    pub name: String,
+    pub description: String,
+    pub rows: u64,
 }
 
 /// One thing that makes a team need a person during a run, and how to fix it.

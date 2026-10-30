@@ -563,6 +563,32 @@ describe('Settings panels', () => {
       expect(rung(unknown.container, 'teams').querySelector('[data-testid="team-reads"]')).toBeNull();
     });
 
+    it('a_team_row_says_when_the_team_works_in_a_folder_and_what_records_it_keeps', async () => {
+      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
+      autonomy.teams = [{
+        name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder',
+        records: [
+          { name: 'leads', description: 'People found', rows: 2 },
+          { name: 'listings', description: 'Places looked at', rows: 1 },
+        ],
+      }];
+      const { container, dispose } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const row = rung(container, 'teams').querySelector('[data-testid="team-row"]')!;
+      expect(row.querySelector('[data-testid="team-works-in"]')!.textContent).toBe('Works in a folder, not in this repository.');
+      expect(row.querySelector('[data-testid="team-records"]')!.textContent).toBe('Keeps leads · 2 rows, listings · 1 row.');
+      dispose();
+
+      // A team in a repository, or one whose computer does not say, adds neither line.
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'repository', records: [] }];
+      const repo = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rung(repo.container, 'teams').querySelector('[data-testid="team-works-in"]')).toBeNull();
+      expect(rung(repo.container, 'teams').querySelector('[data-testid="team-records"]')).toBeNull();
+    });
+
     it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {
       autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: null, fix: null }];
       const { container } = mount(() => <AutomationPanel />);

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
+use serde_json::Value;
 
 /// docket's `{"error": "<sentence>"}`.
 #[derive(Debug, Deserialize)]
@@ -47,6 +48,39 @@ pub(super) struct PodRow {
 pub(super) struct PodReport {
     pub profile: Profile,
     pub read_only: Option<Vec<String>>,
+    /// The repository the team works in; `""` for a team that works in a folder. Absent from a
+    /// docket before that was possible.
+    pub codebase: Option<String>,
+}
+
+/// `GET /pods/<pod>/records`: the sets the team declares. `problems` (documents that do not
+/// validate) is docket's to show.
+#[derive(Debug, Deserialize)]
+pub(super) struct RecordList {
+    #[serde(default)]
+    pub records: Vec<RecordSet>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct RecordSet {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// How many rows the set holds in all, tasks included.
+    #[serde(default)]
+    pub rows: u64,
+}
+
+/// `GET /pods/<pod>/records/<set>`: the rows are objects keyed by column.
+#[derive(Debug, Deserialize)]
+pub(super) struct RecordRows {
+    #[serde(default)]
+    pub columns: Vec<String>,
+    #[serde(default)]
+    pub rows: Vec<Value>,
+    /// Whether docket stopped at the limit; it sends a flag, and a count would mean the same.
+    #[serde(default)]
+    pub cut: Value,
 }
 
 /// The verdict object of a pod's profile; `violations` is empty unless the profile is

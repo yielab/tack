@@ -5061,6 +5061,26 @@ export interface components {
              *     computer reports the team or its harness does not say.
              */
             read_only?: string[] | null;
+            /**
+             * @description The record sets the team keeps and how many rows each holds; `null` when the harness does
+             *     not say.
+             */
+            records?: components["schemas"]["TeamRecords"][] | null;
+            /**
+             * @description `repository` or `folder`; `null` when no computer reports the team or its harness does not
+             *     say. A folder team's work stays in its folder: nothing is merged.
+             */
+            works_in?: string | null;
+        };
+        /** @description One set of records a team keeps. */
+        TeamRecords: {
+            description: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description Rows in the set, whichever run wrote them.
+             */
+            rows: number;
         };
         /**
          * @description Terminal reason from a runner attempt: `code`, `message`, and optional

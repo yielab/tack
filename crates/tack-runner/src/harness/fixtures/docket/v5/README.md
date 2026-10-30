@@ -184,6 +184,7 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
+| `pod-folder` | `GET /pods/<pod>` | 200 | constructed |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |
 | `pods-empty` | `GET /pods` | 200 | captured |
@@ -209,6 +210,8 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `post-tasks-network-open` | `POST /tasks/<pod>` | 422 | captured |
 | `post-tasks-no-description` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-unknown-pod` | `POST /tasks/<pod>` | 404 | captured |
+| `records-rows` | `GET /pods/<pod>/records/<set>` | 200 | constructed |
+| `records` | `GET /pods/<pod>/records` | 200 | constructed |
 | `status-empty` | `GET /status.json` | 200 | captured |
 | `status` | `GET /status.json` | 200 | captured |
 | `task-blocked-input-expired` | `GET /tasks/<pod>/<id>` | 200 | constructed |
@@ -232,6 +235,12 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `traces-events` | `GET /traces/<pod>` | 200 | constructed |
 | `traces-since-empty` | `GET /traces/<pod>` | 200 | captured |
 | `unauthorized` | `GET /pods` | 401 | captured |
+
+`pod-folder`, `records` and `records-rows` are written from docket's spec (a team with no repository
+has `codebase` `""`, and a team's record sets are read over two routes), not captured: the captured
+pods predate both, so the fake adds `codebase` to them. They are recaptured when the script runs
+against a docket that has the routes. The two `post-pods-created`/`-existing` requests were captured
+with a `blueprint`, which Tack no longer sends, so their provenance lists it as optional.
 
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.

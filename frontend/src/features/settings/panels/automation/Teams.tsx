@@ -69,6 +69,27 @@ const Teams: Component<Props> = (props) => {
     </Show>
   );
 
+  /** Where the team works and what it keeps, in words; nothing while the computer does not say. */
+  const WorkNotes = (p: { id: string | null | undefined }) => {
+    const team = () => {
+      const name = teamOf(profile(p.id));
+      return name ? props.settings()?.teams?.find((t) => t.name === name) : undefined;
+    };
+    const sets = () => team()?.records?.filter((set) => set.name) ?? [];
+    return (
+      <>
+        <Show when={team()?.works_in === 'folder'}>
+          <Note testid="team-works-in">Works in a folder, not in this repository.</Note>
+        </Show>
+        <Show when={sets().length > 0}>
+          <Note testid="team-records">
+            Keeps {sets().map((set) => `${set.name} · ${set.rows} ${set.rows === 1 ? 'row' : 'rows'}`).join(', ')}.
+          </Note>
+        </Show>
+      </>
+    );
+  };
+
   const saveRole = async (role: Role, value: string) => {
     try {
       await api.roles.update(role.id, { agent_profile_id: value || null });
@@ -113,6 +134,7 @@ const Teams: Component<Props> = (props) => {
               <ProfileSelect label={`Profile for ${role.name}`} value={role.agent_profile_id} onChange={(v) => void saveRole(role, v)} />
             </div>
             <Show when={line(role.agent_profile_id)}>{(text) => <Note>{text()}</Note>}</Show>
+            <WorkNotes id={role.agent_profile_id} />
             <ReadsNote id={role.agent_profile_id} />
           </div>
         )}
@@ -123,6 +145,7 @@ const Teams: Component<Props> = (props) => {
           <ProfileSelect label="Profile for a task with no role" value={props.project()?.default_profile_id} onChange={(v) => props.onDefaultProfile(v || null)} />
         </div>
         <Show when={line(props.project()?.default_profile_id)}>{(text) => <Note>{text()}</Note>}</Show>
+        <WorkNotes id={props.project()?.default_profile_id} />
         <ReadsNote id={props.project()?.default_profile_id} />
       </div>
       <div class="flex flex-wrap items-start gap-3">

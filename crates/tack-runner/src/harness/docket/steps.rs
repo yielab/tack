@@ -13,6 +13,17 @@ pub(super) fn steps(hops: &[TaskHop]) -> Vec<Value> {
     hops.iter().map(step).collect()
 }
 
+/// What a task handed off as its result: the summary of its last step, when it wrote one.
+pub(super) fn result(hops: &[TaskHop]) -> Option<String> {
+    hops.last()?
+        .artifact
+        .as_ref()?
+        .summary
+        .as_deref()
+        .filter(|summary| !summary.is_empty())
+        .map(str::to_owned)
+}
+
 fn step(hop: &TaskHop) -> Value {
     let manifest = hop.prompt_manifest.as_ref();
     let artifact = hop.artifact.as_ref();

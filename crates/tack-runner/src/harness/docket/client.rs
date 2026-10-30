@@ -124,9 +124,33 @@ impl Client {
 
     /// `POST /pods` with `ensure`: `200` when the pod exists, `201` when made.
     pub async fn ensure_pod(&self, pod: &str, location: &str) -> Result<Reply, String> {
-        let body =
-            json!({"name": pod, "location": location, "blueprint": "software", "ensure": true});
+        // No shape is named: docket's own default is the code team, whatever it calls it.
+        let body = json!({"name": pod, "location": location, "ensure": true});
         self.send(Method::POST, &["pods"], &[], Some(body)).await
+    }
+
+    /// `GET /pods/<pod>/records`: the record sets the team declares.
+    pub async fn records(&self, pod: &str) -> Result<Reply, String> {
+        self.send(Method::GET, &["pods", pod, "records"], &[], None)
+            .await
+    }
+
+    /// `GET /pods/<pod>/records/<set>?limit=&sql=`: one read-only `SELECT` over the set.
+    pub async fn record_rows(
+        &self,
+        pod: &str,
+        set: &str,
+        limit: u32,
+        sql: &str,
+    ) -> Result<Reply, String> {
+        let limit = limit.to_string();
+        self.send(
+            Method::GET,
+            &["pods", pod, "records", set],
+            &[("limit", limit.as_str()), ("sql", sql)],
+            None,
+        )
+        .await
     }
 
     /// `POST /tasks/<pod>`.

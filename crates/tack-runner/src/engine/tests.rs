@@ -3279,6 +3279,7 @@ async fn run_evidence_attempt_requesting(
         break_origin,
         requested,
         |_| {},
+        None,
     )
     .await
 }
@@ -3294,6 +3295,7 @@ async fn run_evidence_attempt_tuned(
     break_origin: bool,
     requested: (Option<bool>, Option<bool>, bool),
     tune: fn(&mut ClaimedWork),
+    reason: Option<serde_json::Value>,
 ) -> EvidenceRun {
     let root_dir = temporary_root(label);
     let root = root_dir.path();
@@ -3342,7 +3344,10 @@ async fn run_evidence_attempt_tuned(
     let data_protocol = FakeDataProtocol::new();
     let fake_protocol = protocol(claimed, cancelled, false);
     let reported = fake_protocol.reported_completions.clone();
-    let inner = adapter(journal.journal_path(&AttemptId::new("attempt")));
+    let mut inner = adapter(journal.journal_path(&AttemptId::new("attempt")));
+    if let Some(reason) = reason {
+        inner.completion_terminal_reason = reason;
+    }
     let start_calls = Arc::clone(&inner.start_calls);
     let engine = RunnerEngine::new(
         fake_protocol,
@@ -3564,11 +3569,51 @@ async fn a_run_that_delivers_no_change_and_cannot_write_stays_succeeded() {
             false,
             (None, None, false),
             tune,
+            None,
         )
         .await;
         let (state, _) = reported_end(&run);
         assert_eq!(state, AttemptState::Succeeded, "{label}");
     }
+}
+
+#[tokio::test]
+async fn an_outcome_that_worked_outside_the_repository_stays_succeeded_and_publishes_nothing() {
+    let reason = serde_json::json!({"code": "done", "outside_repository": true,
+                                    "team": "notes", "task": "t-1", "summary": "Listed 3 leads"});
+    // A pushing runner, which would publish a branch if the work had left one.
+    let run = run_evidence_attempt_tuned(
+        "outside-repository",
+        false,
+        |_| {},
+        None,
+        Some(crate::config::GitConfig {
+            push_branches: true,
+            ..Default::default()
+        }),
+        false,
+        (None, Some(true), false),
+        |_| {},
+        Some(reason),
+    )
+    .await;
+    let (state, reason) = reported_end(&run);
+    assert_eq!(state, AttemptState::Succeeded);
+    assert_eq!(reason["code"], "done");
+    assert_eq!(reason["summary"], "Listed 3 leads");
+    // No branch, no head commit and no pull request: nothing here for a merge to start from.
+    assert!(reason.get("branch").is_none() && reason.get("head_commit").is_none());
+    let report = &run.completions[0];
+    assert!(!report.actual_execution.additional.contains_key("git"));
+    let events = run.data_protocol.state.lock().expect("lock");
+    assert!(
+        events
+            .events
+            .iter()
+            .flat_map(|batch| batch.events.iter())
+            .all(|event| !event.kind.starts_with("attempt.push")),
+        "nothing was pushed or declined"
+    );
 }
 
 #[tokio::test]
@@ -4447,6 +4492,7 @@ async fn a_failed_install_ends_the_attempt_before_any_agent_starts() {
         false,
         (None, None, false),
         |work| replacing_install(work, FAILING_INSTALL),
+        None,
     )
     .await;
     let (state, reason) = reported_end(&run);

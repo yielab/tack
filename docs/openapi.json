@@ -12959,6 +12959,46 @@
               "type": "string"
             },
             "description": "The folders the team's sandbox reads besides its own work; `[]` for none, `null` when no\ncomputer reports the team or its harness does not say."
+          },
+          "records": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamRecords"
+            },
+            "description": "The record sets the team keeps and how many rows each holds; `null` when the harness does\nnot say."
+          },
+          "works_in": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`repository` or `folder`; `null` when no computer reports the team or its harness does not\nsay. A folder team's work stays in its folder: nothing is merged."
+          }
+        }
+      },
+      "TeamRecords": {
+        "type": "object",
+        "description": "One set of records a team keeps.",
+        "required": [
+          "name",
+          "description",
+          "rows"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Rows in the set, whichever run wrote them.",
+            "minimum": 0
           }
         }
       },

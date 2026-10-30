@@ -1,0 +1,8 @@
+constructed
+route: GET /pods/<pod>
+status: 200
+built-from: pod-attended.json (captured against this docket) with codebase added and the team's name changed
+source: specs/functional/pod-records.spec.md requirements 33 and 50-53, specs/functional/serve-read-api.spec.md "GET /pods/<pod>", at docket develop 28c3cf65
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+date: 2026-10-30
+note: from the spec, recaptured by D. A team that works in a folder: codebase is "" and it has no repository config folder. Every other key is the captured attended team's.

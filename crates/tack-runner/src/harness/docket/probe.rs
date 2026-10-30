@@ -7,12 +7,12 @@ use std::collections::BTreeSet;
 use chrono::Utc;
 use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamReport, TeamViolation,
+    SignInReport, SignInState, TeamRecordSet, TeamReport, TeamViolation, WorksIn,
 };
 
 use super::{
     client::Client,
-    wire::{PodList, PodReport, StatusAnswer},
+    wire::{PodList, PodReport, RecordList, StatusAnswer},
 };
 
 /// The oldest operator API version this harness speaks; a later one is accepted too. It is the
@@ -90,8 +90,32 @@ pub(super) async fn escalation_record(client: &Client, api: u32) -> Result<(), S
     }
 }
 
-/// One team as docket reports it: its profile with the violations, and the folders its sandbox
-/// reads.
+/// The record sets a team declares, with how many rows each holds. `None` when docket has no such
+/// route (an older one answers `404`) or its answer cannot be read: that is not "no sets".
+async fn record_sets(client: &Client, name: &str) -> Option<Vec<TeamRecordSet>> {
+    let reply = client
+        .records(name)
+        .await
+        .ok()
+        .filter(|r| r.status == 200)?;
+    let list: RecordList = reply
+        .read()
+        .inspect_err(|why| tracing::warn!(why, "docket's record sets could not be read"))
+        .ok()?;
+    Some(
+        list.records
+            .into_iter()
+            .map(|set| TeamRecordSet {
+                name: set.name,
+                description: set.description.unwrap_or_default(),
+                rows: set.rows,
+            })
+            .collect(),
+    )
+}
+
+/// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
+/// where it works and what it keeps.
 async fn team(client: &Client, name: &str) -> Result<TeamReport, String> {
     let reply = client.pod(name).await?;
     if reply.status != 200 {
@@ -112,6 +136,15 @@ async fn team(client: &Client, name: &str) -> Result<TeamReport, String> {
             .collect(),
         // An older docket sends no key; that stays unknown rather than becoming "none".
         read_only: report.read_only,
+        // Likewise: no `codebase` key is an older docket, not a team without a repository.
+        works_in: report.codebase.as_deref().map(|codebase| {
+            if codebase.is_empty() {
+                WorksIn::Folder
+            } else {
+                WorksIn::Repository
+            }
+        }),
+        records: record_sets(client, name).await,
     })
 }
 

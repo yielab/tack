@@ -1,0 +1,8 @@
+constructed
+route: GET /pods/<pod>/records
+status: 200
+built-from: the shape of requirement 50; no capture
+source: specs/functional/pod-records.spec.md requirements 33 and 50-53, specs/functional/serve-read-api.spec.md "GET /pods/<pod>", at docket develop 28c3cf65
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+date: 2026-10-30
+note: from the spec, recaptured by D. One set the team declares, with the columns as {name, type, required}; rows counts the whole set, whichever task wrote them.
