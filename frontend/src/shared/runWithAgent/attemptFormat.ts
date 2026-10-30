@@ -16,6 +16,7 @@
 // (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
 // same guarantee; this file is the frontend half.
 
+import { isFolderRun } from '../execution/attempts';
 import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
 import type { Measurement } from '../execution/types';
 import { HARNESS_KINDS, describeExecutionState, type StateTone } from './shared';
@@ -263,9 +264,10 @@ export function changedNoFile(attempt: AttemptDelivery): boolean {
   );
 }
 
-/** Whether a person can still give the attempt a verdict: it changed files, or it only answered. */
+/** Whether a person can still give the attempt a verdict: it changed files, or it only answered.
+ *  A folder team's run has nothing to accept or reject: its result is what it did, and it is done. */
 export function needsVerdict(attempt: AttemptDelivery): boolean {
-  return isReviewableAttempt(attempt) || changedNoFile(attempt);
+  return !isFolderRun(attempt.terminal_reason) && (isReviewableAttempt(attempt) || changedNoFile(attempt));
 }
 
 /** How many files a unified diff touches. */

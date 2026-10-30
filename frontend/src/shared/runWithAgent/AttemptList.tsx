@@ -2,7 +2,7 @@ import { type Component, For, Show, createMemo, createResource, createSignal } f
 import { Badge, Button, LoadError, Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { api } from '../api';
-import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
+import { artifactsApi, attemptsApi, readRunRecords, readRunSteps, type AttemptSummary } from '../execution';
 import type { RunLimit } from '../execution/api';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
@@ -35,7 +35,7 @@ import ReviewActions from './ReviewActions';
 import PlanPanel from './PlanPanel';
 import RunChips from './RunChips';
 import { needsAPerson } from './RerunAtL3';
-import { AgentConcluded, AgentDid, SideSlot } from './AgentWork';
+import { AgentConcluded, AgentDid, SideSlot, StepsRan, TeamRecords } from './AgentWork';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
@@ -214,6 +214,8 @@ const AttemptTools: Component<{
         ? repository()
         : null;
   const result = () => (typeof reason().result === 'string' ? (reason().result as string) : null);
+  const runSteps = () => readRunSteps(props.attempt.terminal_reason);
+  const records = () => (readRunRecords(props.attempt.terminal_reason) ?? []).filter((set) => set.rows.length > 0);
   const [steps] = createResource(log, async (l) => {
     try {
       return parseRunLog(await (await artifactsApi.download(props.requestId, n(), l.artifact_id)).text());
@@ -285,6 +287,12 @@ const AttemptTools: Component<{
         terminal={terminal()}
         workspace={folder()}
       />
+      <Show when={(runSteps() ?? []).length > 0}>
+        <StepsRan steps={runSteps()!} />
+      </Show>
+      <Show when={records().length > 0}>
+        <TeamRecords sets={records()} />
+      </Show>
       <Show when={terminal()}>
         <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
         <Show when={plan() && props.itemId}>

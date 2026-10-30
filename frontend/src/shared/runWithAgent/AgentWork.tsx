@@ -1,6 +1,8 @@
 import { type Component, For, type JSX, Show, createSignal } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { Badge } from '../ui';
+import { toast } from '../ui/toast';
+import type { RunRecordSet, RunStep, RunStepPrompt } from '../execution';
 import { inProject } from './attemptFormat';
 import EventTimeline from './EventTimeline';
 import { groupByTool, type RunLog, type ToolGroup } from './runLog';
@@ -178,3 +180,159 @@ export const AgentDid: Component<{
     </section>
   );
 };
+
+const ROLE_WORDS: Record<string, string> = { lead: 'Lead', implementer: 'Implementer', reviewer: 'Reviewer' };
+const CLASS_WORDS: Record<string, string> = { cheap: 'a small model', strong: 'a strong model' };
+const SCOPE_WORDS: Record<string, string> = {
+  shipped: 'shipped with docket',
+  pod: "the team's",
+  repository: "this repository's",
+  operator: 'your settings',
+  task: "this task's",
+};
+const LAYER_WORDS: Record<string, string> = { identity: 'identity', task: 'task', hop: 'hop' };
+
+/** A role in words: Lead, Implementer, Reviewer, or a custom role's name capitalised. */
+export function roleWords(role: string | null, n: number): string {
+  if (!role) return `Step ${n}`;
+  return ROLE_WORDS[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+/** A model class in words; a class this screen does not know reads as its own name. */
+export function classWords(model: string | null, modelClass: string | null): string | null {
+  const phrase = modelClass ? (CLASS_WORDS[modelClass] ?? `a ${modelClass} model`) : null;
+  return [model, phrase].filter((x): x is string => !!x).join(' · ') || null;
+}
+
+/** Where docket found a prompt, in plain words; a scope this screen does not know reads as "other". */
+export function scopeWords(scope: string): string {
+  return SCOPE_WORDS[scope] ?? 'other';
+}
+
+const copyWhole = (value: string) => {
+  void navigator.clipboard.writeText(value).then(
+    () => toast.success('Fingerprint copied.'),
+    () => toast.error(`Couldn't copy the fingerprint: ${value}`),
+  );
+};
+
+/** One prompt a step ran: `name version`, with where it came from in plain words. Its whole
+ *  fingerprint is copied on click; the title shows it shortened. */
+const PromptChip: Component<{ prompt: RunStepPrompt }> = (props) => {
+  const label = () => (props.prompt.version ? `${props.prompt.name} ${props.prompt.version}` : props.prompt.name);
+  const layer = () => LAYER_WORDS[props.prompt.layer] ?? props.prompt.layer;
+  const print = () => (props.prompt.sha256 ? props.prompt.sha256.slice(0, 12) : 'none');
+  return (
+    <li data-testid="step-prompt" class="max-w-full">
+      <button
+        type="button"
+        title={`${layer()} prompt, ${scopeWords(props.prompt.scope)}, fingerprint ${print()}`}
+        disabled={!props.prompt.sha256}
+        onClick={() => copyWhole(props.prompt.sha256)}
+        class="max-w-full break-all rounded-full px-2.5 py-0.5 text-left text-micro disabled:cursor-default"
+        style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
+      >
+        <span style={{ 'font-family': 'var(--font-mono)' }}>{label()}</span>{' '}
+        <span style={{ color: 'var(--color-text-tertiary)' }}>{scopeWords(props.prompt.scope)}</span>
+      </button>
+    </li>
+  );
+};
+
+/** One hop: who it was, the model it ran on, the verdict, its prompts, and what it assumed and asked. */
+const StepRow: Component<{ step: RunStep; n: number }> = (props) => {
+  const model = () => classWords(props.step.model, props.step.class);
+  const list = (title: string, items: string[]) => (
+    <Show when={items.length > 0}>
+      <div class="space-y-1">
+        <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h5>
+        <ul class="list-disc space-y-0.5 pl-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <For each={items}>{(item) => <li class="break-words">{item}</li>}</For>
+        </ul>
+      </div>
+    </Show>
+  );
+  return (
+    <li data-testid="run-step" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{roleWords(props.step.role, props.n)}</span>
+        <Show when={model()}>
+          {(m) => <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{m()}</span>}
+        </Show>
+        <Show when={props.step.verdict}>
+          {(v) => <Badge tone="neutral">Verdict: {v()}</Badge>}
+        </Show>
+      </div>
+      <Show
+        when={props.step.prompts.length > 0}
+        fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This step recorded no prompt.</p>}
+      >
+        <ul data-testid="step-prompts" class="flex flex-wrap gap-1.5">
+          <For each={props.step.prompts}>{(p) => <PromptChip prompt={p} />}</For>
+        </ul>
+      </Show>
+      {list('The agent assumed', props.step.assumptions)}
+      {list('The agent asked', props.step.questions)}
+    </li>
+  );
+};
+
+/** What each step ran: one row per hop of a docket task, in order. */
+export const StepsRan: Component<{ steps: RunStep[] }> = (props) => (
+  <section data-testid="run-steps" class="space-y-2">
+    <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What each step ran</h4>
+    <ol class="space-y-2">
+      <For each={props.steps}>{(step, i) => <StepRow step={step} n={i() + 1} />}</For>
+    </ol>
+  </section>
+);
+
+/** A cell as a person reads it: nothing for a null, the text as it is, a structure as JSON. */
+const cellText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+
+/** What the team recorded: one small table per record set that holds rows. Columns whose names
+ *  start with an underscore are the team's bookkeeping and are not shown. */
+export const TeamRecords: Component<{ sets: RunRecordSet[] }> = (props) => (
+  <section data-testid="team-records" class="space-y-3">
+    <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the team recorded</h4>
+    <For each={props.sets.filter((s) => s.rows.length > 0)}>
+      {(set) => {
+        const columns = () => set.columns.filter((c) => !c.startsWith('_'));
+        return (
+          <div data-testid="record-set" class="space-y-1.5">
+            <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{set.set}</h5>
+            <div class="max-w-full overflow-x-auto rounded-item" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr>
+                    <For each={columns()}>
+                      {(c) => <th class="px-3 py-1.5 font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c}</th>}
+                    </For>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={set.rows}>
+                    {(row) => (
+                      <tr>
+                        <For each={columns()}>
+                          {(c) => <td class="break-words px-3 py-1.5" style={{ color: 'var(--color-text-primary)' }}>{cellText(row[c])}</td>}
+                        </For>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+            <Show when={set.cut}>
+              <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>More rows are kept by the team in docket.</p>
+            </Show>
+          </div>
+        );
+      }}
+    </For>
+  </section>
+);

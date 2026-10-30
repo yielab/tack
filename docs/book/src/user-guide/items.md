@@ -191,6 +191,16 @@ shows only the run you picked, in this order:
   ran (a shell command is shown as the command) and each call docket refused. Only the Claude Code
   log names its steps by tool; for any other agent **By tool** is disabled and says why, and the
   timeline is what there is.
+- **What each step ran** lists, for a run that went through a team's steps one after another, each step in
+  order: who did it (Lead, Implementer, Reviewer, or the name of a role your team gave), the model it used,
+  in words (a small model or a strong model), its verdict when it gave one, and the prompts it read. Each
+  prompt shows its name and version, and where it came from: shipped with docket, the team's own, this
+  repository's, or your settings. A step that read no prompt says so. Under each step, what the agent
+  assumed and what it asked are listed when it said any. **What the team recorded** shows the rows the team
+  wrote during the run, one small table for each kind of record; when a table was cut short, it says the
+  rest are kept by the team in docket. A team that works in a folder rather than a repository says so on
+  the Last run card: there is nothing to merge, and what it did is the last step's summary. A run from
+  before these sections existed shows the tab as it always did.
 - **Show questions & files** opens the questions the agent asked, the files from the run and, when a
   verifier ran, the merge-readiness pack. A question that is still waiting appears there, with the
   command it is about, why the agent's policy stopped it, the options, their risks and the agent's
