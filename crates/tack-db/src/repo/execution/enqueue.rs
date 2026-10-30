@@ -190,11 +190,16 @@ pub struct AttemptListingRow {
 /// task's own metadata (its type, priority and trust, which the server writes into
 /// `metadata.item`) and the instructions composed from its text (title, description, comments)
 /// change when the card does, so a retry after an edit answers the request it made, not a
-/// conflict. Everything else the request says still counts.
+/// conflict; so do the answers a run again carries (`metadata.previous_answers`) and the item
+/// as data (`task`), which holds the same text. Everything else the request says still counts.
 pub fn as_compared(snapshot: &serde_json::Value) -> serde_json::Value {
     let mut value = snapshot.clone();
     if let Some(metadata) = value.get_mut("metadata").and_then(|m| m.as_object_mut()) {
         metadata.remove("item");
+        metadata.remove("previous_answers");
+    }
+    if let Some(object) = value.as_object_mut() {
+        object.remove("task");
     }
     if let Some(profile) = value
         .get_mut("resolved_agent_profile")
