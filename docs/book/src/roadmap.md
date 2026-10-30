@@ -35,8 +35,9 @@ the section named beside it. What is not a card is in "Cancelled" below.
   is built and merged on the Phase 79 branch. What is left is the review and merge of Phases 79, 80 and 81 into `develop`.
 - **[Phase 82](#phase-82--the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it)**,
   the task goes to docket as fields, and a run says which prompts made it; widened 2026-10-30 with
-  what docket's Phases 55 and 56 ask of Tack: six cards (A, B, E, F, C, D), none started. It reads
-  what docket shipped and changes nothing in docket.
+  what docket's Phases 55 and 56 ask of Tack: all six cards (A, B, E, F, C, D) are built and merged on the
+  Phase 79 branch. What is left is the review and merge of that branch. It reads what docket shipped and
+  changes nothing in docket.
 
 ## Future, not planned
 
@@ -73,7 +74,7 @@ do not wait on anything; each can come back as a card of its own.
 
 ## Phase 82 — the task goes to docket as fields, and a run says which prompts made it
 
-**Status:** proposed 2026-10-29, from the prompt audit of 2026-10-28 and what docket shipped the next
+**Status:** cards A to F built on the Phase 79 branch (2026-10-30). Proposed 2026-10-29, from the prompt audit of 2026-10-28 and what docket shipped the next
 day (its Phases 52 to 54: a prompt is a versioned file with a hash, a step closes with a handoff, a
 task can arrive as fields, every step records which prompts composed it, and the Anthropic provider
 reports its cache reads). docket's API number is unchanged and every addition is optional, so
@@ -84,6 +85,13 @@ records, one judge instead of a critic and a tester, the team shapes renamed). *
 [0030](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md),
 [0031](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md).
 **Plan:** [`docs/plans/phase-82.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-82.md).
+
+**The local suite of the three (2026-10-30).** Run on the local model against docket `57ec0546`, prill
+`6b95423` and Tack `21f81e08` with the checklist fix: 14 of 15 tests pass. The fifteenth, the answered
+lights-out run, fails on the model's own lead step (it repeats itself or exhausts its iterations; seen
+twice), so the run-again-keeps-the-answer assertion at its end has not run live. Every hop docket ran
+carried its prompt manifest (5 of 5, then 1 of 1). `--check` finds no drift between docket's answers, the
+captures and the fake. The captures are of docket `115e9027`.
 
 **What changes for a person.** A docket run no longer sends the card twice (as prose and as a
 brief): the title, the checks, the constraints, the risk, the kind, the paths the checks name and

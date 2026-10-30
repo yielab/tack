@@ -39,7 +39,8 @@ fn criterion(item: &Value) -> Option<String> {
         "manual" => text(item, "text")?.to_owned(),
         _ => return (!title.is_empty()).then(|| title.to_owned()),
     };
-    Some(if title.is_empty() {
+    // A checklist line is a `manual` criterion whose title and text are the same words: say them once.
+    Some(if title.is_empty() || title == detail {
         detail
     } else {
         format!("{title}: {detail}")
@@ -298,4 +299,22 @@ pub(super) fn body(
         body.insert("trusted".into(), json!(trusted));
     }
     Value::Object(body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::criterion;
+    use serde_json::json;
+
+    #[test]
+    fn a_criterion_whose_title_is_its_text_is_said_once() {
+        let line = json!({"kind": "manual", "title": "The whole suite passes", "text": "The whole suite passes"});
+        assert_eq!(criterion(&line).as_deref(), Some("The whole suite passes"));
+        let titled =
+            json!({"kind": "manual", "title": "Reviewed", "text": "A maintainer approves"});
+        assert_eq!(
+            criterion(&titled).as_deref(),
+            Some("Reviewed: A maintainer approves")
+        );
+    }
 }
