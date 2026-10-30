@@ -703,6 +703,44 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
     )
 }
 
+/// docket's `TaskRequest` (`extra="forbid"`): strings, lists of strings and a list of objects, each
+/// optional. The sentence names the field as pydantic does; no capture holds it yet.
+fn check_task_fields(task: &Value) -> Option<Response> {
+    let Some(fields) = task.as_object() else {
+        return Some(error(400, "task must be an object"));
+    };
+    for (key, value) in fields {
+        let (fits, expected) = match key.as_str() {
+            "objective" | "doneWhen" | "risk" | "verify" | "kind" => (value.is_string(), "string"),
+            "acceptance" | "constraints" | "paths" => (
+                value
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(Value::is_string)),
+                "list of strings",
+            ),
+            "answers" => (
+                value
+                    .as_array()
+                    .is_some_and(|items| items.iter().all(Value::is_object)),
+                "list of objects",
+            ),
+            _ => {
+                return Some(error(
+                    400,
+                    &format!("invalid task: {key}: Extra inputs are not permitted"),
+                ));
+            }
+        };
+        if !fits {
+            return Some(error(
+                400,
+                &format!("invalid task: {key}: Input should be a valid {expected}"),
+            ));
+        }
+    }
+    None
+}
+
 /// The body rules of `POST /tasks/<pod>` that docket's captured refusals show:
 /// `400` for a wrong shape, `422` for a restriction that would widen. What
 /// docket accepts without comment (a blank description, any priority) is
@@ -744,6 +782,9 @@ fn check_task_body(body: &Value) -> Option<Response> {
             .is_some_and(|text| !text.trim().is_empty())
     {
         return Some(refusal("post-tasks-brief-without-objective", &[]));
+    }
+    if let Some(refused) = object.get("task").and_then(check_task_fields) {
+        return Some(refused);
     }
     if let Some(restrictions) = object.get("restrictions") {
         if restrictions["network"]
@@ -1032,6 +1073,7 @@ fn task_record(task: &Task) -> Value {
         "maxTokens",
         "restrictions",
         "brief",
+        "task",
     ] {
         match body.get(key) {
             // docket fills a brief out to the whole document.

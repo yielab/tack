@@ -198,6 +198,32 @@ async fn the_request_snapshot_carries_what_the_item_is() {
 }
 
 #[tokio::test]
+async fn the_request_snapshot_carries_the_item_as_data_beside_the_composed_prose() {
+    let board = board().await;
+    add_profile(&board.repo, "profile-content", "{}", "{}").await;
+    let mut request = bare_request(board.item_id, "k-task");
+    request.agent_profile_id = Some("profile-content".into());
+    let started = start(&board, request).await.unwrap();
+    let stored = snapshot(&board.repo, &started).await;
+    let task = &stored["task"];
+    assert_eq!(task["kind"], "Task");
+    assert_eq!(task["source"], "manual");
+    assert!(
+        task["title"]
+            .as_str()
+            .is_some_and(|title| !title.is_empty())
+    );
+    // The data holds the profile's own text; the prose the other agents read is built on it.
+    let prose = stored["resolved_agent_profile"]["instructions"]
+        .as_str()
+        .unwrap();
+    assert!(prose.starts_with(task["instructions"].as_str().unwrap()));
+    assert!(prose.contains("## The item"));
+    // A first run has no previous attempt to carry answers from.
+    assert!(stored["metadata"].get("previous_answers").is_none());
+}
+
+#[tokio::test]
 async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provisional_limit() {
     let board = board().await;
     let with_tokens = r#"{"budgets":{"tokens":300000}}"#;

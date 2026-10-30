@@ -39,5 +39,6 @@ pub use types::{
     PermissionPolicy, ProtocolError, ProtocolErrorEnvelope, ProtocolVersion, RecoveryDetails,
     RecoveryDisposition, RecoveryJournalState, RecoveryKey, RecoveryObservation,
     RecoveryObservationRequest, RecoveryObservationResponse, RepositorySnapshot, RunnerId,
-    RunnerSelector, StableErrorCode, UnknownVariant, Usage, WorkspaceId,
+    RunnerSelector, StableErrorCode, TaskDocument, UnknownVariant, Usage, WorkspaceId,
+    fence_card_text,
 };

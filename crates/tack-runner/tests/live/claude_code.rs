@@ -117,6 +117,7 @@ fn spec_with(
         environment,
         metadata: serde_json::json!({}),
         brief: None,
+        task: None,
         verify: None,
         push_branch: None,
         additional: Default::default(),

@@ -34,8 +34,8 @@ use tack_app::AppError;
 use tack_app::runs::cancel_run::{Cancellation, cancel_run};
 use tack_app::runs::requeue::requeue;
 use tack_app::runs::start_run::{
-    self, LimitSource, Refusal, RunRequest, Started, compose_instructions, profile_source_label,
-    start_run, unset_tokens,
+    self, LimitSource, Refusal, RunRequest, Started, kind_of, profile_source_label,
+    render_instructions, start_run, task_document, unset_tokens,
 };
 
 /// Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape
@@ -1686,13 +1686,24 @@ pub async fn get_item_agent_context(
     })?;
 
     // Compose the instructions with the definition_of_done
-    let composed = compose_instructions(
+    let composed = task_document(
         profile_instructions,
         &item,
         &comments,
         brief.as_ref(),
         project.definition_of_done.as_deref(),
-    );
+        &kind_of(&item, &project),
+    )
+    .map(|task| render_instructions(&task))
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not serialize item brief");
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not serialize item brief",
+            json!({}),
+        )
+    })?;
 
     // The profile's limit, unless the dialog has its own: a different number is the run's, none is
     // "no limit". The sentence is still `limit_source`'s, over a snapshot of the same shape.
