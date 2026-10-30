@@ -166,6 +166,7 @@ pub async fn build_runtime_with_active(
     .with_verify(config.verify.clone(), limits.harness_process.clone())
     .with_git(config.git.clone())
     .with_process_env(config.process.clone())
+    .with_board_url(board_url(&config.api_base_url))
     .with_active(active);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities)
         .with_reprobe(crate::client::transport::CAPABILITY_REPROBE_INTERVAL, probe);
@@ -359,4 +360,13 @@ async fn report_capabilities<C: Clock>(
         },
         additional: BTreeMap::new(),
     }
+}
+
+/// The board's address without the protocol path, which the runner is configured with.
+fn board_url(api_base_url: &str) -> String {
+    let trimmed = api_base_url.trim_end_matches('/');
+    trimmed
+        .strip_suffix("/api/runner/v1")
+        .unwrap_or(trimmed)
+        .to_owned()
 }

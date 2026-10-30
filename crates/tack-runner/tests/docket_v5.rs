@@ -1242,6 +1242,111 @@ async fn a_task_without_cache_figures_counts_whole() {
     );
 }
 
+/// The hops of `task-with-manifest` as a script: each ends on the trace as docket writes it, with
+/// no manifest there, and the record carries what the fixture's hop holds.
+fn hops_with_their_manifests() -> Vec<(String, Value)> {
+    fixture("task-with-manifest")["hops"]
+        .as_array()
+        .expect("hops")
+        .iter()
+        .map(|hop| {
+            let mut payload = hop_finished(
+                hop["role"].as_str().expect("role"),
+                hop["model"].as_str().expect("model"),
+                0,
+                hop["artifact"]["verdict"].clone(),
+            );
+            for key in ["promptManifest", "artifact"] {
+                if let Some(value) = hop.get(key) {
+                    payload[key] = value.clone();
+                }
+            }
+            ("hop_finished".to_owned(), payload)
+        })
+        .collect()
+}
+
+async fn steps_of(after: Vec<(String, Value)>) -> Option<Value> {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        after,
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    outcome.terminal_reason.get("steps").cloned()
+}
+
+#[tokio::test]
+async fn a_settled_runs_result_holds_what_each_step_was_made_of() {
+    let steps = steps_of(hops_with_their_manifests()).await.expect("steps");
+    let steps = steps.as_array().expect("one entry per hop");
+    assert_eq!(steps.len(), 3);
+    assert_eq!(
+        steps
+            .iter()
+            .map(|step| step["role"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["lead", "implementer", "reviewer"]
+    );
+
+    // The implementer: the prompts by layer, in the order docket composed them, and what its
+    // handoff said.
+    assert_eq!(
+        steps[1],
+        json!({
+            "role": "implementer",
+            "model": "local/qwen2.5-coder:7b",
+            "class": "cheap",
+            "family": "local",
+            "verdict": null,
+            "ok": true,
+            "summary": "Added src/x.rs and its test.",
+            "prompts": [
+                {"layer": "identity", "name": "implementer", "version": "1.0.0",
+                 "sha256": "3".repeat(64), "scope": "shipped", "tokens": 410},
+                {"layer": "task", "name": "task", "version": "",
+                 "sha256": "4".repeat(64), "scope": "task", "tokens": 1280},
+                {"layer": "hop", "name": "implementer", "version": "1.0.0",
+                 "sha256": "5".repeat(64), "scope": "pod", "tokens": 12},
+            ],
+            "assumptions": ["The module is not public API."],
+            "questions": ["Should the old name keep working?"],
+        })
+    );
+    // The verdict is the handoff's, and a step that assumed and asked nothing says so by empty lists.
+    assert_eq!(steps[2]["verdict"], "approved");
+    assert_eq!(steps[2]["assumptions"], json!([]));
+    assert_eq!(steps[2]["questions"], json!([]));
+}
+
+#[tokio::test]
+async fn a_hop_without_a_manifest_has_no_prompts_and_no_family() {
+    // The reviewer of the record carries no `promptManifest` key at all.
+    let steps = steps_of(hops_with_their_manifests()).await.expect("steps");
+    assert_eq!(steps[2]["prompts"], json!([]));
+    assert_eq!(steps[2]["class"], Value::Null);
+    assert_eq!(steps[2]["family"], Value::Null);
+    // The model is the one the hop was served by, which the record names without a manifest.
+    assert_eq!(steps[2]["model"], "local/local-model");
+
+    // An older docket's hop: neither a manifest nor a handoff.
+    let steps = steps_of(vec![(
+        "hop_finished".into(),
+        hop_finished("implementer", "local/local-model", 0, Value::Null),
+    )])
+    .await
+    .expect("steps");
+    assert_eq!(steps[0]["prompts"], json!([]));
+    assert_eq!(steps[0]["summary"], Value::Null);
+    assert_eq!(steps[0]["questions"], json!([]));
+}
+
+#[tokio::test]
+async fn a_task_that_recorded_no_hop_has_no_steps() {
+    assert_eq!(steps_of(Vec::new()).await, None);
+}
+
 #[tokio::test]
 async fn a_done_task_names_its_branch_head_and_leaves_the_worktree_alone() {
     let fake = pods_fake().await;

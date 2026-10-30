@@ -105,12 +105,15 @@ pub fn program_found(program: &str, env: &crate::config::ProcessEnv) -> bool {
 /// Runs the verifier for one attempt. `scratch` is the evidence capture's
 /// scratch directory; its `src` holds the files already staged. Returns the
 /// staged `mrp.json`, in the shape `terminal_reason.artifacts` entries have.
+/// `trajectory_uri` is where the board will serve the run's staged `trajectory.json`, when it
+/// has one; a prill verifier is given it with the file's digest.
 pub async fn run(
     config: &VerifyConfig,
     limits: &ProcessLimits,
     workspace: &Workspace,
     scratch: &Path,
     env: &crate::config::ProcessEnv,
+    trajectory_uri: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, VerifyFailure> {
     let evidence = scratch.join("evidence");
     fs::create_dir_all(&evidence)
@@ -126,7 +129,18 @@ pub async fn run(
         VerifyKind::Command => {
             run_command(config, limits, workspace, &evidence, &output, env).await?
         }
-        VerifyKind::Prill => prill::run(config, limits, workspace, &evidence, &output, env).await?,
+        VerifyKind::Prill => {
+            prill::run(
+                config,
+                limits,
+                workspace,
+                &evidence,
+                &output,
+                env,
+                trajectory_uri,
+            )
+            .await?
+        }
     }
 
     let attempt_id = workspace.attempt_id.as_str();

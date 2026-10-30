@@ -353,6 +353,9 @@ pub struct RunnerEngine<P, A, W, C = crate::SystemClock> {
     /// The environment the runner was started with: the verifier's `PATH` and what an install
     /// runs with.
     process: crate::config::ProcessEnv,
+    /// The board's address, without a path, for the links the evidence carries to its own
+    /// artifacts; without one they are paths on the board.
+    board_url: Option<String>,
     /// The leases in flight, which the runner's ticker renews together.
     active: crate::active::ActiveAttempts,
 }
@@ -399,6 +402,7 @@ where
             verify: None,
             git: crate::config::GitConfig::default(),
             process: crate::config::ProcessEnv::default(),
+            board_url: None,
             active: crate::active::ActiveAttempts::new(1),
         }
     }
@@ -452,6 +456,12 @@ where
     /// The environment the runner was started with, for the verifier and the install.
     pub fn with_process_env(mut self, process: crate::config::ProcessEnv) -> Self {
         self.process = process;
+        self
+    }
+
+    /// The board's address, without a path, so the evidence can link its artifacts.
+    pub fn with_board_url(mut self, board_url: String) -> Self {
+        self.board_url = Some(board_url);
         self
     }
 

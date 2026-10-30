@@ -966,13 +966,27 @@ fn finish(state: &mut World, index: usize) {
         let task = &state.tasks[index];
         (task.pod.clone(), task.id.clone(), task.script.clone())
     };
-    for (event_type, payload) in script.after.clone() {
+    for (event_type, mut payload) in script.after.clone() {
         if event_type == "hop_finished" {
-            // The hop is on the task's record as well as in the trace.
-            state.tasks[index].hops.push(json!({
+            // The hop is on the task's record as well as in the trace. The prompt manifest and
+            // the handoff a script gives it are on the record only (the trace event is
+            // unchanged), and a hop the script gives neither has neither key, as docket writes a
+            // hop recorded before they existed.
+            let mut hop = json!({
                 "role": payload["role"],
                 "model": payload["model"],
-            }));
+            });
+            if let Some(event) = payload.as_object_mut() {
+                for key in ["promptManifest", "artifact"] {
+                    if let Some(value) = event.remove(key) {
+                        hop[key] = value;
+                    }
+                }
+            }
+            if let Some(ok) = payload.get("ok") {
+                hop["ok"] = ok.clone();
+            }
+            state.tasks[index].hops.push(hop);
         }
         trace_event(state, &pod, &id, &event_type, payload);
     }
