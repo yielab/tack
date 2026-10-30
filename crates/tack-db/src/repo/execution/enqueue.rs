@@ -45,7 +45,7 @@ pub enum EnqueueResult {
 
 /// A read-only snapshot of one runner's scheduling-relevant state, used to
 /// build a `tack_orch::scheduler::RunnerCandidate` one layer up (that type
-/// cannot be constructed here — see [`RequestSelection`]'s doc comment for
+/// cannot be constructed here — see [`RequestSelection`](super::claim::RequestSelection)'s doc comment for
 /// why). Every field mirrors a live `agent_runners`/`agent_fleet_members`
 /// column, not the runner's self-reported `capability_snapshot` alone,
 /// because capacity/heartbeat are refreshed by every claim/heartbeat call
@@ -460,7 +460,7 @@ fn snapshot_created_at_matches_now(snapshot: &str, now: &str) -> Result<(), Stor
 impl Repository {
     /// Read-only scheduling input: this runner's own current state plus its
     /// fleet memberships. `None` if `runner_id` does not exist. See
-    /// [`RequestSelection`]'s doc comment for why this is a plain read
+    /// [`RequestSelection`](super::claim::RequestSelection)'s doc comment for why this is a plain read
     /// rather than something `tack-orch` fetches itself.
     pub async fn fetch_runner_scheduling_snapshot(
         &self,
