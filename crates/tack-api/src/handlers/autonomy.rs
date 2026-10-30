@@ -123,6 +123,23 @@ pub struct TeamLine {
     /// computer reports the team or its harness does not say.
     #[serde(default)]
     pub read_only: Option<Vec<String>>,
+    /// `repository` or `folder`; `null` when no computer reports the team or its harness does not
+    /// say. A folder team's work stays in its folder: nothing is merged.
+    #[serde(default)]
+    pub works_in: Option<String>,
+    /// The record sets the team keeps and how many rows each holds; `null` when the harness does
+    /// not say.
+    #[serde(default)]
+    pub records: Option<Vec<TeamRecords>>,
+}
+
+/// One set of records a team keeps.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamRecords {
+    pub name: String,
+    pub description: String,
+    /// Rows in the set, whichever run wrote them.
+    pub rows: u64,
 }
 
 impl From<Settings> for AutonomySettings {
@@ -283,6 +300,19 @@ async fn project_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<Team
             caps_at,
             fix,
             read_only: known.and_then(|t| t.read_only.clone()),
+            works_in: known
+                .and_then(|t| t.works_in)
+                .and_then(|works_in| serde_json::to_value(works_in).ok())
+                .and_then(|value| value.as_str().map(str::to_owned)),
+            records: known.and_then(|t| t.records.as_ref()).map(|sets| {
+                sets.iter()
+                    .map(|set| TeamRecords {
+                        name: set.name.clone(),
+                        description: set.description.clone(),
+                        rows: set.rows,
+                    })
+                    .collect()
+            }),
         });
     }
     Ok(lines)

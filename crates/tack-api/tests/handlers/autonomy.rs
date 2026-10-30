@@ -735,7 +735,9 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
             "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L3",
             "teams": [
                 {"name": "reviewers", "profile": "default", "violations": [{"requirement": "r", "fix": "run it lights-out"}]},
-                {"name": "writers", "profile": "lights-out", "violations": [], "read_only": ["/opt/node-22"]}],
+                {"name": "writers", "profile": "lights-out", "violations": [], "read_only": ["/opt/node-22"],
+                 "works_in": "folder",
+                 "records": [{"name": "leads", "description": "People found", "rows": 2}]}],
         }]})
         .to_string(),
     )
@@ -774,6 +776,24 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     assert_eq!(reads("writers"), json!(["/opt/node-22"]), "{got}");
     assert_eq!(reads("reviewers"), Value::Null, "{got}");
     assert_eq!(reads("ghosts"), Value::Null, "{got}");
+    // Where a team works and what it keeps travel the same way.
+    let of = |n: &str, key: &str| {
+        got["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == n)
+            .unwrap()[key]
+            .clone()
+    };
+    assert_eq!(of("writers", "works_in"), json!("folder"), "{got}");
+    assert_eq!(
+        of("writers", "records"),
+        json!([{"name": "leads", "description": "People found", "rows": 2}]),
+        "{got}"
+    );
+    assert_eq!(of("reviewers", "works_in"), Value::Null, "{got}");
+    assert_eq!(of("reviewers", "records"), Value::Null, "{got}");
     assert_eq!(line("writers").1, Value::Null, "{got}");
     assert_eq!(line("writers").2, Value::Null, "{got}");
     assert_eq!(line("ghosts").1, "L3", "{got}");

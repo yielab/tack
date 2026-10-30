@@ -43,6 +43,7 @@ use crate::{
 mod client;
 pub mod daemon;
 mod probe;
+mod records;
 mod steps;
 mod task;
 mod wire;
@@ -50,7 +51,7 @@ mod wire;
 use client::Client;
 use wire::{
     Enqueued, Escalation, EscalationDetail, EscalationEvent, EscalationList, EscalationState,
-    HopEvent, TaskDiff, TaskUsage, TaskView, Tokens, TraceEvent, TracePage,
+    HopEvent, PodReport, TaskDiff, TaskUsage, TaskView, Tokens, TraceEvent, TracePage,
 };
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
@@ -171,6 +172,9 @@ struct RunInfo {
     refused: Option<String>,
     /// The operator API version docket answered when the task started, when it could be asked.
     api: Option<u32>,
+    /// The team works in a repository. False only when docket says the team has none; a docket
+    /// that does not say is taken to have one, as every team did before.
+    in_repository: bool,
 }
 
 /// The ends of the channels `wait` drives.
@@ -368,6 +372,20 @@ impl DocketAdapter {
                 "the task's branch {branch:?} is not in the repository"
             ))
         }
+    }
+
+    /// Whether the team works in a repository, read once when its run starts. Anything docket
+    /// does not say counts as yes: a folder team is the one thing it has to say outright.
+    async fn has_repository(&self, pod: &str) -> bool {
+        let Ok(reply) = self.client.pod(pod).await else {
+            return true;
+        };
+        reply.status != 200
+            || reply
+                .read::<PodReport>()
+                .ok()
+                .and_then(|report| report.codebase)
+                .is_none_or(|codebase| !codebase.is_empty())
     }
 
     /// The commit the request's base revision names in the repository, which
@@ -994,6 +1012,13 @@ impl DocketAdapter {
         let why = task.reason.as_deref().unwrap_or_default();
         let failure_kind = task.failure_kind.as_deref();
         let (state, reason) = match task.status.as_str() {
+            // A team in a folder leaves no branch: what it did is what its last step handed off,
+            // and there is nothing for the engine to capture or merge.
+            "done" if task.worktree.is_none() && !info.in_repository => (
+                AttemptState::Succeeded,
+                json!({"code": "done", "outside_repository": true, "team": info.pod,
+                       "task": info.task, "summary": steps::result(&task.hops)}),
+            ),
             "done" => {
                 let branch = task
                     .worktree
@@ -1084,7 +1109,16 @@ impl DocketAdapter {
                        "message": why, "task": info.task}),
             ),
         };
-        self.outcome(info, state, reason, Some(task), model)
+        let mut outcome = self.outcome(info, state, reason, Some(task), model);
+        // What the team wrote in this task, beside the steps. The task has ended, so no row
+        // changes under the read.
+        let records = records::kept(&self.client, &info.pod, &info.task).await;
+        if !records.is_empty()
+            && let Some(object) = outcome.terminal_reason.as_object_mut()
+        {
+            object.insert("records".to_owned(), Value::Array(records));
+        }
+        outcome
     }
 }
 
@@ -1174,6 +1208,7 @@ impl HarnessAdapter for DocketAdapter {
             _ => Self::base_commit(spec).await,
         };
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
+        let in_repository = self.has_repository(&pod).await;
         let body = task::body(
             request,
             &attempt_id,
@@ -1214,6 +1249,7 @@ impl HarnessAdapter for DocketAdapter {
                 timeout: Duration::from_secs(request.timeout_seconds),
                 refused,
                 api: Some(api),
+                in_repository,
             })
             .await)
     }
@@ -1331,6 +1367,7 @@ impl HarnessAdapter for DocketAdapter {
             .await
             .map(|status| status.api)
             .ok();
+        let in_repository = self.has_repository(pod).await;
         Ok(self
             .register(RunInfo {
                 pod: pod.to_owned(),
@@ -1341,6 +1378,7 @@ impl HarnessAdapter for DocketAdapter {
                 timeout: Duration::from_secs(spec.work.request.timeout_seconds),
                 refused: None,
                 api,
+                in_repository,
             })
             .await)
     }

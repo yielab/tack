@@ -1,0 +1,8 @@
+constructed
+route: GET /pods/<pod>/records/<set>
+status: 200
+built-from: the shape of requirements 33 and 51; no capture
+source: specs/functional/pod-records.spec.md requirements 33 and 50-53, specs/functional/serve-read-api.spec.md "GET /pods/<pod>", at docket develop 28c3cf65
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+date: 2026-10-30
+note: from the spec, recaptured by D. Every row is an object keyed by column and carries the system columns, _task among them; columns are the names; cut says docket stopped at the limit.

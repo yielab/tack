@@ -1,0 +1,26 @@
+{
+  "set": "leads",
+  "columns": [
+    "_id",
+    "_at",
+    "_task",
+    "_session",
+    "_step",
+    "_updated_at",
+    "email",
+    "stage"
+  ],
+  "rows": [
+    {
+      "_id": 1,
+      "_at": "2026-01-01T00:00:00Z",
+      "_task": "00000000-0000-0000-0000-000000000000",
+      "_session": "session-0",
+      "_step": "lead",
+      "_updated_at": "2026-01-01T00:00:00Z",
+      "email": "ana@example.test",
+      "stage": "new"
+    }
+  ],
+  "cut": false
+}

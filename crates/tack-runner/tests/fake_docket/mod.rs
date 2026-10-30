@@ -226,6 +226,12 @@ pub struct Script {
     pub commit: Option<(String, String)>,
     pub untracked: Vec<String>,
     pub usage: Value,
+    /// Rows the task writes in the team's record sets when it finishes: `(set, row)`. The fake
+    /// stamps each with the task's id as `_task`, as docket does.
+    pub records: Vec<(String, Value)>,
+    /// The task ends with no worktree whatever the team, as docket's record of a task that ran
+    /// in place.
+    pub no_worktree: bool,
 }
 
 impl Default for Script {
@@ -242,6 +248,8 @@ impl Default for Script {
             commit: None,
             untracked: Vec::new(),
             usage: json!({"input": 0, "output": 0, "byModel": {}}),
+            records: Vec::new(),
+            no_worktree: false,
         }
     }
 }
@@ -264,6 +272,8 @@ struct Task {
     branch: String,
     base_commit: String,
     hops: Vec<Value>,
+    /// The team works in a folder: the task has no branch and its record no `worktree`.
+    folder: bool,
     gate_open: bool,
     /// The id of the escalation the gate opened.
     escalation: Option<String>,
@@ -280,8 +290,21 @@ struct Escalation {
     call: Option<String>,
 }
 
+/// One set of records a team declares, with the rows its tasks wrote.
+struct RecordSet {
+    name: String,
+    description: String,
+    key: Option<String>,
+    /// The columns the team declared, besides docket's own.
+    columns: Vec<String>,
+    /// Each row as `GET .../records/<set>` sends it, system columns included.
+    rows: Vec<Value>,
+}
+
 struct Pod {
     codebase: String,
+    /// The team has no repository: `codebase` is `""` on its report.
+    folder: bool,
     profile: String,
     violations: Vec<(String, String)>,
     /// What `readOnly` answers instead of the capture's: `Some(None)` leaves the key out, as
@@ -312,6 +335,13 @@ struct World {
     answers_refused: u32,
     /// `GET /escalations/<id>` leaves out `call`, as a docket that does not show it.
     calls_withheld: bool,
+    /// The record sets of each team, by team.
+    records: BTreeMap<String, Vec<RecordSet>>,
+    /// A docket before folders and records: a team's report has no `codebase` and the records
+    /// routes answer `404`.
+    without_records: bool,
+    /// Sets whose statement docket refuses with `400`.
+    refused_sets: BTreeSet<String>,
 }
 
 pub struct FakeDocket {
@@ -339,6 +369,9 @@ impl FakeDocket {
             without_escalations: false,
             answers_refused: 0,
             calls_withheld: false,
+            records: BTreeMap::new(),
+            without_records: false,
+            refused_sets: BTreeSet::new(),
         }));
         let app = Router::new()
             .fallback(handle)
@@ -373,6 +406,7 @@ impl FakeDocket {
             name.to_owned(),
             Pod {
                 codebase: String::new(),
+                folder: false,
                 profile: profile.to_owned(),
                 violations: violations
                     .iter()
@@ -381,6 +415,55 @@ impl FakeDocket {
                 read_only: None,
             },
         );
+    }
+
+    /// A team that works in a folder, with no repository: its report says `codebase` is `""` and
+    /// a task it finishes has no worktree.
+    pub fn add_folder_pod(&self, name: &str) {
+        self.add_pod(name, "lights-out", &[]);
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap()
+            .folder = true;
+    }
+
+    /// Makes the fake a docket before folders and records.
+    pub fn without_records(&self) {
+        self.shared.lock().unwrap().without_records = true;
+    }
+
+    /// A set of records the team declares, with the columns besides docket's own.
+    pub fn add_record_set(&self, pod: &str, name: &str, description: &str, columns: &[&str]) {
+        self.shared
+            .lock()
+            .unwrap()
+            .records
+            .entry(pod.to_owned())
+            .or_default()
+            .push(RecordSet {
+                name: name.to_owned(),
+                description: description.to_owned(),
+                key: columns.first().map(|column| (*column).to_owned()),
+                columns: columns.iter().map(|column| (*column).to_owned()).collect(),
+                rows: Vec::new(),
+            });
+    }
+
+    /// A row some task wrote earlier in a set, stamped with that task's id.
+    pub fn add_record_row(&self, pod: &str, set: &str, task: &str, row: Value) {
+        write_row(&mut self.shared.lock().unwrap(), pod, set, task, row);
+    }
+
+    /// Makes docket refuse to run a statement over the set, as it does a slow or malformed one.
+    pub fn refuse_set(&self, set: &str) {
+        self.shared
+            .lock()
+            .unwrap()
+            .refused_sets
+            .insert(set.to_owned());
     }
 
     /// What the pod's `readOnly` answers: the folders its sandbox reads, `[]` for none, or
@@ -632,6 +715,8 @@ async fn handle(
         }
         ("GET", ["pods"]) => pods(&state),
         ("GET", ["pods", pod]) => pod_report(&state, pod),
+        ("GET", ["pods", pod, "records"]) => pod_records(&state, pod),
+        ("GET", ["pods", pod, "records", set]) => record_rows(&state, pod, set, &query),
         ("POST", ["pods"]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
         ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
@@ -700,7 +785,21 @@ fn pod_report(state: &World, name: &str) -> Response {
     let Some(pod) = state.pods.get(name) else {
         return refusal("pod-unknown", &[("no-such-team", name)]);
     };
-    let mut report = fixture_with("pod-attended", &[("saas-dev", name)]);
+    let mut report = if pod.folder {
+        fixture_with("pod-folder", &[("saas-notes", name)])
+    } else {
+        let mut report = fixture_with("pod-attended", &[("saas-dev", name)]);
+        // The capture is from before docket said where a team works.
+        report["codebase"] = json!(if pod.codebase.is_empty() {
+            "/scratch/repo"
+        } else {
+            pod.codebase.as_str()
+        });
+        report
+    };
+    if state.without_records {
+        report.as_object_mut().unwrap().remove("codebase");
+    }
     let violations: Vec<Value> = pod
         .violations
         .iter()
@@ -722,6 +821,113 @@ fn pod_report(state: &World, name: &str) -> Response {
     reply(200, report)
 }
 
+/// A row of a set as docket stores it: the columns the team declared, and the system columns it
+/// fills itself, `_task` the id of the task whose hop wrote it.
+fn write_row(state: &mut World, pod: &str, set: &str, task: &str, row: Value) {
+    let sets = state
+        .records
+        .get_mut(pod)
+        .unwrap_or_else(|| panic!("{pod} declares no record sets"));
+    let set = sets
+        .iter_mut()
+        .find(|found| found.name == set)
+        .unwrap_or_else(|| panic!("{pod} declares no set {set}"));
+    let mut stored = fixture("records-rows")["rows"][0].clone();
+    stored["_id"] = json!(set.rows.len() + 1);
+    stored["_task"] = json!(task);
+    for column in &set.columns {
+        stored[column] = row.get(column).cloned().unwrap_or(Value::Null);
+    }
+    set.rows.push(stored);
+}
+
+/// `GET /pods/<pod>/records`: the sets the team declares, with how many rows each holds.
+fn pod_records(state: &World, pod: &str) -> Response {
+    if state.without_records || !state.pods.contains_key(pod) {
+        return error(404, "not found");
+    }
+    let template = fixture("records");
+    let sets: Vec<Value> = state
+        .records
+        .get(pod)
+        .into_iter()
+        .flatten()
+        .map(|set| {
+            let mut entry = template["records"][0].clone();
+            entry["name"] = json!(set.name);
+            entry["description"] = json!(set.description);
+            entry["key"] = json!(set.key);
+            entry["rows"] = json!(set.rows.len());
+            entry["columns"] = json!(
+                set.columns
+                    .iter()
+                    .map(|column| json!({"name": column, "type": "text", "required": false}))
+                    .collect::<Vec<_>>()
+            );
+            entry
+        })
+        .collect();
+    reply(
+        200,
+        json!({"records": sets, "problems": template["problems"]}),
+    )
+}
+
+/// `GET /pods/<pod>/records/<set>?limit=&sql=`: one read-only `SELECT`. The fake understands the
+/// one statement Tack sends, `SELECT * FROM <set> WHERE _task = '<task>'`, and the bare read.
+fn record_rows(state: &World, pod: &str, set: &str, query: &str) -> Response {
+    if state.without_records || !state.pods.contains_key(pod) {
+        return error(404, "not found");
+    }
+    let Some(found) = state
+        .records
+        .get(pod)
+        .and_then(|sets| sets.iter().find(|found| found.name == set))
+    else {
+        return error(404, &format!("no record set {set}"));
+    };
+    let params: HashMap<String, String> = reqwest::Url::parse(&format!("http://fake/?{query}"))
+        .expect("a query")
+        .query_pairs()
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    let limit = match params.get("limit").map(|limit| limit.parse::<usize>()) {
+        None => 50,
+        Some(Ok(limit)) if (1..=1000).contains(&limit) => limit,
+        Some(_) => return error(400, "limit must be 1 to 1000"),
+    };
+    if state.refused_sets.contains(set) {
+        return error(400, "the statement is too slow");
+    }
+    let mut rows: Vec<Value> = found.rows.clone();
+    if let Some(sql) = params.get("sql") {
+        let prefix = format!("SELECT * FROM {set}");
+        let Some(rest) = sql.strip_prefix(&prefix) else {
+            return error(400, "only one SELECT over the set is read");
+        };
+        if !rest.is_empty() {
+            let task = rest
+                .strip_prefix(" WHERE _task = '")
+                .and_then(|rest| rest.strip_suffix('\''))
+                .filter(|task| !task.contains('\''));
+            let Some(task) = task else {
+                return error(400, "only one SELECT over the set is read");
+            };
+            rows.retain(|row| row["_task"] == json!(task));
+        }
+    }
+    let cut = rows.len() > limit;
+    rows.truncate(limit);
+    let mut answer = fixture("records-rows");
+    answer["set"] = json!(set);
+    let mut columns: Vec<Value> = answer["columns"].as_array().unwrap()[..6].to_vec();
+    columns.extend(found.columns.iter().map(|column| json!(column)));
+    answer["columns"] = json!(columns);
+    answer["rows"] = json!(rows);
+    answer["cut"] = json!(cut);
+    reply(200, answer)
+}
+
 fn post_pod(state: &mut World, body: &Value) -> Response {
     let Some(name) = body["name"].as_str().filter(|name| !name.is_empty()) else {
         return refusal("post-pods-old-fields", &[]);
@@ -741,6 +947,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
         name.to_owned(),
         Pod {
             codebase: body["location"].as_str().unwrap_or_default().to_owned(),
+            folder: false,
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
             read_only: None,
@@ -906,9 +1113,10 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     state.next += 1;
     let id = format!("task-{:04x}", state.next);
     let script = state.script.clone();
+    let folder = team.folder || script.no_worktree;
     let branch = format!("docket/{pod}/{id}");
     let mut base_commit = String::new();
-    if let Some(repository) = state.repository.clone() {
+    if let Some(repository) = state.repository.clone().filter(|_| !folder) {
         let base_ref = body["baseRef"].as_str().unwrap_or("HEAD");
         base_commit = git(
             &repository,
@@ -933,6 +1141,7 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
         branch,
         base_commit,
         hops: Vec::new(),
+        folder,
         gate_open: true,
         escalation: None,
     });
@@ -1104,7 +1313,11 @@ fn finish(state: &mut World, index: usize) {
         }
         trace_event(state, &pod, &id, &event_type, payload);
     }
+    for (set, row) in script.records.clone() {
+        write_row(state, &pod, &set, &id, row);
+    }
     if script.status == "done"
+        && !state.tasks[index].folder
         && let (Some((path, content)), Some(repository)) =
             (script.commit.clone(), state.repository.clone())
     {
@@ -1181,8 +1394,10 @@ fn task_record(task: &Task) -> Value {
     if let Some(id) = &task.escalation {
         record["escalations"] = json!([id]);
     }
-    // A task docket holds at its enqueue has no worktree yet.
-    if !parked {
+    // A task docket holds at its enqueue has no worktree yet, and a folder team's never has.
+    if task.folder {
+        record.as_object_mut().expect("record").remove("worktree");
+    } else if !parked {
         record["worktree"]["branch"] = json!(task.branch);
         record["worktree"]["baseCommit"] = json!(task.base_commit);
         record["worktree"]["baseRef"] = body["baseRef"].clone();

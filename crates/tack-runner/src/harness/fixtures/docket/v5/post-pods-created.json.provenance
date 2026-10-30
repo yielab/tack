@@ -3,7 +3,8 @@ route: POST /pods
 status: 201
 request: post-pods-created.request.json
 tack-sends: yes
-note: the body Tack sends; the answer still names the team project
+optional-keys: blueprint
+note: the body Tack sent when it was captured, with blueprint, which it no longer sends (docket defaults it); the answer still names the team project
 command: curl -X POST http://127.0.0.1:<port>/pods (bearer token from docket's --token-file) with the body in post-pods-created.request.json
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8
 env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key

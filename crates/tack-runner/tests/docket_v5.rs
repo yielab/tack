@@ -489,9 +489,10 @@ async fn ensure_is_posted_once_for_two_attempts() {
     assert_eq!(ensures.len(), 1, "{ensures:?}");
     assert_eq!(
         ensures[0].body,
-        json!({"name": POD, "location": scene.repository.display().to_string(),
-               "blueprint": "software", "ensure": true})
+        json!({"name": POD, "location": scene.repository.display().to_string(), "ensure": true})
     );
+    // Tack names no team shape: docket's own default stands.
+    assert!(ensures[0].body.get("blueprint").is_none());
     assert_eq!(fake.requests_to("POST", "/tasks/saas-dev").len(), 2);
 }
 
@@ -1499,6 +1500,287 @@ async fn a_hop_without_a_manifest_has_no_prompts_and_no_family() {
 #[tokio::test]
 async fn a_task_that_recorded_no_hop_has_no_steps() {
     assert_eq!(steps_of(Vec::new()).await, None);
+}
+
+// ── A team that works in a folder, and the records a run wrote ────────────────
+
+/// A team with no repository that keeps two sets of records.
+async fn folder_fake() -> FakeDocket {
+    let fake = FakeDocket::start().await;
+    fake.add_folder_pod(POD);
+    fake.add_record_set(POD, "leads", "People the team found", &["email", "stage"]);
+    fake.add_record_set(POD, "listings", "Places it looked at", &["url"]);
+    fake
+}
+
+fn lead(email: &str) -> Value {
+    json!({"email": email, "stage": "new"})
+}
+
+/// The attempt of one run against `fake`, with `script` as the task's.
+async fn run_script(
+    fake: &FakeDocket,
+    script: Script,
+) -> (tack_runner::harness::HarnessOutcome, Scene) {
+    fake.script(script);
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    (outcome, scene)
+}
+
+#[tokio::test]
+async fn a_folder_teams_done_task_succeeds_with_its_last_summary_and_nothing_to_merge() {
+    let fake = folder_fake().await;
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            after: hops_with_their_manifests(),
+            ..Script::default()
+        },
+    )
+    .await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    let reason = &outcome.terminal_reason;
+    assert_eq!(reason["code"], "done");
+    assert_eq!(reason["outside_repository"], json!(true));
+    assert_eq!(reason["team"], POD);
+    assert_eq!(reason["task"], fake.task_ids()[0].as_str());
+    assert_eq!(reason["summary"], "The change matches the card.");
+    // No branch, so no head for the engine to propose a merge from.
+    assert!(reason.get("branch").is_none() && reason.get("head_commit").is_none());
+    assert!(
+        fake.requests_to("GET", "/tasks/saas-dev/task-0001/diff")
+            .is_empty()
+    );
+    // The steps are kept as for any run.
+    assert_eq!(reason["steps"].as_array().map(Vec::len), Some(3));
+}
+
+#[tokio::test]
+async fn a_repository_teams_done_task_without_a_worktree_still_fails() {
+    let fake = pods_fake().await;
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            no_worktree: true,
+            ..Script::default()
+        },
+    )
+    .await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], "branch_not_applied");
+    assert!(outcome.terminal_reason.get("outside_repository").is_none());
+}
+
+/// The statement and limit the adapter sent for a set.
+fn read_of(fake: &FakeDocket, set: &str) -> Vec<(String, String)> {
+    let requests = fake.requests_to("GET", &format!("/pods/{POD}/records/{set}"));
+    assert_eq!(requests.len(), 1, "{set}: {requests:?}");
+    reqwest::Url::parse(&format!("http://docket/?{}", requests[0].query))
+        .expect("a query")
+        .query_pairs()
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect()
+}
+
+#[tokio::test]
+async fn a_run_keeps_the_rows_it_wrote_and_no_other_and_leaves_out_a_set_with_none() {
+    let fake = folder_fake().await;
+    fake.add_record_row(
+        POD,
+        "leads",
+        "task-from-another-run",
+        lead("old@example.test"),
+    );
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![
+                ("leads".into(), lead("ana@example.test")),
+                ("leads".into(), lead("bo@example.test")),
+            ],
+            ..Script::default()
+        },
+    )
+    .await;
+
+    let task = fake.task_ids()[0].clone();
+    let records = outcome.terminal_reason["records"]
+        .as_array()
+        .expect("records");
+    assert_eq!(
+        records.len(),
+        1,
+        "listings has no row of this task: {records:?}"
+    );
+    let leads = &records[0];
+    assert_eq!(leads["set"], "leads");
+    assert_eq!(leads["cut"], json!(false));
+    assert_eq!(
+        leads["columns"],
+        json!([
+            "_id",
+            "_at",
+            "_task",
+            "_session",
+            "_step",
+            "_updated_at",
+            "email",
+            "stage"
+        ])
+    );
+    let emails: Vec<_> = leads["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["email"].as_str().unwrap(),
+                row["_task"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        emails,
+        [
+            ("ana@example.test", task.as_str()),
+            ("bo@example.test", task.as_str())
+        ]
+    );
+    // The read is the one statement, bounded.
+    let sent = read_of(&fake, "leads");
+    assert!(sent.contains(&("limit".into(), "50".into())), "{sent:?}");
+    assert!(
+        sent.contains(&(
+            "sql".into(),
+            format!("SELECT * FROM leads WHERE _task = '{task}'")
+        )),
+        "{sent:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_set_with_more_rows_than_the_limit_is_cut_and_says_so() {
+    let fake = folder_fake().await;
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: (0..51)
+                .map(|n| ("leads".into(), lead(&format!("{n}@example.test"))))
+                .collect(),
+            ..Script::default()
+        },
+    )
+    .await;
+
+    let leads = &outcome.terminal_reason["records"][0];
+    assert_eq!(leads["rows"].as_array().map(Vec::len), Some(50));
+    assert_eq!(leads["cut"], json!(true));
+}
+
+#[tokio::test]
+async fn a_set_docket_refuses_is_skipped_and_the_others_are_kept() {
+    let fake = folder_fake().await;
+    fake.refuse_set("leads");
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![
+                ("leads".into(), lead("ana@example.test")),
+                ("listings".into(), json!({"url": "https://example.test/a"})),
+            ],
+            ..Script::default()
+        },
+    )
+    .await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    let sets: Vec<_> = outcome.terminal_reason["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|set| set["set"].as_str().unwrap())
+        .collect();
+    assert_eq!(sets, ["listings"]);
+}
+
+#[tokio::test]
+async fn a_set_whose_name_is_not_an_id_is_never_put_in_a_statement() {
+    let fake = folder_fake().await;
+    fake.add_record_set(POD, "x;drop", "A name no id has", &["url"]);
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![("x;drop".into(), json!({"url": "u"}))],
+            ..Script::default()
+        },
+    )
+    .await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert!(outcome.terminal_reason.get("records").is_none());
+    assert!(
+        fake.requests_to("GET", &format!("/pods/{POD}/records/x"))
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn an_older_docket_has_no_records_and_its_teams_say_neither_where_they_work_nor_what_they_keep()
+ {
+    let fake = pods_fake().await;
+    fake.without_records();
+    let (outcome, scene) = run_script(
+        &fake,
+        Script {
+            commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+            ..Script::default()
+        },
+    )
+    .await;
+    // A team with no `codebase` key is taken to have a repository, as before.
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert!(outcome.terminal_reason.get("records").is_none());
+
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    assert_eq!(teams[0].works_in, None);
+    assert_eq!(teams[0].records, None);
+    let json = serde_json::to_value(&teams[0]).unwrap();
+    assert!(json.get("works_in").is_none() && json.get("records").is_none());
+}
+
+#[tokio::test]
+async fn the_probe_says_where_each_team_works_and_what_it_keeps() {
+    use tack_protocol::execution::{TeamRecordSet, WorksIn};
+    let fake = folder_fake().await;
+    fake.add_pod("saas-code", "lights-out", &[]);
+    fake.add_record_row(POD, "leads", "task-a", lead("a@example.test"));
+    fake.add_record_row(POD, "leads", "task-b", lead("b@example.test"));
+    let scene = scene();
+
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    let folder = teams.iter().find(|t| t.name == POD).unwrap();
+    assert_eq!(folder.works_in, Some(WorksIn::Folder));
+    assert_eq!(
+        folder.records,
+        Some(vec![
+            TeamRecordSet {
+                name: "leads".into(),
+                description: "People the team found".into(),
+                rows: 2,
+            },
+            TeamRecordSet {
+                name: "listings".into(),
+                description: "Places it looked at".into(),
+                rows: 0,
+            },
+        ])
+    );
+    let code = teams.iter().find(|t| t.name == "saas-code").unwrap();
+    assert_eq!(code.works_in, Some(WorksIn::Repository));
+    assert_eq!(code.records, Some(Vec::new()));
 }
 
 #[tokio::test]
@@ -3141,11 +3423,13 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 13] = [
+const CLIENT_ROUTES: [&str; 15] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
     "GET /pods/<pod>",
+    "GET /pods/<pod>/records",
+    "GET /pods/<pod>/records/<set>",
     "POST /pods",
     "POST /tasks/<pod>",
     "GET /tasks/<pod>/<id>",
@@ -3157,11 +3441,16 @@ const CLIENT_ROUTES: [&str; 13] = [
     "POST /escalations/<id>",
 ];
 
-/// Routes whose files are written from docket's spec until a capture of a real run replaces them.
-const FROM_THE_SPEC_ONLY: [&str; 1] = ["GET /escalations/<id>"];
-
 /// `GET /health` is sent by the daemon's supervision, not by `client.rs`.
 const NOT_IN_CLIENT: [&str; 1] = ["GET /health"];
+
+/// Routes of a docket later than the captures, whose files are written from its spec until the
+/// capture script is run against it.
+const NOT_CAPTURED_YET: [&str; 3] = [
+    "GET /escalations/<id>",
+    "GET /pods/<pod>/records",
+    "GET /pods/<pod>/records/<set>",
+];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {
@@ -3173,12 +3462,15 @@ fn every_route_the_client_sends_has_a_captured_file() {
     );
     let provenances = fake_docket::provenances();
     for route in CLIENT_ROUTES {
+        // A route written from the spec until a capture of it is made has a constructed file.
+        let state = if NOT_CAPTURED_YET.contains(&route) {
+            "constructed"
+        } else {
+            "captured"
+        };
         let captured: Vec<_> = provenances
             .iter()
-            .filter(|found| {
-                (found.state == "captured" || FROM_THE_SPEC_ONLY.contains(&route))
-                    && found.get("route") == Some(route)
-            })
+            .filter(|found| found.state == state && found.get("route") == Some(route))
             .collect();
         assert!(
             !captured.is_empty(),
@@ -3668,12 +3960,53 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
     }
 
     let mut wrong = Vec::new();
+    for (name, answer) in &mut seen {
+        // The captures of a team report are from before docket said where a team works; the
+        // spec's own files are compared in `the_fake_answers_a_folder_team_and_its_records_...`.
+        if matches!(*name, "pod-attended" | "pod-lights-out") {
+            answer.as_object_mut().unwrap().remove("codebase");
+        }
+    }
     for (name, answer) in &seen {
         if let Err(why) = same_shape(answer, &fake_docket::fixture(name), name) {
             wrong.push(why);
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[tokio::test]
+async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_spec_files() {
+    let fake = FakeDocket::start().await;
+    fake.add_folder_pod("saas-notes");
+    fake.add_record_set("saas-notes", "leads", "People", &["email", "stage"]);
+    fake.add_record_row(
+        "saas-notes",
+        "leads",
+        "task-a",
+        json!({"email": "a@example.test", "stage": "new"}),
+    );
+    let mut wrong = Vec::new();
+    for (name, path) in [
+        ("pod-folder", "/pods/saas-notes"),
+        ("records", "/pods/saas-notes/records"),
+        ("records-rows", "/pods/saas-notes/records/leads"),
+    ] {
+        let (status, answer) = ask(&fake, "GET", path, None).await;
+        assert_eq!(status, 200, "{name}: {answer}");
+        if let Err(why) = same_shape(&answer, &fake_docket::fixture(name), name) {
+            wrong.push(why);
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+    // A team in a repository says where it works too, and the captures' two pods do not.
+    fake.add_pod("saas-code", "lights-out", &[]);
+    let (_, answer) = ask(&fake, "GET", "/pods/saas-code", None).await;
+    assert!(
+        answer["codebase"]
+            .as_str()
+            .is_some_and(|path| !path.is_empty())
+    );
 }
 
 #[tokio::test]
@@ -3696,7 +4029,7 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
         &fake,
         "POST",
         "/pods",
-        Some(json!({"name": "saas-dev", "location": "/x", "ensure": true})),
+        Some(json!({"name": "saas-dev", "ensure": true})),
     )
     .await;
     assert_eq!(missing.0, 400);
@@ -3704,7 +4037,7 @@ async fn a_request_with_a_key_no_capture_has_or_without_one_every_capture_has_is
         missing.1["error"]
             .as_str()
             .unwrap()
-            .contains("\"blueprint\""),
+            .contains("\"location\""),
         "{missing:?}"
     );
     let mut task = request_file("post-task-created");

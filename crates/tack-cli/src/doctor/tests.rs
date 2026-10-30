@@ -283,6 +283,8 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
                 "/home/x/.nvm/versions/node/v22.17.1".to_owned(),
                 "/home/x/proj/node_modules".to_owned(),
             ]),
+            works_in: None,
+            records: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
@@ -292,12 +294,16 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
                 fix: "docket pod set network none".to_owned(),
             }],
             read_only: Some(Vec::new()),
+            works_in: None,
+            records: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
             profile: "attended".to_owned(),
             violations: Vec::new(),
             read_only: None,
+            works_in: None,
+            records: None,
         },
     ]);
     assert_eq!(

@@ -408,7 +408,8 @@ where
     /// A run that may change the repository, whose agent reported success and whose captured
     /// evidence holds no change, ends failed: nothing reached review. A run that is read-only
     /// (`ExecutionRequestSnapshot::expects_change`), or that staged a plan, delivered what it
-    /// was asked for and stays succeeded.
+    /// was asked for and stays succeeded. So does a run the harness says worked outside the
+    /// repository (a folder team): it was never going to leave a change here.
     pub(super) fn fail_without_change(
         spec: &ExecutionSpec,
         scratch: &std::path::Path,
@@ -416,6 +417,7 @@ where
         outcome: &mut HarnessOutcome,
     ) {
         if outcome.terminal_state != AttemptState::Succeeded
+            || outcome.terminal_reason["outside_repository"] == serde_json::Value::Bool(true)
             || !spec.work.request.expects_change()
             || staged
                 .iter()
