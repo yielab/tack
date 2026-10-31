@@ -162,6 +162,36 @@ describe('LatestRunSummary', () => {
     expect(buttons(card)).toContain('Run on another computer');
   });
 
+  it('a queued run behind a full computer says what the computer is busy with, links the task and the limit, and offers to answer the question it waits on', async () => {
+    const behind = {
+      runner_id: 'runner-1', runner_name: 'Main', runs_at_a_time: 1, request_id: 'req-busy', attempt_number: 1,
+      item_id: 'item-busy', project_id: 'proj-1', item_title: 'Reference notes', started_at: '2026-10-31T15:30:00Z',
+      question: 'Allow the focused test suite?', question_since: '2026-10-31T15:33:00Z',
+    };
+    const sentence = "This computer runs 1 at a time and is busy with 'Reference notes' since 15:30, which waits for your answer since 15:33";
+    const waiting = { ...RUN, state: 'queued', waiting_reason: sentence, waiting_since: null, waiting_behind: [behind] };
+    let c = mount([waiting], () => {}, []);
+    for (let i = 0; i < 4; i++) await flush();
+    const line = c.querySelector('[data-testid="latest-run-waiting"]')!;
+    expect(line.textContent).toBe(`Waiting: ${sentence}`);
+    const links = [...line.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')]);
+    expect(links).toEqual([
+      ['runs 1 at a time', '/agents'],
+      ["'Reference notes'", '/projects/proj-1/items/item-busy'],
+    ]);
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(buttons(card)).toEqual(expect.arrayContaining(['Run on another computer', 'Answer it']));
+
+    // A busy run that waits for no one: the sentence and its links, and no Answer it.
+    while (disposers.length) disposers.pop()!();
+    vi.restoreAllMocks();
+    const running = { ...behind, question: null, question_since: null };
+    c = mount([{ ...waiting, waiting_reason: "This computer runs 1 at a time and is busy with 'Reference notes' since 15:30", waiting_behind: [running] }], () => {}, []);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(buttons(c.querySelector('[data-testid="latest-run"]')!)).not.toContain('Answer it');
+    expect(c.querySelectorAll('[data-testid="latest-run-waiting"] a')).toHaveLength(2);
+  });
+
   it('a queued run says why it waits and for how long; a capacity wait has no duration; a request that failed for want of a runner shows the reason as its failure', async () => {
     const waiting = { ...RUN, state: 'queued', waiting_reason: 'No runner has the model it asks for.', waiting_since: new Date(Date.now() - 5 * 60_000).toISOString() };
     let c = mount([waiting], () => {}, []);

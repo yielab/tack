@@ -378,3 +378,45 @@ pub async fn started_and_ended_at(
             .await?,
     )
 }
+
+/// An attempt that holds one of a runner's slots, with the task it works on and, when it is parked
+/// on a question, the question that waits longest.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct OpenAttemptRow {
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub item_id: String,
+    pub project_id: String,
+    pub item_title: String,
+    /// When the agent started, or when the runner took the run if it has not started.
+    pub since: String,
+    /// The oldest question still waiting for an answer.
+    pub question: Option<String>,
+    /// When that question was asked.
+    pub question_since: Option<String>,
+}
+
+/// The attempts holding a slot of `runner_id` (leased, preparing, running or waiting for an
+/// answer), the longest-held first.
+pub async fn open_attempts_of_runner(
+    repo: &Repository,
+    runner_id: &str,
+) -> Result<Vec<OpenAttemptRow>, StoreError> {
+    Ok(sqlx::query_as(state::sql(
+        "SELECT a.request_id, a.attempt_number, i.id AS item_id, i.project_id, i.title AS item_title, \
+                COALESCE(a.started_at, a.lease_issued_at) AS since, \
+                d.prompt AS question, d.created_at AS question_since \
+         FROM execution_attempts a \
+         JOIN execution_requests r ON r.id = a.request_id \
+         JOIN items i ON i.id = r.item_id \
+         LEFT JOIN execution_decisions d ON d.id = ( \
+             SELECT d2.id FROM execution_decisions d2 \
+             WHERE d2.attempt_id = a.id AND d2.state = 'pending' ORDER BY d2.created_at LIMIT 1) \
+         WHERE a.runner_id = ? \
+           AND a.state IN ({leased}, {preparing}, {running}, {waiting_decision}) \
+         ORDER BY since",
+    ))
+    .bind(runner_id)
+    .fetch_all(repo.pool())
+    .await?)
+}

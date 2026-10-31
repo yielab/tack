@@ -1801,6 +1801,105 @@ async fn a_run_queued_for_a_computer_that_stopped_answering_says_when_it_last_di
     assert_eq!(detail["waiting_reason"], json!(expected), "{detail}");
 }
 
+/// A request queued behind a runner with no free slot has no reason from a poll (a full runner
+/// never asks for work): the read works one out from what the runner holds, and writes nothing.
+#[tokio::test]
+async fn a_run_queued_behind_a_full_runner_says_what_the_runner_is_busy_with() {
+    let (app, repo, item_id) = setup().await;
+    seed::item_beside(&repo, &item_id, "item-busy", "Reference notes", "To Do").await;
+    let clock = tack_test_support::FixedClock("2026-08-12T12:00:00Z".parse().unwrap());
+    seed::running_attempt(
+        &repo,
+        &clock,
+        "runner-active",
+        "profile-c1",
+        "item-busy",
+        "busy",
+    )
+    .await;
+    let (_, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    let request_id = created["request_id"].as_str().expect("id").to_owned();
+    let read = || async {
+        let (_, list) = snd(
+            &app,
+            "GET",
+            &format!("/executions?item_ids={item_id}"),
+            String::new(),
+        )
+        .await;
+        let (_, detail) = snd(
+            &app,
+            "GET",
+            &format!("/executions/{request_id}"),
+            String::new(),
+        )
+        .await;
+        assert_eq!(list["data"][0]["waiting_reason"], detail["waiting_reason"]);
+        assert_eq!(list["data"][0]["waiting_behind"], detail["waiting_behind"]);
+        detail
+    };
+
+    // A running attempt: the sentence names the item and since when, with no question.
+    let detail = read().await;
+    let reason = detail["waiting_reason"]
+        .as_str()
+        .expect("a reason")
+        .to_owned();
+    assert!(
+        reason.starts_with(
+            "This computer runs 1 at a time and is busy with 'Reference notes' since "
+        ),
+        "{reason}"
+    );
+    assert!(!reason.contains("waits for your answer"), "{reason}");
+    let behind = &detail["waiting_behind"][0];
+    assert_eq!(behind["item_id"], "item-busy", "{detail}");
+    assert_eq!(behind["item_title"], "Reference notes");
+    assert_eq!(behind["runs_at_a_time"], 1);
+    assert_eq!(behind["question"], Value::Null);
+
+    // The same attempt parked on a decision: the sentence says it waits for an answer.
+    seed::pending_decision(&repo, &clock, "runner-active", "att-busy", "d1", &[], None).await;
+    let detail = read().await;
+    let reason = detail["waiting_reason"].as_str().expect("a reason");
+    assert!(
+        reason.contains(", which waits for your answer since "),
+        "{reason}"
+    );
+    let behind = &detail["waiting_behind"][0];
+    assert_eq!(behind["request_id"], "req-busy");
+    assert_eq!(
+        behind["question"],
+        "Allow the harness to run the focused test suite?"
+    );
+    assert!(behind["question_since"].is_string(), "{behind}");
+
+    let stored = request_row(&repo, &request_id).await.waiting_reason;
+    assert_eq!(stored, None, "the read-time sentence is never stored");
+}
+
+/// A runner with room keeps what the poll wrote, and names nothing it is busy with.
+#[tokio::test]
+async fn a_run_queued_behind_a_runner_with_room_keeps_the_reason_the_poll_wrote() {
+    let (app, repo, item_id) = setup().await;
+    let (_, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    let request_id = created["request_id"].as_str().expect("id").to_owned();
+    seed::agent_runner_heartbeat(&repo, "runner-active", &Utc::now().to_rfc3339()).await;
+    seed::execution_request_waiting_reason(&repo, &request_id, "codex needs a model named").await;
+    let (_, detail) = snd(
+        &app,
+        "GET",
+        &format!("/executions/{request_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(
+        detail["waiting_reason"], "codex needs a model named",
+        "{detail}"
+    );
+    assert_eq!(detail["waiting_behind"], json!([]), "{detail}");
+}
+
 #[tokio::test]
 async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_of_the_day() {
     let (app, repo, item_id) = setup().await;

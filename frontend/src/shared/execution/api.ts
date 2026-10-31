@@ -72,8 +72,27 @@ export interface ExecutionSummary {
   /** When a runner's poll first found the request unclaimable (RFC 3339); null
    *  for a capacity wait and once claimed. */
   waiting_since?: string | null;
+  /** The runs that hold every slot of the computers the request may run on, when no poll
+   *  explained the wait because those computers are full; empty or absent otherwise. */
+  waiting_behind?: WaitingBehind[];
   /** The run's token limit and who applies it; `sentence` is what every screen prints. */
   limit?: RunLimit;
+}
+
+/** One run that holds a slot of a full computer a queued request waits for. */
+export interface WaitingBehind {
+  runner_id: string;
+  runner_name: string;
+  runs_at_a_time: number;
+  request_id: string;
+  attempt_number: number;
+  item_id: string;
+  project_id: string;
+  item_title: string;
+  started_at: string;
+  /** The question the run waits for a person to answer; null when it waits for no one. */
+  question: string | null;
+  question_since: string | null;
 }
 
 /** `RunLimit` from the server, which owns the sentence. */
@@ -209,6 +228,7 @@ export const executionsApi = {
       created_at: data.created_at,
       waiting_reason: data.waiting_reason,
       waiting_since: data.waiting_since,
+      waiting_behind: data.waiting_behind,
       limit: data.limit,
     };
     return { data: summary, headers };
