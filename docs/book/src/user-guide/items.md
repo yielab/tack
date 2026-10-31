@@ -146,7 +146,7 @@ The **Automation** row of the properties list says in one line what happens to t
 The record of every time an agent was handed this item. The **Last run** card, at the top of the
 drawer and in the side column of the item's page, takes the colour and the buttons of the run:
 
-- **Running** shows the agent's last steps, the tokens it has used against its limit, **Follow live**
+- **Running** shows the team's steps when it reports them, the agent's last steps, the tokens it has used against its limit, **Follow live**
   and **Stop**.
 - **Needs your review** shows the opening of the agent's report, how long it took, how many steps
   it took and how many files it changed, with **Accept**, **Reject…** (which asks for an optional
@@ -172,6 +172,13 @@ shows only the run you picked, in this order:
   that was not meant to change files), *Failed* (including a run that was meant to change files and
   changed nothing), *Accepted*, and so on — with the agent that ran and, when the run's branch became
   a pull request, a **PR #n** link and its state.
+- **The team's steps**, when the run's team reports them: a line of steps in order, each marked
+  *Done*, *Running* or *Waiting* as the run goes, with what checks it in words ("checked by a command",
+  "a reviewer can send it back, up to 2 times", "asks you", "checked outside the team"). A step sent
+  back shows as *Running* again and the steps after it wait again. A step that no one on the team does
+  (a command, a question, a wait) is listed in its place with no mark, because nothing in the run says
+  where it stands. When the team or its agent reports no steps, the tab says "<Agent> does not report
+  its steps in advance", and the timeline below shows the steps taken so far.
 - **What the agent concluded**: the agent's report as it wrote it, cut to a few lines. **Read full
   report** shows the rest.
 - **What the agent did**, two ways. **By tool** groups its steps by the tool it used, with how many

@@ -5,7 +5,8 @@ import { useExecutionStore } from '../state/executionContext';
 import AttemptList from './AttemptList';
 import RunChips from './RunChips';
 import RunWithAgentModal from './RunWithAgentModal';
-import { describeAttemptStatus } from './attemptFormat';
+import { describeAttemptStatus, isTerminalAttemptState } from './attemptFormat';
+import { AttemptTeamSteps, runWho } from './TeamSteps';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
@@ -340,6 +341,16 @@ const RequestRow: Component<{
             <LoadError what="the attempts" error={a.error} onRetry={() => void store.loadAttempts(summary()?.request_id ?? '').catch(() => undefined)} />
           ) : null;
         })()}
+      </Show>
+      {/* The team's steps in order, above the timeline of what the agent did. */}
+      <Show when={latestAttempt() && (runWho(summary()).profileId || runWho(summary()).agentKind)}>
+        <AttemptTeamSteps
+          requestId={latestAttempt()!.request_id}
+          attemptNumber={latestAttempt()!.attempt_number}
+          live={!isTerminalAttemptState(latestAttempt()!.state)}
+          profileId={runWho(summary()).profileId}
+          agentKind={runWho(summary()).agentKind}
+        />
       </Show>
       {/* Mounted once and fed the fresh attempts, so a refresh updates the
           rows in place and what the person opened on them stays open. */}
