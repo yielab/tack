@@ -315,11 +315,10 @@ describe('AttemptList', () => {
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
     const asking = mount([attempt({ state: 'waiting_decision', ended_at: null })]);
-    expect(asking.textContent).not.toContain('Files from this run');
-    const open = [...asking.querySelectorAll('button')].find((b) => b.textContent === 'Open the question')!;
-    open.click();
+    // It waits for an answer, so its questions are open already.
     await flush();
     expect(asking.textContent).toContain('Files from this run');
+    expect([...asking.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(true);
 
     const ended = mount([attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } })]);
     expect(ended.textContent).toContain('The agent needed a person to decide');
@@ -328,6 +327,22 @@ describe('AttemptList', () => {
 
     const plain = mount([attempt()]);
     expect([...plain.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(false);
+  });
+
+  it('an attempt that starts to wait for an answer while the page is open opens its questions by itself', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
+    );
+    const [attempts, setAttempts] = createSignal([attempt({ state: 'running', ended_at: null })]);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts()} />, container);
+    disposers.push(() => { dispose(); container.remove(); });
+    await flush();
+    expect(container.textContent).not.toContain('Files from this run');
+    setAttempts([attempt({ state: 'waiting_decision', ended_at: null })]);
+    await flush();
+    expect(container.textContent).toContain('Files from this run');
   });
 
   it('a failed list of the files is said as one and Try again asks again', async () => {
