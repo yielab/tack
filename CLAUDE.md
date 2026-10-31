@@ -66,6 +66,12 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   accepted) after docket closed Phase 55 and neared the end of 56: E shows a `wait` as a wait and the whole
   call of an `outward` approval while pending, erased after; F runs a folder team (no repository) to
   Succeeded, keeps the rows a task wrote, drops `blueprint` from `ensure`. Rounds A∥B, E∥F, C∥D.
+- **Proposed 2026-10-31:** Phase 83 (`docs/plans/phase-83.md`, ADR 0032, proposed) — Tack reads the
+  whole docket team (members, models, queue, steps and shape when docket reports them) and shows it on
+  Agents → Teams; a task gets a team in the new-item dialog and auto-starts without a role; a run's
+  findings become a proposal (plan-v1 with type, role, team, parent; a docket team through a
+  `tack_proposals` record set) that a person accepts into items. Cards A D, B C, E F, G; none
+  started; two asks of docket (`blueprint`, `pipeline.steps`) block nothing.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
