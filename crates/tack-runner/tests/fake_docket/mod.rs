@@ -159,15 +159,6 @@ fn request_keys() -> HashMap<String, KeySpec> {
             required.retain(|key| !optional.contains(key));
         }
     }
-    // A task to a team that works in a folder carries no `baseRef` and no `prepare` (docket refuses
-    // both), and every capture so far is of a team in a repository.
-    if let Some(spec) = routes.get_mut("POST /tasks/<pod>") {
-        if let Some(required) = &mut spec.required {
-            required.remove("baseRef");
-            required.remove("prepare");
-        }
-        spec.allowed.insert("prepare".to_owned());
-    }
     routes
 }
 
@@ -1454,14 +1445,11 @@ fn task_record(task: &Task) -> Value {
         }
         "done" => "task-done",
         "blocked" if task.script.blocked_reason.is_some() => "task-blocked-input-expired",
-        "failed"
-            if task.folder
-                && matches!(
-                    task.script.failure_kind.as_deref(),
-                    Some("base_ref" | "prepare")
-                ) =>
-        {
+        "failed" if task.folder && task.script.failure_kind.as_deref() == Some("base_ref") => {
             "task-failed-base-ref-folder"
+        }
+        "failed" if task.folder && task.script.failure_kind.as_deref() == Some("prepare") => {
+            "task-failed-prepare-folder"
         }
         "failed" | "blocked" if task.escalation.is_some() => "task-failed-after-escalation",
         _ => "task-failed-pipeline",

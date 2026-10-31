@@ -1,0 +1,6 @@
+{
+  "description": "Capture only: a task for a team in a folder, with no baseRef and no prepare.",
+  "externalRef": "capture-item/attempt-9",
+  "idempotencyKey": "capture-attempt-9",
+  "pipeline": "no-such-pipeline"
+}

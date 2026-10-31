@@ -1,8 +1,10 @@
-constructed
+captured
 route: GET /tasks/<pod>/<id>
 status: 200
-built-from: task-failed-pipeline.json (captured against this docket) with the reason and failureKind of a task a folder team refuses at claim, and no worktree
-source: src/docket/teams/workspace/worktree.py ensure_task_worktree (the workdir branch, with _CODEBASE_ONLY) and src/docket/teams/pod_settings.py in_a_folder, src/docket/tasks/application/queue.py refuse_claimed_task, at 9954b4f8
-docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+tack-sends: yes
+note: a task with a baseRef for a team in a folder, settled failed before any hop: failureKind base_ref, the sentence in reason, no worktree
+command: curl -X GET http://127.0.0.1:<port>/tasks/saas-notes/task-00000000-0000-0000-0000-000000000000 (bearer token from docket's --token-file)
+docket: docket 0.3.0b1 (API 6), source checkout 4bf26e50
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-31
-note: not captured; docket was only read. A task posted with baseRef to a team that works in a folder (workspaceKind workdir) is claimed and settles failed before any hop, with failureKind base_ref and no worktree. The next capture replaces it.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

@@ -1,9 +1,9 @@
 # docket — what the harness is tested against
 
 The files in this directory are **captures from a real docket**, plus the answers that are
-marked `constructed`. Captured from `docket 0.2.0b6` (operator API version `6`, with the
-escalation record, the task as fields, the prompt manifest, the two-level home and the four
-blueprints), source checkout `115e9027`, on 2026-10-30. The directory keeps the name `v5` from the
+marked `constructed`. Captured from `docket 0.3.0b1` (operator API version `6`, with the
+escalation record, the task as fields, the prompt manifest, the two-level home, the four
+blueprints, `workspaceKind`, `blueprint` and `pipeline.steps`), source checkout `4bf26e50`, on 2026-10-31. The directory keeps the name `v5` from the
 first capture; the answers say `apiVersion: "6"`.
 
 `scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a
@@ -217,8 +217,12 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `post-task-autonomy-l5` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-created` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-existing` | `POST /tasks/<pod>` | 200 | captured |
+| `post-task-folder-base-ref` | `POST /tasks/<pod>` | 201 | captured |
+| `post-task-folder-prepare` | `POST /tasks/<pod>` | 201 | captured |
+| `post-task-folder` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-gated` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-minimal` | `POST /tasks/<pod>` | 201 | captured |
+| `post-task-prepare` | `POST /tasks/<pod>` | 201 | captured |
 | `post-tasks-autonomy-above-ceiling` | `POST /tasks/<pod>` | 422 | captured |
 | `post-tasks-autonomy-invalid` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-brief-without-objective` | `POST /tasks/<pod>` | 422 | captured |
@@ -243,10 +247,12 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `task-diff-unknown` | `GET /tasks/<pod>/<id>/diff` | 404 | captured |
 | `task-done` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-failed-after-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
-| `task-failed-base-ref-folder` | `GET /tasks/<pod>/<id>` | 200 | constructed |
+| `task-failed-approval-expired` | `GET /tasks/<pod>/<id>` | 200 | constructed |
+| `task-failed-base-ref-folder` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-hop` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-needs-human` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-pipeline` | `GET /tasks/<pod>/<id>` | 200 | captured |
+| `task-failed-prepare-folder` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-unknown` | `GET /tasks/<pod>/<id>` | 404 | captured |
 | `task-usage-by-model` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-usage-cached` | `GET /tasks/<pod>/<id>` | 200 | constructed |
@@ -264,6 +270,15 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 the `records` recipe applied by `docket pod update`; the one row of `records-rows` is inserted into
 the set's own table, because only an agent's tool call writes one. The requests of `POST /pods` carry
 no `blueprint`, as Tack sends none.
+
+A team that works in a folder has no repository to cut a worktree from. `post-task-folder` is the
+task as Tack sends it there (no `baseRef`, no `prepare`; `optional-keys` on it is why the fake does not
+require them), and `post-task-folder-base-ref` and `post-task-folder-prepare` are the two it never sends,
+which docket claims and settles `failed` before any hop (`task-failed-base-ref-folder`,
+`task-failed-prepare-folder`: `failureKind` `base_ref` and `prepare`, the pod and the value in `reason`).
+`post-task-prepare` is the one request that carries `prepare` to a team with a codebase.
+`task-failed-approval-expired` stays `constructed` on purpose: docket's own deadline for an approval is
+hours, and the script waits for nothing.
 
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.

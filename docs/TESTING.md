@@ -379,6 +379,17 @@ and never needs docket or prill; the three meet only here. A test that needs a m
 the local model alone, so read the log before blaming Tack. The script lists its knobs at the top;
 `DOCKET_PRILL_SKIP_BUILD=1` reuses the last build.
 
+The suite has four teams. Three work in the fixture repository and call the local model
+(`saas-code`, `saas-content`, `saas-lights`); the fourth, `saas-notes`, works in a plain folder
+and runs no model: its pipeline is one wait of 25 seconds. Test 16 sends it a task through the
+board and asserts docket received no `baseRef` and no `prepare`, ended the task `done` with no
+branch, and that the run card and the Agents page show the team's steps. Test 17 holds a task of
+that team open during the wait and writes three rows in its `tack_proposals` set through docket's
+own records port (no model writes them), then asserts the attempt's `plan` artifact, accepts it
+through `POST /items/{id}/subtasks-from-plan` and checks the three items, their nesting, their
+blocker, their roles and their profile. It also asserts docket answered the team with `blueprint`
+and `pipeline.steps`. The rest of the suite is a real model's work and can fail on the model alone.
+
 `docket-prill-e2e.sh --check` needs no model and no container. It runs
 `scripts/capture-docket-fixtures.sh` against a real docket, compares the keys of docket's answers
 with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, compares
@@ -386,8 +397,10 @@ with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, compa
 `briefing_schema` test (`#[ignore]`d in CI because it needs `prill` on `PATH`), and runs the fake
 docket's tests against the captures, so a key docket sends that the fake does not, or the reverse,
 fails by name. It exits non-zero when anything drifted. What the captures cannot reach stays
-`constructed`: it needs a model's reply or an agent's call that leaves the machine, and each says
-so in its provenance.
+`constructed`: it needs a model's reply, an agent's call that leaves the machine, or a deadline of
+docket's that is hours long (`task-failed-approval-expired`), and each says so in its provenance.
+The refusals of a folder team (a `baseRef` or a `prepare` sent to it, `failureKind` `base_ref` and
+`prepare`) need none of those and are captured.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it

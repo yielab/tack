@@ -1,0 +1,20 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: a prepare sent to a team in a folder is refused at claim.",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "externalRef": "capture-item/attempt-11",
+  "idempotencyKey": "capture-attempt-11",
+  "prepare": "true",
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "pod 'saas-notes' works in a folder (workspaceKind workdir); prepare 'true' applies only to a pod with a codebase",
+  "failureKind": "prepare",
+  "pendingApprovalIndex": null,
+  "hops": [],
+  "costUsd": 0.0,
+  "tokenBudget": 100000
+}

@@ -1,0 +1,6 @@
+{
+  "description": "Capture only: a baseRef sent to a team in a folder is refused at claim.",
+  "externalRef": "capture-item/attempt-10",
+  "idempotencyKey": "capture-attempt-10",
+  "baseRef": "main"
+}
