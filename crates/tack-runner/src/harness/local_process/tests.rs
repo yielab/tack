@@ -472,6 +472,7 @@ async fn a_question_is_answered_and_the_run_continues() {
                     let answer = DecisionAnswer {
                         option_id: Some(option_id.to_owned()),
                         text: None,
+                        unanswered: false,
                     };
                     let _ = answers_tx.send(answer).await;
                 }
@@ -524,6 +525,7 @@ exit 0"#;
         let answer = DecisionAnswer {
             option_id: Some("allow".to_owned()),
             text: None,
+            unanswered: false,
         };
         let _ = answers_tx.send(answer).await;
     };

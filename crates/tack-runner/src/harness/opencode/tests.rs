@@ -268,6 +268,7 @@ fn an_answer_becomes_a_permission_outcome() {
     let allow = DecisionAnswer {
         option_id: Some("once".to_owned()),
         text: None,
+        unanswered: false,
     };
     let bytes = OpencodeGrammar.answer(&question, &allow);
     assert_eq!(
@@ -279,6 +280,7 @@ fn an_answer_becomes_a_permission_outcome() {
         let deny = DecisionAnswer {
             option_id: Some(option_id.to_owned()),
             text: None,
+            unanswered: false,
         };
         let bytes = OpencodeGrammar.answer(&question, &deny);
         let got: Value = serde_json::from_slice(&bytes).expect("valid json");

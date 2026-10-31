@@ -2357,6 +2357,7 @@ async fn a_resumed_attempt_waits_for_the_decision_the_board_already_holds() {
             answer: answer.map(|option_id| DecisionAnswer {
                 option_id: Some(option_id.to_owned()),
                 text: None,
+                unanswered: false,
             }),
             resolved_at: None,
             resolved_by: None,
@@ -2956,7 +2957,8 @@ async fn resubmitting_the_same_terminal_event_is_idempotent() {
 // -----------------------------------------------------------------
 
 /// `(row, the create call fails?, a resolved answer preset via poll, the
-/// attempt's own timeout, the option_id the run receives)`. `expired` never
+/// attempt's own timeout, the option_id the run receives, whether that answer is marked as
+/// one nobody gave)`. `expired` never
 /// presets a poll answer, so the only way it resolves is the deadline —
 /// `1` second is enough for `AdvancingClock` (one simulated second per
 /// `now()` call) to pass it within the first heartbeat tick.
@@ -2988,13 +2990,30 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
         recommendation: None,
     };
 
-    let rows: [(&str, bool, Option<&str>, u64, &str); 3] = [
-        ("resolved", false, Some("allow_once"), 3600, "allow_once"),
-        ("expired", false, None, 1, "deny"),
-        ("create-fails", true, None, 3600, "deny"),
+    type Row = (
+        &'static str,
+        bool,
+        Option<&'static str>,
+        u64,
+        &'static str,
+        bool,
+    );
+    let rows: [Row; 3] = [
+        (
+            "resolved",
+            false,
+            Some("allow_once"),
+            3600,
+            "allow_once",
+            false,
+        ),
+        ("expired", false, None, 1, "deny", true),
+        ("create-fails", true, None, 3600, "deny", true),
     ];
 
-    for (name, create_fails, preset_answer, timeout_seconds, expect_option_id) in rows {
+    for (name, create_fails, preset_answer, timeout_seconds, expect_option_id, expect_unanswered) in
+        rows
+    {
         let (root_dir, journal) = fresh_journal(&format!("decision-{name}"));
         let root = root_dir.path();
         let mut claimed = work();
@@ -3014,6 +3033,7 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
                     answer: Some(DecisionAnswer {
                         option_id: Some(option_id.to_owned()),
                         text: None,
+                        unanswered: false,
                     }),
                     resolved_at: None,
                     resolved_by: None,
@@ -3055,6 +3075,7 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
             Some(expect_option_id),
             "{name}"
         );
+        assert_eq!(answer.unanswered, expect_unanswered, "{name}");
 
         let created = data_protocol
             .state

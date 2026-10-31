@@ -233,6 +233,7 @@ fn an_answer_becomes_a_control_response() {
     let allow = DecisionAnswer {
         option_id: Some("allow_once".to_owned()),
         text: None,
+        unanswered: false,
     };
     let bytes = ClaudeCodeGrammar.answer(&question, &allow);
     let expected: Value = serde_json::from_str(include_str!(
@@ -251,6 +252,7 @@ fn an_answer_becomes_a_control_response() {
     let deny = DecisionAnswer {
         option_id: Some("deny".to_owned()),
         text: Some("denied by test".to_owned()),
+        unanswered: false,
     };
     let bytes = ClaudeCodeGrammar.answer(&deny_question, &deny);
     let expected: Value = serde_json::from_str(include_str!(

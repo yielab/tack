@@ -22,7 +22,8 @@ async fn send_answer(
     }
 }
 
-/// The answer nobody gave: by convention every grammar orders a question's
+/// The answer nobody gave, marked as such (`unanswered`) so an adapter that must not read it as a
+/// refusal can tell it from one. By convention every grammar orders a question's
 /// options with its safe default last (`decision.create.request.json`'s own
 /// example: `allow_once` then `deny`), so this is always that one.
 fn deny_answer(question: &Question) -> DecisionAnswer {
@@ -30,10 +31,12 @@ fn deny_answer(question: &Question) -> DecisionAnswer {
         Some(option) => DecisionAnswer {
             option_id: Some(option.option_id.clone()),
             text: None,
+            unanswered: true,
         },
         None => DecisionAnswer {
             option_id: None,
             text: None,
+            unanswered: true,
         },
     }
 }
@@ -195,9 +198,15 @@ where
                     if let Some(resolved) = resolved {
                         if resolved.state == "resolved" {
                             let opened = state.pending.take().expect("just matched Some above");
-                            let answer = resolved
-                                .answer
-                                .unwrap_or_else(|| deny_answer(&opened.question));
+                            // Whatever the board relays was given by someone: only the runner's
+                            // own `deny_answer` stands for nobody.
+                            let answer = resolved.answer.map_or_else(
+                                || deny_answer(&opened.question),
+                                |given| DecisionAnswer {
+                                    unanswered: false,
+                                    ..given
+                                },
+                            );
                             send_answer(state.decisions, answer).await;
                             return;
                         }

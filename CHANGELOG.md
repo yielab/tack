@@ -22,6 +22,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A docket approval nobody answered no longer ends as "approval denied": when Tack's time for the question runs out, the task is cancelled instead of being answered "deny", and the run ends as "Nobody answered" with the question; a task docket itself fails with `approval_expired` ends the same way, and only a refusal a person gave is "approval denied".
 - A task waiting behind a computer that is full now says what holds it ("This computer runs 1 at a time and is busy with 'Release notes' since 15:30, which waits for your answer since 15:33"), links that task and the limit, and offers **Answer it** when the run in front is waiting for you, instead of only "Waiting for a runner to pick it up".
 - The Run with agent dialog says when a profile's team works in its own folder on this computer, not in the repository, and no longer shows a branch or an install line for that team.
 - A task given to a team that works in a folder starts instead of failing in two seconds: Tack no longer
