@@ -77,6 +77,10 @@ export interface ExecutionSummary {
   waiting_behind?: WaitingBehind[];
   /** The run's token limit and who applies it; `sentence` is what every screen prints. */
   limit?: RunLimit;
+  /** The profile the run was made with; null when it has since been deleted or the run left it to the computer. */
+  agent_profile_id?: string | null;
+  /** The agent the run asked for; null when it left that to the computer. */
+  requested_harness_kind?: string | null;
 }
 
 /** One run that holds a slot of a full computer a queued request waits for. */
