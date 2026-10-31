@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- A docket team can propose items: when it declares a record set named `tack_proposals`, the rows it wrote in a run (title, description, type, role, team, parent, blockers, acceptance) become the same proposal a Planner's file would be, and a row that does not fit says which one in the run's timeline; docket reports that it can, and a `tack-plan.json` on its branch is no longer read as a proposal.
 - A proposal of items is one format whichever agent made it: each plan entry may carry a `type`, a `role`, a `team` and a `parent`, and accepting it creates the sub-items under their parents with their type, role and team, and the entries' `depends_on` as blockers. An accept with no plan artifact (a file a person uploaded) works, and an unknown role, type or team is reported on its entry instead of failing the request. Claude Code, Codex and opencode report whether their runs can propose, and the Researcher is told to write the plan file when its findings lead to work.
 
 ### Fixed

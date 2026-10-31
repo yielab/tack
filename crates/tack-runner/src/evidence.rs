@@ -309,12 +309,21 @@ pub async fn capture<P: WorktreeProvisioner>(
         let bytes = serde_json::to_vec_pretty(steps).unwrap_or_default();
         stage(TRAJECTORY_FILE, "trajectory", "application/json", &bytes);
     }
-    // Read after capture, from the workspace that is about to be deleted. A
-    // missing file is not a failure.
-    let plan = head
-        .is_none()
-        .then(|| fs::read(workspace.path.join(PLAN_FILE)).ok())
-        .flatten();
+    // A harness that already holds the proposal (docket's team, from its records) puts it in
+    // `plan` and, when its rows make none, the reason in `plan_invalid`; its branch's own
+    // `tack-plan.json` is never read (`head` is set), because that file is the agent's work, not
+    // a proposal. Otherwise read after capture, from the workspace that is about to be deleted.
+    // A missing file is not a failure.
+    if let Some(reason) = evidence.terminal_reason["plan_invalid"].as_str() {
+        let _ = fs::write(scratch.join(PLAN_INVALID_FILE), reason);
+    }
+    let plan = match &evidence.terminal_reason["plan"] {
+        serde_json::Value::Null => head
+            .is_none()
+            .then(|| fs::read(workspace.path.join(PLAN_FILE)).ok())
+            .flatten(),
+        held => serde_json::to_vec_pretty(held).ok(),
+    };
     if let Some(bytes) = plan {
         let parsed = serde_json::from_slice::<PlanV1>(&bytes)
             .map_err(|error| error.to_string())

@@ -4214,3 +4214,220 @@ async fn a_failed_tasks_sentence_reaches_the_attempts_message() {
         json!(format!("docket said: {sentence}"))
     );
 }
+
+// ── A team proposes items through its `tack_proposals` records ─────────────────
+
+/// A folder team that declares the set a proposal is written in.
+async fn proposing_fake() -> FakeDocket {
+    let fake = FakeDocket::start().await;
+    fake.add_folder_pod(POD);
+    fake.add_record_set(
+        POD,
+        "tack_proposals",
+        "Items the team proposes",
+        &[
+            "ref",
+            "title",
+            "description",
+            "type",
+            "role",
+            "team",
+            "parent",
+            "depends_on",
+            "acceptance",
+        ],
+    );
+    fake
+}
+
+/// A row of `tack_proposals` as the team writes it: every column text.
+fn proposal(columns: &[(&str, &str)]) -> (String, Value) {
+    let row: serde_json::Map<String, Value> = columns
+        .iter()
+        .map(|(column, text)| ((*column).to_owned(), json!(text)))
+        .collect();
+    ("tack_proposals".to_owned(), Value::Object(row))
+}
+
+/// What the runner stages for `outcome`, and the scratch directory holding the reason a plan was
+/// refused: the capture the engine makes of a run that ended in the repository at `main`.
+async fn captured(
+    scene: &Scene,
+    outcome: &tack_runner::harness::HarnessOutcome,
+) -> (PathBuf, Vec<Value>) {
+    let work = spec(scene, "attempt-1", 1);
+    let main = git(&scene.repository, &["rev-parse", "main"]);
+    let workspaces = tack_runner::client::WorkspaceManager::new(
+        scene._dir.path().join("workspaces"),
+        tack_runner::client::workspace::git::GitWorktreeProvisioner::default(),
+    );
+    tack_runner::evidence::capture(
+        &workspaces,
+        &work.workspace,
+        "docket".to_owned(),
+        outcome.terminal_reason.clone(),
+        Value::Null,
+        None,
+        Some(&main),
+        ("Tack <t@localhost>", "work"),
+        Some(&main),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn rows_in_tack_proposals_stage_the_plan_a_file_would() {
+    let fake = proposing_fake().await;
+    let (outcome, scene) = run_script(
+        &fake,
+        Script {
+            records: vec![
+                proposal(&[
+                    ("ref", "settings"),
+                    ("title", "Per-user settings"),
+                    (
+                        "description",
+                        "Let each user keep their own settings across sessions.",
+                    ),
+                    ("acceptance", "A setting survives a new session"),
+                    ("type", "feature"),
+                    ("role", "Backend"),
+                    ("team", "my-saas-dev"),
+                ]),
+                proposal(&[
+                    ("ref", "table"),
+                    ("title", "Add the settings table"),
+                    (
+                        "description",
+                        "Create the migration and the repository functions for per-user settings.",
+                    ),
+                    ("acceptance", "The migration applies to an empty database"),
+                    ("type", "task"),
+                    ("parent", "settings"),
+                ]),
+                proposal(&[
+                    ("ref", "page"),
+                    ("title", "Settings page in the frontend"),
+                    (
+                        "description",
+                        "Render the settings form against the new routes.",
+                    ),
+                    (
+                        "acceptance",
+                        "Saving a value shows it after a reload\n\nThe form validates its fields",
+                    ),
+                    ("type", "task"),
+                    ("role", "Frontend"),
+                    ("parent", "settings"),
+                    ("depends_on", "table"),
+                ]),
+            ],
+            ..Script::default()
+        },
+    )
+    .await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+
+    // The file form of the same three entries: the contract's second example without the
+    // estimates (a record has no such column), the last entry with its second criterion.
+    let mut file: Value = serde_json::from_str(include_str!(
+        "../../../docs/contracts/plan-v1/plan.nested.example.json"
+    ))
+    .expect("example");
+    for entry in file["subtasks"].as_array_mut().unwrap() {
+        entry.as_object_mut().unwrap().remove("estimate");
+    }
+    file["subtasks"][2]["acceptance"] = json!([
+        "Saving a value shows it after a reload",
+        "The form validates its fields"
+    ]);
+    assert_eq!(outcome.terminal_reason["plan"], file);
+
+    let (scratch, staged) = captured(&scene, &outcome).await;
+    let artifact = staged
+        .iter()
+        .find(|item| item["kind"] == "plan")
+        .expect("a plan artifact is staged");
+    assert_eq!(artifact["name"], "tack-plan.json");
+    assert_eq!(artifact["media_type"], "application/vnd.tack.plan+json");
+    let bytes = std::fs::read(artifact["staged_path"].as_str().unwrap()).expect("staged bytes");
+    assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), file);
+    assert!(
+        !scratch
+            .join(tack_runner::evidence::PLAN_INVALID_FILE)
+            .exists()
+    );
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+#[tokio::test]
+async fn a_task_with_no_row_in_tack_proposals_stages_no_plan() {
+    let fake = proposing_fake().await;
+    // Another task's proposal is not this one's, and a plan file on the branch is no proposal.
+    fake.add_record_row(
+        POD,
+        "tack_proposals",
+        "task-from-another-run",
+        proposal(&[("ref", "old"), ("title", "Old"), ("description", "Old")]).1,
+    );
+    let (outcome, scene) = run_script(&fake, Script::default()).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert!(outcome.terminal_reason.get("plan").is_none());
+    assert!(outcome.terminal_reason.get("plan_invalid").is_none());
+
+    std::fs::write(
+        scene.workspace.join("tack-plan.json"),
+        r#"{"v":"1","subtasks":[{"title":"t","description":"d"}]}"#,
+    )
+    .expect("a plan file in the work tree");
+    let (scratch, staged) = captured(&scene, &outcome).await;
+    assert!(
+        staged.iter().all(|item| item["kind"] != "plan"),
+        "{staged:?}"
+    );
+    assert!(
+        !scratch
+            .join(tack_runner::evidence::PLAN_INVALID_FILE)
+            .exists()
+    );
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+#[tokio::test]
+async fn a_row_whose_parent_is_no_row_makes_the_plan_invalid_and_names_its_ref() {
+    let fake = proposing_fake().await;
+    let (outcome, scene) = run_script(
+        &fake,
+        Script {
+            records: vec![
+                proposal(&[("ref", "first"), ("title", "First"), ("description", "One")]),
+                proposal(&[
+                    ("ref", "second"),
+                    ("title", "Second"),
+                    ("description", "Two"),
+                    ("parent", "nowhere"),
+                ]),
+            ],
+            ..Script::default()
+        },
+    )
+    .await;
+    assert!(outcome.terminal_reason.get("plan").is_none());
+    let reason = outcome.terminal_reason["plan_invalid"]
+        .as_str()
+        .expect("the reason");
+    assert!(
+        reason.contains("second") && reason.contains("nowhere"),
+        "{reason}"
+    );
+
+    let (scratch, staged) = captured(&scene, &outcome).await;
+    assert!(
+        staged.iter().all(|item| item["kind"] != "plan"),
+        "{staged:?}"
+    );
+    let written = std::fs::read_to_string(scratch.join(tack_runner::evidence::PLAN_INVALID_FILE))
+        .expect("the engine reads this into attempt.plan_invalid");
+    assert_eq!(written, reason);
+    let _ = std::fs::remove_dir_all(scratch);
+}
