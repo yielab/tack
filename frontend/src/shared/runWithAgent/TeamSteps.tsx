@@ -1,6 +1,6 @@
 import { type Component, For, Show, createEffect, createResource, onCleanup } from 'solid-js';
 import { agentName } from '../execution/agents';
-import { agentProfilesApi, attemptsApi, teamOf, type AgentProfileSummary } from '../execution';
+import { agentProfilesApi, attemptsApi, teamOf, type AgentProfileSummary, type ExecutionSummary } from '../execution';
 import { teamsApi, type TeamEntry } from '../execution/teams';
 import type { TeamStepReport } from '../execution/types';
 import { matchSteps } from './teamSteps';
@@ -29,9 +29,8 @@ const KIND_WORDS: Record<TeamStepReport['kind'], string | null> = {
 const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The run's profile and agent, as the run's summary carries them. */
-export function runWho(summary: object | undefined): { profileId: string | null; agentKind: string | null } {
-  const s = summary as { agent_profile_id?: string | null; requested_harness_kind?: string | null } | undefined;
-  return { profileId: s?.agent_profile_id ?? null, agentKind: s?.requested_harness_kind ?? null };
+export function runWho(summary: ExecutionSummary | undefined): { profileId: string | null; agentKind: string | null } {
+  return { profileId: summary?.agent_profile_id ?? null, agentKind: summary?.requested_harness_kind ?? null };
 }
 
 /** The team a profile names and the agent's report of it, or nothing. */
