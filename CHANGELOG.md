@@ -11,6 +11,21 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+---
+
+## [0.2.0-beta.1] - 2026-10-30
+
+The version moves to `0.2.0` because this release changes what Tack needs from docket (HTTP API
+version 6, docket `0.2.0-beta.6` or later) and reshapes the code it is built from. It carries
+Phases 73 to 82. The `v0.1.0-beta.10` tag of 2026-10-14 never had a release, so everything since
+`v0.1.0-beta.9` ships here, and the `[0.1.0-beta.10]` section below is the part of it that was
+written first.
+
+Phases 79 to 82 are the newest part: `tack-app` owns the host work behind small traits, the
+runner has a crate of its own, a run that waits on a person waits without a clock, the audit of
+that tree is fixed, and the task goes to docket as fields with the run recording which prompts
+made it.
+
 - The Execution tab shows, for each step of a docket run, the role, the model in words, the verdict and the prompts it read (with version and where each came from), what the step assumed and asked, and the rows the team recorded; a folder team's run says it has nothing to merge.
 - A wait is no longer a question, and an action that leaves is seen before it is approved. A docket step that waits until a time shows on the timeline as "The team waits until 14:00. Nobody needs to answer." with a clock, never asks anything, and the run's time limit does not run while it waits; a wait that ran out with no step to go to next ends the run with that sentence. An approval of something that leaves the team (an email, a post, a write to a service) is titled "This action leaves the team" and shows the whole action above the options, scrolling past twenty lines; Tack keeps it only while the question is open and erases it in the same write that answers or expires the question, and when docket does not show it Tack does not ask.
 - A docket run now receives the card as fields. The request carries the item as data (`task`), and the adapter sends docket's `task` (objective, done when, acceptance, constraints, risk, kind, the paths the criteria name) beside a `description` that holds only the profile's instructions and the card's fenced text, so the brief and the definition of done are no longer sent twice and the adapter no longer cuts them out of prose. "Run again" sends the questions docket asked in the previous attempt with the option a person picked, so nobody is asked the same thing twice. The other three agents read the same prose as before.
@@ -673,6 +688,8 @@ automation a template carries, and the removal of dollars per day.
   test moves a fake clock in place of waiting, `api.spec.ts` creates the project it exports instead of
   skipping, and the coverage floor has one rule: the `develop` total the job measured, minus one point,
   re-measured at each round's gate.
+
+[0.2.0-beta.1]: https://github.com/yielab/tack/compare/v0.1.0-beta.10...v0.2.0-beta.1
 
 ---
 

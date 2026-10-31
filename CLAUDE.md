@@ -15,9 +15,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 `docs/book/src/roadmap.md` is the one place for what is delivered and what is open; read its
 "Open" section first. In short, as of 2026-10-18:
 
-- **Released:** `v0.1.0-beta.9` (2026-09-21). `v0.1.0-beta.10` (Phases 66–72) is tagged
-  2026-10-14 but its GitHub release is not published, so the README's install commands install
-  `v0.1.0-beta.9` until the maintainer publishes it (`docs/LAUNCH-CHECKLIST.md`).
+- **Released:** `v0.1.0-beta.9` (2026-09-21). The next release is `v0.2.0-beta.1` (Phases 66–82):
+  the version is bumped and the changelog section written on the Phases 79–82 branch (PR #66), and it
+  is not tagged. `v0.1.0-beta.10` (tagged 2026-10-14) never had a release and is not re-cut, so the
+  README's install commands install `v0.1.0-beta.9` until the maintainer publishes
+  `v0.2.0-beta.1` (`docs/LAUNCH-CHECKLIST.md`).
 - **In `develop`, unreleased:** Phase 73 (`docs/plans/phase-73.md`, ADRs 0021 and 0022) — every
   docket run goes to a long-lived team over docket's HTTP API version 6, a role chooses the
   profile, a task can start by itself and repeat, the automatic merge stops at the team's

@@ -13,10 +13,11 @@ button, when the task moves to Done, or by itself at Level 4 or 5 under the veri
 verdict. A project can start its tasks by itself, send each role's tasks to a long-lived docket
 team, repeat tasks, and travel whole in one file.
 
-**Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. `v0.1.0-beta.10`,
-which carries Phases 66 to 72, is tagged (2026-10-14) but its release is not published yet.
-Phases 73 to 75, 77 and 78 are in `develop` and ship in the release after it. Phases 79, 80
-and 81 are built on a branch and not yet merged.
+**Releases.** `v0.1.0-beta.9` (2026-09-21) is the last published release. The next is
+`v0.2.0-beta.1`, which carries Phases 66 to 82: the version is bumped and the changelog section
+is written, and it waits for the review and merge of the Phase 79 branch and for the maintainer to
+tag it. The `v0.1.0-beta.10` tag (2026-10-14) never had a release and is not re-cut; its changes
+ship in `v0.2.0-beta.1`.
 
 **Where this is going.** Phases 79 and 80 give the runner a crate of its own and make
 a run that waits on a person wait without a clock. Phase 81 fixes what an audit of that tree
@@ -55,7 +56,7 @@ it can be opened later.
 Cancelled on 2026-10-27 because none of these was approved as a card. They are not scheduled and
 do not wait on anything; each can come back as a card of its own.
 
-- Publishing the `v0.1.0-beta.10` release, the publish list, the installs on macOS and Windows, the
+- Publishing the release, the publish list, the installs on macOS and Windows, the
   code-signing decision and the GitHub and workstation items of Phases 65 and 69 (Wave 0). The
   release is the maintainer's own step, written in `docs/LAUNCH-CHECKLIST.md`.
 - The live proof of My SaaS's code card through a team with a real install, which needs a paid

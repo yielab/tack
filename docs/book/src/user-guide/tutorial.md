@@ -24,7 +24,7 @@ Tack is a single self-contained binary — web UI, REST API, and SQLite engine i
 file. One line installs it:
 
 ```sh
-TAG=v0.1.0-beta.10
+TAG=v0.2.0-beta.1
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 tack            # starts the server + web UI at http://localhost:3210
 ```
@@ -33,7 +33,7 @@ Verify it's up:
 
 ```sh
 curl http://localhost:3210/api/health
-# {"migrations_applied":…,"status":"ok","version":"0.1.0-beta.10"}
+# {"migrations_applied":…,"status":"ok","version":"0.2.0-beta.1"}
 ```
 
 `version` is the build you installed, and `migrations_applied` is how many database migrations

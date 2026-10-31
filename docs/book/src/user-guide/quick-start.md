@@ -86,7 +86,7 @@ Then open **`http://localhost:3210`** in your browser. On first start, Tack crea
 
 ```sh
 curl http://localhost:3210/api/health
-# {"status":"ok","version":"0.1.0-beta.10","migrations_applied":…}
+# {"status":"ok","version":"0.2.0-beta.1","migrations_applied":…}
 ```
 
 `version` is the build you installed and `migrations_applied` is how many database migrations it has run; it only grows as Tack does.

@@ -3585,7 +3585,7 @@ dependencies = [
 
 [[package]]
 name = "tack-api"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3624,7 +3624,7 @@ dependencies = [
 
 [[package]]
 name = "tack-app"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3655,7 +3655,7 @@ dependencies = [
 
 [[package]]
 name = "tack-cli"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3682,7 +3682,7 @@ dependencies = [
 
 [[package]]
 name = "tack-core"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "csv",
@@ -3702,7 +3702,7 @@ dependencies = [
 
 [[package]]
 name = "tack-db"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "serde",
@@ -3721,7 +3721,7 @@ dependencies = [
 
 [[package]]
 name = "tack-orch"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "tack-protocol",
@@ -3729,7 +3729,7 @@ dependencies = [
 
 [[package]]
 name = "tack-protocol"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "serde",
@@ -3740,7 +3740,7 @@ dependencies = [
 
 [[package]]
 name = "tack-runner"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "apple-native-keyring-store",
  "async-trait",
@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "tack-test-support"
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 dependencies = [
  "chrono",
  "serde_json",

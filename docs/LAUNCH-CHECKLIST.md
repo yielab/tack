@@ -31,13 +31,12 @@ automatically — every step under "Publish list" is a human action.
    ```bash
    git push origin develop:main && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-   **`v0.1.0-beta.10` is tagged but not released.** The tag (2026-10-14) points at
+   **The next tag is `v0.2.0-beta.1`.** The version is bumped in `Cargo.toml`, the desktop
+   crate, `tauri.conf.json`, `frontend/package.json` and their lockfiles, and `CHANGELOG.md`
+   has its section. The `v0.1.0-beta.10` tag (2026-10-14) is not re-cut: it points at
    `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the
-   repository does not allow, so the run failed before it started and no release exists.
-   `b8821c37` fixed the workflow on `develop` the same day and a dry run passed. Running the
-   workflow again on the tag cannot work, since it uses the tag's own copy of the file: either
-   move the tag to a commit after `b8821c37` (delete it on GitHub and push it again, after
-   `main` is fast-forwarded), or tag the next version. Until then the install commands in
+   repository does not allow, so the run failed before it started and no release exists. Its
+   changes ship in `v0.2.0-beta.1`. Until that release is published the install commands in
    `README.md` look up the newest published release, so they install `v0.1.0-beta.9`.
    `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs,
    and refuses the tag outright if it doesn't match `Cargo.toml`.
@@ -59,7 +58,7 @@ automatically — every step under "Publish list" is a human action.
    `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing
    else updates them:
    ```bash
-   scripts/sync-packaging.sh v0.1.0-beta.9   # then commit the diff
+   scripts/sync-packaging.sh v0.2.0-beta.1   # then commit the diff
    ```
    Until this runs they point at the previous release. A wrong digest is not a soft
    failure: Homebrew and `makepkg` abort with a hash mismatch, which reads to a
