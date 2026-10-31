@@ -30,8 +30,8 @@ The Status line in each file is the authority. The "Superseded by" column below 
 
 | ADR | Title | Status | Superseded by |
 |---|---|---|---|
-| 0031 | [a docket team may work outside the repository, and what leaves is seen before it leaves](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md) | Proposed 2026-10-30 | — |
-| 0030 | [the task goes to docket as fields, and a run says which prompts made it](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md) | Proposed 2026-10-29 | — |
+| 0031 | [a docket team may work outside the repository, and what leaves is seen before it leaves](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md) | Proposed 2026-10-30, built the same day | — |
+| 0030 | [the task goes to docket as fields, and a run says which prompts made it](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md) | Proposed 2026-10-29, built 2026-10-30 | — |
 | 0029 | [one test binary per crate, dependencies without debug info, agent builds without the incremental cache](https://github.com/yielab/tack/blob/develop/docs/adr/0029-one-test-binary-per-crate.md) | Accepted 2026-10-26 | — |
 | 0028 | [the protocol is a crate, and the SQL has one home](https://github.com/yielab/tack/blob/develop/docs/adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md) | Accepted 2026-10-26 | — |
 | 0027 | [whoever makes the agent's working copy prepares it](https://github.com/yielab/tack/blob/develop/docs/adr/0027-whoever-makes-the-working-copy-prepares-it.md) | Accepted 2026-10-19 | — |

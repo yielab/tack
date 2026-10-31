@@ -1,6 +1,6 @@
 # ADR 0030: the task goes to docket as fields, and a run says which prompts made it
 
-**Status: PROPOSED 2026-10-29.** The maintainer asked what Tack must change now that docket has
+**Status: PROPOSED 2026-10-29; built 2026-10-30 on the maintainer's go-ahead (Phase 82, cards A, B, C, D), awaiting acceptance.** The maintainer asked what Tack must change now that docket has
 closed its Phases 52, 53 and 54 (2026-10-29): a prompt is a versioned file with a hash, a hop
 closes with a `handoff` tool call, the message a model reads is a `## Task` section and a `## Hop`
 section, `POST /tasks/<pod>` takes a structured `task`, every hop records a `promptManifest`, and
