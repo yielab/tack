@@ -2,9 +2,10 @@ use chrono::{Local, TimeZone, Utc};
 use serde_json::json;
 
 use super::{
-    OptionLabels, escalation_progress, escalation_question, wait_line,
-    wire::{Escalation, TraceEvent},
+    DocketAdapter, OptionLabels, RunInfo, escalation_progress, escalation_question, wait_line,
+    wire::{Escalation, TaskView, TraceEvent},
 };
+use crate::config::DocketConfig;
 
 fn escalation(record: serde_json::Value) -> Escalation {
     serde_json::from_value(record).expect("an escalation as docket sends it")
@@ -197,4 +198,90 @@ fn an_outward_approval_without_its_call_is_not_asked() {
     let (question, _) = escalation_question(&escalation(ordinary), Some("ignored")).expect("asked");
     assert!(question.metadata.get("call").is_none());
     assert!(question.metadata.get("outward").is_none());
+}
+
+/// How an attempt ends when docket's task has ended with `failure_kind`, given what Tack asked
+/// the person: the question, when, and whether an answer went back to docket.
+async fn ended(
+    failure_kind: &str,
+    reason: &str,
+    asked: Option<(&str, i64, bool)>,
+) -> serde_json::Value {
+    let config = DocketConfig {
+        // Nothing listens here: the records read after the end finds no docket and moves on.
+        base_url: Some("http://127.0.0.1:1".to_owned()),
+        ..DocketConfig::default()
+    };
+    let state = tempfile::tempdir().expect("a state directory");
+    let adapter = DocketAdapter::new(config, state.path().to_path_buf());
+    let info = RunInfo {
+        pod: "my-saas".to_owned(),
+        task: "task-1".to_owned(),
+        attempt_id: "attempt-1".to_owned(),
+        workspace: state.path().to_path_buf(),
+        started_at: Utc::now(),
+        timeout: std::time::Duration::from_secs(3600),
+        refused: None,
+        api: Some(6),
+        in_repository: true,
+    };
+    let task: TaskView = serde_json::from_value(json!({
+        "status": "failed", "failureKind": failure_kind, "reason": reason, "hops": [],
+    }))
+    .expect("a task as docket sends it");
+    let asked = asked.map(|(prompt, minutes_ago, answered)| {
+        (
+            prompt.to_owned(),
+            Utc::now() - chrono::Duration::minutes(minutes_ago),
+            answered,
+        )
+    });
+    let (progress, _lines) = tokio::sync::mpsc::channel(4);
+    adapter
+        .finish(&info, &task, None, &progress, None, asked.as_ref())
+        .await
+        .terminal_reason
+}
+
+#[tokio::test]
+async fn an_approval_that_expired_unanswered_ends_not_answered_with_its_question() {
+    let reason = ended(
+        "approval_denied",
+        "approval denied",
+        Some(("Push the migration to production?", 25, false)),
+    )
+    .await;
+    assert_eq!(reason["code"], json!("not_answered"));
+    let message = reason["message"].as_str().expect("a message");
+    assert!(
+        message.starts_with("Nobody answered 'Push the migration to production?' (asked "),
+        "{message}"
+    );
+    assert!(
+        message.ends_with("); the team stopped after 25 minutes."),
+        "{message}"
+    );
+    assert!(!message.to_lowercase().contains("denied"), "{message}");
+}
+
+#[tokio::test]
+async fn an_approval_a_person_denied_ends_approval_denied() {
+    let reason = ended(
+        "approval_denied",
+        "approval denied: not today",
+        Some(("Push the migration to production?", 2, true)),
+    )
+    .await;
+    assert_eq!(reason["code"], json!("approval_denied"));
+    assert_eq!(reason["message"], json!("approval denied: not today"));
+}
+
+#[tokio::test]
+async fn a_failure_code_tack_does_not_translate_shows_dockets_text_labelled() {
+    let reason = ended("quota_exceeded", "the day's tokens are spent", None).await;
+    assert_eq!(reason["code"], json!("quota_exceeded"));
+    assert_eq!(
+        reason["message"],
+        json!("docket said: the day's tokens are spent")
+    );
 }

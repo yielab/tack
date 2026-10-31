@@ -16,6 +16,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 - The Run with agent dialog says when a profile's team works in its own folder on this computer, not in the repository, and no longer shows a branch or an install line for that team.
 - A task given to a team that works in a folder starts instead of failing in two seconds: Tack no longer
   sends the base commit or the install step to a team that has no repository.
+- A run whose question nobody answered now ends as "Nobody answered '<the question>' (asked 15:33); the team stopped after 25 minutes." instead of "approval denied", which nobody had given; a denial a person gave still reads as a denial. Any other end docket reports that Tack has no sentence for is shown as "docket said: ..." so it never reads as Tack's own words.
 
 ---
 

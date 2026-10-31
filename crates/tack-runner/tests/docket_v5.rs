@@ -2028,7 +2028,7 @@ async fn failures_carry_docket_kind_and_text() {
         assert_eq!(outcome.terminal_reason["code"], json!(kind));
         assert_eq!(
             outcome.terminal_reason["message"],
-            json!(format!("docket says {kind}"))
+            json!(format!("docket said: docket says {kind}"))
         );
     }
     let fake = pods_fake().await;
@@ -2041,7 +2041,10 @@ async fn failures_carry_docket_kind_and_text() {
     let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
     assert_eq!(outcome.terminal_reason["code"], json!("blocked"));
-    assert_eq!(outcome.terminal_reason["message"], json!("needs a person"));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!("docket said: needs a person")
+    );
 }
 
 #[tokio::test]
@@ -3060,7 +3063,10 @@ async fn docket_blocking_an_expired_question_ends_with_not_answered() {
             "{blocked_reason:?}"
         );
         if code == "blocked" {
-            assert_eq!(outcome.terminal_reason["message"], json!(reason));
+            assert_eq!(
+                outcome.terminal_reason["message"],
+                json!(format!("docket said: {reason}"))
+            );
         } else {
             let message = outcome.terminal_reason["message"]
                 .as_str()
@@ -4202,5 +4208,8 @@ async fn a_failed_tasks_sentence_reaches_the_attempts_message() {
     let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
     assert_eq!(outcome.terminal_reason["code"], json!("pipeline"));
-    assert_eq!(outcome.terminal_reason["message"], json!(sentence));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!(format!("docket said: {sentence}"))
+    );
 }
