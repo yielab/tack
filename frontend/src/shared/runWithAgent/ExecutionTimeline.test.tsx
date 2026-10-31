@@ -371,22 +371,56 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
     expect(rows[1].textContent).toContain('Implementer');
     expect(rows[1].textContent).toContain('qwen2.5-coder:7b · a small model');
     const chips = [...rows[1].querySelectorAll('[data-testid="step-prompt"]')].map((li) => li.textContent);
-    expect(chips).toEqual(['implementer 1.0.0 shipped with docket', "task this task's", "house-style 2.0.0 the team's"]);
+    expect(chips).toEqual(['implementer 1.0.0 built in', "task this task's", "house-style 2.0.0 the team's"]);
     expect(rows[1].textContent).not.toContain('The agent assumed');
     expect(rows[1].textContent).not.toContain('The agent asked');
   });
 
-  it('a step with no prompts says it recorded none, and the screen names no field, hash or command', async () => {
+  it('the prompts a step read are one closed disclosure, and a step with none has no disclosure and no sentence about it', async () => {
     const c = mountFinished({ result: 'Done.', steps: STEPS });
     await settle();
     const rows = [...c.querySelectorAll('[data-testid="run-step"]')];
-    expect(rows[2].textContent).toContain('This step recorded no prompt.');
-    expect(rows[2].querySelector('[data-testid="step-prompts"]')).toBeNull();
+    const disclosure = rows[1].querySelector('details[data-testid="step-prompts-disclosure"]') as HTMLDetailsElement;
+    expect(disclosure.open).toBe(false);
+    expect(disclosure.querySelector('summary')!.textContent).toBe('Prompts used');
+    expect(rows[2].querySelector('details')).toBeNull();
+    expect(rows[2].textContent).not.toContain('recorded no prompt');
     const text = c.querySelector('[data-testid="run-steps"]')!.textContent ?? '';
     expect(text).not.toContain('sha256');
     expect(text).not.toContain('promptManifest');
+    expect(text).not.toContain('docket');
     expect(text).not.toContain('critic');
     expect(text).not.toContain('tester');
+  });
+
+  it('identical steps in a row are one row with a count, and keep what each assumed and asked', async () => {
+    const cycle = (assumption: string) => ({
+      role: 'implementer', model: 'qwen2.5-coder:7b', class: 'any', family: 'qwen', verdict: null, ok: true, summary: null,
+      prompts: [{ layer: 'identity', name: 'implementer', version: '1.0.0', sha256: 'aaaa', scope: 'shipped', tokens: 410 }],
+      assumptions: [assumption], questions: [],
+    });
+    const c = mountFinished({ result: 'Done.', steps: [cycle('A'), cycle('B'), cycle('A'), { ...cycle('C'), role: 'reviewer', verdict: 'approve' }] });
+    await settle();
+    const rows = [...c.querySelectorAll('[data-testid="run-step"]')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('Implementer ×3');
+    expect(rows[0].textContent).toContain('A');
+    expect(rows[0].textContent).toContain('B');
+    expect(rows[0].querySelectorAll('[data-testid="step-prompt"]')).toHaveLength(1);
+    expect(rows[1].textContent).not.toContain('×');
+  });
+
+  it('a model class of "any", or none, is never shown', async () => {
+    const step = (cls: string | null) => ({
+      role: 'implementer', model: 'qwen2.5-coder:7b', class: cls, family: null, verdict: null, ok: true, summary: null,
+      prompts: [], assumptions: [], questions: [],
+    });
+    const c = mountFinished({ result: 'Done.', steps: [step('any'), { ...step(null), role: 'reviewer' }] });
+    await settle();
+    const text = c.querySelector('[data-testid="run-steps"]')!.textContent ?? '';
+    expect(text).toContain('qwen2.5-coder:7b');
+    expect(text).not.toContain('any');
+    expect(text).not.toContain(' · a ');
   });
 
   it('a run without steps shows no What each step ran section, as before this phase', async () => {

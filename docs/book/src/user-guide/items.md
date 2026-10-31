@@ -198,11 +198,12 @@ shows only the run you picked, in this order:
   log names its steps by tool; for any other agent **By tool** is disabled and says why, and the
   timeline is what there is.
 - **What each step ran** lists, for a run that went through a team's steps one after another, each step in
-  order: who did it (Lead, Implementer, Reviewer, or the name of a role your team gave), the model it used,
-  in words (a small model or a strong model), its verdict when it gave one, and the prompts it read. Each
-  prompt shows its name and version, and where it came from: shipped with docket, the team's own, this
-  repository's, or your settings. A step that read no prompt says so. Under each step, what the agent
-  assumed and what it asked are listed when it said any. **What the team recorded** shows the rows the team
+  order: who did it (Lead, Implementer, Reviewer, or the name of a role your team gave), the model it used
+  (with "a small model" or "a strong model" when the team said which), its verdict when it gave one, and,
+  under it, what the agent assumed and what it asked when it said any. Steps that came out alike one after
+  another are one row with a count, such as "Implementer ×3". The prompts a step read are folded under
+  **Prompts used**, each with its name and version and where it came from: built in, the team's own, this
+  repository's, your settings or this task. **What the team recorded** shows the rows the team
   wrote during the run, one small table for each kind of record; when a table was cut short, it says the
   rest are kept by the team in docket. A team that works in a folder rather than a repository says so on
   the Last run card: there is nothing to merge, and what it did is the last step's summary. A run from
@@ -215,8 +216,8 @@ shows only the run you picked, in this order:
 Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on
 the computer that ran it.
 
-What the agent got (its sandbox, the names of its environment variables, where it worked, and the
-exact prompt it read), what the run used and its ids sit in a side column on the item's page, and
+What the agent got (whether it ran in an isolated sandbox, the names of its environment variables when
+it had any, where it worked, and the exact prompt it read), what the run used and its ids sit in a side column on the item's page, and
 under the run in the drawer. **Usage** is folded: its line gives the tokens counted against a limit
 and, when the run has one, the share of it used, and opening it shows the detail. The request and
 attempt ids copy with one press, and **Raw log** opens the run's full log.

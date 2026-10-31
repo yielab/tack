@@ -624,7 +624,17 @@ describe('AttemptList', () => {
       // The runner's own path is not shown: the agent worked in the project's folder.
       expect(c.querySelector('[data-testid="agent-got-workspace"]')?.textContent).toContain("the project's folder");
       expect(c.querySelector('[data-testid="agent-got-workspace"]')?.textContent).not.toContain('/w/1');
-      expect(mount([attempt({ sandbox: 'bwrap' })]).querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe('Sandboxed with bwrap');
+      expect(mount([attempt({ sandbox: 'bwrap' })]).querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe('Runs in an isolated sandbox');
+    });
+
+    it('says_nothing_for_a_line_that_has_nothing_to_report', async () => {
+      mockExecution();
+      const c = mount([attempt({ sandbox: 'harness', environment_names: [] })]);
+      await flush();
+      expect(c.querySelector('[data-testid="agent-got-sandbox"]')?.textContent).toBe('Runs in an isolated sandbox');
+      expect(c.querySelector('[data-testid="agent-got-env"]')).toBeNull();
+      expect(c.querySelector('[data-testid="agent-got"]')!.textContent).not.toContain('none reported');
+      expect(c.textContent).not.toContain('jail');
     });
 
     it('shows_the_prompt_verbatim_in_a_pre_once_opened', async () => {

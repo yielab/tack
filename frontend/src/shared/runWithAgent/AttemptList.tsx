@@ -102,9 +102,11 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
     <section data-testid="agent-got" class="space-y-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
       <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What the agent got</h4>
       <p data-testid="agent-got-sandbox">{sandbox() ?? 'The runner did not say whether the agent was sandboxed'}</p>
-      <p data-testid="agent-got-env" class="break-all">
-        Environment variables: {names().length > 0 ? names().join(', ') : 'none reported'}
-      </p>
+      <Show when={names().length > 0}>
+        <p data-testid="agent-got-env" class="break-all">
+          Environment variables: {names().join(', ')}
+        </p>
+      </Show>
       <Show when={props.workspace}>
         {(w) => (
           <p data-testid="agent-got-workspace" class="break-all" title={w()}>

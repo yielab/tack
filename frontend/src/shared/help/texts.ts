@@ -34,9 +34,9 @@ export const HELP = {
 
 /** How the runner's sandbox is put in words, wherever a run's sandbox is shown. */
 export const SANDBOX_TEXT = {
-  bwrap: 'Sandboxed with bwrap',
+  bwrap: 'Runs in an isolated sandbox',
   none: "Not sandboxed: the agent has your user's access to this machine",
-  harness: 'Sandboxed by docket in its own jail',
+  harness: 'Runs in an isolated sandbox',
 } as const;
 
 /** The part of a runner's harness report that says whether the agent may run here. */

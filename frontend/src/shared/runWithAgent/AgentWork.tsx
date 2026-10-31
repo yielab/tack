@@ -184,7 +184,7 @@ export const AgentDid: Component<{
 const ROLE_WORDS: Record<string, string> = { lead: 'Lead', implementer: 'Implementer', reviewer: 'Reviewer' };
 const CLASS_WORDS: Record<string, string> = { cheap: 'a small model', strong: 'a strong model' };
 const SCOPE_WORDS: Record<string, string> = {
-  shipped: 'shipped with docket',
+  shipped: 'built in',
   pod: "the team's",
   repository: "this repository's",
   operator: 'your settings',
@@ -200,7 +200,9 @@ export function roleWords(role: string | null, n: number): string {
 
 /** A model class in words; a class this screen does not know reads as its own name. */
 export function classWords(model: string | null, modelClass: string | null): string | null {
-  const phrase = modelClass ? (CLASS_WORDS[modelClass] ?? `a ${modelClass} model`) : null;
+  // A class of "any" says nothing about the model, so it is never shown.
+  const named = modelClass && modelClass.trim().toLowerCase() !== 'any' ? modelClass : null;
+  const phrase = named ? (CLASS_WORDS[named] ?? `a ${named} model`) : null;
   return [model, phrase].filter((x): x is string => !!x).join(' · ') || null;
 }
 
@@ -239,9 +241,46 @@ const PromptChip: Component<{ prompt: RunStepPrompt }> = (props) => {
   );
 };
 
-/** One hop: who it was, the model it ran on, the verdict, its prompts, and what it assumed and asked. */
-const StepRow: Component<{ step: RunStep; n: number }> = (props) => {
-  const model = () => classWords(props.step.model, props.step.class);
+/** Steps in a row that are the same to a person (same role, model and verdict) are one: their
+ *  assumptions, questions and prompts are kept, each once. */
+interface StepGroup {
+  step: RunStep;
+  count: number;
+  /** The place of the group's first step, for a step with no role. */
+  n: number;
+}
+
+const sameStep = (a: RunStep, b: RunStep) => a.role === b.role && a.model === b.model && a.class === b.class && a.verdict === b.verdict;
+const promptKey = (p: RunStepPrompt) => `${p.layer}|${p.name}|${p.version}|${p.sha256}|${p.scope}`;
+const once = <T,>(items: T[], key: (item: T) => string): T[] => {
+  const seen = new Set<string>();
+  return items.filter((item) => (seen.has(key(item)) ? false : (seen.add(key(item)), true)));
+};
+
+function groupSteps(steps: RunStep[]): StepGroup[] {
+  const groups: StepGroup[] = [];
+  steps.forEach((step, i) => {
+    const last = groups[groups.length - 1];
+    if (last && sameStep(last.step, step)) {
+      last.count += 1;
+      last.step = {
+        ...last.step,
+        prompts: once([...last.step.prompts, ...step.prompts], promptKey),
+        assumptions: once([...last.step.assumptions, ...step.assumptions], (x) => x),
+        questions: once([...last.step.questions, ...step.questions], (x) => x),
+      };
+    } else {
+      groups.push({ step, count: 1, n: i + 1 });
+    }
+  });
+  return groups;
+}
+
+/** One hop, or several alike in a row: who it was, the model, the verdict, and what it assumed and
+ *  asked. The prompts it read are one closed disclosure. */
+const StepRow: Component<{ group: StepGroup }> = (props) => {
+  const step = () => props.group.step;
+  const model = () => classWords(step().model, step().class);
   const list = (title: string, items: string[]) => (
     <Show when={items.length > 0}>
       <div class="space-y-1">
@@ -255,34 +294,37 @@ const StepRow: Component<{ step: RunStep; n: number }> = (props) => {
   return (
     <li data-testid="run-step" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
-        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{roleWords(props.step.role, props.n)}</span>
+        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {roleWords(step().role, props.group.n)}
+          <Show when={props.group.count > 1}> ×{props.group.count}</Show>
+        </span>
         <Show when={model()}>
           {(m) => <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{m()}</span>}
         </Show>
-        <Show when={props.step.verdict}>
+        <Show when={step().verdict}>
           {(v) => <Badge tone="neutral">Verdict: {v()}</Badge>}
         </Show>
       </div>
-      <Show
-        when={props.step.prompts.length > 0}
-        fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This step recorded no prompt.</p>}
-      >
-        <ul data-testid="step-prompts" class="flex flex-wrap gap-1.5">
-          <For each={props.step.prompts}>{(p) => <PromptChip prompt={p} />}</For>
-        </ul>
+      {list('The agent assumed', step().assumptions)}
+      {list('The agent asked', step().questions)}
+      <Show when={step().prompts.length > 0}>
+        <details data-testid="step-prompts-disclosure">
+          <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Prompts used</summary>
+          <ul data-testid="step-prompts" class="mt-1.5 flex flex-wrap gap-1.5">
+            <For each={step().prompts}>{(p) => <PromptChip prompt={p} />}</For>
+          </ul>
+        </details>
       </Show>
-      {list('The agent assumed', props.step.assumptions)}
-      {list('The agent asked', props.step.questions)}
     </li>
   );
 };
 
-/** What each step ran: one row per hop of a docket task, in order. */
+/** What each step ran: one row per hop of a docket task, in order; hops alike in a row are one. */
 export const StepsRan: Component<{ steps: RunStep[] }> = (props) => (
   <section data-testid="run-steps" class="space-y-2">
     <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>What each step ran</h4>
     <ol class="space-y-2">
-      <For each={props.steps}>{(step, i) => <StepRow step={step} n={i() + 1} />}</For>
+      <For each={groupSteps(props.steps)}>{(group) => <StepRow group={group} />}</For>
     </ol>
   </section>
 );
