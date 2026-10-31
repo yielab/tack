@@ -3828,6 +3828,11 @@ export interface components {
              * @description The index of an earlier entry this one is a sub-item of; absent means a sub-item of the item.
              */
             parent?: number | null;
+            /**
+             * @description A profile, by id: any profile, with a team or without, goes into the item's run settings.
+             *     It wins over `team`.
+             */
+            profile_id?: string | null;
             /** @description A project role, by name. */
             role?: string | null;
             /** @description A team, by name; the one profile that names it goes into the item's run settings. */
@@ -3848,6 +3853,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             title: string;
+            /**
+             * @description The profile id that no profile has; the item's run settings name no profile from it, and
+             *     its `team` is still tried.
+             */
+            unknown_profile?: string | null;
             /** @description The role name the project does not have; the item has no role. */
             unknown_role?: string | null;
             /** @description The type the project does not have; the item has its parent's type. */

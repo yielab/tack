@@ -634,6 +634,10 @@ pub struct CreateSubtaskFromPlan {
     /// A team, by name; the one profile that names it goes into the item's run settings.
     #[serde(default)]
     pub team: Option<String>,
+    /// A profile, by id: any profile, with a team or without, goes into the item's run settings.
+    /// It wins over `team`.
+    #[serde(default)]
+    pub profile_id: Option<String>,
     /// The index of an earlier entry this one is a sub-item of; absent means a sub-item of the item.
     #[serde(default)]
     pub parent: Option<u32>,
@@ -661,6 +665,10 @@ pub struct CreatedSubtask {
     /// The team that no profile, or more than one, names; the item's run settings name no profile.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unresolved_team: Option<String>,
+    /// The profile id that no profile has; the item's run settings name no profile from it, and
+    /// its `team` is still tried.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_profile: Option<String>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -753,7 +761,9 @@ pub async fn create_subtasks_from_plan(
     let roles = state.repo.list_roles(parent.project_id).await?;
     // Team name -> the profiles whose tool policy names it.
     let mut profiles_by_team: std::collections::HashMap<String, Vec<String>> = Default::default();
+    let mut profile_ids: std::collections::HashSet<String> = Default::default();
     for profile in tack_db::queries::agent_profiles::profiles_by_name(&state.repo).await? {
+        profile_ids.insert(profile.id.clone());
         let policy: serde_json::Value =
             serde_json::from_str(&profile.tool_policy).unwrap_or_default();
         if let Some(team) = policy["docket"]["team"].as_str() {
@@ -845,29 +855,43 @@ pub async fn create_subtasks_from_plan(
             }
         }
 
+        // A profile named by id wins over the team; an id no profile has is reported, and the
+        // team, if any, is still tried.
+        let mut unknown_profile = None;
+        let mut chosen = None;
+        if let Some(wanted) = named(&subtask_input.profile_id) {
+            if profile_ids.contains(wanted) {
+                chosen = Some(wanted.to_owned());
+            } else {
+                unknown_profile = Some(wanted.to_owned());
+            }
+        }
         let mut unresolved_team = None;
-        if let Some(wanted) = named(&subtask_input.team) {
+        if chosen.is_none()
+            && let Some(wanted) = named(&subtask_input.team)
+        {
             match profiles_by_team.get(wanted).map(Vec::as_slice) {
-                Some([profile_id]) => {
-                    let settings = tack_core::models::RunSettings {
-                        agent_profile_id: Some(profile_id.clone()),
-                        ..Default::default()
-                    };
-                    state
-                        .repo
-                        .update_item_atomically(
-                            item.id,
-                            UpdateItem {
-                                run_settings: Some(Some(settings)),
-                                ..UpdateItem::default()
-                            },
-                            &project.workflow,
-                            None,
-                        )
-                        .await?;
-                }
+                Some([profile_id]) => chosen = Some(profile_id.clone()),
                 _ => unresolved_team = Some(wanted.to_owned()),
             }
+        }
+        if let Some(profile_id) = chosen {
+            let settings = tack_core::models::RunSettings {
+                agent_profile_id: Some(profile_id),
+                ..Default::default()
+            };
+            state
+                .repo
+                .update_item_atomically(
+                    item.id,
+                    UpdateItem {
+                        run_settings: Some(Some(settings)),
+                        ..UpdateItem::default()
+                    },
+                    &project.workflow,
+                    None,
+                )
+                .await?;
         }
 
         created.push(CreatedSubtask {
@@ -876,6 +900,7 @@ pub async fn create_subtasks_from_plan(
             unknown_role,
             unknown_type,
             unresolved_team,
+            unknown_profile,
         });
     }
 

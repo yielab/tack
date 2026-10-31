@@ -1529,6 +1529,69 @@ async fn an_unknown_role_type_or_team_is_reported_on_its_entry_and_refuses_nothi
     assert!(item["roles"].as_array().unwrap().is_empty());
 }
 
+#[tokio::test]
+async fn an_entry_may_name_a_profile_that_wins_over_its_team_and_an_unknown_one_is_reported() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let parent_id = common::create_item(&app, pid, "Parent Item").await;
+    let mut ids = Vec::new();
+    for (name, policy) in [
+        (
+            "Teamless",
+            json!({"agent": "claude-code", "tools": {"claude-code": ["Read"]}}),
+        ),
+        (
+            "Team profile",
+            json!({"agent": "claude-code", "docket": {"team": "my-saas-dev"},
+                   "tools": {"claude-code": ["Read"]}}),
+        ),
+    ] {
+        let (_, profile) = common::send_as_operator(
+            &app,
+            "POST",
+            "/api/agent-profiles",
+            json!({"name": name, "instructions": "x", "tool_policy": policy}).to_string(),
+        )
+        .await;
+        ids.push(profile["agent_profile_id"].as_str().unwrap().to_owned());
+    }
+    let (teamless, team_profile) = (&ids[0], &ids[1]);
+
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        json!({"subtasks": [
+            {"title": "Named profile", "acceptance": [], "profile_id": teamless},
+            {"title": "Wins over team", "acceptance": [],
+             "profile_id": teamless, "team": "my-saas-dev"},
+            {"title": "Unknown profile", "acceptance": [], "profile_id": "no-such-profile"},
+            {"title": "Team only", "acceptance": [], "team": "my-saas-dev"}
+        ]}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let created = body["created"].as_array().unwrap();
+    assert_eq!(created.len(), 4, "an unknown profile refuses nothing");
+    let mut settings = Vec::new();
+    for entry in created {
+        let item = item_detail(&app, entry["id"].as_str().unwrap()).await;
+        settings.push(item["item"]["run_settings"]["agent_profile_id"].clone());
+    }
+    assert_eq!(settings[0], json!(teamless), "a profile with no team");
+    assert!(created[0].get("unknown_profile").is_none(), "{body}");
+    assert_eq!(
+        settings[1],
+        json!(teamless),
+        "the profile wins over the team"
+    );
+    assert!(created[1].get("unresolved_team").is_none(), "{body}");
+    assert_eq!(created[2]["unknown_profile"], "no-such-profile");
+    assert!(settings[2].is_null(), "an unknown profile names none");
+    assert_eq!(settings[3], json!(team_profile), "a team alone still works");
+}
+
 // ─── Item provenance / trust boundary ────────────────────────────
 
 /// Mount a GitHub `GET /repos/acme/widgets/issues` mock returning one open issue.
