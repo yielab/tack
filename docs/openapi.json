@@ -9637,6 +9637,13 @@
             "description": "The index of an earlier entry this one is a sub-item of; absent means a sub-item of the item.",
             "minimum": 0
           },
+          "profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A profile, by id: any profile, with a team or without, goes into the item's run settings.\nIt wins over `team`."
+          },
           "role": {
             "type": [
               "string",
@@ -9711,6 +9718,13 @@
           },
           "title": {
             "type": "string"
+          },
+          "unknown_profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile id that no profile has; the item's run settings name no profile from it, and\nits `team` is still tried."
           },
           "unknown_role": {
             "type": [
