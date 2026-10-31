@@ -176,14 +176,14 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   install line for it. Each part links to where you change it.
 - **Where the profile came from** appears under the summary: "Chosen by the role X", "Project default",
   "Saved on this task", "The built-in Implementer", or "More than one role has a profile, so the project
-  default is used". To use another profile for this run, press another name in the **Profile** row.
+  default is used". To use another profile for this run, choose it under **Who does it**.
   [Teams](automation.md#teams) explains how a role chooses.
-- **The profile row follows the profile.** The profiles you made come first, each with the line saying
-  what it delivers, and the built-in ones sit apart below. Pressing a profile also picks the agent it is
-  written for (a profile with a docket team means docket; otherwise the agent it lists tools for), when
-  this computer offers that agent, and a line under the row says so when it replaces the agent the task
-  had. A profile that runs no commands says "No install: this profile runs no commands" where the dialog
-  tells what is installed before the agent starts.
+- **Who does it** lists every profile, grouped by the team it names (with who is in the team) or, for a
+  profile with no team, by the agent that runs it (Claude Code, Codex, OpenCode or Docket). Each group
+  says what that agent can do, and what it cannot is shown greyed with the reason. Choosing a profile
+  also picks the agent it is written for, when this computer offers that agent, and a line says so when
+  it replaces the agent the task had. A profile that runs no commands says "No install: this profile
+  runs no commands" where the dialog tells what is installed before the agent starts.
 - **Machine or group.** Lists this computer and the other machines by name, then the groups. A machine that
   has stopped answering is shown disabled, with the time it was last heard. With one machine answering and
   no group there is nothing to choose, so the field is one line, "Runs on this computer".
