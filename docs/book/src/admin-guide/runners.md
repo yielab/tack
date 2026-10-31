@@ -522,7 +522,10 @@ is about the part you run. It happens **in the board's process**, not in a runne
   started task to the first in-progress status and writes "Started by itself" on its activity.
 - **Which machine.** The run goes to the fleet its profile names. If the profile names none, there
   must be exactly one active runner, and that runner is used. With several runners and no fleet the
-  task is not started, because Tack cannot tell where it should run. Name a fleet in the profile.
+  task is not started, because Tack cannot tell where it should run. Name a fleet in the profile. Of
+  several active runners, the ones that answer are the candidates; when none answers, all of them are.
+  The task's own Automation row says so: "By hand: it would start when it reaches Backlog, but 2
+  computers could run it and its profile names no group of computers to choose from".
 - **Whether it asks.** A started run asks before each action unless **every** machine it could land on
   reports the agent as sandboxed, by `bwrap` or by the agent's own jail (docket). A machine that
   reports no sandbox, or says nothing, makes it ask. The person answers in Tack's inbox.

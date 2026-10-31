@@ -1090,3 +1090,29 @@ pub async fn execution_claim_replays_shown(repo: &Repository) {
         .await
         .expect("show execution_claim_replays");
 }
+
+/// Makes a group of computers `fleet_id` holding `runner_id`, and sends the runs of `profile_id` to it.
+pub async fn agent_profile_in_fleet(
+    repo: &Repository,
+    profile_id: &str,
+    fleet_id: &str,
+    runner_id: &str,
+) {
+    repo.create_agent_fleet(fleet_id, fleet_id, None, "{}", chrono::Utc::now())
+        .await
+        .expect("seed agent_fleets");
+    sqlx::query(
+        "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, 'now')",
+    )
+    .bind(fleet_id)
+    .bind(runner_id)
+    .execute(repo.pool())
+    .await
+    .expect("seed agent_fleet_members");
+    sqlx::query("UPDATE agent_profiles SET fleet_id = ? WHERE id = ?")
+        .bind(fleet_id)
+        .bind(profile_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed agent_profiles fleet");
+}

@@ -12,7 +12,7 @@ const PROFILES = [
 ];
 const PROJECT = { id: 'p1', auto_start_enabled: true, auto_start_status: 'To Do', default_profile_id: null };
 
-function routeFetch(detail: { roles: unknown[]; run_settings: unknown }, patches: unknown[]) {
+function routeFetch(detail: { roles: unknown[]; run_settings: unknown }, patches: unknown[], runners: unknown[] = [{ runner_id: 'r1', state: 'active', online: true }]) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     const json = (body: unknown, headers: Record<string, string> = {}) =>
@@ -22,7 +22,7 @@ function routeFetch(detail: { roles: unknown[]; run_settings: unknown }, patches
       return json({ id: 'item-1' }, { ETag: '"2"' });
     }
     if (url.includes('/agent-profiles')) return json({ protocol_version: 1, data: PROFILES });
-    if (url.includes('/runners')) return json({ protocol_version: 1, data: [] });
+    if (url.includes('/runners')) return json({ protocol_version: 1, data: runners });
     if (url.includes('/teams')) return json({ teams: [] });
     if (url.endsWith('/autonomy')) return json({ level: 'L3' });
     if (url.includes('/projects/')) return json(PROJECT);
@@ -67,6 +67,18 @@ describe('AutomationRow: who does it', () => {
     const row = mount();
     await settle();
     expect(row.querySelector('[data-testid="automation-row"]')?.textContent).toContain('Goes to Fixer (from the role Content)');
+  });
+
+  it('says why a task cannot start by itself when two computers answer and its profile names no group', async () => {
+    routeFetch({ roles: [], run_settings: { agent_profile_id: 'profile-1' } }, [], [
+      { runner_id: 'r1', state: 'active', online: true },
+      { runner_id: 'r2', state: 'active', online: true },
+    ]);
+    const row = mount();
+    await settle();
+    const text = row.querySelector('[data-testid="automation-row"]')?.textContent ?? '';
+    expect(text).toContain('By hand: it would start when it reaches To Do, but 2 computers could run it and its profile names no group of computers to choose from');
+    expect(text).toContain('Goes to Content writer (chosen on this task)');
   });
 
   it('choosing a profile stores it in the run settings and keeps the other settings; Nobody yet clears it', async () => {

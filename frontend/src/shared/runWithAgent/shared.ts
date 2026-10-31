@@ -340,6 +340,25 @@ export function silentRunnerLabel(name: string, lastHeartbeatAt: string | null):
   return `${name} (not answering${since ? ` since ${since}` : ''})`;
 }
 
+/**
+ * Why a task that starts by itself has nowhere to run, in words; null when it has somewhere. It reads the
+ * machines the way the board's own pick does: the profile's group of computers when it names one, else
+ * the one active computer (of several, the ones that answer; when none answers, all of them).
+ * A person at the Run dialog chooses; nobody does when a task starts by itself.
+ */
+export function noPlaceToRun(
+  runners: Array<{ state: string; online?: boolean }>,
+  profileGroup: string | null | undefined,
+): string | null {
+  if (profileGroup) return null;
+  const active = runners.filter((r) => isActiveRunnerState(r.state));
+  const answering = active.filter((r) => r.online !== false);
+  const candidates = answering.length > 0 ? answering : active;
+  if (candidates.length === 1) return null;
+  if (candidates.length === 0) return 'no computer is connected to run it';
+  return `${candidates.length} computers could run it and its profile names no group of computers to choose from`;
+}
+
 /** The agents a profile is written for: its docket team means docket, else the agents it lists tools for. */
 export function profileAgents(profile: { tool_policy?: unknown }): string[] {
   if (teamOf(profile)) return ['docket'];

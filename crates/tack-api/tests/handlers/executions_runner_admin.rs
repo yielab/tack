@@ -2706,6 +2706,46 @@ async fn the_auto_start_tick_starts_a_task_with_a_profile_in_its_run_settings_an
     assert_eq!(status_of(&repo, &settings_only).await, "To Do");
 }
 
+// Two computers answer and the profile names no group: the board cannot pick one, so the tick
+// starts nothing (the Run dialog asks a person; nobody is asked here). A group that holds one of
+// them is the place to run, and the task starts. Found by the live suite, whose two runners (the
+// embedded one and its own) left every accepted task in Backlog.
+#[tokio::test]
+async fn the_auto_start_tick_waits_for_a_group_where_two_computers_answer() {
+    let (repo, state, _item_id, project_id) = auto_start_board().await;
+    repo.register_runner(
+        NewRunner {
+            id: "runner-second",
+            name: "Second",
+            credential_hash: "hash-second",
+            labels: "{}",
+            total_capacity: 1,
+            available_capacity: 1,
+            capability_snapshot: "{}",
+            protocol_version: 1,
+        },
+        SystemClock.now(),
+    )
+    .await
+    .expect("second runner");
+    let chosen = add_item(&repo, project_id, "chosen").await;
+    choose_profile(&repo, &chosen, "profile-c1").await;
+    seed::project_auto_start_max_open(&repo, &project_id.to_string(), 10).await;
+
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
+    assert!(requests_of(&repo, &chosen).await.is_empty());
+    assert_eq!(status_of(&repo, &chosen).await, "To Do");
+
+    seed::agent_profile_in_fleet(&repo, "profile-c1", "fleet-c1", "runner-active").await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
+    assert_eq!(requests_of(&repo, &chosen).await.len(), 1);
+    assert_eq!(status_of(&repo, &chosen).await, "In Progress");
+}
+
 // A role that needs the network (`tool_policy.network`) starts its auto-started run with it.
 #[tokio::test]
 async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {

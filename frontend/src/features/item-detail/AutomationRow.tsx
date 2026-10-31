@@ -1,7 +1,8 @@
 import { type Component, Show, createResource } from 'solid-js';
 import { api } from '../../shared/api';
 import { request } from '../../shared/api/client';
-import { agentProfilesApi } from '../../shared/execution';
+import { agentProfilesApi, runnersApi } from '../../shared/execution';
+import { noPlaceToRun } from '../../shared/runWithAgent/shared';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
 import { toast } from '../../shared/ui/toast';
 import { HelpHint, LoadError } from '../../shared/ui';
@@ -21,11 +22,15 @@ export function automationSentence(input: {
   hasProfile: boolean;
   /** Who does it and where that choice came from: "Content writer (chosen on this task)". */
   who?: string | null;
+  /** Why the board cannot pick a computer for it, when it cannot (`noPlaceToRun`). */
+  noPlace?: string | null;
 }): string {
   if (!input.hasProfile && input.roleWithoutProfile) return `By hand: the role ${input.roleWithoutProfile} has no profile`;
   if (!input.starts) return "By hand: this project doesn't start tasks by itself";
   return [
-    `Starts by itself when it reaches ${input.startsAt}`,
+    input.noPlace
+      ? `By hand: it would start when it reaches ${input.startsAt}, but ${input.noPlace}`
+      : `Starts by itself when it reaches ${input.startsAt}`,
     input.who ? `Goes to ${input.who}` : null,
     input.team ? `Team ${input.team}` : null,
     input.merge ? `Merge ${input.merge}` : null,
@@ -50,13 +55,15 @@ const AutomationRow: Component<{ item: Item }> = (props) => {
   const [resource, { refetch }] = createResource(
     () => props.item.id,
     async (id) => {
-      const [project, detail, profiles, autonomy] = await Promise.all([
+      const [project, detail, profiles, autonomy, runners] = await Promise.all([
         api.projects.get(props.item.project_id),
         request<{ roles?: Role[]; item?: { run_settings?: RunSettings | null } }>(`/items/${id}`),
         agentProfilesApi.list().then((r) => r.data.data ?? []),
         api.autonomy.get(props.item.project_id),
+        // Where it runs is a hint on the sentence, never a reason to hide it.
+        runnersApi.list().then((r) => (Array.isArray(r.data.data) ? r.data.data : null)).catch(() => null),
       ]);
-      return { project, roles: detail.roles ?? [], runSettings: detail.item?.run_settings ?? null, profiles, autonomy };
+      return { project, roles: detail.roles ?? [], runSettings: detail.item?.run_settings ?? null, profiles, autonomy, runners };
     },
   );
   // The choice made on the task comes first, then the role's, then the project's.
@@ -83,6 +90,7 @@ const AutomationRow: Component<{ item: Item }> = (props) => {
       roleWithoutProfile: d.roles.find((r) => !r.agent_profile_id)?.name ?? null,
       hasProfile: !!profileId,
       who: profile && from ? `${profile.name} (${from})` : null,
+      noPlace: profile && d.runners ? noPlaceToRun(d.runners, profile.fleet_id) : null,
     });
   };
   const choose = async (profileId: string | null) => {

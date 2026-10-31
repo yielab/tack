@@ -325,6 +325,8 @@ export interface AgentProfileSummary {
   summary?: string;
   /** One line on what the profile delivers: "a change on a branch", "an answer". */
   delivers?: string | null;
+  /** The group of computers the profile's runs go to; none means the one active computer. */
+  fleet_id?: string | null;
   /** Read only, derived from the tool policy: what the profile's tools can do. */
   changes_files?: boolean;
   runs_commands?: boolean;
