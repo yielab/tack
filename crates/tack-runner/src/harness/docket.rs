@@ -1006,6 +1006,8 @@ impl DocketAdapter {
         model: Option<String>,
         progress: &mpsc::Sender<Progress>,
         unanswered_until: Option<DateTime<Utc>>,
+        // The question last put to the person, when it was asked, and whether an answer went back.
+        asked: Option<&(String, DateTime<Utc>, bool)>,
     ) -> HarnessOutcome {
         // docket's task record says why it ended in `reason`, for a failed and a blocked task
         // alike; its hops carry their own `error`, the task has none.
@@ -1086,7 +1088,7 @@ impl DocketAdapter {
             ),
             "blocked" => (
                 AttemptState::Failed,
-                json!({"code": "blocked", "message": why, "task": info.task}),
+                json!({"code": "blocked", "message": format!("docket said: {why}"), "task": info.task}),
             ),
             // At L5 a tool call needed approval and docket asks nobody; the task is final until
             // someone retries it, so the attempt ends here and nothing queues it again.
@@ -1103,10 +1105,48 @@ impl DocketAdapter {
                        "message": format!("Could not prepare the dependencies (docket): {why}"),
                        "task": info.task}),
             ),
+            // docket's approval timeout ends the task as a denial. Tack sent none, so nobody
+            // refused anything: a question went unanswered.
+            _ if failure_kind == Some("approval_denied")
+                && !asked.is_some_and(|(_, _, answered)| *answered) =>
+            {
+                let message = match asked {
+                    Some((question, at, _)) => {
+                        let (at, now) =
+                            (at.with_timezone(&Local), Utc::now().with_timezone(&Local));
+                        let seconds = (now - at).num_seconds().max(0);
+                        let (count, unit) = if seconds < 60 {
+                            (seconds, "second")
+                        } else {
+                            ((seconds + 30) / 60, "minute")
+                        };
+                        format!(
+                            "Nobody answered '{question}' (asked {}); the team stopped after {count} {unit}{}.",
+                            at.format(if at.date_naive() == now.date_naive() {
+                                "%H:%M"
+                            } else {
+                                "%Y-%m-%d %H:%M"
+                            }),
+                            if count == 1 { "" } else { "s" },
+                        )
+                    }
+                    None => super::not_answered(unanswered_until),
+                };
+                (
+                    AttemptState::Failed,
+                    json!({"code": "not_answered", "message": message, "task": info.task}),
+                )
+            }
+            // A denial a person gave: docket's own text carries their reason.
+            _ if failure_kind == Some("approval_denied") => (
+                AttemptState::Failed,
+                json!({"code": "approval_denied", "message": why, "task": info.task}),
+            ),
+            // Any other end is docket's, in docket's words and labelled as such.
             _ => (
                 AttemptState::Failed,
                 json!({"code": failure_kind.unwrap_or("failed"),
-                       "message": why, "task": info.task}),
+                       "message": format!("docket said: {why}"), "task": info.task}),
             ),
         };
         let mut outcome = self.outcome(info, state, reason, Some(task), model);
@@ -1528,6 +1568,8 @@ impl DocketAdapter {
         let mut asked: HashSet<String> = HashSet::new();
         let mut refused: HashMap<String, u32> = HashMap::new();
         let mut pending: Option<Pending> = None;
+        // The question last put to the person, when, and whether an answer went back to docket.
+        let mut last_asked: Option<(String, DateTime<Utc>, bool)> = None;
         // What docket called the options it offered, learnt from the escalations read before the
         // events that name them.
         let mut labels = OptionLabels::new();
@@ -1562,9 +1604,11 @@ impl DocketAdapter {
                     if let Some(times) = refused.get(&ask.escalation) {
                         question.vendor_id = format!("{}#{times}", question.vendor_id);
                     }
+                    let prompt = question.prompt.clone();
                     if side.questions.try_send(question).is_ok() {
                         asked.insert(ask.escalation.clone());
                         pending = Some(ask);
+                        last_asked = Some((prompt, Utc::now(), false));
                     }
                 }
                 if read.settled_through > since {
@@ -1610,6 +1654,7 @@ impl DocketAdapter {
                         model,
                         &side.progress,
                         pending.as_ref().and_then(|held| held.expires_at),
+                        last_asked.as_ref(),
                     )
                     .await);
             }
@@ -1664,18 +1709,20 @@ impl DocketAdapter {
             tokio::select! {
                 () = tokio::time::sleep(POLL_INTERVAL) => {}
                 answer = side.answers.recv(), if pending.is_some() => {
-                    if let (Some(answer), Some(ask)) = (answer, pending.take())
-                        && let Some(problem) = self.deliver(&ask, &answer).await
-                    {
-                        // The decision is resolved in Tack, so the run would wait on
-                        // nothing: ask again while docket still holds the question.
-                        asked.remove(&ask.escalation);
-                        *refused.entry(ask.escalation.clone()).or_default() += 1;
-                        let _ = side.progress.try_send(Progress {
-                            kind: event_kind::AGENT_ANSWER_FAILED.to_owned(),
-                            text: format!("{problem}; asking again"),
-                            usage: None,
-                        });
+                    if let (Some(answer), Some(ask)) = (answer, pending.take()) {
+                        if let Some(problem) = self.deliver(&ask, &answer).await {
+                            // The decision is resolved in Tack, so the run would wait on
+                            // nothing: ask again while docket still holds the question.
+                            asked.remove(&ask.escalation);
+                            *refused.entry(ask.escalation.clone()).or_default() += 1;
+                            let _ = side.progress.try_send(Progress {
+                                kind: event_kind::AGENT_ANSWER_FAILED.to_owned(),
+                                text: format!("{problem}; asking again"),
+                                usage: None,
+                            });
+                        } else if let Some(last) = last_asked.as_mut() {
+                            last.2 = true;
+                        }
                     }
                 }
             }
