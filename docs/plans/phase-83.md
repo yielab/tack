@@ -1,10 +1,8 @@
 # Phase 83: a team is shown as it is, a task can go to a team, and what a run finds can become items
 
-**Status: OPEN 2026-10-31; ADR 0032 accepted the same day.** The ADR holds the decisions; this plan is the cards.
-H, I, K and L (round 0) are built and in `develop`; they fixed what onboarding runs on
-2026-10-31 found (a folder team, ADR 0031 decision 1; a run queued for 52 minutes behind a question
-nobody saw, then failed in half a second), which accepted decisions already cover, and wait on
-nothing.
+**Status: BUILT 2026-10-31; ADR 0032 accepted the same day.** The ADR holds the decisions; this plan is the cards.
+Every card is in `develop`, with M (Planner and Researcher can write the plan), M2 (their instructions name no
+file) and Q (docket's task scope) added after the ADR. The local suite ran against docket `cdeabac3`.
 docket's two asks (ADR 0032 "What this asks of docket") block no card: each card reads them when
 present and says so on screen when absent. Tack edits nothing in docket's or prill's repositories.
 
