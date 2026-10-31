@@ -32,10 +32,10 @@ Phases 73 to 82 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maint
 and it is not a card.
 
 **[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
-as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is proposed;
-no card starts before it is accepted, except H, I, K and L, which fix defects
-accepted decisions already cover (a folder team; a queued run that does not say why; an unanswered
-question read as a refusal) and start now. Every card speaks of teams, who does a task and proposals in terms no agent owns: each
+as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is accepted 2026-10-31;
+H, I, K and L, which fix defects
+accepted decisions already cover, are built (a folder team; a queued run that does not say why; an unanswered
+question read as a refusal). Every card speaks of teams, who does a task and proposals in terms no agent owns: each
 agent reports what it can, and a screen shows the rest disabled with the agent's reason. Twelve cards
 in six rounds:
 

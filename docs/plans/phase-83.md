@@ -1,7 +1,7 @@
 # Phase 83: a team is shown as it is, a task can go to a team, and what a run finds can become items
 
-**Status: PROPOSED 2026-10-31.** ADR 0032 (proposed) holds the decisions; this plan is the cards.
-No card starts before the ADR is accepted, except H, I, K and L: they fix what onboarding runs on
+**Status: OPEN 2026-10-31; ADR 0032 accepted the same day.** The ADR holds the decisions; this plan is the cards.
+H, I, K and L (round 0) are built and in `develop`; they fixed what onboarding runs on
 2026-10-31 found (a folder team, ADR 0031 decision 1; a run queued for 52 minutes behind a question
 nobody saw, then failed in half a second), which accepted decisions already cover, and wait on
 nothing.
