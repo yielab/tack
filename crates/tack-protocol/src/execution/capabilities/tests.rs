@@ -109,3 +109,56 @@ fn team_ceiling_fields_are_optional_and_round_trip() {
     assert_eq!(teams[0].violations[0].fix, "run it lights-out");
     assert_eq!(serde_json::to_value(&parsed).expect("serialize"), with);
 }
+
+#[test]
+fn an_agents_own_features_ride_beside_its_report_and_round_trip() {
+    let mut report: HarnessCapability = serde_json::from_value(serde_json::json!({
+        "harness_kind": "codex", "installed_version": "1", "probe_error": null,
+        "probed_at": "2026-08-06T12:00:00Z"
+    }))
+    .expect("a report without features parses");
+    assert_eq!(
+        report.features(),
+        None,
+        "absent stays absent, never invented"
+    );
+
+    let declared = FeatureCapabilities {
+        cancel: CapabilityValue {
+            support: CapabilitySupport::Supported,
+            reason: Some("stops the process group".to_owned()),
+            additional: BTreeMap::new(),
+        },
+        resume: CapabilityValue {
+            support: CapabilitySupport::Unsupported,
+            reason: Some("a restart ends the run".to_owned()),
+            additional: BTreeMap::new(),
+        },
+        decisions: CapabilityValue {
+            support: CapabilitySupport::Supported,
+            reason: None,
+            additional: BTreeMap::new(),
+        },
+        artifacts: CapabilityValue {
+            support: CapabilitySupport::Advisory,
+            reason: None,
+            additional: BTreeMap::new(),
+        },
+        usage: CapabilityValue {
+            support: CapabilitySupport::Advisory,
+            reason: Some("partial".to_owned()),
+            additional: BTreeMap::new(),
+        },
+        proposals: None,
+        additional: BTreeMap::new(),
+    };
+    report.set_features(&declared);
+    let wire = serde_json::to_value(&report).expect("serialize");
+    assert_eq!(wire["features"]["cancel"]["support"], "supported");
+    assert_eq!(
+        wire["features"]["resume"]["reason"],
+        "a restart ends the run"
+    );
+    let back: HarnessCapability = serde_json::from_value(wire).expect("parse back");
+    assert_eq!(back.features(), Some(declared));
+}

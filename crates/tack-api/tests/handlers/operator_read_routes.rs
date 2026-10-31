@@ -96,6 +96,10 @@ fn full_capabilities() -> Value {
             "probe_error": null,
             "probed_at": now,
             "requires_model": true,
+            "features": {
+                "cancel": {"support": "supported", "reason": null},
+                "proposals": {"support": "supported", "reason": "through a plan file"},
+            },
         }],
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
@@ -209,6 +213,11 @@ async fn list_runners_returns_real_capability_and_capacity_data() {
     assert_eq!(
         runner["capability_snapshot"]["harnesses"][0]["harness_kind"], "codex",
         "the real declared capability snapshot must round-trip, not a placeholder"
+    );
+    assert_eq!(
+        runner["capability_snapshot"]["harnesses"][0]["features"]["proposals"]["reason"],
+        "through a plan file",
+        "an agent's own features reach the board per agent"
     );
     assert_eq!(runner["fleet_ids"], json!([]));
 }

@@ -260,14 +260,14 @@ fn capped(team: &TeamReport) -> bool {
 
 pub(super) async fn probe(
     client: &Client,
-    decisions: tack_protocol::execution::CapabilityValue,
+    features: tack_protocol::execution::FeatureCapabilities,
 ) -> HarnessCapability {
     let mut capability = HarnessCapability {
         harness_kind: DomainHarnessKind::new(super::DESCRIPTOR.kind),
         installed_version: String::new(),
         probe_error: None,
         probed_at: Utc::now(),
-        decisions: Some(decisions),
+        decisions: Some(features.decisions.clone()),
         requires_model: false,
         requires_model_reason: None,
         models: None,
@@ -288,6 +288,7 @@ pub(super) async fn probe(
         ]
         .into(),
     };
+    capability.set_features(&features);
     let Status {
         models,
         version,

@@ -263,6 +263,24 @@ async fn probe_on_a_later_api_is_accepted_and_names_the_version_it_answered() {
 }
 
 #[tokio::test]
+async fn docket_reports_its_features_per_agent_even_when_it_cannot_be_used() {
+    for version in ["6", "5"] {
+        let fake = pods_fake().await;
+        fake.set_api_version(version);
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+
+        let capability = adapter.probe().await;
+        let features = capability.features().expect("docket reports its features");
+        assert_eq!(features, adapter.declared_capabilities(), "API {version}");
+        assert_eq!(
+            features.proposals.expect("proposals").support,
+            tack_protocol::execution::CapabilitySupport::Supported
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_version_below_6_or_not_a_number_is_refused_with_the_sentence() {
     for found in ["4", "5", "abc", ""] {
         let fake = pods_fake().await;

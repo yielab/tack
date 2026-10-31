@@ -59,6 +59,11 @@ pub struct Concurrency {
 /// `additional`, so an older runner or reader that does not know it loses nothing.
 const API_VERSION_KEY: &str = "api_version";
 
+/// The key under which an agent reports what it itself can do, per feature, in the shape of the
+/// runner's own `features`. It rides in `additional` beside `decisions`, so a runner or reader that
+/// does not know it loses nothing; absent means the agent did not say.
+const FEATURES_KEY: &str = "features";
+
 /// One installed harness.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HarnessCapability {
@@ -112,6 +117,19 @@ impl HarnessCapability {
     /// The API version the harness answers, when it has one: `"5"`, not `"API 5"`.
     pub fn api_version(&self) -> Option<&str> {
         self.additional.get(API_VERSION_KEY)?.as_str()
+    }
+
+    /// What this agent itself reports it can do, when it said: stop, resume, answer questions,
+    /// propose items, report usage. `None` when the report carries none, or one that cannot be read.
+    pub fn features(&self) -> Option<FeatureCapabilities> {
+        serde_json::from_value(self.additional.get(FEATURES_KEY)?.clone()).ok()
+    }
+
+    /// Records what this agent can do; see [`Self::features`].
+    pub fn set_features(&mut self, features: &FeatureCapabilities) {
+        if let Ok(value) = serde_json::to_value(features) {
+            self.additional.insert(FEATURES_KEY.to_owned(), value);
+        }
     }
 
     /// Records the API version the harness answers; see [`Self::api_version`].
