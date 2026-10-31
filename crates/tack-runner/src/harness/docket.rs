@@ -1183,18 +1183,23 @@ impl DocketAdapter {
         let mut outcome = self.outcome(info, state, reason, Some(task), model);
         // What the team wrote in this task, beside the steps. The task has ended, so no row
         // changes under the read.
-        let records = records::kept(&self.client, &info.pod, &info.task).await;
-        if !records.is_empty()
-            && let Some(object) = outcome.terminal_reason.as_object_mut()
-        {
+        let records::Kept {
+            sets: records,
+            proposals_unread,
+        } = records::kept(&self.client, &info.pod, &info.task).await;
+        if let Some(object) = outcome.terminal_reason.as_object_mut() {
             // The proposal the rows make: the capture stages it as a file's plan would be, or
-            // says why it cannot.
+            // says why it cannot. Rows the run could not read are a proposal that is not there,
+            // and the person is told why.
             match records::proposal(&records) {
                 Some(Ok(plan)) => object.insert("plan".to_owned(), plan),
                 Some(Err(why)) => object.insert("plan_invalid".to_owned(), Value::String(why)),
-                None => None,
+                None => proposals_unread
+                    .and_then(|why| object.insert("plan_invalid".to_owned(), Value::String(why))),
             };
-            object.insert("records".to_owned(), Value::Array(records));
+            if !records.is_empty() {
+                object.insert("records".to_owned(), Value::Array(records));
+            }
         }
         outcome
     }

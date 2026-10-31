@@ -295,6 +295,8 @@ struct RecordSet {
     name: String,
     description: String,
     key: Option<String>,
+    /// `pod` or `task`: whether the key is unique across the team or within one task.
+    scope: String,
     /// The columns the team declared, besides docket's own.
     columns: Vec<String>,
     /// Each row as `GET .../records/<set>` sends it, system columns included.
@@ -346,6 +348,10 @@ struct World {
     without_shape_and_steps: bool,
     /// A docket before `workspaceKind`: neither the list nor a report sends it.
     without_workspace_kind: bool,
+    /// A docket before records had a `scope`: the listing has none, a row has no `_role`, a member
+    /// no `capabilities`, and `?task=` is an unknown parameter docket ignores, answering every row
+    /// of the set. A caller that sends it is told apart from one that does not by the request log.
+    before_task_scope: bool,
 }
 
 pub struct FakeDocket {
@@ -378,6 +384,7 @@ impl FakeDocket {
             refused_sets: BTreeSet::new(),
             without_shape_and_steps: false,
             without_workspace_kind: false,
+            before_task_scope: false,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -451,8 +458,28 @@ impl FakeDocket {
         self.shared.lock().unwrap().without_records = true;
     }
 
-    /// A set of records the team declares, with the columns besides docket's own.
+    /// Makes the fake a docket before the `scope` of a record set: see `World::before_task_scope`.
+    pub fn before_task_scope(&self) {
+        self.shared.lock().unwrap().before_task_scope = true;
+    }
+
+    /// A set of records the team declares, with the columns besides docket's own. Its key is
+    /// unique across the team (`scope: pod`, docket's default).
     pub fn add_record_set(&self, pod: &str, name: &str, description: &str, columns: &[&str]) {
+        self.add_record_set_scoped(pod, name, description, columns, "pod");
+    }
+
+    /// A set of records with the `scope` of its document: `pod` (the key is unique across the
+    /// team) or `task` (unique within one task, and a task updates only its own rows).
+    pub fn add_record_set_scoped(
+        &self,
+        pod: &str,
+        name: &str,
+        description: &str,
+        columns: &[&str],
+        scope: &str,
+    ) {
+        assert!(matches!(scope, "pod" | "task"), "a scope is pod or task");
         self.shared
             .lock()
             .unwrap()
@@ -463,6 +490,7 @@ impl FakeDocket {
                 name: name.to_owned(),
                 description: description.to_owned(),
                 key: columns.first().map(|column| (*column).to_owned()),
+                scope: scope.to_owned(),
                 columns: columns.iter().map(|column| (*column).to_owned()).collect(),
                 rows: Vec::new(),
             });
@@ -879,12 +907,29 @@ fn pod_report(state: &World, name: &str) -> Response {
             member["model"]["value"] = json!(model);
         }
     }
+    if !state.before_task_scope {
+        // What each role reaches, from the constructed answer's member of the same role.
+        let reach = fixture("pod-capabilities");
+        for member in report["members"].as_array_mut().into_iter().flatten() {
+            if let Some(found) = reach["members"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|found| found["role"] == member["role"])
+            {
+                member["capabilities"] = found["capabilities"].clone();
+            }
+        }
+    }
     reply(200, report)
 }
 
 /// A row of a set as docket stores it: the columns the team declared, and the system columns it
-/// fills itself, `_task` the id of the task whose hop wrote it.
+/// fills itself, `_task` the id of the task whose hop wrote it and `_role` the role of that hop.
+/// A key the set already holds is not written again, as `add` answers `created: false`: across
+/// the whole team for a `pod` set, within the task for a `task` set.
 fn write_row(state: &mut World, pod: &str, set: &str, task: &str, row: Value) {
+    let older = state.before_task_scope;
     let sets = state
         .records
         .get_mut(pod)
@@ -893,14 +938,30 @@ fn write_row(state: &mut World, pod: &str, set: &str, task: &str, row: Value) {
         .iter_mut()
         .find(|found| found.name == set)
         .unwrap_or_else(|| panic!("{pod} declares no set {set}"));
+    if let Some(key) = &set.key
+        && let Some(value) = row.get(key).filter(|value| !value.is_null())
+        && set.rows.iter().any(|stored| {
+            stored[key] == *value && (set.scope == "pod" || stored["_task"] == json!(task))
+        })
+    {
+        return;
+    }
     // The system columns of a captured row; the team's own are the set's.
-    let mut stored = fixture("records-rows")["rows"][0].clone();
+    let mut stored = fixture(if older {
+        "records-rows"
+    } else {
+        "records-rows-task"
+    })["rows"][0]
+        .clone();
     stored
         .as_object_mut()
         .expect("a row")
         .retain(|column, _| column.starts_with('_'));
     stored["_id"] = json!(set.rows.len() + 1);
     stored["_task"] = json!(task);
+    if !older {
+        stored["_role"] = row.get("_role").cloned().unwrap_or(json!("lead"));
+    }
     for column in &set.columns {
         stored[column] = row.get(column).cloned().unwrap_or(Value::Null);
     }
@@ -912,7 +973,11 @@ fn pod_records(state: &World, pod: &str) -> Response {
     if state.without_records || !state.pods.contains_key(pod) {
         return error(404, "not found");
     }
-    let template = fixture("records");
+    let template = fixture(if state.before_task_scope {
+        "records"
+    } else {
+        "records-scoped"
+    });
     let sets: Vec<Value> = state
         .records
         .get(pod)
@@ -923,6 +988,9 @@ fn pod_records(state: &World, pod: &str) -> Response {
             entry["name"] = json!(set.name);
             entry["description"] = json!(set.description);
             entry["key"] = json!(set.key);
+            if !state.before_task_scope {
+                entry["scope"] = json!(set.scope);
+            }
             entry["rows"] = json!(set.rows.len());
             entry["columns"] = json!(
                 set.columns
@@ -939,8 +1007,10 @@ fn pod_records(state: &World, pod: &str) -> Response {
     )
 }
 
-/// `GET /pods/<pod>/records/<set>?limit=&sql=`: one read-only `SELECT`. The fake understands the
-/// one statement Tack sends, `SELECT * FROM <set> WHERE _task = '<task>'`, and the bare read.
+/// `GET /pods/<pod>/records/<set>?limit=&sql=|task=`: the rows of one task in write order
+/// (`task=`), or one read-only `SELECT`. The fake understands the one statement Tack sends,
+/// `SELECT * FROM <set> WHERE _task = '<task>'`, and the bare read. `task=` empty, or together
+/// with `sql=`, is a `400`; a docket before the `scope` does not know `task=` and ignores it.
 fn record_rows(state: &World, pod: &str, set: &str, query: &str) -> Response {
     if state.without_records || !state.pods.contains_key(pod) {
         return error(404, "not found");
@@ -966,6 +1036,17 @@ fn record_rows(state: &World, pod: &str, set: &str, query: &str) -> Response {
         return error(400, "the statement is too slow");
     }
     let mut rows: Vec<Value> = found.rows.clone();
+    if !state.before_task_scope
+        && let Some(task) = params.get("task")
+    {
+        if params.contains_key("sql") {
+            return refusal("records-task-and-sql", &[]);
+        }
+        if task.trim().is_empty() {
+            return refusal("records-task-empty", &[]);
+        }
+        rows.retain(|row| row["_task"] == json!(task));
+    }
     if let Some(sql) = params.get("sql") {
         let prefix = format!("SELECT * FROM {set}");
         let Some(rest) = sql.strip_prefix(&prefix) else {
@@ -985,9 +1066,19 @@ fn record_rows(state: &World, pod: &str, set: &str, query: &str) -> Response {
     // docket counts the rows the limit left out.
     let cut = rows.len().saturating_sub(limit);
     rows.truncate(limit);
-    let mut answer = fixture("records-rows");
+    let mut answer = fixture(if state.before_task_scope {
+        "records-rows"
+    } else {
+        "records-rows-task"
+    });
     answer["set"] = json!(set);
-    let mut columns: Vec<Value> = answer["columns"].as_array().unwrap()[..6].to_vec();
+    let mut columns: Vec<Value> = answer["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|column| column.as_str().is_some_and(|name| name.starts_with('_')))
+        .cloned()
+        .collect();
     columns.extend(found.columns.iter().map(|column| json!(column)));
     answer["columns"] = json!(columns);
     answer["rows"] = json!(rows);

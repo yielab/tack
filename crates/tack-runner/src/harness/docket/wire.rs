@@ -88,6 +88,23 @@ pub(super) struct PodReport {
 pub(super) struct PodMember {
     pub role: String,
     pub model: Option<PodMemberModel>,
+    /// What the member's role reaches, as docket worked it out. Kept as it came and read on its
+    /// own ([`MemberReach`]), so a shape Tack cannot read costs the member's reach and never the
+    /// team. Absent from a docket before that key.
+    pub capabilities: Option<Value>,
+}
+
+/// What a member's `capabilities` says that Tack reads: the kinds of tool the role has and the
+/// record sets it can write. `tools`, `records.query` and any other key are not read.
+#[derive(Debug, Deserialize)]
+pub(super) struct MemberReach {
+    pub kinds: Option<Vec<String>>,
+    pub records: Option<MemberRecords>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct MemberRecords {
+    pub write: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,6 +163,11 @@ pub(super) struct RecordSet {
     /// How many rows the set holds in all, tasks included.
     #[serde(default)]
     pub rows: u64,
+    /// `pod` (a row's key is unique across the team) or `task` (unique within one task). Absent
+    /// from a docket that cannot read a task's rows by `?task=`: that absence is the only thing
+    /// that decides how the rows of a task are read.
+    #[serde(default)]
+    pub scope: Option<String>,
 }
 
 /// `GET /pods/<pod>/records/<set>`: the rows are objects keyed by column.

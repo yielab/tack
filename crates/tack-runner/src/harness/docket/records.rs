@@ -4,7 +4,7 @@
 use serde_json::{Value, json};
 
 use super::{
-    client::Client,
+    client::{Client, RowsOf},
     wire::{RecordList, RecordRows},
 };
 use crate::evidence::{PlanSubtask, PlanV1};
@@ -26,38 +26,58 @@ fn statement(set: &str, task: &str) -> Option<String> {
     (is_id(set) && is_id(task)).then(|| format!("SELECT * FROM {set} WHERE _task = '{task}'"))
 }
 
-/// The run's `records`: `[{set, columns, rows, cut}]`, the sets with no row of the task left out.
-/// Empty when the team keeps no records or docket cannot say (an older one has no such route).
-pub(super) async fn kept(client: &Client, pod: &str, task: &str) -> Vec<Value> {
-    let Some(sets) = declared(client, pod).await else {
-        return Vec::new();
+/// What [`kept`] read: the sets with rows of this task, and why the proposals could not be read,
+/// when they could not.
+pub(super) struct Kept {
+    /// `[{set, columns, rows, cut}]`, the sets with no row of the task left out.
+    pub sets: Vec<Value>,
+    /// Why the rows of [`PROPOSALS`] could not be read (docket refused, was not reached or sent
+    /// what its API does not describe). A team that wrote proposals the run could not read has
+    /// proposed nothing, and the person is told why; any other set that fails is only logged.
+    pub proposals_unread: Option<String>,
+}
+
+/// The run's `records`: for each set the team declares, the rows of this task. Empty when the team
+/// keeps no records or docket cannot say (an older one has no such route).
+///
+/// A set whose listing carries a `scope` is read by `?task=`, which docket binds as a parameter and
+/// answers in write order; any other (an older docket) by the one `SELECT` it has always taken.
+/// `task=` is never sent without the `scope`: a docket that does not know it would ignore it and
+/// answer every row of the set, other tasks' included.
+pub(super) async fn kept(client: &Client, pod: &str, task: &str) -> Kept {
+    let mut kept = Kept {
+        sets: Vec::new(),
+        proposals_unread: None,
     };
-    let mut kept = Vec::new();
-    for set in sets {
-        let Some(sql) = statement(&set, task) else {
+    let Some(declared) = declared(client, pod).await else {
+        return kept;
+    };
+    for Declared { name: set, by_task } in declared {
+        if !is_id(&set) || task.is_empty() {
             tracing::warn!(set, task, "a record set or task id is not an id; skipped");
             continue;
+        }
+        let statement = statement(&set, task);
+        let rows = if by_task {
+            RowsOf::Task(task)
+        } else {
+            let Some(sql) = statement.as_deref() else {
+                tracing::warn!(set, task, "a record set or task id is not an id; skipped");
+                continue;
+            };
+            RowsOf::Statement(sql)
         };
-        let reply = match client.record_rows(pod, &set, ROWS_KEPT, &sql).await {
-            Ok(reply) => reply,
+        let read = read_set(client, pod, &set, rows).await;
+        let read = match read {
+            Ok(read) => read,
             Err(why) => {
-                tracing::warn!(why, set, "docket could not be reached to read a record set");
+                tracing::warn!(why, set, "a record set could not be read");
+                if set == PROPOSALS {
+                    kept.proposals_unread =
+                        Some(format!("the team's {PROPOSALS} was not read: {why}"));
+                }
                 continue;
             }
-        };
-        if reply.status != 200 {
-            tracing::warn!(
-                set,
-                status = reply.status,
-                why = reply.error(),
-                "docket refused to read a record set"
-            );
-            continue;
-        }
-        let Ok(read) = reply.read::<RecordRows>().inspect_err(|why| {
-            tracing::warn!(why, set, "docket's rows of a record set could not be read")
-        }) else {
-            continue;
         };
         if read.rows.is_empty() {
             continue;
@@ -67,13 +87,35 @@ pub(super) async fn kept(client: &Client, pod: &str, task: &str) -> Vec<Value> {
             Value::Number(count) => count.as_u64().unwrap_or(0) > 0,
             _ => false,
         };
-        kept.push(json!({"set": set, "columns": read.columns, "rows": read.rows, "cut": cut}));
+        kept.sets
+            .push(json!({"set": set, "columns": read.columns, "rows": read.rows, "cut": cut}));
     }
     kept
 }
 
+/// One set's rows, or the sentence saying why docket did not give them.
+async fn read_set(
+    client: &Client,
+    pod: &str,
+    set: &str,
+    rows: RowsOf<'_>,
+) -> Result<RecordRows, String> {
+    let reply = client
+        .record_rows(pod, set, ROWS_KEPT, rows)
+        .await
+        .map_err(|why| format!("docket could not be reached: {why}"))?;
+    if reply.status != 200 {
+        return Err(format!(
+            "docket refused ({}): {}",
+            reply.status,
+            reply.error()
+        ));
+    }
+    reply.read::<RecordRows>()
+}
+
 /// The record set a team writes its proposed items in, one row for each item.
-const PROPOSALS: &str = "tack_proposals";
+pub(super) const PROPOSALS: &str = "tack_proposals";
 
 /// The plan-v1 document the team's rows of `tack_proposals` make, or the reason they make none
 /// (it names the row's `ref`). `None` when the team wrote no such row in this task. `records` is
@@ -169,14 +211,29 @@ fn plan(rows: &[Value]) -> Result<Value, String> {
     serde_json::to_value(plan).map_err(|why| why.to_string())
 }
 
-/// The names of the sets the team declares, or `None` when docket does not say.
-async fn declared(client: &Client, pod: &str) -> Option<Vec<String>> {
+/// One set the team declares, and whether its rows are read by task.
+struct Declared {
+    name: String,
+    /// The listing carried a `scope`: docket reads a task's rows itself.
+    by_task: bool,
+}
+
+/// The sets the team declares, or `None` when docket does not say.
+async fn declared(client: &Client, pod: &str) -> Option<Vec<Declared>> {
     let reply = client.records(pod).await.ok().filter(|r| r.status == 200)?;
     let list: RecordList = reply
         .read()
         .inspect_err(|why| tracing::warn!(why, "docket's record sets could not be read"))
         .ok()?;
-    Some(list.records.into_iter().map(|set| set.name).collect())
+    Some(
+        list.records
+            .into_iter()
+            .map(|set| Declared {
+                by_task: set.scope.is_some(),
+                name: set.name,
+            })
+            .collect(),
+    )
 }
 
 #[cfg(test)]

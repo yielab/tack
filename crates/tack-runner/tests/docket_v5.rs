@@ -544,6 +544,66 @@ async fn probe_reads_a_team_without_the_two_asks_of_an_older_docket() {
 }
 
 #[tokio::test]
+async fn probe_reads_what_each_member_reaches_and_leaves_it_unsaid_for_an_older_docket() {
+    // The roles of the pod, as the constructed `pod-capabilities` gives them: the lead proposes and
+    // only reads, the implementer changes the project and proposes nothing.
+    let reach = |teams: Vec<tack_protocol::execution::TeamReport>| {
+        teams[0]
+            .members
+            .as_ref()
+            .expect("members")
+            .iter()
+            .map(|m| (m.role.clone(), m.can_propose, m.writes_project))
+            .collect::<Vec<_>>()
+    };
+    let fake = pods_fake().await;
+    let scene = scene();
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    assert_eq!(
+        reach(teams),
+        [
+            ("lead".to_owned(), Some(true), Some(false)),
+            ("implementer".to_owned(), Some(false), Some(true)),
+        ]
+    );
+
+    let older = pods_fake().await;
+    older.before_task_scope();
+    let teams = adapter(&older, &scene).probe().await.teams.expect("teams");
+    assert_eq!(
+        reach(teams),
+        [
+            ("lead".to_owned(), None, None),
+            ("implementer".to_owned(), None, None),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn probe_says_whether_the_proposals_are_shared_across_tasks_only_when_the_listing_has_a_scope()
+ {
+    let columns = ["ref", "title"];
+    async fn shared(fake: &FakeDocket) -> Option<bool> {
+        let scene = scene();
+        let teams = adapter(fake, &scene).probe().await.teams.expect("teams");
+        teams[0].proposals_shared_across_tasks
+    }
+    for (scope, expected) in [("pod", Some(true)), ("task", Some(false))] {
+        let fake = pods_fake().await;
+        fake.add_record_set_scoped(POD, "tack_proposals", "Items", &columns, scope);
+        assert_eq!(shared(&fake).await, expected, "scope {scope}");
+    }
+    // A docket before the scope sends none, and so says nothing; so does a team with no proposals.
+    let older = pods_fake().await;
+    older.add_record_set(POD, "tack_proposals", "Items", &columns);
+    older.before_task_scope();
+    assert_eq!(shared(&older).await, None);
+    let other = pods_fake().await;
+    other.add_record_set_scoped(POD, "leads", "People", &columns, "pod");
+    assert_eq!(shared(&other).await, None);
+}
+
+#[tokio::test]
 async fn works_in_is_read_from_workspace_kind_and_from_the_config_dir_without_it() {
     use tack_protocol::execution::WorksIn;
     // (the key is sent, a folder team) -> the key says so; (no key, either team) -> the old reading.
@@ -1969,10 +2029,19 @@ async fn a_run_keeps_the_rows_it_wrote_and_no_other_and_leaves_out_a_set_with_no
             "_task",
             "_session",
             "_step",
+            "_role",
             "_updated_at",
             "email",
             "stage"
         ])
+    );
+    assert!(
+        leads["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["_role"] == "lead"),
+        "the row keeps the role of the hop that wrote it: {leads}"
     );
     let emails: Vec<_> = leads["rows"]
         .as_array()
@@ -1992,15 +2061,55 @@ async fn a_run_keeps_the_rows_it_wrote_and_no_other_and_leaves_out_a_set_with_no
             ("bo@example.test", task.as_str())
         ]
     );
-    // The read is the one statement, bounded.
+    // The listing carries the set's scope, so docket reads the task's rows itself: bounded, and
+    // no statement of Tack's.
     let sent = read_of(&fake, "leads");
     assert!(sent.contains(&("limit".into(), "50".into())), "{sent:?}");
+    assert!(sent.contains(&("task".into(), task)), "{sent:?}");
+    assert!(sent.iter().all(|(key, _)| key != "sql"), "{sent:?}");
+}
+
+#[tokio::test]
+async fn a_docket_whose_listing_has_no_scope_is_read_by_the_statement_and_never_sent_task() {
+    let fake = folder_fake().await;
+    fake.before_task_scope();
+    // The older docket ignores `task=` and would answer these rows too if it were sent.
+    fake.add_record_row(
+        POD,
+        "leads",
+        "task-from-another-run",
+        lead("old@example.test"),
+    );
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![("leads".into(), lead("ana@example.test"))],
+            ..Script::default()
+        },
+    )
+    .await;
+
+    let task = fake.task_ids()[0].clone();
+    let sent = read_of(&fake, "leads");
+    assert!(sent.iter().all(|(key, _)| key != "task"), "{sent:?}");
     assert!(
         sent.contains(&(
             "sql".into(),
             format!("SELECT * FROM leads WHERE _task = '{task}'")
         )),
         "{sent:?}"
+    );
+    let leads = &outcome.terminal_reason["records"][0];
+    assert_eq!(leads["rows"].as_array().map(Vec::len), Some(1), "{leads}");
+    assert_eq!(leads["rows"][0]["email"], "ana@example.test");
+    // Such a docket writes no `_role`, so the row has none and the columns do not list it.
+    assert!(leads["rows"][0].get("_role").is_none(), "{leads}");
+    assert!(
+        !leads["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|column| column == "_role")
     );
 }
 
@@ -4043,9 +4152,16 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
     }
 }
 
+/// The docket of the captures: before the scope of a record set and what a member reaches.
+async fn captured_docket() -> FakeDocket {
+    let fake = FakeDocket::start().await;
+    fake.before_task_scope();
+    fake
+}
+
 #[tokio::test]
 async fn the_fake_answers_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = captured_docket().await;
     let mut seen: Vec<(&str, Value)> = Vec::new();
     let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
 
@@ -4375,7 +4491,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
 
 #[tokio::test]
 async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = captured_docket().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set(
         "saas-notes",
@@ -4414,6 +4530,98 @@ async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_cap
         ask(&fake, "GET", "/pods/saas-notes", None).await.1["repoConfigDir"],
         json!("")
     );
+}
+
+#[tokio::test]
+async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_constructed_files() {
+    let fake = FakeDocket::start().await;
+    fake.add_folder_pod("saas-notes");
+    fake.add_record_set_scoped(
+        "saas-notes",
+        "entries",
+        "Things",
+        &["ref", "title", "amount"],
+        "task",
+    );
+    fake.add_record_row(
+        "saas-notes",
+        "entries",
+        "task-a",
+        json!({"ref": "story-1", "title": "A story", "amount": 12.5}),
+    );
+    let mut wrong = Vec::new();
+    for (name, path) in [
+        ("records-scoped", "/pods/saas-notes/records"),
+        (
+            "records-rows-task",
+            "/pods/saas-notes/records/entries?task=task-a",
+        ),
+        ("pod-capabilities", "/pods/saas-notes"),
+    ] {
+        let (status, answer) = ask(&fake, "GET", path, None).await;
+        assert_eq!(status, 200, "{name}: {answer}");
+        if let Err(why) = same_shape(&answer, &fake_docket::fixture(name), name) {
+            wrong.push(why);
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+    assert_eq!(
+        ask(&fake, "GET", "/pods/saas-notes/records", None).await.1["records"][0]["scope"],
+        "task"
+    );
+    // The rows of one task, and none for a task that wrote none.
+    let (_, rows) = ask(
+        &fake,
+        "GET",
+        "/pods/saas-notes/records/entries?task=task-b",
+        None,
+    )
+    .await;
+    assert_eq!(rows["rows"], json!([]));
+    let (_, rows) = ask(
+        &fake,
+        "GET",
+        "/pods/saas-notes/records/entries?task=task-a",
+        None,
+    )
+    .await;
+    assert_eq!(rows["rows"][0]["_role"], "lead");
+
+    // An empty task, or a task together with a statement, is a 400 in docket's error shape.
+    for (name, path) in [
+        (
+            "records-task-empty",
+            "/pods/saas-notes/records/entries?task=",
+        ),
+        (
+            "records-task-and-sql",
+            "/pods/saas-notes/records/entries?task=task-a&sql=SELECT%20*%20FROM%20entries",
+        ),
+    ] {
+        let (status, answer) = ask(&fake, "GET", path, None).await;
+        assert_eq!(status, 400, "{name}");
+        assert_eq!(answer, fake_docket::fixture(name), "{name}");
+    }
+
+    // A docket before the scope ignores `task=` and answers every row, which is why Tack never
+    // sends it without having seen a `scope`.
+    let older = FakeDocket::start().await;
+    older.before_task_scope();
+    older.add_folder_pod("saas-notes");
+    older.add_record_set("saas-notes", "entries", "Things", &["ref"]);
+    for (task, reference) in [("task-a", "a"), ("task-b", "b")] {
+        older.add_record_row("saas-notes", "entries", task, json!({"ref": reference}));
+    }
+    let (_, rows) = ask(
+        &older,
+        "GET",
+        "/pods/saas-notes/records/entries?task=task-a",
+        None,
+    )
+    .await;
+    assert_eq!(rows["rows"].as_array().map(Vec::len), Some(2));
+    let (_, listing) = ask(&older, "GET", "/pods/saas-notes/records", None).await;
+    assert!(listing["records"][0].get("scope").is_none());
 }
 
 #[tokio::test]
@@ -4704,4 +4912,134 @@ async fn a_row_whose_parent_is_no_row_makes_the_plan_invalid_and_names_its_ref()
         .expect("the engine reads this into attempt.plan_invalid");
     assert_eq!(written, reason);
     let _ = std::fs::remove_dir_all(scratch);
+}
+
+// ── Where the proposals are read from, and whose rows they are ───────────────────
+
+/// The titles of the plan a run staged, or `None` when it staged none.
+fn plan_titles(outcome: &tack_runner::harness::HarnessOutcome) -> Option<Vec<String>> {
+    outcome.terminal_reason.get("plan").map(|plan| {
+        plan["subtasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["title"].as_str().unwrap().to_owned())
+            .collect()
+    })
+}
+
+#[tokio::test]
+async fn a_set_shared_by_the_team_holding_two_tasks_rows_stages_only_this_tasks_rows() {
+    let fake = proposing_fake().await;
+    fake.add_record_row(
+        POD,
+        "tack_proposals",
+        "task-from-another-run",
+        proposal(&[("ref", "old"), ("title", "Old"), ("description", "Old")]).1,
+    );
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![proposal(&[
+                ("ref", "mine"),
+                ("title", "Mine"),
+                ("description", "This run's"),
+            ])],
+            ..Script::default()
+        },
+    )
+    .await;
+    assert_eq!(plan_titles(&outcome), Some(vec!["Mine".to_owned()]));
+    // The listing carried the scope, so docket was asked for this task; no statement was sent.
+    let task = fake.task_ids()[0].clone();
+    let sent = read_of(&fake, "tack_proposals");
+    assert!(sent.contains(&("task".into(), task)), "{sent:?}");
+    assert!(sent.iter().all(|(key, _)| key != "sql"), "{sent:?}");
+}
+
+#[tokio::test]
+async fn a_set_kept_per_task_lets_two_tasks_propose_under_the_same_ref() {
+    let fake = FakeDocket::start().await;
+    fake.add_folder_pod(POD);
+    fake.add_record_set_scoped(
+        POD,
+        "tack_proposals",
+        "Items the team proposes",
+        &["ref", "title", "description"],
+        "task",
+    );
+    fake.add_record_row(
+        POD,
+        "tack_proposals",
+        "task-from-another-run",
+        proposal(&[("ref", "a"), ("title", "Theirs"), ("description", "x")]).1,
+    );
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![proposal(&[
+                ("ref", "a"),
+                ("title", "Mine"),
+                ("description", "y"),
+            ])],
+            ..Script::default()
+        },
+    )
+    .await;
+    assert_eq!(plan_titles(&outcome), Some(vec!["Mine".to_owned()]));
+}
+
+#[tokio::test]
+async fn a_set_shared_by_the_team_gives_a_second_task_the_first_tasks_row_so_it_stages_nothing() {
+    // docket answers `created: false` with the first task's row and writes nothing, so this task
+    // has no row: Tack reads none of another task's, and the person sees no proposal.
+    let fake = proposing_fake().await;
+    fake.add_record_row(
+        POD,
+        "tack_proposals",
+        "task-from-another-run",
+        proposal(&[("ref", "a"), ("title", "Theirs"), ("description", "x")]).1,
+    );
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![proposal(&[
+                ("ref", "a"),
+                ("title", "Mine"),
+                ("description", "y"),
+            ])],
+            ..Script::default()
+        },
+    )
+    .await;
+    assert_eq!(plan_titles(&outcome), None);
+    assert!(outcome.terminal_reason.get("plan_invalid").is_none());
+}
+
+#[tokio::test]
+async fn proposals_docket_refuses_to_give_propose_nothing_and_say_why() {
+    let fake = proposing_fake().await;
+    fake.refuse_set("tack_proposals");
+    let (outcome, _) = run_script(
+        &fake,
+        Script {
+            records: vec![proposal(&[
+                ("ref", "a"),
+                ("title", "Mine"),
+                ("description", "y"),
+            ])],
+            ..Script::default()
+        },
+    )
+    .await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(plan_titles(&outcome), None);
+    let why = outcome.terminal_reason["plan_invalid"]
+        .as_str()
+        .expect("the reason");
+    assert!(
+        why.contains("tack_proposals") && why.contains("400") && why.contains("too slow"),
+        "{why}"
+    );
+    assert!(outcome.terminal_reason.get("records").is_none());
 }

@@ -7,10 +7,12 @@ import {
   agentCapabilityLines,
   agentName,
   agentProfilesApi,
+  memberReachText,
   networkText,
   pickHarness,
   profileAgentText,
   queueText,
+  SHARED_PROPOSALS_TEXT,
   stepText,
   teamOf,
   teamsApi,
@@ -162,7 +164,11 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
                       {(members) => (
                         <ul>
                           <For each={members} fallback={<DisabledLine>No members reported</DisabledLine>}>
-                            {(m) => <li>{m.model ? `${m.role} · ${m.model}` : m.role}</li>}
+                            {(m) => (
+                              <li data-testid={`team-member-${m.role}`}>
+                                {[m.role, m.model, ...memberReachText(m)].filter(Boolean).join(' · ')}
+                              </li>
+                            )}
                           </For>
                         </ul>
                       )}
@@ -226,6 +232,11 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
                       )}
                     </Field>
                   </dl>
+                  <Show when={report()?.proposals_shared_across_tasks === true}>
+                    <p data-testid="team-proposals-shared" class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+                      {SHARED_PROPOSALS_TEXT}
+                    </p>
+                  </Show>
                 </Show>
 
                 <div class="flex flex-wrap items-center gap-2 text-small" style={{ color: 'var(--color-text-secondary)' }}>

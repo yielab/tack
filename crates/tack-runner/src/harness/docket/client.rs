@@ -41,6 +41,15 @@ impl Reply {
     }
 }
 
+/// What picks the rows of a record set a read returns.
+pub(super) enum RowsOf<'a> {
+    /// The rows one task wrote, in write order. Only for a set whose listing carried a `scope`: a
+    /// docket that does not know `task=` ignores it and answers every row of the set.
+    Task(&'a str),
+    /// One read-only `SELECT` over the set, for a docket that cannot read a task's rows itself.
+    Statement(&'a str),
+}
+
 pub(super) struct Client {
     http: reqwest::Client,
     base: String,
@@ -135,19 +144,25 @@ impl Client {
             .await
     }
 
-    /// `GET /pods/<pod>/records/<set>?limit=&sql=`: one read-only `SELECT` over the set.
+    /// `GET /pods/<pod>/records/<set>?limit=` with the one thing that picks the rows: a task's
+    /// own (`task=`, which docket binds as a parameter) or one read-only `SELECT` (`sql=`). Never
+    /// both, and `task=` only for a set whose listing carried a `scope` (see [`RowsOf`]).
     pub async fn record_rows(
         &self,
         pod: &str,
         set: &str,
         limit: u32,
-        sql: &str,
+        rows: RowsOf<'_>,
     ) -> Result<Reply, String> {
         let limit = limit.to_string();
+        let (key, value) = match rows {
+            RowsOf::Task(task) => ("task", task),
+            RowsOf::Statement(sql) => ("sql", sql),
+        };
         self.send(
             Method::GET,
             &["pods", pod, "records", set],
-            &[("limit", limit.as_str()), ("sql", sql)],
+            &[("limit", limit.as_str()), (key, value)],
             None,
         )
         .await

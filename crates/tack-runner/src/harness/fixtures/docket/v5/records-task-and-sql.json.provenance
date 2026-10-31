@@ -1,0 +1,9 @@
+constructed
+route: GET /pods/<pod>/records/<set>
+status: 400
+tack-sends: no
+built-from: the `{"ok": false, "error": <sentence>}` of post-tasks-no-description.json
+docket: docket working tree on 2026-10-31, read and not run (uncommitted; API stays 6)
+source: ~/Sites/rack-cli/internal-docs/design/records-proposals-2026-10-31.md (a gitignored design note)
+date: 2026-10-31
+note: `?task=` together with `?sql=`. Tack never sends both. The status and the shape are the design note's; the sentence is made up. Recapture when docket commits.

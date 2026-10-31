@@ -5175,10 +5175,21 @@ export interface components {
         };
         /** @description One member of a team. */
         TeamMember: {
+            /**
+             * @description Whether the member can propose items for a person to accept. Absent means the harness did
+             *     not say, which is not the same as `false`; no field may carry a harness's own key name.
+             */
+            can_propose?: boolean | null;
             /** @description The model the member runs on. Absent means the harness did not say. */
             model?: string | null;
             /** @description What the member does, in the harness's own word for it, shown as data. */
             role: string;
+            /**
+             * @description Whether the member can change the project's files or run commands in it (`false`: it only
+             *     reads). Absent means the harness did not say, which is not the same as `false`; no field
+             *     may carry a harness's own key name.
+             */
+            writes_project?: boolean | null;
         };
         /**
          * @description How far a team's agents can reach over the network.
@@ -5238,6 +5249,13 @@ export interface components {
             name: string;
             network?: null | components["schemas"]["TeamNetwork"];
             profile: string;
+            /**
+             * @description Whether what the members propose is kept for every task of the team together (`true`: a
+             *     name used in one task cannot be used again in another until the team's list of proposals
+             *     is recreated) or for each task apart (`false`). Absent means the team keeps no list of
+             *     proposals or the harness did not say; no field may carry a harness's own key name.
+             */
+            proposals_shared_across_tasks?: boolean | null;
             queue?: null | components["schemas"]["TeamQueue"];
             /**
              * @description The folders the team's sandbox may read besides its own work, as docket resolved them
