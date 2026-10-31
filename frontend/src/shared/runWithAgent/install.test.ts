@@ -29,4 +29,11 @@ describe('installLine', () => {
     expect(installLine('make deps', null, false)).toBe('No install: this profile runs no commands');
     expect(installLine('make deps', null, true)).toBe('Replaced: make deps');
   });
+
+  it('shows no install line for a folder team, whatever the profile or project prepares; a repository team keeps its line', () => {
+    const check = { ...git, install: { command: 'npm ci', lockfile: 'package-lock.json' } };
+    expect(installLine('make deps', null, true, true)).toBeNull();
+    expect(installLine(null, check, undefined, true)).toBeNull();
+    expect(installLine(null, check, true, false)).toBe('Prepares with npm ci (from package-lock.json)');
+  });
 });

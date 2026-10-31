@@ -11,6 +11,8 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+- The Run with agent dialog says when a profile's team works in its own folder on this computer, not in the repository, and no longer shows a branch or an install line for that team.
+
 ---
 
 ## [0.2.0-beta.1] - 2026-10-30

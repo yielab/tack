@@ -6,7 +6,7 @@ import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
 import { HELP } from '../help/texts';
-import type { AgentProfileSummary } from '../execution';
+import { teamOf, type AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
 import { installLine } from './install';
@@ -121,6 +121,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
     },
     (path) => api.projects.checkFolder(path).catch(() => null),
   );
+  // The board knows each team's `works_in` from the project's autonomy settings;
+  // without them every team is a repository team.
+  const [autonomyLines] = createResource(() => props.projectId, (id) => api.autonomy.get(id).catch(() => null));
+  const worksInFolder = () => {
+    const team = teamOf(props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId));
+    return !!team && autonomyLines()?.teams?.find((t) => t.name === team)?.works_in === 'folder';
+  };
   const tools = () => props.form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
   const toggleTool = (name: string, on: boolean) =>
     props.setForm('toolsText', (on ? [...tools(), name] : tools().filter((t) => t !== name)).join(', '));
@@ -128,6 +135,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
   const automation = () => `/projects/${props.projectId}/settings?tab=automation`;
   const folder = () => tilde(props.project()?.repository ?? '');
   const where = () => {
+    if (worksInFolder()) return "in the team's own folder on this computer, not in this repository";
     const mode = props.project()?.workspace_mode;
     return mode === 'in_place' ? `in ${folder()}`
       : mode === 'clone' ? `in a fresh clone of ${folder()}`
@@ -170,7 +178,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <A href={automation()} class="font-semibold hover:underline" style={LINK}>{profileName()}</A>
         {' · '}
         <A href={automation()} class="hover:underline" style={LINK}>{props.modelLabel()}</A>
-        <Show when={props.project()?.repository}>
+        <Show when={props.project()?.repository || worksInFolder()}>
           {' · '}
           <A href={automation()} class="hover:underline" style={LINK}>{where()}</A>
         </Show>
@@ -236,9 +244,11 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
       <Show when={props.project()}>
         {(project) => (
-          <p data-testid="run-dialog-install" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            {installLine(project().prepare_command, folderCheck(), props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.runs_commands)}
-          </p>
+          <Show when={installLine(project().prepare_command, folderCheck(), props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.runs_commands, worksInFolder())}>
+            {(line) => (
+              <p data-testid="run-dialog-install" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{line()}</p>
+            )}
+          </Show>
         )}
       </Show>
 

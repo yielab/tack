@@ -101,6 +101,8 @@ function mockFetch(
     brief?: Record<string, unknown>;
     /** While `down` is true the profiles list answers 500. */
     profilesFailing?: { down: boolean };
+    /** The project's autonomy settings: each team's line, with `works_in`. */
+    autonomy?: { teams: unknown[] };
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -137,6 +139,7 @@ function mockFetch(
       const resolved = opts.resolved ?? { profile_id: fallback, profile_source: fallback ? 'project_default' : null };
       return new Response(JSON.stringify({ text: opts.agentContext ?? 'Fix login bug\n\nThe brief.', limits: opts.limits ?? {}, limit: { tokens: null, source: 'none', enforced_by: 'measured', sentence: `Server says ${new URL(url, 'http://x').search}` }, ...resolved }), { status: 200 });
     }
+    if (url.endsWith('/autonomy')) return new Response(JSON.stringify(opts.autonomy ?? {}), { status: 200 });
     if (url.includes('/projects/')) return new Response(JSON.stringify(project), { status: 200 });
     if (url.endsWith('/executions') && init?.method === 'POST') {
       lastCreateBody = JSON.parse(String(init.body));
@@ -576,6 +579,31 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-install"]')?.textContent).toBe('No install: this profile runs no commands');
+  });
+
+  it('a profile whose team works in a folder says so in place of the branch, and installs nothing', async () => {
+    const folderProfile = { ...PROFILE, tool_policy: { docket: { team: 'saas-content' } } };
+    const teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder' }];
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [folderProfile], autonomy: { teams } });
+    await flush();
+    await flush();
+    const summary = document.querySelector('[data-testid="run-summary"]')!;
+    expect(summary.textContent).toContain("in the team's own folder on this computer, not in this repository");
+    expect(summary.textContent).not.toContain('on a new branch of');
+    expect(document.querySelector('[data-testid="run-dialog-install"]')).toBeNull();
+  });
+
+  it('pressing a profile with no team puts the branch and the install line back', async () => {
+    const folderProfile = { ...PROFILE, tool_policy: { docket: { team: 'saas-content' } } };
+    const teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder' }];
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [folderProfile, PROFILE_2], autonomy: { teams } });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain("in the team's own folder");
+    (Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Fixer') as HTMLButtonElement).click();
+    await flush();
+    expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain('on a new branch of ~/src/app');
+    expect(document.querySelector('[data-testid="run-dialog-install"]')).not.toBeNull();
   });
 
   it('shows a combined machine/group picker, by name, when more than one target exists', async () => {
