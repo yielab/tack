@@ -240,6 +240,7 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `task-diff-unknown` | `GET /tasks/<pod>/<id>/diff` | 404 | captured |
 | `task-done` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-failed-after-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
+| `task-failed-base-ref-folder` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-failed-hop` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-needs-human` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-pipeline` | `GET /tasks/<pod>/<id>` | 200 | captured |

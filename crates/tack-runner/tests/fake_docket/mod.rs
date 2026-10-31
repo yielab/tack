@@ -159,6 +159,14 @@ fn request_keys() -> HashMap<String, KeySpec> {
             required.retain(|key| !optional.contains(key));
         }
     }
+    // A task to a team that works in a folder carries no `baseRef` (docket refuses one), and every
+    // capture so far is of a team in a repository.
+    if let Some(Some(required)) = routes
+        .get_mut("POST /tasks/<pod>")
+        .map(|spec| &mut spec.required)
+    {
+        required.remove("baseRef");
+    }
     routes
 }
 
@@ -1116,8 +1124,22 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     }
     state.next += 1;
     let id = format!("task-{:04x}", state.next);
-    let script = state.script.clone();
+    let mut script = state.script.clone();
     let folder = team.folder || script.no_worktree;
+    // docket claims a task posted with a `baseRef` to a team in a folder and settles it `failed`
+    // before any hop: there is no repository to cut a worktree from.
+    if team.folder
+        && let Some(base_ref) = body["baseRef"].as_str().filter(|base| !base.is_empty())
+    {
+        script = Script {
+            status: "failed".to_owned(),
+            failure_kind: Some("base_ref".to_owned()),
+            reason: format!(
+                "pod '{pod}' works in a folder (workspaceKind workdir); baseRef '{base_ref}' applies only to a pod with a codebase"
+            ),
+            ..Script::default()
+        };
+    }
     let branch = format!("docket/{pod}/{id}");
     let mut base_commit = String::new();
     if let Some(repository) = state.repository.clone().filter(|_| !folder) {
@@ -1361,6 +1383,9 @@ fn task_record(task: &Task) -> Value {
         }
         "done" => "task-done",
         "blocked" if task.script.blocked_reason.is_some() => "task-blocked-input-expired",
+        "failed" if task.folder && task.script.failure_kind.as_deref() == Some("base_ref") => {
+            "task-failed-base-ref-folder"
+        }
         "failed" | "blocked" if task.escalation.is_some() => "task-failed-after-escalation",
         _ => "task-failed-pipeline",
     });

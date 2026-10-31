@@ -1600,6 +1600,91 @@ async fn a_folder_teams_done_task_succeeds_with_its_last_summary_and_nothing_to_
     assert_eq!(reason["steps"].as_array().map(Vec::len), Some(3));
 }
 
+/// The body posted for one run on `fake`, whose project says `npm ci` is the install.
+async fn body_posted(fake: &FakeDocket) -> (Value, tack_runner::harness::HarnessOutcome) {
+    let scene = scene();
+    let mut attempt = spec(&scene, "attempt-1", 1);
+    attempt.work.request.repository.prepare = Some(PrepareSetting::Replace {
+        command: "npm ci".to_owned(),
+    });
+    attempt.work.request.metadata = json!({"rework_base": "docket/saas-dev/task-previous"});
+    git(
+        &scene.repository,
+        &["branch", "docket/saas-dev/task-previous", "main"],
+    );
+    let (outcome, _) = run_to_end(&adapter(fake, &scene), &attempt).await;
+    let posted = fake.requests_to("POST", "/tasks/saas-dev");
+    assert_eq!(posted.len(), 1);
+    (posted[0].body.clone(), outcome)
+}
+
+#[tokio::test]
+async fn a_task_to_a_folder_team_carries_no_base_ref_and_no_prepare() {
+    // A folder team: neither key, so docket cuts no worktree and the run ends done.
+    let (body, outcome) = body_posted(&folder_fake().await).await;
+    assert!(
+        body.get("baseRef").is_none() && body.get("prepare").is_none(),
+        "{body}"
+    );
+    assert_eq!(
+        outcome.terminal_state,
+        AttemptState::Succeeded,
+        "{:?}",
+        outcome.terminal_reason
+    );
+    assert_eq!(outcome.terminal_reason["outside_repository"], json!(true));
+
+    // A team with a repository keeps both, the rework base as the ref.
+    let (body, _) = body_posted(&pods_fake().await).await;
+    assert_eq!(body["baseRef"], json!("docket/saas-dev/task-previous"));
+    assert_eq!(body["prepare"], json!("npm ci"));
+
+    // A docket that sends no `repoConfigDir` keeps both too, folder team or not.
+    for fake in [pods_fake().await, folder_fake().await] {
+        fake.without_records();
+        let (body, _) = body_posted(&fake).await;
+        assert!(
+            body.get("baseRef").is_some() && body.get("prepare").is_some(),
+            "{body}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_base_ref_as_docket_does() {
+    let fake = folder_fake().await;
+    let mut body = request_file("post-task-created");
+    body["baseRef"] = json!("0123abc");
+    let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(body.clone())).await;
+    assert_eq!(status, 201, "{created}");
+    let id = created["task"].as_str().unwrap();
+    let (_, record) = ask(&fake, "GET", &format!("/tasks/saas-dev/{id}"), None).await;
+    assert_eq!(record["status"], json!("failed"));
+    assert_eq!(record["failureKind"], json!("base_ref"));
+    assert_eq!(
+        record["reason"],
+        json!(
+            "pod 'saas-dev' works in a folder (workspaceKind workdir); baseRef '0123abc' applies only to a pod with a codebase"
+        )
+    );
+    assert!(record.get("worktree").is_none() && record["hops"] == json!([]));
+    same_shape(
+        &record,
+        &fake_docket::fixture("task-failed-base-ref-folder"),
+        "record",
+    )
+    .expect("the fake answers with the keys of the fixture");
+
+    // Without a `baseRef` the same team takes the task.
+    body.as_object_mut().unwrap().remove("baseRef");
+    body["idempotencyKey"] = json!("again");
+    let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(body)).await;
+    assert_eq!(status, 201, "{created}");
+    let id = created["task"].as_str().unwrap();
+    let (_, record) = ask(&fake, "GET", &format!("/tasks/saas-dev/{id}"), None).await;
+    assert_eq!(record["status"], json!("done"));
+}
+
 #[tokio::test]
 async fn a_repository_teams_done_task_without_a_worktree_still_fails() {
     let fake = pods_fake().await;
