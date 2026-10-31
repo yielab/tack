@@ -26,8 +26,8 @@ anyone else's server with your code or your model credentials.
 
 So: Tack is a project manager (Kanban/Scrum/phase workflows, dependencies, timelines,
 per-project vocabulary) and an agent execution fleet, in one Rust binary with an
-embedded SQLite file. No accounts, no cloud, no Docker required (though there's a
-Docker image if you want one). `curl | sh` then `tack serve --with-runner` and you have
+embedded SQLite file. No accounts, no cloud, no Docker required (there's a
+Dockerfile if you want one). `curl | sh` then `tack serve --with-runner` and you have
 a board that can dispatch a card to Claude Code, Codex, docket, or opencode running on
 your own machine, with its own credentials, in an isolated workspace.
 
@@ -39,17 +39,16 @@ mid-attempt and the board doesn't retry blindly — it shows `needs_operator`, w
 duplicate execution, and an operator has to make an explicit decision to requeue it.
 There's a 35-second recording of the whole sequence — kill, no duplicate, explicit
 requeue, success — made from an actual downloaded release binary running in Docker, not
-a staged dev build. It's in the README's "Durable by design" section:
+a staged dev build. It's in the repository, docs/screenshots/recovery-demo.gif:
 <https://github.com/yielab/tack>.
 
 What it's not, so nobody has to find out the hard way: single shared bearer token, no
-per-user accounts; no outbound notifications (no email, nothing — you have to look at
-the board); English-only UI; one contributor (me); this has never had an outside user.
-Full list is in the README's "Known limitations" section, and I'd rather list it there
-than have someone hit it first.
+per-user accounts; no email notifications (signed outbound webhooks exist, nothing
+else — otherwise you have to look at the board); English-only UI; one contributor (me);
+this has never had an outside user.
 
-18.4 MiB release binary (UI embedded, measured in CI), 1,505 Rust tests, MIT licensed. Would
-genuinely like the "what's missing" feedback more than the "cool" feedback — I have a
-`good first issue` label seeded with real gaps (i18n scaffolding, SMTP notifications,
-time tracking, in-UI diff review of what an agent changed) if anyone wants to poke at
-the code instead of just the pitch.
+The release binary is under 25 MB with the UI embedded (CI enforces that budget), there are
+over 1,600 Rust tests, and it's MIT licensed. Would genuinely like the "what's missing"
+feedback more than the "cool" feedback — I have a `good first issue` label seeded with real
+gaps (i18n scaffolding, SMTP notifications, time tracking, a new CLI output format) if
+anyone wants to poke at the code instead of just the pitch.

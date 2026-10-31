@@ -1,6 +1,6 @@
 # Phase 81: what the 2026-10-26 audit found
 
-**Status: proposed 2026-10-26.** No ADR: nothing here changes a decision. The one rule below is
+**Status: built 2026-10-27 (every card), merged into `develop` on 2026-10-31 (PR #66).** Proposed 2026-10-26. No ADR: nothing here changes a decision. The one rule below is
 already true today and is written down so no card breaks it.
 
 An audit of the tree with Phases 79 and 80 built (tests, structure, code design, screens, and the

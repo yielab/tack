@@ -1,6 +1,6 @@
 # Phase 77: the agent's copy is prepared, and every run has a limit learnt from its kind
 
-**Executes:** [ADR 0027](../adr/0027-whoever-makes-the-working-copy-prepares-it.md) (accepted
+**Executes:** [ADR 0027](../../adr/0027-whoever-makes-the-working-copy-prepares-it.md) (accepted
 2026-10-19), Tack's side. docket's side is docket's ADR 0029 (D-65), planned and built by docket;
 Tack builds against its provisional fields and sends them only when docket says it accepts them.
 

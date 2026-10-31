@@ -1,6 +1,6 @@
 # Plan: Phase 75 — limits in tokens, and a lean context
 
-**Status: opened 2026-10-18; Rounds 1 to 3 (A, G, B, D, E, V, L) in `develop` the same day.** Serves ADR 0024 (`docs/adr/0024-limits-in-tokens-and-a-lean-context.md`).
+**Status: built; every round is in `develop` (2026-10-18). Opened 2026-10-18.** Serves ADR 0024 (`docs/adr/0024-limits-in-tokens-and-a-lean-context.md`).
 Written against `develop` at `973dcd33`. Every path and line below was read that day; re-run
 `rg -n` before trusting a line number.
 
@@ -77,7 +77,7 @@ One agent, one task, one branch from `develop` named `phase75/<id>`; the brief i
 section of this file plus these lines, and nothing else:
 
 ```
-Task <id> from docs/plans/phase-75.md. Read that section, its "The rule for every task" table, and the files it lists, nothing wider.
+Task <id> from docs/closed-cycles/plans/phase-75.md. Read that section, its "The rule for every task" table, and the files it lists, nothing wider.
 The ADR is docs/adr/0024-limits-in-tokens-and-a-lean-context.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Fix the fact in its owner and make the other callers read it; never add a second copy of a rule.

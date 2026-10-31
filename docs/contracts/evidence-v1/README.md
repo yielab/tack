@@ -8,7 +8,7 @@ uploads each through the ordinary artifact manifest-then-content path:
 |---|---|---|---|
 | `changes.patch` | `patch` | `text/x-diff` | `git diff --cached --binary <base_revision>`, cut at 8 MiB (`patch.truncated`) |
 | `files.json` | `files` | `application/json` | `[{path, op}]`, `op` one of `added`, `modified`, `deleted`, `renamed` |
-| `evidence.json` | `evidence` | `application/json` | the manifest below; `schema.json` is its shape |
+| `evidence.json` | `evidence` | `application/json` | the manifest; `schema.json` is its shape |
 
 Capture first runs `git add -A` in the disposable clone (excluding `.tack-runner/` and the
 runner's own markers), which is how untracked files and deletions enter one diff. A workspace

@@ -10,7 +10,7 @@
 > borrador, no lo que se va a construir. Lo que manda es [`phase-79.md`](phase-79.md), §7.
 
 Esta guía acompaña al plan operativo [`phase-79.md`](phase-79.md) y a la decisión
-[ADR 0028](../adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md). El plan dice *qué
+[ADR 0028](../../adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md). El plan dice *qué
 comandos correr*. Esta guía explica *por qué* cada paso existe, qué concepto de arquitectura,
 de Rust o de ingeniería con IA hay detrás, y cómo saber que quedó bien. Si ya conoces los
 conceptos, salta al plan; si estás aprendiendo, lee esto primero y ten el plan al lado.

@@ -1,8 +1,9 @@
 # Closed cycles
 
-Nothing under this directory is current. The live plans are in `docs/plans/`: Phase 73
-and the two whose maintainer items are still open (Phases 65 and 69). The roadmap,
-`docs/book/src/roadmap.md`, points at them.
+Nothing under this directory is current. The one live plan is `docs/plans/phase-76.md`
+(future, not planned); the per-harness measurements in `docs/plans/measurements/` stay beside
+it because the frontend cites them. The roadmap, `docs/book/src/roadmap.md`, says what is
+delivered and what is open.
 
 - `boards/part-1.md`, `part-2.md`, `part-3.md` — the full board sections for the closed
   Agent-Factory Control Center and Agnostic Control Plane cycles (Phases 33–49), moved
@@ -26,9 +27,12 @@ and the two whose maintainer items are still open (Phases 65 and 69). The roadma
   prill run, moved verbatim 2026-10-17. Their plan links point at `plans/` below.
 - `plans/` — a plan whose phase has landed or whose design was replaced: the harness
   maintainability audit, the human-maintainability (Phase 63) specification, the
-  agnostic control plane plan whose bridge Phase 64 retired, and Phase 64's own two
-  plans (`phase-64.md`, `harnesses.md`), whose open rows became Phase 65's tasks; and the
-  plans of Phases 66, 67, 68, 70, 71 and 72, moved 2026-10-17 once nothing in them was open.
+  agnostic control plane plan whose bridge Phase 64 retired, Phase 64's own two
+  plans (`phase-64.md`, `harnesses.md`), and the plans of Phases 65–75 and 77–82. The
+  two Spanish learning guides to Phase 79 (`phase-79-guia.md`, `phase-79-desde-cero.md`) are
+  here too: they teach the first draft of that plan, with ports and in-memory fakes that
+  were not built, so `phase-79.md` is the plan that counts. Only Phase 76 is still in
+  `docs/plans/`.
 - `handoffs/` — the per-card handoffs for every closed cycle, moved out of the old
   `docs/agent-handoffs/`: `part-3/` through `part-7/`, `part-viii/`, `part-ix/`, plus
   `deps/` and `test-architecture/`. `docs/agent-handoffs/` no longer exists anywhere in

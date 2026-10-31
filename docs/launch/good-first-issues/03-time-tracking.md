@@ -5,7 +5,7 @@
 ## The gap, checked directly
 
 An item already carries `estimate: Option<f64>` and `estimate_unit: EstimateUnit`
-(`crates/tack-core/src/models.rs:105-106`) — story points, hours, days, or a custom
+(`Item` in `crates/tack-core/src/models.rs`) — story points, hours, days, or a custom
 unit. It also carries `started_at`/`completed_at` timestamps. What it does not have is
 anywhere to record *actual* time spent working on it: `grep -rn 'time_spent'
 crates/ frontend/src` finds nothing anywhere in the schema, the API, or the UI. There is

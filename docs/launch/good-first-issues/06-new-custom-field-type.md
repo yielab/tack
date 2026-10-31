@@ -10,7 +10,7 @@ CustomFieldType`): `Text`, `Number`, `Date`, `Boolean`, `Select`, `MultiSelect`,
 (`crates/tack-core/src/models.rs:731` onward) — e.g. `Url` requires the string start
 with `http://`/`https://`, `Date` accepts `YYYY-MM-DD` or RFC3339. This is one of the
 most self-contained extension points in the codebase: a new variant touches one enum,
-one validation match arm, and one serialization mapping.
+one validation match arm, and one string mapping.
 
 ## Where to start
 
@@ -26,13 +26,13 @@ one validation match arm, and one serialization mapping.
    `Url` arm at line 739 is a good, complete example of the shape: match on the JSON
    value's shape, return a specific `Err(String)` naming the field and what's actually
    expected — not a generic "invalid value").
-4. Add its string mapping in `crates/tack-db/src/repo/custom_fields.rs` — there are
-   **three** separate match arms across two different functions that all need the new
-   variant: one serialize-to-string arm, and two independent deserialize-from-string
-   arms in two different row-mapping functions elsewhere in the same file. Run
-   `grep -n '"email" => CustomFieldType::Email' crates/tack-db/src/repo/custom_fields.rs`
-   first — it will show you all three (well, both deserialize ones plus the reverse
-   arm nearby) so you don't add the variant in one place and miss the others.
+4. Add its string mapping in `crates/tack-db/src/repo/custom_fields.rs` — the match in
+   `create_field` that turns a `CustomFieldType` into the string stored in the
+   `field_type` column. Reading a row back goes through the enum's serde names
+   (`snake_case`, via `decode::variant`), so no second mapping is needed there. Then
+   `grep -rn 'multi_select' crates/` lists the places that spell out the type names for
+   users (the CLI help in `crates/tack-cli/src/cmd/entities.rs` and the project-file
+   docs in `crates/tack-core/src/outline.rs` and `outline/bundle.rs`); add yours there.
 5. Add the type to the frontend's custom-field editor UI (`grep -rln
    'CustomFieldType\|custom_field' frontend/src/features/` to find the current picker —
    confirm the exact file yourself, since this is exactly the kind of location that
