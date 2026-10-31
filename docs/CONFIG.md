@@ -1,9 +1,11 @@
 # Configuration Reference
 
 Every environment variable and TOML key of the API server and the runner, one table per domain.
-This file is the single reference for them. Use it when you need the exact name, default or effect
-of a setting; the [Configuration page](https://yielab.github.io/tack/admin-guide/configuration.html)
-explains how the settings are loaded.
+This file is the single reference for them; the book renders it as the
+[Configuration Reference](https://yielab.github.io/tack/admin-guide/configuration-reference.html). Use it
+when you need the exact name, default or effect of a setting; the
+[Configuration page](https://yielab.github.io/tack/admin-guide/configuration.html) explains how the
+settings are loaded.
 
 ## The API server
 
@@ -19,7 +21,7 @@ The server reads `tack.toml` from its working directory, then environment variab
 | `TACK_LOG_FILE` | _(none)_ | Write logs to this file **in addition to** stdout, in the same format `TACK_LOG_JSON` selects. Missing parent directories are created; if the directory cannot be created the server logs to stdout only rather than refusing to start. `tack service install` and the desktop app both set this so logs survive without a service manager attached |
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
 | `TACK_API_TOKEN` | _(generated)_ | Bearer token — requires `Authorization: Bearer <token>` (or the `tack_session` cookie) on all API requests. Left unset on a loopback bind, the server reads or creates `api-token` beside the database file (see below) |
-| `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the startup refusal to bind a non-loopback address with no `TACK_API_TOKEN` set Loopback binds are unaffected either way. Off by default: this widens who can reach an unauthenticated API, so it must be a deliberate choice |
+| `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the startup refusal to bind a non-loopback address with no `TACK_API_TOKEN` set. Loopback binds are unaffected either way. Off by default: this widens who can reach an unauthenticated API, so it must be a deliberate choice |
 | `TACK_ALLOWED_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080,http://localhost:3210,http://127.0.0.1:3210,https://tack.test` | Comma-separated allow-list of browser origins. Setting it replaces the default list. It gates CORS, and it gates the board's live WebSocket upgrade for any request whose `Origin` is not a loopback host — a bind to a loopback address (the default) additionally authorizes any loopback-hosted `Origin` on its own, so a local UI on any port (Vite's `5173` dev server included) receives live events with no configuration; a non-loopback bind, or a UI served from a non-loopback origin, still needs its origin listed here or the handshake is refused before it completes |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
 | `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL — when set, POSTs JSON events on item create/update/delete, sprint status changes, and due-soon alerts |
@@ -52,11 +54,11 @@ With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from t
 
 Every `tack` subcommand other than `serve`, `service`, `runner start` and `runner doctor` talks to a
 running server over HTTP and never opens the database. It resolves the server's base URL from
-`--base-url`, then `TACK_API_URL`, then `~/.tackrc`, then `http://127.0.0.1:3210`.
+`--api-url`, then `TACK_API_URL`, then `~/.tackrc`, then `http://127.0.0.1:3210`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TACK_API_URL` | `http://127.0.0.1:3210` | Base URL of the server the CLI talks to, unless `--base-url` overrides it |
+| `TACK_API_URL` | `http://127.0.0.1:3210` | Base URL of the server the CLI talks to, unless `--api-url` overrides it |
 | `TACK_API_TOKEN` | _(none)_ | Bearer token the CLI sends, when the server it talks to requires one. Same variable the server reads to *require* a token — one value, two ends of the same connection |
 
 ## The runner
@@ -84,9 +86,8 @@ The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bu
 
 `tack serve --with-runner` (or `TACK_LOCAL_RUNNER_ENABLE=1`) runs the runner role as a
 task inside the same process as the server, speaking runner-v1 over loopback HTTP
-exactly like a remote runner would. This is the fewest-steps way to see
-a real agent attempt run against your own board: no second binary, no `tack runner
-enroll` call, no token to copy anywhere.
+exactly like a remote runner would. It needs no second binary, no `tack runner
+enroll` call and no token to copy.
 
 - **Gate.** Off by default. `TACK_LOCAL_RUNNER_ENABLE` (table above) and `--with-runner`
   are equivalent; either turns it on. Refused outright — before any socket or database
@@ -123,10 +124,8 @@ enroll` call, no token to copy anywhere.
   cwd-relative `.tack-runner` — it has no database or `storage_dir` to scope against).
   Holds the runner's credential (`session.json`) and its attempt journal, both written
   owner-only (`session.json` mode `0600`; the directory itself and journal entries
-  `0700`/`0600`). An install upgrading from before this default existed has its already-
-  enrolled state moved there automatically, once, the first time the new directory is
-  found missing and the old one is not — never the reverse, and never once the new
-  directory already exists.
+  `0700`/`0600`). State left in the old cwd-relative default is moved there once, when the new
+  directory is missing and the old one exists; an existing new directory is never overwritten.
 - **Agent logins — Tack holds no model key.** Each agent signs in and reaches its model
   with its own tools. Tack has no model key, endpoint or catalog; it does not read, store,
   forward or proxy what an agent finds, embedded or standalone. There is no `[provider.*]`

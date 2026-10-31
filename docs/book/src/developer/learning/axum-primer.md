@@ -70,6 +70,8 @@ pub async fn create_item(
 }
 ```
 
+`State` comes from axum, but `Json`, `Path` and `Query` are imported from `crate::extract`, Tack's own versions. They behave the same, and when a request cannot be read they refuse with an `ApiError`, so even a malformed body gets the API's JSON error envelope.
+
 Compare to the same handler in other frameworks:
 
 **Express:**

@@ -32,22 +32,22 @@ This comes at a cost: you write more SQL. The payoff: you have full SQL power �
 
 ## The Repository pattern
 
-All database operations live in `crates/tack-db/src/repo/`. The structure:
+All database operations live in `crates/tack-db`, the only crate that names `sqlx`. The structure:
 
 ```
 crates/tack-db/src/
-├── lib.rs           # declares Repository struct; re-exports all repo modules
+├── lib.rs           # init_pool; re-exports Repository and StoreError
+├── error.rs         # StoreError
+├── decode.rs        # reads a stored id, instant, enum or JSON value back, or fails with StoreError::Corrupt
 ├── migrations.rs    # the migrations, embedded as strings
-└── repo/
-    ├── items.rs
-    ├── projects.rs
-    ├── sprints.rs
-    ├── boards.rs
-    ├── comments.rs
-    ├── dependencies.rs
-    ├── roles.rs
-    ├── attachments.rs
-    └── ...
+├── repo.rs          # declares the Repository struct
+├── repo/            # commands: one file or directory per aggregate
+│   ├── items.rs
+│   ├── projects.rs
+│   ├── sprints.rs
+│   ├── execution/
+│   └── ...
+└── queries/         # read models: one file per table
 ```
 
 The `Repository` struct is a thin wrapper around `SqlitePool`:
@@ -56,14 +56,9 @@ The `Repository` struct is a thin wrapper around `SqlitePool`:
 pub struct Repository {
     pool: SqlitePool,
 }
-
-impl Repository {
-    pub fn new(pool: SqlitePool) -> Self { Self { pool } }
-    pub fn pool(&self) -> &SqlitePool { &self.pool }
-}
 ```
 
-All database functions are methods on `Repository`, defined in `impl Repository` blocks spread across the repo modules. There is no object instance with mutable state — the pool handles connection management internally.
+All commands are methods on `Repository`, defined in `impl Repository` blocks spread across the `repo/` modules. There is no object instance with mutable state — the pool handles connection management internally. The pool is reachable from outside the crate only through `Repository::pool()` behind the `raw-pool` feature, which `tack-test-support` alone enables. Every method fails with `StoreError` (`NotFound`, `Conflict`, `Corrupt` or `Sql`), so no `sqlx` type crosses the crate's edge.
 
 Compare to patterns you know:
 
@@ -78,19 +73,16 @@ Compare to patterns you know:
 ```rust
 // From crates/tack-db/src/repo/items.rs
 
-pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
-    let row = sqlx::query_as::<_, ItemRow>(
-        "SELECT id, project_id, parent_id, title, description, item_type,
-                status, priority, estimate, estimate_unit, tags, sort_order,
-                sprint_id, assignee, due_date, started_at, completed_at,
-                created_at, updated_at
-         FROM items WHERE id = ?"
-    )
+pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, StoreError> {
+    let columns = item_columns("");
+    sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+        "SELECT {columns} FROM items WHERE id = ?"
+    )))
     .bind(id.to_string())
     .fetch_optional(self.pool())
-    .await?;
-
-    Ok(row.map(|r| r.into_item()))
+    .await?
+    .map(ItemRow::into_item)
+    .transpose()
 }
 ```
 
@@ -99,8 +91,9 @@ Breaking this down:
 - `sqlx::query_as::<_, ItemRow>(sql)` — execute SQL and map each row to `ItemRow` (a raw DB struct with string fields)
 - `.bind(id.to_string())` — bind the `?` placeholder; UUIDs are stored as TEXT in SQLite, so `.to_string()` converts before binding
 - `fetch_optional` — returns `Option<ItemRow>`: `Some(row)` if found, `None` if not, `Err` if the query itself fails
-- `.await?` — await the async operation; `?` propagates `sqlx::Error` up to the caller
-- `.map(|r| r.into_item())` — convert the raw DB row into the domain `Item` struct
+- `.await?` — await the async operation; `?` turns a `sqlx::Error` into `StoreError::Sql` and returns it to the caller
+- `.map(ItemRow::into_item).transpose()` — convert the raw DB row into the domain `Item` struct; the conversion can fail, so the `Option<Result<..>>` is flipped into a `Result<Option<..>>`
+- `item_columns("")` — the column list is written once (`ITEM_COLUMNS`), and `AssertSqlSafe` marks a query string built from such a constant
 
 The three fetch methods:
 
@@ -110,7 +103,7 @@ The three fetch methods:
 | `fetch_one` | `T` | Exactly one row expected; errors if missing |
 | `fetch_optional` | `Option<T>` | Zero or one row; missing is a valid state |
 
-**UUIDs as TEXT**: SQLite has no native UUID type. Tack stores them as TEXT (`id.to_string()` on write, `Uuid::parse_str(&row.id)` on read). The conversion is handled in the `ItemRow::into_item()` method that converts raw row strings into typed domain structs.
+**UUIDs as TEXT**: SQLite has no native UUID type. Tack stores them as TEXT (`id.to_string()` on write, `decode::uuid(table, column, &text)` on read). `ItemRow::into_item()` converts raw row strings into typed domain structs through `decode`, so a stored value that cannot be read becomes `StoreError::Corrupt { table, column }` instead of a panic or a silent default.
 
 ---
 
@@ -123,37 +116,27 @@ pub async fn list_items(
     &self,
     project_id: Uuid,
     filter: &ItemFilter,
-) -> Result<Vec<Item>, sqlx::Error> {
-    let mut query = String::from(
-        "SELECT ... FROM items WHERE project_id = ?"
-    );
-    let mut binds: Vec<String> = vec![project_id.to_string()];
+) -> Result<Vec<ItemCard>, StoreError> {
+    // The WHERE clause and its bound values come from the filter's optional fields.
+    let (where_clause, binds) = item_filter_clause(project_id, filter);
+    let columns = card_columns();
+    let mut query =
+        format!("SELECT {columns} FROM items{where_clause} ORDER BY sort_order ASC");
 
-    if let Some(ref status) = filter.status {
-        query.push_str(" AND status = ?");
-        binds.push(status.clone());
-    }
-    if let Some(ref priority) = filter.priority {
-        query.push_str(" AND priority = ?");
-        binds.push(priority.to_string());
-    }
-    // ... more optional filters ...
+    let per_page = filter.effective_per_page() as i64;
+    let page = filter.effective_page() as i64;
+    query.push_str(&format!(" LIMIT {per_page} OFFSET {}", (page - 1) * per_page));
 
-    let per_page = filter.per_page.unwrap_or(100).min(500) as i64;
-    let page = filter.page.unwrap_or(1).max(1) as i64;
-    let offset = (page - 1) * per_page;
-    query.push_str(&format!(" LIMIT {per_page} OFFSET {offset}"));
-
-    let mut q = sqlx::query_as::<_, ItemRow>(&query);
+    let mut q = sqlx::query_as::<_, ItemCardRow>(AssertSqlSafe(query));
     for bind in &binds {
         q = q.bind(bind);
     }
     let rows = q.fetch_all(self.pool()).await?;
-    Ok(rows.into_iter().map(|r| r.into_item()).collect())
+    rows.into_iter().map(ItemCardRow::into_card).collect()
 }
 ```
 
-This dynamic approach is necessary because `sqlx`'s compile-time checking only works for static string literals. For dynamic queries you build the SQL string at runtime and fall back to runtime checking. The tradeoff is acceptable here — the base SQL is always fixed; only the `WHERE` clauses vary.
+The SQL text is assembled at runtime. Only fixed fragments are concatenated into it (the column list, the `WHERE` clauses, two integers); every value from a caller is bound with `?`. The base SQL is always fixed and only the `WHERE` clauses vary.
 
 ---
 
@@ -165,37 +148,22 @@ Tack's migrations are embedded as constant string arrays in `crates/tack-db/src/
 // From crates/tack-db/src/migrations.rs
 
 pub async fn run_all(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    // Create the tracking table if it does not exist
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS _migrations (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE,
-            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )"
-    )
-    .execute(pool).await?;
+    ensure_migrations_table(pool).await?;
+    let migrations = all_migrations();                  // the ordered list, each with a name and its statements
+    verify_applied_migration_invariant(pool, &migrations).await?;   // the applied history matches by name and checksum
+    create_pre_upgrade_backup_if_needed(pool, &migrations).await?; // VACUUM INTO before a table rebuild or drop
+    apply_migrations(pool, &migrations).await?;        // each pending one in its own transaction
+    Ok(())
+}
 
-    let migrations: Vec<(&str, &[&str])> = vec![
-        ("001_workspaces",       &MIGRATION_001[..]),
-        ("002_projects",         &MIGRATION_002[..]),
-        ("003_sprints",          &MIGRATION_003_SPRINTS[..]),
-        ("004_items",            &MIGRATION_004_ITEMS[..]),
-        ("005_dependencies",     &MIGRATION_005[..]),
+fn all_migrations() -> Vec<Migration> {
+    vec![
+        ordinary("001_workspaces", &MIGRATION_001[..]),
+        ordinary("002_projects",   &MIGRATION_002[..]),
         // ...
-        ("010_fts",              &MIGRATION_010[..]),  // FTS5 virtual table + triggers
+        ordinary("010_fts",        &MIGRATION_010[..]),  // FTS5 virtual table + triggers
         // ...
-        ("016_perf_indexes",     &MIGRATION_016[..]),
-    ];
-
-    for (name, statements) in migrations {
-        let already_applied = /* check _migrations table */;
-        if !already_applied {
-            for statement in statements {
-                sqlx::query(statement).execute(pool).await?;
-            }
-            // Record as applied
-        }
-    }
+    ]
 }
 ```
 
@@ -204,7 +172,7 @@ This is exactly the same concept as:
 - Flyway / Liquibase (tracks in `flyway_schema_history`)
 - Knex / node-pg-migrate (tracks in `knex_migrations`)
 
-The tracking table is `_migrations` (not `__django_migrations`, but same idea). If a migration name is in the table, it is skipped. This makes startup idempotent — safe to call on every startup.
+The tracking table is `_migrations` (not `__django_migrations`, but same idea). If a migration name is in the table, it is skipped. This makes startup idempotent — safe to call on every startup. Unlike most of these tools, Tack also refuses to start when the applied history differs from the binary's list by name, order or checksum, so a shipped migration is never edited.
 
 Each migration is an array of SQL statements because SQLite does not support multi-statement strings in all contexts. Migration 010 creates the FTS5 full-text search table and three triggers:
 
@@ -248,17 +216,16 @@ SQLite stores these as `TEXT`. sqlx reads them back as `String`, and the row con
 
 ```rust
 // In ItemRow::into_item():
-let tags: Vec<String> = serde_json::from_str(&row.tags).unwrap_or_default();
+tags: decode::json("items", "tags", &self.tags)?,
 ```
 
 For projects, the workflow and vocabulary are deserialized from the `TEXT` column into typed structs:
 
 ```rust
-let workflow: WorkflowConfig = serde_json::from_str(&row.workflow)
-    .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
+let workflow: WorkflowConfig = decode::json("projects", "workflow", &row.workflow)?;
 ```
 
-If the JSON is malformed (e.g. a migration corrupted it), this returns a `sqlx::Error::Decode` — surfaced as a 500 from the API. In practice this should not happen because writes go through `serde_json::to_string` which is infallible for well-typed structs.
+If the JSON is malformed (e.g. a migration corrupted it), this returns `StoreError::Corrupt { table, column }`, which is logged with the table and column (never the value) and surfaced as a 500 from the API. In practice this should not happen because writes go through `serde_json::to_string`, which cannot fail for well-typed structs.
 
 ---
 
@@ -273,7 +240,7 @@ pub async fn siblings_all_done(
     &self,
     parent_id: Uuid,
     done_status: &str,
-) -> Result<bool, sqlx::Error> {
+) -> Result<bool, StoreError> {
     let total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM items WHERE parent_id = ?"
     )
@@ -313,17 +280,15 @@ The `let _` and the fact that errors are ignored (`let _ = ...`) is intentional 
 
 ## Testing with in-memory SQLite
 
-Because every repository function takes a pool as input (via `&self` where `self` contains the pool), you can swap in an in-memory SQLite database for tests:
+Because every repository method reads its pool from `self`, a test can hand it an in-memory SQLite database. `tack-test-support` does that in one call:
 
 ```rust
 // In test code:
-let pool = sqlx::SqlitePool::connect("sqlite::memory:").await?;
-migrations::run_all(&pool).await?;
-let repo = Repository::new(pool);
+let repo = tack_test_support::setup_test_db().await;   // in-memory pool, migrations run
 
-// Now use repo exactly as production code does — no mocking needed
-let item = repo.create_item(project_id, "todo", input).await?;
-assert_eq!(item.title, "My test item");
+// Make the rows the test needs, then call the code under test:
+let workspace_id = tack_test_support::create_test_workspace(&repo).await;
+let project = tack_test_support::make_project(&repo, workspace_id).await;
 ```
 
-There is no mocking framework involved. The in-memory database runs migrations, creates real tables, and the repository code runs against it unchanged. This makes integration tests both simple and high-confidence.
+There is no mocking framework involved. The in-memory database runs the real migrations, creates real tables, and the repository code runs against it unchanged. This makes integration tests both simple and high-confidence. The helper's current functions are in `crates/tack-test-support/src/`; [Testing](../testing.md) says where each kind of test belongs.

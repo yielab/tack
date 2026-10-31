@@ -78,24 +78,24 @@ tack execution reconcile <request-id> \
   --reason "confirmed process was killed via ps on the runner host"
 ```
 
-This calls `POST /api/executions/{id}/requeue`, which only succeeds for a request the server itself authoritatively recovered. An unresolved or already-queued request returns `409 invalid_transition` with the current state named in `details`, never a silent no-op. Verified by hand against a live server (an unresolvable request returns `{"code":"invalid_transition","details":{"from":"unknown","to":"queued"}}`) and pinned by `crates/tack-cli/tests/e6_scheduler_e2e_test.rs`.
+This calls `POST /api/executions/{id}/requeue`, which only succeeds for a request the server itself authoritatively recovered. An unresolved or already-queued request returns `409 invalid_transition` with the current state named in `details`, never a silent no-op. `crates/tack-cli/tests/e6_scheduler_e2e_test.rs` pins it.
 
 ## Version compatibility
 
 Every runner-v1 request body that carries JSON holds `"protocol_version": 1`. The server rejects anything else outright. `check_protocol_version` in `crates/tack-api/src/handlers/runner_protocol.rs` returns `unsupported_protocol` (the fixture is `docs/contracts/runner-v1/errors/unsupported-protocol.json`) for any other number, and `invalid_request` when the field is missing or not a number, on every one of the 13 operations that carry a JSON body. There is no negotiated fallback: a v2 protocol, if it ever exists, is a new contract revision, not a version range this server tries to interpolate.
 
-Separately, each runner reports its own `runner_version` (a free-form string in the capability snapshot) and each harness reports its `installed_version`. Both are informational, logged and stored, and the server never uses them to gate behaviour. docket is the one place a version is enforced, and by the runner's probe, not by the protocol: the adapter reads `apiVersion` from docket's `GET /status.json` and accepts `"5"` or any later number.
+Separately, each runner reports its own `runner_version` (a free-form string in the capability snapshot) and each harness reports its `installed_version`. Both are informational, logged and stored, and the server never uses them to gate behaviour. docket is the one place a version is enforced, and by the runner's probe, not by the protocol: the adapter reads `apiVersion` from docket's `GET /status.json` and accepts a number, 6 or later.
 
 ## docket
 
 docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 6, which needs docket 0.2.0-beta.6.
 
 - An `apiVersion` below 6, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 6); this docket answers API N" and no task is posted.
-- `docket exec`, the contract probe, the NDJSON output parser and the stdin answers of the earlier adapter are gone. Nothing in the runner starts a throwaway docket per run.
+- Nothing in the runner starts a throwaway docket per run.
 - One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and reads the task's branch from the repository; the runner makes no checkout for it.
 - The daemon is supervised by the runner only when `[docket].binary` is set in its configuration.
 
-Every call, the task body and the team rules are in [Runs, Teams and Automation](runs-and-teams.md#the-docket-adapter). The separate Docket control-plane bridge, with its own dispatch, approval and budget routes, was retired earlier; docket has no scheduling path or API surface of its own in Tack.
+Every call, the task body and the team rules are in [Runs, Teams and Automation](runs-and-teams.md#the-docket-adapter). docket has no scheduling path or API surface of its own in Tack.
 
 ## Known gaps
 
@@ -103,20 +103,20 @@ These are documented rather than papered over, per this project's "unsupported i
 
 - **`execution_requests` has no real `priority` column.** A `metadata`-convention stopgap exists, documented as non-binding.
 - **Only docket reports a run's steps while it works.** codex, claude-code and opencode show their steps in the log only; their timelines fill once their tool lines are read from captured output of the real binaries.
-- **docket is proved against a fake.** No test runs a real docket 0.2.0-beta.6; see below.
+- **docket is proved against a fake.** No test in CI runs a real docket; see below.
 
 ## What actually runs today
 
-Read this section before treating any earlier claim on this page as a promise about a live, end-to-end run. This is the one page where test names belong.
+This section separates what the contract guarantees from what the test suite proves. This is the one page where test names belong.
 
 **Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-protocol/tests/runner_contract.rs` (byte-pins all 48 frozen fixtures), and the integrator test files referenced throughout this page.
 
 **The `tack-runner` binary's own network transport is wired and proven.** `tack_runner::bootstrap::build_runtime` is the one composition root that both the standalone `tack-runner` binary and the embedded `tack serve --with-runner` and `tack runner start` paths call. It wires the real `HttpPullProtocol`, not `UnavailableProtocolClient`. `UnavailableProtocolClient` still exists in the crate as an explicit no-client fallback, reachable only if something constructs a runtime without attaching a protocol client, and stays pinned by `runtime::tests::unavailable_protocol_is_a_typed_failure_not_success` so that path fails as a typed `RunnerError::ProtocolUnavailable` rather than a silent success.
 
-Live, end-to-end proof of the real client: `crates/tack-runner/tests/bootstrap_entrypoint.rs` proves the composition root is reachable and shutdown-controllable from outside the crate against a real (mocked) HTTP enrollment exchange. Every run of `scripts/smoke.sh` exercises the real client against a real server: step 7 drives a real attempt through claim, checkout, harness and completion with a separate `tack-runner` process; step 9 kills the runner mid-attempt and proves restart recovery; step 10 does the claim-to-completion path inside a single `tack serve --with-runner` process. **A fresh-machine operator today can enroll a runner and point a real `tack-runner` process (standalone or embedded) at a real server and watch it enroll, claim, and complete real work.**
+Live, end-to-end proof of the real client: `crates/tack-runner/tests/bootstrap_entrypoint.rs` proves the composition root is reachable and shutdown-controllable from outside the crate against a real (mocked) HTTP enrollment exchange. Every run of `scripts/smoke.sh` exercises the real client against a real server: step 7 drives a real attempt through claim, checkout, harness and completion with a separate `tack-runner` process; step 9 kills the runner mid-attempt and proves restart recovery; step 10 does the claim-to-completion path inside a single `tack serve --with-runner` process. An operator can enroll a runner and point a real `tack-runner` process, standalone or embedded, at a real server, and watch it enroll, claim and complete real work.
 
 **Several attempts at once** is proved in `crates/tack-runner/src/harness/local_process/tests.rs`: with two slots, two claims run together, every heartbeat carries both leases, and cancelling one attempt through the heartbeat answer leaves the other running. `crates/tack-runner/tests/crash_matrix.rs` recovers two unresolved journals after a crash.
 
-**docket is proved against a fake, not a real docket.** `crates/tack-runner/tests/docket_v5.rs` drives `DocketAdapter` against `crates/tack-runner/tests/fake_docket/mod.rs`, an in-process docket written from the published API specification. It covers the version probe and the "needs docket 0.2.0-beta.6" refusal, the teams and the ceiling, the task body key by key, the default team named for the folder, the trace cursor surviving a restart, approvals and parked questions as decisions, and the task's branch coming back into the worktree. The daemon's supervision is proved in `crates/tack-runner/src/harness/docket/daemon/tests.rs`. Until a real docket 0.2.0-beta.6 exists, nothing proves the fake matches it.
+**docket is proved against a fake, not a real docket.** `crates/tack-runner/tests/docket_v5.rs` drives `DocketAdapter` against `crates/tack-runner/tests/fake_docket/mod.rs`, an in-process docket that answers from recordings of a real one (`scripts/capture-docket-fixtures.sh`). It covers the version probe and the "needs docket 0.2.0-beta.6" refusal, the teams and the ceiling, the task body key by key, the default team named for the folder, the trace cursor surviving a restart, approvals and parked questions as decisions, and the task's branch coming back into the worktree. The daemon's supervision is proved in `crates/tack-runner/src/harness/docket/daemon/tests.rs`. Only the local suite below runs a real docket.
 
 The whole workflow through the browser is proven by hand with a local suite that is not versioned (`onboarding-lab/e2e/docket-prill-e2e.sh` in the maintainer's checkout). It builds Tack from the checkout, runs docket and prill from their own source trees against a local model, and drives a project, its runner, its settings, a bug, a feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a screenshot per step. It makes real model calls, so CI never runs it.

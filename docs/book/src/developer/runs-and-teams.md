@@ -28,7 +28,7 @@ The numbered steps are what happens when a project has auto-start on and a task 
     - `resolve_profile` calls `tack_core::run_defaults::resolve` (next section) and records the source in `metadata.profile_source`.
     - The agent is the profile's `tool_policy.agent`, else the project's `default_harness`; with neither, the request is refused with `select_an_agent`.
     - `default_selector` returns the profile's fleet, else the only active runner, else an error.
-    - `load_profile` snapshots the profile, fills `permission_policy.network` from the profile's `tool_policy.network` when the request does not carry the key (a request that says `true` or `false` keeps it), and resolves the run's limits; `enqueue_as` writes the request. A replay answers the same request and the tick does nothing more.
+    - `load_profile` snapshots the profile, fills `permission_policy.network` from the profile's `tool_policy.network` when the request does not carry the key (a request that says `true` or `false` keeps it), and resolves the run's limits; `enqueue_run` writes the request. A replay answers the same request and the tick does nothing more.
 5. **The move.** Only after the request exists, `start` moves the task to the first in-progress status with `update_item_atomically`, broadcasts `BoardEvent::ItemUpdated`, and writes the system comment "Started by itself: it reached X with the role Y" through `merge::tell`.
 6. **The claim.** The scheduler (`tack-orch`, called through `tack-app`) matches the request to a runner. A request no runner can take waits with a reason and fails with `no_runner_can_claim` after `SchedulingPolicy.unclaimable_fail_after`, 30 minutes by default. The runner claims it when one of its attempt slots is free.
 7. **The slot.** On a claim the engine calls `ActiveAttempts::register`, which records the lease and returns a `watch::Receiver<bool>` that turns `true` when the server asks for a cancellation. One ticker sends a single heartbeat for every active lease (`transport.rs`, `heartbeat_all`) and passes each `lease_results` row to `ActiveAttempts::apply`. A folder worked in place stays one attempt at a time because `workspace.rs` locks the folder.
@@ -156,17 +156,20 @@ The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows come
 | `089_item_recurrence` | `items.recurrence` (`weekly`, `monthly`, `quarterly`) and `items.recurrence_of` |
 | `090_auto_start` | `projects.auto_start_enabled` (default 0), `auto_start_status`, `auto_start_max_open` (default 3, at least 1) |
 | `091_template_bundle` | `project_templates.roles`, `.profiles` and `.automation`; see [The Project File Format](project-file.md) |
-| `095_project_prepare_command` | `projects.prepare_command`: NULL detects the install command from the lockfile, `''` turns the install off, any other text replaces it |
+| `092_drop_usd_per_day` | Drops the dollars-per-day budget; limits are in tokens |
+| `093_project_prepare_command` | `projects.prepare_command`: NULL detects the install command from the lockfile, `''` turns the install off, any other text replaces it |
+| `094_provisional_tokens_per_run` | `project_budgets.provisional_tokens_per_run`: the token limit of a run whose profile sets none (2 000 000 by default; NULL turns it off) |
+| `095_profile_delivers` | `agent_profiles.delivers`: one line saying what the profile delivers |
 
 ## The fake docket
 
-There is no real docket in any test. `crates/tack-runner/tests/fake_docket/mod.rs` is an in-process docket on a loopback port, answering from the captures of a real docket (API 6) with the keys it has and no others. Its README, `crates/tack-runner/src/harness/fixtures/docket/v5/README.md`, lists the routes it implements and the keys it leaves out. The adapter is tested against it in `crates/tack-runner/tests/docket_v5.rs`.
+No test in CI runs a real docket. `crates/tack-runner/tests/fake_docket/mod.rs` is an in-process docket on a loopback port, answering from recordings of a real docket (API 6, made by `scripts/capture-docket-fixtures.sh`) with the keys it has and no others. Its README, `crates/tack-runner/src/harness/fixtures/docket/v5/README.md`, lists the routes it implements and the keys it leaves out (the directory and the test keep the name `v5`; the answers are API 6). The adapter is tested against it in `crates/tack-runner/tests/docket_v5.rs`.
 
 To extend it:
 
 1. Add the route to the fake's router and make it record the request, so a test can assert on `FakeDocket::requests_to(method, prefix)`.
 2. Script behaviour with a `Script`: trace events before and after the gate, a `Gate` (`None`, `Approval`, `Consult` or `Hold`), the final status, a file to commit on the task's branch, untracked files and the usage. A `hop_finished` entry may carry `promptManifest` and `artifact` (`summary`, `verdict`, `assumptions`, `questions`): the fake writes them on the task record's hop and leaves them off the trace event, as docket does, and a hop given neither has neither key.
 3. Add the route to the "What the fake implements" list in the README, and the keys you skip to "What it leaves out".
-4. When a real docket 0.2.0-beta.6 exists, replace what the fake says with captures from it and say so in the README.
+4. When docket's answer changes, run `scripts/capture-docket-fixtures.sh` against the new docket and replace the recordings; the README says which version they came from.
 
 The daemon's supervision is tested separately with a shell script on a scratch path that serves `/health`; see `crates/tack-runner/src/harness/docket/daemon/tests.rs`.

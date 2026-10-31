@@ -30,7 +30,7 @@ Start with [Rust for Backend Developers](rust-primer.md). The structs-and-traits
 
 **[Axum — HTTP Without Magic](axum-primer.md)** — How Tack's HTTP layer works. Routing, extractors (how request data flows into handler functions), shared state (`AppState`), response types, error mapping, and middleware. Concrete before/after comparisons to Express and FastAPI.
 
-**[The Data Layer (sqlx & Repository Pattern)](data-layer.md)** — sqlx is not an ORM. It checks your SQL at compile time and maps rows to structs. Covers the Repository struct, migrations, JSON fields in SQLite, FTS5 search, and the auto-complete parent status logic.
+**[The Data Layer (sqlx & Repository Pattern)](data-layer.md)** — sqlx is not an ORM: you write the SQL and it maps rows to structs. Covers the Repository struct, `StoreError`, migrations, JSON fields in SQLite, FTS5 search, and the auto-complete parent status logic.
 
 **[SolidJS for Frontend Developers](solidjs-primer.md)** — For developers who know React (or Vue/Angular). SolidJS looks like React but never re-renders components. Covers signals, derived state, effects, control flow primitives (`<Show>`, `<For>`), context, routing, and what that means when reading Tack's frontend code.
 
