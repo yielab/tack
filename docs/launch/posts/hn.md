@@ -37,7 +37,7 @@ docs claim durable recovery from a killed agent process — most don't say eithe
 Tack's runner protocol gives every attempt a fencing token and a lease. Kill the runner
 mid-attempt and the board doesn't retry blindly — it shows `needs_operator`, with no
 duplicate execution, and an operator has to make an explicit decision to requeue it.
-There's a 35-second recording of the whole sequence — kill, no duplicate, explicit
+There's a recording of the whole sequence — kill, no duplicate, explicit
 requeue, success — made from an actual downloaded release binary running in Docker, not
 a staged dev build. It's in the repository, docs/screenshots/recovery-demo.gif:
 <https://github.com/yielab/tack>.

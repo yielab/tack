@@ -57,13 +57,13 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   with Phases 79 and 80 found, as cards for Sonnet and Haiku agents in three rounds. CI never needs
   docket or prill; the three meet only in the local, unversioned `onboarding-lab/`.
   A card runs only the tests of what it touched; the full suites run once per round.
-- **Built 2026-10-30, in `develop` (PR #66); ADRs 0030 and 0031 still proposed:** Phase 82 (`docs/closed-cycles/plans/phase-82.md`, ADR 0030, proposed) — docket closed its
+- **Built 2026-10-30, in `develop` (PR #66); ADRs 0030 and 0031 accepted 2026-10-31:** Phase 82 (`docs/closed-cycles/plans/phase-82.md`, ADR 0030, accepted) — docket closed its
   Phases 52–54 the same day (`task` fields on `POST /tasks/<pod>`, a `promptManifest` and `handoff`
   `assumptions`/`questions` on every hop, API still 6, all additive). Cards: A sends the item as
   `task` fields and the previous answers on a rerun; B reads each hop's prompts into one `steps` value and
   the verifier's `family`/`trajectory`; C shows it on the Execution tab; D recaptures the fixtures and reruns
   the live suite. Tack writes no prompt file for a team (ADR 0030, decision 5). Widened 2026-10-30 (ADR 0031,
-  proposed) after docket closed Phase 55 and neared the end of 56: E shows a `wait` as a wait and the whole
+  accepted) after docket closed Phase 55 and neared the end of 56: E shows a `wait` as a wait and the whole
   call of an `outward` approval while pending, erased after; F runs a folder team (no repository) to
   Succeeded, keeps the rows a task wrote, drops `blueprint` from `ensure`. Rounds A∥B, E∥F, C∥D.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,

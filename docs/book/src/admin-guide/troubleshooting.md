@@ -182,7 +182,7 @@ Where the token comes from and how it is found is in
 **Cause.** Tack answers a browser only when it recognises the address the page was loaded from.
 
 - **CORS error in the console.** The page's origin is not in `TACK_ALLOWED_ORIGINS`. The default list is
-  `localhost` and `127.0.0.1` on ports 8080 and 3210, and `https://tack.test`.
+  `localhost` and `127.0.0.1` on ports 8080 and 3210.
 - **`421`, "this server does not answer to that host name".** The request's `Host` is not the local machine,
   the address the server is bound to, or the host of an allowed origin. This usually happens behind a
   reverse proxy whose public name is not listed.

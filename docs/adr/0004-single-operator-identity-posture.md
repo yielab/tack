@@ -110,7 +110,7 @@ that machine already has an equivalent or greater level of access to it.
 
 ## Consequences
 
-- The public docs (`docs/book/src/user-guide/administration.md`, `docs/CONFIG.md`,
+- The public docs (`docs/book/src/admin-guide/administration.md`, `docs/CONFIG.md`,
   `README.md`) now say what Tack's authentication actually is before they describe how
   to configure it, closing the "self-hosted implies accounts" gap this ADR exists to
   close.

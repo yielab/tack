@@ -1,7 +1,7 @@
 # ADR 0021: every run goes to a long-lived team, and a project's automation is one ladder
 
 **Status: ACCEPTED 2026-10-14 (the maintainer: "aprobado"); executed by Phase 73
-(`docs/plans/phase-73.md`).** Amends ADR 0019 decision 7 (docket runs from contract 1.2) and
+(`docs/closed-cycles/plans/phase-73.md`).** Amends ADR 0019 decision 7 (docket runs from contract 1.2) and
 ADR 0015 decision 1 (what the project's Automation tab holds). Reads docket ADR 0027 and its
 operator API version 5 as the contract on the other side.
 **Amended by ADR 0024:** decision 7's dollar budget is gone; limits are in tokens.

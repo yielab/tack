@@ -18,8 +18,7 @@ $ gh api graphql -f query='{ repository(owner:"yielab", name:"tack") {
 
 **Body:**
 
-> Tack is genuinely new — zero outside users as of this post. Rather than guess what
-> matters, I'd rather ask directly: if you're currently using Vibe Kanban, Crystal,
+> Tack is a new project. Rather than guess what matters, I'd rather ask directly: if you're currently using Vibe Kanban, Crystal,
 > Conductor, Sculptor, Emdash, or just plain Claude Code/Codex with no board at all —
 > what's the one thing that would have to be true for you to try this instead?
 >

@@ -54,7 +54,7 @@ Everything past this point is supporting detail; nothing above depends on anythi
   dispatch trigger), ADR 0007 decisions 5 and 6, ADR 0002's `legacy-docket` clause.
 - **Wire contract:** `docs/contracts/runner-v1/` **changes**: the decision fixtures and routes
   are removed (decision 3; reversed by the 2026-09-18 amendment, they stay). No shipped harness declares `decisions`, so no runner in the
-  field sends them. The pin table in `crates/tack-orch/tests/runner_contract.rs` changes in
+  field sends them. The pin table in `crates/tack-protocol/tests/runner_contract.rs` changes in
   the same commit.
 - **Roadmap:** Phase 64, `docs/book/src/roadmap.md`.
 
@@ -184,7 +184,7 @@ ADR 0060 rejected deletion for three reasons:
 | `.claude/` (6 skills, context/token/reporting/decision/scope contracts) | 11 files, 1 249 lines | leaves the repository; the two rules worth keeping (plain-language decisions, no mechanism without a caller) move into `CONTRIBUTING.md` |
 | `CLAUDE.md` | 222 lines | ≤ 40 lines, pointing at `CONTRIBUTING.md` and `docs/TESTING.md` |
 | `TODO.md` boards | 5 029 lines | replaced by the roadmap plus GitHub issues; the live part is archived to `docs/closed-cycles/boards/` |
-| `docs/agent-handoffs/` | 69 files, 15 644 lines | frozen into `docs/closed-cycles/handoffs/`; no new ones |
+| `docs/closed-cycles/handoffs/` | 69 files, 15 644 lines | frozen into `docs/closed-cycles/handoffs/`; no new ones |
 | `docs/closed-cycles/` | 215 files, 69 081 lines | kept, frozen, excluded from every check |
 | `docs/plans/` | 4 files, 2 094 lines | archived once their phase lands; `harnesses.md` is rewritten against this ADR when carded |
 | `scripts/maintainability.py`, baseline, `list-fixed-waits.py`, `docs/adr/0064-fixed-waits.txt` | 605 lines + generated | removed (decision 11) |

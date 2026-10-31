@@ -28,13 +28,8 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-No card is open: Phases 73 to 82 are built and in `develop`. Two things wait on the maintainer,
-and neither is a card:
-
-- Accepting [ADR 0030](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md)
-  and [ADR 0031](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md),
-  which Phase 82 built and which are still proposed.
-- Tagging `v0.2.0-beta.1`.
+No card is open: Phases 73 to 82 are built and in `develop`. The one thing left is the
+maintainer's own step, and it is not a card: tagging `v0.2.0-beta.1`.
 
 What is not a card is in "Cancelled" below.
 
@@ -88,8 +83,8 @@ can come back as a card of its own.
 - Directives learnt from a person's corrections (ADR 0020, decision 6): Tack depends on no
   verifier, and the feature waited on a contract from one. The reasons a person gives stay
   stored (ADR 0013, decision 7).
-- Measuring docket's polling, and the retakes of `agents.png`, `agents-flow.gif`, the two desktop
-  screenshots and `recovery-demo.gif`.
+- Measuring docket's polling, and the retakes of `agents-flow.gif` and `recovery-demo.gif`. The
+  outdated `agents.png` and the two desktop screenshots were removed instead of retaken.
 - Four limits that stay as limits, each already shown in the product with its reason: "Apply the
   repository's teams" is disabled; only docket stops a run at its token limit; the tokens a
   verifier spends count whole, cache included; only docket reports a running agent's steps on its
@@ -105,7 +100,7 @@ and each ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/doc
 
 ### Phase 82 — the task goes to docket as fields, and a run says which prompts made it
 
-**ADRs:** 0030 and 0031 (proposed). **Plan:** [`phase-82.md`](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-82.md).
+**ADRs:** 0030 and 0031 (accepted). **Plan:** [`phase-82.md`](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-82.md).
 
 A docket run no longer sends the card twice (as prose and as a brief): the title, the checks, the
 constraints, the risk, the kind, the paths the checks name and the done-when go as fields, and

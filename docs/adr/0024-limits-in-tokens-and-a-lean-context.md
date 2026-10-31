@@ -1,7 +1,7 @@
 # ADR 0024: limits in tokens, and nothing sent to an agent twice
 
 **Status: ACCEPTED 2026-10-18.** The maintainer took decisions 1 to 4 on 2026-10-18 and asked for
-the work to start the same day. Executed by Phase 75 (`docs/plans/phase-75.md`). Amends ADR 0020
+the work to start the same day. Executed by Phase 75 (`docs/closed-cycles/plans/phase-75.md`). Amends ADR 0020
 decision 5 (the money budget), ADR 0021 decision 7 (the dollar budget priced per model) and
 ADR 0012 decision 6 (which limits reach docket).
 

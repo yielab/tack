@@ -42,7 +42,7 @@ verification tax stays entirely human.
 | Custom field types: text, number, date, boolean, select, multi-select, url, email, long text — all scalar, per project | `models.rs:666-745` |
 | The prompt is the profile's `instructions`, verbatim; the item's title and description are not in it | `crates/tack-runner/src/harness/local_process.rs:527`; `frontend/src/shared/runWithAgent/shared.ts:131`; `RunWithAgentModal.tsx:399` |
 | `ItemSource::is_trusted` exists for the prompt-injection boundary and has no caller in a handler | `models.rs:121-143`; `rg 'is_trusted\(\)' crates/tack-api` → none |
-| The request snapshot accepts additive fields | `crates/tack-orch/src/execution/types.rs:341-361` (`additional`, flatten); `docs/contracts/runner-v1/README.md` ("additive object fields round-trip unchanged") |
+| The request snapshot accepts additive fields | `crates/tack-protocol/src/execution/types.rs:341-361` (`additional`, flatten); `docs/contracts/runner-v1/README.md` ("additive object fields round-trip unchanged") |
 | The entity path: model in core, migration, repository, `repo.rs`, handler, router | `docs/book/src/developer/adding-features.md`, "Adding a New Entity" |
 | Next migration number | `078` (`grep -o '"[0-9]\{3\}_[a-zA-Z0-9_]*"' crates/tack-db/src/migrations.rs \| sort -u \| tail -1` → `077`) |
 

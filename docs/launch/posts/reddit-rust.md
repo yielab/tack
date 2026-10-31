@@ -56,5 +56,4 @@ Things I'd genuinely like eyes on:
 - General Axum/`sqlx` review — this is a real, running system, not a toy, so actual
   criticism is more useful than encouragement.
 
-MIT licensed, 0 stars so far (new post, first time anyone outside this repo has seen
-it): <https://github.com/yielab/tack>.
+MIT licensed: <https://github.com/yielab/tack>.

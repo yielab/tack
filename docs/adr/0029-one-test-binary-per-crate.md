@@ -10,7 +10,7 @@ its decision 3; the rest of ADR 0007 stands.
 |---|---|---|
 | 1 | **Each crate has one integration-test binary, `it`.** `tests/it.rs` declares every file under `tests/` as a module; the crate's `Cargo.toml` sets `autotests = false` and names that one target. Helpers shared by several modules (`common`, `support`, `fake_docket`, …) are declared once in `it.rs` | A new subject is a `mod` line in `tests/it.rs`. A file is selected by its module: `-E 'test(/^<module>::/)'`; one crate's: `-E 'binary_id(<crate>::it)'` |
 | 2 | **Dependencies carry no debug info** (`[profile.dev.package."*"] debug = false`). The workspace's own crates keep line tables | A backtrace still names a dependency's functions and gives file and line for Tack's |
-| 3 | **A build that runs once has no incremental cache.** Agent cards and `scripts/docket-prill-e2e.sh` build with `CARGO_INCREMENTAL=0`, as CI already does. A person's own checkout keeps it | Nothing: it is set where the build is started |
+| 3 | **A build that runs once has no incremental cache.** Agent cards and `onboarding-lab/e2e/docket-prill-e2e.sh` build with `CARGO_INCREMENTAL=0`, as CI already does. A person's own checkout keeps it | Nothing: it is set where the build is started |
 
 **Why now:** an agent's build folder reached 25–28 GB and the main checkout's 29 GB. ADR 0007
 grouped `tack-api`'s files by subject but left 46 integration binaries across six crates (19 in

@@ -54,7 +54,7 @@ was it reverted — is never known to the board.
 | GitHub: issues and comments both ways by push and poll; no PRs | `crates/tack-api/src/github_sync.rs:67,109,192,227,365`; `docs/GITHUB-SYNC.md:12-30,111-116` |
 | The poll moves items through `update_item_atomically` and never calls the outbound push | `github_sync.rs:10-14`, `:312-345` |
 | `webhook.rs` is an outbound client, not a receiver | `crates/tack-api/src/webhook.rs:7-15` |
-| The completion report's `actual_execution` accepts additive fields | `crates/tack-orch/src/execution/types.rs` (`additional`, flatten); `runner-v1/README.md` |
+| The completion report's `actual_execution` accepts additive fields | `crates/tack-protocol/src/execution/types.rs` (`additional`, flatten); `runner-v1/README.md` |
 | Decision timestamps exist; no `viewed_at` anywhere | `crates/tack-db/src/migrations.rs:1523-1541` |
 | Attempt usage is measured tokens with provenance; `cost_usd` is `not_measured` unless a harness reports it | `docs/contracts/runner-v1/completion.request.json` (`usage`) |
 | The business case: verification tax, measured minutes, independence of the verifier | `../rack-cli/internal-docs/plan-fabrica-agentica-l3-l5-2026-09-29.es.md` §0, §2.1, §3.2, §3.3 |

@@ -39,7 +39,7 @@ six calls; nothing above depends on anything below it.
 ---
 
 - **Status:** accepted 2026-09-03 — recorded as a dated amendment at the bottom of
-  `docs/agent-handoffs/part-vi/VI-A2.md`.
+  `docs/closed-cycles/handoffs/part-6/VI-A2.md`.
 - **Date:** 2026-09-03
 - **Relationship to earlier ADRs:** doesn't change ADR 0002 (`0002-runner-control-plane.md`)
   or the safety rules in ADR 0003 (`0003-standalone-single-binary-runner.md`) — decision 6
