@@ -18,6 +18,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- The Execution tab says less and plainer: **What each step ran** shows each step's role, model, verdict and what the agent assumed and asked, folds the prompts under **Prompts used**, joins identical steps in a row ("Implementer ×3"), no longer prints "a any model" or "This step recorded no prompt"; **What the agent got** leaves out the lines with nothing to report and says "Runs in an isolated sandbox".
 - The sidebar shows **Waiting for you** with the number of runs that are asking a question and opens the first one on its Execution tab; no row when none waits. A board card's chip for such a run opens that run.
 - The question a run is waiting for comes first: it is the top of the Last run card, on the item's page and in the drawer, with its answers open, and the Execution tab opens its questions by itself; a question asked after you opened the task appears without a reload.
 - An item follows its run: while the run is going, the item's status, assignee and side details change as the run does, on the item's page and in the drawer, with no reload.

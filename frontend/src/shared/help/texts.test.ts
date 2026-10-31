@@ -15,7 +15,7 @@ describe('agentSafety', () => {
     expect(agentSafety([{}])).toBeNull();
   });
 
-  it('puts docket\'s own confinement in words', () => {
-    expect(SANDBOX_TEXT.harness).toBe('Sandboxed by docket in its own jail');
+  it('puts the agent\'s confinement in plain words', () => {
+    expect(SANDBOX_TEXT.harness).toBe('Runs in an isolated sandbox');
   });
 });

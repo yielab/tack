@@ -69,7 +69,7 @@ you already trust. See [Administration & Security](administration.md).
   why.
 - **docket's jail is docket's.** Tack does not wrap docket in `bwrap`: docket is a daemon with its
   own home, and it confines its agents itself, in a jail it sets up. The run reports
-  `sandbox: harness`, shown on screen as "Sandboxed by docket in its own jail". Tack reaches
+  `sandbox: harness`, shown on screen as "Runs in an isolated sandbox". Tack reaches
   docket only over its loopback API with a bearer token, passes it the task, the denied tools
   and the network flag as restrictions, and holds no model key for it.
 - **The workspace.** The agent works in a clone or a branch of the project's own

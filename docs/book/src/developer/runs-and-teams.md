@@ -126,7 +126,7 @@ A team that declares a set named `tack_proposals` proposes items through it, bec
 
 ### Capabilities
 
-`capabilities()` declares `cancel`, `decisions`, `artifacts`, `usage`, `policy` and `proposals` ("through a team's `tack_proposals` record set") as supported, `resume` as unsupported. Whether a given team uses `proposals` is in that team's `records`. `sandbox()` returns `"harness"`, which the server accepts beside `bwrap` and `none` and the UI renders as "Sandboxed by docket in its own jail". `probe::probe` adds the teams to the capability snapshot and sets `autonomy_ceiling` to `L3` when any team is capped, else `L5`.
+`capabilities()` declares `cancel`, `decisions`, `artifacts`, `usage`, `policy` and `proposals` ("through a team's `tack_proposals` record set") as supported, `resume` as unsupported. Whether a given team uses `proposals` is in that team's `records`. `sandbox()` returns `"harness"`, which the server accepts beside `bwrap` and `none` and the UI renders as "Runs in an isolated sandbox". `probe::probe` adds the teams to the capability snapshot and sets `autonomy_ceiling` to `L3` when any team is capped, else `L5`.
 
 ## The ceiling
 
