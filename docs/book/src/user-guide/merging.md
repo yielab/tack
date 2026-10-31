@@ -3,7 +3,7 @@
 This page is for the person who decides how a finished run reaches the main branch. After reading it you
 can merge a run from Tack with one button, let a task merge when you move it to Done, and set the rules under
 which Tack merges by itself. The merge is the third step of the ladder in
-[Automating a Project](automation.md#merge); the rules for starting runs and for teams are there too.
+[Automating a Project](automation.md#merge), where the rules for teams and for starting runs are.
 
 When an agent's run finishes on a branch and its pull request is open, you can merge it
 from Tack instead of going to GitHub. There are three ways, and a project uses as many of
@@ -94,10 +94,7 @@ An administrator sets most of this up; see
 
 ### The ceiling of a team
 
-The team that ran the change sets a ceiling too. A team that needs a person during a run keeps its tasks at
-L3 however high the project's level is: the automatic merge holds them and says "The team that ran this
-stays at L3: it needs a person during a run", and the Ceiling step lists the team and what to change; see
-[Ceiling](automation.md#ceiling). The Merge button is not held by the ceiling.
+A team that needs a person during a run keeps its tasks at L3 however high the project's level is: the automatic merge holds them and says "The team that ran this stays at L3: it needs a person during a run". The **Merge** button is not held. What to change is under [Ceiling](automation.md#ceiling).
 
 ## Sending a rejected change back to the agent
 
@@ -125,9 +122,9 @@ the day. Otherwise it waits and says why: "Today's token limit is reserved by 2 
 Tokens are counted as [Token limits](running-agents.md#token-limits) explains: what the cache served does
 not count. A bar under the limit shows the day: counted, reserved and what is left, amber from 80%.
 
-An agent Tack cannot stop at a limit (Codex today) can use more than it was given, so its run can still
+An agent Tack cannot stop at a limit (Codex) can use more than it was given, so its run can still
 take the day past its limit; docket, Claude Code and opencode are stopped at it.
 
 A limit that stops new runs says which one on the task; runs already going finish. A day starts at midnight
 UTC. There is no limit in dollars: a dollar figure is a price list applied to tokens, and a model with no
-price would pass it.
+price would slip past it.

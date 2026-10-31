@@ -2,7 +2,7 @@
 
 This page is for anyone who wants to move work into or out of Tack. After reading it you will know which kind of file to use, how to bring a whole project in from one file, and how to take one out again.
 
-The examples use `http://127.0.0.1:3210` and a server started with `tack serve`. The `tack` command finds a local server and its token on its own. Every `curl` request to a server that requires a token needs `-H "Authorization: Bearer <token>"`; the [Administrator Guide](../admin-guide/administration.md) explains tokens.
+The examples use `http://127.0.0.1:3210` and a server started with `tack serve`. The `tack` command finds a local server and its token on its own. A `curl` request to a server that requires a token needs `-H "Authorization: Bearer <token>"`; the [Administrator Guide](../admin-guide/administration.md) explains tokens.
 
 ---
 
@@ -375,7 +375,7 @@ The answer is `{ "created": N, "skipped": N }`.
 
 ### Keeping GitHub issues in sync
 
-Items imported from GitHub stay linked to their issue, and you can link any other item by hand with the **Link GitHub issue** row in the item's side panel. When the board has a GitHub token, the link carries state and comments in both directions:
+Items imported from GitHub stay linked to their issue, and you can link any other item by hand in the **Link GitHub issue** section of its Overview tab. When the board has a GitHub token, the link carries state and comments in both directions:
 
 - **Out, on every change.** Moving a linked item into a Done status closes its issue. Moving it back out reopens it. A comment on the item is posted on the issue.
 - **In, on a poll.** A closed issue moves its item to the first Done status. A reopened one moves it to the first to-do status. A new comment on the issue appears on the item, attributed to its GitHub login.
@@ -407,7 +407,7 @@ The snapshot holds:
 
 It does not hold roles, agent profiles or automation settings; use the project file for those.
 
-To restore a snapshot, choose **Project settings → Data → Import → Import from JSON / YAML…**, or `POST /api/projects/import`. It creates a new project with the items, sprints, parent links, dependencies and briefs. A brief in the file is checked by the same rules as a save from the Brief tab, and the import is refused if one breaks them, since a snapshot can be edited by hand. The answer counts `briefs_imported` beside the other totals. The `tack import` command reads outlines and CSV files, not snapshots.
+To restore a snapshot, choose **Project settings → Data → Import → Import from JSON / YAML…**, or `POST /api/projects/import`. It creates a new project with the items, sprints, parent links, dependencies and briefs. A brief in the file is checked by the same rules as a save from the item's Overview tab, and the import is refused if one breaks them, since a snapshot can be edited by hand. The answer counts `briefs_imported` beside the other totals. The `tack import` command reads project files, outlines and CSV files, not snapshots.
 
 ### A CSV export
 

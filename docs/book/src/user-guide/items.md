@@ -8,23 +8,23 @@ Every piece of work in Tack — a task, bug, feature, building, work order, or w
 
 ## Opening an item
 
-The drawer opens whenever the `?item=<id>` query parameter is present in the URL. You open it by:
+The drawer opens whenever the address carries `?item=<id>`. You open it by:
 
 - Clicking a card on the Board, a row in the List or Table, or a search result.
-- Navigating directly to a link such as `https://tack.test/board?item=<id>`.
+- Opening a link such as `http://localhost:3210/projects/<project>/board?item=<id>`, or running `tack open <item-id>`, which prints that link.
 
-Because the open item lives in the URL, item links are **deep-linkable and shareable** — paste the link to a teammate and the same drawer opens for them. Press `Esc` or use the close control to dismiss the drawer; focus returns to where you were.
+Because the open item is part of the address, an item link can be shared — paste it to a teammate and the same drawer opens for them. Press `Esc` or use the close control to dismiss the drawer; focus returns to where you were.
 
 At the top of the drawer, the **header** shows:
 
 - A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order") and the item's **short id** — the first six characters of the id, uppercased.
-- The editable **title**. Edit it inline; the change commits when you blur the field or press `Enter`.
+- The editable **title**. Edit it in place; the change is saved when you leave the field or press `Enter`.
 - A row of **status pills**, one per workflow status. Click any inactive pill to transition the item to that status. The transition is validated by the project workflow (allowed transitions and WIP limits are enforced server-side); if it is rejected the item reverts and an error toast appears.
 - The date the item was created.
 
-Under the header, one **properties** list holds **Priority**, **Due date**, **Assignee**, **Estimate**, **Sprint**, **Repeats**, the **last update**, **Tags** (type a tag and press `Enter` to add; click the `×` on a tag to remove it), the **Automation** row and what the item **blocks**. Every one but the last update can be edited in place.
+Under the header, one **properties** list holds **Priority**, **Due date**, **Assignee**, **Estimate**, **Sprint**, **Repeats**, the **last update**, **Tags** (type a tag and press `Enter` to add; click the `×` on a tag to remove it), the **Automation** row and what the item **blocks**. Every one but the last update, the Automation row and what the item blocks can be edited in place.
 
-All edits save immediately (optimistic update: applied locally first, then persisted).
+All edits save at once.
 
 ### The item's page
 
@@ -36,16 +36,13 @@ All edits save immediately (optimistic update: applied locally first, then persi
 
 ## Overview tab
 
-The Overview tab (older links and bookmarks that say `?tab=details` still open it) is the task
-itself, top to bottom: its **description**, its **Done when** list, what the agent gets beyond
+The Overview tab is the task itself, top to bottom: its **description**, its **Done when** list, what the agent gets beyond
 it (**For the agent**), and a linked GitHub issue.
 
 The description is edited in place: it reads as text, and clicking it (or **Click to edit**,
-when it is empty) opens the rich-text editor; **Done** closes it. Edits **autosave** — they are
-debounced and persisted automatically a short pause (about 0.6 seconds) after you stop typing.
-There is no save button.
+when it is empty) opens the rich-text editor; **Done** closes it. Edits **autosave** a moment (about half a second) after you stop typing. There is no save button.
 
-Core metadata — **assignee, priority, estimate, sprint, due date, and labels (tags)** — lives in the header above the tabs (see [Opening an item](#opening-an-item)), so it is always visible regardless of which tab is active.
+Assignee, priority, estimate, sprint, due date and tags are in the properties list (see [Opening an item](#opening-an-item)), so they are visible whichever tab is open.
 
 <img src="../screenshots/brief.png" width="50%" alt="The Overview tab of an item: the description editor, a Done when checklist with one check and Add check, a collapsed For the agent section summarised as 3 checks, 3 limits and risk noted, and Link GitHub issue.">
 
@@ -80,16 +77,16 @@ and no automatic check reads it.
 The definition of done in plain sentences is set once per project, in
 [Automation](automation.md#automation) — not on each task.
 
-An item holds up to 50 criteria and 100 constraints. If the server rejects a save, the reason
+An item holds up to 50 criteria and 100 constraints. If a save is refused, the reason
 appears next to the part it concerns.
 
 ---
 
 ## Fields tab (custom fields)
 
-Custom fields capture project-specific data that the built-in fields don't cover — a vendor name, a budget figure, a compliance flag, and so on. They are **defined per project** (in project settings); the Fields tab shows every field defined for the item's project, plus role assignment.
+Custom fields capture project-specific data that the built-in fields don't cover — a vendor name, a budget figure, a compliance flag, and so on. They are **defined per project** (in **Settings → Fields**, or with `tack field create`); the Fields tab shows every field defined for the item's project, plus its [roles](#roles-and-the-automation-row).
 
-Set a value by typing or selecting in the control next to the field name. Each change is saved as you commit it; clearing a text-like field removes its value. **Values are validated on save** against the field's type — an invalid value is rejected and shown as an error toast, not stored.
+Set a value by typing or selecting in the control next to the field name. Each change is saved as you commit it; clearing a text field removes its value. A value that does not fit the field's type is refused with an error message and not stored.
 
 ### Field types
 
@@ -105,9 +102,9 @@ Set a value by typing or selecting in the control next to the field name. Each c
 | Select | One value chosen from the field's defined options | `In review` |
 | Multi-select | An array of values, each from the field's options | `["frontend","urgent"]` |
 
-A field definition may also carry extra **validation rules** that apply on top of the type check: a regex `pattern` and `min_length`/`max_length` for strings, `min`/`max` for numbers, and `max_items` for multi-select. Values that violate these rules are rejected with a descriptive message.
+A field definition may also carry extra **validation rules** on top of the type: a pattern and a minimum and maximum length for text, a minimum and maximum for numbers, and a maximum number of choices for multi-select. They are set through the API or a [project file](import-export.md#the-project-file); a value that breaks one is refused with a message saying why.
 
-> If a project has no custom fields, the tab shows "No custom fields — define fields in project settings."
+> A project with no custom fields shows "No custom fields" and a pointer to project settings.
 
 ---
 
@@ -115,13 +112,13 @@ A field definition may also carry extra **validation rules** that apply on top o
 
 A task that happens every week, month or quarter can repeat by itself. Set **Repeats** in the task's header to **Weekly**, **Monthly** or **Quarterly**; **Never** turns it off. A task that repeats carries a **Repeats** badge on the board and in the list.
 
-You can also set it when you create a task from the command line, or in a file you import:
+You can also set it when you create a task from the command line:
 
 ```sh
 tack add "Pay the rent" -p <PROJECT_ID> --recurrence monthly
 ```
 
-In an outline or CSV import, the column is `recurrence` (CSV also accepts `repeats`). A value that is not weekly, monthly or quarterly is reported as a warning and the task does not repeat; see [Import, Export & Project Files](import-export.md).
+In an outline or CSV import, the key is `recurrence`; see [Import, Export & Project Files](import-export.md).
 
 **Closing the task makes the next one, once.** When the task moves into a Done status from one that is not Done, Tack creates the next task, unless a task made from it is still unfinished. That is what "once" means: closing, reopening and closing again does not pile up copies.
 
@@ -132,7 +129,7 @@ The next task:
 - copies the title, description, type, parent, priority, estimate, tags, roles and the repeat setting;
 - does not copy the sprint or the assignee.
 
-The closed task's activity says "Created the next one, due 2026-11-30" with the new date. See [Repeating a task](automation.md#repeating-a-task) for how this works with a project that starts tasks by itself.
+The closed task's activity says "Created the next one, due 2026-11-30" with the new date. In a project that [starts tasks by itself](automation.md#start), a repeating task can run on its own each period.
 
 ---
 
@@ -140,15 +137,7 @@ The closed task's activity says "Created the next one, due 2026-11-30" with the 
 
 A **role** says what kind of work a task is for, such as Content or Developer. A project's roles are created under **Settings → Roles**, and each role can be given an agent profile in [Automation](automation.md#teams). On a task, the **Fields** tab lists the project's roles with a checkbox for each; ticking one gives the task that role. A task with no role is never started by itself, but you can always run it by hand.
 
-Between the **Run with agent** button and the tabs, the drawer has an **Automation** row. It says in one line what happens to this task without you:
-
-| The row says | What it means |
-|---|---|
-| "Starts by itself when it reaches To Do · Team saas-content · Merge L3" | The project starts tasks by itself from that status. The team and merge level are shown when they are known |
-| "By hand: this project doesn't start tasks by itself" | Nothing starts it. Press **Run with agent** |
-| "By hand: the role Content has no profile" | The task's role has no profile and the project has no default. Choose one in [Teams](automation.md#teams) |
-
-After Tack acts on a task, badges say so on the board, list and table: **Started by itself**, **Team: name** and **Merged by itself**. They are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
+The **Automation** row of the properties list says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board, list and table. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
 
 ---
 
@@ -188,7 +177,7 @@ shows only the run you picked, in this order:
 - **What the agent did**, two ways. **By tool** groups its steps by the tool it used, with how many
   times, and shows the files and commands it worked on as chips. **Timeline** lists the run's
   events as they happened, and fills while the run is going: each call to the model, each tool it
-  ran (a shell command is shown as the command) and each call docket refused. Only the Claude Code
+  ran (a shell command is shown as the command) and each call a docket team refused. Only the Claude Code
   log names its steps by tool; for any other agent **By tool** is disabled and says why, and the
   timeline is what there is.
 - **What each step ran** lists, for a run that went through a team's steps one after another, each step in
@@ -214,8 +203,7 @@ exact prompt it read), what the run used and its ids sit in a side column on the
 under the run in the drawer. **Usage** is folded: its line gives the tokens counted against a limit
 and, when the run has one, the share of it used, and opening it shows the detail. The request and
 attempt ids copy with one press, and **Raw log** opens the run's full log.
-How to
-start a run is in [Running Agents on Tasks](running-agents.md), and how to judge one is in
+How to start a run is in [Running Agents on Tasks](running-agents.md), and how to judge one is in
 [Reviewing a Run](reviewing-runs.md). The item's
 [acceptance criteria](#acceptance-criteria-and-for-the-agent) are what the agent is given as the
 definition of done. An item that was never run shows an empty tab, not a hidden one.
@@ -242,9 +230,9 @@ Tack's dependency graph is a **DAG (directed acyclic graph)**, so:
 
 ## Activity tab
 
-The Activity tab is the item's **comment timeline**. Comments are listed oldest-first, each showing the author (or "Anonymous" when none is recorded) and a relative timestamp (`just now`, `5m ago`, `3h ago`, `2d ago`, then a calendar date for older entries).
+The Activity tab is the item's **comment timeline**. Each entry shows its author ("Anonymous" when none is recorded; "Tack" for the notes Tack writes when it acts, such as "Started by itself") and how long ago it was written.
 
-To add a comment, type in the box at the bottom and select **Comment**. Posting is optimistic — your comment appears immediately and is rolled back with an error toast if the server rejects it.
+To add a comment, type in the box at the bottom and select **Comment**. It appears at once and is taken back with an error message if it could not be saved.
 
 ---
 
@@ -258,9 +246,3 @@ Attach files to an item from the Files tab:
 Each uploaded file is listed with its **size and MIME type**. Click a filename to download it (served with the original filename); use **Delete** to remove it.
 
 Deleting an attachment removes the file as well as its record. Where the server keeps the files is the administrator's choice; see [Configuration](../admin-guide/configuration.md). To upload from a script, see the [API Reference](../developer/api-reference.md).
-
----
-
-## Comments
-
-Comments live in the **Activity tab** (see above) — that tab is the item's discussion thread. Open the item, switch to **Activity**, write in the comment box, and select **Comment** to post.

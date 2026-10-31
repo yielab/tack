@@ -93,13 +93,13 @@ tack list --project <id>                  # list items; filter with --status, --
 tack board --project <id>                 # the board in the terminal
 tack search "login" --project <id>        # search; leave out --project to search everything
 
-tack add "Design login page" --project <id> --type task --priority high
+tack add "Design login page" --project <id> --item-type task --priority high
 tack add "Send the newsletter" --project <id> --recurrence weekly
 
 tack move <item-id> "In Progress"         # move to another status
 ```
 
-`tack add` also takes `--parent`, `--assignee` and `--sprint`. Types are `task` (the default), `epic`, `feature`, `bug`, `subtask` and `requirement`; priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
+`tack add` also takes `--parent`, `--assignee` and `--sprint`; `-p` and `-t` are short for `--project` and `--item-type`. Types are `task` (the default), `epic`, `feature`, `bug`, `subtask` and `requirement`; priorities are `critical`, `high`, `medium` (the default) and `low`. `--recurrence weekly|monthly|quarterly` makes the task repeat: closing it creates the next one.
 
 ### Branches
 
@@ -228,12 +228,10 @@ Commands:
   reconcile  Requeue a needs_operator execution after an audited recovery decision
 ```
 
-A run needs a time limit and a permission policy, and nothing else. Everything else falls back to what the project and the item's role say:
+A run needs only a permission policy. Everything else falls back to what the project and the item's role say:
 
 ```sh
-tack execution create <item-id> \
-  --permission-policy '{"tools":[],"network":false}' \
-  --timeout-seconds 600
+tack execution create <item-id> --permission-policy '{"tools":[],"network":false}'
 ```
 
 | Flag | Meaning when you leave it out |
@@ -242,6 +240,7 @@ tack execution create <item-id> \
 | `--harness <agent>` | The profile's agent, else the project's default agent. Names such as `claude-code`, `codex`, `opencode` and `docket`. |
 | `--model <name>` | The project's default for that agent, else the agent's own choice. Give the agent's own spelling of a model. |
 | `--runner <id>` or `--fleet <id>` | The profile's fleet, else the only active runner. Use at most one of the two. |
+| `--timeout-seconds <n>` | The profile's time limit, else one hour. |
 | `--idempotency-key <key>` | A fresh key each call. Pass a stable one to retry the same request safely. |
 | `--status-map-policy done_on_success\|done_on_mrp_accepted` | The item's status is never touched. With a policy it moves to the first Done status when the attempt succeeds, or when its merge-readiness pack is accepted. |
 
@@ -265,7 +264,7 @@ A runner is the program on a computer that carries out runs. Installing, enrolli
 tack runner doctor
 ```
 
-It needs no server and enrolls nothing. It reports which agents this computer has, whether each is signed in, what models it offers, and, for docket, whether its daemon answers and which teams run lights-out. It reads the configuration a runner on this computer would use. Each agent has a block like this one:
+It needs no server and enrolls nothing; `--json` prints the raw report and `--config <file>` reads another runner configuration. It reports which agents this computer has, whether each is signed in, what models it offers, and, for docket, whether its daemon answers and which teams run lights-out. It reads the configuration a runner on this computer would use. Each agent has a block like this one:
 
 ```text
 docket
@@ -283,7 +282,7 @@ When docket is configured and answers, its block gains these lines before the si
   team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
-- **`api`** is the version of docket's HTTP interface. Tack needs docket 0.2.0-beta.6, which speaks version 6. An older version reads `api: 5 (needs docket 0.2.0-beta.6)` and no run is sent to it.
+- **`api`** is the version of docket's HTTP interface. Tack needs docket 0.2.0-beta.6, which speaks version 6 or later. An older docket reads `api: 5 (needs docket 0.2.0-beta.6 (API 6); this docket answers API 5)` and no run is sent to it.
 - **`daemon`** says whether docket's background process answers. `not answering at … ` says where Tack looked.
 - **`team <name>`** appears once per team. `lights-out` means the team runs without a person. `attended` means it needs one, and the fix in brackets is the docket command that changes that. A team that is `attended` keeps its tasks at L3, however high the project's merge level; see [Merging from Tack](merging.md).
 

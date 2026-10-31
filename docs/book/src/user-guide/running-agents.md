@@ -17,8 +17,7 @@ always runs and an agent executor that stays off until you turn it on. Everythin
 | The CLI and `tack mcp` for all of the above | A task that starts by itself ([Automating a Project](automation.md)) |
 | Webhooks, GitHub sync and backups | |
 
-With no agent turned on, **Run with agent** says "Agent execution is off" instead of showing a form. Tack
-never queues a request that nothing could ever take.
+With no agent turned on, **Run with agent** says "Agent execution is off" instead of showing a form.
 
 Turning agents on for one computer is a switch on the Agents page. A shared server needs a separate
 runner instead, which is an administrator's task: see
@@ -28,20 +27,20 @@ runner instead, which is an administrator's task: see
 
 ## Agents on this computer
 
-The **Agents** page (`/agents`) is about this computer only. It holds nothing that belongs to a project.
+The **Agents** page is about this computer only. It holds nothing that belongs to a project.
 
-<img src="../screenshots/agents.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed and when each last ran here, a Sign in step with one row per installed agent, and a Run test button.">
+<img src="../screenshots/tutorial/08-agents-on.png" width="60%" alt="The Agents page: a switch for agent execution on this computer, which agents are installed, a Sign in step with one row per installed agent, and a Run test button.">
 
 1. **Turn agents on.** One switch for this computer. It takes effect at once, with no restart.
-2. **See which agents are installed**, and when each last ran here. Tack looks where a terminal would
+2. **See which agents are installed**, with their versions. Tack looks where a terminal would
    look; if an agent is installed somewhere unusual, see
    [Where Tack looks for an agent](../admin-guide/runners.md#where-tack-looks-for-a-harness-binary).
 3. **Sign in.** One row per installed agent, asked of the agent itself: "Signed in", or "Not signed in.
    Run `<command>` in a terminal." with a link to that agent's own documentation. Tack holds no model key.
    Each agent signs in and reaches its model with its own tools.
-4. **Run test.** Checks that an installed agent starts and answers. It names no model, so it uses an agent
-   that runs with its own default (Claude Code today). When every installed agent needs a model named,
-   the button is disabled and says so.
+4. **Run test.** Checks that an installed agent starts and answers. It names no model, so it uses an
+   installed agent that runs with its own default. When every installed agent needs a model named, the
+   button is disabled and says so.
 
 The default agent, the model, where the agent works and what happens after a run are project settings,
 described in [Automating a Project](automation.md#the-projects-other-settings).
@@ -160,7 +159,7 @@ For the dialog the path is short. Turn agents on for this computer ([Agents on t
 computer](#agents-on-this-computer)). Tell the project where its code is, either when you create the
 project ("Does this project have code?") or later under **Settings → Automation**
 ([Automating a Project](automation.md)). Then press **Run with agent** on a task.
-[Quick Start](quick-start.md#run-an-item-with-an-agent) walks through it with screenshots.
+The [Tutorial](tutorial.md) walks through it with screenshots.
 
 ### The Run with agent dialog
 
@@ -210,7 +209,7 @@ is not on the agent's list), rather than leaving **Run** disabled with no explan
 
 ### Token limits
 
-A limit is in tokens, and a run always has one while the provisional limit is on. You can set one in four places:
+A limit is in tokens. A run has one unless the profile sets none and the project's provisional limit is cleared. You can set one in four places:
 
 | Where | What it limits |
 |---|---|
@@ -227,9 +226,8 @@ not counted)", or says "cache not reported" for an agent that does not separate 
 Every run says its limit and who applies it, in one line:
 
 - "Provisional limit: 2 000 000 tokens (no measured runs yet) · set in Settings → Automation · …": the
-  profile sets none, so the run takes the provisional limit, which is the cap the SWE-Effi benchmark gives
-  one software task. Failed runs cost about four times a successful one, so it is there to stop a run that
-  has run away, not to trim good runs.
+  profile sets none, so the run takes the project's provisional limit. It is there to stop a run that has
+  run away, not to trim good ones.
 
 - "300 000 tokens · from the profile Implementer · docket stops the task there"
 - "No limit set in Tack · docket stops each step at its own limit (docket's setting)": a docket team has
@@ -241,7 +239,7 @@ Every run says its limit and who applies it, in one line:
   report each model call's tokens as it finishes, and Tack stops the run when the tokens counted reach the
   limit. The attempt fails with "the run reached its token limit (300 000)". A call's output is complete
   only at the end, so a run can end a little past its limit.
-- "measured, not enforced": Codex reports its tokens, but Tack cannot stop it at a limit yet. The limit is
+- "measured, not enforced": Codex reports its tokens, but Tack cannot stop it at a limit. The limit is
   still shown, and still counts against the project's day. A run given what was left of the day says it can
   go past today's limit.
 
@@ -340,15 +338,12 @@ nobody answers in time expires, and an expired question is never treated as an A
 
 ## Running from the command line
 
-This is one complete run from the command line. It was executed against a real `tack serve --with-runner`
-with a stand-in `claude` program in place of a signed-in install, so it cost nothing and never left the
-machine. Every id and line of output below is copied from that run. Swap in a real, signed-in agent and the
-same commands reach the same place.
+This is one complete run from the command line.
 
-**Before this:** a project and a task exist (`tack init`, `tack add`), and an embedded runner is running
-(`tack serve --with-runner`) or an administrator has enrolled one. `tack execution create` requires
-`--permission-policy` and `--timeout-seconds`; the CLI fills in an idempotency key for you. The server
-loads the profile by id and builds the repository from the project.
+**Before this:** a project and a task exist (`tack init`, `tack add`), and agents are on for this computer
+(the **Agents** page, or `tack serve --with-runner`) or an administrator has enrolled a runner.
+`tack execution create` requires `--permission-policy`; the CLI fills in an idempotency key for you. Tack
+builds the repository from the project.
 
 Create a profile. Its instructions and limits are copied into every request made with it:
 
@@ -374,13 +369,15 @@ tack execution create <ITEM_ID> \
   --timeout-seconds 120
 ```
 
+`--timeout-seconds` is optional: without it the profile's time limit applies, else one hour.
+
 ```text
 Created execution request: exec_0fe
   state: queued
   id:    exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
 ```
 
-Poll for the end. A fresh embedded runner finishes against a stand-in agent in well under a second:
+Check on it until it ends:
 
 ```sh
 tack execution get exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf9280134ec5d1
@@ -395,6 +392,5 @@ Execution request exec_0fe7252989f5f3d40a056c1da45b035039e4a8247ad89e5222cf92801
 
 That is a completed run, reached with no browser. `tack execution list` shows every request, newest first,
 and `tack execution cancel <ID>` asks the runner to stop one. For the detail of an attempt, such as which
-model answered and how the run ended, open the task's Execution tab or read the attempts over the API: see
-[The Runner Contract](../developer/runner-contract.md#what-actually-runs-today). Every `tack execution`
+model answered and how the run ended, open the task's Execution tab. Every `tack execution`
 option is in the [CLI reference](cli.md#runs).
