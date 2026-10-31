@@ -45,6 +45,12 @@ in six rounds:
 - **K** A queued run says what it waits behind: the run holding the computer and, when that one waits
   on a person, the question, with a way to answer it.
 - **L** A question nobody answered ends its run as "nobody answered", never as "approval denied".
+- **L2** Tack's own timeout is never answered "no" for you: an expired question cancels the task, and
+  docket's `approval_expired` reads as "nobody answered".
+- **P** Each agent says what it can do (stop, resume, answer questions, propose items, usage), a run
+  says which profile and agent run it, and an accepted proposal entry may name any profile.
+- **N** The item page follows its run with no reload, a question waiting for you is the first thing on
+  it and has a count in the sidebar, and the Execution tab drops what nobody understands.
 - **A** One description of a team for any agent (members, models, steps, where it works, how it
   decides, queue), filled by docket; the board lists every team any agent reports.
 - **D** One proposal format for any agent: the plan file gains type, role, team and parent;
