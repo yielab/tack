@@ -304,6 +304,20 @@ export interface RunStep {
   questions: string[];
 }
 
+/** Where a step of a team's reported steps stands in a run, read from the run's own events. */
+export type TeamStepState = 'done' | 'running' | 'waiting';
+
+/** One step the run's team reports, with where it stands in this run. `state` is `null` for a step
+ *  nobody with a role does (a command, a question, a wait, a parallel step): no event names it, so
+ *  nothing can be said of it. `check` is what decides it passed, in words; `null` when nothing does. */
+export interface TeamStepReport {
+  name: string;
+  kind: components['schemas']['TeamStepKind'];
+  role: string | null;
+  state: TeamStepState | null;
+  check: string | null;
+}
+
 /** One record set a team declared, with the rows this run wrote (at most 50). `cut` is set when the
  *  set held more rows than were read. Rows are keyed by column name. */
 export interface RunRecordSet {

@@ -23,6 +23,7 @@ import ReviewActions from './ReviewActions';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
 import RunWithAgentModal from './RunWithAgentModal';
+import TeamStepsLine, { runWho } from './TeamSteps';
 import { parseRunLog } from './runLog';
 import { stoppedByLimit } from './runLimit';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso, type StateTone } from './shared';
@@ -305,6 +306,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
           </Show>
 
           <Show when={kind() === 'running'}>
+            <TeamStepsLine profileId={runWho(latest()).profileId} agentKind={runWho(latest()).agentKind} events={events.state === 'errored' ? [] : (events.latest ?? [])} />
             <Show
               when={steps().length > 0}
               fallback={

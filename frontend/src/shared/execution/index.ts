@@ -21,6 +21,8 @@ export type {
   RunStep,
   RunStepPrompt,
   RunRecordSet,
+  TeamStepReport,
+  TeamStepState,
 } from './types';
 export { TERMINAL_EXECUTION_STATES, isTerminalExecutionState } from './types';
 
