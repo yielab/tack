@@ -380,8 +380,8 @@ A profile is what the agent is told to be and which tools it may use. Four are b
 |---|---|
 | **Implementer** (default) | Reads, edits and runs commands |
 | **Reviewer** | Reads and reports. Changes nothing |
-| **Researcher** | Reads and searches, and writes a report |
-| **Planner** | Plans and designs, and proposes subtasks you can accept |
+| **Researcher** | Reads and searches, and writes a report. The only file it writes is the plan file `tack-plan.json`, when its findings lead to work |
+| **Planner** | Plans and designs, and proposes subtasks you can accept. The only file it writes is the plan file `tack-plan.json` |
 
 You pick one with the pills in the run dialog; each pill has a tooltip saying what it may do. You edit a
 profile in a form on the Agents page, never as JSON. A profile you change is copied into each request when

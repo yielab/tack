@@ -133,6 +133,49 @@ fn codex_declares_what_it_does_not_enforce() {
     );
 }
 
+/// A Planner or Researcher run on Codex takes the profile's list for `codex` as its tools, as the
+/// Run dialog and auto-start send it (`tool_policy.tools.codex`, `["*"]` for both built-ins), and
+/// that list selects the writable sandbox so `tack-plan.json` can be written; never full access.
+#[test]
+fn a_planner_or_researcher_on_codex_gets_a_workspace_write_sandbox_and_never_full_access() {
+    let state = scratch("codex-planner-sandbox");
+    let policy = serde_json::json!({"tools": {
+        "claude-code": ["Read", "Write"], "codex": ["*"], "opencode": ["*"], "docket": ["*"],
+    }});
+    for kind in ["planner", "researcher"] {
+        let mut request = spec(DESCRIPTOR.kind, state.path());
+        request.work.request.resolved_agent_profile.tool_policy = policy.clone();
+        request
+            .work
+            .request
+            .resolved_agent_profile
+            .additional
+            .insert("kind".into(), kind.into());
+        request.work.request.permission_policy.tools = policy["tools"]["codex"]
+            .as_array()
+            .expect("list")
+            .iter()
+            .filter_map(|tool| tool.as_str().map(str::to_owned))
+            .collect();
+        let run = RunContext {
+            spec: &request,
+            scratch: state.path(),
+            program: None,
+            host: &crate::config::ProcessEnv::default(),
+        };
+        let args = CodexGrammar.invocation(&run).expect("invocation").args;
+        let at = args
+            .iter()
+            .position(|arg| arg == "--sandbox")
+            .expect("flag");
+        assert_eq!(args[at + 1], "workspace-write", "{kind}");
+        assert!(
+            !args.iter().any(|arg| arg == "danger-full-access"),
+            "{kind}"
+        );
+    }
+}
+
 /// One row per policy value the mapping cares about: the tool list alone
 /// selects the sandbox mode; `approvals` and `network` never change the
 /// args (each is compared against the same expected args as the first row,

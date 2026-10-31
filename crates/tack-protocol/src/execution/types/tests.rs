@@ -572,6 +572,35 @@ fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_no
             Some("researcher"),
             true,
         ),
+        // `write` on a planner or researcher is the plan file; any other write tool is a change.
+        (
+            "claude-code",
+            vec!["Read", "Write"],
+            none.clone(),
+            Some("planner"),
+            false,
+        ),
+        (
+            "claude-code",
+            vec![],
+            serde_json::json!({"tools": {"claude-code": ["Read", "WebSearch", "Write"]}}),
+            Some("researcher"),
+            false,
+        ),
+        (
+            "claude-code",
+            vec!["Read", "Write", "Bash"],
+            none.clone(),
+            Some("planner"),
+            true,
+        ),
+        (
+            "claude-code",
+            vec!["Read", "Write"],
+            none.clone(),
+            Some("implementer"),
+            true,
+        ),
         ("codex", vec!["*"], none.clone(), Some("implementer"), true),
         ("codex", vec!["*"], none.clone(), Some("custom"), true),
         // docket applies its team's own tools: an unnamed list may write.

@@ -15,6 +15,15 @@ fn networked(state: &std::path::Path) -> crate::harness::ExecutionSpec {
     request
 }
 
+/// The built-in Planner and Researcher give opencode `["*"]`, which grants the edit tool the plan
+/// file needs; a read-only list does not.
+#[test]
+fn the_built_in_planner_and_researcher_list_grants_opencode_the_edit_tool() {
+    let all = vec!["*".to_owned()];
+    assert!(grants(&all, "edit"));
+    assert!(!grants(&["webfetch".to_owned()], "edit"));
+}
+
 #[test]
 fn opencode_declares_decisions_supported_over_acp() {
     let declared = OpencodeGrammar.capabilities();

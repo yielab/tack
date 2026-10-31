@@ -27,7 +27,7 @@ outcome and the tools to check it:
 **Succeeded** is green only when the changes were captured. It is amber when a run that was not meant to
 change files changed nothing, or when the changes could not be read. A run is meant to change files when its
 tools include one that writes, or, when its tools are all tools, unless its profile is a Reviewer, Researcher
-or Planner. A run that was meant to change files and changed nothing is shown as **Failed**, with the reason
+or Planner. (A Planner's or Researcher's write tool is for the plan file, so it does not count.) A run that was meant to change files and changed nothing is shown as **Failed**, with the reason
 "The agent reported success but delivered no change to review", and the number of files the agent left
 uncommitted when there were any. A failed run leads with why it failed.
 
@@ -51,7 +51,11 @@ The badges that start with Started, Team and Merged are explained in
 
 ### When a run proposes items
 
-A run with the **Planner** profile changes no files and can end with a list of items it proposes. The
+A run with the **Planner** profile changes no project files and can end with a list of items it proposes. The
+Planner and the Researcher write one file only, the plan file `tack-plan.json`. A run of either that also
+changes any other file ends **Failed** with the reason "This run was meant only to write a plan, but it also
+changed:" and the names of the files, so a change nobody asked for is never accepted by default; the changes
+are still there to look at. The
 attempt shows **The Planner proposes N items**, with one row per item. Each row has a checkbox, and its
 title, description and acceptance criteria can be edited. Its **Type** and **Role** can be changed, and
 **Who does it** names the team that will do the item once it is created. **Waits on** names the items it
