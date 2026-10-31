@@ -10,6 +10,8 @@ import { getItemTypeMap, resolveLabel } from '../../shared/vocab/vocab';
 import { FiPlus, FiX, FiTrash2 } from 'solid-icons/fi';
 import { createConfirm } from '../../shared/ui/ConfirmDialog';
 import { priorityColor } from '../../shared/ui/PriorityDot';
+import { agentProfilesApi, type AgentProfileSummary } from '../../shared/execution';
+import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
 
 /** Choice chip (type / priority / estimate): a pill; the chosen one gets the
  *  accent-soft fill, accent ink and a 2px accent ring. */
@@ -66,7 +68,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
   // Ids that tie each heading to what it names: a <label> to its input, a
   // group's name to its row of option buttons.
   const uid = createUniqueId();
-  const ids = { type: `${uid}-type`, priority: `${uid}-priority`, estimate: `${uid}-estimate`, children: `${uid}-children`, tags: `${uid}-tags` };
+  const ids = { type: `${uid}-type`, priority: `${uid}-priority`, estimate: `${uid}-estimate`, who: `${uid}-who`, children: `${uid}-children`, tags: `${uid}-tags` };
   const [title, setTitle] = createSignal('');
   const [description, setDescription] = createSignal('');
   const [itemType, setItemType] = createSignal<ItemType>('task');
@@ -76,6 +78,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
   const [tagInput, setTagInput] = createSignal('');
   const [subtasks, setSubtasks] = createSignal<SubtaskItem[]>([]);
   const [subtaskInput, setSubtaskInput] = createSignal('');
+  const [profileId, setProfileId] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
 
@@ -88,6 +91,13 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       return items.filter(item => item.parent_id === parentId);
     }
   );
+
+  // Every profile, to choose who does the new task; none to choose from hides the choice.
+  const [profiles] = createResource(
+    () => (props.isOpen && mode() === 'create' ? true : null),
+    () => agentProfilesApi.list().then((r) => r.data.data ?? [], () => [] as AgentProfileSummary[]),
+  );
+  const chosenName = () => profiles()?.find((p) => p.agent_profile_id === profileId())?.name ?? 'Nobody yet';
 
   // Pre-fill form when editing
   createEffect(() => {
@@ -108,6 +118,7 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
       setEstimate(null);
       setTags([]);
       setSubtasks([]);
+      setProfileId(null);
     }
   });
 
@@ -202,6 +213,16 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
         };
 
         const createdItem = await api.items.create(props.projectId, itemData);
+
+        // Who does it is stored as the profile in the task's run settings.
+        const chosen = profileId();
+        if (chosen) {
+          try {
+            await api.items.update(createdItem.id, { run_settings: { agent_profile_id: chosen } });
+          } catch {
+            toast.error('The item was created, but who does it could not be saved. Choose it again on the item.');
+          }
+        }
 
         // Create subtasks if any
         if (subtasks().length > 0) {
@@ -324,6 +345,24 @@ const CreateItemModal: Component<CreateItemModalProps> = (props) => {
             </div>
           </div>
         </div>
+
+        {/* Who does it (only in create mode, and only when there is a profile to choose) */}
+        <Show when={mode() === 'create' && (profiles()?.length ?? 0) > 0}>
+          <details data-testid="create-who-does-it">
+            <summary id={ids.who} class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+              Who does it: {chosenName()}
+            </summary>
+            <div class="mt-2">
+              <ProfilePicker
+                label="Who does it"
+                value={profileId()}
+                profiles={profiles() ?? []}
+                disabled={loading()}
+                onChange={(p) => setProfileId(p ? p.agent_profile_id : null)}
+              />
+            </div>
+          </details>
+        </Show>
 
         {/* Description with WYSIWYG */}
         <div>

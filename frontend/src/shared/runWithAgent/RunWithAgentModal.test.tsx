@@ -11,6 +11,12 @@ const realSetTimeout = globalThis.setTimeout;
 const flush = () => new Promise((r) => realSetTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
+/** The profile's radio in the "Who does it" picker, found by the label a person reads. */
+const profileRadio = (name: string): HTMLInputElement =>
+  [...document.querySelectorAll<HTMLLabelElement>('[data-testid="who-does-it"] label')]
+    .filter((l) => l.textContent === name)
+    .map((l) => document.getElementById(l.htmlFor) as HTMLInputElement)[0];
+
 const FLEET = { fleet_id: 'fleet-1', name: 'Primary Fleet', concurrency_limit: 5, default_policy: null };
 const PROFILE = {
   agent_profile_id: 'profile-1',
@@ -397,11 +403,11 @@ describe('RunWithAgentModal', () => {
     });
     await flush();
     await flush();
-    const pill = Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Fixer') as HTMLButtonElement;
-    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    const pill = profileRadio('Fixer');
+    expect(pill.checked).toBe(true);
     expect(document.querySelector('[data-testid="profile-source"]')?.textContent).toBe('Chosen by the role Content');
     // A profile the person picks instead is theirs, not the server's.
-    (Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Reviewer') as HTMLButtonElement).click();
+    (profileRadio('Reviewer')).click();
     await flush();
     expect(document.querySelector('[data-testid="profile-source"]')).toBeNull();
   });
@@ -420,7 +426,7 @@ describe('RunWithAgentModal', () => {
     mount({}, opts);
     await flush();
     await flush();
-    const pill = Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Reviewer') as HTMLButtonElement;
+    const pill = profileRadio('Reviewer');
     pill.click();
     submitButton().click();
     await flush();
@@ -548,7 +554,7 @@ describe('RunWithAgentModal', () => {
     const notice = () => document.querySelector('[data-testid="profile-agent-notice"]')?.textContent;
     expect(select('Agent').value).toBe('codex');
     expect(notice()).toBeUndefined();
-    const pill = (name: string) => Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === name) as HTMLButtonElement;
+    const pill = (name: string) => profileRadio(name);
     pill('Fixer').click();
     await flush();
     expect(select('Agent').value).toBe('claude-code');
@@ -559,18 +565,79 @@ describe('RunWithAgentModal', () => {
     expect(notice()).toBeUndefined();
   });
 
-  it('lists the profiles the person made first, each with what it delivers, and the built-in ones apart', async () => {
-    const mine = { ...PROFILE_2, name: 'Fixer', delivers: 'a change on a branch' };
-    const builtIn = { ...PROFILE, name: 'Reviewer', builtin: true, kind: 'reviewer' };
+  it('offers every profile in the one picker, grouped by the agent that runs it, with no Built in list', async () => {
+    const mine = { ...PROFILE_2, name: 'Fixer', delivers: 'a change on a branch', tool_policy: { agent: 'codex' } };
+    const builtIn = { ...PROFILE, name: 'Reviewer', builtin: true, kind: 'reviewer', summary: 'Reads the change and says what is wrong', tool_policy: { agent: 'claude-code' } };
     mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [builtIn, mine] });
     await flush();
     await flush();
-    const group = document.querySelector('[role="group"][aria-label="Profile"]')!;
-    const names = [...group.querySelectorAll('button')].map((b) => b.textContent);
-    expect(names).toEqual(['Fixer', 'Reviewer']);
-    expect(group.textContent).toContain('Your profiles');
-    expect(group.textContent).toContain('Built in');
-    expect(group.textContent).toContain('a change on a branch');
+    const picker = document.querySelector('[data-testid="who-does-it"]')!;
+    expect(picker).not.toBeNull();
+    // A Run needs a profile: there is no "Nobody yet" here.
+    expect(picker.textContent).not.toContain('Nobody yet');
+    expect(picker.textContent).not.toContain('Built in');
+    expect(picker.textContent).not.toContain('Your profiles');
+    // Each profile sits under the agent that runs it, which is named plainly.
+    expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('Codex');
+    expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('Fixer');
+    expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('a change on a branch');
+    const claude = picker.querySelector('[data-testid="who-alone-claude-code"]')!;
+    expect(claude.textContent).toContain('Claude Code');
+    expect(claude.textContent).toContain('A single agent, no team');
+    expect(claude.textContent).toContain('Reads the change and says what is wrong');
+    // Claude Code reported nothing on this computer: said so, not guessed.
+    expect(claude.textContent).toContain('Not reported by Claude Code');
+    expect(picker.textContent).toContain('Each task can use a different agent; this choice is for this task.');
+  });
+
+  it('says what an agent can do from its own report, and greys what it cannot with its reason', async () => {
+    const mine = { ...PROFILE_2, name: 'Fixer', tool_policy: { agent: 'codex' } };
+    const runner = runnerRow('runner-1', 'This computer', runnerCapabilitySnapshot({
+      harnesses: [{
+        harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+        features: {
+          cancel: { support: 'supported', reason: null },
+          decisions: { support: 'supported', reason: null },
+          proposals: { support: 'unsupported', reason: 'Codex has no plan file here' },
+        },
+      }],
+    }));
+    mount({}, { runners: [runner], fleets: [], agentProfiles: [PROFILE, mine] });
+    await flush();
+    await flush();
+    const codex = document.querySelector('[data-testid="who-alone-codex"]')!;
+    expect(codex.textContent).toContain('Can stop a run and answer questions.');
+    const cannot = [...codex.querySelectorAll('[aria-disabled="true"]')].map((e) => e.textContent);
+    expect(cannot).toContain('Cannot propose items · Codex has no plan file here');
+    // A feature the agent left out is "not reported", never filled from the computer's own report.
+    expect(cannot).toContain('Not reported by Codex');
+  });
+
+  it('shows a team with what it is made of, and a reported team no profile names as disabled with what to do', async () => {
+    const teamProfile = { ...PROFILE, name: 'Content team', tool_policy: { agent: 'docket', docket: { team: 'saas-content' } } };
+    const teams = [
+      { name: 'saas-content', harness: 'docket', reported: true, profiles: [], report: { members: [{ role: 'Lead', model: null }, { role: 'Writer', model: null }] } },
+      { name: 'saas-code', harness: 'docket', reported: true, profiles: [], report: { members: [{ role: 'Builder', model: null }] } },
+    ];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/teams')) return Promise.resolve(new Response(JSON.stringify({ teams }), { status: 200 }));
+      return (mockFetch({ runners: [RUNNER], fleets: [], agentProfiles: [teamProfile, PROFILE_2] }) as typeof fetch)(input, init);
+    }) as typeof fetch);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(() => <Host />, container);
+    disposers.push(() => { dispose(); container.remove(); });
+    await flush();
+    await flush();
+    const content = document.querySelector('[data-testid="who-team-saas-content"]')!;
+    expect(content.textContent).toContain('Team saas-content');
+    expect(content.textContent).toContain('Made of Lead, Writer');
+    expect(content.textContent).toContain('Content team');
+    const code = document.querySelector('[data-testid="who-team-saas-code"]')!;
+    expect(code.textContent).toContain('Make a profile for it on the Agents page');
+    expect(code.querySelector('input[type="radio"]')!.hasAttribute('disabled')).toBe(true);
+    // The words of the engine never reach the screen.
+    expect(document.querySelector('[data-testid="who-does-it"]')!.textContent).not.toMatch(/harness|pod|blueprint|archetype/i);
   });
 
   it('a profile that runs no commands says nothing is installed', async () => {
@@ -600,7 +667,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain("in the team's own folder");
-    (Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === 'Fixer') as HTMLButtonElement).click();
+    (profileRadio('Fixer')).click();
     await flush();
     expect(document.querySelector('[data-testid="run-summary"]')!.textContent).toContain('on a new branch of ~/src/app');
     expect(document.querySelector('[data-testid="run-dialog-install"]')).not.toBeNull();
@@ -657,8 +724,8 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(dialog.textContent).not.toContain('No agent profile exists yet.');
-    const pill = [...dialog.querySelectorAll('[aria-label="Profile"] button')].find((b) => b.textContent === 'Default')!;
-    expect(pill.getAttribute('aria-pressed')).toBe('true');
+    const pill = profileRadio('Default');
+    expect(pill.checked).toBe(true);
   });
 
   it('the repository is not asked for; only a branch override sends a snapshot, built from the project', async () => {
@@ -962,7 +1029,7 @@ describe('RunWithAgentModal', () => {
   it('the_web_tools_box_starts_at_the_profiles_network_and_a_remembered_or_touched_value_wins', async () => {
     const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', tool_policy: { network: true } };
     const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
-    const pick = (name: string) => (Array.from(document.querySelectorAll('[role="group"][aria-label="Profile"] button')).find((b) => b.textContent === name) as HTMLButtonElement).click();
+    const pick = (name: string) => (profileRadio(name)).click();
     const opts = { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, researcher], project: { ...PROJECT, default_profile_id: null } };
     // A profile without the key: off, and the run says so.
     mount({}, opts);

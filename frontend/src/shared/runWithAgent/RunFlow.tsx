@@ -13,6 +13,7 @@ import { installLine } from './install';
 import { LEVEL_NEEDS_DOCKET, gateHarnessModelSelection } from './shared';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
+import ProfilePicker from './ProfilePicker';
 
 /** Claude Code's file, shell, web and sub-agent tools, from the names `claude mcp serve`
  *  lists (docs/plans/measurements/tools-claude-code.md). The rest of that list depends on
@@ -51,6 +52,8 @@ export interface RunFlowProps {
   checkedCard?: Accessor<boolean | undefined>;
   profilesLoading: Accessor<boolean>;
   profiles: Accessor<AgentProfileSummary[]>;
+  /** What the agents of the machines this run may use reported, to say what each can do. */
+  agentReports: Accessor<HarnessCapability[]>;
   creatingProfile: Accessor<boolean>;
   createDefaultProfile: () => void;
   harnessOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
@@ -92,8 +95,6 @@ export interface RunFlowProps {
 const PILL = { 'background-color': 'var(--color-bg-app)', color: 'var(--color-text-primary)' };
 const LINK = { color: 'var(--color-accent-ink)' };
 const SUMMARY_CLASS = 'cursor-pointer font-heading text-lg';
-const KIND_ORDER = ['implementer', 'reviewer', 'researcher', 'planner'];
-
 /** The dialog's sentence for the server's `profile_source`. */
 export function describeProfileSource(source: string | null | undefined): string | null {
   if (!source) return null;
@@ -142,10 +143,6 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         : `on a new branch of ${folder()}`;
   };
   const profileName = () => props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.name ?? 'Choose a profile';
-  const sortedProfiles = () => {
-    const rank = (p: AgentProfileSummary) => { const i = KIND_ORDER.indexOf(p.kind ?? 'custom'); return i < 0 ? KIND_ORDER.length : i; };
-    return [...props.profiles()].sort((a, b) => rank(a) - rank(b));
-  };
   const blocker = (): { text: string; href: string } | undefined => {
     if (props.project()?.code_origin === 'none') return { text: "Choose where this project's code is →", href: automation() };
     if (props.rows.runner() === 'missing') return { text: 'Turn on agent execution →', href: '/agents' };
@@ -213,21 +210,15 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           </div>
         }
       >
-        <FieldShell label="Profile" help={HELP.profile}>
-        <div role="group" aria-label="Profile" class="space-y-3">
-          <ProfileGroup
-            title={props.profiles().some((p) => p.builtin) ? 'Your profiles' : undefined}
-            profiles={sortedProfiles().filter((p) => !p.builtin)}
-            selected={props.form.agentProfileId}
-            onPick={(p) => { props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
+        <FieldShell label="Who does it" help={HELP.profile}>
+          <ProfilePicker
+            label="Who does it"
+            withNobody={false}
+            value={props.form.agentProfileId || null}
+            profiles={props.profiles()}
+            reports={props.agentReports()}
+            onChange={(p) => { if (!p) return; props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
           />
-          <ProfileGroup
-            title={props.profiles().some((p) => !p.builtin) ? 'Built in' : undefined}
-            profiles={sortedProfiles().filter((p) => p.builtin)}
-            selected={props.form.agentProfileId}
-            onPick={(p) => { props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
-          />
-        </div>
         </FieldShell>
         <Show when={props.agentNotice()}>
           {(text) => <p data-testid="profile-agent-notice" class="-mt-3 px-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>}
@@ -427,46 +418,6 @@ const RunFlow: Component<RunFlowProps> = (props) => {
     </>
   );
 };
-
-/** Profiles as pills, each with the line saying what it delivers beneath it. */
-const ProfileGroup: Component<{
-  title?: string;
-  profiles: AgentProfileSummary[];
-  selected: string;
-  onPick: (profile: AgentProfileSummary) => void;
-}> = (props) => (
-  <Show when={props.profiles.length > 0}>
-    <div class="space-y-1.5">
-      <Show when={props.title}>
-        <p class="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{props.title}</p>
-      </Show>
-      <div class="flex flex-wrap gap-x-3 gap-y-2">
-        <For each={props.profiles}>
-          {(p) => (
-            <div class="flex max-w-56 flex-col items-start gap-0.5">
-              <button
-                type="button"
-                title={p.summary}
-                aria-pressed={props.selected === p.agent_profile_id}
-                aria-describedby={p.delivers ? `delivers-${p.agent_profile_id}` : undefined}
-                class="rounded-full px-4 py-1.5 text-sm font-semibold"
-                style={props.selected === p.agent_profile_id
-                  ? { 'background-color': 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }
-                  : PILL}
-                onClick={() => props.onPick(p)}
-              >
-                {p.name}
-              </button>
-              <Show when={p.delivers}>
-                <span id={`delivers-${p.agent_profile_id}`} class="px-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{p.delivers}</span>
-              </Show>
-            </div>
-          )}
-        </For>
-      </div>
-    </div>
-  </Show>
-);
 
 const ModelGateNote: Component<{ gate: ReturnType<typeof gateHarnessModelSelection> }> = (props) => (
   <div class="space-y-1.5">

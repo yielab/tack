@@ -9,8 +9,9 @@ pub struct WaitingItem {
     pub version: i64,
 }
 
-/// The tasks of the project in `status` that have at least one role.
-pub async fn waiting_with_a_role(
+/// The tasks of the project in `status` that say who does them: at least one role, or a profile
+/// chosen on the task itself (`run_settings.agent_profile_id`).
+pub async fn waiting_with_someone_to_do_it(
     repo: &Repository,
     project_id: &str,
     status: &str,
@@ -18,7 +19,8 @@ pub async fn waiting_with_a_role(
     Ok(sqlx::query_as(
         "SELECT id, priority, sort_order, version FROM items
          WHERE project_id = ? AND status = ?
-           AND EXISTS (SELECT 1 FROM item_roles ir WHERE ir.item_id = items.id)",
+           AND (EXISTS (SELECT 1 FROM item_roles ir WHERE ir.item_id = items.id)
+                OR COALESCE(json_extract(items.run_settings, '$.agent_profile_id'), '') <> '')",
     )
     .bind(project_id)
     .bind(status)
