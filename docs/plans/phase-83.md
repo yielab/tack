@@ -1,12 +1,13 @@
 # Phase 83: a team is shown as it is, a task can go to a team, and what a run finds can become items
 
 **Status: PROPOSED 2026-10-31.** ADR 0032 (proposed) holds the decisions; this plan is the cards.
-No card starts before the ADR is accepted. docket's two asks (ADR 0032 "What this asks of docket")
+No card starts before the ADR is accepted, except H and I: they fix what an onboarding run on
+2026-10-31 found in ADR 0031 decision 1 (a folder team), which is accepted, and wait on nothing. docket's two asks (ADR 0032 "What this asks of docket")
 block no card: each card reads them when present and says so on screen when absent. Tack edits
 nothing in docket's or prill's repositories.
 
-Seven cards, sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
-names. Four rounds.
+Nine cards, sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
+names. Five rounds.
 
 ## How every card runs
 
@@ -26,6 +27,7 @@ real one.
 
 | Round | Cards | Gate |
 |---|---|---|
+| 0 | **H ∥ I** (H owns the run's start in `harness/docket.rs` and `task.rs`, I owns `shared/runWithAgent/RunFlow.tsx` and `install.ts`); starts now, before ADR 0032 is accepted | full suites once on the merged tree |
 | 1 | **A ∥ D** (the fake docket is split: A edits only the pod routes, D only the records routes and the plan fixtures; `harness/docket.rs`: D only the settle; whoever merges second rebases) | full suites once on the merged tree |
 | 2 | **B ∥ C** (B owns `features/agents/`, C owns `features/board/` and `features/item-detail/`; both read A's `GET /api/teams`) | full suites once |
 | 3 | **E ∥ F** (E owns `PlanPanel.tsx`, F the run card and timeline) | full suites once |
@@ -39,7 +41,9 @@ real one.
 | C | A task goes to a team | Sonnet | `frontend/src/features/board/CreateItemModal.tsx`, `features/item-detail/AutomationRow.tsx`, `tack-app/src/auto_start.rs`, the `tack-db` query behind `waiting_with_a_role`, the user guide's automation "Start" section | A |
 | E | The person chooses what becomes an item | Haiku | `frontend/src/shared/runWithAgent/PlanPanel.tsx`, `AttemptList.tsx` (the plan line only), the user guide's "A Planner run" section | B, D |
 | F | A run shows the team's steps as it goes | Haiku | `frontend/src/shared/runWithAgent/` (`ExecutionTimeline.tsx`, `LatestRunSummary.tsx`), `shared/execution/types.ts`, the user guide's Execution tab section | A |
-| G | The local suite proves it against docket | Sonnet | `onboarding-lab/e2e/` (script, spec), recaptured fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, `TESTING.md`'s live-suite section | A–F |
+| G | The local suite proves it against docket | Sonnet | `onboarding-lab/e2e/` (script, spec), recaptured fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, `TESTING.md`'s live-suite section | A–F, H, I |
+| H | A folder team's run starts | Sonnet | `tack-runner/src/harness/docket.rs` (the run's start only: `start`, `has_repository`), `harness/docket/task.rs` (`body`), the fake's `POST /tasks/<pod>` rule, a fixture under `harness/fixtures/docket/v5/`, `docket_v5.rs` (task tests), ADR 0031's evidence line on `GET /pods/<p>`, the administrator guide's folder-team paragraph | — |
+| I | The run dialog says where the team works | Haiku | `frontend/src/shared/runWithAgent/RunFlow.tsx` (`where`), `install.ts`, their tests, the user guide's "Run with agent" paragraph | — |
 
 ## Left out, and why
 
@@ -48,7 +52,8 @@ a team from a shape in Tack; reading the pipeline file from the repository; the 
 proposal format; a pipeline chooser per task and `variables`; creating proposed items without a
 person. There is no docs card and no measurement card.
 
-**Done when:** Agents → Teams shows every team a runner reports with its members, models, where it
+**Done when:** a task given to a team that works in a folder starts and ends Succeeded with what
+the team handed off, and the run dialog says where it will work before it starts; Agents → Teams shows every team a runner reports with its members, models, where it
 works, how it decides, its queue, its records, and its steps when docket reports them; a profile's
 Team field offers those teams and a team with no profile can get one in one click; a new item can be
 given a team in the dialog and starts by itself when it reaches the trigger status without a role;
@@ -184,6 +189,59 @@ shape in the regenerated schema.
 3. After creating: the list of created items as links, and one line per entry the server reported
    (unknown role, team with several profiles).
 
+### H. A folder team's run starts
+
+**Model:** Sonnet. **Waits on:** nothing. ADR 0031 decision 1, the start of the run (the decision
+covered its end; nothing said what a run to a folder team must not send).
+
+**Why.** Every task given to a folder team fails in two seconds without spending a token. The
+runner reads that the team has no repository (`has_repository`, `repoConfigDir: ""`) and uses it
+only when the run ends, while `task::body` always sends `baseRef`, the project's base commit. docket
+refuses a `baseRef` it cannot cut a worktree from (`teams/workspace/worktree.py`,
+`ensure_task_worktree`, since its Phase 46): "baseRef '<sha>' needs a task worktree, but the
+Implementer has no codebase". The fake docket ignores `baseRef` for a folder pod, so no test saw it.
+The project-level `prepare` (the install derived from the lockfile) goes too, and docket ignores it
+for a task with no worktree.
+
+**Read first:** `harness/docket.rs` (`start`, `has_repository`, `finish`'s first arm),
+`harness/docket/task.rs` (`body`), the fake's `post_task` and `check_task_body`, the v5 fixtures
+README (`repoConfigDir`), docket's `teams/workspace/worktree.py` `ensure_task_worktree` and
+`tasks/application/queue.py` `prepare_claimed_task` (read only).
+
+**Does.**
+1. `start` asks `has_repository` before it builds the body, and `body` takes it: a team in a folder
+   gets no `baseRef` and no `prepare`; a team with a repository, or a docket that does not say, gets
+   both as today. The rework base (`rework_base`) is never sent to a folder team either.
+2. The fake does what docket does: a task posted with `baseRef` to a folder pod is claimed and ends
+   `failed` with `failureKind: "base_ref"` and docket's sentence, from a new fixture
+   `task-failed-base-ref-folder.json` written from the real reply (G recaptures it).
+3. ADR 0031's evidence says `codebase` is on `GET /pods/<p>`; the detail carries `repoConfigDir`
+   (the list carries `codebase`). Correct that line.
+4. Tests: a folder pod's task body has neither key and the attempt ends Succeeded with
+   `outside_repository`; a repository pod's body keeps both; a docket that sends no `repoConfigDir`
+   keeps both; the fake refuses a folder task that carries `baseRef`.
+
+### I. The run dialog says where the team works
+
+**Model:** Haiku. **Waits on:** nothing.
+
+**Why.** Run with agent says "on a new branch of <repository>" and "Prepares with npm ci (from
+package-lock.json)" for a profile whose team works in a folder, where there is no branch and no
+install. The board already knows: the project's autonomy settings carry each team's `works_in`, which
+Settings → Automation → Teams shows.
+
+**Read first:** `shared/runWithAgent/RunFlow.tsx` (`where`, the profile chips), `install.ts`,
+`features/settings/panels/automation/Teams.tsx` (`WorkNotes`, how it finds a profile's team),
+`shared/api/autonomy.ts`.
+
+**Does.**
+1. When the chosen profile's team reports `works_in: "folder"`: the line says "in the team's own
+   folder on this computer, not in this repository" and no install line is shown. With `repository`
+   or no report, the line is as today.
+2. Changing the profile updates the line.
+3. Tests: a folder team's profile shows the folder line and no install; a repository team and a
+   profile with no team keep today's lines.
+
 ### F. A run shows the team's steps as it goes
 
 **Model:** Haiku. **Waits on:** A. ADR 0032 decision 6.
@@ -202,8 +260,9 @@ shape in the regenerated schema.
 
 **Model:** Sonnet. **Waits on:** A–F.
 
-**Does.** Recapture the pod fixtures from docket's current checkout; add to
-`docket-prill-e2e.sh` one folder team with a `tack_proposals` set whose task adds three rows (one
+**Does.** Recapture the pod fixtures from docket's current checkout, and the folder refusal H
+wrote; add to `docket-prill-e2e.sh` one folder team (its task starts with no `baseRef` and ends
+Succeeded with no branch, H) with a `tack_proposals` set whose task adds three rows (one
 nested, one depending on another); assert the plan artifact, accept it through the API and check
 the three items, their nesting, their blocker and their team's profile; give one of them no role and
 check it starts by itself. `--check` passes. The run names docket's commit and whether `blueprint`
