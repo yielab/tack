@@ -6905,6 +6905,27 @@
         }
       }
     },
+    "/api/teams": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "GET /api/teams",
+        "operationId": "list_teams",
+        "responses": {
+          "200": {
+            "description": "Every team any active runner reports, once per name and agent, with the profiles that name it; plus the names profiles use that no runner reports",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/templates": {
       "get": {
         "tags": [
@@ -13000,6 +13021,72 @@
           }
         }
       },
+      "TeamDecides": {
+        "type": "string",
+        "description": "Whether a team runs to the end alone.",
+        "enum": [
+          "to_the_end",
+          "asks_a_person"
+        ]
+      },
+      "TeamEntry": {
+        "type": "object",
+        "description": "One team: what an agent reported about it, or only the name a profile gives it.",
+        "required": [
+          "name",
+          "reported",
+          "profiles"
+        ],
+        "properties": {
+          "harness": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent that runs the team; `null` for a name only a profile that names no agent uses."
+          },
+          "name": {
+            "type": "string"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamProfile"
+            },
+            "description": "The profiles that name the team."
+          },
+          "report": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamReport",
+                "description": "Everything the agent said of the team; a field it did not say is absent."
+              }
+            ]
+          },
+          "reported": {
+            "type": "boolean",
+            "description": "Whether an active runner reports this team. When `false`, everything below besides\n`profiles` is `null`: the board knows the name and nothing else."
+          },
+          "reported_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When that runner's agent last reported."
+          },
+          "runner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The runner whose report this is: the newest one when several report the team."
+          }
+        }
+      },
       "TeamLine": {
         "type": "object",
         "description": "A team one of the project's roles runs, and whether it caps the project's autonomy.",
@@ -13058,6 +13145,110 @@
           }
         }
       },
+      "TeamList": {
+        "type": "object",
+        "description": "Every team any agent reports.",
+        "required": [
+          "teams"
+        ],
+        "properties": {
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamEntry"
+            }
+          }
+        }
+      },
+      "TeamMember": {
+        "type": "object",
+        "description": "One member of a team.",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model the member runs on. Absent means the harness did not say."
+          },
+          "role": {
+            "type": "string",
+            "description": "What the member does, in the harness's own word for it, shown as data."
+          }
+        }
+      },
+      "TeamNetwork": {
+        "type": "string",
+        "description": "How far a team's agents can reach over the network.",
+        "enum": [
+          "none",
+          "limited",
+          "open"
+        ]
+      },
+      "TeamProfile": {
+        "type": "object",
+        "description": "A profile that names a team.",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "TeamQueue": {
+        "type": "object",
+        "description": "The work a team holds now.",
+        "required": [
+          "waiting",
+          "running"
+        ],
+        "properties": {
+          "running": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tasks being worked now.",
+            "minimum": 0
+          },
+          "waiting": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tasks that have not started or wait for a person.",
+            "minimum": 0
+          }
+        }
+      },
+      "TeamRecordSet": {
+        "type": "object",
+        "description": "One set of records a team keeps.",
+        "required": [
+          "name",
+          "description",
+          "rows"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "TeamRecords": {
         "type": "object",
         "description": "One set of records a team keeps.",
@@ -13078,6 +13269,206 @@
             "format": "int64",
             "description": "Rows in the set, whichever run wrote them.",
             "minimum": 0
+          }
+        }
+      },
+      "TeamReport": {
+        "type": "object",
+        "description": "One team a harness runs.\n\nEvery optional field below is in Tack's own words, filled by the harness's adapter from what\nits agent reports. Absent means the harness did not say, which is never the same as \"none\":\na screen shows what was reported and nothing it had to guess. No field may carry a harness's\nown key name; a harness's own labels arrive only as data (`shape`).",
+        "required": [
+          "name",
+          "profile"
+        ],
+        "properties": {
+          "decides": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamDecides",
+                "description": "Whether the team runs to the end alone or stops for a person. Absent means the harness did\nnot say; no field may carry a harness's own key name."
+              }
+            ]
+          },
+          "members": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamMember"
+            },
+            "description": "Who does the work: one entry per member, with the model it runs on. Absent means the\nharness did not say; no field may carry a harness's own key name."
+          },
+          "name": {
+            "type": "string"
+          },
+          "network": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamNetwork",
+                "description": "How far the team's agents can reach over the network. Absent means the harness did not\nsay; no field may carry a harness's own key name."
+              }
+            ]
+          },
+          "profile": {
+            "type": "string"
+          },
+          "queue": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamQueue",
+                "description": "How much work the team holds now. Absent means the harness did not say; no field of this\ntype may carry a harness's own key name."
+              }
+            ]
+          },
+          "read_only": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The folders the team's sandbox may read besides its own work, as docket resolved them\n(its machine-wide grants narrowed by the team's own setting); empty when there are none.\nAbsent when the harness did not say, which is not the same as none."
+          },
+          "records": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamRecordSet"
+            },
+            "description": "The record sets the team keeps, with how many rows each holds. Absent when the harness\nhas no such thing or did not say."
+          },
+          "shape": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A label the harness gives the team's shape, shown as it came and never sent anywhere.\nAbsent means the harness did not say; no field may carry a harness's own key\nname."
+          },
+          "steps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamStep"
+            },
+            "description": "The steps a task goes through, in order. Absent means the harness did not say (an empty\nlist is a team that reported no steps); no field may carry a harness's own\nkey name."
+          },
+          "violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamViolation"
+            }
+          },
+          "works_in": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorksIn",
+                "description": "Whether the team works in a repository or in a plain folder. Absent when the harness did\nnot say, which is not the same as a repository."
+              }
+            ]
+          }
+        }
+      },
+      "TeamStep": {
+        "type": "object",
+        "description": "One step of the way a team handles a task.",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "checked_by": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamStepCheck",
+                "description": "What decides the step passed. Absent means nothing checks it, or the harness did not say."
+              }
+            ]
+          },
+          "kind": {
+            "$ref": "#/components/schemas/TeamStepKind"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who does an `agent` step, in the harness's own word for it, shown as data. Absent for a\nstep nobody in the team does, or when the harness did not say."
+          },
+          "sends_back_max": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How many times it may go back. Absent means the harness did not say.",
+            "minimum": 0
+          },
+          "sends_back_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The earlier step the work goes back to when the check fails. Absent means it goes nowhere."
+          }
+        }
+      },
+      "TeamStepCheck": {
+        "type": "string",
+        "description": "What decides a step passed.",
+        "enum": [
+          "command",
+          "reviewer",
+          "person",
+          "external"
+        ]
+      },
+      "TeamStepKind": {
+        "type": "string",
+        "description": "What a step is.",
+        "enum": [
+          "agent",
+          "command",
+          "ask",
+          "wait",
+          "parallel"
+        ]
+      },
+      "TeamViolation": {
+        "type": "object",
+        "description": "One thing that makes a team need a person during a run, and how to fix it.",
+        "required": [
+          "requirement",
+          "fix"
+        ],
+        "properties": {
+          "fix": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
           }
         }
       },
@@ -13872,6 +14263,14 @@
           "custom"
         ]
       },
+      "WorksIn": {
+        "type": "string",
+        "description": "Where a team does its work.",
+        "enum": [
+          "repository",
+          "folder"
+        ]
+      },
       "Workspace": {
         "type": "object",
         "required": [
@@ -13938,6 +14337,10 @@
     {
       "name": "roles",
       "description": "Roles / specialties and their assignment to items."
+    },
+    {
+      "name": "teams",
+      "description": "The teams the board's agents report, with the profiles that name them."
     },
     {
       "name": "autonomy",

@@ -48,7 +48,7 @@ real one.
 | D | One proposal format, accepted the same way from anywhere | Sonnet | `tack-protocol` `capabilities.rs` (`FeatureCapabilities.proposals`), `tack-runner/src/evidence.rs` (`PlanV1`), where the three local agents report `features`, `docs/contracts/plan-v1/`, `plan_contract.rs`, `tack-api` `handlers/items.rs` (`create_subtasks_from_plan`), `tack-db` `repo/execution/claim.rs` (Planner and Researcher instructions), the developer guide's plan contract | — |
 | B | Agents → Teams, from whatever the agents report | Sonnet | `frontend/src/features/agents/` (a new `TeamsPanel.tsx`, `AgentsPage.tsx`, `runnerFleet/AgentProfilesPanel.tsx`), `settings/panels/automation/Teams.tsx` (options only), `shared/execution/` team types, the user guide's teams section | A |
 | J | A docket team proposes through its records | Sonnet | `tack-runner/src/harness/docket/records.rs`, `harness/docket.rs` (settle only), docket's `features` report, the fake's records routes, `docket_v5.rs` (records tests), `onboarding-lab/skill/` references | D |
-| C | A task says who does it | Sonnet | `frontend/src/features/board/CreateItemModal.tsx`, `features/item-detail/AutomationRow.tsx`, `tack-app/src/auto_start.rs`, the `tack-db` query behind `waiting_with_a_role`, the user guide's automation "Start" section | A, B |
+| C | A task says who does it | Sonnet | `frontend/src/features/board/CreateItemModal.tsx`, `features/item-detail/AutomationRow.tsx`, `shared/runWithAgent/RunFlow.tsx` and `RunWithAgentModal.tsx` (the profile chips only), one shared picker, `tack-app/src/auto_start.rs`, the `tack-db` query behind `waiting_with_a_role`, the user guide's automation "Start" section | A, B |
 | E | The person chooses what becomes an item, from a run or a file | Haiku | `frontend/src/shared/runWithAgent/PlanPanel.tsx`, `AttemptList.tsx` (the plan line only), a new `features/item-detail/ProposeFromFile.tsx`, the user guide's "A Planner run" section, renamed "When a run proposes items" | A, D |
 | F | A run shows the team's steps as it goes | Haiku | `frontend/src/shared/runWithAgent/` (`ExecutionTimeline.tsx`, `LatestRunSummary.tsx`), `shared/execution/types.ts`, the user guide's Execution tab section | A |
 | G | The local suite proves it against docket | Sonnet | `onboarding-lab/e2e/` (script, spec), recaptured fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, `TESTING.md`'s live-suite section | all |
@@ -209,11 +209,16 @@ saves run settings (`RunWithAgentModal.tsx`, read only); `tack-app/src/auto_star
 query `waiting_with_a_role`; `start_run.rs` `resolve_profile` (read only).
 
 **Does.**
-1. **Who does it** in the new-item dialog and on the item's Automation row: every profile, grouped
-   by the team it names (with what the team is made of, from `GET /api/teams`) or by its agent for a
-   profile with no team. Choosing stores the profile in the item's run settings; "Nobody yet" clears
-   it. A reported team with no profile is shown disabled with "Make a profile for it on the Agents
-   page".
+1. **Who does it** in the new-item dialog, on the item's Automation row and in the **Run with
+   agent** dialog, one picker in all three (the dialog's "Your profiles" and "Built in" lists go): every
+   profile, grouped by the team it names (with what the team is made of, from `GET /api/teams`) or by
+   its agent for a profile with no team. Each agent group is named by the agent (Claude Code, Codex,
+   opencode, docket) and says in one line what it can do from its reported capabilities (stop, resume,
+   answer questions, propose items, usage); one it cannot do is shown disabled with the agent's reason.
+   A built-in profile shows its description under the agent that runs it, and says "one agent, no team".
+   The picker says "Each task can use a different agent; this choice is for this task". Choosing stores
+   the profile in the item's run settings; "Nobody yet" clears it. A reported team with no profile is
+   shown disabled with "Make a profile for it on the Agents page".
 2. The Automation row says where the choice came from: "chosen on this task" or "from the role
    Content".
 3. Auto-start takes items that wait in the trigger status with a role **or** with a profile in run
