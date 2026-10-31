@@ -106,7 +106,9 @@ impl Repository {
             serde_json::to_string(&input.acceptance).map_err(StoreError::unwritable)?;
         let constraints =
             serde_json::to_string(&input.constraints).map_err(StoreError::unwritable)?;
-        let mut tx = self.pool().begin().await?;
+        // The first statement reads and the next writes, so the transaction takes the write lock when it begins: a deferred one that
+        // lost the upgrade to another writer failed at once (`database is locked`, a 500 on a person's save) instead of waiting for it.
+        let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
         let stored = sqlx::query(
             "SELECT acceptance, constraints, definition_of_done, risk
              FROM item_briefs WHERE item_id = ?",
