@@ -142,6 +142,8 @@ needs a model named"). If a runner looks at it and finds it cannot take it, and 
 
 A run waiting for a computer that has stopped answering says so with the time it last did: "The computer this run asked for has not answered since" followed by that time. It waits until the computer answers again, or you run it on another computer.
 
+A run waiting for a computer that is full says what holds it, for example "This computer runs 1 at a time and is busy with 'Release notes' since 15:30, which waits for your answer since 15:33". The task's name links to that task, and "runs 1 at a time" links to the Agents page, where that limit is set. When the run it waits behind is asking you a question, **Answer it** opens that question, beside **Run on another computer**. With several computers, the sentence has one part for each.
+
 ---
 
 ## Running an item with an agent

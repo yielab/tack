@@ -4032,6 +4032,11 @@ export interface components {
             protocol_version: number;
             request_id: string;
             state: string;
+            /**
+             * @description The runs that hold every slot of the computers this request may run on, when no poll has
+             *     given a reason because those computers are full; empty otherwise. Read at read time.
+             */
+            waiting_behind: components["schemas"]["WaitingBehind"][];
             /** @description Why no runner has claimed this request yet, as a plain sentence; null once claimed. */
             waiting_reason?: string | null;
             /** @description When a runner's poll first found the request unclaimable; null once claimed. */
@@ -4056,6 +4061,11 @@ export interface components {
             limit: components["schemas"]["RunLimit"];
             request_id: string;
             state: string;
+            /**
+             * @description The runs that hold every slot of the computers this request may run on, when no poll has
+             *     given a reason because those computers are full; empty otherwise. Read at read time.
+             */
+            waiting_behind: components["schemas"]["WaitingBehind"][];
             /** @description Why no runner has claimed this request yet, as a plain sentence; null once claimed. */
             waiting_reason?: string | null;
             /** @description When a runner's poll first found the request unclaimable; null once claimed. */
@@ -5304,6 +5314,28 @@ export interface components {
              * @description Tokens in + out of every readable MRP's `usage`.
              */
             verification_tokens: number;
+        };
+        /** @description One run that holds a slot of a full computer a queued request waits for. */
+        WaitingBehind: {
+            /** Format: int64 */
+            attempt_number: number;
+            item_id: string;
+            item_title: string;
+            project_id: string;
+            /** @description The question the run waits for a person to answer; null when it waits for no one. */
+            question?: string | null;
+            /** @description When that question was asked (RFC 3339). */
+            question_since?: string | null;
+            request_id: string;
+            runner_id: string;
+            runner_name: string;
+            /**
+             * Format: int64
+             * @description How many runs the computer takes at a time.
+             */
+            runs_at_a_time: number;
+            /** @description When the run started, or was taken by the computer if it has not started (RFC 3339). */
+            started_at: string;
         };
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {

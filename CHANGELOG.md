@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A task waiting behind a computer that is full now says what holds it ("This computer runs 1 at a time and is busy with 'Release notes' since 15:30, which waits for your answer since 15:33"), links that task and the limit, and offers **Answer it** when the run in front is waiting for you, instead of only "Waiting for a runner to pick it up".
 - The Run with agent dialog says when a profile's team works in its own folder on this computer, not in the repository, and no longer shows a branch or an install line for that team.
 - A task given to a team that works in a folder starts instead of failing in two seconds: Tack no longer
   sends the base commit or the install step to a team that has no repository.

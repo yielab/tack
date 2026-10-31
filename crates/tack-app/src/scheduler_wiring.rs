@@ -18,7 +18,8 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
+use tack_db::queries::execution_attempts::OpenAttemptRow;
 use tack_db::repo::execution::{FleetConcurrencySnapshot, QueuedRequestForScheduling};
 use tack_db::{Repository, StoreError, queries};
 use tack_orch::scheduler::select::{EXPIRED_LEASE_GRACE, SchedulingPolicy, select_runner};
@@ -332,6 +333,59 @@ fn waiting_note(outcome: &SelectionOutcome) -> Option<(String, String, bool)> {
     }
 }
 
+/// What a queued request waits behind when every computer it may run on is full: one clause per
+/// computer, saying how many runs it takes at a time, what it is busy with and since when, and
+/// whether that run waits for a person's answer. Worked out when someone looks, never stored: a
+/// full computer does not poll, so no poll could have written it. `None` when no computer holds
+/// anything to name. `at` is the offset times are told in; a time on another day carries its date.
+pub fn busy_note(
+    runners: &[(&str, i64, &[OpenAttemptRow])],
+    now: DateTime<Utc>,
+    at: FixedOffset,
+) -> Option<String> {
+    let told = |raw: &str| -> Option<String> {
+        let when = DateTime::parse_from_rfc3339(raw).ok()?.with_timezone(&at);
+        let format = if when.date_naive() == now.with_timezone(&at).date_naive() {
+            "%H:%M"
+        } else {
+            "%Y-%m-%d %H:%M"
+        };
+        Some(when.format(format).to_string())
+    };
+    let clauses: Vec<String> = runners
+        .iter()
+        .filter(|(_, _, open)| !open.is_empty())
+        .map(|(name, total, open)| {
+            let subject = if runners.len() == 1 {
+                "This computer".to_string()
+            } else {
+                format!("'{name}'")
+            };
+            let busy: Vec<String> = open
+                .iter()
+                .map(|attempt| {
+                    let mut held = format!("'{}'", attempt.item_title);
+                    if let Some(since) = told(&attempt.since) {
+                        held.push_str(&format!(" since {since}"));
+                    }
+                    if attempt.question.is_some() {
+                        held.push_str(", which waits for your answer");
+                        if let Some(since) = attempt.question_since.as_deref().and_then(told) {
+                            held.push_str(&format!(" since {since}"));
+                        }
+                    }
+                    held
+                })
+                .collect();
+            format!(
+                "{subject} runs {total} at a time and is busy with {}",
+                busy.join(", and ")
+            )
+        })
+        .collect();
+    (!clauses.is_empty()).then(|| clauses.join("; "))
+}
+
 /// Writes what a poll found about every request it left unselected, and fails
 /// the ones that have waited past the policy. A request no poll has reached
 /// has no `waiting_since` and is never failed for that alone.
@@ -639,6 +693,63 @@ mod tests {
                 "{variant}: the sentence repeats the enum's name: {sentence}"
             );
             assert!(!code.is_empty(), "{variant}: empty code");
+        }
+    }
+
+    #[test]
+    fn a_full_computer_says_what_it_is_busy_with_and_whether_that_waits_for_a_person() {
+        let attempt = |title: &str, since: &str, question: Option<&str>| OpenAttemptRow {
+            request_id: "req".into(),
+            attempt_number: 1,
+            item_id: "item".into(),
+            project_id: "project".into(),
+            item_title: title.into(),
+            since: since.into(),
+            question: question.map(str::to_string),
+            question_since: question.map(|_| "2026-10-31T15:33:00Z".to_string()),
+        };
+        let now: DateTime<Utc> = "2026-10-31T16:00:00Z".parse().unwrap();
+        let utc = FixedOffset::east_opt(0).unwrap();
+        let running = [attempt("Reference notes", "2026-10-31T15:30:00Z", None)];
+        let asking = [attempt(
+            "Reference notes",
+            "2026-10-31T15:30:00Z",
+            Some("Proceed?"),
+        )];
+        let two = [
+            attempt("A", "2026-10-31T15:30:00Z", None),
+            attempt("B", "2026-10-30T09:05:00Z", Some("Proceed?")),
+        ];
+        let rows = vec![
+            (
+                vec![("Main", 1, &running[..])],
+                Some(
+                    "This computer runs 1 at a time and is busy with 'Reference notes' since 15:30",
+                ),
+            ),
+            (
+                vec![("Main", 1, &asking[..])],
+                Some(
+                    "This computer runs 1 at a time and is busy with 'Reference notes' since 15:30, which waits for your answer since 15:33",
+                ),
+            ),
+            (
+                vec![("Main", 2, &two[..])],
+                Some(
+                    "This computer runs 2 at a time and is busy with 'A' since 15:30, and 'B' since 2026-10-30 09:05, which waits for your answer since 15:33",
+                ),
+            ),
+            (
+                vec![("Main", 1, &running[..]), ("Laptop", 3, &asking[..])],
+                Some(
+                    "'Main' runs 1 at a time and is busy with 'Reference notes' since 15:30; 'Laptop' runs 3 at a time and is busy with 'Reference notes' since 15:30, which waits for your answer since 15:33",
+                ),
+            ),
+            (vec![("Main", 1, &[][..])], None),
+            (vec![], None),
+        ];
+        for (n, (runners, want)) in rows.into_iter().enumerate() {
+            assert_eq!(busy_note(&runners, now, utc).as_deref(), want, "row {n}");
         }
     }
 }

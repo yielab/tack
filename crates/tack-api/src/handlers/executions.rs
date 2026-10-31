@@ -15,7 +15,7 @@ use axum::{
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tack_db::queries::execution_attempts::AttemptWithOutcomes;
+use tack_db::queries::execution_attempts::{AttemptWithOutcomes, OpenAttemptRow};
 use tack_db::queries::{agent_profiles, budgets, execution_attempts, execution_requests};
 use tack_db::repo::execution::state as execution_state;
 use tack_db::{
@@ -246,8 +246,31 @@ pub struct ExecutionSummary {
     pub waiting_reason: Option<String>,
     /// When a runner's poll first found the request unclaimable; null once claimed.
     pub waiting_since: Option<String>,
+    /// The runs that hold every slot of the computers this request may run on, when no poll has
+    /// given a reason because those computers are full; empty otherwise. Read at read time.
+    pub waiting_behind: Vec<WaitingBehind>,
     /// The run's token limit and who applies it.
     pub limit: RunLimit,
+}
+
+/// One run that holds a slot of a full computer a queued request waits for.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct WaitingBehind {
+    pub runner_id: String,
+    pub runner_name: String,
+    /// How many runs the computer takes at a time.
+    pub runs_at_a_time: i64,
+    pub request_id: String,
+    pub attempt_number: i64,
+    pub item_id: String,
+    pub project_id: String,
+    pub item_title: String,
+    /// When the run started, or was taken by the computer if it has not started (RFC 3339).
+    pub started_at: String,
+    /// The question the run waits for a person to answer; null when it waits for no one.
+    pub question: Option<String>,
+    /// When that question was asked (RFC 3339).
+    pub question_since: Option<String>,
 }
 
 /// A run's token limit, who set it and who applies it, with the one sentence every screen prints.
@@ -394,6 +417,9 @@ pub struct ExecutionDetailResponse {
     pub waiting_reason: Option<String>,
     /// When a runner's poll first found the request unclaimable; null once claimed.
     pub waiting_since: Option<String>,
+    /// The runs that hold every slot of the computers this request may run on, when no poll has
+    /// given a reason because those computers are full; empty otherwise. Read at read time.
+    pub waiting_behind: Vec<WaitingBehind>,
     /// The run's token limit and who applies it.
     pub limit: RunLimit,
 }
@@ -854,6 +880,13 @@ pub async fn list_executions(
         rows.iter().any(|row| row.state == ExecutionState::Queued),
     )
     .await?;
+    let holdings = full_runners(
+        &state.repo,
+        &runners,
+        rows.iter()
+            .any(|row| row.state == ExecutionState::Queued && row.waiting_reason.is_none()),
+    )
+    .await?;
     let ids: Vec<String> = rows.iter().map(|row| row.id.clone()).collect();
     let mut limits = run_limits_of(&state.repo, &ids, now)
         .await
@@ -868,24 +901,40 @@ pub async fn list_executions(
         })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
-        .map(|row| ExecutionSummary {
-            limit: limits
-                .remove(&row.id)
-                .unwrap_or_else(|| limit_source(&Value::Null, None, None)),
-            waiting_reason: queued_reason(
-                row.state,
-                row.waiting_reason,
-                &row.selector_kind,
-                &row.selector_id,
-                &runners,
-                now,
-            ),
-            request_id: row.id,
-            item_id: row.item_id,
-            state: row.state,
-            cancellation_requested_at: row.cancellation_requested_at,
-            created_at: row.created_at,
-            waiting_since: row.waiting_since,
+        .map(|row| {
+            let (behind, waiting_behind) =
+                if row.state == ExecutionState::Queued && row.waiting_reason.is_none() {
+                    waiting_behind(
+                        &row.selector_kind,
+                        &row.selector_id,
+                        &runners,
+                        &holdings,
+                        now,
+                    )
+                } else {
+                    (None, Vec::new())
+                };
+            ExecutionSummary {
+                limit: limits
+                    .remove(&row.id)
+                    .unwrap_or_else(|| limit_source(&Value::Null, None, None)),
+                waiting_reason: queued_reason(
+                    row.state,
+                    row.waiting_reason,
+                    behind,
+                    &row.selector_kind,
+                    &row.selector_id,
+                    &runners,
+                    now,
+                ),
+                waiting_behind,
+                request_id: row.id,
+                item_id: row.item_id,
+                state: row.state,
+                cancellation_requested_at: row.cancellation_requested_at,
+                created_at: row.created_at,
+                waiting_since: row.waiting_since,
+            }
         })
         .collect();
     Ok(Json(ExecutionListResponse {
@@ -932,6 +981,108 @@ async fn queued_runners(
     })
 }
 
+/// The runners a request's selector names: the one runner, or the members of the group (fleet).
+fn named_runners<'a>(
+    selector_kind: &str,
+    selector_id: &str,
+    runners: &'a [RunnerListingRow],
+) -> Vec<&'a RunnerListingRow> {
+    match selector_kind {
+        "exact_runner" => runners.iter().filter(|r| r.id == selector_id).collect(),
+        "fleet" => runners
+            .iter()
+            .filter(|r| r.fleet_ids.iter().any(|fleet| fleet == selector_id))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The open attempts of every runner with no free slot, by runner id. Read only when a queued
+/// request has no reason from a poll: a full runner never polls, so nothing else explains it.
+async fn full_runners(
+    repo: &Repository,
+    runners: &[RunnerListingRow],
+    needed: bool,
+) -> Result<BTreeMap<String, Vec<OpenAttemptRow>>, (StatusCode, Json<Value>)> {
+    let mut held = BTreeMap::new();
+    if !needed {
+        return Ok(held);
+    }
+    for runner in runners.iter().filter(|r| is_full(r)) {
+        let open = execution_attempts::open_attempts_of_runner(repo, &runner.id)
+            .await
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not read what a runner is busy with");
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not read what a runner is busy with",
+                    json!({}),
+                )
+            })?;
+        held.insert(runner.id.clone(), open);
+    }
+    Ok(held)
+}
+
+/// Whether a runner can take work but has no free slot.
+fn is_full(runner: &RunnerListingRow) -> bool {
+    runner.state == "active"
+        && runner.revoked_at.is_none()
+        && runner.total_capacity > 0
+        && runner.available_capacity <= 0
+}
+
+/// What a queued request with no reason from a poll waits behind: the sentence, and the runs it
+/// is made from. Only when every computer the request may run on is full, since one with room
+/// would take it. Nothing is stored.
+fn waiting_behind(
+    selector_kind: &str,
+    selector_id: &str,
+    runners: &[RunnerListingRow],
+    full: &BTreeMap<String, Vec<OpenAttemptRow>>,
+    now: DateTime<Utc>,
+) -> (Option<String>, Vec<WaitingBehind>) {
+    let named: Vec<&RunnerListingRow> = named_runners(selector_kind, selector_id, runners)
+        .into_iter()
+        .filter(|r| r.state == "active" && r.revoked_at.is_none())
+        .collect();
+    let parts: Option<Vec<(&str, i64, &[OpenAttemptRow])>> = named
+        .iter()
+        .map(|r| {
+            full.get(&r.id)
+                .map(|open| (r.name.as_str(), r.total_capacity, open.as_slice()))
+        })
+        .collect();
+    let Some(parts) = parts.filter(|parts| !parts.is_empty()) else {
+        return (None, Vec::new());
+    };
+    let Some(sentence) =
+        tack_app::scheduler_wiring::busy_note(&parts, now, *chrono::Local::now().offset())
+    else {
+        return (None, Vec::new());
+    };
+    let behind = named
+        .iter()
+        .flat_map(|runner| {
+            full[&runner.id].iter().map(|attempt| WaitingBehind {
+                runner_id: runner.id.clone(),
+                runner_name: runner.name.clone(),
+                runs_at_a_time: runner.total_capacity,
+                request_id: attempt.request_id.clone(),
+                attempt_number: attempt.attempt_number,
+                item_id: attempt.item_id.clone(),
+                project_id: attempt.project_id.clone(),
+                item_title: attempt.item_title.clone(),
+                started_at: attempt.since.clone(),
+                question: attempt.question.clone(),
+                question_since: attempt.question_since.clone(),
+            })
+        })
+        .collect();
+    (Some(sentence), behind)
+}
+
 /// When the computer a queued run asked for last answered, if it has stopped answering: the newest
 /// heartbeat of the named runner, or of a group's (fleet's) members, is past the liveness window.
 /// `None` while one answers, and when none ever did (there is then no time to name).
@@ -941,15 +1092,7 @@ fn silent_since(
     runners: &[RunnerListingRow],
     now: DateTime<Utc>,
 ) -> Option<DateTime<Utc>> {
-    let asked: Vec<&RunnerListingRow> = match selector_kind {
-        "exact_runner" => runners.iter().filter(|r| r.id == selector_id).collect(),
-        "fleet" => runners
-            .iter()
-            .filter(|r| r.fleet_ids.iter().any(|fleet| fleet == selector_id))
-            .collect(),
-        _ => return None,
-    };
-    let last = asked
+    let last = named_runners(selector_kind, selector_id, runners)
         .iter()
         .filter_map(|runner| runner.last_heartbeat_at.as_deref().and_then(parse_rfc3339))
         .max()?;
@@ -959,11 +1102,13 @@ fn silent_since(
 
 /// A listed run's reason. A queued run waits for the computer it asked for when that has stopped
 /// answering, and names when: a poll's stored reason is from before that, so it gives way. Otherwise
-/// it shows what a poll stored, and with nothing stored, "no runner is online" when none is. Other
+/// it shows what a poll stored; with nothing stored, what the full computers it may run on are busy
+/// with, and failing that "no runner is online" when none is. Other
 /// states show what is stored. Read at read time; never stored.
 fn queued_reason(
     state: ExecutionState,
     stored: Option<String>,
+    behind: Option<String>,
     selector_kind: &str,
     selector_id: &str,
     runners: &[RunnerListingRow],
@@ -978,7 +1123,7 @@ fn queued_reason(
             since.to_rfc3339_opts(SecondsFormat::Secs, true)
         ));
     }
-    stored.or_else(|| {
+    stored.or(behind).or_else(|| {
         (!runners.iter().any(|runner| runner_is_online(runner, now)))
             .then(|| NO_RUNNER_ONLINE.to_string())
     })
@@ -1020,6 +1165,19 @@ pub async fn get_execution(
     let now = state.clock.now();
     let request_state = row.state;
     let runners = queued_runners(&state.repo, request_state == ExecutionState::Queued).await?;
+    let holdings = full_runners(
+        &state.repo,
+        &runners,
+        request_state == ExecutionState::Queued && row.waiting_reason.is_none(),
+    )
+    .await?;
+    let (behind, waiting_behind) = waiting_behind(
+        &row.selector_kind,
+        &row.selector_id,
+        &runners,
+        &holdings,
+        now,
+    );
     let request_id = row.id;
     let limit = run_limits_of(&state.repo, std::slice::from_ref(&request_id), now)
         .await
@@ -1043,9 +1201,11 @@ pub async fn get_execution(
         cancellation_requested_at: row.cancellation_requested_at,
         created_at: row.created_at,
         instructions: row.instructions,
+        waiting_behind,
         waiting_reason: queued_reason(
             request_state,
             row.waiting_reason,
+            behind,
             &row.selector_kind,
             &row.selector_id,
             &runners,

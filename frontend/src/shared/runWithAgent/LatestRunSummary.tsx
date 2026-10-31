@@ -3,6 +3,7 @@ import { Badge, Button, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
+import type { WaitingBehind } from '../execution/api';
 import {
   NOT_MEASURED_TEXT,
   changedNoFile,
@@ -150,6 +151,35 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const needsPerson = () => asking() || needsAPerson(attempt());
   const failedReason = () => (latest()?.state === 'failed' ? latest()?.waiting_reason || null : null);
   const waitingReason = () => (latest()?.state === 'queued' ? latest()?.waiting_reason || null : null);
+  // When the wait is a full computer, the sentence names its limit and the tasks that hold it:
+  // each becomes a link, in the order the sentence says them.
+  const behind = () => (latest()?.state === 'queued' ? latest()?.waiting_behind ?? [] : []);
+  const itemHref = (b: WaitingBehind, tab = '') => `/projects/${b.project_id}/items/${b.item_id}${tab}`;
+  const waitingParts = (): Array<{ text: string; href?: string }> => {
+    const reason = waitingReason() ?? '';
+    const links: Array<{ needle: string; href: string }> = [];
+    const seen = new Set<string>();
+    for (const b of behind()) {
+      if (!seen.has(b.runner_id)) {
+        seen.add(b.runner_id);
+        links.push({ needle: `runs ${b.runs_at_a_time} at a time`, href: '/agents' });
+      }
+      links.push({ needle: `'${b.item_title}'`, href: itemHref(b) });
+    }
+    const parts: Array<{ text: string; href?: string }> = [];
+    let at = 0;
+    for (const { needle, href } of links) {
+      const found = reason.indexOf(needle, at);
+      if (found < 0) continue;
+      if (found > at) parts.push({ text: reason.slice(at, found) });
+      parts.push({ text: needle, href });
+      at = found + needle.length;
+    }
+    if (at < reason.length) parts.push({ text: reason.slice(at) });
+    return parts;
+  };
+  // The first busy run that waits for a person: its question is one press away.
+  const askingBehind = () => behind().find((b) => b.question !== null);
 
   // Duration, steps and files changed, read off the finished run's own artifacts.
   const [digest] = createResource(
@@ -252,7 +282,18 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
           <Show when={kind() === 'queued'}>
             <p data-testid="latest-run-waiting" class="text-sm" style={muted()}>
-              {waitingReason() ? `Waiting: ${waitingReason()}` : 'Waiting for a runner to pick it up.'}
+              <Show when={waitingReason()} fallback="Waiting for a runner to pick it up.">
+                Waiting:{' '}
+                <For each={waitingParts()}>
+                  {(part) => (
+                    <Show when={part.href} fallback={part.text}>
+                      <a href={part.href} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
+                        {part.text}
+                      </a>
+                    </Show>
+                  )}
+                </For>
+              </Show>
               <Show when={waitingReason() && latest()?.waiting_since}>
                 {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
               </Show>
@@ -379,6 +420,18 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               >
                 Run on another computer
               </Button>
+              <Show when={askingBehind()}>
+                {(b) => (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    title={b().question ?? undefined}
+                    onClick={() => window.location.assign(itemHref(b(), `?tab=execution&run=${encodeURIComponent(b().request_id)}`))}
+                  >
+                    Answer it
+                  </Button>
+                )}
+              </Show>
               <Show when={canPickAnother()}>
                 <RunWithAgentModal
                   isOpen={another()}

@@ -10181,6 +10181,7 @@
           "item_id",
           "state",
           "created_at",
+          "waiting_behind",
           "limit"
         ],
         "properties": {
@@ -10217,6 +10218,13 @@
           },
           "state": {
             "type": "string"
+          },
+          "waiting_behind": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitingBehind"
+            },
+            "description": "The runs that hold every slot of the computers this request may run on, when no poll has\ngiven a reason because those computers are full; empty otherwise. Read at read time."
           },
           "waiting_reason": {
             "type": [
@@ -10262,6 +10270,7 @@
           "item_id",
           "state",
           "created_at",
+          "waiting_behind",
           "limit"
         ],
         "properties": {
@@ -10286,6 +10295,13 @@
           },
           "state": {
             "type": "string"
+          },
+          "waiting_behind": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitingBehind"
+            },
+            "description": "The runs that hold every slot of the computers this request may run on, when no poll has\ngiven a reason because those computers are full; empty otherwise. Read at read time."
           },
           "waiting_reason": {
             "type": [
@@ -13686,6 +13702,68 @@
             "type": "integer",
             "format": "int64",
             "description": "Tokens in + out of every readable MRP's `usage`."
+          }
+        }
+      },
+      "WaitingBehind": {
+        "type": "object",
+        "description": "One run that holds a slot of a full computer a queued request waits for.",
+        "required": [
+          "runner_id",
+          "runner_name",
+          "runs_at_a_time",
+          "request_id",
+          "attempt_number",
+          "item_id",
+          "project_id",
+          "item_title",
+          "started_at"
+        ],
+        "properties": {
+          "attempt_number": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "item_id": {
+            "type": "string"
+          },
+          "item_title": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The question the run waits for a person to answer; null when it waits for no one."
+          },
+          "question_since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When that question was asked (RFC 3339)."
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "runner_id": {
+            "type": "string"
+          },
+          "runner_name": {
+            "type": "string"
+          },
+          "runs_at_a_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many runs the computer takes at a time."
+          },
+          "started_at": {
+            "type": "string",
+            "description": "When the run started, or was taken by the computer if it has not started (RFC 3339)."
           }
         }
       },
