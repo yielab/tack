@@ -40,6 +40,10 @@ Neither ask blocks a card; each is read when present, and the screen says so whe
    role, model class, gate kind, rework target and maximum), read into `steps`. Today `pipeline`
    carries only `source`.
 
+On 2026-10-31 docket's `develop` (`df17a145`) carried neither; it did add `workspaceKind` to both
+routes (see ADR 0031's evidence), which `works_in` reads first, falling back to `repoConfigDir` and
+`codebase` for a docket that does not send it.
+
 ## Evidence (read 2026-10-31 on `develop` at `9bab0965`, docket at its working tree)
 
 | Fact | Where |

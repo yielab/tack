@@ -271,6 +271,10 @@ README (`repoConfigDir`), docket's `teams/workspace/worktree.py` `ensure_task_wo
 4. Tests: a folder pod's task body has neither key and the attempt ends Succeeded with
    `outside_repository`; a repository pod's body keeps both; a docket that sends no `repoConfigDir`
    keeps both; the fake refuses a folder task that carries `baseRef`.
+5. Follow-up, 2026-10-31, after docket's `df17a145` sent `workspaceKind` on both pod routes:
+   `has_repository` reads `workspaceKind` first (`workdir` is a folder) and falls back to
+   `repoConfigDir` for a docket that does not send it; the fake also refuses a non-empty `prepare`
+   on a folder pod (`failureKind` `prepare`), as docket now does; the fixtures carry the key.
 
 ### I. The run dialog says where the team works
 
@@ -364,8 +368,9 @@ approval route.
 
 **Model:** Sonnet. **Waits on:** every other card.
 
-**Does.** Recapture the pod fixtures from docket's current checkout, and the folder refusal H
-wrote; add to `docket-prill-e2e.sh` one folder team (its task starts with no `baseRef` and ends
+**Does.** Recapture the pod fixtures from docket's current checkout (its `--check` of
+2026-10-31 found only the new `workspaceKind` key on `pods.json` and the three `pod-*.json`), and
+the folder refusal H wrote (docket's real sentence now exists, `failureKind` `base_ref`); add to `docket-prill-e2e.sh` one folder team (its task starts with no `baseRef` and ends
 Succeeded with no branch, H) with a `tack_proposals` set whose task adds three rows (one
 nested, one depending on another); assert the plan artifact, accept it through the API and check
 the three items, their nesting, their blocker and their profile; give one of them no role and
