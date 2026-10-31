@@ -133,10 +133,11 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
     () => props.itemId,
     async (itemId): Promise<Offer> => {
       try {
-        const detail = await request<{ project_id: string }>(`/items/${itemId}`);
+        // `GET /items/{id}` answers `{ item, roles, dependencies }`: the project is the item's.
+        const projectId = (await request<{ item: { project_id: string } }>(`/items/${itemId}`)).item.project_id;
         const [project, roles, profiles, teams] = await Promise.all([
-          api.projects.get(detail.project_id).catch(() => null),
-          api.roles.list(detail.project_id).catch(() => []),
+          api.projects.get(projectId).catch(() => null),
+          api.roles.list(projectId).catch(() => []),
           agentProfilesApi.list().then((r) => r.data.data ?? []).catch(() => [] as AgentProfileSummary[]),
           request<{ teams: TeamEntry[] }>('/teams').then((r) => r.teams).catch(() => [] as TeamEntry[]),
         ]);

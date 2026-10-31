@@ -78,9 +78,12 @@ function routeFetch(artifact: unknown, created: unknown, posts: Array<{ url: str
     }
     if (url.includes('/agent-profiles')) return json(PROFILES);
     if (url.includes('/teams')) return json(TEAMS);
-    if (url.includes('/roles')) return json(ROLES);
-    if (url.includes('/projects/')) return json(PROJECT);
-    if (url.includes('/items/')) return json({ id: 'item_1', project_id: 'p1', roles: [] });
+    // Strict about the project's id, as the real routes are: a request for another project finds nothing.
+    if (url.endsWith('/projects/p1/roles')) return json(ROLES);
+    if (url.endsWith('/projects/p1')) return json(PROJECT);
+    if (url.includes('/projects/')) return json({ error: { message: 'not found' } }, 404);
+    // `GET /items/{id}` answers { item, roles, dependencies }, the project id inside the item.
+    if (url.includes('/items/')) return json({ item: { id: 'item_1', project_id: 'p1' }, roles: [], dependencies: [] });
     return json(artifact);
   });
 }
@@ -149,6 +152,20 @@ describe('PlanPanel', () => {
     await settle();
     expect(container.textContent).toContain('This file proposes 1 item');
     expect(container.textContent).not.toContain('Planner');
+  });
+
+  it('a_role_the_project_has_is_not_marked_as_missing', async () => {
+    const named = { v: '1', subtasks: [{ title: 'Settings', description: '', acceptance: [], depends_on: [], role: 'Backend' }, { title: 'Docs', description: '', acceptance: [], depends_on: [], role: 'Writer' }] };
+    routeFetch(named, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+
+    const roles = Array.from(container.querySelectorAll<HTMLSelectElement>('select[aria-label="Role"]'));
+    const labels = (select: HTMLSelectElement) => Array.from(select.options).map((o) => o.textContent);
+    expect(labels(roles[0])).toEqual(['No role', 'Backend', 'Frontend']);
+    expect(roles[0].value).toBe('Backend');
+    // A role the project does not have is still shown, and said not to be there.
+    expect(labels(roles[1])).toContain('Writer (not in this project)');
   });
 
   it('editing_a_rows_type_role_and_who_changes_the_request', async () => {

@@ -38,6 +38,8 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- The accept panel of a run's proposed items no longer marks a role the project has as "(not in this project)": it asked for the project of an item in the wrong place of the answer, so it never loaded the project's roles or types; and a run made by a team says "The team <name> proposes" instead of "The Planner proposes".
+- A task that would start by itself but has nowhere to run says so on its Automation row ("By hand: it would start when it reaches Backlog, but 2 computers could run it and its profile names no group of computers to choose from") instead of promising it starts; the board had always skipped it silently.
 - A docket approval nobody answered no longer ends as "approval denied": when Tack's time for the question runs out, the task is cancelled instead of being answered "deny", and the run ends as "Nobody answered" with the question; a task docket itself fails with `approval_expired` ends the same way, and only a refusal a person gave is "approval denied".
 - A task waiting behind a computer that is full now says what holds it ("This computer runs 1 at a time and is busy with 'Release notes' since 15:30, which waits for your answer since 15:33"), links that task and the limit, and offers **Answer it** when the run in front is waiting for you, instead of only "Waiting for a runner to pick it up".
 - The Run with agent dialog says when a profile's team works in its own folder on this computer, not in the repository, and no longer shows a branch or an install line for that team.

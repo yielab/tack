@@ -9,6 +9,7 @@ import {
   relativeTimeFromIso,
   isActiveRunnerState,
   shouldHideTargetPicker,
+  noPlaceToRun,
   isExecutionOff,
   isDecisionsAttested,
   resolveRunModel,
@@ -293,5 +294,24 @@ describe('approvals ("Ask me before acting")', () => {
       decisions: { support: 'unsupported', reason: 'nothing pauses a run to await a decision' },
     };
     expect(isDecisionsAttested(unsupportedHarness)).toBe(false);
+  });
+});
+
+describe('noPlaceToRun', () => {
+  const on = { state: 'active', online: true };
+  const silent = { state: 'active', online: false };
+  it('finds a place when the profile names a group or exactly one computer answers', () => {
+    expect(noPlaceToRun([on, on], 'fleet_1')).toBeNull();
+    expect(noPlaceToRun([on], null)).toBeNull();
+    // Of several, the ones that answer win, as in the board's own pick.
+    expect(noPlaceToRun([on, silent, { state: 'revoked', online: false }], null)).toBeNull();
+    // None answers and one is active: the run waits for it.
+    expect(noPlaceToRun([silent], null)).toBeNull();
+  });
+  it('says why there is none: two computers answer and the profile names no group, or none is connected', () => {
+    expect(noPlaceToRun([on, on], null)).toBe('2 computers could run it and its profile names no group of computers to choose from');
+    expect(noPlaceToRun([silent, silent], undefined)).toContain('2 computers');
+    expect(noPlaceToRun([], null)).toBe('no computer is connected to run it');
+    expect(noPlaceToRun([{ state: 'revoked' }], null)).toBe('no computer is connected to run it');
   });
 });

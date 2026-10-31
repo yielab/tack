@@ -299,7 +299,13 @@ const AttemptTools: Component<{
         <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
         <Show when={plan() && props.itemId}>
           {(itemId) => (
-            <PlanPanel requestId={props.requestId} attemptNumber={n()} artifactId={plan()!.artifact_id} itemId={itemId()} />
+            <PlanPanel
+              requestId={props.requestId}
+              attemptNumber={n()}
+              artifactId={plan()!.artifact_id}
+              itemId={itemId()}
+              team={(props.attempt.actual_execution as { team?: string } | null)?.team}
+            />
           )}
         </Show>
         <Modal isOpen={diffOpen()} onClose={() => setDiffOpen(false)} title="Changes" size="xl">

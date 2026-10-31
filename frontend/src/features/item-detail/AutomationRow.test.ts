@@ -18,6 +18,16 @@ describe('automationSentence', () => {
   });
 });
 
+describe('a task with nowhere to run', () => {
+  it('says why it waits for a person, instead of promising it starts by itself', () => {
+    const noPlace = '2 computers could run it and its profile names no group of computers to choose from';
+    expect(automationSentence({ ...base, noPlace })).toBe(`By hand: it would start when it reaches To Do, but ${noPlace} · Team saas-content · Merge L4`);
+  });
+  it('keeps the other reasons first', () => {
+    expect(automationSentence({ ...base, starts: false, noPlace: 'x' })).toBe("By hand: this project doesn't start tasks by itself");
+  });
+});
+
 describe('who does it', () => {
   it('names the profile and where the choice came from', () => {
     expect(automationSentence({ ...base, who: 'Content writer (chosen on this task)' })).toBe(
