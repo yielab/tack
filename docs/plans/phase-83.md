@@ -14,7 +14,7 @@ fields it can and reports through its capabilities what it cannot. A screen show
 and renders the rest disabled with the harness's reason. No card adds a docket word to the API, the
 database or the screen; docket's own role and shape names arrive as data.
 
-Twelve cards, sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
+Fifteen cards (L2, P and N were added on 2026-10-31 after docket's answers and the first screens), sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
 names. Six rounds; round 0 runs in two halves.
 
 ## How every card runs
@@ -55,6 +55,9 @@ real one.
 | H | A folder team's run starts | Sonnet | `tack-runner/src/harness/docket.rs` (the run's start only: `start`, `has_repository`), `harness/docket/task.rs` (`body`), the fake's `POST /tasks/<pod>` rule, a fixture under `harness/fixtures/docket/v5/`, `docket_v5.rs` (task tests), ADR 0031's evidence line on `GET /pods/<p>`, the administrator guide's folder-team paragraph | — |
 | I | The run dialog says where the team works | Haiku | `frontend/src/shared/runWithAgent/RunFlow.tsx` (`where`), `install.ts`, their tests, the user guide's "Run with agent" paragraph | — |
 | K | A queued run says what it waits behind | Sonnet | `tack-app/src/scheduler_wiring.rs` (a new pure function beside `waiting_note`), the request view in `tack-api` `handlers/executions.rs`, a `tack-db` query for a runner's open attempts, `shared/runWithAgent/LatestRunSummary.tsx` (the queued line only), the user guide's "waiting" paragraph | — |
+| L2 | Tack's own timeout is not a "no" | Sonnet | `tack-protocol` `DecisionAnswer`, `tack-runner` `engine/decisions.rs`, `harness/docket.rs` (settle and follow) and their tests, the fake, the guides' decisions paragraphs | L |
+| P | Each agent says what it can do, and a run says who runs it | Sonnet | `tack-runner` harness probes (each agent's declared features into its report), `tack-api` `handlers/executions.rs` (`agent_profile_id` and `requested_harness_kind` on the run), `handlers/items.rs` (accept: an entry may name a `profile_id`), regenerated API files, the developer guide | A, D |
+| N | The item page follows its run, and what needs you comes first | Sonnet | `frontend/src/features/item-detail/` (page and editor), `shared/runWithAgent/` (`DecisionInbox.tsx`, `LatestRunSummary.tsx`, `AttemptList.tsx`, `AgentWork.tsx`), `shared/ui/Sidebar.tsx`, the user guide's run paragraphs | P, F, C |
 | L | A question nobody answered does not read as "denied" | Sonnet | `tack-runner/src/harness/docket.rs` (the settle's failure arms only), `harness/docket/tests.rs`, the fake's approval expiry, the user guide's decisions paragraph | H |
 
 ## Left out, and why
@@ -355,9 +358,63 @@ approval route.
 3. Tests: an approval that expires unanswered ends `not_answered` with the question; one a person
    denied ends `approval_denied`; an unknown code keeps docket's text, labelled.
 
+### L2. Tack's own timeout is not a "no"
+
+**Model:** Sonnet. **Waits on:** L. docket's report of 2026-10-31 (its `4bf26e50`).
+
+**Why.** The 2026-10-31 stall ended with Tack answering `deny` itself 60 minutes after the task was
+queued: the engine answers an expired decision with the question's last option, and the docket adapter
+posted it. docket recorded a refusal nobody gave; its own deadline is 24 hours.
+
+**Does.** An answer nobody gave is marked (`DecisionAnswer.unanswered`); the docket adapter cancels
+the task instead of posting `deny` and the attempt ends `not_answered`; docket's own `approval_expired`
+ends the same way; `failureKind` is read as an open string. Built 2026-10-31.
+
+### P. Each agent says what it can do, and a run says who runs it
+
+**Model:** Sonnet. **Waits on:** A, D. Found by card B and F's agents: the Agents page can only say what
+an agent can do when the agent's report carries it, and a run's screen cannot find its team.
+
+**Does.** Three small parts, one commit each.
+1. Each agent's probe puts its declared features (stop, resume, answer questions, propose items,
+   usage) into the report the board reads, per agent, not only per runner; docket reports them per
+   agent too. `HarnessCapability.features` is what `shared/execution/agents.ts` already reads.
+2. A run carries `agent_profile_id` and `requested_harness_kind` on its summary and detail, so a screen
+   finds the run's team and agent from the run, not from the item's current setting.
+3. An accepted entry may name a `profile_id` (any profile, with or without a team); it wins over `team`.
+   Unknown or unusable: reported on that entry like an unknown team.
+Tests: one row each, RED first. Regenerate the API files.
+
+### N. The item page follows its run, and what needs you comes first
+
+**Model:** Sonnet. **Waits on:** P, F, C. The maintainer's report of 2026-10-31: the item's side details
+do not follow the run and need a reload; the question the agent asks is hidden; the Execution tab
+carries lines nobody understands.
+
+**Verified.** The item page reads the item once (`useItemEditor`), and the board's socket is used only
+by the board; the run chips follow the execution store's four-second poll, but the item's status and
+side details do not. `DecisionInbox` reads its list once and sits behind "Show questions & files", closed
+by default, inside each attempt; nothing in the sidebar says a run waits for you.
+
+**Does.**
+1. While a run is not finished, the item page re-reads the item with the run (the same four-second
+   cadence, or the board's event when the page has the socket), so status, assignee, run chip and the
+   side details change with no reload.
+2. A question waiting for you is the first thing in the run's summary on the item page and in the
+   drawer, with its answer controls open, not behind "Show questions & files". `DecisionInbox` re-reads
+   while the attempt runs or waits, so a question asked after the page opened appears.
+3. The sidebar gains **Waiting for you** with the number of runs that wait for an answer, linking to the
+   first; a board card's chip for such a run links to its question.
+4. Noise out of the Execution tab: **What each step ran** shows a step's role, verdict, what it assumed
+   and what it asked; the prompt names, versions and sources go in one closed "Prompts used"; identical
+   steps in a row are one ("Implementer ×3"); a model class of "any" is not shown (it read "a any
+   model"). **What the agent got** drops each line that only says "none reported" and speaks plainly
+   ("runs in an isolated sandbox"), not "docket in its own jail".
+Tests: one row each, RED first.
+
 ### F. A run shows the team's steps as it goes
 
-**Model:** Haiku. **Waits on:** A. ADR 0032 decision 1 (the run's screen).
+**Model:** Haiku. **Waits on:** A, P (the run carries its profile and agent; B's `teamsApi.list()` is the client). ADR 0032 decision 1 (the run's screen).
 
 **Read first:** `ExecutionTimeline.tsx`, `LatestRunSummary.tsx`, `shared/execution/types.ts`
 (`RunStep`), how the timeline already names a step from the run's events.
