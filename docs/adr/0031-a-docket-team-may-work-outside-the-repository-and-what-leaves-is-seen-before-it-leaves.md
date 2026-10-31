@@ -1,6 +1,6 @@
 # ADR 0031: a docket team may work outside the repository, and what leaves is seen before it leaves
 
-**Status: PROPOSED 2026-10-30.** The maintainer asked what Tack must change for docket's Phase 55
+**Status: PROPOSED 2026-10-30; built 2026-10-30 on the maintainer's go-ahead (Phase 82, cards E, F), awaiting acceptance.** The maintainer asked what Tack must change for docket's Phase 55
 (closed 2026-10-30: a team works outward, on its own schedule) and its Phase 56 (being finished the
 same day: an external service is declared, a team keeps records, one judge). docket's API version
 stays 6 and every addition is optional, except two removals that land with Phase 56 and that Tack
