@@ -178,6 +178,20 @@ describe('RunWithAgentButton', () => {
     expect(lastSearchParams.item).toBe('item-1');
   });
 
+  it('the chip of a run that waits for an answer opens that run, where its question is', async () => {
+    const c = mount(
+      { compact: true, showStateChip: true },
+      { executions: [{ request_id: 'req-9', item_id: 'item-1', state: 'waiting_decision', cancellation_requested_at: null, created_at: '2026-01-01T00:00:00Z' }] },
+    );
+    await flush();
+    const chip = [...c.querySelectorAll('button')].find((b) => b.title === 'Open the question');
+    expect(chip).toBeTruthy();
+    chip!.click();
+    await flush();
+    expect(lastSearchParams.tab).toBe('execution');
+    expect(lastSearchParams.run).toBe('req-9');
+  });
+
   it('showStateChip renders nothing when the item has no execution requests', async () => {
     const c = mount({ compact: true, showStateChip: true });
     await flush();

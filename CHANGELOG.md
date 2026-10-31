@@ -18,6 +18,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- The sidebar shows **Waiting for you** with the number of runs that are asking a question and opens the first one on its Execution tab; no row when none waits. A board card's chip for such a run opens that run.
 - The question a run is waiting for comes first: it is the top of the Last run card, on the item's page and in the drawer, with its answers open, and the Execution tab opens its questions by itself; a question asked after you opened the task appears without a reload.
 - An item follows its run: while the run is going, the item's status, assignee and side details change as the run does, on the item's page and in the drawer, with no reload.
 - A run shows its team's steps as it goes: when the team reports its steps, a line above the timeline lists them in order, each done, running or waiting, with what checks it (a command, a reviewer who can send it back so many times, you, or a check outside the team); a step sent back runs again, and a step nobody on the team does carries no mark. When the team or its agent reports none, the run says the agent does not report its steps in advance.
