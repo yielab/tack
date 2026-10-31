@@ -109,7 +109,7 @@ a `_migrations` table. Startup stops before the server answers in two cases:
    [Backup & Restore](backup-restore.md#staged-restore).
 
 `GET /api/health` reports `migrations_applied` once the server is up. The full upgrade path, with what runs
-by itself, is in the repository's `docs/MIGRATION-GUIDE.md`.
+by itself, is in the [Migration Guide](https://github.com/yielab/tack/blob/develop/docs/MIGRATION-GUIDE.md).
 
 ---
 
@@ -243,18 +243,18 @@ on and found. Set the missing section as described in
 **What you see.** `tack runner doctor` prints, under `docket`:
 
 ```text
-  api:         4 (needs docket 0.2.0-beta.6)
+  api:         5 (needs docket 0.2.0-beta.6 (API 6); this docket answers API 5)
 ```
 
-and the runner posts no task to docket. The full sentence is "needs docket 0.2.0-beta.6 (API 6); this
-docket answers API N".
+and the runner posts no task to docket.
 
 **Cause.** Tack sends each docket run to a team over docket's HTTP API, which it checks before every
-task. It accepts only version `5`, which docket 0.2.0-beta.6 provides. An older or newer docket answers
-another version, and Tack refuses it rather than guess.
+task. It accepts version `6`, which docket 0.2.0-beta.6 provides, and any later one. An older docket
+answers a lower version, and Tack refuses it rather than guess.
 
-**What to do.** Install docket 0.2.0-beta.6 on the runner's machine, restart the daemon (or the runner,
-if it starts the daemon), and run `tack runner doctor` again until the line reads `api:         5`. The
+**What to do.** Install docket 0.2.0-beta.6 or later on the runner's machine, restart the daemon (or the
+runner, if it starts the daemon), and run `tack runner doctor` again until the line reads `api:         6`
+or higher. The
 install steps are in [Installing and Operating Runners](runners.md#install-docket-and-tell-the-runner).
 If you run the daemon yourself, check that it is the new binary that is running, not the old one.
 
@@ -284,7 +284,7 @@ binary = "docket"
 
 Remove `base_url` if the runner should start the daemon. For an embedded runner, pass its settings with
 `tack serve --runner-config <path>`. Run `tack runner doctor` afterwards: the docket block should show
-`api: 5` and `daemon: running on 127.0.0.1:7399`. If the daemon was started but exits at once, read
+`api: 6` and `daemon: running on 127.0.0.1:7399`. If the daemon was started but exits at once, read
 `<state dir>/logs/docket-daemon.log`; the runner restarts it after 2 seconds, then 4, 8 and so on up to
 a minute. All the keys are in [docket teams](runners.md#docket-teams).
 
@@ -327,7 +327,7 @@ and cannot take it, and the run is failed when it has waited longer than that fo
 go away by itself. These do not fail the run, because they end by themselves:
 
 - every runner is busy, which clears when one finishes;
-- the project has used its tokens or dollars for the day, or its review queue is full;
+- the project has used its tokens for the day, or its review queue is full;
 - no runner has looked at the run yet, for instance because none is online.
 
 **What to do.** Read the reason and fix that, from the runner's machine or the board.
@@ -339,7 +339,7 @@ go away by itself. These do not fail the run, because they end by themselves:
 | The runner does not offer an agent | Install the agent or turn it on in the runner's settings, then run `tack runner doctor`. For docket, see [docket is absent](#docket-is-absent-and-the-daemon-does-not-start). |
 | An agent needs a model named | Name a model in the profile or in the run. |
 | The runner lacks a label | Add the label to the runner, or change what the run asks for. |
-| A budget is used up | The run waits until tomorrow, or raise the project's budget. |
+| The project used its tokens for today, or its review queue is full | The run waits until tomorrow or until a review is done, or raise the project's daily token limit. |
 
 A run that failed after the wait can be started again once the cause is gone. To retire an attempt that
 is stuck on a machine that died, use the [Recovery Runbook](recovery-runbook.md).
@@ -349,7 +349,7 @@ is stuck on a machine that died, use the [Recovery Runbook](recovery-runbook.md)
 ## Auto-start does not tick
 
 **What you see.** A project has **Start a task by itself** switched on, and a task that meets every
-condition in the User Guide's [list](../user-guide/troubleshooting.md#a-task-did-not-start-by-itself)
+condition in the User Guide's [list](../user-guide/automation.md#start)
 never starts. The board shows no error.
 
 **Cause.** The board looks for such tasks on its own interval, `TACK_AUTO_START_SECONDS`, which is 30

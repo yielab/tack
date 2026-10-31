@@ -130,7 +130,11 @@ hot-backup path.
 
 Bundles carry a generation counter and an install ID. An upload that would overwrite newer work from a
 different install is refused, and so is a restore that would clobber newer local work; both ask for
-explicit confirmation.
+explicit confirmation. A restore also checks the bundle's SHA-256 and schema version before it stages
+anything.
+
+Bundles are compressed but **not encrypted**. Use a private bucket with encryption at rest turned on at
+the provider, and scope the access key to that one bucket.
 
 ---
 

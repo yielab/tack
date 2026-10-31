@@ -10,9 +10,9 @@ automatically — every step under "Publish list" is a human action.
 | --- | --- | --- |
 | 1 | CI is green on `develop`, including E2E — no job cancelled or timed out | `gh api "repos/yielab/tack/actions/workflows/ci.yml/runs?event=push&branch=develop&per_page=1" --jq '.workflow_runs[0].conclusion'` (expect `success`) |
 | 2 | Local `develop` matches `origin/develop` — nothing sitting unpushed | `git fetch origin && git rev-parse origin/develop develop` (both SHAs equal) |
-| 3 | `main` is caught up to `develop` — `main` is what the install one-liner and the GitHub landing page actually serve | `git rev-list --count origin/main..origin/develop` (0 = current; fast-forward `main` before tagging if not) |
+| 3 | `main` is caught up to `develop` — `release.yml` refuses a tag whose commit is not on `main`, and `main` is what the GitHub landing page and the Scoop manifest URL serve | `git rev-list --count origin/main..origin/develop` (0 = current; fast-forward `main` before tagging if not) |
 | 4 | `install.sh` picks the `tack-*` archive, never the `tack-runner-*` one (both match the same platform suffix), and verifies what it downloaded | `./scripts/verify-install-urls.sh` — runs the installer for real against the published release, asserts a working `tack` lands, asserts the `SHA256SUMS` check ran, and asserts `packaging/` carries the published digests |
-| 5 | The workspace version is the version you're about to tag — `release.yml` refuses a tag that doesn't match `Cargo.toml` | `grep '^version' Cargo.toml` |
+| 5 | The workspace version is the version you're about to tag — `release.yml` refuses a tag that doesn't match `Cargo.toml` | `grep -m1 '^version' Cargo.toml` |
 | 6 | The local gate and the end-to-end smoke are green | `.githooks/pre-push && cargo nextest run --workspace && ./scripts/smoke.sh` (fake mode: shim harness binaries, no model call) |
 | 7 | The live GitHub repository description matches the current harness list (four: Claude Code, Codex, docket, opencode) | `gh repo view yielab/tack --json description --jq .description` |
 | 8 | The recovery demo asset is a valid, playable file | `file docs/screenshots/recovery-demo.gif` |
@@ -23,11 +23,8 @@ automatically — every step under "Publish list" is a human action.
 
 ## Publish list — everything a human does, in order
 
-1. **Tag the release.** **Done 2026-09-21 — `v0.1.0-beta.9`**, the first tag with the
-   desktop bundles on the releases page. `main` was fast-forwarded to the same commit
-   first, since that is what the install one-liner and the landing page serve. A
-   `0.1.0-beta.8` version was bumped on 2026-09-07 but never tagged, so its changes
-   shipped here. For the next one:
+1. **Tag the release.** `main` must contain the commit first, since `release.yml` refuses a tag that
+   is not on it. The last published release is `v0.1.0-beta.9`.
    ```bash
    git push origin develop:main && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
@@ -45,7 +42,7 @@ automatically — every step under "Publish list" is a human action.
    (Linux), `.dmg` (macOS), `.msi` (Windows) — are the first links in the release
    description, since the desktop app is the primary way to use Tack. The binary
    installers (`install.sh`, `install.ps1`) and Homebrew/Scoop links follow.
-3. **Open the seven `good first issue` GitHub issues** from the drafts in
+3. **Open the six `good first issue` GitHub issues** from the drafts in
    `docs/launch/good-first-issues/`, applying the existing `good first issue` label
    (already on the repo — `gh label list --repo yielab/tack --search "good first issue"`).
 4. **Post the four drafts** in `docs/launch/posts/` to their venues, in any order —

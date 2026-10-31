@@ -6,7 +6,7 @@ Tack has no identity model: there are no user accounts, no sessions, and no per-
 
 Tack is local-first by default. It binds to `127.0.0.1`, keeps everything in a single SQLite file, and on that loopback bind it creates a token of its own and requires it. This page covers what you set when you go beyond that: choosing the token, controlling network exposure, enabling cloud backups, wiring up webhooks, and tuning logs. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration.md) for how those are loaded.
 
-All examples assume the default base URL `http://127.0.0.1:3210`.
+All examples assume the default base URL `http://127.0.0.1:3210`. The `curl` examples leave out the `Authorization` header that every call needs; see [Authentication](#authentication).
 
 ---
 
@@ -104,7 +104,7 @@ The file-upload endpoint (`POST /api/items/{id}/attachments`) is exempt from thi
 
 ## Cloud backup (S3-compatible)
 
-Tack can push database snapshots to any S3-compatible object store — AWS S3, Cloudflare R2, Backblaze B2, or MinIO. Remote backup is **enabled only when a bucket, an access key, and a secret key are all present**. For local snapshot/restore, see [Backup and Restore](backup-restore.md).
+Tack can push backup bundles (the database and the attachments) to any S3-compatible object store — AWS S3, Cloudflare R2, Backblaze B2, or MinIO. Remote backup is **enabled only when a bucket, an access key, and a secret key are all present**. For local snapshot/restore, see [Backup and Restore](backup-restore.md).
 
 ### Configuration sources
 
@@ -116,16 +116,11 @@ Two layers feed the effective config:
 
 The UI values override the environment for these fields: endpoint, bucket, region, access key, secret key, prefix, retention. A blank UI field clears the override and falls back to the environment default. The one exception is the auto-backup **interval**, which is environment-only (`TACK_BACKUP_INTERVAL_SECS`) and applied at startup — it is not editable from the UI.
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO (e.g. `https://<account>.r2.cloudflarestorage.com`) |
-| `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name. **Required** to enable remote backup |
-| `TACK_BACKUP_REGION` | `auto` | Region. AWS needs the real region; Cloudflare R2 uses `auto` |
-| `TACK_BACKUP_ACCESS_KEY` | _(none)_ | S3 access key ID. **Required** to enable remote backup |
-| `TACK_BACKUP_SECRET_KEY` | _(none)_ | S3 secret access key. **Required**; never logged |
-| `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
-| `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; omit for manual-only. Env-only, applied at startup |
-| `TACK_BACKUP_RETENTION` | `10` | Number of remote backups to keep after each upload |
+The variables are `TACK_BACKUP_ENDPOINT` (omit for AWS S3), `TACK_BACKUP_BUCKET`, `TACK_BACKUP_REGION`
+(`auto` by default; AWS needs the real region), `TACK_BACKUP_ACCESS_KEY`, `TACK_BACKUP_SECRET_KEY` (never logged),
+`TACK_BACKUP_PREFIX` (default `tack`), `TACK_BACKUP_INTERVAL_SECS` (omit for manual-only; values under 60 are
+raised to 60) and `TACK_BACKUP_RETENTION` (default `10`, the bundles kept after each upload). Their defaults are in the
+[Configuration Reference](configuration-reference.md).
 
 Example (Cloudflare R2):
 
@@ -181,7 +176,7 @@ curl -X POST http://127.0.0.1:3210/api/backup/remote
 # Restore a specific object (then restart the server)
 curl -X POST http://127.0.0.1:3210/api/backup/remote/restore \
   -H 'Content-Type: application/json' \
-  -d '{"key":"tack/2026-06-26T12-00-00Z.tackbundle"}'
+  -d '{"key":"tack/tack-backup-2026-06-26T12-00-00Z.tar.zst"}'
 ```
 
 ---
@@ -266,11 +261,9 @@ tack serve
 
 Logging is controlled by three variables. Secrets — the API token, the webhook secret, the backup secret key, and the GitHub token — are never written to logs at any level.
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TACK_LOG_LEVEL` | `info` | Verbosity: `trace`, `debug`, `info`, `warn`, `error` |
-| `TACK_LOG_JSON` | `false` | Emit structured JSON lines (for log aggregators) when `true`/`1` |
-| `TACK_LOG_FILE` | _(none)_ | Also write logs to this file path (standard output still gets them) |
+`TACK_LOG_LEVEL` sets the verbosity (`trace`, `debug`, `info` by default, `warn`, `error`), `TACK_LOG_JSON=true`
+emits structured JSON lines for a log aggregator, and `TACK_LOG_FILE` also writes the log to a file (standard output
+still gets it).
 
 ```sh
 TACK_LOG_LEVEL=debug TACK_LOG_JSON=true TACK_LOG_FILE=/var/log/tack.log tack serve
@@ -278,37 +271,8 @@ TACK_LOG_LEVEL=debug TACK_LOG_JSON=true TACK_LOG_FILE=/var/log/tack.log tack ser
 
 ---
 
-## Environment variable reference
+## Every setting
 
-Security- and administration-relevant settings, as read by the server at startup. Values can also be set in `tack.toml`; see [Configuration](configuration.md).
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `TACK_HOST` | `127.0.0.1` | Bind address. Set to `0.0.0.0` to expose on a LAN (front with a TLS proxy). Requires `TACK_API_TOKEN` (or the opt-out below) once set to anything non-loopback — see [Network exposure and TLS](#network-exposure-and-tls) |
-| `TACK_PORT` | `3210` | Listen port |
-| `TACK_DATABASE_URL` | `sqlite:tack.db?mode=rwc` | SQLite database location |
-| `TACK_API_TOKEN` | _(generated on loopback)_ | The token required as `Authorization: Bearer <token>` on all `/api/*` routes except `/api/health` and `/api/openapi.json`. Left unset on a loopback bind, the server uses the `api-token` file beside its database. Never logged |
-| `TACK_EXECUTION_DECISION_TOKEN` | _(generated on loopback)_ | The second secret required to answer a run's question. Left unset on a loopback bind, the server uses the `decision-token` file beside its database. Never logged |
-| `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the non-loopback-without-token startup refusal. Off by default — set only when a `TACK_HOST` reachable beyond the local machine is intentional and a token genuinely cannot be configured |
-| `TACK_ALLOWED_ORIGINS` | see [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md) | Comma-separated CORS allow-list of exact origins |
-| `TACK_MAX_BODY_SIZE` | `2097152` | Max body size in bytes for non-attachment requests (2 MB). Uploads are always capped at 50 MB |
-| `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
-| `TACK_WEBHOOK_URL` | _(none)_ | Outbound webhook URL; enables event POSTs |
-| `TACK_WEBHOOK_SECRET` | _(none)_ | HMAC-SHA256 signing secret; adds `X-Tack-Signature: sha256=<hex>`. Never logged |
-| `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope); status and comments sync out to linked issues, and the poll below may start. Never logged |
-| `TACK_GITHUB_API_BASE` | `https://api.github.com` | GitHub API root (override for GitHub Enterprise) |
-| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval for linked issues; `0` is off. A project's automatic merge runs on the same tick, so it needs this and `TACK_GITHUB_TOKEN` |
-| `TACK_AUTO_START_SECONDS` | `30` | How often the board starts tasks that projects start by themselves; `0` is off. See [Starting tasks by itself](runners.md#starting-tasks-by-itself) |
-| `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL; omit for AWS S3 |
-| `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name — required to enable remote backup |
-| `TACK_BACKUP_REGION` | `auto` | S3 region (`auto` for Cloudflare R2) |
-| `TACK_BACKUP_ACCESS_KEY` | _(none)_ | S3 access key ID — required to enable remote backup |
-| `TACK_BACKUP_SECRET_KEY` | _(none)_ | S3 secret access key — required; never logged |
-| `TACK_BACKUP_PREFIX` | `tack` | Object key prefix inside the bucket |
-| `TACK_BACKUP_INTERVAL_SECS` | _(none)_ | Auto-backup interval in seconds; env-only, applied at startup |
-| `TACK_BACKUP_RETENTION` | `10` | Remote backups to retain after each upload |
-| `TACK_LOG_LEVEL` | `info` | Log verbosity |
-| `TACK_LOG_JSON` | `false` | Structured JSON logging |
-| `TACK_LOG_FILE` | _(none)_ | Optional log file path |
-
-For the workflow-facing side of these features, see [Backup and Restore](backup-restore.md); for proxy and TLS setup, see [Deployment](deployment.md).
+The [Configuration Reference](configuration-reference.md) lists each `TACK_*` variable with its default. For the
+workflow-facing side of backups, see [Backup and Restore](backup-restore.md); for proxy and TLS setup, see
+[Deployment](deployment.md).

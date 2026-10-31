@@ -1,126 +1,107 @@
-# GitHub Sync (status and comments, both directions)
+# GitHub sync
 
-_Status: shipping in slices · Date: 2026-06-25 · Phase 21 · inbound state and comments
-both ways added 2026-09-20_
+A **link** ties a Tack item to a GitHub issue. Linked items keep their state and comments in step
+with the issue in both directions, and an accepted agent run opens a pull request that the same
+poll then follows. The one-way GitHub _import_ (`POST /api/projects/{id}/import-github`) copies
+issues in once; the link is what keeps them in step afterwards.
 
-Tack's one-way GitHub _import_ copies issues in once. This adds a **living link** so
-status changes and comments flow both ways: out to GitHub on an item update or a new
-comment, and in from GitHub on a poll.
+## What flows where
 
-## Scope (decided)
+| Direction | Trigger | What happens |
+| --- | --- | --- |
+| Tack → GitHub | A linked item moves into a Done-category status | The issue is **closed**. |
+| Tack → GitHub | A linked item moves out of Done | The issue is **reopened**. |
+| Tack → GitHub | A comment is posted on a linked item | It is posted onto the issue; GitHub's comment id is stored on the Tack comment. |
+| GitHub → Tack | The poll sees a closed issue whose item is not Done | The item moves to the project workflow's first Done-category status. |
+| GitHub → Tack | The poll sees an open issue whose item is Done | The item moves to the workflow's first Todo-category status. |
+| GitHub → Tack | The poll sees a comment whose id is not stored on a Tack comment | A Tack comment is created, starting `@<login> on GitHub:`, a blank line, then the text. |
+| Tack → GitHub | An attempt is accepted | A pull request is opened (see below). |
 
-- **Direction: push (Tack → GitHub) and poll (GitHub → Tack).** No webhook receiver —
-  Tack listens on `127.0.0.1` by default and the desktop app never exposes it, so
-  GitHub cannot deliver to it; a poll with the same token push already uses reaches
-  every install. A webhook route is refused until an install reachable from the
-  internet asks.
-- **Data: open/closed state, and comments, either direction.** When a linked item
-  moves into a Done-category status, its GitHub issue is **closed**; when it moves
-  back out of Done, the issue is **reopened** — and the same mapping in reverse: a
-  closed issue moves its item to the project workflow's first Done-category status, a
-  reopened one to the first Todo-category status. A comment typed on a linked item is
-  posted onto its issue; a comment posted on the issue is mirrored in as a Tack
-  comment on the poll. No label/title mirroring yet.
-- **Pull requests.** When an agent attempt for a linked item succeeds and its runner
-  pushed a branch, Tack opens a pull request from that branch to the repository's
-  default branch, with the same token as the push (`TACK_GITHUB_TOKEN` or the project's
-  own). An item with no GitHub link, or no token, gets no pull request and the attempt
-  still completes. The title carries only the attempt and issue numbers; the body is the
-  attempt's merge-readiness pack. The pull request's number, link and state show on the
-  attempt. On the poll, the same issues response also lists pull requests: Tack records
-  when one is merged or closed, and marks a merged one reverted when a later pull
-  request titled `Revert…` cites its number (`#<n>`) in its body. A 304 writes nothing.
-- **Best-effort.** The push is fire-and-forget (like outbound webhooks): failures are
-  logged, never block or fail the item update or the comment creation. The poll logs
-  and skips a repo that errors rather than failing the whole poll.
-- **Conflict policy:** last-write-wins, Tack-initiated for push. The poll moves an
-  item through the project's ordinary workflow (the same validation `PATCH
-  /items/{id}` uses) and creates inbound comments straight through the db repo, so an
-  inbound move or comment never triggers an outbound push — the two directions never
-  share a code path.
+Only the Done boundary matters: a title edit, or a move between two statuses of the same category,
+calls GitHub not at all, and an item already in the right category is left where it is. Titles,
+labels, assignees and issue bodies are never mirrored. System comments (status changes, edits) are
+never pushed, and a comment mirrored in from GitHub is never pushed back, because the stored GitHub
+id marks it as already synced.
 
-## How the link is formed
+- **No webhook receiver.** Tack listens on `127.0.0.1` by default and the desktop app never exposes
+  it, so GitHub could not deliver to it. A poll with the same token the push uses reaches every
+  install.
+- **Best-effort.** A push is fire-and-forget, like outbound webhooks: a failure is logged and never
+  blocks or fails the item update or the comment. The poll logs and skips a repository that errors
+  rather than failing the whole pass.
+- **Last write wins.** The poll moves an item through the project's ordinary workflow, with the same
+  validation `PATCH /api/items/{id}` uses, and creates comments directly, so an inbound move or
+  comment never triggers an outbound push. It only ever creates comments, never edits or deletes one,
+  in either direction.
 
-- Importing a repo (`POST /api/projects/:id/import-github`) now records a row in the
-  new `github_links` table for every created item: `(item_id, repo, issue_number)`.
-- So any item that came from a GitHub import is automatically push-linked.
-- Any item can also be linked by hand, from the item's side panel or directly:
-  `PUT /api/items/{id}/github-link` with `{"repo": "owner/name", "issue_number": 42}`
-  creates or replaces the link; `DELETE /api/items/{id}/github-link` removes it
-  (not an error when there was none); `GET /api/items/{id}/github-link` returns the
-  current link, or a 404 when the item isn't linked.
+## The link
+
+- Importing a repository records a link `(item, owner/name, issue number)` for every item it creates,
+  so an imported item is linked from the start.
+- Any item can be linked by hand, from the item's side panel or the API:
+  `PUT /api/items/{id}/github-link` with `{"repo": "owner/name", "issue_number": 42}` creates or
+  replaces the link; `GET` returns it (404 when there is none); `DELETE` removes it and is not an error
+  when there was none.
 
 ## Configuration
 
-Push is **off unless a token is configured** — there is no way for Tack to write to
-GitHub without one, so the feature is opt-in and inert by default. The poll is
-**additionally off unless an interval is configured** — both a token and a nonzero
-interval are required before it starts.
+Nothing is sent to GitHub without a token, so sync is inert by default. The poll also needs an interval.
 
-| Env var | Default | Purpose |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `TACK_GITHUB_TOKEN` | _(none)_ | PAT with `repo` scope; enables push and poll. Never logged. |
-| `TACK_GITHUB_API_BASE` | `https://api.github.com` | Override for GitHub Enterprise / testing against a mock. |
-| `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds. `0` is off. |
+| `TACK_GITHUB_TOKEN` | _(none)_ | Personal access token with `repo` scope. Enables the push, and lets the poll start. Never logged. |
+| `TACK_GITHUB_API_BASE` | `https://api.github.com` | The API root, for GitHub Enterprise or a mock. |
+| `TACK_GITHUB_POLL_SECONDS` | `0` | Poll interval in seconds. `0` is off. |
 
-A project can also carry its own token, referenced rather than stored directly:
-`PATCH /api/projects/{id}` with `{"github_token_ref": "store:<name>"}`, where
-`<name>` is a secret already stored through
-`PUT /api/local-runner/secrets/{name}`. A push or poll request for that project's
-repo resolves the project's own reference first and falls back to
-`TACK_GITHUB_TOKEN` only when the project has none, or its reference doesn't
-resolve. The token value itself is never returned by any route — only the
-reference. The poll still only *starts* when `TACK_GITHUB_TOKEN` is set; a
-project's own reference can only choose which token an already-running poll
-uses for that project's repo, never start the poll on its own.
+A project can carry its own token as a reference rather than a value:
+`PATCH /api/projects/{id}` with `{"github_token_ref": "store:<name>"}`, where `<name>` is a secret
+stored with `tack runner secret set <name>`. Sending an empty string clears the reference. For a
+project's repository, its own reference is used first, and `TACK_GITHUB_TOKEN` only when the project
+has none or the reference does not resolve. The token value is never returned by any route. The poll
+still starts only when `TACK_GITHUB_TOKEN` is set: a project's reference chooses which token an
+already-running poll uses for that repository and cannot start the poll.
 
-## Flow
+## The poll
 
-**Push:**
+Every `TACK_GITHUB_POLL_SECONDS` while a token is set, for each repository with at least one linked
+item:
 
-1. `update_item` changes an item's status.
-2. If a `TACK_GITHUB_TOKEN` is set **and** the item has a `github_links` row **and**
-   the change crosses the Done boundary (was-done ≠ now-done), Tack spawns a
-   best-effort `PATCH {base}/repos/{repo}/issues/{n}` with `{"state": "closed"|"open"}`.
-3. A title edit or a same-category status move triggers **no** GitHub call.
+1. `GET {base}/repos/{repo}/issues?state=all&since=<latest synced_at across its links>`, sending the
+   previously seen `ETag` as `If-None-Match`. The `ETag` is kept in memory for the life of the process.
+2. On a `304` no issue is read. Otherwise each returned issue that matches a linked item's number is
+   compared with the item as in the table above, and its `updated_at` is stored as that link's
+   `synced_at`, which narrows the next poll's `since`.
+3. For each linked issue the list returned (a new comment bumps the issue's `updated_at`, so an issue
+   absent from the list has nothing new to read), `GET {base}/repos/{repo}/issues/{n}/comments`, with
+   `since` set to the link's `synced_at` once it has one, and every comment not yet stored becomes a
+   Tack comment.
+4. The same list also contains pull requests. The poll records when one that Tack opened is merged or
+   closed. A merged one is marked **reverted** when a later pull request whose title starts with
+   `Revert` cites its number (`#<n>`) in its body.
+5. For each pull request merged in the last 14 days, the poll learns its merge commit and marks the
+   pull request reverted when a commit on the default branch says `This reverts commit <merge commit>`.
+   For one merged in the last 24 hours it also records when CI on the merge commit first read red.
+   Step 5 runs on a `304` as well.
 
-**Poll**, every `TACK_GITHUB_POLL_SECONDS` while a token is set:
+A project's automatic merge runs on the same tick, right after the poll, so it needs the token and the
+interval too. The Merge button reads the same GitHub signals; see
+[Merging from Tack](book/src/user-guide/merging.md).
 
-1. For each repo with at least one linked item: `GET
-   {base}/repos/{repo}/issues?state=all&since=<max synced_at across its links>`,
-   sending back a previously seen `ETag` as `If-None-Match`.
-2. A `304` response does no write. Otherwise, each returned issue that matches a
-   linked item's number moves that item through the project's ordinary workflow to
-   the first Done-category status (closed) or first Todo-category status (open) — an
-   item already in that category is left alone. Nothing else on the issue (body,
-   labels, assignee) is read.
-3. Every processed issue's `updated_at` is recorded as that link's `synced_at`,
-   narrowing the next poll's `since`; the `ETag` is kept in memory for the process's
-   lifetime, not persisted.
-4. For each linked issue the list returned (a new comment bumps the issue's
-   `updated_at`, so an issue absent from the list has nothing new to read), `GET
-   {base}/repos/{repo}/issues/{n}/comments?since=<that link's synced_at>` (the
-   parameter is omitted while the link has never synced). Each
-   returned comment whose id isn't already stored on a Tack comment becomes one,
-   created straight through the db repo — never the HTTP handler, so it can't itself
-   trigger the push below — with a body starting `@<login> on GitHub:` then a blank
-   line then the comment text. The comment's id is stored alongside it.
+## Pull requests
 
-**Comment push:**
+When an attempt is accepted, in the attempt review or the merge-readiness pack review, or by a
+project's automatic merge, and the runner pushed its branch, Tack opens a pull request from that branch
+to the repository's default branch, with the same token as the push (the project's own, else
+`TACK_GITHUB_TOKEN`). The item must be linked to a GitHub issue; an item with no link, or no token,
+gets no pull request, and the review still completes. An attempt that already has a pull request
+returns it without calling GitHub.
 
-1. A user posts a comment on an item (`POST /api/items/{id}/comments`).
-2. If a `TACK_GITHUB_TOKEN` is set **and** the item has a `github_links` row, Tack
-   spawns a best-effort `POST {base}/repos/{repo}/issues/{n}/comments` with `{"body":
-   <the comment's content>}` and stores the id GitHub returns on the comment.
-3. A system comment (status changes, edits) is never pushed — only a comment created
-   through this endpoint is a candidate. A comment mirrored in from the poll above is
-   created through the db repo, not this endpoint, so it is never a candidate either:
-   the stored id is what "already mirrored" means, in both directions.
+The title carries only the attempt and issue numbers, never item or agent text. The body is the
+attempt's merge-readiness pack, or a plain note when there is none. The pull request's number, link
+and state (open, merged, closed or reverted) show on the attempt.
 
-## Explicitly out of scope (future slices)
+## Not supported
 
-- A GitHub webhook receiver (decided against — see "Scope" above).
-- Mirroring labels, assignees, or title.
-- Conflict resolution beyond "Tack pushes, last write wins" for push; the poll moves an
-  item only when the issue's state and the item's status category disagree, and only
-  ever creates a comment, never edits or deletes one either direction.
+- A GitHub webhook receiver.
+- Mirroring labels, assignees or titles.
+- Editing or deleting a comment on the other side.
