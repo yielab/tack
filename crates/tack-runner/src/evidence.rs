@@ -140,6 +140,8 @@ pub struct PlanSubtask {
     pub estimate: Option<String>,
 }
 
+/// The steps of a run that recorded them (`terminal_reason.steps`), staged as one artifact.
+pub const TRAJECTORY_FILE: &str = "trajectory.json";
 /// Why `captured` is false when git could not read the workspace.
 pub const EVIDENCE_REASON_GIT_UNREADABLE: &str = "git could not read the workspace";
 /// Why `captured` is false when the provisioner has no repository to read.
@@ -284,6 +286,15 @@ pub async fn capture<P: WorktreeProvisioner>(
     if let Some(brief) = brief {
         let bytes = serde_json::to_vec_pretty(brief).unwrap_or_default();
         stage("brief.json", "brief", "application/json", &bytes);
+    }
+    // What each step of the run was made of, as the harness recorded it: the verifier is given
+    // this file's address and digest as the attempt's trajectory.
+    if let Some(steps) = evidence.terminal_reason["steps"]
+        .as_array()
+        .filter(|steps| !steps.is_empty())
+    {
+        let bytes = serde_json::to_vec_pretty(steps).unwrap_or_default();
+        stage(TRAJECTORY_FILE, "trajectory", "application/json", &bytes);
     }
     // Read after capture, from the workspace that is about to be deleted. A
     // missing file is not a failure.

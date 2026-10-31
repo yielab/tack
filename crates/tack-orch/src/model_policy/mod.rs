@@ -2,11 +2,9 @@
 //! when the run's agent is the project's default agent, otherwise none (the
 //! agent chooses).
 //!
-//! [`resolve_model_policy`] is pure (no I/O/clock/DB) — see [`wiring`] for
-//! the live `tack-db`-backed caller. Whether a harness can run with no model
+//! [`resolve_model_policy`] is pure (no I/O/clock/DB); `tack_app::model_policy_wiring`
+//! is the live `tack-db`-backed caller. Whether a harness can run with no model
 //! is `select_runner`'s job, not this module's.
-
-pub mod wiring;
 
 /// Which input supplied the model.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

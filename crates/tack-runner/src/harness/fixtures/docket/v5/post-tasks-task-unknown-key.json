@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "invalid task: 1 validation error for TaskRequest\ncolour\n  Extra inputs are not permitted [type=extra_forbidden, input_value='red', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden"
+}

@@ -5,6 +5,7 @@ import { api } from '../../../shared/api';
 import { MemoryRouter, Route } from '@solidjs/router';
 import DependenciesTab from './DependenciesTab';
 import type { Item } from '../../../shared/types';
+import { flush } from '../../../test/flush';
 
 const ITEM = { id: 'i1', project_id: 'p1', title: 'Item One' } as unknown as Item;
 
@@ -13,8 +14,6 @@ const projectItems = [
   { id: 'i2', title: 'Item Two' },
   { id: 'i3', title: 'Item Three' },
 ];
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let deps: unknown[];
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
@@ -78,6 +77,13 @@ describe('DependenciesTab', () => {
     const text = container.textContent ?? '';
     expect(text).toContain('Item Two'); // i1 blocks i2
     expect(text).toContain('Item Three'); // i3 blocks i1 → blocked by
+  });
+
+  it("links each row to the other item's own page, not the drawer", async () => {
+    const { container } = mount();
+    await flush();
+    const hrefs = Array.from(container.querySelectorAll('li a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(['/projects/p1/items/i2', '/projects/p1/items/i3']);
   });
 
   it('surfaces the server cycle-rejection message and adds nothing', async () => {

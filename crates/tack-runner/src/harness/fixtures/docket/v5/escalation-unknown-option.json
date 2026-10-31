@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "option 'no-such-option' is not offered; choose one of: approve_once, approve_task, deny"
+}

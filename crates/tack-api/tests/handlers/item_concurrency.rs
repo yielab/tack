@@ -14,7 +14,6 @@ use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::router::{AppState, build_router};
-use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -22,17 +21,8 @@ use uuid::Uuid;
 // ─── Helpers (mirrors security/board_drag_wip_race.rs) ─────────────────────
 
 async fn app_with_state() -> (Router, AppState) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'CI Workspace', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
 
     let (tx, _rx) = broadcast::channel(16);
     let config = AppConfig {
@@ -40,12 +30,13 @@ async fn app_with_state() -> (Router, AppState) {
         ..AppConfig::default()
     };
     let state = AppState {
-        repo: Repository::new(pool),
+        repo,
         config,
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
 
     (
@@ -307,7 +298,7 @@ async fn stale_if_match_is_rejected_with_412_with_no_racer() {
 
 /// **What this proves:** two genuinely concurrent `PATCH`es, same item, same
 /// `If-Match` value (both fetched from the same prior `GET`), race
-/// `claim_item_version`'s atomic `UPDATE ... WHERE version = ?`. However the
+/// `update_item_atomically`'s version check inside one write transaction. However the
 /// two requests interleave, SQLite's writer serialization means only one of
 /// the two compare-and-swap calls can succeed — the loser must see `412`,
 /// never a second `200` and never a `500`. That is a real, worthwhile
@@ -317,7 +308,7 @@ async fn stale_if_match_is_rejected_with_412_with_no_racer() {
 /// what gates the write. Both racers here start from the same freshly-read
 /// version regardless of what string either one actually sent, so an
 /// implementation that silently drops the header-value comparison but still
-/// funnels every `PATCH` through `claim_item_version` reproduces the
+/// funnels every `PATCH` through `update_item_atomically` reproduces the
 /// identical one-`200`/one-`412` shape this test watches for. A mutation
 /// that drops the header-value comparison passed this test most of the
 /// time in practice (caught only 5/15 runs). For a deterministic proof that
@@ -368,13 +359,13 @@ async fn two_concurrent_patches_on_one_version_yield_one_cas_winner() {
 
 /// A larger-fanout variant of the CAS-layer race above: `N` `PATCH`es racing
 /// one still-valid version must still yield exactly one `200`, since
-/// `claim_item_version`'s atomic `UPDATE ... WHERE version = ?` only lets one
+/// `update_item_atomically`'s version check inside one write transaction only lets one
 /// writer through per version, however many are racing it.
 ///
 /// Like the pair-sized race above, this is a property of the CAS layer, not
 /// proof that `If-Match`'s *value* is enforced: an implementation that
 /// accepts the header without ever comparing it, but still funnels every
-/// `PATCH` through `claim_item_version`, can still produce more than one
+/// `PATCH` through `update_item_atomically`, can still produce more than one
 /// winner here — a racer that reads the version *after* an earlier racer in
 /// the same batch has already committed sees a new "current" version and
 /// wins again too. That mutation was caught more often with this test
@@ -539,12 +530,12 @@ async fn before_update_failure_cannot_partially_apply_patch() {
     // but before SQLite applies the one generated UPDATE. It is a deterministic
     // failure injection: the old field-by-field implementation would already
     // have committed earlier fields at this point.
-    sqlx::query(
+    tack_test_support::seed::statement(
+        &state.repo,
         "CREATE TRIGGER fail_atomic_item_patch BEFORE UPDATE ON items WHEN NEW.title = 'Blocked' BEGIN SELECT RAISE(ABORT, 'injected before-update failure'); END",
+        &[],
     )
-    .execute(state.repo.pool())
-    .await
-    .unwrap();
+    .await;
     let failed = req(
         &app,
         Method::PATCH,

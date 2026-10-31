@@ -83,11 +83,17 @@ impl ArtifactStorage {
     async fn safe_attempt_dir(&self, attempt_id: &str) -> Result<PathBuf, ArtifactContentError> {
         tokio::fs::create_dir_all(&self.root)
             .await
-            .map_err(|_| ArtifactContentError::Io)?;
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })?;
         reject_symlink(&self.root).await?;
         let canonical_root = tokio::fs::canonicalize(&self.root)
             .await
-            .map_err(|_| ArtifactContentError::Io)?;
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })?;
 
         let attempt_dir = self.root.join(encode_id(attempt_id));
         // Inspect *before* creating: `create_dir_all` on a path that is
@@ -98,7 +104,10 @@ impl ArtifactStorage {
         }
         tokio::fs::create_dir_all(&attempt_dir)
             .await
-            .map_err(|_| ArtifactContentError::Io)?;
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -106,9 +115,13 @@ impl ArtifactStorage {
                 tokio::fs::set_permissions(&attempt_dir, std::fs::Permissions::from_mode(0o700))
                     .await;
         }
-        let canonical_attempt_dir = tokio::fs::canonicalize(&attempt_dir)
-            .await
-            .map_err(|_| ArtifactContentError::Io)?;
+        let canonical_attempt_dir =
+            tokio::fs::canonicalize(&attempt_dir)
+                .await
+                .map_err(|failure| {
+                    tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                    ArtifactContentError::Io
+                })?;
         if canonical_attempt_dir != canonical_root
             && !canonical_attempt_dir.starts_with(&canonical_root)
         {
@@ -148,7 +161,10 @@ impl ArtifactStorage {
             .create_new(true) // Never follows an existing symlink or file.
             .open(&temp_path)
             .await
-            .map_err(|_| ArtifactContentError::Io)?;
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })?;
 
         let mut hasher = Sha256::new();
         let mut total_written: u64 = 0;
@@ -230,10 +246,16 @@ impl ArtifactStorage {
         reject_symlink(&candidate).await?;
         let canonical_root = tokio::fs::canonicalize(&self.root)
             .await
-            .map_err(|_| ArtifactContentError::Io)?;
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })?;
         let canonical_candidate = tokio::fs::canonicalize(&candidate)
             .await
-            .map_err(|_| ArtifactContentError::Io)?;
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })?;
         if canonical_candidate != canonical_root
             && !canonical_candidate.starts_with(&canonical_root)
         {
@@ -241,7 +263,10 @@ impl ArtifactStorage {
         }
         tokio::fs::File::open(&canonical_candidate)
             .await
-            .map_err(|_| ArtifactContentError::Io)
+            .map_err(|failure| {
+                tracing::warn!(error = %failure, "Artifact storage I/O failed");
+                ArtifactContentError::Io
+            })
     }
 
     /// Best-effort blob removal for a swept artifact row.

@@ -2,7 +2,7 @@
   "ok": true,
   "created": true,
   "project": "saas-lights",
-  "blueprint": "software",
+  "blueprint": "build",
   "members": [
     {
       "id": "saas-lights-lead",

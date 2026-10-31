@@ -1,0 +1,9 @@
+constructed
+route: GET /escalations
+status: 200
+tack-sends: yes
+built-from: docket's tests/fixtures/operator-v2/escalation-consult.json (the view, recorded from a real run of docket on a fake model) inside the list envelope of specs/api/operator-api.spec.md "Escalations" (escalations, next)
+source: tests/fixtures/operator-v2/escalation-consult.json at 9954b4f8
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+date: 2026-10-26
+note: a pending escalation of kind consult; not captured, because docket sends it only while a model runs or a person answers one; every key is one docket writes, the values are made up, or come from the capture or the recording it is built from. The ids, times and the pod name are the placeholders and the names of this folder's captures.

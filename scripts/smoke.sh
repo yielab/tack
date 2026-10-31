@@ -168,7 +168,7 @@ chmod +x "$SHIMS/claude"
 cp "$SHIMS/claude" "$SHIMS/codex"
 chmod +x "$SHIMS/codex"
 
-# docket is a daemon the runner reaches over HTTP (API 5), not a binary it runs per attempt, so there is no shim here: tests/docket_v5.rs proves it against the in-process fake.
+# docket is a daemon the runner reaches over HTTP (API 6), not a binary it runs per attempt, so there is no shim here: tests/docket_v5.rs proves it against the in-process fake.
 
 # opencode has no run shim (step 8 says why); this one only answers the probe,
 # so the runner never reaches a real opencode install or its login.
@@ -442,7 +442,7 @@ wait_for "attempts_json '$REQ9B' | jq -r '.data[] | select(.state==\"succeeded\"
   || bad "the queued-while-saturated request never completed"
 
 step 10 "Standalone mode: 'tack serve --with-runner' reaches a completed attempt with zero manual enrollment"
-# The point of ADR 0058: one binary, one command, no separate runner process,
+# The point of ADR 0003: one binary, one command, no separate runner process,
 # no operator-issued token ever copied anywhere. Fresh state dir, fresh
 # database — nothing here is inherited from steps 3-9's separately-enrolled
 # runner.

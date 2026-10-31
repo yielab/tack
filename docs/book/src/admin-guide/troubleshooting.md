@@ -246,7 +246,7 @@ on and found. Set the missing section as described in
   api:         4 (needs docket 0.2.0-beta.6)
 ```
 
-and the runner posts no task to docket. The full sentence is "needs docket 0.2.0-beta.6 (API 5); this
+and the runner posts no task to docket. The full sentence is "needs docket 0.2.0-beta.6 (API 6); this
 docket answers API N".
 
 **Cause.** Tack sends each docket run to a team over docket's HTTP API, which it checks before every

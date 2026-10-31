@@ -74,7 +74,7 @@
       `HOME` to find its OAuth session/config").
     - `opencode`: `OpenCodeAdapter::default_passthrough_env` forwards `PATH`, `HOME`, and the four
       `XDG_*` variables (`opencode.rs`'s own doc comment, observed fact 6).
-  - The report closes with one line paraphrasing ADR 0050/0058's "Tack does not proxy model
+  - The report closes with one line paraphrasing ADR 0002/0003's "Tack does not proxy model
     providers" position, naming both ADRs.
 - Tests added and exact commands/results:
   - `crates/tack-cli/src/doctor.rs`, `#[cfg(test)] mod tests` (8 new tests, all deterministic, no

@@ -1,5 +1,5 @@
 {
-  "apiVersion": "5",
+  "apiVersion": "6",
   "timestamp": "2026-01-01T00:00:00Z",
   "channels": [],
   "agents": [
@@ -11,7 +11,7 @@
       "model": "anthropic/claude-sonnet-4-6",
       "registered": true,
       "bindings": [],
-      "lastActivity": "2026-01-01",
+      "lastActivity": "never",
       "costUsd": 0.0,
       "budgetUsd": null
     },
@@ -23,7 +23,7 @@
       "model": "anthropic/claude-haiku-4-5",
       "registered": true,
       "bindings": [],
-      "lastActivity": "2026-01-01",
+      "lastActivity": "never",
       "costUsd": 0.0,
       "budgetUsd": null
     },
@@ -35,7 +35,7 @@
       "model": "anthropic/claude-sonnet-4-6",
       "registered": true,
       "bindings": [],
-      "lastActivity": "2026-01-01",
+      "lastActivity": "never",
       "costUsd": 0.0,
       "budgetUsd": null
     },
@@ -47,7 +47,7 @@
       "model": "anthropic/claude-haiku-4-5",
       "registered": true,
       "bindings": [],
-      "lastActivity": "2026-01-01",
+      "lastActivity": "never",
       "costUsd": 0.0,
       "budgetUsd": null
     }

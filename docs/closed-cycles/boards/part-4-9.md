@@ -14,7 +14,7 @@
 |---|---|---|---|---|
 | IX | Human maintainability | 63 | **Done 2026-09-14** — Waves 27–33 integrated; a follow-up cut the size exclusions 89 → 44 and the rest are accepted under §IX.5. Measured outcome and why Phase 64 replaces it: `docs/book/src/roadmap.md`, Phase 63. | [§IX](#part-ix--human-maintainability-phase-63) |
 | VIII | Docket bridge hardening | 62 | **Done 2026-09-08** — Waves 24–26 integrated. VIII-C3 closed as obsolete 2026-09-18: the adapter it corrects is deleted by Phase 64's bridge retirement. | [§VIII](#part-viii--docket-bridge-hardening-phase-62) |
-| **VII** | **Desktop app & background service** | 61 | **Done 2026-09-07** (reopened once for VII-B5, then closed again). ADR 0062 accepted; Linux/Windows bundles build, macOS not re-run; a stranger completed a full attempt via the tray/AppImage. One product defect spun out as VI-C36. | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
+| **VII** | **Desktop app & background service** | 61 | **Done 2026-09-07** (reopened once for VII-B5, then closed again). ADR 0006 accepted; Linux/Windows bundles build, macOS not re-run; a stranger completed a full attempt via the tray/AppImage. One product defect spun out as VI-C36. | [§VII](#part-vii--desktop-app--background-service-phase-61), top of this file |
 | **VI** | **Agent Onboarding & Provider UX** | 60 | **Done 2026-09-07** — every card has an accepted integration and a handoff; nothing is open. Not card work, but still true: no harness offers in-app login, so the completed-attempt claim rests on a fake-harness shim, and the live tray/AppImage walks aren't re-run. | [§VI](#part-vi--agent-onboarding--provider-ux-phase-60), top of this file |
 | **V** | **Adoption & First Public Release** | 59 | **Done 2026-09-06** — every card integrated. What remains is publishing, a human action outside this repo: see `docs/LAUNCH-CHECKLIST.md`, whose first item is tagging a release (nothing downloadable since `v0.1.0-beta.7`). | [§V](#part-v--adoption--first-public-release-phase-59) |
 | **IV** | **Standalone Single-Binary Operation** | 58 | Done — Wave 10 integrated at `83fefab`. | [§IV](#part-iv--standalone-single-binary-operation-phase-58) |
@@ -22,7 +22,7 @@
 | II | Agnostic Control Plane | 39–49 | Superseded after Wave B by Part III. | `docs/closed-cycles/boards/part-2.md` |
 | I | Agent-Factory Control Center | 33–38 | Complete 2026-08-05. | `docs/closed-cycles/boards/part-1.md` |
 
-**No board in this file is live.** ADR 0068 was accepted on 2026-09-18, and with it work
+**No board in this file is live.** ADR 0010 was accepted on 2026-09-18, and with it work
 stopped being tracked as cards and waves: the current plan is **Phase 64** in
 `docs/book/src/roadmap.md` (its harness stage: `docs/plans/harnesses.md`), decisions are
 recorded in `docs/adr/`, and nothing new is added here. This file stays until Phase 64's
@@ -539,9 +539,9 @@ card's block only.
 this Part makes the code, the guard and the documentation say the same thing the decision
 does.
 
-**The decisions of record are ADR 0060** (`docs/adr/0060-docket-control-plane-disposition.md`,
+**The decisions of record are ADR 0060** (`docs/closed-cycles/adr/0060-docket-control-plane-disposition.md`,
 accepted 2026-08-31 — the bridge is maintained, optional, never the owner of a runner-v1
-request) **and ADR 0065** (`docs/adr/0065-docket-pipeline-dispatch-trigger.md`, **accepted**
+request) **and ADR 0065** (`docs/closed-cycles/adr/0065-docket-pipeline-dispatch-trigger.md`, **accepted**
 2026-09-08 — the pipeline-dispatch trigger's caller, token and non-claim on an item). Read
 0065's decision table, not a paraphrase. No card re-decides one; a card that finds a
 decision impossible stops and says so in its handoff.
@@ -932,7 +932,7 @@ them.
 
 ### VIII-C3 — a unit test models a response the real server never sends
 
-**Closed as obsolete 2026-09-18** (ADR 0068, amendment of that date): Phase 64 deletes
+**Closed as obsolete 2026-09-18** (ADR 0010, amendment of that date): Phase 64 deletes
 `DocketAdapter` with the control-plane bridge, and the test with it. The finding below stays
 as a record of how `/dispatch/{project}` behaves.
 
@@ -997,7 +997,7 @@ Every handoff in `docs/agent-handoffs/part-viii/` adds, beyond the standard sect
 
 # Part VII — Desktop app & background service (Phase 61)
 
-**Status: ACTIVE — ADR 0062 accepted 2026-09-03; Wave 18 dispatched the same day (VII-A2
+**Status: ACTIVE — ADR 0006 accepted 2026-09-03; Wave 18 dispatched the same day (VII-A2
 and VII-B1, Sonnet agents in worktrees off `2958e9e`). The Tauri Linux prerequisites are
 installed and verified on the dispatch machine.** The runner and the board already survive a closed
 browser tab; nothing survives a closed terminal. This Part makes Tack a background service
@@ -1022,7 +1022,7 @@ card's block only. It names what to read, how much it costs, the gate, and when 
 install like an application — its own window, icon and tray — so that closing the window
 never stops an agent attempt and nobody opens a terminal to start it.
 
-**The decision of record is ADR 0062** (`docs/adr/0062-desktop-app-and-background-service.md`,
+**The decision of record is ADR 0006** (`docs/adr/0006-desktop-app-and-background-service.md`,
 accepted 2026-09-03): eight decisions in one table at the top of the file. Read that table,
 not a paraphrase. No card re-decides one; a card that finds a decision impossible stops and
 says so in its handoff.
@@ -1044,7 +1044,7 @@ says so in its handoff.
 | Where in-flight attempts are listed (for the Quit warning) | `GET /api/executions` — `crates/tack-api/src/handlers/executions.rs:807`; read the handler for its status filter | grep |
 | Frontend API base | `VITE_API_URL ?? '/api'` — same-origin by default, so the window loads the served UI unchanged | `frontend/src/shared/api/client.ts:9` |
 
-### The data folders (ADR 0062 decision 5), fixed here so A2 and B3 agree without sharing code
+### The data folders (ADR 0006 decision 5), fixed here so A2 and B3 agree without sharing code
 
 | OS | Root (`dirs::data_dir()` + `tack`) | Under it |
 |---|---|---|
@@ -1118,7 +1118,7 @@ rule 8 applies as written.
 ## §VII.3 Dependency graph, cross-Part conflicts and merge policy
 
 ```text
-ADR 0062 (accepted) ──┬── VII-A2 (tack service) ──────────────────────────────────────┐
+ADR 0006 (accepted) ──┬── VII-A2 (tack service) ──────────────────────────────────────┐
                       └── VII-B1 (tack-desktop: sidecar + supervisor + window) ─┐      │
                                     ├── VII-B2 (tray, lifecycle, autostart) ────┤      │
                                     └── VII-B3 (data folders, first run, attach)┴── VII-C1 (release bundles) ── VII-C2 (README, install, screenshots) ── VII-D1 (stranger proof)
@@ -1160,7 +1160,7 @@ A card that discovers another collision states it in the handoff and stops.
 dependency in `crates/tack-cli/Cargo.toml`, `docs/book/src/user-guide/cli.md` §"tack
 service", the user-service rows of `docs/DEPLOYMENT-GUIDE.md`, and the VII-A2 handoff.
 
-**Context.** The terminal path's daemon (ADR 0062 decision 8). Linux: a systemd *user*
+**Context.** The terminal path's daemon (ADR 0006 decision 8). Linux: a systemd *user*
 unit at `~/.config/systemd/user/tack.service` — `ExecStart=<absolute path of the running
 binary> serve --with-runner`, `Environment=` the four folder variables from §VII.0,
 `WorkingDirectory=<root>`, `Restart=on-failure`, `WantedBy=default.target`; `install`
@@ -1500,7 +1500,7 @@ polling alone with the child's exit status `not_measured`.
 - **Mobile or remote access** of any kind.
 - **Code signing and notarization** — a separate decision with money attached.
 - **A second frontend or an app-only API.** The window shows the served UI.
-- **Turning the runner on by itself.** ADR 0061 decision 6's switch is the only way.
+- **Turning the runner on by itself.** ADR 0005 decision 6's switch is the only way.
 - **A Windows service.** `tack service` returns a typed unsupported there; the app is the
   Windows path.
 - **Auto-update.** The plugin exists; it is not wired until signed builds exist.
@@ -1545,8 +1545,8 @@ i18n, time tracking and in-UI diff review stay deferred — see §VI.5.
 
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
-| 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Integrated** at `927f850` on `develop` (handoffs: `docs/agent-handoffs/part-vi/VI-A1.md`, `VI-A2.md`, `VI-A3.md`). All three adversarially verified against the real tree, not just their own reports — A1's live worked example re-checked, A3's stranger-read test and render proofs opened, A2's ADR cited by line against 0050/0058. `mdbook build` clean; the only `docs/CONFIG.md` conflict (A1's new bullet vs. A2's rewritten paragraph, both anticipated it) resolved keeping both contributions. **ADR 0061 is `Status: proposed` — Wave 15 (VI-B1/B2/B3) does not branch until the user records acceptance with a date in `VI-A2.md`.** One non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward reference to ADR 0061 once accepted (not fixed here — outside every Wave-14 card's ownership). |
-| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **VI-B1 and VI-B2 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-B1.md`, `VI-B2.md`). **VI-B3 and VI-B4 integrated 2026-09-05** at `03df038` (handoffs `VI-B3.md`, `VI-B4.md`). Both were green alone and neither built after the merge: B4 made the discovery report's catalog one status per provider and B3 called it expecting a single one. Reconciled at integration, which is the first moment either card could have seen the other. Two comments the merge falsified were repointed, one caught by `check-comments.sh` rather than by reading. **VI-B4 corrected its own central claim under challenge:** its first vendor-name grep covered only the dispatch functions and reported zero; run over the whole tree with each file split at its own `#[cfg(test)]`, two production sites still named Vercel, one of which would have recorded an unobserved model as harness-reported for the next gateway added. VI-B5 follows B4 alone, because it changes the contract B4's acceptance holds byte-identical. **opencode was removed from the tree the same day** (ADR 0063 decision 8, handoff `docs/agent-handoffs/part-vi/opencode-removal.md`) — Tack ships adapters for two harnesses and is not limited to two: an unknown harness name still parses and is refused at claim with the same typed reason any undeclared one gets. **VI-B2 landed narrower and better-shaped than its card:** opencode's gateway path was measured working but deliberately not built, because it is the only harness that could not be credentialed by per-spawn injection — it needed a written config file. That card also claimed the provider machinery carries no vendor name and that a second endpoint is three data rows and no code path. **Measured 2026-09-05, it is not:** `attach_catalog` looks up the Vercel config key by name rather than walking the configured providers, and the three rows only suffice for a provider whose catalog is a bearer-authenticated `data[].id` list. VI-B4 makes the claim true. Two card errors corrected by measurement: the default secret name had to be `vercel-ai-gateway/default`, since `SecretStore::resolve` never appends the label, and the card's vendor URL for codex 404s. **Escalated, now carded:** the catalog publishes per-model pricing, context windows and modalities, and `ModelCombination` has nowhere to put them — a reviewed wire field, not the `additional` map. ADR 0063 decision 5 records it; **VI-B5 owns it**. ADR 0061 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base `2958e9e`. Decision 1 of ADR 0061 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
+| 14 — Truth first | VI-A1 · VI-A2 · VI-A3 | 60 | **Integrated** at `927f850` on `develop` (handoffs: `docs/agent-handoffs/part-vi/VI-A1.md`, `VI-A2.md`, `VI-A3.md`). All three adversarially verified against the real tree, not just their own reports — A1's live worked example re-checked, A3's stranger-read test and render proofs opened, A2's ADR cited by line against 0002/0003. `mdbook build` clean; the only `docs/CONFIG.md` conflict (A1's new bullet vs. A2's rewritten paragraph, both anticipated it) resolved keeping both contributions. **ADR 0005 is `Status: proposed` — Wave 15 (VI-B1/B2/B3) does not branch until the user records acceptance with a date in `VI-A2.md`.** One non-blocking finding routed to VI-D1: `docs/book/src/roadmap.md:3273` wants a forward reference to ADR 0005 once accepted (not fixed here — outside every Wave-14 card's ownership). |
+| 15 — Provider at the runner boundary | VI-B1 · VI-B2 · VI-B3 | 60 | **VI-B1 and VI-B2 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-B1.md`, `VI-B2.md`). **VI-B3 and VI-B4 integrated 2026-09-05** at `03df038` (handoffs `VI-B3.md`, `VI-B4.md`). Both were green alone and neither built after the merge: B4 made the discovery report's catalog one status per provider and B3 called it expecting a single one. Reconciled at integration, which is the first moment either card could have seen the other. Two comments the merge falsified were repointed, one caught by `check-comments.sh` rather than by reading. **VI-B4 corrected its own central claim under challenge:** its first vendor-name grep covered only the dispatch functions and reported zero; run over the whole tree with each file split at its own `#[cfg(test)]`, two production sites still named Vercel, one of which would have recorded an unobserved model as harness-reported for the next gateway added. VI-B5 follows B4 alone, because it changes the contract B4's acceptance holds byte-identical. **opencode was removed from the tree the same day** (ADR 0063 decision 8, handoff `docs/agent-handoffs/part-vi/opencode-removal.md`) — Tack ships adapters for two harnesses and is not limited to two: an unknown harness name still parses and is refused at claim with the same typed reason any undeclared one gets. **VI-B2 landed narrower and better-shaped than its card:** opencode's gateway path was measured working but deliberately not built, because it is the only harness that could not be credentialed by per-spawn injection — it needed a written config file. That card also claimed the provider machinery carries no vendor name and that a second endpoint is three data rows and no code path. **Measured 2026-09-05, it is not:** `attach_catalog` looks up the Vercel config key by name rather than walking the configured providers, and the three rows only suffice for a provider whose catalog is a bearer-authenticated `data[].id` list. VI-B4 makes the claim true. Two card errors corrected by measurement: the default secret name had to be `vercel-ai-gateway/default`, since `SecretStore::resolve` never appends the label, and the card's vendor URL for codex 404s. **Escalated, now carded:** the catalog publishes per-model pricing, context windows and modalities, and `ModelCombination` has nowhere to put them — a reviewed wire field, not the `additional` map. ADR 0063 decision 5 records it; **VI-B5 owns it**. ADR 0005 accepted by the user on 2026-09-03 (recorded in `docs/agent-handoffs/part-vi/VI-A2.md`, amendments). Sequential B1 → B2 → B3; base `2958e9e`. Decision 1 of ADR 0005 was refined on 2026-09-03 before acceptance (platform keychain first, owner-only file where none answers, backend reported); VI-B1's card and dispatch block already match. |
 | 16 — UI-first flow | VI-C1 · VI-C2 · VI-C3 · VI-C4 | 60 | **Wave complete — VI-C1 integrated 2026-09-05** (handoff `VI-C1.md`): the Agents page, the sidebar entry, the Board's first-run banner, and the Fleet page's runner management moved under *Advanced*. Its stated blocker was wrong and its own amendment says so — the runner-v1 completion route is at `handlers/runner_protocol.rs:198`, in `tack-api` and not in either adapter; the eight live 404s came from guessed names and from percent-encoding that never delivered the real path. The real residual limit is narrower: a genuine harness subprocess reporting its own completion needs that adapter's argv and output shape. **VI-C2, VI-C3 and VI-C4 integrated 2026-09-04** (handoffs `docs/agent-handoffs/part-vi/VI-C2.md`, `VI-C3.md`, `VI-C4.md`). C2 merged with no conflict — it is frontend-only and shared no file with the desktop cards it integrated alongside. C1 still needs B2 + B3. VI-C4's two routes ship with no handler test in `tack-api` — the next Wave 16 card touching that crate owns adding them (see its amendment). |
 | 17 — Proof | VI-C5 … VI-C23 · VI-D1 · VI-D2 | 60 | **VI-C17 integrated 2026-09-06 — the badges finally ask the question they mean.** `GET /api/executions` takes `item_ids` and returns exactly one row per id, its latest request, picked by a window function with an `id DESC` tiebreak because two requests for one item can share a `created_at`. Badges register interest on mount and every registration in one microtask coalesces into a single request: **one round trip per screen either way, but a row per card instead of up to 2000** — smaller than even the old 200-row default. Absence from the response is now conclusive, so VI-C14's `Unknown` chip and the hand-copied row cap are both **deleted rather than bound** — with badges asking by exact id there was nothing left for that constant to guard, which is the outcome VI-C17's own card said to check for first. The card **checked rather than assumed** the thing VI-C14's pricing had gotten wrong: this `serde_urlencoded` cannot deserialize a repeated query key into a sequence, verified in a scratch crate, so ids go comma-separated. The integrator verified the 2000-id cap against SQLite's own bind-variable limit — the bundled build is 3.46.0 with `SQLITE_MAX_VARIABLE_NUMBER 32766`, a 16× margin — and fixed one defect: the coalesced fetch was launched with `void` and had no `catch`, so a failed badge poll became an unhandled rejection. **Its 'pre-existing flake' claim was true and was checked rather than accepted** — on `develop` without this card, `two_servers_on_two_databases` failed 2 of 5 runs, and it still fails at `-j 1`, so it is machine load, not test parallelism. That test arrived with VI-C15 and its 10s deadline was set on an idle machine; `bootstrap_entrypoint`'s 5s shutdown budget took 110s under the same load. Both are now **VI-C23** — the same unreadable-signal disease V-C4 found in CI, from the other end. Earlier notes follow. | **VI-C18 and VI-C19 integrated 2026-09-06, and the E2E suite is green — 70/70, three consecutive full chromium runs from a clean state, for the first time this cycle.** C18 answered its own question the right way round: **the gate was never wrong, the test was.** It left the model selector on its silent default and assumed `getOrCreateProject` returns a stable project; `list_projects` orders `updated_at DESC` and the helper takes `[0]`, so under `fullyParallel` the shared project is whichever one any concurrent test last touched. It proved the leak instead of inferring it — the failing dialog showed a default model minted only by `scheduler-e2e.spec.ts`'s own fixture. The integrator's revert reproduced the failure in 4 of 5 runs. The helper itself is **VI-C20**. C19: `remove_secret` now reverses exactly the flip `set_secret` makes and nothing else, so a provider the operator enabled in config survives a key removal; the revert failed exactly one test, as claimed, and VI-C16's E2E workaround is gone. **What chasing the last failure found is worth more than either card.** The suite's outcome tracks how much state its persistent database has accumulated — **9 failures at 383 runners, 1 at 42, 0 from clean**, different tests at each level, all passing alone. That is why this cycle produced four irreconcilable flake rates for the same tests; none were wrong, none recorded the starting state. Now **VI-C22**. And deleting `e2e.db` without `storage-e2e/` leaves a runner credential for an id the new database has never seen — the failure class VI-C15 was carded for, on the axis its `storage_dir` scoping does not cover — now **VI-C21**. Earlier notes follow. | **VI-C10 and VI-C16 integrated 2026-09-06.** C10: `check-comments.sh` only ever scanned `crates/**/*.rs`, so the rule it enforces had never applied to the frontend — 219 citation lines across 80 files (the card re-measured; the board said 221, and it said so). **Four reached rendered operator text, three of them asserting gaps that had since been filled** — `GET /runners`, the fleet-member routes, and the precedence walk — so the UI was telling people that shipped features were missing. The integrator verified all three routes exist before accepting the rewrites. A callerless provenance helper whose only output was one of those strings is deleted, not reworded. The gate now understands JSX and block comments and single quotes, and flags a bare `docs/agent-handoffs` path. **The integrator found one more hole and fixed it: the card-id pattern was `[0-9]` , so the word boundary fell between the digits of every two-digit id and VI-C10 through VI-C19 passed straight through** — proven with a probe file, `VI-C9` caught and `VI-C10` not, then fixed and the whole tree still clean. **Its first catch after merging was VI-C14**, which landed minutes earlier and had never been scanned. C16: a lock directory keyed by API origin, so the three specs sharing one server-wide switch stop racing; it also measured a real ambiguity in `ProviderKeyPanel` (`stored()` is falsy while loading *and* when empty — 4 of 10 solo runs failed on the unmodified file) and escalated two things it could not own. **Both escalations were real and the integrator acted on both**: `agent-assets.spec.ts` is a recorder needing a release build, was never added to `playwright.config.ts`'s recorder exclusion list, and was failing every capability-reading spec alongside it; and `remove_secret` never undoes the `enabled` flag `set_secret` sets, now **VI-C19**. Full chromium suite, measured: **5 of 5 runs failed before, 7 of 7 fail exactly once after**, always `run-with-agent.spec.ts:98`, which passes alone — deterministic, reproduces at the pre-merge tip, and is now **VI-C18**. Earlier notes follow. | **VI-C14 integrated 2026-09-06.** The badges' shared preload now asks for the server's hard cap (2000) instead of taking its 200-row default, and an item absent from a response that came back *at* the cap renders `Unknown` rather than nothing — the two cases are indistinguishable from the client and silence claims the wrong one. One request for a screen of items, before and after. The card priced the real fix and stopped where it was told to: no route returns the latest execution for a set of item ids. The integrator's own revert failed **five** tests, not the four the handoff counted — an undercount in the safe direction, the unmentioned one being the `Unknown` chip itself. Two things the card did not measure, measured at integration: the cap raise costs **≈343 KiB more per board load** on an install big enough to fill it (195 B × 1800 rows, `ExecutionSummary` has five fields), and the `Unknown` chip lands on *every* uncached item once an install passes 2000 requests, including items that never ran — correct, since the client cannot tell those apart, but a visible change to a full board. Its escalation plus a duplicated constant became **VI-C17**. Earlier notes follow. | **VI-C15 integrated 2026-09-06.** The embedded runner's default state directory now derives from `storage_dir` instead of the process's working directory, so two `tack serve --with-runner` processes started from one shell against two databases no longer resolve to one credential. `TACK_RUNNER_STATE_DIR` still wins when set. State written under the old default is moved once, only when the new directory does not exist, and never reused when the rename fails — the card argued that choice against a silent migration and an unconditional refusal, and recorded the case it does not solve (several installs already sharing one legacy directory: the first to boot keeps it, the rest correctly self-provision). The integrator re-ran the revert proof and it failed as claimed, at `embedded_runner_state_scoping.rs:166` — but **at server A, not server B**, one assertion before where the test's own doc comment said it would, and server B's `expect` narrated a resume-then-refuse sequence the revert never reaches. Both texts were corrected to what reverting actually produces before the merge. Earlier notes follow. | **VI-C13 integrated 2026-09-06.** `a11y.spec.ts` had been failing since the modal redesign, the same disease `scheduler-e2e.spec.ts` had. The `agents-page.spec.ts` fix is the one worth reading: the test used to **revoke every other active runner in the database** for determinism — measured unsafe and about half effective — and three further approaches were measured and rejected before one that touches no other file's state. Three full parallel runs, clean. Its amendment corrects its own description of the auto-selection rule after review. Two escalations became **VI-C15** (the embedded runner's state directory does not follow the database — a credential outliving the database it was made against) and **VI-C16** (three specs driving one server-wide switch). Earlier notes follow. | **VI-C11 and VI-C12 integrated 2026-09-06.** C11: `docs/contracts/model-policy/precedence-table.json`, generated from the Rust walk and read by both sides. The integrator proved both directions personally — swap two entries in `ModelPolicyTier::ORDER` and leave the fixture, the Rust gate fails; regenerate it, and **twelve TypeScript cases fail with no TypeScript touched**. C12: the executions list takes an `item_id` and a bound (200, capped 2000, applied unscoped too); dropping the `WHERE` fails exactly the one test, naming the leaked row. Its bound made a pre-existing badge-staleness question reachable, now **VI-C14**. Earlier notes follow. | **VI-C9 integrated 2026-09-06** — the dialog can dispatch again, in both directions. The gate mirrors the scheduler's `declared \|\| passthrough` arm, and Auto is resolved rather than guessed, so a request that would queue forever is refused with the consequence named and a link to the fix. It also found the gate being fed every runner's capabilities instead of the target's. `scheduler-e2e.spec.ts` had been failing since VI-C2's picker redesign; its mechanics are updated and **its assertions are untouched** — the integrator checked the whole spec diff and found exactly one changed assertion line, an addition. **VI-C10 and VII-D1 are unblocked.** Three findings became **VI-C11** (nothing binds the client's copy of the precedence walk to the Rust one, and the dialog now blocks on it), **VI-C12** (`GET /api/executions` returns every row ever, and the browser filters) and **VI-C13** (two more specs the same redesign stranded). Earlier notes follow. | **VI-D2 integrated 2026-09-06** (handoff `VI-D2.md`, two dated amendments). It shipped `agents.png` and `attempt.png` and **deliberately did not replace `hero.gif`**: the recording it made showed the dispatch modal with a live *Unsupported* badge three seconds before a run that had been dispatched around the button with `POST /executions`. The recorder is guarded so it cannot regenerate silently and the re-recording recipe sits beside the guard. `two-machines.png` is produced and not shipped — every capability row reads *not supported*, and the enrollment panel prints a handoff path above the list, which is **VI-C10**. **VI-C9 is now the critical path: VI-C10 and VII-D1 both wait behind it**, D1 because a stranger's transcript has to dispatch an agent on an item and today cannot. Earlier notes follow. | **VI-C8 integrated 2026-09-06** (handoff `VI-C8.md`) — the attempt events route and the artifact download now have the scoping tests nothing was giving them. The download's proof is the one that matters and the integrator re-ran it alone: revert that single site's `request_id` predicate and exactly its test fails, carrying the other execution's actual file bytes back to a caller who asked under a different execution id. Earlier notes follow. | **VI-C6 and VI-C7 integrated 2026-09-06.** C6: both attempt-list routes answer `404` for an unknown attempt *and* for one belonging to another execution, and the integrator's independent revert showed the cross-execution test failing with the other execution's artifact row in the body — it catches a leak, not a status code. That revert also showed **two more sites with the same scoping and no test at all**, now **VI-C8**; the artifact *download* is one of them. C7: an `AutoSelect` request is rejected by the scheduler unconditionally and by design, so the dialog's own default queues forever on any install with no explicit default model at any tier — **VI-C9** carries the fix and waits for VI-D2, which is filming that dialog. C7's first verdict overstated the scope and its amendment says so; it also retracts its own proposed fix. Wave 17 original note follows. |
 | 17 (original note) | — | 60 | **VI-C5 integrated 2026-09-06** (handoff `docs/agent-handoffs/part-vi/VI-C5.md`) — six handler tests, each proven load-bearing; the integrator re-ran the ordering proof independently by flipping `repo/execution.rs`'s `ORDER BY` to `DESC` and watching exactly the two ordering tests fail. It declared one gap, now carded as **VI-C6**: neither route's unknown-attempt path is covered. **VI-C7** was added from V-C2's surviving escalation. Original note follows. **VI-C5 dispatched 2026-09-05** — it needs nothing and shares no file with the other two, so it runs now rather than waiting for them. D2 (assets) needs C1, C2 and Part V's V-C2, which owns `docs/screenshots/`; D1 goes last and needs everything |
@@ -1566,8 +1566,8 @@ UI — with no screen or page that shows the whole path, and because the one que
 user asks first, *"which model, from which provider, and where do I put the key?"*, is
 answered today by a negation.
 
-**Read the posture correctly.** ADR 0050 ("the Tack API never starts a coding harness and
-never becomes a model proxy") and ADR 0058 ("vendor credentials remain outside Tack") are
+**Read the posture correctly.** ADR 0002 ("the Tack API never starts a coding harness and
+never becomes a model proxy") and ADR 0003 ("vendor credentials remain outside Tack") are
 **right and stay**. They are statements about the API server. They have been read — by the
 docs that cite them and by users — as "Tack cannot help you configure a provider", which is
 a different claim and a false one. The runner already owns credentials (its own), already
@@ -1623,9 +1623,9 @@ happens today, where it must happen after this Part, and — when the answer is 
 
 | Step | Today | Target | Why not fully UI |
 |---|---|---|---|
-| Turn on agent execution | console: `tack serve --with-runner` | **UI** — one switch, on a loopback bind (ADR 0061 decision 6); the command is rendered only where the switch cannot exist (a non-loopback bind) | — starting Tack itself is the one console step left |
+| Turn on agent execution | console: `tack serve --with-runner` | **UI** — one switch, on a loopback bind (ADR 0005 decision 6); the command is rendered only where the switch cannot exist (a non-loopback bind) | — starting Tack itself is the one console step left |
 | Install a harness binary | outside Tack, undocumented | console, rendered in the UI: installed / absent per harness, with the vendor's install command | external binaries |
-| Authenticate a harness with its own vendor login | console, outside Tack | console, rendered in the UI with the exact command and a re-check | OAuth device flows need a TTY; Tack never holds vendor logins (ADR 0050/0058) |
+| Authenticate a harness with its own vendor login | console, outside Tack | console, rendered in the UI with the exact command and a re-check | OAuth device flows need a TTY; Tack never holds vendor logins (ADR 0002/0003) |
 | Authenticate through **Vercel AI Gateway** | impossible | **UI** with the embedded runner — one key, pasted once, write-only, runner-local; console (`tack runner secret set`) for a remote runner, rendered in the UI | none in the embedded case |
 | Enroll a runner | zero-touch (embedded) / UI token → console (remote) | unchanged | — |
 | Create a fleet / add a member | fleet: UI; member: API only | UI | — |
@@ -1710,7 +1710,7 @@ estimate). Seven rules are specific to this Part:
    file that exists is "present, unverified" — the honest state — never a check mark. No
    status on any screen is derived from file existence.
 3. **Provider secrets never enter `tack.db`, a log line, or the operator API** — with
-   exactly one exception, which ADR 0061 (VI-A2) authorizes and bounds: a loopback-only,
+   exactly one exception, which ADR 0005 (VI-A2) authorizes and bounds: a loopback-only,
    embedded-runner-only, write-once route that hands a key to the co-located runner's
    owner-only store without persisting it. Every card touching a secret asserts the
    *absence* directly (row counts, captured log output) with a positive control proving the
@@ -1745,7 +1745,7 @@ estimate). Seven rules are specific to this Part:
 | `docs/book/src/user-guide/{agent-runners,cli,configuration,quick-start}.md`, `docs/API-REFERENCE.md` §"Runner, Fleet & Execution", the model-resolution rows of `docs/CONFIG.md` | VI-A1 — **VI-D1 amends after Waves 15–16 ship** |
 | `docs/adr/0061-*.md`, the one provider-credentials bullet in `docs/CONFIG.md` | VI-A2 only |
 | `crates/tack-runner/src/secrets.rs` (new), the store path in `crates/tack-runner/src/config.rs`, the `secret_reference` branch of each adapter, `tack runner secret …` in `crates/tack-cli/src/main.rs` (one subcommand arm + one module) | VI-B1 |
-| The `[provider.*]` section of `RunnerConfig`, each adapter's spawn environment/args, `bootstrap::probe`, `crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md` | VI-B2 — **after B1 merges**. Exception recorded 2026-09-03: the refined ADR 0061 decision 1 requires `tack runner doctor` to report which store backend is in effect, so **VI-B1 owns that one `doctor.rs` line** and the store's wiring in `bootstrap.rs`. B2 owns everything else in both files and must not revert it |
+| The `[provider.*]` section of `RunnerConfig`, each adapter's spawn environment/args, `bootstrap::probe`, `crates/tack-cli/src/doctor.rs`, the gateway rows of `docs/CONFIG.md` | VI-B2 — **after B1 merges**. Exception recorded 2026-09-03: the refined ADR 0005 decision 1 requires `tack runner doctor` to report which store backend is in effect, so **VI-B1 owns that one `doctor.rs` line** and the store's wiring in `bootstrap.rs`. B2 owns everything else in both files and must not revert it |
 | `crates/tack-runner/src/provider.rs` and the module tree replacing it, the catalog half of `crates/tack-cli/src/doctor.rs`, the registry | VI-B4 — **after B2 merges**. Disjoint from VI-B3 and may run alongside it. B4 must not touch the wire type or the fixtures; that is B5's, and B4's own acceptance depends on them staying byte-identical |
 | The per-model field on `ModelCombination`, `docs/contracts/runner-v1/**`, the pin table in `crates/tack-orch/tests/runner_contract.rs` | VI-B5 — **after B4 merges**, and the only card that may change the wire contract in this Part |
 | `crates/tack-api/src/handlers/local_runner.rs` (new), its mounts in `router.rs` (those only), the control handle in `crates/tack-cli/src/local_runner.rs`, the persisted on/off flag, `frontend/src/features/agents/{ExecutionToggle,ProviderKeyPanel}.tsx` + their client and tests | VI-B3 |
@@ -1777,7 +1777,7 @@ estimate). Seven rules are specific to this Part:
 VI-A1 (docs: the path, the truth) ─────────────────────────────────────────────┐
 VI-A3 (README + introduction + diagram) ───────────────────────────────────────┤
                                                                                │
-VI-A2 (ADR 0061) ──┬── VI-B1 (secret store) ── VI-B2 (Vercel AI Gateway) ──┬── VI-B4 (provider trait) ── VI-B5 (catalog on the wire)
+VI-A2 (ADR 0005) ──┬── VI-B1 (secret store) ── VI-B2 (Vercel AI Gateway) ──┬── VI-B4 (provider trait) ── VI-B5 (catalog on the wire)
                    │                                                      │   │
                    │                        └── VI-B3 (embedded: on/off, key) ──┼── VI-C1 (Agents page) ──┐
                    │                                                             │                          │
@@ -1895,16 +1895,16 @@ pasted. `configuration.md` and `docs/CONFIG.md` no longer both claim to be the r
 
 ---
 
-### VI-A2 — ADR 0061: provider credentials and model catalogs at the runner boundary
+### VI-A2 — ADR 0005: provider credentials and model catalogs at the runner boundary
 
 **A decision card. Prepares and stops; the user accepts the ADR.** No Wave 15 card branches
 before that.
 
-**Owns:** `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`, the one
+**Owns:** `docs/adr/0005-provider-credentials-at-the-runner-boundary.md`, the one
 provider-credentials bullet in `docs/CONFIG.md` (l.89-108 today), and the VI-A2 handoff.
 **Owns no code.**
 
-**Context.** ADR 0050 l.29-30 and ADR 0058 l.80-83 are quoted in §VI.0. Both are correct
+**Context.** ADR 0002 l.29-30 and ADR 0003 l.80-83 are quoted in §VI.0. Both are correct
 about the API server. Both are being cited to mean "Tack cannot help you configure a
 provider", which produced the reported confusion (recorded in IV-A5's own Context, which
 called the situation "correct but invisible" and fixed only the visibility). The runner
@@ -1917,7 +1917,7 @@ resolver. This ADR decides what the runner may hold and how a key reaches it, so
 
 1. **Where a provider key lives.** Recommended: a runner-local, owner-only store in
    `TACK_RUNNER_STATE_DIR`, alongside `session.json`, with the same `0600` posture.
-   Rejected for the record: `app_meta` like the backup secret (crosses the line ADR 0050
+   Rejected for the record: `app_meta` like the backup secret (crosses the line ADR 0002
    drew; the backup key is the *server's own* secret, a provider key is not); a Tack-side
    vault (a proxy by another name).
 2. **The one exception.** An embedded-runner, loopback-only, write-once operator route that
@@ -1940,7 +1940,7 @@ resolver. This ADR decides what the runner may hold and how a key reaches it, so
 5. **The surface map as product rule.** Adopt §VI.0's table: the "never UI" column is
    closed and named; a future step that cannot be UI needs an ADR amendment, not a card's
    judgement.
-6. **Turning the embedded runner on from the UI — an amendment to ADR 0058.** Today the
+6. **Turning the embedded runner on from the UI — an amendment to ADR 0003.** Today the
    gate is a startup flag. Recommended: on a loopback bind, one switch in the UI starts or
    stops the in-process runner and persists the choice (recommendation: `app_meta`, read by
    the server after the database opens); **off by default is unchanged** — a fresh install
@@ -1953,7 +1953,7 @@ resolver. This ADR decides what the runner may hold and how a key reaches it, so
    can offer instead — recorded as an open question in §VI.5, not decided here). This
    decision rewrites the first row of the surface map.
 
-**Tasks:** write the ADR in the house format (see 0059/0060: Status, Date, Supersedes,
+**Tasks:** write the ADR in the house format (see 0004/0060: Status, Date, Supersedes,
 Contract, Context, Measurement, Decision, Consequences). Replace the `docs/CONFIG.md`
 sentence *"there is no `TACK_*` variable for a model provider or endpoint, by design"* with
 the precise rule the ADR states. List in the handoff every sentence in `docs/` and
@@ -1961,7 +1961,7 @@ the precise rule the ADR states. List in the handoff every sentence in `docs/` a
 variable for a model provider\|never reads, stores, or forwards"`) for VI-A1 / VI-D1.
 
 **Acceptance:** the ADR names each decision, each rejected option and its cost, and cites
-0050 and 0058 by line for what it reaffirms and what it bounds. The user has accepted it
+0002 and 0003 by line for what it reaffirms and what it bounds. The user has accepted it
 (recorded in the handoff with the date). The CONFIG.md sentence is replaced. The handoff's
 sentence list is complete — the grep in Tasks returns only the ADRs.
 
@@ -2116,7 +2116,7 @@ coding-agents` before relying on any cell; this table is a starting point, not a
 
 Catalog: the gateway's model list (`GET /v1/models`, Bearer key) becomes
 `model_combinations` for each harness that can reach the gateway — provider
-`vercel-ai-gateway` (or what ADR 0061 chose), model id verbatim, probed-at recorded. Only
+`vercel-ai-gateway` (or what ADR 0005 chose), model id verbatim, probed-at recorded. Only
 when the provider is enabled **and** the secret resolves; otherwise zero entries and a typed
 reason (`provider_not_configured` / `catalog_unreachable` with status), never a stale list.
 
@@ -2158,7 +2158,7 @@ path string; the server must not learn where the store lives — the persisted o
 client and tests, and the VI-B3 handoff.
 
 **Context.** Today the embedded runner is spawned once, at startup, from the `--with-runner`
-flag or `TACK_LOCAL_RUNNER_ENABLE`, and `AppState` knows nothing about it. ADR 0061
+flag or `TACK_LOCAL_RUNNER_ENABLE`, and `AppState` knows nothing about it. ADR 0005
 decision 6 makes it startable from the UI on a loopback bind. Two things must stay
 exactly as they are: **off by default** (a fresh install runs nothing until a person on
 the same machine turns it on) and **loopback-only** (the toggle is refused — route absent,
@@ -2330,7 +2330,7 @@ why:
    own login"** (per installed agent: the exact command, `claude` / `codex login`, the
    sentence that Tack cannot see the result, and "confirm with a
    test run below") and **"Use Vercel AI Gateway"** (B3's panel — one key, every model, no
-   terminal). Neither is labelled *recommended* unless ADR 0061 said so.
+   terminal). Neither is labelled *recommended* unless ADR 0005 said so.
 4. **Default model.** A picker over the union of every active runner's
    `model_combinations`, plus *Auto*, plus *Type a model id* only where an agent attests
    `model_passthrough`; saves to the project default (C3). If C3 has not landed, this step
@@ -3522,7 +3522,7 @@ is wrong for a shared runner or the boot does something there it never does here
 One measured lead, not a conclusion: `embedded_runner_live_secret.rs` sets
 `DBUS_SESSION_BUS_ADDRESS=/dev/null` for its child and has never failed on CI, while the two
 that failed do not set it. The secret store is keychain-first with a file fallback (ADR
-0061); on a headless runner with no session bus, a keychain probe over D-Bus is a
+0005); on a headless runner with no session bus, a keychain probe over D-Bus is a
 plausible place to block for seconds before falling back — and if readiness or enrollment
 waits behind that probe, the health endpoint itself is late. That would make it a product
 fact, not a test fact: a server that is slow to answer `/api/health` on any headless host.
@@ -3860,7 +3860,7 @@ limitations": the embedded runner then never reaches `active`, `GET /api/local-r
 `starting` forever, and nothing in the log says why. VI-C32 added liveness backstops around the
 boot and named this one as outside its scope. Read that section of `VI-C32.md` only.
 
-ADR 0061 decision 1: keychain first, file where *none answers*. A store that has not answered
+ADR 0005 decision 1: keychain first, file where *none answers*. A store that has not answered
 within a bound is one that did not answer; the fallback is the one an error already takes, and
 `doctor` reports it the same way. The split brain this permits — a key stored in the file on one
 boot and a keychain that answers on the next — already exists for the error path and is not
@@ -3963,14 +3963,14 @@ roster has no read path, the card is a backend card, and you write that and stop
 - **Tack calling any model API itself**, including "just to validate a key" — the runner's
   probe does that.
 - **A harness-login broker.** Vendor OAuth flows stay in the terminal, rendered in the UI.
-- **Multi-user accounts** (ADR 0059) and **anything docket** (ADR 0060).
+- **Multi-user accounts** (ADR 0004) and **anything docket** (ADR 0060).
 - **Notifications, i18n, time tracking, in-UI diff review** — still deferred from Part V.
   C4 lists artifacts; reading a diff in the UI is a separate, later card.
 - **Exercising the `decisions` path with a real harness** — still no harness in this tree
   asks a mid-run question; C4 lists decisions, it does not manufacture one.
 - **Recorded, not decided:** whether bare `tack` (no subcommand) should mean
   `serve --with-runner` on a loopback bind. The recommendation is no — the UI switch (ADR
-  0061 decision 6) removes the click's cost without changing a security default. Reopen only
+  0005 decision 6) removes the click's cost without changing a security default. Reopen only
   with evidence that the switch is not enough.
 
 ---
@@ -3985,7 +3985,7 @@ for the template. The three sections specific to this Part:
 
 1. **Surface-map delta.** Which rows of the §VI.0 table your card moved from console to UI,
    or proved cannot move — with the reason, and whether that reason is already in the
-   table's last column. If it is not, that is an escalation for ADR 0061, not a new row.
+   table's last column. If it is not, that is an escalation for ADR 0005, not a new row.
 2. **Secret-path proof** (B1, B2, B3, D1 only). The exact commands showing the key in the
    runner's store and nowhere else: the `sqlite3 … | grep -c`, the log capture, the `stat`.
    A handoff for one of these cards without this section is incomplete.
@@ -4011,7 +4011,7 @@ acceptance gate verifiable without trusting its author's handoff.
 | Wave | Cards | Phase | Status |
 |---|---|---|---|
 | 11 — Release blockers | V-A1 · V-A2 · V-A3 · V-A4 | 59 | **Done, all four integrated** at `45416e7` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-A1.md` … `V-A4.md`). Local-only artifacts awaiting explicit user approval to publish: `main` branch (V-A1), tag `v0.1.0-beta.7` (V-A3), GitHub description/topics/Pages (V-A4) — see each handoff's Next step. |
-| 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **Done, both integrated** at `990349f` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-B1.md`, `V-B2.md`). V-B1: ADR 0059 (single-operator), non-loopback+no-token startup refusal now has an explicit opt-out (`TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK`); README paragraph proposed in the handoff, not yet merged (V-A4 already shipped this cycle). V-B2: ADR 0060 decides **keep** docket as a maintained optional bridge (not gate/delete), backed by measured numbers; no code/schema change shipped. |
+| 12 — Honest posture & prune | V-B1 · V-B2 | 59 | **Done, both integrated** at `990349f` on `develop` (handoffs: `docs/agent-handoffs/part-v/V-B1.md`, `V-B2.md`). V-B1: ADR 0004 (single-operator), non-loopback+no-token startup refusal now has an explicit opt-out (`TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK`); README paragraph proposed in the handoff, not yet merged (V-A4 already shipped this cycle). V-B2: ADR 0060 decides **keep** docket as a maintained optional bridge (not gate/delete), backed by measured numbers; no code/schema change shipped. |
 | 13 — Distribution & launch | V-C1 · V-C2 · V-C3 · V-C4 | 59 | **V-C4 integrated 2026-09-06** (handoff `docs/agent-handoffs/part-v/V-C4.md`). *Verify install URLs* now runs `install.sh` for real into a scratch directory and asserts a runnable `tack` lands; the integrator re-ran its revert-once proof independently — with the `grep -v` reverted it downloads 2.14 MB and fails with `no 'tack' binary found in archive`. E2E's budget went 25 → 40 minutes on measured numbers (3.45 overhead + 8.40 chromium + 7.00 firefox, webkit unmeasurable on this machine and recorded as such, not as a webkit fact). **That will turn a cancellation into an honest failure, which is the point:** `scheduler-e2e.spec.ts`'s four tests fail deterministically on VI-C9's gate. **Bring the budget back down once VI-C9 lands** — about twelve of those minutes are the failing tests. Original note follows. | **V-C3 integrated 2026-09-06** (handoff `docs/agent-handoffs/part-v/V-C3.md`) — and it found the launch's own blocker while walking the stranger's path instead of reading it: **`install.sh` had installed nothing since `v0.1.0-beta.7`.** Two archives per release end in the same platform suffix, the releases API lists `tack-runner-…` first, so the advertised one-liner downloaded the runner archive and died on `no 'tack' binary found in archive`. One `grep -v`; verified against the live API, broken before and right after. Everything else it prepared is unpublished by design. Its amendment corrects three of its own claims after review. Two green-but-blind CI checks it surfaced are now **V-C4**. Original note follows. | V-C1 **done, integrated** at `135b941` (handoff: `docs/agent-handoffs/part-v/V-C1.md`) — Homebrew/AUR/Nix/ghcr.io recipes + cargo-binstall metadata, all four verified with real installs in disposable containers; found and fixed a pre-existing `Dockerfile` toolchain-ordering bug along the way. **V-C2 is now unblocked** — Part IV Wave 10 (all six cards, including IV-A4 zero-touch enrollment) and V-A2 are both done, so the demo can now be recorded as one command (`tack serve --with-runner`) with no hang risk. **V-C2 integrated 2026-09-06** (handoff `docs/agent-handoffs/part-v/V-C2.md`) — `docs/screenshots/recovery-demo.gif`, an attempt reaching *Needs operator*, an operator decision, and the same attempt reaching *Succeeded*, re-recordable with `scripts/record-recovery-demo.sh` against a published artifact in Docker. **That unblocks V-C3, dispatched 2026-09-06, and Part VI's VI-D2.** V-C2's escalation carries a dated amendment worth reading before trusting any card that measures a release artifact: recording from a published tag measures a *past* tree, and two of its three original product observations were already false on `develop` by the time it wrote them. The surviving one is carded as **VI-C7**. |
 
 **Integration line:** `develop`, the repository's default branch — same as Parts III and IV,
@@ -4095,7 +4095,7 @@ behind it that is an advantage, and the positioning card (V-A4) should not shy f
   into a card's diff unexamined. It is the same change Part IV's capsule describes; the two
   Parts must not both claim it. **Landed** at `f4941f0`, before any Wave 11 card branched —
   the fix matched a real `codex` binary now being installed on this machine.
-- `docs/adr/0058-standalone-single-binary-runner.md`, `docs/agent-handoffs/part-iv/` —
+- `docs/adr/0003-standalone-single-binary-runner.md`, `docs/agent-handoffs/part-iv/` —
   untracked Part IV material.
 - `tack.db.before-037_orch_runs_rebuild.sqlite` — an untracked database snapshot sitting in
   the repository root. It is not a card, but it should not be there when a stranger clones.
@@ -4409,7 +4409,7 @@ assumes accounts exist. This ambiguity is worse than either honest answer.
 The posture also aged badly against Part III. Phase 27.2 made a non-loopback bind with no
 token log a **warning**. When the product's job was storing task text, a warning was
 proportionate. Now the same server schedules coding agents that execute arbitrary code, and
-ADR 0058 already chose a startup **error** for exactly this shape of risk on the embedded
+ADR 0003 already chose a startup **error** for exactly this shape of risk on the embedded
 runner. The two postures contradict each other.
 
 **Tasks:**
@@ -4651,7 +4651,7 @@ Use the §III.2 template verbatim, plus three sections specific to Part V:
 
 Executable board for the cycle described in
 [docs/book/src/roadmap.md](../../book/src/roadmap.md) → *Next — Standalone Single-Binary
-Operation*, and decided in [`docs/adr/0058-standalone-single-binary-runner.md`](../../adr/0058-standalone-single-binary-runner.md).
+Operation*, and decided in [`docs/adr/0003-standalone-single-binary-runner.md`](../../adr/0003-standalone-single-binary-runner.md).
 **Parts I, II and III remain historical context.** This Part has its own numbering
 namespace (`§IV.0` … `§IV.6`) so Part I's load-bearing section numbers stay put.
 
@@ -4686,8 +4686,8 @@ real trunk). Branch every card from `develop`. Do not create a `plan/*` line for
 against their own board needs two binaries, four manual steps and a copied one-time token;
 after this Part they need one command, `tack serve --with-runner`.
 
-**Read before touching anything:** `docs/adr/0058-standalone-single-binary-runner.md`. It
-records why the runner is separate at all (ADR 0050), why that separation is about *roles
+**Read before touching anything:** `docs/adr/0003-standalone-single-binary-runner.md`. It
+records why the runner is separate at all (ADR 0002), why that separation is about *roles
 and not binaries*, and — most importantly — why the embedded runner must still speak
 runner-v1 over loopback HTTP instead of calling handlers in-process. A card that "optimizes
 away" that HTTP hop has broken the whole point of the design; escalate instead.
@@ -4936,8 +4936,8 @@ in order to answer "why can't I run this model?" exists only inside a capability
 that a runner posts to a server. There is no way to ask the local machine what it can do.
 That gap is the direct cause of a real, reported confusion: it is not discoverable how one
 configures Claude, Codex, OpenRouter or a local model. The answer — that provider
-credentials live in each harness's own environment and Tack never proxies them (ADR 0050,
-reaffirmed in ADR 0058) — is correct but invisible.
+credentials live in each harness's own environment and Tack never proxies them (ADR 0002,
+reaffirmed in ADR 0003) — is correct but invisible.
 
 **Tasks:** report, for the local machine: which harness binaries are on `PATH` and their
 versions; what each probe declares (`model_combinations`, `model_passthrough`, and each

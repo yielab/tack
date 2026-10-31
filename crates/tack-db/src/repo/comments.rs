@@ -1,3 +1,4 @@
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -12,7 +13,8 @@ impl Repository {
         &self,
         item_id: Uuid,
         input: CreateComment,
-    ) -> Result<Comment, sqlx::Error> {
+    ) -> Result<Comment, StoreError> {
+        self.require_item(item_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();
@@ -44,7 +46,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_comments(&self, item_id: Uuid) -> Result<Vec<Comment>, sqlx::Error> {
+    pub async fn list_comments(&self, item_id: Uuid) -> Result<Vec<Comment>, StoreError> {
         let rows = sqlx::query_as::<_, CommentRow>(
             "SELECT id, item_id, author, content, comment_type, created_at, updated_at
              FROM comments WHERE item_id = ? ORDER BY created_at ASC",
@@ -53,7 +55,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_comment()).collect())
+        rows.into_iter().map(CommentRow::into_comment).collect()
     }
 
     /// Create a system comment for audit trail (status changes, edits, etc.)
@@ -63,7 +65,7 @@ impl Repository {
         item_id: Uuid,
         content: String,
         comment_type: CommentType,
-    ) -> Result<Comment, sqlx::Error> {
+    ) -> Result<Comment, StoreError> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();
@@ -102,7 +104,7 @@ impl Repository {
     /// direction — the inbound poll's "have I already created this one"
     /// check.
     #[instrument(skip(self))]
-    pub async fn list_github_comment_ids(&self, item_id: Uuid) -> Result<Vec<i64>, sqlx::Error> {
+    pub async fn list_github_comment_ids(&self, item_id: Uuid) -> Result<Vec<i64>, StoreError> {
         sqlx::query_scalar(
             "SELECT github_comment_id FROM comments
              WHERE item_id = ? AND github_comment_id IS NOT NULL",
@@ -110,6 +112,7 @@ impl Repository {
         .bind(item_id.to_string())
         .fetch_all(self.pool())
         .await
+        .map_err(StoreError::from)
     }
 
     /// Record the GitHub comment id a Tack comment mirrors — set after an
@@ -120,7 +123,7 @@ impl Repository {
         &self,
         comment_id: Uuid,
         github_comment_id: i64,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         sqlx::query("UPDATE comments SET github_comment_id = ? WHERE id = ?")
             .bind(github_comment_id)
             .bind(comment_id.to_string())
@@ -142,10 +145,11 @@ struct CommentRow {
 }
 
 impl CommentRow {
-    fn into_comment(self) -> Comment {
-        Comment {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            item_id: Uuid::parse_str(&self.item_id).unwrap(),
+    fn into_comment(self) -> Result<Comment, StoreError> {
+        const TABLE: &str = "comments";
+        Ok(Comment {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            item_id: decode::uuid(TABLE, "item_id", &self.item_id)?,
             author: self.author,
             content: self.content,
             comment_type: match self.comment_type.as_str() {
@@ -154,12 +158,8 @@ impl CommentRow {
                 "system" => CommentType::System,
                 _ => CommentType::Comment,
             },
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-        }
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
     }
 }

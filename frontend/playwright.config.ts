@@ -68,14 +68,11 @@ export default defineConfig({
   // spec that reads a capability fail alongside it. Its own header comment
   // carries the recipe to run it — there is no `make` target for it, since
   // every attempt it makes is a real, live, billed model call.
-  // docket-prill.spec.ts likewise needs docket, prill and a local model that
-  // scripts/docket-prill-e2e.sh stands up, under playwright.docket-prill.config.ts.
   testIgnore: [
     '**/screenshots.spec.ts',
     '**/recovery-demo.spec.ts',
     '**/agent-assets.spec.ts',
     '**/tutorial-assets.spec.ts',
-    '**/docket-prill.spec.ts',
   ],
   // One test file shouldn't leak state into another; each creates what it needs.
   fullyParallel: true,

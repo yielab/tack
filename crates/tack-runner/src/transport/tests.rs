@@ -1,12 +1,16 @@
 use std::{collections::BTreeMap, sync::Mutex, time::UNIX_EPOCH};
 
-use tack_orch::execution::{CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities};
+use serde_json::json;
+use tack_protocol::execution::{
+    CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
 };
 
 use super::*;
+use crate::client::{Checkpoint, EventRecord};
 
 // -----------------------------------------------------------------
 // A local mock HTTP/1.1 server. Rule 8 allows local mock HTTP only —
@@ -432,13 +436,13 @@ async fn reporting_running_without_a_process_id_is_typed_not_sent() {
 /// Round-trips the frozen completion, cancellation and recovery fixtures
 /// through `protocol`, asserting each typed response in turn.
 async fn run_completion_cancellation_and_recovery(protocol: &impl PullProtocol) {
-    let completion: CompletionReport =
+    let completion: CompletionRequest =
         serde_json::from_str(&fixture("completion.request.json")).expect("frozen completion");
     let response = protocol
         .report_completion(&session(), completion)
         .await
         .expect("completion succeeds");
-    assert_eq!(response.state, AttemptState::Succeeded);
+    assert_eq!(response.state, ExecutionState::Succeeded);
     assert!(!response.replayed);
 
     let cancellation: CancellationReport =
@@ -493,12 +497,14 @@ async fn run_events_decisions_and_artifacts_exchange(
 ) -> (Value, Value) {
     let frozen_events: Value =
         serde_json::from_str(&fixture("event-batch.request.json")).expect("frozen events");
-    let events: Vec<ProtocolEvent> =
+    let events: Vec<EventRecord> =
         serde_json::from_value(frozen_events["events"].clone()).expect("frozen event list");
     let response = protocol
         .submit_events(
             &session(),
-            EventBatchReport {
+            EventBatchRequest {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session().runner_id.clone(),
                 attempt_id: attempt.clone(),
                 fencing_token: FencingToken(7),
                 previous_checkpoint: Some(Checkpoint::new("checkpoint-0002")),
@@ -511,7 +517,7 @@ async fn run_events_decisions_and_artifacts_exchange(
     assert_eq!(response.accepted_event_ids.len(), 2);
     assert_eq!(
         response.committed_checkpoint,
-        Some(Checkpoint::new("checkpoint-0004"))
+        Checkpoint::new("checkpoint-0004")
     );
 
     let frozen_decision: Value =
@@ -999,7 +1005,7 @@ mod slot_loop {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use async_trait::async_trait;
-    use tack_orch::execution::{ActualExecution, Usage, WorkspaceId as DomainWorkspaceId};
+    use tack_protocol::execution::{ActualExecution, Usage, WorkspaceId as DomainWorkspaceId};
     use tokio::sync::{Semaphore, mpsc};
     use wiremock::{Mock, MockServer, Request, ResponseTemplate, matchers::any};
 
@@ -1338,6 +1344,227 @@ mod slot_loop {
             .expect("serve task")
             .expect("serve result");
     }
+
+    /// A slot asking the server for work holds no attempt, so the heartbeat of an idle runner
+    /// reports every slot free: the server answers a conflict to any other number (the runner
+    /// contract's `available_capacity`), and a runner it cannot hear counts as offline.
+    #[tokio::test]
+    async fn an_idle_runner_with_a_claim_open_reports_all_its_capacity_free() {
+        // Past the two claims `respond` hands out, so every claim is the empty answer, held open.
+        let claims = Arc::new(AtomicUsize::new(2));
+        let heartbeats = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let unexpected = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        {
+            let (claims, heartbeats, unexpected) = (
+                Arc::clone(&claims),
+                Arc::clone(&heartbeats),
+                Arc::clone(&unexpected),
+            );
+            Mock::given(any())
+                .respond_with(move |request: &Request| {
+                    let reply = respond(request, &claims, &heartbeats, &unexpected);
+                    if request.url.path().ends_with("/claim") {
+                        reply.set_delay(Duration::from_secs(30))
+                    } else {
+                        reply
+                    }
+                })
+                .mount(&server)
+                .await;
+        }
+
+        let root = tempfile::tempdir().expect("state dir");
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let engine = RunnerEngine::new(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::new(Semaphore::new(0)),
+                running: Arc::new(AtomicUsize::new(0)),
+            },
+            crate::client::journal::OwnerOnlyJournal::new(root.path().join("journal")),
+            WorkspaceManager::new(root.path().join("workspaces"), NoCheckout),
+        )
+        .with_concurrency(2);
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.path().join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        config.enrollment_credential = Some(EnrollmentCredential::new(SECRET_ENROLLMENT));
+        config.max_concurrent_attempts = 2;
+        let runner =
+            HttpRunnerClient::new(protocol, engine, config, crate::SystemClock, capabilities())
+                .with_renewal_interval(Duration::from_millis(50));
+        let (shutdown, shutdown_handle) = Shutdown::channel();
+        let serving = tokio::spawn(async move { runner.serve(shutdown).await });
+
+        let enough = tack_test_support::poll_until(Duration::from_secs(30), async || {
+            (heartbeats.lock().expect("heartbeats").len() >= 3).then_some(())
+        })
+        .await;
+        assert!(
+            enough.is_some(),
+            "the runner heartbeats while its claims are open"
+        );
+        for heartbeat in heartbeats.lock().expect("heartbeats").iter() {
+            assert_eq!(lease_count(heartbeat), 0, "no attempt is held");
+            assert_eq!(
+                heartbeat["available_capacity"], 2,
+                "a claim that is only asking for work takes no capacity: {heartbeat}"
+            );
+        }
+
+        shutdown_handle.request();
+        tokio::time::timeout(Duration::from_secs(30), serving)
+            .await
+            .expect("serve stops on shutdown")
+            .expect("serve task")
+            .expect("serve result");
+    }
+
+    /// A runner over `state_dir` talking to `server`, with the enrollment credential given.
+    fn runner_for_session(
+        server: &MockServer,
+        root: &Path,
+        credential: Option<&str>,
+    ) -> HttpRunnerClient<GatedAdapter, NoCheckout, crate::SystemClock> {
+        let protocol = Arc::new(client(&format!("{}/api/runner/v1", server.uri())));
+        let engine = RunnerEngine::new(
+            Arc::clone(&protocol),
+            GatedAdapter {
+                release: Arc::new(Semaphore::new(0)),
+                running: Arc::new(AtomicUsize::new(0)),
+            },
+            crate::client::journal::OwnerOnlyJournal::new(root.join("journal")),
+            WorkspaceManager::new(root.join("workspaces"), NoCheckout),
+        );
+        let mut config = RunnerConfig::defaults();
+        config.state_dir = root.join("state");
+        fs::create_dir_all(&config.state_dir).expect("state dir");
+        config.enrollment_credential = credential.map(EnrollmentCredential::new);
+        HttpRunnerClient::new(protocol, engine, config, crate::SystemClock, capabilities())
+    }
+
+    /// Answers every call with `status` and `body`, and records the paths called.
+    async fn server_answering(status: u16, body: String) -> (MockServer, Arc<Mutex<Vec<String>>>) {
+        let paths = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        let seen = Arc::clone(&paths);
+        Mock::given(any())
+            .respond_with(move |request: &Request| {
+                seen.lock()
+                    .expect("paths")
+                    .push(request.url.path().to_owned());
+                ResponseTemplate::new(status)
+                    .set_body_raw(body.clone().into_bytes(), "application/json")
+            })
+            .mount(&server)
+            .await;
+        (server, paths)
+    }
+
+    /// The enrollment token is single use: a restarted runner holding a session the server
+    /// still accepts resumes it and never needs the token again.
+    #[tokio::test]
+    async fn a_restarted_runner_resumes_its_saved_session_without_an_enrollment_credential() {
+        let (server, paths) = server_answering(200, fixture("refresh.response.json")).await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), None);
+        store_session(&root.path().join("state"), &session()).expect("session is stored");
+
+        let resumed = runner
+            .establish_session()
+            .await
+            .expect("the session resumes");
+
+        assert_eq!(resumed.runner_id, session().runner_id);
+        let paths = paths.lock().expect("paths");
+        assert_eq!(paths.len(), 1, "{paths:?}");
+        assert!(paths[0].ends_with("/refresh"), "no enrollment: {paths:?}");
+    }
+
+    /// A session the server refuses cannot be mended without the token, and the runner says
+    /// that, not that a credential was missing from the start.
+    #[tokio::test]
+    async fn a_refused_session_without_an_enrollment_credential_says_the_session_was_refused() {
+        let (server, paths) = server_answering(401, fixture("errors/unauthorized.json")).await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), None);
+        store_session(&root.path().join("state"), &session()).expect("session is stored");
+
+        let error = runner
+            .establish_session()
+            .await
+            .expect_err("the session is refused");
+
+        assert!(matches!(error, RunnerError::SessionRefused), "{error:?}");
+        let message = error.to_string();
+        assert!(message.contains("saved session was refused"), "{message}");
+        assert!(message.contains("expired or revoked"), "{message}");
+        assert!(!message.contains(SECRET_CREDENTIAL));
+        assert!(
+            paths.lock().expect("paths")[0].ends_with("/refresh"),
+            "only the refresh was tried"
+        );
+    }
+
+    /// With a session the server refuses and a token in hand, the runner enrolls again.
+    #[tokio::test]
+    async fn a_refused_session_with_an_enrollment_credential_enrolls_again() {
+        let paths = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server = MockServer::start().await;
+        let seen = Arc::clone(&paths);
+        Mock::given(any())
+            .respond_with(move |request: &Request| {
+                let path = request.url.path().to_owned();
+                seen.lock().expect("paths").push(path.clone());
+                if path.ends_with("/enroll") {
+                    ResponseTemplate::new(200).set_body_raw(
+                        fixture("enrollment.response.json").into_bytes(),
+                        "application/json",
+                    )
+                } else {
+                    ResponseTemplate::new(401).set_body_raw(
+                        fixture("errors/unauthorized.json").into_bytes(),
+                        "application/json",
+                    )
+                }
+            })
+            .mount(&server)
+            .await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), Some(SECRET_ENROLLMENT));
+        store_session(&root.path().join("state"), &session()).expect("session is stored");
+
+        runner.establish_session().await.expect("enrolls again");
+
+        let paths = paths.lock().expect("paths");
+        assert!(paths[0].ends_with("/refresh"), "{paths:?}");
+        assert!(paths[1].ends_with("/enroll"), "{paths:?}");
+    }
+
+    /// Nothing saved and no token: there is no way to identify the runner, and it says so.
+    #[tokio::test]
+    async fn no_session_and_no_enrollment_credential_says_the_credential_is_required() {
+        let (server, paths) = server_answering(500, "{}".to_owned()).await;
+        let root = tempfile::tempdir().expect("state dir");
+        let runner = runner_for_session(&server, root.path(), None);
+
+        let error = runner
+            .establish_session()
+            .await
+            .expect_err("nothing to start from");
+
+        assert!(
+            matches!(error, RunnerError::MissingEnrollmentCredential),
+            "{error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "runner enrollment credential is required"
+        );
+        assert!(paths.lock().expect("paths").is_empty());
+    }
+
     /// A restart finds one agent still running and one journal behind it. The
     /// running one is followed in a slot of its own: the ticker heartbeats its
     /// lease with every other while it runs, and the journal behind it is
@@ -1483,4 +1710,32 @@ mod slot_loop {
             .expect("serve task")
             .expect("serve result");
     }
+}
+
+#[tokio::test]
+async fn every_request_carries_a_request_id_of_its_own() {
+    let reply = fixture("claim.no-work.response.json");
+    let server = spawn_mock(vec![(200, reply.clone()), (200, reply)]);
+    let protocol = client(&server.base_url);
+    for nth in 1..=2 {
+        protocol
+            .claim(
+                &session(),
+                ClaimRequest {
+                    claim_request_id: ClaimRequestId::new(format!("claim_{nth}")),
+                    available_capacity: 1,
+                    wait: Duration::from_secs(1),
+                },
+            )
+            .await
+            .expect("no work");
+    }
+    let recorded = server.requests.lock().expect("requests").clone();
+    let ids: Vec<&String> = recorded
+        .iter()
+        .map(|request| request.headers.get("x-request-id").expect("a request id"))
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert!(ids.iter().all(|id| id.starts_with("req_") && id.len() > 8));
+    assert_ne!(ids[0], ids[1]);
 }

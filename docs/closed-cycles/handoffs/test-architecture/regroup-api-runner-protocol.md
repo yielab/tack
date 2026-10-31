@@ -1,6 +1,6 @@
 # Regroup tack-api's runner-protocol and wiring test binaries
 
-ADR 0064 rollout step 4, `tack-api` first slice. Scope: six files only —
+ADR 0007 rollout step 4, `tack-api` first slice. Scope: six files only —
 `c2_handlers_test.rs`, `f1_decisions_test.rs`, `f2_artifact_events_test.rs` into a
 new `runner_protocol` binary; `f6a_artifact_wiring_test.rs`, `f6b_model_wiring_test.rs`,
 `f6d_execution_sweep_wiring_test.rs` into a new `wiring` binary.

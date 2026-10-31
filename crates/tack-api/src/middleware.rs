@@ -47,7 +47,7 @@ fn origin_is_loopback(origin: &str) -> bool {
 /// the server itself is bound to loopback, an `Origin` that also names a
 /// loopback host is accepted even if it isn't in the configured list — on a
 /// single machine, whoever can open this connection already holds the same
-/// access as the bind itself (the posture ADR 0059 states for the rest of
+/// access as the bind itself (the posture ADR 0004 states for the rest of
 /// this API). This is what lets any local dev port (Vite's default `5173`
 /// included) reach the socket with no configuration; it does not change
 /// what a non-loopback bind accepts, since that check still requires an
@@ -265,7 +265,7 @@ pub async fn refuse_cross_site(
 /// Uses a constant-time comparison to prevent timing-oracle attacks. This is
 /// the only credential a request can hold — there is no per-user account to
 /// authenticate as instead — a deliberate single-operator scope recorded in
-/// `docs/adr/0059-single-operator-identity-posture.md`, not an omission.
+/// `docs/adr/0004-single-operator-identity-posture.md`, not an omission.
 pub async fn require_token(
     State(state): State<AppState>,
     req: Request,

@@ -11,10 +11,11 @@
 // mounted in the real production router and proven end to end by the
 // `wiring` binary's `artifact.rs`.
 use tack_api::handlers::runner_protocol;
+use tack_protocol::Clock;
 
 use std::sync::{Arc, Mutex};
 
-use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
+use crate::runner_protocol::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{
     Router,
@@ -26,10 +27,11 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{
-        EnrollmentToken, ExecutionClock, NewAgentProfile, NewExecutionRequest, NewRunner,
-    },
+    queries::execution_artifacts,
+    queries::execution_attempts,
+    repo::execution::{EnrollmentToken, NewAgentProfile, NewExecutionRequest, NewRunner},
 };
+use tack_test_support::create_test_workspace;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -44,7 +46,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -69,12 +71,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
     let pool = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'F2', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("workspace");
+    let workspace = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace,
@@ -124,7 +121,7 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
@@ -136,7 +133,6 @@ async fn setup() -> (Router, Repository, FakeClock, String, tempfile::TempDir) {
     (app, repo, clock, item.id.to_string(), storage_root)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn enqueue_request(
     repo: &Repository,
     clock: &FakeClock,
@@ -191,7 +187,7 @@ async fn enqueue_request(
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("enqueue");
@@ -312,7 +308,7 @@ async fn ready_running_attempt(
             token_hash: &token_hash,
             expires_at: clock.now() + Duration::hours(1),
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("pending runner");
@@ -344,7 +340,7 @@ async fn ready_running_attempt(
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        clock,
+        clock.now(),
     )
     .await
     .ok();
@@ -490,18 +486,12 @@ impl Fixture {
     /// download URI is built from.
     async fn attempt_location(&self) -> (i64, String) {
         let attempt_id = &self.attempt.attempt_id;
-        let attempt_number: i64 =
-            sqlx::query_scalar("SELECT attempt_number FROM execution_attempts WHERE id=?")
-                .bind(attempt_id)
-                .fetch_one(self.repo.pool())
-                .await
-                .unwrap();
-        let request_id: String =
-            sqlx::query_scalar("SELECT request_id FROM execution_attempts WHERE id=?")
-                .bind(attempt_id)
-                .fetch_one(self.repo.pool())
-                .await
-                .unwrap();
+        let attempt_number = execution_attempts::attempt_number(&self.repo, attempt_id)
+            .await
+            .unwrap();
+        let request_id = execution_attempts::request_id_of_attempt(&self.repo, attempt_id)
+            .await
+            .unwrap();
         (attempt_number, request_id)
     }
 
@@ -510,14 +500,9 @@ impl Fixture {
     }
 
     async fn stored_reference(&self, artifact_id: &str) -> Option<String> {
-        sqlx::query_scalar(
-            "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id=?",
-        )
-        .bind(&self.attempt.attempt_id)
-        .bind(artifact_id)
-        .fetch_one(self.repo.pool())
-        .await
-        .unwrap()
+        execution_artifacts::content_reference(&self.repo, &self.attempt.attempt_id, artifact_id)
+            .await
+            .unwrap()
     }
 
     async fn attempt_dir_is_empty(&self) -> bool {
@@ -640,14 +625,7 @@ async fn artifact_content_upload_commits_verified_state() {
     assert_eq!(uploaded["state"], "content_verified");
     assert_eq!(uploaded["size_bytes"], content.len());
 
-    let stored_reference: Option<String> = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts WHERE attempt_id=? AND artifact_id='art-1'",
-    )
-    .bind(&fx.attempt.attempt_id)
-    .fetch_one(fx.repo.pool())
-    .await
-    .unwrap();
-    assert!(stored_reference.is_some());
+    assert!(fx.stored_reference("art-1").await.is_some());
     fx.cleanup().await;
 }
 

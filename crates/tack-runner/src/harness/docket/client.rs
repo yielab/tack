@@ -1,14 +1,17 @@
-//! The calls this harness makes to docket's operator API (version 5), one
+//! The calls this harness makes to docket's operator API (version 6), one
 //! function per route. Each returns the status and the JSON body as docket
-//! sent them; reading them is the caller's work. The token is read from its
+//! sent them; the caller reads the body through [`Reply::read`], into the
+//! shapes of `wire.rs`. The token is read from its
 //! file on every call, so a daemon restarted with a new one needs no restart
 //! here.
 
 use std::{path::PathBuf, time::Duration};
 
 use reqwest::{Method, Url};
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
+use super::wire::ErrorBody;
 use crate::config::DocketConfig;
 
 /// How long one request may take.
@@ -24,10 +27,17 @@ pub(super) struct Reply {
 impl Reply {
     /// docket's `{"error": "<sentence>"}`, or the status when it sent none.
     pub fn error(&self) -> String {
-        self.body["error"]
-            .as_str()
+        self.read::<ErrorBody>()
+            .ok()
+            .and_then(|body| body.error)
             .filter(|text| !text.is_empty())
-            .map_or_else(|| format!("docket answered {}", self.status), str::to_owned)
+            .unwrap_or_else(|| format!("docket answered {}", self.status))
+    }
+
+    /// The body as the shape the caller expects of this route, or the sentence saying it is not.
+    pub fn read<T: DeserializeOwned>(&self) -> Result<T, String> {
+        serde_json::from_value(self.body.clone())
+            .map_err(|why| format!("docket's answer is not what its API describes: {why}"))
     }
 }
 
@@ -68,8 +78,8 @@ impl Client {
         query: &[(&str, &str)],
         body: Option<Value>,
     ) -> Result<Reply, String> {
-        let mut url =
-            Url::parse(&self.base).map_err(|_| "the docket URL is not valid".to_owned())?;
+        let mut url = Url::parse(&self.base)
+            .map_err(|error| format!("the docket URL is not valid ({error})"))?;
         url.path_segments_mut()
             .map_err(|()| "the docket URL cannot carry a path".to_owned())?
             .extend(segments);
@@ -114,9 +124,33 @@ impl Client {
 
     /// `POST /pods` with `ensure`: `200` when the pod exists, `201` when made.
     pub async fn ensure_pod(&self, pod: &str, location: &str) -> Result<Reply, String> {
-        let body =
-            json!({"name": pod, "location": location, "blueprint": "software", "ensure": true});
+        // No shape is named: docket's own default is the code team, whatever it calls it.
+        let body = json!({"name": pod, "location": location, "ensure": true});
         self.send(Method::POST, &["pods"], &[], Some(body)).await
+    }
+
+    /// `GET /pods/<pod>/records`: the record sets the team declares.
+    pub async fn records(&self, pod: &str) -> Result<Reply, String> {
+        self.send(Method::GET, &["pods", pod, "records"], &[], None)
+            .await
+    }
+
+    /// `GET /pods/<pod>/records/<set>?limit=&sql=`: one read-only `SELECT` over the set.
+    pub async fn record_rows(
+        &self,
+        pod: &str,
+        set: &str,
+        limit: u32,
+        sql: &str,
+    ) -> Result<Reply, String> {
+        let limit = limit.to_string();
+        self.send(
+            Method::GET,
+            &["pods", pod, "records", set],
+            &[("limit", limit.as_str()), ("sql", sql)],
+            None,
+        )
+        .await
     }
 
     /// `POST /tasks/<pod>`.
@@ -153,25 +187,27 @@ impl Client {
         self.send(Method::GET, &["traces", pod], query, None).await
     }
 
-    /// `GET /inbox`.
-    pub async fn inbox(&self) -> Result<Reply, String> {
-        self.send(Method::GET, &["inbox"], &[], None).await
+    /// `GET /escalations?since=<seq>`, narrowed to one task when `task` names it: every
+    /// record past `since`, whatever its state, and `next`, the highest `seq` returned.
+    pub async fn escalations(&self, since: u64, task: Option<&str>) -> Result<Reply, String> {
+        let since = since.to_string();
+        let mut query = vec![("since", since.as_str())];
+        if let Some(task) = task {
+            query.push(("task", task));
+        }
+        self.send(Method::GET, &["escalations"], &query, None).await
     }
 
-    /// `GET /approvals`: the pending records, with each one's tool, action and options.
-    pub async fn pending_approvals(&self) -> Result<Reply, String> {
-        self.send(Method::GET, &["approvals"], &[], None).await
-    }
-
-    /// `POST /approvals/<token>`.
-    pub async fn approve(&self, token: &str, body: Value) -> Result<Reply, String> {
-        self.send(Method::POST, &["approvals", token], &[], Some(body))
+    /// `GET /escalations/<id>`: the one record, which for a pending approval of a call that
+    /// leaves carries the call itself. The list never does.
+    pub async fn escalation(&self, id: &str) -> Result<Reply, String> {
+        self.send(Method::GET, &["escalations", id], &[], None)
             .await
     }
 
-    /// `POST /tasks/<id>/answer`.
-    pub async fn answer(&self, task: &str, body: Value) -> Result<Reply, String> {
-        self.send(Method::POST, &["tasks", task, "answer"], &[], Some(body))
+    /// `POST /escalations/<id>`: the one route that settles a pause.
+    pub async fn resolve(&self, id: &str, body: Value) -> Result<Reply, String> {
+        self.send(Method::POST, &["escalations", id], &[], Some(body))
             .await
     }
 }

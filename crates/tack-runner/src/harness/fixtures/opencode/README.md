@@ -96,7 +96,7 @@ this tree trusts blindly.
   'write'. Available tools: ..."}}` event, the run's own exit code is 0, and — if the model's next
   turn answers normally — the final `step_finish.reason` is still `"stop"`. The denial is
   evidence in the transcript, not a run failure; `report()` never treats it as one on its own,
-  matching ADR 0067 decision 5 (the exit code is never read to decide the verdict; here neither
+  matching ADR 0009 decision 5 (the exit code is never read to decide the verdict; here neither
   is a denial).
 - `SIGTERM` mid-run, sent while the fake server was deliberately not answering: opencode exits
   143 and produces **zero bytes of stdout** — not even the `step_start` a normal turn opens
@@ -188,7 +188,7 @@ this tree trusts blindly.
 ## Unverified — documented guesses, not facts
 
 1. `cancel: Advisory`, never `Supported`: the bash tool's own child was observed (via `ps`,
-   ADR 0067) to survive `SIGTERM` in its own process/session group; whether every tool a run
+   ADR 0009) to survive `SIGTERM` in its own process/session group; whether every tool a run
    starts behaves the same way is not separately confirmed here.
 2. `resume: Unsupported`: no reattachment interface was observed; `--continue`/`--session`
    were read from `--help` text, not exercised against a real paused run. `decisions` is no
@@ -198,7 +198,7 @@ this tree trusts blindly.
    stream names a file opencode's own tools wrote, so no per-file artifact discovery is
    implemented.
 4. Whether an `error` event type actually appears in a real transcript was not reproduced here;
-   `report()` treats one as failing the run if it ever does, but the claim rests on ADR 0067's
+   `report()` treats one as failing the run if it ever does, but the claim rests on ADR 0009's
    own risk section and the shape of `step_finish`/`tool_use`, not a captured `error` line.
 5. `permission_policy: advisory`: `task`'s "grants sub-agents" gate is read from
    `permission_policy.tools` naming `task` by the same tool-list-membership convention

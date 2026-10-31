@@ -1,6 +1,6 @@
 # Regroup tack-api's handler and security test binaries
 
-ADR 0064 rollout step 4, `tack-api` slice. Base: `develop` at `db113b8`. Branch:
+ADR 0007 rollout step 4, `tack-api` slice. Base: `develop` at `db113b8`. Branch:
 `agent/regroup-api-handlers`.
 
 ## What moved

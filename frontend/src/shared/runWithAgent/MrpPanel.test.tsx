@@ -4,10 +4,10 @@ import ready from '../../../../docs/contracts/mrp-v1/fixtures/ready.json';
 import notReady from '../../../../docs/contracts/mrp-v1/fixtures/not-ready.json';
 import manualOnly from '../../../../docs/contracts/mrp-v1/fixtures/manual-only.json';
 import verifierFailed from '../../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json';
+import signed from '../../../../docs/contracts/mrp-v1/fixtures/signed-with-next-steps.json';
 import MrpPanel from './MrpPanel';
 import type { AttemptMerge } from '../execution/attempts';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 function mount(merge?: AttemptMerge) {
@@ -99,6 +99,25 @@ describe('MrpPanel', () => {
     mount();
     await flush();
     expect(calls(spy2, '/mrp/viewed')).toHaveLength(0);
+  });
+
+  it('the_pack_panel_says_the_pack_is_signed_and_what_was_signed', async () => {
+    mockFetch(signed);
+    const el = mount();
+    await flush();
+    const text = el.querySelector('[data-testid="mrp-signature"]')!.textContent!;
+    expect(text).toContain('Signed by the verifier');
+    expect(text).toContain(signed.signature.statement_sha256.slice(0, 12));
+    expect(text).not.toContain('Not signed');
+  });
+
+  it('the_pack_panel_says_not_signed_for_a_pack_with_no_signature', async () => {
+    mockFetch(ready);
+    const el = mount();
+    await flush();
+    const text = el.querySelector('[data-testid="mrp-signature"]')!.textContent!;
+    expect(text).toContain('Not signed');
+    expect(text).not.toContain('Signed by the verifier');
   });
 
   it('the_pack_panel_shows_the_held_reason', async () => {

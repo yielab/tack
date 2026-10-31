@@ -33,7 +33,7 @@ export type CreateProject = Schemas['CreateProject'];
 
 // ─── Items ─────────────────────────────────────────────────────────────────
 
-export type Item = Schemas['Item'];
+export type Item = Schemas['ItemCard'];
 
 /**
  * Paginated envelope returned by `GET /api/projects/:id/items` (`PaginatedItems`

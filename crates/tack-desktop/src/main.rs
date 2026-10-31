@@ -52,7 +52,7 @@ impl SidecarHandle for TauriSidecarHandle {
 }
 
 /// [`SidecarLauncher`] that spawns the bundled `tack` binary through
-/// `tauri-plugin-shell`'s sidecar mechanism (ADR 0062 decision 2).
+/// `tauri-plugin-shell`'s sidecar mechanism (ADR 0006 decision 2).
 struct TauriLauncher {
     app: tauri::AppHandle,
     port: u16,

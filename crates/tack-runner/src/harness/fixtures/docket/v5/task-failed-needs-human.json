@@ -1,0 +1,42 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: an approval step at L5 asks nobody, so this task fails needs_human.",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "externalRef": "capture-item/attempt-4",
+  "idempotencyKey": "capture-attempt-4",
+  "baseRef": "main",
+  "pipeline": "capture-approval",
+  "autonomy": "L5",
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "approval required before lead hop and a task at L5 asks nobody",
+  "failureKind": "needs_human",
+  "pendingApprovalIndex": null,
+  "hops": [],
+  "costUsd": 0.0,
+  "worktree": {
+    "dir": "/scratch/home/.docket/state/workspaces/projects/saas-lights-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/saas-lights/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "baseRef": "main",
+    "gitDir": "/scratch/repo2/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo2/.git"
+  },
+  "pipelineSource": "pod:capture-approval",
+  "gateApplied": false,
+  "usage": {
+    "input": 0,
+    "cached": 0,
+    "cacheWrite": 0,
+    "output": 0,
+    "byModel": {}
+  },
+  "escalations": [
+    "esc-000000000000"
+  ],
+  "tokenBudget": 100000
+}

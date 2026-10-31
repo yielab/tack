@@ -4,7 +4,9 @@
 //! Vendor findings — what is measured, what is a documented guess, and at
 //! which version — are in `fixtures/codex/README.md`.
 
-use tack_orch::execution::{Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy};
+use tack_protocol::execution::{
+    Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy,
+};
 
 use crate::harness::{
     DecisionAnswer, DecisionOption, HarnessError, Question, StreamSignal,

@@ -29,7 +29,7 @@
     call. That leaves a non-`Send` formatting temporary held across an `.await`, which makes the
     whole `serve_inner` future non-`Send` — invisible under the old `runtime.block_on(serve())`
     call in `tack-cli`, but a hard compile error the moment anything tries
-    `tokio::spawn(serve_with_ready(..))`, which is the exact shape ADR 0058 describes for the
+    `tokio::spawn(serve_with_ready(..))`, which is the exact shape ADR 0003 describes for the
     embedded-runner card ("a task in the server's own process"). Hoisted the await into a local
     binding before the macro call; log fields and values are unchanged.
 - Tests added and exact commands/results:
@@ -80,7 +80,7 @@
   - Which role executed what: **not applicable.** No live attempt, no runner, nothing executed.
   - Loopback/gating proof: **not applicable.** This card adds no new gate, no new default-off
     flag, and no non-loopback refusal — `AppConfig::validate_security`/`binds_loopback` are
-    untouched. The safety posture ADR 0058 describes belongs to the embedder card that consumes
+    untouched. The safety posture ADR 0003 describes belongs to the embedder card that consumes
     this seam, not to the seam itself.
 - Secrets/logging review: no new logging added. The one `tracing::info!` touched by the `Send`
   fix logs the same two fields it always did (`control_planes`, `poll_secs`), just with the

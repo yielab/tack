@@ -85,7 +85,7 @@ share, `mdoc` = module/file preamble length in lines.
 **broken stub** before this card: it ended mid-sentence
 (`each concrete harness adapter (\`codex.rs\`,`) and pointed at
 `docs/dev-notes/tack-runner/harness/mod.md`, which this card deletes. It was
-rewritten as a complete, self-contained preamble pointing to ADR 0066 instead,
+rewritten as a complete, self-contained preamble pointing to ADR 0008 instead,
 still well under the 30-line budget.
 
 `python3 scripts/maintainability.py comment-worklist --json`, filtered to these
@@ -103,8 +103,8 @@ before. What changed is where one piece of knowledge lives:
   (`AdapterRegistry` keys on `tack_orch::execution::HarnessKind`; `registry.rs`
   defines its own `HarnessKind` enum) used to require a trip to
   `docs/dev-notes/tack-runner/harness/mod.md`. The `HarnessProbe`-split rationale
-  is now covered by ADR 0066 (already existed, already cited this exact module doc
-  section as evidence for its own decision table); the kind-key gap, which ADR 0066
+  is now covered by ADR 0008 (already existed, already cited this exact module doc
+  section as evidence for its own decision table); the kind-key gap, which ADR 0008
   explicitly declines to close, is now stated directly and concisely on
   `AdapterRegistry`'s own struct doc instead of pointing at a file this card
   deletes.
@@ -178,23 +178,23 @@ narrative of how the code arrived at its current shape.
 follows:
 
 - **"Why `HarnessProbe` is not a sixth `HarnessAdapter` method"** — already
-  covered. `docs/adr/0066-docket-as-a-third-harness.md` (proposed, not yet
+  covered. `docs/adr/0008-docket-as-a-third-harness.md` (proposed, not yet
   accepted) already cites this exact rationale as evidence in its own decision
   table (`"Capability reporting is a second, separate trait, because the first
   five all require a claimed attempt | crates/tack-runner/src/harness/mod.rs:
   187-225, and its 'Why HarnessProbe is not a sixth method' section"`). The
   module doc's own `HarnessProbe` trait comment now states the one-sentence
   version of the same fact inline (needed before any attempt exists; the five
-  `HarnessAdapter` methods all require one) and points to ADR 0066 for the full
+  `HarnessAdapter` methods all require one) and points to ADR 0008 for the full
   argument, rather than to the file this card deletes.
 - **"Two open interface gaps, proven by two real adapters"** — gap 1
   (`LocalRunHandle` cannot name its own harness kind) is also already covered:
-  ADR 0066 decision 5 explicitly closes it as a precondition of adding docket as
+  ADR 0008 decision 5 explicitly closes it as a precondition of adding docket as
   a third harness (`"`LocalRunHandle` gains a `harness_kind` field, and the
   literal construction in `tests/crash_matrix.rs` that blocks it is fixed"`).
   Gap 2 (the kind-key typed twice — `AdapterRegistry` keys on
   `tack_orch::execution::HarnessKind`; `registry.rs` defines its own separate
-  `HarnessKind` enum) is explicitly **not** covered by ADR 0066 (decision 5's own
+  `HarnessKind` enum) is explicitly **not** covered by ADR 0008 (decision 5's own
   "why" column: `"Unifying the two kind types is a refactor with no functional
   trigger here"`) and is not a decision, just a current-state fact — folded
   directly into `AdapterRegistry`'s own struct doc as a two-line note instead of

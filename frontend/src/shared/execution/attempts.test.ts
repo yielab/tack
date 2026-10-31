@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { tokenStore } from '../api/client';
-import { attemptsApi } from './attempts';
+import { attemptsApi, folderRunSummary, isFolderRun, readRunRecords, readRunSteps } from './attempts';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -75,5 +75,50 @@ describe('attemptsApi', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ protocol_version: 1, data: events }));
     const { data } = await attemptsApi.events('exec_1', 1);
     expect(data.data).toEqual(events);
+  });
+});
+
+describe('what the run was made of', () => {
+  it('readRunSteps is undefined when the run has no steps key, and reads each hop in order', () => {
+    expect(readRunSteps({ result: 'Done.' })).toBeUndefined();
+    expect(readRunSteps(null)).toBeUndefined();
+    const steps = readRunSteps({
+      steps: [
+        {
+          role: 'implementer', model: 'qwen2.5-coder:7b', class: 'cheap', family: 'qwen', verdict: null, ok: true,
+          summary: 'Wrote the module.',
+          prompts: [{ layer: 'identity', name: 'implementer', version: '1.0.0', sha256: 'abc', scope: 'shipped', tokens: 410 }],
+          assumptions: ['The file exists.'], questions: ['Which folder?'],
+        },
+        { role: null, model: null, class: null, family: null, verdict: 'approve', ok: null, summary: null, prompts: [], assumptions: [], questions: [] },
+      ],
+    });
+    expect(steps).toHaveLength(2);
+    expect(steps![0]).toMatchObject({ role: 'implementer', class: 'cheap', ok: true, assumptions: ['The file exists.'], questions: ['Which folder?'] });
+    expect(steps![0].prompts[0]).toEqual({ layer: 'identity', name: 'implementer', version: '1.0.0', sha256: 'abc', scope: 'shipped', tokens: 410 });
+    expect(steps![1]).toMatchObject({ role: null, verdict: 'approve', prompts: [] });
+  });
+
+  it('readRunSteps reads a missing prompt list as none, and drops a step that is not an object', () => {
+    const steps = readRunSteps({ steps: [null, { role: 'lead' }] });
+    expect(steps).toEqual([
+      expect.objectContaining({ role: 'lead', prompts: [], assumptions: [], questions: [], model: null }),
+    ]);
+  });
+
+  it('readRunRecords is undefined without records, and keeps the cut flag and the rows', () => {
+    expect(readRunRecords({ result: 'Done.' })).toBeUndefined();
+    const sets = readRunRecords({
+      records: [{ set: 'leads', columns: ['_id', 'email'], rows: [{ _id: 1, email: 'a@example.test' }], cut: true }],
+    });
+    expect(sets).toEqual([{ set: 'leads', columns: ['_id', 'email'], rows: [{ _id: 1, email: 'a@example.test' }], cut: true }]);
+  });
+
+  it('a folder team run is one that says outside_repository, and its summary is the last step', () => {
+    const folder = { code: 'done', outside_repository: true, team: 'brief', task: 'k', summary: 'Wrote the brief.' };
+    expect(isFolderRun(folder)).toBe(true);
+    expect(folderRunSummary(folder)).toBe('Wrote the brief.');
+    expect(isFolderRun({ result: 'x' })).toBe(false);
+    expect(folderRunSummary({ summary: null })).toBeNull();
   });
 });

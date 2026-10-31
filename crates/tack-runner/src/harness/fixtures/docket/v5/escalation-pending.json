@@ -1,0 +1,52 @@
+{
+  "id": "esc-000000000000",
+  "task": "task-00000000-0000-0000-0000-000000000000",
+  "pod": "saas-dev",
+  "step": "lead",
+  "role": "lead",
+  "kind": "approval",
+  "causedBy": "capture-needs-approval",
+  "prompt": "pod dispatch — task enqueue for 'saas-dev': Capture only: capture-needs-approval holds this enqueue for a person.",
+  "options": [
+    {
+      "id": "approve_once",
+      "label": "Approve once",
+      "description": "Run this call now; ask again next time.",
+      "risks": [],
+      "estimatedTokens": null
+    },
+    {
+      "id": "approve_task",
+      "label": "Approve for this task",
+      "description": "Run this call and any identical one in this task.",
+      "risks": [],
+      "estimatedTokens": null
+    },
+    {
+      "id": "deny",
+      "label": "Deny",
+      "description": "Refuse this call; a reason can be given.",
+      "risks": [],
+      "estimatedTokens": null
+    }
+  ],
+  "recommendation": null,
+  "requestedSchema": null,
+  "askedAt": "2026-01-01T00:00:00Z",
+  "expiresAt": "2026-01-01T00:00:00Z",
+  "onExpiry": "deny",
+  "policy": "person",
+  "level": "L3",
+  "state": "pending",
+  "resolution": null,
+  "seq": 1,
+  "affordances": {
+    "options": [
+      "approve_once",
+      "approve_task",
+      "deny"
+    ],
+    "acceptsText": false,
+    "resolveUrl": "/escalations/esc-000000000000"
+  }
+}

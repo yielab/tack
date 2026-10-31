@@ -1,5 +1,5 @@
-use axum::Json;
-use axum::extract::{Path, State};
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use serde::Deserialize;
 use tracing::instrument;
 use uuid::Uuid;
@@ -132,6 +132,7 @@ pub async fn import_github(
 
     let api_base = state
         .config
+        .loops
         .github_api_base
         .trim_end_matches('/')
         .to_string();

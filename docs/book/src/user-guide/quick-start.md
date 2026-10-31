@@ -13,11 +13,11 @@ Tack is a single self-contained binary — the web UI, REST API, and SQLite engi
 **One line (Linux / macOS):**
 
 ```sh
-TAG=v0.1.0-beta.10
+TAG=$(curl -fsSL "https://api.github.com/repos/yielab/tack/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 ```
 
-Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. The line above already names the release it installs (`TAG`); change it to install another; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
+Verifies the download against that release's `SHA256SUMS` and refuses to install on a mismatch. The first line looks up the newest published release; set `TAG` to a release name to install another; choose the install directory with `TACK_INSTALL_DIR` (default `~/.local/bin`).
 
 **Homebrew (macOS and Linux):**
 
@@ -28,7 +28,7 @@ brew install yielab/tap/tack
 **Windows:**
 
 ```powershell
-$tag = 'v0.1.0-beta.10'
+$tag = (irm "https://api.github.com/repos/yielab/tack/releases?per_page=1")[0].tag_name
 $env:TACK_VERSION = $tag
 irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 ```
@@ -86,7 +86,7 @@ Then open **`http://localhost:3210`** in your browser. On first start, Tack crea
 
 ```sh
 curl http://localhost:3210/api/health
-# {"status":"ok","version":"0.1.0-beta.10","migrations_applied":…}
+# {"status":"ok","version":"0.2.0-beta.1","migrations_applied":…}
 ```
 
 `version` is the build you installed and `migrations_applied` is how many database migrations it has run; it only grows as Tack does.
@@ -98,7 +98,7 @@ If this fails, see [Troubleshooting](troubleshooting.md).
 ## First use
 
 1. **Create a project.** Click **New Project** on the Projects page, or press `Ctrl+K` and type "new project". Choose a **project type** — a template that pre-loads a matching [workflow](workflows.md) and [vocabulary](vocabulary.md) you can customize later. Then answer **Does this project have code?**:
-   - **An existing folder on this computer** — pick the folder once. This is the choice if you want an agent to work on code you already have.
+   - **An existing folder on this computer** — pick the folder once, by typing its path or, in the desktop app, with **Browse…** (in a browser tab the button is shown disabled, with "Available in the desktop app"). This is the choice if you want an agent to work on code you already have.
    - **A new folder Tack creates** — Tack makes the folder and starts a git repository in it.
    - **No code yet** — a plain project manager. You can change the answer later under **Settings → Automation** (see [Automation](automation.md#automation)).
 

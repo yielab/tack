@@ -2,8 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { ExecutionStoreProvider } from '../state/executionContext';
 import ExecutionTimeline from './ExecutionTimeline';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 /** The run the tab shows. Only one is on screen: the latest, until a chip picks another. */
@@ -95,7 +94,7 @@ function mockFetch(): typeof fetch {
   }) as typeof fetch;
 }
 
-function mount(itemId = 'item-1', extra: { itemTitle?: string; projectId?: string; layout?: 'drawer' | 'page' } = {}) {
+function mount(itemId = 'item-1', extra: { itemTitle?: string; projectId?: string; layout?: 'drawer' | 'page'; runId?: string; onRunChange?: (id: string | undefined) => void } = {}) {
   cancelCalls = [];
   requeueBody = undefined;
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch());
@@ -146,6 +145,19 @@ describe('ExecutionTimeline', () => {
     expect(c.querySelector('[data-testid="run-chip"][aria-pressed="true"]')?.textContent).toContain('Run 4');
     expect((await pick(c, 'Run 1')).textContent).toContain('Running');
     expect((await pick(c, 'Run 3')).textContent).toContain('Needs operator');
+  });
+
+  it('a run is linked to: the run the address names is shown, a chip reports the run it picks, and its state is announced politely', async () => {
+    const picked: Array<string | undefined> = [];
+    const c = mount('item-1', { runId: 'req-running', onRunChange: (id) => picked.push(id) });
+    for (let i = 0; i < 4; i++) await flush();
+    expect(shownRun(c).textContent).toContain('req-running');
+    expect(c.querySelector('[data-testid="run-chip"][aria-pressed="true"]')?.textContent).toContain('Run 1');
+    const status = shownRun(c).querySelector('[role="status"]')!;
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent).toContain('Running');
+    await pick(c, 'Run 3');
+    expect(picked).toEqual(['req-needs-operator']);
   });
 
   it('an item with one run shows no chips, and Run again is offered', async () => {
@@ -272,5 +284,141 @@ describe('ExecutionTimeline', () => {
     await flush();
 
     expect(requeueBody).toEqual({ recovery_key: 'recovery-key-123', reason: 'confirmed safe to requeue' });
+  });
+});
+
+describe('ExecutionTimeline: what each step ran and what the team recorded', () => {
+  const DONE_ROW = { request_id: 'req-done', item_id: 'item-done', state: 'succeeded', cancellation_requested_at: null, created_at: '2025-03-01T00:00:00Z' };
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+  /** A finished run whose attempt carries the given terminal reason. */
+  function mountFinished(terminalReason: unknown) {
+    const attempt = {
+      ...ATTEMPT_ROW,
+      attempt_id: 'att-done',
+      request_id: 'req-done',
+      state: 'succeeded',
+      started_at: '2025-03-01T00:00:01Z',
+      ended_at: '2025-03-01T00:02:00Z',
+      terminal_reason: terminalReason,
+    };
+    vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/artifacts')) return json({ protocol_version: 1, data: [] });
+      if (url.includes('/events')) return json({ protocol_version: 1, data: [] });
+      if (url.includes('/attempts')) return json({ protocol_version: 1, data: [attempt] });
+      if (url.includes('/executions')) return json({ protocol_version: 1, data: [DONE_ROW] });
+      return json({});
+    }) as typeof fetch);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(
+      () => (
+        <ExecutionStoreProvider>
+          <ExecutionTimeline itemId="item-done" />
+        </ExecutionStoreProvider>
+      ),
+      container,
+    );
+    disposers.push(() => {
+      dispose();
+      container.remove();
+    });
+    return container;
+  }
+  const settle = async () => {
+    for (let i = 0; i < 6; i++) await flush();
+  };
+
+  const STEPS = [
+    {
+      role: 'lead', model: 'claude-sonnet-5-5', class: 'strong', family: 'claude', verdict: 'approve', ok: true,
+      summary: 'Planned it.',
+      prompts: [{ layer: 'identity', name: 'lead', version: '1.2.0', sha256: 'f00dfeedcafe0000000000000000000000000000000000000000000000000000', scope: 'shipped', tokens: 500 }],
+      assumptions: ['The brief is current.'], questions: ['Which tone should it use?'],
+    },
+    {
+      role: 'implementer', model: 'qwen2.5-coder:7b', class: 'cheap', family: 'qwen', verdict: null, ok: true,
+      summary: 'Wrote it.',
+      prompts: [
+        { layer: 'identity', name: 'implementer', version: '1.0.0', sha256: 'aaaa', scope: 'shipped', tokens: 410 },
+        { layer: 'task', name: 'task', version: '', sha256: 'bbbb', scope: 'task', tokens: 1280 },
+        { layer: 'hop', name: 'house-style', version: '2.0.0', sha256: 'cccc', scope: 'pod', tokens: 12 },
+      ],
+      assumptions: [], questions: [],
+    },
+    {
+      role: 'pricer', model: null, class: null, family: null, verdict: null, ok: true, summary: null,
+      prompts: [], assumptions: [], questions: [],
+    },
+  ];
+
+  it('a run with steps shows each one in order: its role in words, its model class, its prompts, what it assumed and asked', async () => {
+    const c = mountFinished({ result: 'Done.', steps: STEPS });
+    await settle();
+    const section = c.querySelector('[data-testid="run-steps"]')!;
+    expect(section).not.toBeNull();
+    expect(section.querySelector('h4')!.textContent).toBe('What each step ran');
+    const rows = [...section.querySelectorAll('[data-testid="run-step"]')];
+    expect(rows).toHaveLength(3);
+    expect(rows[0].textContent).toContain('Lead');
+    expect(rows[0].textContent).toContain('claude-sonnet-5-5 · a strong model');
+    expect(rows[0].textContent).toContain('Verdict: approve');
+    expect(rows[0].textContent).toContain('The agent assumed');
+    expect(rows[0].textContent).toContain('The brief is current.');
+    expect(rows[0].textContent).toContain('The agent asked');
+    expect(rows[0].textContent).toContain('Which tone should it use?');
+    expect(rows[1].textContent).toContain('Implementer');
+    expect(rows[1].textContent).toContain('qwen2.5-coder:7b · a small model');
+    const chips = [...rows[1].querySelectorAll('[data-testid="step-prompt"]')].map((li) => li.textContent);
+    expect(chips).toEqual(['implementer 1.0.0 shipped with docket', "task this task's", "house-style 2.0.0 the team's"]);
+    expect(rows[1].textContent).not.toContain('The agent assumed');
+    expect(rows[1].textContent).not.toContain('The agent asked');
+  });
+
+  it('a step with no prompts says it recorded none, and the screen names no field, hash or command', async () => {
+    const c = mountFinished({ result: 'Done.', steps: STEPS });
+    await settle();
+    const rows = [...c.querySelectorAll('[data-testid="run-step"]')];
+    expect(rows[2].textContent).toContain('This step recorded no prompt.');
+    expect(rows[2].querySelector('[data-testid="step-prompts"]')).toBeNull();
+    const text = c.querySelector('[data-testid="run-steps"]')!.textContent ?? '';
+    expect(text).not.toContain('sha256');
+    expect(text).not.toContain('promptManifest');
+    expect(text).not.toContain('critic');
+    expect(text).not.toContain('tester');
+  });
+
+  it('a run without steps shows no What each step ran section, as before this phase', async () => {
+    const c = mountFinished({ result: 'Done.', artifacts: [] });
+    await settle();
+    expect(c.querySelector('[data-testid="run-steps"]')).toBeNull();
+    expect(c.querySelector('[data-testid="team-records"]')).toBeNull();
+    expect(c.textContent).not.toContain('What each step ran');
+    expect(c.textContent).toContain('What the agent concluded');
+  });
+
+  it('a run with records shows one table per set that holds rows, without the underscore columns, and says when a set was cut', async () => {
+    const c = mountFinished({
+      result: 'Done.',
+      records: [
+        { set: 'leads', columns: ['_id', '_task', 'email', 'stage'], rows: [{ _id: 1, _task: 't', email: 'a@example.test', stage: 'new' }], cut: true },
+        { set: 'empty', columns: ['_id', 'note'], rows: [], cut: false },
+      ],
+    });
+    await settle();
+    const sets = [...c.querySelectorAll('[data-testid="record-set"]')];
+    expect(sets).toHaveLength(1);
+    const headers = [...sets[0].querySelectorAll('th')].map((th) => th.textContent);
+    expect(headers).toEqual(['email', 'stage']);
+    expect(sets[0].querySelector('td')!.textContent).toBe('a@example.test');
+    expect(sets[0].textContent).toContain('More rows are kept by the team in docket.');
+    expect(c.textContent).not.toContain('empty');
+  });
+
+  it('a set that is not cut shows no note about more rows', async () => {
+    const c = mountFinished({ records: [{ set: 'leads', columns: ['_id', 'email'], rows: [{ _id: 1, email: 'b@example.test' }], cut: false }] });
+    await settle();
+    expect(c.querySelector('[data-testid="record-set"]')!.textContent).not.toContain('More rows');
   });
 });

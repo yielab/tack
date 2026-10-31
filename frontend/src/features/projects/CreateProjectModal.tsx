@@ -235,7 +235,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     'box-shadow': 'var(--shadow-md)',
   };
   const cardClass =
-    'rounded-[20px] border-2 p-3 text-left transition-[border-color,box-shadow,background-color] ' +
+    'rounded-item border-2 p-3 text-left transition-[border-color,box-shadow,background-color] ' +
     'hover:border-[var(--color-primary-600)] focus:outline-none focus-visible:ring-2';
 
   const renderPreview = (t: ProjectTemplate) => {
@@ -243,7 +243,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
     const samples = vocabSamples(t);
     return (
       <div
-        class="mt-2 flex flex-col gap-1.5 rounded-[14px] px-2.5 py-2 text-[0.6875rem]"
+        class="mt-2 flex flex-col gap-1.5 rounded-[14px] px-2.5 py-2 text-micro"
         style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-secondary)' }}
       >
         <Show when={columns.length > 0}>
@@ -279,7 +279,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
       <form onSubmit={handleSubmit} class="space-y-4">
         <Show when={error()}>
           <div
-            class="rounded-[22px] px-4 py-2.5 text-sm font-semibold"
+            class="rounded-xl px-4 py-2.5 text-sm font-semibold"
             style={{
               'background-color': 'var(--color-danger-100)',
               color: 'var(--color-danger-600)',
@@ -306,7 +306,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
             placeholder="A brief description of your project..."
             rows={2}
             disabled={loading()}
-            class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
+            class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 disabled:opacity-50"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',
@@ -339,7 +339,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
               )}
             </For>
             <Show when={codeChoice() !== 'none'}>
-              <div class="flex items-end gap-2">
+              <div class="flex items-start gap-2">
                 <div class="flex-1">
                   <Field
                     label={codeChoice() === 'folder' ? 'Folder' : 'Where to create it'}
@@ -350,11 +350,16 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                     disabled={loading()}
                   />
                 </div>
-                <Show when={inTauri()}>
-                  <Button type="button" variant="secondary" onClick={() => void browse()} disabled={loading()}>
-                    Browse…
-                  </Button>
-                </Show>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  class="mt-5"
+                  onClick={() => void browse()}
+                  disabled={!inTauri() || loading()}
+                  reason={inTauri() ? undefined : 'Available in the desktop app'}
+                >
+                  Browse…
+                </Button>
               </div>
               <Show when={pathCheck()}>
                 <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{checkSentence(pathCheck()!)}</p>
@@ -412,7 +417,7 @@ const CreateProjectModal: Component<CreateProjectModalProps> = (props) => {
                 {(group) => (
                   <div>
                     <div
-                      class="mb-1.5 flex items-center gap-1.5 text-[0.65625rem] font-bold uppercase tracking-[.1em]"
+                      class="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-[.1em]"
                       style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       <TypeDot type={group.type} /> {group.label}

@@ -1,4 +1,9 @@
 {
-  "events": [],
-  "next": ""
+  "events": [
+    "{\"ts\": \"2026-01-01T00:00:00Z\", \"project\": \"saas-dev\", \"session_id\": \"agent:saas-dev:dispatch\", \"agent_role\": \"lead\", \"event_type\": \"error\", \"payload\": {\"run\": \"run-00000000-0000-0000-0000-000000000000\", \"source\": \"sweep\", \"error\": \"1 returned task(s) failed: task-00000000-0000-0000-0000-000000000000: unknown pipeline 'no-such-pipeline': pod 'saas-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml\"}}",
+    "{\"ts\": \"2026-01-01T00:00:00Z\", \"project\": \"saas-dev\", \"session_id\": \"agent:saas-dev:task-00000000-0000-0000-0000-000000000000\", \"agent_role\": \"lead\", \"event_type\": \"dispatch_refused\", \"payload\": {\"reason\": \"unknown pipeline 'no-such-pipeline': pod 'saas-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml\", \"failureKind\": \"pipeline\"}}",
+    "{\"ts\": \"2026-01-01T00:00:00Z\", \"project\": \"saas-dev\", \"session_id\": \"agent:saas-dev:dispatch\", \"agent_role\": \"lead\", \"event_type\": \"error\", \"payload\": {\"run\": \"run-00000000-0000-0000-0000-000000000000\", \"source\": \"sweep\", \"error\": \"1 returned task(s) failed: task-00000000-0000-0000-0000-000000000000: unknown pipeline 'no-such-pipeline': pod 'saas-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml\"}}",
+    "{\"ts\": \"2026-01-01T00:00:00Z\", \"project\": \"saas-dev\", \"session_id\": \"agent:saas-dev:task-00000000-0000-0000-0000-000000000000\", \"agent_role\": \"lead\", \"event_type\": \"dispatch_refused\", \"payload\": {\"reason\": \"unknown pipeline 'no-such-pipeline': pod 'saas-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml\", \"failureKind\": \"pipeline\"}}"
+  ],
+  "next": "2026-01-01T00:00:00Z:2"
 }

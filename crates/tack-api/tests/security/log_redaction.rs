@@ -65,7 +65,10 @@ async fn a_github_token_never_reaches_a_log() {
         .mount(&gh)
         .await;
     let config = AppConfig {
-        github_api_base: gh.uri(),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;

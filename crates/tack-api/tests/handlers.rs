@@ -7,8 +7,6 @@
 //! routes, runner-fleet membership, optimistic item-version concurrency, and
 //! outline and CSV imports.
 
-mod common;
-
 #[path = "handlers/attachments.rs"]
 mod attachments;
 #[path = "handlers/attempt_lists.rs"]
@@ -27,6 +25,8 @@ mod bundle;
 mod crud;
 #[path = "handlers/custom_fields.rs"]
 mod custom_fields;
+#[path = "handlers/debug_and_relations.rs"]
+mod debug_and_relations;
 #[path = "handlers/executions_runner_admin.rs"]
 mod executions_runner_admin;
 #[path = "handlers/fleet_membership.rs"]
@@ -39,6 +39,8 @@ mod local_runner;
 mod merge_button;
 #[path = "handlers/metrics.rs"]
 mod metrics;
+#[path = "handlers/missing_parents.rs"]
+mod missing_parents;
 #[path = "handlers/mrp.rs"]
 mod mrp;
 #[path = "handlers/operator_read_routes.rs"]
@@ -47,6 +49,10 @@ mod operator_read_routes;
 mod outline;
 #[path = "handlers/production_router.rs"]
 mod production_router;
+#[path = "handlers/rejections.rs"]
+mod rejections;
+#[path = "handlers/remote_backup.rs"]
+mod remote_backup;
 #[path = "handlers/rework.rs"]
 mod rework;
 #[path = "handlers/templates.rs"]

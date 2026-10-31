@@ -15,14 +15,14 @@
 //! bearer value is never logged, never echoed in an error body, and never
 //! passed to `tracing`. Only the resolved `runner_id` is ever logged.
 
-use axum::Json;
+use crate::extract::Json;
 use axum::http::{HeaderMap, StatusCode, header};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
 use tack_db::Repository;
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_db::queries::agent_runners;
+use tack_protocol::execution::{AttemptId, ProtocolErrorEnvelope, RunnerId, StableErrorCode};
 
 /// A runner identity resolved from an authenticated bearer credential. This
 /// type can only be constructed by [`authenticate`]; handlers must never
@@ -36,17 +36,12 @@ use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
 /// `Authorization` header a second time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunnerPrincipal {
-    pub runner_id: String,
+    pub runner_id: RunnerId,
     pub credential_hash: String,
 }
 
 pub type ProtocolErrorResponse = (StatusCode, Json<Value>);
 pub type ProtocolResult<T> = Result<T, ProtocolErrorResponse>;
-
-/// Static request-correlation id placeholder. No per-request correlation id
-/// is wired into the runner protocol's error envelopes yet — mirrors the
-/// identical `OPERATOR_REQUEST_ID` convention on the operator side.
-pub const RUNNER_REQUEST_ID: &str = "req_runner";
 
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` (`StableErrorCode::retryable`) so
@@ -61,7 +56,12 @@ pub fn protocol_error(
     message: &str,
     details: Value,
 ) -> ProtocolErrorResponse {
-    let envelope = ProtocolErrorEnvelope::new(code, message, RUNNER_REQUEST_ID, details);
+    let envelope = ProtocolErrorEnvelope::new(
+        code,
+        message,
+        crate::request_id::current_request_id(),
+        details,
+    );
     (
         status,
         Json(serde_json::to_value(envelope).expect("envelope serializes")),
@@ -144,20 +144,17 @@ pub async fn authenticate(
         ));
     };
     let hash = credential_hash(token);
-    let row = sqlx::query(
-        "SELECT id, state, revoked_at, credential_expires_at FROM agent_runners WHERE credential_hash = ? LIMIT 1",
-    )
-    .bind(&hash)
-    .fetch_optional(repo.pool())
-    .await
-    .map_err(|_| {
-        protocol_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            StableErrorCode::InternalError,
-            "Could not verify runner credential",
-            json!({}),
-        )
-    })?;
+    let row = agent_runners::runner_by_credential_hash(repo, &hash)
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not verify runner credential");
+            protocol_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                StableErrorCode::InternalError,
+                "Could not verify runner credential",
+                json!({}),
+            )
+        })?;
     let Some(row) = row else {
         return Err(protocol_error(
             StatusCode::UNAUTHORIZED,
@@ -166,9 +163,9 @@ pub async fn authenticate(
             json!({}),
         ));
     };
-    let runner_id: String = row.get("id");
-    let state: String = row.get("state");
-    let revoked_at: Option<String> = row.get("revoked_at");
+    let runner_id = row.id;
+    let state = row.state;
+    let revoked_at = row.revoked_at;
     if revoked_at.is_some() || state == "revoked" {
         return Err(protocol_error(
             StatusCode::FORBIDDEN,
@@ -185,11 +182,12 @@ pub async fn authenticate(
             json!({}),
         ));
     }
-    let expires_at: Option<String> = row.get("credential_expires_at");
+    let expires_at = row.credential_expires_at;
     if let Some(expires_at) = expires_at {
         let expires_at = DateTime::parse_from_rfc3339(&expires_at)
             .map(|value| value.with_timezone(&Utc))
-            .map_err(|_| {
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Stored credential expiry is corrupt");
                 protocol_error(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     StableErrorCode::InternalError,
@@ -208,7 +206,7 @@ pub async fn authenticate(
     }
     tracing::debug!(runner_id = %runner_id, "runner protocol v1 request authenticated");
     Ok(RunnerPrincipal {
-        runner_id,
+        runner_id: RunnerId::new(runner_id),
         credential_hash: hash,
     })
 }
@@ -242,7 +240,7 @@ pub fn is_credential_not_recognized(error_body: &Value) -> bool {
 /// than silently overridden or treated as `invalid_request`.
 pub fn require_matching_runner(body: &Value, principal: &RunnerPrincipal) -> ProtocolResult<()> {
     match body.get("runner_id").and_then(Value::as_str) {
-        Some(id) if id == principal.runner_id => Ok(()),
+        Some(id) if id == principal.runner_id.as_str() => Ok(()),
         Some(_) => Err(forbidden(
             "The authenticated runner may not act as a different runner_id",
         )),
@@ -253,9 +251,9 @@ pub fn require_matching_runner(body: &Value, principal: &RunnerPrincipal) -> Pro
 /// Cross-checks a request body's `attempt_id` field (when present) against
 /// the path's `attempt_id`. Absent is allowed — the path is authoritative —
 /// but a present, differing value indicates a client bug worth surfacing.
-pub fn require_matching_attempt(body: &Value, attempt_id: &str) -> ProtocolResult<()> {
+pub fn require_matching_attempt(body: &Value, attempt_id: &AttemptId) -> ProtocolResult<()> {
     match body.get("attempt_id").and_then(Value::as_str) {
-        Some(id) if id == attempt_id => Ok(()),
+        Some(id) if id == attempt_id.as_str() => Ok(()),
         Some(_) => Err(invalid_request(
             "attempt_id",
             "attempt_id in the body must match the path",
@@ -280,7 +278,7 @@ mod tests {
     #[test]
     fn require_matching_runner_rejects_impersonation_or_bad_field() {
         let principal = RunnerPrincipal {
-            runner_id: "runr_self".into(),
+            runner_id: RunnerId::new("runr_self"),
             credential_hash: "irrelevant-for-this-test".into(),
         };
         assert!(require_matching_runner(&json!({"runner_id": "runr_self"}), &principal).is_ok());
@@ -322,10 +320,14 @@ mod tests {
 
     #[test]
     fn require_matching_attempt_allows_absent_but_rejects_mismatch() {
-        assert!(require_matching_attempt(&json!({}), "att_1").is_ok());
-        assert!(require_matching_attempt(&json!({"attempt_id": "att_1"}), "att_1").is_ok());
+        assert!(require_matching_attempt(&json!({}), &AttemptId::new("att_1")).is_ok());
+        assert!(
+            require_matching_attempt(&json!({"attempt_id": "att_1"}), &AttemptId::new("att_1"))
+                .is_ok()
+        );
         let (status, body) =
-            require_matching_attempt(&json!({"attempt_id": "att_2"}), "att_1").unwrap_err();
+            require_matching_attempt(&json!({"attempt_id": "att_2"}), &AttemptId::new("att_1"))
+                .unwrap_err();
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body.0["error"]["code"], "invalid_request");
     }

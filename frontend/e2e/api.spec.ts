@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { API_ORIGIN as ORIGIN } from './helpers';
+import { API_ORIGIN as ORIGIN, getOrCreateProject } from './helpers';
 
 // API contract smoke tests. These hit the tack-api server directly (bypassing
 // the Vite proxy) so they assert the real wire contract documented in
@@ -73,8 +73,7 @@ test('unknown API route returns 404', async ({ request }) => {
 });
 
 test('JSON export endpoint succeeds', async ({ request }) => {
-  const projects = await request.get(`${ORIGIN}/api/projects`).then((r) => r.json());
-  test.skip(!projects.length, 'no project to export');
-  const res = await request.get(`${ORIGIN}/api/projects/${projects[0].id}/export?format=json`);
+  const projectId = await getOrCreateProject(request);
+  const res = await request.get(`${ORIGIN}/api/projects/${projectId}/export?format=json`);
   expect(res.ok()).toBeTruthy();
 });

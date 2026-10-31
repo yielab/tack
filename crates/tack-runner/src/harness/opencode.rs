@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
 };
 
@@ -32,7 +32,7 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     probe_notes: &[
         (
             "tested_version",
-            "measured against opencode 1.18.30 (ADR 0067 decision 9); an untested version still \
+            "measured against opencode 1.18.30 (ADR 0009 decision 9); an untested version still \
              probes Advisory rather than a refusal",
         ),
         (
@@ -138,7 +138,7 @@ impl StepTokens {
 /// Scans every stdout line for `step_finish` (tokens are summed across
 /// every one; the last `reason` decides the verdict) and `error`. A tool
 /// the policy denied is opencode's own `tool_use` event and never stops
-/// the run, so the exit code is never read to decide (ADR 0067 decision
+/// the run, so the exit code is never read to decide (ADR 0009 decision
 /// 5) — only whether a terminal event was seen at all.
 fn parse_run_output(result: &ProcessResult) -> RunReport {
     let mut last_reason = None;
@@ -368,8 +368,11 @@ impl HarnessGrammar for OpencodeGrammar {
         let program = run
             .program
             .ok_or_else(|| rejected("the opencode binary was not located".to_owned()))?;
-        let (path, home) = super::locate::snapshot();
-        let home = home.ok_or_else(|| rejected("the runner has no home directory".to_owned()))?;
+        let path = run.host.search_path();
+        let home = run
+            .host
+            .home()
+            .ok_or_else(|| rejected("the runner has no home directory".to_owned()))?;
         let login = config::read(program, path.as_deref(), &home).map_err(rejected)?;
 
         let model = request

@@ -7,7 +7,7 @@
 
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Duration};
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     CapabilityLimits, CapabilityValue, Concurrency, FeatureCapabilities, ProtocolVersion,
     RunnerCapabilities,
 };
@@ -48,9 +48,11 @@ pub struct RunnerLimits {
 /// Builds a runtime identical to the one `tack-runner`'s binary has always
 /// assembled, without starting it.
 ///
-/// Fails fast on a missing enrollment credential before any filesystem
-/// side effect or protocol work — the credential itself is never put into
-/// the returned error, a log line, or any diagnostic.
+/// Fails fast when the runner holds neither a saved session nor an
+/// enrollment credential, before any filesystem side effect or protocol
+/// work — a runner with a session starts from it and needs no credential.
+/// The credential itself is never put into the returned error, a log line,
+/// or any diagnostic.
 pub async fn build_runtime(
     config: RunnerConfig,
     limits: RunnerLimits,
@@ -67,14 +69,14 @@ pub async fn build_runtime_with_active(
     limits: RunnerLimits,
     active: crate::active::ActiveAttempts,
 ) -> Result<ProductionRunnerRuntime, RunnerError> {
-    config.require_enrollment_credential()?;
+    config.require_session_or_enrollment_credential()?;
 
     // The real transport replaces `UnavailableProtocolClient`, the stub
     // that otherwise cannot reach a server at all.
     let staging_root = config.state_dir.join("staging");
-    let secrets = SecretStore::open(&config.secret_store_path());
+    let secrets = config.open_secret_store();
     let own_environment = secrets
-        .resolve_own_environment(&config.environment)
+        .resolve_own_environment(&config.environment, &config.process)
         .map_err(|error| {
             tracing::warn!(%error, "the [environment] table could not be resolved");
             RunnerError::Config(crate::ConfigError::Invalid)
@@ -86,6 +88,7 @@ pub async fn build_runtime_with_active(
         &config.secrets.request_may_reference,
         &own_environment,
         &config.docket,
+        &config.process,
     );
     // What this runner reports is probed here and again by the client later
     // (a team added after start), so one function decides how it is built.
@@ -113,6 +116,7 @@ pub async fn build_runtime_with_active(
                     &config.secrets.request_may_reference,
                     &own_environment,
                     &config.docket,
+                    &config.process,
                 );
                 let mut capabilities =
                     report_capabilities(&adapters, &SystemClock, config.max_concurrent_attempts)
@@ -132,7 +136,9 @@ pub async fn build_runtime_with_active(
         }
     };
     let capabilities = probe().await;
-    if config.verify.enabled && !crate::verify::program_found(&config.verify.program) {
+    if config.verify.enabled
+        && !crate::verify::program_found(&config.verify.program, &config.process)
+    {
         tracing::warn!(
             program = config.verify.program.as_str(),
             "the verifier is enabled but its program is not on PATH; every succeeded attempt will record a verify failure"
@@ -159,6 +165,8 @@ pub async fn build_runtime_with_active(
     .with_data_protocol(Arc::clone(&protocol) as Arc<dyn AttemptDataProtocol>)
     .with_verify(config.verify.clone(), limits.harness_process.clone())
     .with_git(config.git.clone())
+    .with_process_env(config.process.clone())
+    .with_board_url(board_url(&config.api_base_url))
     .with_active(active);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities)
         .with_reprobe(crate::client::transport::CAPABILITY_REPROBE_INTERVAL, probe);
@@ -239,7 +247,7 @@ pub struct DiscoveryReport {
     /// What each registered harness declares per feature, keyed by kind —
     /// the values the runner-wide summary cannot state because they differ
     /// per harness. Not sent to the server.
-    pub declared: BTreeMap<String, tack_orch::execution::FeatureCapabilities>,
+    pub declared: BTreeMap<String, tack_protocol::execution::FeatureCapabilities>,
 }
 
 /// Runs the exact discovery/capability-probing step [`build_runtime`]
@@ -254,6 +262,7 @@ pub async fn probe(
     process_limits: &ProcessLimits,
     secrets: &SecretStore,
     docket: &crate::config::DocketConfig,
+    env: &crate::config::ProcessEnv,
 ) -> DiscoveryReport {
     let (adapters, missing_harnesses) = crate::harness::discover(
         process_limits,
@@ -262,6 +271,7 @@ pub async fn probe(
         &[],
         &BTreeMap::new(),
         docket,
+        env,
     );
     let capabilities = report_capabilities(&adapters, &SystemClock, 1).await;
     let declared = adapters.declared_capabilities();
@@ -318,27 +328,27 @@ async fn report_capabilities<C: Clock>(
         harnesses,
         features: FeatureCapabilities {
             cancel: feature(
-                tack_orch::execution::CapabilitySupport::Advisory,
+                tack_protocol::execution::CapabilitySupport::Advisory,
                 Some(
                     "a process-group signal cannot reach a detached descendant unless the harness reports its process groups; see each harness's own cancel capability",
                 ),
             ),
             resume: feature(
-                tack_orch::execution::CapabilitySupport::Unsupported,
+                tack_protocol::execution::CapabilitySupport::Unsupported,
                 Some("no resumable session contract"),
             ),
             decisions: feature(
-                tack_orch::execution::CapabilitySupport::Supported,
+                tack_protocol::execution::CapabilitySupport::Supported,
                 Some(
                     "at least one harness adapter opens a decision; see each harness's own decisions capability for which one",
                 ),
             ),
             artifacts: feature(
-                tack_orch::execution::CapabilitySupport::Advisory,
+                tack_protocol::execution::CapabilitySupport::Advisory,
                 Some("uploaded when an adapter stages one; best-effort, not replayed on restart"),
             ),
             usage: feature(
-                tack_orch::execution::CapabilitySupport::Advisory,
+                tack_protocol::execution::CapabilitySupport::Advisory,
                 Some("usage is reported only when a harness emits it"),
             ),
             additional: BTreeMap::new(),
@@ -350,4 +360,13 @@ async fn report_capabilities<C: Clock>(
         },
         additional: BTreeMap::new(),
     }
+}
+
+/// The board's address without the protocol path, which the runner is configured with.
+fn board_url(api_base_url: &str) -> String {
+    let trimmed = api_base_url.trim_end_matches('/');
+    trimmed
+        .strip_suffix("/api/runner/v1")
+        .unwrap_or(trimmed)
+        .to_owned()
 }

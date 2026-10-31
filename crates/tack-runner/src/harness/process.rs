@@ -34,6 +34,8 @@ use std::{
 };
 
 use thiserror::Error;
+
+use crate::error::IoKind;
 use tokio::{
     io::AsyncReadExt,
     process::{Child, Command},
@@ -172,12 +174,24 @@ pub enum CancelOutcome {
 pub enum ProcessError {
     #[error("process working directory escapes its declared workspace root")]
     WorkspaceEscape,
-    #[error("process could not be spawned")]
-    Spawn,
-    #[error("process io failed")]
-    Io,
-    #[error("process signal delivery failed")]
-    Signal,
+    /// The working directory or the workspace root could not be inspected, so confinement could
+    /// not be checked. Carries the kind only: the operating system's own text can name the path.
+    #[error("process working directory could not be checked: {0}")]
+    WorkspaceCheck(IoKind),
+    #[error("process could not be spawned: {0}")]
+    Spawn(IoKind),
+    #[error("process exited before it could be followed")]
+    NotRunning,
+    #[error("process pipe is missing")]
+    PipeMissing,
+    #[error("process io failed: {0}")]
+    Io(IoKind),
+    /// `panicked` says whether an output reader task panicked or was cancelled; the panic's own
+    /// message is not carried, it can quote what the task was holding.
+    #[error("process output reader could not be joined (panicked: {panicked})")]
+    ReaderJoin { panicked: bool },
+    #[error("process signal delivery failed: {0}")]
+    Signal(IoKind),
 }
 
 /// A spawned child under group-aware supervision. Constructed only via
@@ -199,11 +213,11 @@ impl ProcessSpec {
         let root = self
             .workspace_root
             .canonicalize()
-            .map_err(|_| ProcessError::WorkspaceEscape)?;
+            .map_err(|error| ProcessError::WorkspaceCheck(IoKind(error.kind())))?;
         let working_directory = self
             .working_directory
             .canonicalize()
-            .map_err(|_| ProcessError::WorkspaceEscape)?;
+            .map_err(|error| ProcessError::WorkspaceCheck(IoKind(error.kind())))?;
         if working_directory != root && !working_directory.starts_with(&root) {
             return Err(ProcessError::WorkspaceEscape);
         }
@@ -229,8 +243,10 @@ impl ProcessSpec {
             command.process_group(0);
         }
 
-        let mut child = command.spawn().map_err(|_| ProcessError::Spawn)?;
-        let pid = child.id().ok_or(ProcessError::Spawn)?;
+        let mut child = command
+            .spawn()
+            .map_err(|error| ProcessError::Spawn(IoKind(error.kind())))?;
+        let pid = child.id().ok_or(ProcessError::NotRunning)?;
 
         if let Some(input) = &self.stdin {
             use tokio::io::AsyncWriteExt;
@@ -275,8 +291,8 @@ impl SupervisedProcess {
         limits: &ProcessLimits,
         secrets: &SecretMaterial,
     ) -> Result<ProcessResult, ProcessError> {
-        let mut stdout_pipe = self.child.stdout.take().ok_or(ProcessError::Io)?;
-        let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::Io)?;
+        let mut stdout_pipe = self.child.stdout.take().ok_or(ProcessError::PipeMissing)?;
+        let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::PipeMissing)?;
         let stdout_cap = limits.max_stdout_bytes;
         let stderr_cap = limits.max_stderr_bytes;
 
@@ -291,7 +307,7 @@ impl SupervisedProcess {
 
         let exit = match time::timeout(limits.timeout, self.child.wait()).await {
             Ok(Ok(status)) => status_to_exit(status),
-            Ok(Err(_)) => return Err(ProcessError::Io),
+            Ok(Err(error)) => return Err(ProcessError::Io(IoKind(error.kind()))),
             Err(_) => {
                 kill_tree(self.pid, &mut self.child, limits.termination_grace).await?;
                 ProcessExit::TimedOut
@@ -309,7 +325,9 @@ impl SupervisedProcess {
                 stdout_task.await
             }
         }
-        .map_err(|_| ProcessError::Io)?;
+        .map_err(|error| ProcessError::ReaderJoin {
+            panicked: error.is_panic(),
+        })?;
         let stderr_raw = match time::timeout_at(readers_until, &mut stderr_task).await {
             Ok(raw) => raw,
             Err(_) => {
@@ -317,7 +335,9 @@ impl SupervisedProcess {
                 stderr_task.await
             }
         }
-        .map_err(|_| ProcessError::Io)?;
+        .map_err(|error| ProcessError::ReaderJoin {
+            panicked: error.is_panic(),
+        })?;
         Ok(ProcessResult {
             exit,
             stdout: finalize_capture(stdout_raw, secrets),
@@ -357,7 +377,7 @@ impl SupervisedProcess {
     ) -> Result<ProcessResult, ProcessError> {
         let (mut stdin, mut questions) = match questions {
             Some(questions) => (
-                Some(self.child.stdin.take().ok_or(ProcessError::Io)?),
+                Some(self.child.stdin.take().ok_or(ProcessError::PipeMissing)?),
                 Some(questions),
             ),
             None => {
@@ -365,8 +385,8 @@ impl SupervisedProcess {
                 (None, None)
             }
         };
-        let stdout_pipe = self.child.stdout.take().ok_or(ProcessError::Io)?;
-        let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::Io)?;
+        let stdout_pipe = self.child.stdout.take().ok_or(ProcessError::PipeMissing)?;
+        let mut stderr_pipe = self.child.stderr.take().ok_or(ProcessError::PipeMissing)?;
         let stderr_cap = limits.max_stderr_bytes;
         let (stderr_stop, stderr_stopped) = oneshot::channel();
         let mut stderr_task = tokio::spawn(async move {
@@ -499,7 +519,7 @@ impl SupervisedProcess {
                 tokio::select! {
                     biased;
                     status = &mut child_wait => {
-                        let status = status.map_err(|_| ProcessError::Io)?;
+                        let status = status.map_err(|error| ProcessError::Io(IoKind(error.kind())))?;
                         break status_to_exit(status);
                     }
                     accumulator = &mut read_and_drive, if stdout_raw.is_none() => {
@@ -538,7 +558,9 @@ impl SupervisedProcess {
                 stderr_task.await
             }
         }
-        .map_err(|_| ProcessError::Io)?;
+        .map_err(|error| ProcessError::ReaderJoin {
+            panicked: error.is_panic(),
+        })?;
         Ok(ProcessResult {
             exit,
             stdout: finalize_capture(
@@ -640,12 +662,14 @@ impl ProcessCanceller {
     ) -> Result<(CancelOutcome, ProcessGroups), ProcessError> {
         #[cfg(unix)]
         {
-            unix::signal_group(self.pid, unix::SIGTERM).map_err(|_| ProcessError::Signal)?;
+            unix::signal_group(self.pid, unix::SIGTERM)
+                .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
             let mut alive = wait_until_gone(BTreeSet::from([self.pid]), grace).await;
             let outcome = if alive.is_empty() {
                 CancelOutcome::Stopped
             } else {
-                unix::signal_group(self.pid, unix::SIGKILL).map_err(|_| ProcessError::Signal)?;
+                unix::signal_group(self.pid, unix::SIGKILL)
+                    .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
                 alive = wait_until_gone(alive, Duration::from_secs(5)).await;
                 CancelOutcome::Killed
             };
@@ -661,7 +685,9 @@ impl ProcessCanceller {
         #[cfg(not(unix))]
         {
             let _ = grace;
-            Err(ProcessError::Signal)
+            Err(ProcessError::Signal(IoKind(
+                std::io::ErrorKind::Unsupported,
+            )))
         }
     }
 }
@@ -762,11 +788,13 @@ async fn kill_tree(
 ) -> Result<CancelOutcome, ProcessError> {
     #[cfg(unix)]
     {
-        unix::signal_group(pid, unix::SIGTERM).map_err(|_| ProcessError::Signal)?;
+        unix::signal_group(pid, unix::SIGTERM)
+            .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
         if time::timeout(grace, child.wait()).await.is_ok() {
             return Ok(CancelOutcome::Stopped);
         }
-        unix::signal_group(pid, unix::SIGKILL).map_err(|_| ProcessError::Signal)?;
+        unix::signal_group(pid, unix::SIGKILL)
+            .map_err(|error| ProcessError::Signal(IoKind(error.kind())))?;
         let _ = time::timeout(Duration::from_secs(5), child.wait()).await;
         Ok(CancelOutcome::Killed)
     }
@@ -948,8 +976,14 @@ pub fn confined_cwd(
         Some(subdirectory) if !subdirectory.is_empty() => root.join(subdirectory),
         _ => root.to_path_buf(),
     };
-    let canonical_root = root.canonicalize().map_err(|_| escape())?;
-    let canonical_cwd = joined.canonicalize().map_err(|_| escape())?;
+    let canonical_root = root.canonicalize().map_err(|error| {
+        tracing::warn!(kind = ?error.kind(), "subdirectory root could not be checked");
+        escape()
+    })?;
+    let canonical_cwd = joined.canonicalize().map_err(|error| {
+        tracing::warn!(kind = ?error.kind(), "subdirectory could not be checked");
+        escape()
+    })?;
     if canonical_cwd != canonical_root && !canonical_cwd.starts_with(&canonical_root) {
         return Err(escape());
     }

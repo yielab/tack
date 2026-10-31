@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tack API",
-    "description": "REST + WebSocket API for Tack, a lightweight, workflow-agnostic project-management tool. This contract is generated from the Rust handlers and domain models; it is the single source of truth for the wire format. All failing responses share the `{ \"error\": { \"status\", \"message\" } }` envelope, with an additional `code` field on a narrow set of responses (e.g. `stale_lease`) where a caller needs to branch on the reason without parsing `message`.",
+    "description": "REST + WebSocket API for Tack, a lightweight, workflow-agnostic project-management tool. This contract is generated from the Rust handlers and domain models; it is the single source of truth for the wire format. Every failing response, including one for a request the server could not read, shares the `{ \"error\": { \"status\", \"code\", \"message\", \"retryable\", \"request_id\", \"details\" } }` envelope; a caller branches on `code`, never on `message`.",
     "contact": {
       "name": "Tack",
       "email": "info@yielab.com"
@@ -11,7 +11,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.1.0-beta.10"
+    "version": "0.2.0-beta.1"
   },
   "paths": {
     "/api/agent-profiles": {
@@ -344,7 +344,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResolveDecisionResponseSchema"
+                  "$ref": "#/components/schemas/ResolveDecisionResponse"
                 }
               }
             }
@@ -592,6 +592,16 @@
           },
           "409": {
             "description": "Not configured, or restore would lose newer work",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The archive or its manifest cannot be read (`unreadable_archive`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1951,7 +1961,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Item"
+                  "$ref": "#/components/schemas/ItemCard"
                 }
               }
             }
@@ -3000,6 +3010,16 @@
                 "schema": {}
               }
             }
+          },
+          "404": {
+            "description": "The item or the role does not exist, or they belong to different projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           }
         }
       },
@@ -3047,7 +3067,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "GET /api/local-runner — the persisted preference, the live runtime\nstate. Only mounted on a loopback bind\nwith a control actually wired in — see `router.rs`'s `local_runner_routes`.",
+        "summary": "GET /api/local-runner — the persisted preference, the live runtime state. Only mounted on a\nloopback bind with a control actually wired in — see `router.rs`'s `local_runner_routes`.",
         "operationId": "get_local_runner",
         "responses": {
           "200": {
@@ -3064,7 +3084,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded\nrunner to match, immediately, with no restart. Persist first, then\nreconcile the runtime: a crash between the two still boots correctly\nnext time.",
+        "summary": "PUT /api/local-runner — save the preference and start/stop the embedded runner to match,\nimmediately, with no restart. Persist first, then reconcile the runtime: a crash between the\ntwo still boots correctly next time.",
         "operationId": "put_local_runner",
         "requestBody": {
           "content": {
@@ -3125,7 +3145,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "POST /api/local-runner/init-folder — creates `path` and runs `git init`.\nAn existing non-empty directory (or a file) is a 409.",
+        "summary": "POST /api/local-runner/init-folder — creates `path` and runs `git init`. An existing\nnon-empty directory (or a file) is a 409.",
         "operationId": "init_local_runner_folder",
         "requestBody": {
           "content": {
@@ -3160,7 +3180,7 @@
         "tags": [
           "local-runner"
         ],
-        "summary": "POST /api/local-runner/test-run — runs the harness once on this machine\nfrom an empty scratch directory: no remote, no typed model. It files the\nrun under an archived `Agent tests` project (created on first use, so it\nnever shows in the project list) and answers the new request's id.",
+        "summary": "POST /api/local-runner/test-run — runs the harness once on this machine from an empty\nscratch directory: no remote, no typed model. It files the run under an archived\n`Agent tests` project (created on first use, so it never shows in the project list) and\nanswers the new request's id.",
         "operationId": "post_test_run",
         "requestBody": {
           "content": {
@@ -3781,7 +3801,7 @@
           {
             "name": "scope",
             "in": "query",
-            "description": "`snapshot` (the default) is the database dump `POST /api/projects/import`\nreads; `bundle` is the project file of ADR 0081 (JSON or YAML).",
+            "description": "`snapshot` (the default) is the database dump `POST /api/projects/import`\nreads; `bundle` is the project file of ADR 0022 (JSON or YAML).",
             "required": false,
             "schema": {
               "type": "string"
@@ -4518,7 +4538,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Item"
+                  "$ref": "#/components/schemas/ItemCard"
                 }
               }
             }
@@ -7543,6 +7563,24 @@
           }
         }
       },
+      "AttemptRerun": {
+        "type": "object",
+        "description": "The \"Run again at L3\" button's state: `reason` says why it is disabled, `null` when enabled.",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "AttemptReview": {
         "type": "object",
         "description": "An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`.",
@@ -7592,7 +7630,7 @@
         ],
         "properties": {
           "actual_execution": {
-            "description": "`tack_orch::execution::ActualExecution` once the attempt has\nreported one, else `null`."
+            "description": "`tack_protocol::execution::ActualExecution` once the attempt has\nreported one, else `null`."
           },
           "attempt_id": {
             "type": "string"
@@ -7670,8 +7708,8 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/ModelProvenanceSchema",
-                "description": "`tack_orch::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value` (the real\ntype lives in `tack-orch`, which does not depend on `utoipa`);\n`#[schema(...)]` below points the *generated OpenAPI document* at\n`ModelProvenanceSchema`, this file's hand-verified mirror, instead of\nthe untyped-`Value` default — an untyped default would generate an\nempty `{}` schema, the same spec-drift problem this API avoids\nelsewhere."
+                "$ref": "#/components/schemas/ModelProvenance",
+                "description": "`tack_protocol::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value`;\n`#[schema(...)]` below points the *generated OpenAPI document* at the\nreal type instead of the untyped-`Value` default, which would\ngenerate an empty `{}` schema."
               }
             ]
           },
@@ -7688,6 +7726,17 @@
           },
           "request_id": {
             "type": "string"
+          },
+          "rerun_at_l3": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AttemptRerun",
+                "description": "The \"Run again at L3\" button's state; present only on an attempt that ended asking for a\nperson (`terminal_reason.code` of `needs_human`)."
+              }
+            ]
           },
           "review": {
             "oneOf": [
@@ -7733,11 +7782,11 @@
             "type": "string"
           },
           "usage": {
-            "description": "`tack_orch::execution::Usage` once reported, else `null` — never a\nfabricated zero."
+            "description": "`tack_protocol::execution::Usage` once reported, else `null` — never a\nfabricated zero."
           },
           "usage_economics": {
-            "$ref": "#/components/schemas/UsageEconomicsSchema",
-            "description": "`tack_orch::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero; no runner infra cost-rate\nis stored anywhere in this schema today, so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at `UsageEconomicsSchema`, the same\nfix as `model_provenance` above."
+            "$ref": "#/components/schemas/UsageEconomics",
+            "description": "`tack_protocol::usage_provenance::UsageEconomics` — two\nindependently-provenanced dollar dimensions, never summed. Absent\nusage/timestamps serialize as `{\"value\": null, \"source\":\n\"not_measured\"}`, never a structural zero; no runner infra cost-rate\nis stored anywhere in this schema today, so\n`runner_time_cost.cost_usd_estimated` is always `not_measured` in\nevery real response from this endpoint. `#[schema(...)]` below\npoints the generated document at the real type, the same fix as\n`model_provenance` above."
           },
           "workspace_id": {
             "type": [
@@ -7938,7 +7987,7 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Item"
+              "$ref": "#/components/schemas/ItemCard"
             }
           },
           "name": {
@@ -8947,6 +8996,13 @@
             ],
             "description": "Omitted, the server picks one: run settings, the item's role, the project's\ndefault, the implementer, and records which in `metadata.profile_source`."
           },
+          "autonomy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.\nAbsent, docket decides from the team's profile; the project's level is never sent. `L3` is\n\"Run again at L3\". Any other value, or a level for an agent other than docket, is\n`invalid_request`."
+          },
           "budgets": {
             "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`)."
           },
@@ -8967,7 +9023,7 @@
             "description": "`mcp` marks a run an agent started through `tack mcp`: it is never merged\nautomatically or by a move to Done, only by the Merge button. Any other\nvalue, or none, means a person started it."
           },
           "permission_policy": {
-            "description": "`tack_orch::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `network` absent: the resolved profile's `tool_policy.network`, else\noff; `true` or `false` is kept as sent. `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
+            "description": "`tack_protocol::execution::PermissionPolicy` (`{tools, network,\napprovals}`). `network` absent: the resolved profile's `tool_policy.network`, else\noff; `true` or `false` is kept as sent. `approvals` is `\"auto\"` or `\"ask\"`; absent means\n`\"auto\"`. `\"ask\"` is rejected at scheduling time for a runner whose\nmatched harness does not attest `decisions: supported`."
           },
           "push_branch": {
             "type": [
@@ -8977,7 +9033,7 @@
             "description": "`false` declines the runner's branch push for this run. The runner's own\nconfiguration decides whether a push exists; `true` never enables one."
           },
           "repository_snapshot": {
-            "description": "`tack_orch::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project. An explicit one must name the project's own\nrepository (`details.reason = \"repository_differs_from_project\"`) and\nmay only add `base_revision` and `subdirectory`; a project with no code\nis `invalid_request` (`details.reason = \"project_has_no_code\"`)."
+            "description": "`tack_protocol::execution::RepositorySnapshot` (`{kind, remote,\nbase_revision, subdirectory}`). Omitted (or `{}`) the server fills it\nfrom the item's project. An explicit one must name the project's own\nrepository (`details.reason = \"repository_differs_from_project\"`) and\nmay only add `base_revision` and `subdirectory`; a project with no code\nis `invalid_request` (`details.reason = \"project_has_no_code\"`)."
           },
           "requested_harness_kind": {
             "type": [
@@ -9777,9 +9833,9 @@
           }
         }
       },
-      "DecisionResolvedBySchema": {
+      "DecisionResolvedBy": {
         "type": "object",
-        "description": "Schema-only mirror of `resolved_by`'s two observed shapes:\n`{\"kind\": \"operator\", \"subject_id\": <x-tack-principal>}` for a live\nresolve, or `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a\nfail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing\nin `docs/contracts/runner-v1/` fixes this shape (decision resolution has\nno runner-v1 fixture at all; see `handlers::decisions`'s own module doc,\n\"No item-status mapping\"), so this stays an open two-field object rather\nthan an invented contract.",
+        "description": "The `resolved_by` of a settled decision: `{\"kind\": \"operator\", \"subject_id\": <principal>}`\nfor an operator's answer, `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a decision that\npassed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`\nfixes this shape, so it stays an open two-field object.",
         "required": [
           "kind",
           "subject_id"
@@ -9966,20 +10022,34 @@
         "type": "object",
         "required": [
           "status",
-          "message"
+          "message",
+          "code",
+          "retryable",
+          "request_id",
+          "details"
         ],
         "properties": {
           "code": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Stable, machine-readable error code. Present on a narrow set of\nresponses where a caller needs to branch on *why* without parsing\n`message`. Absent on ordinary errors."
+            "$ref": "#/components/schemas/StableErrorCode",
+            "description": "Stable, machine-readable error code, on every error: a caller branches on *why* with it,\nnever by parsing `message`. The code decides `status`."
+          },
+          "details": {
+            "$ref": "#/components/schemas/ErrorDetails",
+            "description": "What the error blames. `details.field` names the request field, path parameter or query\nparameter that failed, when one did."
           },
           "message": {
             "type": "string",
             "description": "Human-readable, end-user-facing message.",
             "example": "Item not found"
+          },
+          "request_id": {
+            "type": "string",
+            "description": "The id of the request this answers, the one the client sent in `x-request-id` when it was\nusable; the response carries it in the same header.",
+            "example": "req_6f1c0d2a9b7e4c3f8a5d1e0b2c4a6f80"
+          },
+          "retryable": {
+            "type": "boolean",
+            "description": "Whether repeating the same request can succeed (`StableErrorCode::retryable`)."
           },
           "status": {
             "type": "integer",
@@ -9990,9 +10060,22 @@
           }
         }
       },
+      "ErrorDetails": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The request field the error blames.",
+            "example": "title"
+          }
+        }
+      },
       "ErrorEnvelope": {
         "type": "object",
-        "description": "Structured error envelope returned by every failing endpoint — see\n`crate::error::ApiError`. The body is always `{ \"error\": { status, message } }`.",
+        "description": "Structured error envelope returned by every failing endpoint — see\n`crate::error::ApiError`. The body is always\n`{ \"error\": { status, code, message, retryable, request_id, details } }`.",
         "required": [
           "error"
         ],
@@ -10227,6 +10310,8 @@
           "decisions",
           "escalation_rate",
           "human_minutes_per_decision",
+          "decided_alone",
+          "decided_alone_rate",
           "human_minutes_per_mrp",
           "verification_tax",
           "mrp_produced",
@@ -10276,6 +10361,15 @@
             ],
             "format": "double",
             "description": "Tokens priced by the rate card, plus the human minutes at its hour\nrate. Absent without a rate card."
+          },
+          "decided_alone": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attempts with at least one escalation the agent's policy settled itself, and no\nperson was asked: a count apart from `decisions`, which only a person's answer makes."
+          },
+          "decided_alone_rate": {
+            "$ref": "#/components/schemas/Ratio",
+            "description": "decided_alone ÷ attempts."
           },
           "decisions": {
             "type": "integer",
@@ -10663,24 +10757,6 @@
           "item_type": {
             "$ref": "#/components/schemas/ItemType"
           },
-          "merge_note": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Why the task's last merge did not happen, while it has not; `None` once merged or never tried."
-          },
-          "merged_by": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged."
-          },
-          "needs_review": {
-            "type": "boolean",
-            "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
-          },
           "parent_id": {
             "type": [
               "string",
@@ -10731,7 +10807,7 @@
           },
           "source": {
             "$ref": "#/components/schemas/ItemSource",
-            "description": "Sticky provenance marker for the prompt-injection\ntrust boundary: set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's `update_item` has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
+            "description": "Sticky provenance marker for the prompt-injection\ntrust boundary: set once at creation time by whichever handler\ncreated the item, and never mutated afterward — `UpdateItem` has no\n`source` field, and the repository's item update has no code path\nthat writes this column, so an item's source can never change once\nset. `#[serde(default)]` matters here: any JSON that predates this\nfield (an old export, or a hand-built import payload) deserializes\nto [`ItemSource::default()`] (`Unknown`), which [`ItemSource::is_trusted`]\ntreats as untrusted — the same \"unverifiable provenance resolves to\nuntrusted\" rule migration 029 applies to pre-existing database rows."
           },
           "source_artifact_id": {
             "type": [
@@ -10754,13 +10830,6 @@
             ],
             "format": "date-time"
           },
-          "started_by": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`auto_start` when the newest request was started by the project's own rule, else `None`."
-          },
           "status": {
             "type": "string"
           },
@@ -10769,13 +10838,6 @@
             "items": {
               "type": "string"
             }
-          },
-          "team": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The docket team named by the newest request's resolved profile, else `None`."
           },
           "title": {
             "type": "string"
@@ -10896,6 +10958,51 @@
           }
         }
       },
+      "ItemCard": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Item"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "merge_note": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Why the task's last merge did not happen, while it has not; `None` once merged or never tried."
+              },
+              "merged_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged."
+              },
+              "needs_review": {
+                "type": "boolean",
+                "description": "True when the latest finished attempt left a patch or a kept\nworkspace that nobody has reviewed yet."
+              },
+              "started_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`auto_start` when the newest request was started by the project's own rule, else `None`."
+              },
+              "team": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "The docket team named by the newest request's resolved profile, else `None`."
+              }
+            }
+          }
+        ],
+        "description": "An item as the board and the item page show it: the [`Item`] plus what the run history says\nabout it. The extra fields are derived on read from executions and merges, never stored on the\nitem and never written back, which is why they are not part of the aggregate."
+      },
       "ItemDetail": {
         "type": "object",
         "description": "Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles\nand dependency edges.",
@@ -10912,7 +11019,7 @@
             }
           },
           "item": {
-            "$ref": "#/components/schemas/Item"
+            "$ref": "#/components/schemas/ItemCard"
           },
           "roles": {
             "type": "array",
@@ -11041,14 +11148,31 @@
           }
         }
       },
-      "MeasurementSourceSchema": {
+      "MeasurementSource": {
         "type": "string",
-        "description": "Documents `tack_orch::execution::MeasurementSource`'s wire shape —\nused by `AttemptSummary.usage_economics`. Defined here, not in\n`crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.\n`tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module\ndoc), so this is a hand-verified mirror, never constructed or serialized\nby real code. `not_measured` is the honest value whenever a figure\ngenuinely is not known — never a fabricated zero.",
+        "description": "How a numeric usage figure was obtained.",
         "enum": [
           "measured",
           "estimated",
           "not_measured"
         ]
+      },
+      "Measurement_f64": {
+        "type": "object",
+        "description": "A nullable metric paired with its provenance, avoiding fabricated zeros.",
+        "required": [
+          "source"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/MeasurementSource"
+          },
+          "value": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": {}
       },
       "MergedBy": {
         "type": "object",
@@ -11134,9 +11258,9 @@
           }
         }
       },
-      "ModelProvenanceSchema": {
+      "ModelProvenance": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::ModelProvenance` —\n`AttemptSummary.model_provenance`'s real shape (`null` while the attempt\nhas not yet reported `actual_execution`). Both model strings are carried\nin full, never reconciled, so a caller can show a request and a served\nmodel that differ.",
+        "description": "What an execution request asked for vs. what an attempt ran on: both\nmodel strings in full, and who named the served one (`reported`,\n`requested` or `agent_default`).",
         "required": [
           "source"
         ],
@@ -11257,7 +11381,7 @@
             "items": {
               "$ref": "#/components/schemas/BundleField"
             },
-            "description": "Custom fields of the project, by name (ADR 0081)."
+            "description": "Custom fields of the project, by name (ADR 0022)."
           },
           "items": {
             "type": "array",
@@ -11580,7 +11704,7 @@
           "data": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Item"
+              "$ref": "#/components/schemas/ItemCard"
             }
           },
           "page": {
@@ -12109,9 +12233,9 @@
           }
         }
       },
-      "ResolveDecisionResponseSchema": {
+      "ResolveDecisionResponse": {
         "type": "object",
-        "description": "`POST .../decisions/{decision_id}/resolve` response body — mirrors\n`handlers::decisions::ResolveDecisionResponse` exactly.",
+        "description": "`POST .../decisions/{decision_id}/resolve` response body.",
         "required": [
           "protocol_version",
           "decision_id",
@@ -12123,7 +12247,8 @@
         ],
         "properties": {
           "answer": {
-            "$ref": "#/components/schemas/DecisionAnswerSchema"
+            "$ref": "#/components/schemas/DecisionAnswerSchema",
+            "description": "The answer as submitted (or as stored, on a replay), echoed back as\nthe operator sent it, extra keys included."
           },
           "decision_id": {
             "type": "string"
@@ -12135,17 +12260,18 @@
           },
           "replayed": {
             "type": "boolean",
-            "description": "`true` when this response is a byte-identical idempotent replay of\nan already-committed resolution rather than a fresh write."
+            "description": "`true` when this response is a byte-identical idempotent replay of an\nalready-committed resolution rather than a fresh write."
           },
           "resolved_at": {
             "type": "string"
           },
           "resolved_by": {
-            "$ref": "#/components/schemas/DecisionResolvedBySchema"
+            "$ref": "#/components/schemas/DecisionResolvedBy",
+            "description": "Who resolved the decision."
           },
           "state": {
             "type": "string",
-            "description": "Always `\"resolved\"` on a 200 — an expired/not-found/conflicting\ndecision is a distinct error response, never a 200 with a different\nstate string.",
+            "description": "Always `\"resolved\"` on a 200 — an expired/not-found/conflicting\ndecision is a distinct error response, never a 200 with a different\nstate string, so a caller need not switch on this field.",
             "example": "resolved"
           }
         }
@@ -12504,15 +12630,15 @@
           }
         }
       },
-      "RunnerTimeCostSchema": {
+      "RunnerTimeCost": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::RunnerTimeCost`.\n`cost_usd_estimated` is `{\"value\": null, \"source\": \"not_measured\"}` in\nevery real response today — no runner infra cost-rate is stored anywhere\nin this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);\n`runner_rate_usd_per_hour` must be supplied by the caller for a real\ndollar figure to appear. `wall_clock_ms` is a plain derivable fact, not\nitself a `Measurement` — `null` only until both the attempt's\n`started_at`/`ended_at` are known.",
+        "description": "Runner-observed wall-clock time cost — entirely different provenance\nfrom the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the\nrunner/API directly witnesses (attempt start/end), never wrapped in a\n[`Measurement`] since there is no \"estimated\" wall clock. No infra rate\nis stored anywhere in this schema today, so `cost_usd_estimated` stays\n`not_measured` unless a caller supplies `runner_rate_usd_per_hour`.",
         "required": [
           "cost_usd_estimated"
         ],
         "properties": {
           "cost_usd_estimated": {
-            "$ref": "#/components/schemas/UsdMeasurementSchema"
+            "$ref": "#/components/schemas/Measurement_f64"
           },
           "wall_clock_ms": {
             "type": [
@@ -12556,7 +12682,7 @@
       },
       "RunnerV1ErrorEnvelope": {
         "type": "object",
-        "description": "Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator\nexecution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,\na different, incompatible shape. A doc-only mirror, not a second runtime\nauthority: `tack-orch` must stay free of an OpenAPI dependency, so the\nreal type cannot derive `ToSchema` itself. Defined here rather than in\n`crate::openapi` so this stays colocated with the routes it documents.\n`code` is a free string, not an enum, for the same reason — its fifteen\nfrozen values are enumerated in `docs/contracts/runner-v1/README.md`.\nReferenced only by *type* (utoipa's `ToSchema`), never constructed as a\nvalue — real responses build the runtime type instead.",
+        "description": "Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape\n(`docs/contracts/runner-v1/errors/*.json`) for every operator\nexecution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,\na different, incompatible shape. A doc-only mirror, not a second runtime\nauthority: `tack-orch` must stay free of an OpenAPI dependency, so the\nreal type cannot derive `ToSchema` itself. Defined here rather than in\n`crate::openapi` so this stays colocated with the routes it documents.\n`code` is a free string, not an enum, for the same reason — its fifteen\nfrozen values are enumerated in `docs/contracts/runner-v1/README.md`.\nReferenced only by *type* (utoipa's `ToSchema`), never constructed as a\nvalue — real responses build the runtime type instead.",
         "required": [
           "error"
         ],
@@ -12719,6 +12845,47 @@
           "closed"
         ]
       },
+      "StableErrorCode": {
+        "type": "string",
+        "description": "Stable error codes: the only values a client may branch on; error text and `details` remain\ndisplay and diagnostic data. The first fifteen are the runner-v1 contract\n(`docs/contracts/runner-v1/errors/*.json`); the rest are the operator API's own, which the\nrunner routes never answer: one per rule the board enforces and one per failure of the HTTP\nlayer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.",
+        "enum": [
+          "invalid_request",
+          "unauthorized",
+          "forbidden",
+          "not_found",
+          "conflict",
+          "idempotency_conflict",
+          "invalid_transition",
+          "stale_lease",
+          "runner_revoked",
+          "decision_expired",
+          "artifact_checksum_mismatch",
+          "payload_too_large",
+          "rate_limited",
+          "unsupported_protocol",
+          "internal_error",
+          "unprocessable",
+          "validation_failed",
+          "invalid_status_transition",
+          "wip_limit_exceeded",
+          "dependency_cycle",
+          "duplicate_dependency",
+          "invalid_vocabulary_key",
+          "empty_workflow",
+          "has_children",
+          "invalid_workflow",
+          "misdirected_host",
+          "cross_site_request",
+          "unsupported_media_type",
+          "unreadable_archive",
+          "section_failed",
+          "machine_revoked",
+          "precondition_failed",
+          "local_runner_unavailable",
+          "folder_not_empty",
+          "method_not_allowed"
+        ]
+      },
       "StatusCategory": {
         "type": "string",
         "enum": [
@@ -12792,6 +12959,46 @@
               "type": "string"
             },
             "description": "The folders the team's sandbox reads besides its own work; `[]` for none, `null` when no\ncomputer reports the team or its harness does not say."
+          },
+          "records": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TeamRecords"
+            },
+            "description": "The record sets the team keeps and how many rows each holds; `null` when the harness does\nnot say."
+          },
+          "works_in": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`repository` or `folder`; `null` when no computer reports the team or its harness does not\nsay. A folder team's work stays in its folder: nothing is merged."
+          }
+        }
+      },
+      "TeamRecords": {
+        "type": "object",
+        "description": "One set of records a team keeps.",
+        "required": [
+          "name",
+          "description",
+          "rows"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Rows in the set, whichever run wrote them.",
+            "minimum": 0
           }
         }
       },
@@ -13407,38 +13614,21 @@
           }
         }
       },
-      "UsageEconomicsSchema": {
+      "UsageEconomics": {
         "type": "object",
-        "description": "Documents `tack_orch::usage_provenance::UsageEconomics` —\n`AttemptSummary.usage_economics`'s real shape. Always present (never\n`null`), unlike `ModelProvenanceSchema` below: two\nindependently-provenanced dollar dimensions, deliberately never summed\ninto one figure.",
+        "description": "Two independently-provenanced dollar dimensions, deliberately never\nsummed into one figure — see this module's doc comment.",
         "required": [
           "model_token_cost_usd_estimated",
           "runner_time_cost"
         ],
         "properties": {
           "model_token_cost_usd_estimated": {
-            "$ref": "#/components/schemas/UsdMeasurementSchema"
+            "$ref": "#/components/schemas/Measurement_f64",
+            "description": "Pass-through of `Usage.cost_usd` — the harness/vendor's own\nself-reported dollar figure, provenance (`measured` / `estimated` /\n`not_measured`) preserved verbatim, never reinterpreted."
           },
           "runner_time_cost": {
-            "$ref": "#/components/schemas/RunnerTimeCostSchema"
-          }
-        }
-      },
-      "UsdMeasurementSchema": {
-        "type": "object",
-        "description": "Documents `tack_orch::execution::Measurement<f64>` — every dollar figure\nin this API (`*_usd_estimated`) uses this shape. `value` is `null`\nwhenever `source` is `not_measured`; `tack-orch`'s own\n`absent_usage_never_serializes_as_zero` test asserts the literal JSON,\nnot just the Rust type: unmeasured is documented as genuinely nullable,\nnever a number defaulting to `0`.",
-        "required": [
-          "source"
-        ],
-        "properties": {
-          "source": {
-            "$ref": "#/components/schemas/MeasurementSourceSchema"
-          },
-          "value": {
-            "type": [
-              "number",
-              "null"
-            ],
-            "format": "double"
+            "$ref": "#/components/schemas/RunnerTimeCost",
+            "description": "This module's own derived dimension — see [`RunnerTimeCost`]."
           }
         }
       },

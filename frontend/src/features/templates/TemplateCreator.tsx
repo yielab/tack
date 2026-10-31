@@ -6,6 +6,7 @@ import { Button, Field, FieldShell, Select, Modal, Badge } from '../../shared/ui
 import { VOCAB_KEYS, resolveLabel } from '../../shared/vocab/vocab';
 import { FiChevronDown, FiChevronRight, FiPlus, FiTrash2 } from 'solid-icons/fi';
 import type { WorkflowStatus, TemplateCustomField, TemplateBoardConfig, ProjectType, CustomFieldType } from '../../shared/types';
+import Card from '../../shared/ui/Card';
 
 // ── local row shape for the workflow editor ──────────────────────────────────
 interface StatusRow {
@@ -33,7 +34,7 @@ function Section(props: {
 }) {
   return (
     <div
-      class={`bg-panel transition-[border-radius] ${props.open ? 'rounded-[28px]' : 'rounded-[32px]'}`}
+      class={`bg-panel transition-[border-radius] ${props.open ? 'rounded-card' : 'rounded-[32px]'}`}
     >
       <button
         type="button"
@@ -59,7 +60,7 @@ function Section(props: {
       </button>
       <Show when={props.open}>
         <div class="px-[22px] pb-[18px] pt-1 space-y-3">
-          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             {props.description}
           </p>
           {props.children}
@@ -93,7 +94,7 @@ const itemStyle = {
 const iconBtnClass =
   'grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full transition-colors hover:bg-[var(--color-bg-subtle)] focus:outline-none focus-visible:ring-2';
 const addBtnClass =
-  'flex w-full items-center justify-center gap-2 rounded-full border-2 border-dashed px-4 py-2 text-[0.8125rem] font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
+  'flex w-full items-center justify-center gap-2 rounded-full border-2 border-dashed px-4 py-2 text-small font-semibold transition-colors hover:bg-[var(--color-bg-app)]';
 const addBtnStyle = { 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' };
 
 // ── field type meta ───────────────────────────────────────────────────────────
@@ -309,7 +310,7 @@ export default function TemplateCreator() {
 
         <form onSubmit={handleSubmit} class="flex flex-col gap-4">
           {/* ── Basic Information ─────────────────────────────────────────── */}
-          <div class="grid grid-cols-1 gap-x-4 gap-y-3 rounded-[28px] bg-panel px-[22px] py-5 sm:grid-cols-2">
+          <Card class="grid grid-cols-1 gap-x-4 gap-y-3 px-[22px] py-5 sm:grid-cols-2">
             <h3 class="text-lg sm:col-span-2" style={{ color: 'var(--color-text-primary)' }}>
               Basic Information
             </h3>
@@ -344,11 +345,11 @@ export default function TemplateCreator() {
                 onInput={(e) => setDescription(e.currentTarget.value)}
                 rows={2}
                 placeholder="Describe what this template is for..."
-                class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
                 style={textareaStyle}
               />
             </FieldShell>
-          </div>
+          </Card>
 
           {/* ── Workflow ──────────────────────────────────────────────────── */}
           <Section
@@ -440,18 +441,18 @@ export default function TemplateCreator() {
               Leave fields blank to keep the default label.
             </p>
 
-            <div class="overflow-hidden rounded-[20px]" style={itemStyle}>
+            <div class="overflow-hidden rounded-item" style={itemStyle}>
               <table class="w-full text-sm">
                 <thead>
                   <tr>
                     <th
-                      class="w-1/3 px-4 pt-3 pb-2 text-left text-[0.65625rem] font-bold uppercase tracking-[.1em]"
+                      class="w-1/3 px-4 pt-3 pb-2 text-left text-micro font-bold uppercase tracking-[.1em]"
                       style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       Default
                     </th>
                     <th
-                      class="px-4 pt-3 pb-2 text-left text-[0.65625rem] font-bold uppercase tracking-[.1em]"
+                      class="px-4 pt-3 pb-2 text-left text-micro font-bold uppercase tracking-[.1em]"
                       style={{ color: 'var(--color-text-tertiary)' }}
                     >
                       Custom label
@@ -512,7 +513,7 @@ export default function TemplateCreator() {
               <div class="space-y-2">
                 <For each={customFields()}>
                   {(field, i) => (
-                    <div class="flex items-center gap-3 rounded-[20px] px-4 py-3" style={itemStyle}>
+                    <div class="flex items-center gap-3 rounded-item px-4 py-3" style={itemStyle}>
                       <span class="text-lg">{fieldTypeIcon(field.field_type)}</span>
                       <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2">
@@ -579,7 +580,7 @@ export default function TemplateCreator() {
             <div class="space-y-2">
               <For each={boards()}>
                 {(board, i) => (
-                  <div class="flex items-start gap-3 rounded-[20px] p-3" style={itemStyle}>
+                  <div class="flex items-start gap-3 rounded-item p-3" style={itemStyle}>
                     <div class="flex-1 space-y-2">
                       <input
                         type="text"
@@ -601,7 +602,7 @@ export default function TemplateCreator() {
                       />
                     </div>
                     <Show when={i() === 0}>
-                      <span class="mt-1 rounded-full px-2.5 py-[3px] text-[0.6875rem] font-bold" style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}>
+                      <span class="mt-1 rounded-full px-2.5 py-[3px] text-micro font-bold" style={{ color: 'var(--color-text-secondary)', 'background-color': 'var(--color-bg-subtle)' }}>
                         Default
                       </span>
                     </Show>
@@ -677,7 +678,7 @@ export default function TemplateCreator() {
               onInput={(e) => setFieldDescription(e.currentTarget.value)}
               rows={2}
               placeholder="Optional description"
-              class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+              class="w-full resize-none rounded-item border px-3.5 py-2 text-sm transition-colors focus:outline-none focus-visible:ring-2"
               style={textareaStyle}
             />
           </FieldShell>
@@ -696,7 +697,7 @@ export default function TemplateCreator() {
                 rows={4}
                 required
                 placeholder={'Option 1\nOption 2\nOption 3'}
-                class="w-full rounded-[20px] border px-3.5 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                class="w-full rounded-item border px-3.5 py-2 font-mono text-sm transition-colors focus:outline-none focus-visible:ring-2"
                 style={textareaStyle}
               />
             </FieldShell>

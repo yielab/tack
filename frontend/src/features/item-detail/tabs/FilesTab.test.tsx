@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import FilesTab from './FilesTab';
+import { flush } from '../../../test/flush';
 
 const attachment = {
   id: 'a1',
@@ -11,8 +12,6 @@ const attachment = {
   size_bytes: 2048,
   uploaded_at: '',
 };
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 afterEach(() => {

@@ -5,8 +5,6 @@
 //! ordinary board-drag PATCH's WIP-limit race, proven under genuine
 //! concurrent load.
 
-mod common;
-
 #[path = "security/board_drag_wip_race.rs"]
 mod board_drag_wip_race;
 #[path = "security/chaos_races.rs"]

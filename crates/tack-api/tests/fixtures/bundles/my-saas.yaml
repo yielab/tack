@@ -1,4 +1,4 @@
-# A Tack project bundle: the outline of ADR 0076 with six more sections (ADR 0081).
+# A Tack project bundle: the outline of ADR 0017 with six more sections (ADR 0022).
 # Applied in this order: project, fields, profiles, roles, sprints, automation, items.
 # The whole file is checked before anything is written; every problem is reported at
 # once; an unknown key anywhere is refused. Names are the references: `profile: X`
@@ -85,7 +85,7 @@ profiles:                         # agent profiles are shared by every project; 
     tool_policy: { agent: claude-code, tools: { claude-code: [Read, Grep, Glob] } }
   # Planner is a built-in profile, named by a role below; nothing to declare here.
   # A profile may name a `fleet` (a fleet's name); one the board does not have is a warning.
-  # No `harness` or `model` on a profile: the agent is tool_policy.agent; a model belongs to a run or to the project (ADR 0078).
+  # No `harness` or `model` on a profile: the agent is tool_policy.agent; a model belongs to a run or to the project (ADR 0019).
 
 roles:                            # project roles; `profile` is a name from `profiles` or an existing profile
   - { name: Contenido, color: "#f59e0b", profile: My SaaS content writer }
@@ -102,7 +102,7 @@ sprints:                          # status: planning (the default) or closed; an
 
 automation:
   code_origin: folder             # folder|new_folder|url|none
-  repository: /home/ox/Sites/my-saas
+  repository: /home/person/Sites/my-saas
   default_branch: main
   workspace_mode: local_branch    # local_branch|in_place|clone
   push_after_run: true
@@ -127,7 +127,7 @@ automation:
     status: Por hacer
     max_open: 3
 
-items:                            # the outline of ADR 0076, plus roles, sprint, fields, recurrence and estimate_unit
+items:                            # the outline of ADR 0017, plus roles, sprint, fields, recurrence and estimate_unit
   - { ref: C1, title: Facturación recurrente, type: epic, priority: high, roles: [Contenido], fields: { Plan: pro } }
   - ref: S1
     title: Guía para crear tu primera factura
@@ -150,7 +150,7 @@ items:                            # the outline of ADR 0076, plus roles, sprint,
   - { ref: G1, title: Campaña de octubre en Instagram, type: feature, status: Por hacer, roles: [Crecimiento], sprint: Semana 43, fields: { Plan: pro, Canal: [instagram] } }
   - { ref: G2, title: Newsletter semanal, type: task, status: Por hacer, roles: [Contenido, Crecimiento], recurrence: weekly, due: 2026-10-18, fields: { Plan: pro, Canal: [newsletter] } }
   - { ref: G3, title: Informe mensual de métricas, type: task, roles: [Crecimiento], recurrence: monthly, due: 2026-10-31, fields: { Plan: pro } }
-  - { ref: R1, title: Qué planes piden los clientes en Chile, type: task, status: Por hacer, roles: [Investigación], fields: { Plan: free, Fuente: "https://forms.my-saas.app/chile" } }
+  - { ref: R1, title: Qué planes piden los clientes en Chile, type: task, status: Por hacer, roles: [Investigación], fields: { Plan: free, Fuente: "https://forms.example.com/chile" } }
   - { ref: R2, title: Comparativa de proveedores de firma electrónica, type: task, roles: [Investigación], fields: { Plan: enterprise } }
   - { ref: O1, title: Copia de seguridad diaria de la base de facturas, type: task, status: Por hacer, roles: [Operaciones], fields: { Plan: pro } }
   - { ref: O2, title: Revisión trimestral de costos de hosting, type: task, roles: [Operaciones], recurrence: quarterly, due: 2026-12-31, fields: { Plan: pro } }

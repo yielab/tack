@@ -6,7 +6,7 @@ use validator::Validate;
 
 use crate::outline::{BundleAutomation, BundleProfile, BundleRole};
 use crate::vocabulary::VocabularyMap;
-use crate::workflow::{StatusCategory, WorkflowConfig};
+use crate::workflow::WorkflowConfig;
 
 // ─── Workspace ───────────────────────────────────────────────
 
@@ -208,7 +208,7 @@ pub struct Item {
     /// Sticky provenance marker for the prompt-injection
     /// trust boundary: set once at creation time by whichever handler
     /// created the item, and never mutated afterward — `UpdateItem` has no
-    /// `source` field, and the repository's `update_item` has no code path
+    /// `source` field, and the repository's item update has no code path
     /// that writes this column, so an item's source can never change once
     /// set. `#[serde(default)]` matters here: any JSON that predates this
     /// field (an old export, or a hand-built import payload) deserializes
@@ -224,6 +224,18 @@ pub struct Item {
     /// or `None` when it follows the project.
     #[serde(default)]
     pub run_settings: Option<RunSettings>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// An item as the board and the item page show it: the [`Item`] plus what the run history says
+/// about it. The extra fields are derived on read from executions and merges, never stored on the
+/// item and never written back, which is why they are not part of the aggregate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ItemCard {
+    #[serde(flatten)]
+    pub item: Item,
     /// True when the latest finished attempt left a patch or a kept
     /// workspace that nobody has reviewed yet.
     #[serde(default)]
@@ -240,8 +252,28 @@ pub struct Item {
     /// How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged.
     #[serde(default)]
     pub merged_by: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+}
+
+impl From<Item> for ItemCard {
+    /// A card for an item with no run history: nothing to review, nothing held, nothing started.
+    fn from(item: Item) -> Self {
+        Self {
+            item,
+            needs_review: false,
+            merge_note: None,
+            started_by: None,
+            team: None,
+            merged_by: None,
+        }
+    }
+}
+
+impl std::ops::Deref for ItemCard {
+    type Target = Item;
+
+    fn deref(&self) -> &Item {
+        &self.item
+    }
 }
 
 /// Where an item's title/description text came from. Backend for the
@@ -734,11 +766,43 @@ pub struct UpdateItem {
     #[serde(default, with = "::serde_with::rust::double_option")]
     #[cfg_attr(feature = "openapi", schema(value_type = Option<RunSettings>))]
     pub run_settings: Option<Option<RunSettings>>,
-    /// Server-only: the target status's category, populated by the update handler
-    /// when the status changes so the persistence layer can maintain
-    /// `started_at` / `completed_at`. Never (de)serialized from client requests.
-    #[serde(skip)]
-    pub status_category: Option<StatusCategory>,
+}
+
+impl UpdateItem {
+    /// True when the request addresses no field at all: applying it changes nothing, so it
+    /// consumes no version.
+    pub fn is_empty(&self) -> bool {
+        let Self {
+            title,
+            description,
+            item_type,
+            status,
+            priority,
+            estimate,
+            estimate_unit,
+            tags,
+            due_date,
+            sprint_id,
+            sort_order,
+            assignee,
+            recurrence,
+            run_settings,
+        } = self;
+        title.is_none()
+            && description.is_none()
+            && item_type.is_none()
+            && status.is_none()
+            && priority.is_none()
+            && estimate.is_none()
+            && estimate_unit.is_none()
+            && tags.is_none()
+            && due_date.is_none()
+            && sprint_id.is_none()
+            && sort_order.is_none()
+            && assignee.is_none()
+            && recurrence.is_none()
+            && run_settings.is_none()
+    }
 }
 
 #[derive(Debug, Deserialize, Validate)]

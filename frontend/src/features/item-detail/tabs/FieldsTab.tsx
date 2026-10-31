@@ -68,7 +68,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
             rows={3}
             value={str()}
             onChange={(e) => commit(def.id, e.currentTarget.value, (s) => s)}
-            class={controlClass.replace('rounded-full', 'rounded-[20px]') + ' resize-none'}
+            class={controlClass.replace('rounded-full', 'rounded-item') + ' resize-none'}
             style={controlStyle}
           />
         );
@@ -150,7 +150,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Custom fields
         </h3>
@@ -168,7 +168,7 @@ const FieldsTab: Component<FieldsTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Roles
         </h3>

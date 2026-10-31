@@ -1,3 +1,4 @@
+use tack_protocol::execution::StableErrorCode;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -45,4 +46,26 @@ pub enum CoreError {
 
     #[error("Invalid workflow: {0}")]
     InvalidWorkflow(String),
+}
+
+impl CoreError {
+    /// The code of each rule: one per rule, so a client can tell a full column from a forbidden
+    /// move without reading the sentence. [`StableErrorCode::status`] gives the HTTP status.
+    pub fn code(&self) -> StableErrorCode {
+        match self {
+            CoreError::ItemNotFound(_)
+            | CoreError::ProjectNotFound(_)
+            | CoreError::SprintNotFound(_)
+            | CoreError::RoleNotFound(_) => StableErrorCode::NotFound,
+            CoreError::InvalidTransition { .. } => StableErrorCode::InvalidStatusTransition,
+            CoreError::WipLimitExceeded { .. } => StableErrorCode::WipLimitExceeded,
+            CoreError::DependencyCycle(_) => StableErrorCode::DependencyCycle,
+            CoreError::DuplicateDependency { .. } => StableErrorCode::DuplicateDependency,
+            CoreError::InvalidVocabularyKey(_) => StableErrorCode::InvalidVocabularyKey,
+            CoreError::EmptyWorkflow => StableErrorCode::EmptyWorkflow,
+            CoreError::HasChildren(_, _) => StableErrorCode::HasChildren,
+            CoreError::Validation(_) => StableErrorCode::ValidationFailed,
+            CoreError::InvalidWorkflow(_) => StableErrorCode::InvalidWorkflow,
+        }
+    }
 }

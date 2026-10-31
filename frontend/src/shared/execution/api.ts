@@ -108,6 +108,9 @@ export interface CreateExecutionInput {
   verify?: boolean;
   /** `false` declines the runner's branch push for this run; never enables one. */
   push_branch?: boolean;
+  /** The level a docket run is asked for, sent as it is; absent, docket decides.
+   *  `L3` is "Run again at L3". */
+  autonomy?: 'L3' | 'L4' | 'L5';
   /** The one model string the agent is asked to use, passed verbatim; absent, the project default or the agent's own. */
   requested_model?: string | null;
   repository_snapshot: unknown;
@@ -492,6 +495,8 @@ export interface MrpPack {
   } | null;
   risk: { tier: 'low' | 'medium' | 'high'; reasons: string[] };
   recommendation: { decision: 'merge' | 'review' | 'reject'; rationale: string };
+  /** Whether the verifier signed the pack, and the hash of the statement it signed. */
+  signature: { kind: 'none' } | { kind: 'in-toto'; statement_sha256: string };
   /** What to do next, when the verifier says. Absent from an older pack. */
   next_steps?: MrpNextStep[];
 }

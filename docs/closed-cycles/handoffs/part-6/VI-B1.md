@@ -244,7 +244,7 @@ There is no lower-MSRV alternative in the same architecture generation — an ol
   round-tripped correctly against the file backend. Scratch state directories were
   removed after each proof; nothing persists on this machine.
 - **`sqlite3 tack.db .dump | grep -c`**: not applicable to this card — this store never
-  touches `tack.db` at all (that is the entire point of ADR 0061 decision 1, rejecting the
+  touches `tack.db` at all (that is the entire point of ADR 0005 decision 1, rejecting the
   database as a location); there is nothing to grep for.
 
 ## Not checked
@@ -273,7 +273,7 @@ There is no lower-MSRV alternative in the same architecture generation — an ol
 
 ## Context spent
 
-- Cold start: read the dispatch README header + VI-B1 block, ADR 0061 decisions 1 and 4,
+- Cold start: read the dispatch README header + VI-B1 block, ADR 0005 decisions 1 and 4,
   the TODO.md §VI.0/§VI.1/§VI.2 prelude and the VI-B1 card body, the contract's
   `EnvironmentValue` shape, the three adapters' named environment-builder ranges,
   `harness/mod.rs`'s trait definitions, `config.rs` whole, `doctor.rs`'s head, and
@@ -318,7 +318,7 @@ keychain pulls secret-service, zbus and a crypto stack — 12 crates that were n
 binary before — and more than tripled it. The card did not measure this, and the gate is
 the only thing that would have caught it.
 
-Nothing here is wrong: the keychain is ADR 0061 decision 1, accepted, and 5.9 MB is still
+Nothing here is wrong: the keychain is ADR 0005 decision 1, accepted, and 5.9 MB is still
 a small binary. The budget is re-baselined to 8 MB, keeping the same ~35% headroom rule
 the gate's own comment states, and the cause is recorded there rather than left as an
 unexplained number.

@@ -5,9 +5,13 @@
 //! lost update. Grouped together because their shape is the pattern under
 //! test, not the individual operation each races.
 
-use crate::common::execution_fixture::{
+use crate::repository::execution_fixture::{
     Fixture, cancellation_input, completion_input, count_where, recovery_input,
 };
+use serde_json::json;
+use tack_protocol::execution::{AttemptId, Checkpoint, RunnerId, WorkspaceId};
+use tack_protocol::execution::{ExecutionState, RecoveryJournalState};
+use tack_test_support::kept;
 
 use chrono::Duration;
 use sqlx::Row;
@@ -32,7 +36,7 @@ use tack_db::repo::execution::{
 async fn concurrent_duplicate_completions_have_one_committed_writer() {
     let fx = Fixture::new().await;
     let fence = fx
-        .ready_completion_attempt("request-concurrent-complete", "attempt-concurrent-complete")
+        .ready_running_attempt("request-concurrent-complete", "attempt-concurrent-complete")
         .await;
     let completion = completion_input(
         "attempt-concurrent-complete",
@@ -135,11 +139,11 @@ async fn concurrent_duplicate_transitions_have_one_applied_writer() {
         .await
         .unwrap();
     let preparing = AttemptTransitionInput {
-        runner_id: "runner-a",
-        attempt_id: "attempt-concurrent-transition",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-concurrent-transition"),
         fencing_token: lease.fencing_token,
         phase: AttemptTransitionPhase::Preparing,
-        workspace_id: "workspace-1",
+        workspace_id: &WorkspaceId::new("workspace-1"),
         base_revision: "abc123",
         process_id: None,
     };
@@ -197,8 +201,8 @@ async fn concurrent_duplicate_heartbeats_have_one_writer() {
         )
         .await;
     let leases = [HeartbeatLease {
-        state: "running",
-        journal_state: "running",
+        state: ExecutionState::Running,
+        journal_state: RecoveryJournalState::ProcessObservedRunning,
         ..fx.lease("attempt-concurrent-heartbeat", fence)
     }];
     let sent_at = fx.clock.now();
@@ -446,15 +450,15 @@ async fn concurrent_duplicate_event_batches_have_one_writer() {
         sequence: 1,
         source: "runner",
         kind: "log",
-        payload: r#"{"line":"hello"}"#,
+        payload: kept(json!({"line": "hello"})),
         occurred_at: fx.clock.now(),
     }];
     let batch = EventBatch {
-        runner_id: "runner-a",
-        attempt_id: "attempt-concurrent-events",
+        runner_id: &RunnerId::new("runner-a"),
+        attempt_id: &AttemptId::new("attempt-concurrent-events"),
         fencing_token: fence,
         previous_checkpoint: None,
-        checkpoint: "checkpoint-concurrent",
+        checkpoint: &Checkpoint::new("checkpoint-concurrent"),
     };
     let (a, b) = tokio::join!(
         fx.apply_events_result(batch.clone(), &events),

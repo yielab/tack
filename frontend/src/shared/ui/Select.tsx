@@ -6,7 +6,7 @@ import {
   type Component,
   type JSX,
 } from 'solid-js';
-import { FieldShell, type FieldHelp } from './Field';
+import { FieldShell, describedBy, type FieldHelp } from './Field';
 
 export interface SelectOption {
   value: string;
@@ -79,6 +79,7 @@ const Select: Component<SelectProps> = (props) => {
         id={id}
         required={local.required}
         aria-invalid={local.error ? 'true' : undefined}
+        aria-describedby={describedBy(id, { error: local.error, hint: local.hint, given: rest['aria-describedby'] })}
         class={controlClass}
         style={controlStyle}
       >

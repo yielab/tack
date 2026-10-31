@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::TimeZone;
 
 use super::*;
-use crate::execution::{CapabilityValue, ExecutionRequestId, HarnessCapability};
 use crate::scheduler::types::Priority;
+use tack_protocol::execution::{CapabilityValue, ExecutionRequestId, HarnessCapability};
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()

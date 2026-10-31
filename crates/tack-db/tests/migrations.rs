@@ -3,8 +3,6 @@
 //! legacy Docket bridge's tables (`bridge_tables_dropped`), and the tables the
 //! factory loop reads (`factory_loop_tables`).
 
-mod common;
-
 #[path = "migrations/automation_tables.rs"]
 mod automation_tables;
 #[path = "migrations/autonomy.rs"]
@@ -25,3 +23,5 @@ mod provisional_limit;
 mod role_profile_fleet;
 #[path = "migrations/template_bundle.rs"]
 mod template_bundle;
+#[path = "migrations/upgrade_from_beta9.rs"]
+mod upgrade_from_beta9;

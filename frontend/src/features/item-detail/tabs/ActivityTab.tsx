@@ -61,7 +61,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
   };
 
   return (
-    <div class="space-y-4 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <div class="space-y-4 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <Show
         when={(comments() ?? []).length > 0}
         fallback={
@@ -75,7 +75,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
         <ul class="space-y-2">
           <For each={comments()}>
             {(c) => (
-              <li class="rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+              <li class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
                 <div class="mb-1 flex items-center justify-between text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                   <span class="font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c.author || (c.comment_type === 'system' ? 'Tack' : 'Anonymous')}</span>
                   <span>{relativeTime(c.created_at)}</span>
@@ -103,7 +103,7 @@ const ActivityTab: Component<ActivityTabProps> = (props) => {
           placeholder="Write a comment…"
           rows={3}
           disabled={posting()}
-          class="w-full resize-none rounded-[20px] border px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
+          class="w-full resize-none rounded-item border px-4 py-3 text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1"
           style={{
             'background-color': 'var(--color-bg-base)',
             color: 'var(--color-text-primary)',

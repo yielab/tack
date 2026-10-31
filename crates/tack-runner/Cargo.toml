@@ -1,5 +1,6 @@
 [package]
 name = "tack-runner"
+autotests = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -7,6 +8,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+tack-protocol = { path = "../tack-protocol" }
 async-trait.workspace = true
 chrono.workspace = true
 clap.workspace = true
@@ -22,13 +24,13 @@ keyring-core = "1.0.0"
 reqwest = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
-tack-orch = { path = "../tack-orch" }
 tack-core = { path = "../tack-core" }
 thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # `keychain`: the legacy keychain, which every application can reach. The crate's
@@ -63,3 +65,9 @@ jsonschema = { version = "0.33", default-features = false }
 
 [lints]
 workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

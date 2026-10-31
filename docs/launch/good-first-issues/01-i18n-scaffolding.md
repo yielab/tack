@@ -35,7 +35,7 @@ on — someone who wants German or Japanese labels has to hand-edit every compon
    somewhere reachable (Settings is the natural place — see
    `frontend/src/features/settings/GlobalSettings.tsx`).
 4. Decide where the active locale is stored (a user preference has nowhere to live yet
-   — there's no per-user identity, see `docs/adr/0059-single-operator-identity-posture.md`
+   — there's no per-user identity, see `docs/adr/0004-single-operator-identity-posture.md`
    — so this is realistically a browser-local setting, not a server-side one, until that
    changes).
 

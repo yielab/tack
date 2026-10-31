@@ -1,5 +1,6 @@
 [package]
 name = "tack-cli"
+autotests = false
 description = "CLI companion for Tack"
 version.workspace = true
 edition.workspace = true
@@ -72,23 +73,26 @@ path = "src/lib.rs"
 embed-spa = ["tack-api/embed-spa"]
 
 [dependencies]
+tack-protocol = { path = "../tack-protocol" }
 # The server runs in-process via `tack serve` (and bare `tack`), so the single
 # `tack` binary is both the app and the CLI client.
 tack-api = { path = "../tack-api" }
+# `serve.rs` spawns the loops that live here, one `run` each; the embedded runner's rules and
+# supervisor live here too, and this crate supplies the `RunnerHost` that spawns the real runner.
+tack-app = { path = "../tack-app" }
 # Hosts the runner role in-process for `tack runner start` and
 # `tack serve --with-runner` — the same composition root the standalone
-# tack-runner binary uses. No cycle: tack-runner depends on tack-orch only.
+# tack-runner binary uses. No cycle: tack-runner depends on tack-core and tack-protocol only.
 tack-runner = { path = "../tack-runner" }
-# `tack runner doctor` renders the RunnerCapabilities/FeatureCapabilities
-# tack-runner's bootstrap module reports, so this crate needs their real
-# types rather than re-declaring shadow copies of its own.
-tack-orch = { path = "../tack-orch" }
-# `EmbeddedRunnerControl` (`local_runner.rs`) implements `tack-api`'s
-# `LocalRunnerControl` trait — the async trait itself is `#[async_trait]`,
-# so the implementor needs the same macro.
+# `serve.rs` opens the store and builds the `Repository` it hands to the server.
+tack-db = { path = "../tack-db" }
+# `CliRunnerHost` (`local_runner.rs`) implements `tack-app`'s async `RunnerHost` trait, so the
+# implementor needs the same macro.
 async-trait = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+# `serve.rs` owns the stop token of the background loops and the tracker of spawned use cases.
+tokio-util = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -114,3 +118,9 @@ tack-test-support = { path = "../tack-test-support" }
 
 [lints]
 workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

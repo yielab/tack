@@ -1,0 +1,7 @@
+{
+  "description": "Capture only: capture-needs-approval holds this enqueue for a person.",
+  "externalRef": "capture-item/attempt-3",
+  "idempotencyKey": "capture-attempt-3",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline"
+}

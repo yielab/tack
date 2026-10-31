@@ -75,7 +75,7 @@ const FilesTab: Component<FilesTabProps> = (props) => {
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        class="flex cursor-pointer flex-col items-center gap-2 rounded-[28px] border-2 border-dashed px-5 py-7 text-center text-sm transition-colors focus:outline-none focus-visible:ring-2"
+        class="flex cursor-pointer flex-col items-center gap-2 rounded-card border-2 border-dashed px-5 py-7 text-center text-sm transition-colors focus:outline-none focus-visible:ring-2"
         style={{
           'border-color': dragOver() ? 'var(--color-primary-500)' : 'var(--color-border-medium)',
           'background-color': dragOver() ? 'var(--color-bg-active)' : 'transparent',
@@ -103,10 +103,10 @@ const FilesTab: Component<FilesTabProps> = (props) => {
         when={(files() ?? []).length > 0}
         fallback={<EmptyState icon={<Icons.IconAttachment size={28} />} title="No attachments yet" />}
       >
-        <ul class="space-y-2 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+        <ul class="space-y-2 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
           <For each={files()}>
             {(f) => (
-              <li class="flex items-center justify-between gap-2 rounded-[20px] py-2.5 pl-4 pr-2 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+              <li class="flex items-center justify-between gap-2 rounded-item py-2.5 pl-4 pr-2 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
                 <div class="min-w-0 flex-1">
                   <a
                     href={api.attachments.downloadUrl(f.id)}

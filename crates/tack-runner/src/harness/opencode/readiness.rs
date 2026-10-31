@@ -3,7 +3,7 @@
 
 use std::{future::Future, pin::Pin};
 
-use tack_orch::execution::{ModelListSource, ModelsReport, SignInReport, SignInState};
+use tack_protocol::execution::{ModelListSource, ModelsReport, SignInReport, SignInState};
 
 use crate::harness::local_process::{CommandOutcome, Readiness, ReadinessShell};
 

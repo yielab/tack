@@ -1,5 +1,5 @@
 import { type Accessor, type Component, For, Show } from 'solid-js';
-import { HelpHint } from '../../../../shared/ui';
+import { HelpHint, LoadError } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { AutonomySettings } from '../../../../shared/api/autonomy';
 import { Heading, Note, SECTION } from './parts';
@@ -8,16 +8,27 @@ import { Heading, Note, SECTION } from './parts';
 const isTeamBlocker = (text: string, names: string[]) => names.some((n) => text.startsWith(`The team ${n} runs attended`));
 
 /** Rung 4, Ceiling: the most autonomy this project can reach, and what holds it down. */
-const Ceiling: Component<{ settings: Accessor<AutonomySettings | null | undefined> }> = (props) => {
+const Ceiling: Component<{
+  settings: Accessor<AutonomySettings | null | undefined>;
+  loadError: Accessor<unknown>;
+  onRetry: () => void;
+}> = (props) => {
   const teams = () => props.settings()?.teams ?? [];
   const blockers = () => (props.settings()?.automatic_merge_blocked_by ?? []).filter((b) => !isTeamBlocker(b, teams().map((t) => t.name)));
   return (
     <div class={SECTION} id="automation-ceiling" data-testid="rung-ceiling">
       <div class="flex items-center gap-2">
-        <Heading>4. Ceiling</Heading>
+        <Heading>Ceiling</Heading>
         <HelpHint label="Ceiling" help={HELP.ladderCeiling} />
       </div>
-      <Show when={props.settings()?.ceiling} fallback={<Note>The ceiling is not available yet.</Note>}>
+      <Show
+        when={props.settings()?.ceiling}
+        fallback={
+          <Show when={props.loadError()} fallback={<Note>The ceiling is not available yet.</Note>}>
+            {(error) => <LoadError what="the ceiling" error={error()} onRetry={props.onRetry} />}
+          </Show>
+        }
+      >
         {(ceiling) => <p class="text-sm" style={{ color: 'var(--color-text-primary)' }}>This project can reach {ceiling()}.</p>}
       </Show>
       <For each={teams()}>

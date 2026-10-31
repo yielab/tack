@@ -24,6 +24,8 @@ use std::{
 
 use thiserror::Error;
 
+use crate::error::IoKind;
+
 use super::sha256::sha256_hex;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,14 +40,19 @@ pub struct StagedArtifact {
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ArtifactError {
-    #[error("artifact staging root is unsafe")]
-    UnsafeStagingRoot,
+    /// Carries the kind of the failure only: the operating system's own text can name the path.
+    #[error("artifact staging root is unsafe: {0}")]
+    UnsafeStagingRoot(IoKind),
     #[error("artifact source path escapes its declared workspace")]
     WorkspaceEscape,
+    #[error("artifact workspace could not be checked: {0}")]
+    WorkspaceUnavailable(IoKind),
     #[error("artifact source does not exist or is not a regular file")]
     SourceUnavailable,
-    #[error("artifact staging operation failed")]
-    Io,
+    #[error("artifact source could not be inspected: {0}")]
+    SourceInspect(IoKind),
+    #[error("artifact staging operation failed: {0}")]
+    Io(IoKind),
 }
 
 /// Roots every staged artifact under `staging_root/<attempt_id>/...`, one
@@ -75,25 +82,26 @@ impl ArtifactStager {
     ) -> Result<StagedArtifact, ArtifactError> {
         let root = workspace_root
             .canonicalize()
-            .map_err(|_| ArtifactError::WorkspaceEscape)?;
+            .map_err(|error| ArtifactError::WorkspaceUnavailable(IoKind(error.kind())))?;
         let candidate = root.join(source_relative);
         // Inspect the requested path *before* resolving it — exactly as
         // `workspace.rs`'s cleanup does, and for the same reason:
         // `canonicalize` follows symlinks, so checking `is_symlink()` on the
         // already-resolved path would just inspect the final real target and
         // never see that a symlink was involved at all.
-        let symlink_check =
-            fs::symlink_metadata(&candidate).map_err(|_| ArtifactError::SourceUnavailable)?;
+        let symlink_check = fs::symlink_metadata(&candidate)
+            .map_err(|error| ArtifactError::SourceInspect(IoKind(error.kind())))?;
         if symlink_check.file_type().is_symlink() {
             return Err(ArtifactError::SourceUnavailable);
         }
         let resolved = candidate
             .canonicalize()
-            .map_err(|_| ArtifactError::SourceUnavailable)?;
+            .map_err(|error| ArtifactError::SourceInspect(IoKind(error.kind())))?;
         if resolved != root && !resolved.starts_with(&root) {
             return Err(ArtifactError::WorkspaceEscape);
         }
-        let metadata = fs::metadata(&resolved).map_err(|_| ArtifactError::SourceUnavailable)?;
+        let metadata = fs::metadata(&resolved)
+            .map_err(|error| ArtifactError::SourceInspect(IoKind(error.kind())))?;
         if !metadata.is_file() {
             return Err(ArtifactError::SourceUnavailable);
         }
@@ -103,12 +111,12 @@ impl ArtifactStager {
             .and_then(|value| value.to_str())
             .ok_or(ArtifactError::SourceUnavailable)?
             .to_owned();
-        let bytes = fs::read(&resolved).map_err(|_| ArtifactError::Io)?;
+        let bytes = fs::read(&resolved).map_err(|error| ArtifactError::Io(IoKind(error.kind())))?;
         let sha256 = sha256_hex(&bytes);
 
         let attempt_dir = self.ensure_attempt_dir(attempt_id)?;
         let staged_path = attempt_dir.join(format!("{}-{name}", &sha256[..16]));
-        fs::write(&staged_path, &bytes).map_err(|_| ArtifactError::Io)?;
+        fs::write(&staged_path, &bytes).map_err(|error| ArtifactError::Io(IoKind(error.kind())))?;
         owner_only_file(&staged_path)?;
 
         Ok(StagedArtifact {
@@ -122,13 +130,15 @@ impl ArtifactStager {
     }
 
     fn ensure_attempt_dir(&self, attempt_id: &str) -> Result<PathBuf, ArtifactError> {
-        fs::create_dir_all(&self.staging_root).map_err(|_| ArtifactError::UnsafeStagingRoot)?;
+        fs::create_dir_all(&self.staging_root)
+            .map_err(|error| ArtifactError::UnsafeStagingRoot(IoKind(error.kind())))?;
         owner_only_dir(&self.staging_root)?;
         // Hex-encoded so an attempt id can never traverse outside its own
         // directory, mirroring the same encoding `journal.rs`/`workspace.rs`
         // already use for the same reason.
         let attempt_dir = self.staging_root.join(encode_id(attempt_id));
-        fs::create_dir_all(&attempt_dir).map_err(|_| ArtifactError::Io)?;
+        fs::create_dir_all(&attempt_dir)
+            .map_err(|error| ArtifactError::Io(IoKind(error.kind())))?;
         owner_only_dir(&attempt_dir)?;
         Ok(attempt_dir)
     }
@@ -145,7 +155,8 @@ pub(super) fn encode_id(value: &str) -> String {
 #[cfg(unix)]
 fn owner_only_dir(path: &Path) -> Result<(), ArtifactError> {
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|_| ArtifactError::Io)
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .map_err(|error| ArtifactError::Io(IoKind(error.kind())))
 }
 
 #[cfg(not(unix))]
@@ -156,7 +167,8 @@ fn owner_only_dir(_path: &Path) -> Result<(), ArtifactError> {
 #[cfg(unix)]
 fn owner_only_file(path: &Path) -> Result<(), ArtifactError> {
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|_| ArtifactError::Io)
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .map_err(|error| ArtifactError::Io(IoKind(error.kind())))
 }
 
 #[cfg(not(unix))]

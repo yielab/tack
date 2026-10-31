@@ -42,16 +42,18 @@ use tack_core::models::{
     Attachment, Board, BoardColumn, BoardGrouping, BoardView, Comment, CommentType, CreateBoard,
     CreateComment, CreateCustomField, CreateDependency, CreateItem, CreateProject,
     CreateProjectTemplate, CreateRole, CreateSprint, CustomFieldDefinition, CustomFieldType,
-    CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemRole, ItemSource,
-    ItemType, Priority, Project, ProjectTemplate, ProjectType, Role, SetCustomFieldValue, Sprint,
-    SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem, UpdateProject, Workspace,
+    CustomFieldValue, Dependency, DependencyType, EstimateUnit, Item, ItemCard, ItemRole,
+    ItemSource, ItemType, Priority, Project, ProjectTemplate, ProjectType, Role,
+    SetCustomFieldValue, Sprint, SprintStatus, UpdateBoard, UpdateCustomField, UpdateItem,
+    UpdateProject, Workspace,
 };
 use tack_core::workflow::{StatusCategory, StatusDef, Transition, WorkflowConfig, WorkflowType};
 
 use crate::handlers;
 
 /// Structured error envelope returned by every failing endpoint — see
-/// `crate::error::ApiError`. The body is always `{ "error": { status, message } }`.
+/// `crate::error::ApiError`. The body is always
+/// `{ "error": { status, code, message, retryable, request_id, details } }`.
 #[derive(Serialize, ToSchema)]
 pub struct ErrorEnvelope {
     pub error: ErrorBody,
@@ -65,18 +67,33 @@ pub struct ErrorBody {
     /// Human-readable, end-user-facing message.
     #[schema(example = "Item not found")]
     pub message: String,
-    /// Stable, machine-readable error code. Present on a narrow set of
-    /// responses where a caller needs to branch on *why* without parsing
-    /// `message`. Absent on ordinary errors.
+    /// Stable, machine-readable error code, on every error: a caller branches on *why* with it,
+    /// never by parsing `message`. The code decides `status`.
+    pub code: tack_protocol::execution::StableErrorCode,
+    /// Whether repeating the same request can succeed (`StableErrorCode::retryable`).
+    pub retryable: bool,
+    /// The id of the request this answers, the one the client sent in `x-request-id` when it was
+    /// usable; the response carries it in the same header.
+    #[schema(example = "req_6f1c0d2a9b7e4c3f8a5d1e0b2c4a6f80")]
+    pub request_id: String,
+    /// What the error blames. `details.field` names the request field, path parameter or query
+    /// parameter that failed, when one did.
+    pub details: ErrorDetails,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ErrorDetails {
+    /// The request field the error blames.
+    #[schema(example = "title")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
+    pub field: Option<String>,
 }
 
 /// Pagination envelope for the item-list endpoint. `total` is the
 /// unpaginated match count so clients can render "N of M".
 #[derive(Serialize, ToSchema)]
 pub struct PaginatedItems {
-    pub data: Vec<Item>,
+    pub data: Vec<ItemCard>,
     pub total: i64,
     pub page: u32,
     pub per_page: u32,
@@ -86,7 +103,7 @@ pub struct PaginatedItems {
 /// and dependency edges.
 #[derive(Serialize, ToSchema)]
 pub struct ItemDetail {
-    pub item: Item,
+    pub item: ItemCard,
     pub roles: Vec<Role>,
     pub dependencies: Vec<Dependency>,
 }
@@ -136,8 +153,8 @@ fn json_content() -> utoipa::openapi::Content {
 
 /// Every operation this is used by (`RunnerProtocolApiDoc`'s
 /// runner-protocol-v1 exchanges, plus `ExecutionOperatorExtrasApiDoc` below)
-/// returns `tack_orch::execution::ProtocolErrorEnvelope` on failure — never
-/// `ErrorEnvelope`, the ordinary `{status, message, code?}` shape
+/// returns `tack_protocol::execution::ProtocolErrorEnvelope` on failure — never
+/// `ErrorEnvelope`, the ordinary `{status, message, code}` shape
 /// `crate::error::ApiError` maps every plain `/api` handler's failure to.
 /// `RunnerV1ErrorEnvelope`
 /// (`handlers::executions`) already exists as the correct, doc-only mirror
@@ -537,13 +554,17 @@ impl OpenApi for RunnerProtocolApiDoc {
 // `RunnerProtocolApiDoc`
 // above for its un-annotated `Json<Value>` handlers — this is a
 // hand-built `OpenApi` fragment, not a `#[utoipa::path(...)]` annotation on
-// the real handler function. Every request/response shape below is a
-// schema-only mirror, hand-verified against `handlers::decisions::
-// resolve_decision`/`ResolveDecisionResponse` and `handlers::
-// runner_protocol::artifact_download::download_artifact_content`'s actual
-// source — never generated from them, and never constructed by real code
-// (see `RunnerV1ErrorEnvelope`'s doc comment above for the identical,
-// already-established precedent).
+// the real handler function. The artifact-download shapes and the decision
+// request body and `answer` object below are schema-only mirrors,
+// hand-verified against `handlers::decisions::resolve_decision`/
+// `validate_answer` and `handlers::runner_protocol::artifact_download::
+// download_artifact_content`'s actual source — never generated from them,
+// and never constructed by real code (see `RunnerV1ErrorEnvelope`'s doc
+// comment above for the identical, already-established precedent). The
+// decision answer cannot be a typed struct: the handler echoes the operator's
+// JSON back as sent (extra keys, an explicit `null` `text`), which a struct
+// would change on the wire. The response itself is the real
+// `handlers::decisions::ResolveDecisionResponse`.
 // ─────────────────────────────────────────────────────────────────────────
 
 /// Schema-only mirror of the `answer` object `POST
@@ -554,7 +575,6 @@ impl OpenApi for RunnerProtocolApiDoc {
 /// server-side, not expressible in this schema). `text` may be omitted,
 /// `null`, or a string — never anything else.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct DecisionAnswerSchema {
     pub option_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -563,45 +583,8 @@ pub struct DecisionAnswerSchema {
 
 /// `POST .../decisions/{decision_id}/resolve` request body.
 #[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
 pub struct ResolveDecisionRequest {
     pub answer: DecisionAnswerSchema,
-}
-
-/// Schema-only mirror of `resolved_by`'s two observed shapes:
-/// `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
-/// resolve, or `{"kind": "system", "subject_id": "expiry"}` for a
-/// fail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing
-/// in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
-/// no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
-/// "No item-status mapping"), so this stays an open two-field object rather
-/// than an invented contract.
-#[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
-pub struct DecisionResolvedBySchema {
-    #[schema(example = "operator")]
-    pub kind: String,
-    pub subject_id: String,
-}
-
-/// `POST .../decisions/{decision_id}/resolve` response body — mirrors
-/// `handlers::decisions::ResolveDecisionResponse` exactly.
-#[derive(Debug, Serialize, ToSchema)]
-#[allow(dead_code)]
-pub struct ResolveDecisionResponseSchema {
-    pub protocol_version: u32,
-    pub decision_id: String,
-    /// Always `"resolved"` on a 200 — an expired/not-found/conflicting
-    /// decision is a distinct error response, never a 200 with a different
-    /// state string.
-    #[schema(example = "resolved")]
-    pub state: String,
-    pub answer: DecisionAnswerSchema,
-    pub resolved_at: String,
-    pub resolved_by: DecisionResolvedBySchema,
-    /// `true` when this response is a byte-identical idempotent replay of
-    /// an already-committed resolution rather than a fresh write.
-    pub replayed: bool,
 }
 
 /// `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`.
@@ -673,7 +656,7 @@ fn resolve_decision_operation() -> OperationBuilder {
                 .content(
                     "application/json",
                     ContentBuilder::new()
-                        .schema(Some(Ref::from_schema_name("ResolveDecisionResponseSchema")))
+                        .schema(Some(Ref::from_schema_name("ResolveDecisionResponse")))
                         .build(),
                 )
                 .build(),
@@ -817,10 +800,10 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         description = "REST + WebSocket API for Tack, a lightweight, workflow-agnostic \
             project-management tool. This contract is generated from the Rust handlers \
             and domain models; it is the single source of truth for the wire format. \
-            All failing responses share the `{ \"error\": { \"status\", \"message\" } }` \
-            envelope, with an additional `code` field on a narrow set of responses \
-            (e.g. `stale_lease`) where a caller needs to branch on the \
-            reason without parsing `message`.",
+            Every failing response, including one for a request the server could not \
+            read, shares the `{ \"error\": { \"status\", \"code\", \"message\", \
+            \"retryable\", \"request_id\", \"details\" } }` envelope; a caller branches \
+            on `code`, never on `message`.",
         license(name = "MIT", identifier = "MIT"),
         contact(name = "Tack", email = "info@yielab.com"),
     ),
@@ -932,7 +915,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::settings::put_backup_settings,
         crate::rate_card::get_rate_card,
         crate::rate_card::put_rate_card,
-        // ── Embedded runner control (ADR 0061 decisions 2 and 6) ────────────
+        // ── Embedded runner control (ADR 0005 decisions 2 and 6) ────────────
         handlers::local_runner::get_local_runner,
         handlers::local_runner::put_local_runner,
         handlers::local_runner::check_local_runner_folder,
@@ -972,6 +955,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         // Local response/request envelopes
         ErrorEnvelope,
         ErrorBody,
+        ErrorDetails,
         handlers::autonomy::AutonomySettings,
         handlers::autonomy::DomainSettings,
         handlers::autonomy::BudgetSettings,
@@ -1022,6 +1006,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::ExecutionDetailResponse,
         handlers::executions::AttemptSummary,
         handlers::executions::AttemptMerge,
+        handlers::executions::AttemptRerun,
         handlers::executions::MergedBy,
         handlers::executions::AttemptListResponse,
         handlers::executions::EventSummary,
@@ -1036,22 +1021,19 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::CancellationRequestedResponse,
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,
-        // ── AttemptSummary.model_provenance/usage_economics real shape
-        // — schema-only mirrors of `tack_orch::
-        // usage_provenance`, which has no `ToSchema`; see their doc
-        // comments in `handlers::executions` for why they live there. ──────
-        handlers::executions::ModelProvenanceSchema,
-        handlers::executions::MeasurementSourceSchema,
-        handlers::executions::UsdMeasurementSchema,
-        handlers::executions::RunnerTimeCostSchema,
-        handlers::executions::UsageEconomicsSchema,
+        // ── AttemptSummary.model_provenance/usage_economics real shape ──────
+        tack_protocol::usage_provenance::ModelProvenance,
+        tack_protocol::execution::MeasurementSource,
+        tack_protocol::execution::Measurement<f64>,
+        tack_protocol::usage_provenance::RunnerTimeCost,
+        tack_protocol::usage_provenance::UsageEconomics,
         // ── Operator-scoped decision resolution — schema-only mirrors of
         // `handlers::decisions`; see `ExecutionOperatorExtrasApiDoc`'s
         // own doc comment above. ────────────────────────────────────────
         DecisionAnswerSchema,
         ResolveDecisionRequest,
-        DecisionResolvedBySchema,
-        ResolveDecisionResponseSchema,
+        tack_core::decision::DecisionResolvedBy,
+        handlers::decisions::ResolveDecisionResponse,
         // ── Harness-agnostic runner fleet: operator fleet/runner/profile API
         // DTOs ───────────────────────────────────────────────────────────
         handlers::runner_admin::CreateFleet,
@@ -1077,6 +1059,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         Project,
         ProjectType,
         Item,
+        ItemCard,
         ItemType,
         ItemSource,
         Priority,

@@ -1,4 +1,4 @@
-//! A project file: the outline of ADR 0076 plus the sections of ADR 0081
+//! A project file: the outline of ADR 0017 plus the sections of ADR 0022
 //! (fields, profiles, roles, sprints, automation). Pure: [`check`] reads the
 //! file and a description of the board and answers with the plan that can be
 //! written, or with every problem at once; [`to_bundle`] writes a project back
@@ -670,7 +670,7 @@ fn check_automation(
         }
     }
     if let Some(prepare) = auto.prepare.as_deref() {
-        match crate::prepare::clean_command(prepare) {
+        match tack_protocol::prepare::clean_command(prepare) {
             Ok(command) => auto.prepare = Some(command),
             Err(_) => problems.push("automation.prepare must be a single line".into()),
         }

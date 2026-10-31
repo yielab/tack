@@ -15,9 +15,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::Repository;
 use tower::ServiceExt;
-use uuid::Uuid;
 
 const OPERATOR_TOKEN: &str = "c8-attempt-scoping-operator-token";
 const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -33,17 +32,8 @@ fn temp_storage_root(label: &str) -> tempfile::TempDir {
 }
 
 async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'C8 attempt scoping', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("workspace");
-    let repo = Repository::new(pool);
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -57,6 +47,7 @@ async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, Str
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = crate::common::with_default_host(build_router(state));
     let project = repo

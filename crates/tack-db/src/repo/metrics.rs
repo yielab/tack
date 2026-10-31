@@ -3,9 +3,10 @@
 //! rows are compared against with `julianday` (`created_at >= since`); `None` is all time.
 //! No `cost_usd` is read anywhere here.
 
-use sqlx::{AssertSqlSafe, Row, SqlitePool};
+use sqlx::{AssertSqlSafe, Row};
 
 use super::budgets::{CACHE_READ_SQL, COUNTED_TOKENS_SQL};
+use crate::{Repository, StoreError};
 
 /// Counted tokens (`COUNTED_TOKENS_SQL`) of attempts, split into implementation
 /// and rework, with the cache reads that were shown and not counted.
@@ -23,6 +24,8 @@ pub struct TokenSplit {
 pub struct AttemptTotals {
     pub attempts: i64,
     pub decisions: i64,
+    /// Attempts with at least one escalation the agent's own policy settled, which no person saw.
+    pub decided_alone: i64,
     pub implementation: TokenSplit,
     pub rework: TokenSplit,
 }
@@ -52,14 +55,14 @@ pub struct PullRequestTotals {
     pub reverted: i64,
 }
 
-/// Attempts and decisions in the window, and the token split. An attempt is
+/// Attempts, decisions and attempts that decided alone in the window, and the token split. An attempt is
 /// rework when its request's `metadata.rework_of` names another request, or when
 /// it is not the request's first attempt; every other attempt is implementation.
 pub async fn attempt_totals(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<AttemptTotals, sqlx::Error> {
+) -> Result<AttemptTotals, StoreError> {
     // The fragments are constants of this crate; only values are bound.
     let rows = sqlx::query(AssertSqlSafe(format!(
         "SELECT CASE WHEN json_extract(r.metadata, '$.rework_of') IS NOT NULL
@@ -79,7 +82,7 @@ pub async fn attempt_totals(
         .bind(project_id)
         .bind(since)
         .bind(since)
-        .fetch_all(pool)
+        .fetch_all(repo.pool())
         .await?;
     let mut totals = AttemptTotals::default();
     for row in rows {
@@ -105,45 +108,31 @@ pub async fn attempt_totals(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_one(pool)
+    .fetch_one(repo.pool())
+    .await?;
+    totals.decided_alone = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM execution_attempts a
+         JOIN execution_requests r ON r.id = a.request_id
+         JOIN items i ON i.id = r.item_id
+         WHERE i.project_id = ? AND (? IS NULL OR julianday(a.created_at) >= julianday(?))
+           AND EXISTS (SELECT 1 FROM execution_events e
+                       WHERE e.attempt_id = a.id AND e.kind = ?)",
+    )
+    .bind(project_id)
+    .bind(since)
+    .bind(since)
+    .bind(tack_protocol::event_kind::ESCALATION_DECIDED)
+    .fetch_one(repo.pool())
     .await?;
     Ok(totals)
 }
 
-/// The counted tokens (`COUNTED_TOKENS_SQL`) of a profile's last `limit` successful, measured
-/// attempts, newest first. Successful: the attempt succeeded and no verdict refused it, whether a
-/// person's on the pack or the attempt, or the verifier's, which shows as the rework it asked for.
-pub async fn profile_successful_run_tokens(
-    pool: &SqlitePool,
-    profile_id: &str,
-    limit: i64,
-) -> Result<Vec<i64>, sqlx::Error> {
-    // The fragment is a constant of this crate; only values are bound.
-    sqlx::query_scalar(AssertSqlSafe(format!(
-        "SELECT {COUNTED_TOKENS_SQL}
-         FROM execution_attempts a
-         JOIN execution_requests r ON r.id = a.request_id
-         WHERE r.agent_profile_id = ? AND a.state = 'succeeded'
-           AND (json_extract(a.usage, '$.tokens_in.value') IS NOT NULL
-                OR json_extract(a.usage, '$.tokens_out.value') IS NOT NULL)
-           AND NOT EXISTS (SELECT 1 FROM mrp_reviews m WHERE m.attempt_id = a.id AND m.verdict = 'reject')
-           AND NOT EXISTS (SELECT 1 FROM attempt_reviews v WHERE v.attempt_id = a.id AND v.verdict = 'rejected')
-           AND NOT EXISTS (SELECT 1 FROM execution_requests w WHERE w.idempotency_key = 'rework-' || a.id)
-         ORDER BY a.created_at DESC, a.rowid DESC
-         LIMIT ?"
-    )))
-    .bind(profile_id)
-    .bind(limit)
-    .fetch_all(pool)
-    .await
-}
-
 /// Resolved decisions created in the window.
 pub async fn decision_waits(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<Vec<WaitRow>, sqlx::Error> {
+) -> Result<Vec<WaitRow>, StoreError> {
     let rows = sqlx::query(
         "SELECT d.viewed_at, d.created_at, d.resolved_at FROM execution_decisions d
          JOIN execution_attempts a ON a.id = d.attempt_id
@@ -155,7 +144,7 @@ pub async fn decision_waits(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
     Ok(rows
         .into_iter()
@@ -170,10 +159,10 @@ pub async fn decision_waits(
 /// Reviewed packs whose artifact was created in the window; `created_at` is the
 /// artifact's, `resolved_at` the review's.
 pub async fn mrp_waits(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<Vec<WaitRow>, sqlx::Error> {
+) -> Result<Vec<WaitRow>, StoreError> {
     let rows = sqlx::query(
         "SELECT m.viewed_at, x.created_at, m.reviewed_at AS resolved_at FROM mrp_reviews m
          JOIN execution_artifacts x ON x.attempt_id = m.attempt_id AND x.artifact_id = m.artifact_id
@@ -186,7 +175,7 @@ pub async fn mrp_waits(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
     Ok(rows
         .into_iter()
@@ -201,11 +190,11 @@ pub async fn mrp_waits(
 /// Attempts that produced a pack in the window, how many were reviewed and
 /// how many of those accepted.
 pub async fn mrp_totals(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     media_type: &str,
     since: Option<&str>,
-) -> Result<MrpTotals, sqlx::Error> {
+) -> Result<MrpTotals, StoreError> {
     let row = sqlx::query(
         "SELECT COUNT(DISTINCT x.attempt_id) AS produced,
                 COUNT(DISTINCT CASE WHEN m.verdict IS NOT NULL THEN x.attempt_id END) AS reviewed,
@@ -221,7 +210,7 @@ pub async fn mrp_totals(
     .bind(media_type)
     .bind(since)
     .bind(since)
-    .fetch_one(pool)
+    .fetch_one(repo.pool())
     .await?;
     Ok(MrpTotals {
         produced: row.get("produced"),
@@ -233,12 +222,12 @@ pub async fn mrp_totals(
 /// Every pack artifact in the window: its `content_reference`, whose bytes carry
 /// the verifier's `usage`. `None` where the content was never uploaded.
 pub async fn mrp_pack_references(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     media_type: &str,
     since: Option<&str>,
-) -> Result<Vec<Option<String>>, sqlx::Error> {
-    sqlx::query_scalar(
+) -> Result<Vec<Option<String>>, StoreError> {
+    Ok(sqlx::query_scalar(
         "SELECT x.content_reference FROM execution_artifacts x
          JOIN execution_attempts a ON a.id = x.attempt_id
          JOIN execution_requests r ON r.id = a.request_id
@@ -250,16 +239,16 @@ pub async fn mrp_pack_references(
     .bind(media_type)
     .bind(since)
     .bind(since)
-    .fetch_all(pool)
-    .await
+    .fetch_all(repo.pool())
+    .await?)
 }
 
 /// Pull requests opened in the window, by their current state.
 pub async fn pull_request_totals(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<PullRequestTotals, sqlx::Error> {
+) -> Result<PullRequestTotals, StoreError> {
     let row = sqlx::query(
         "SELECT COUNT(*) AS opened,
                 COALESCE(SUM(p.state = 'merged'), 0) AS merged,
@@ -274,7 +263,7 @@ pub async fn pull_request_totals(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_one(pool)
+    .fetch_one(repo.pool())
     .await?;
     Ok(PullRequestTotals {
         opened: row.get("opened"),
@@ -302,10 +291,10 @@ pub struct MergeTriggers {
 }
 
 pub async fn runs_by_start(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<StartTotals, sqlx::Error> {
+) -> Result<StartTotals, StoreError> {
     let rows = sqlx::query(
         "SELECT CASE WHEN json_extract(r.metadata, '$.rework_of') IS NOT NULL
                           AND json_extract(r.metadata, '$.rework_of') != r.id THEN 'rework'
@@ -322,7 +311,7 @@ pub async fn runs_by_start(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
     let mut totals = StartTotals::default();
     for row in rows {
@@ -337,10 +326,10 @@ pub async fn runs_by_start(
 }
 
 pub async fn merges_by_trigger(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<MergeTriggers, sqlx::Error> {
+) -> Result<MergeTriggers, StoreError> {
     let rows = sqlx::query(
         "SELECT trigger, COUNT(*) AS merges FROM tack_merges
          WHERE project_id = ? AND merged_at IS NOT NULL
@@ -350,7 +339,7 @@ pub async fn merges_by_trigger(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_all(pool)
+    .fetch_all(repo.pool())
     .await?;
     let mut totals = MergeTriggers::default();
     for row in rows {
@@ -368,10 +357,10 @@ pub async fn merges_by_trigger(
 /// itself while none of the item's requests ever had a resolved decision.
 /// Returns `(lights_off, merged_items)`.
 pub async fn lights_off(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_id: &str,
     since: Option<&str>,
-) -> Result<(i64, i64), sqlx::Error> {
+) -> Result<(i64, i64), StoreError> {
     let row = sqlx::query(
         "WITH newest AS (
              SELECT i.id AS item_id, r.metadata AS metadata,
@@ -394,7 +383,7 @@ pub async fn lights_off(
     .bind(project_id)
     .bind(since)
     .bind(since)
-    .fetch_one(pool)
+    .fetch_one(repo.pool())
     .await?;
     Ok((row.get("lights_off"), row.get("merged_items")))
 }

@@ -65,7 +65,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   await createFleet(request, `RWA board fleet ${Date.now()}`);
   await enrollRunner(request, `RWA board runner ${Date.now()}`, 'opaque/model-alpha');
   // Two more profiles and no project default: the dialog still preselects the
-  // built-in Implementer (ADR 0074 decision 5), so a profile is never a
+  // built-in Implementer (ADR 0015 decision 5), so a profile is never a
   // missing field on a default install.
   await createAgentProfile(request, `RWA board profile A ${Date.now()}`);
   await createAgentProfile(request, `RWA board profile B ${Date.now()}`);

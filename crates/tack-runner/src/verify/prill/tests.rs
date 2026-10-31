@@ -112,6 +112,7 @@ fn tack_evidence_becomes_an_attempt_evidence_document() {
     let full = attempt_evidence(
         &tack_evidence("att_1", &"a".repeat(40), measured_usage()),
         &head,
+        None,
     );
     assert_eq!(
         full,
@@ -134,11 +135,19 @@ fn tack_evidence_becomes_an_attempt_evidence_document() {
         "tokens_in": {"source": "not_measured", "value": null},
         "tokens_out": {"source": "not_measured", "value": null},
     });
-    let minimal = attempt_evidence(&tack_evidence("att_2", &"a".repeat(40), unmeasured), &head);
+    let minimal = attempt_evidence(
+        &tack_evidence("att_2", &"a".repeat(40), unmeasured),
+        &head,
+        None,
+    );
     assert_eq!(minimal["harness"], json!({"name": "codex"}));
     assert!(minimal.get("generator").is_none());
     assert!(minimal.get("usage").is_none());
-    let null_usage = attempt_evidence(&tack_evidence("att_3", &"a".repeat(40), Value::Null), &head);
+    let null_usage = attempt_evidence(
+        &tack_evidence("att_3", &"a".repeat(40), Value::Null),
+        &head,
+        None,
+    );
     assert!(null_usage.get("usage").is_none());
 }
 
@@ -279,6 +288,7 @@ fn every_prill_fixture_translates_into_a_pack_that_round_trips() {
         "m2-sections",
         "reject-failed-criterion",
         "human-review-no-sandbox",
+        "m6-fields",
     ] {
         let translated = pack(&prill_fixture(name), &evidence, &evidence_sha, None);
         let bytes = serde_json::to_vec_pretty(&translated).expect("serializes");
@@ -302,7 +312,7 @@ fn prills_stages_and_next_steps_reach_the_pack() {
     let mut prill = prill_fixture("reject-failed-criterion");
     let translated = pack(&prill, &evidence, &"e".repeat(64), None);
     let stages = translated.stages.as_deref().expect("stages");
-    assert_eq!(stages.len(), 9);
+    assert_eq!(stages.len(), 10);
     assert_eq!(
         (stages[1].name.as_str(), stages[1].status.as_str()),
         ("criteria", "failed")
@@ -319,6 +329,24 @@ fn prills_stages_and_next_steps_reach_the_pack() {
     assert_eq!(steps[0].criterion_id.as_deref(), Some("unit"));
     assert_eq!(steps[0].line, Some(4));
     assert_eq!(steps[0].message.as_deref(), Some("make it pass"));
+}
+
+/// prill's `coverage` section (the share of changed lines covered, the uncovered ones) has no
+/// section in `mrp-v1`, so it is dropped by name: only its stage, which `stages` carries as prill
+/// reports it, reaches the pack.
+#[test]
+fn prills_coverage_section_is_not_translated_but_its_stage_is() {
+    let evidence = tack_evidence("att_9", &"a".repeat(40), Value::Null);
+    let prill = prill_fixture("m6-fields");
+    assert_eq!(prill["coverage"]["share"], json!(0.5));
+    let translated = pack(&prill, &evidence, &"e".repeat(64), None);
+    let text = serde_json::to_string(&translated).expect("serializes");
+    assert!(
+        !text.contains("uncovered") && !text.contains("minChanged"),
+        "{text}"
+    );
+    let stages = translated.stages.as_deref().expect("stages");
+    assert!(stages.iter().any(|stage| stage.name == "coverage"));
 }
 
 #[test]
@@ -529,13 +557,58 @@ async fn verify_with(
     with_brief: bool,
     sign_key: Option<&str>,
 ) -> Verified {
+    verify_within(knob, args, with_brief, sign_key, 60).await
+}
+
+/// [`verify_with`] giving prill `timeout_seconds` to answer.
+async fn verify_within(
+    knob: &str,
+    args: Vec<String>,
+    with_brief: bool,
+    sign_key: Option<&str>,
+    timeout_seconds: u64,
+) -> Verified {
+    verify_run(knob, args, with_brief, sign_key, timeout_seconds, None).await
+}
+
+/// The whole sequence for a run whose harness recorded `steps`, as the engine hands it over: the
+/// steps in the evidence's `terminal_reason`, staged as `trajectory.json`, and the address the
+/// board will serve it from.
+async fn verify_steps(steps: &Value, uri: Option<&str>) -> Verified {
+    verify_run(
+        "TACK_FAKE_PRILL_FIXTURE=human-review-no-sandbox",
+        Vec::new(),
+        false,
+        None,
+        60,
+        Some((steps, uri)),
+    )
+    .await
+}
+
+async fn verify_run(
+    knob: &str,
+    args: Vec<String>,
+    with_brief: bool,
+    sign_key: Option<&str>,
+    timeout_seconds: u64,
+    steps: Option<(&Value, Option<&str>)>,
+) -> Verified {
     let dir = tempfile::tempdir().expect("temporary directory");
     let workspace_path = dir.path().join("ws");
     fs::create_dir_all(&workspace_path).expect("workspace");
     let base = harness_left_work(&workspace_path);
     let scratch = dir.path().join("scratch");
     fs::create_dir_all(scratch.join("src")).expect("scratch");
-    let evidence = tack_evidence("att_1", &base, measured_usage());
+    let mut evidence = tack_evidence("att_1", &base, measured_usage());
+    if let Some((steps, _)) = steps {
+        evidence.terminal_reason = json!({"code": "done", "steps": steps});
+        fs::write(
+            scratch.join("src/trajectory.json"),
+            serde_json::to_vec_pretty(steps).expect("json"),
+        )
+        .expect("trajectory");
+    }
     fs::write(
         scratch.join("src/evidence.json"),
         serde_json::to_vec_pretty(&evidence).expect("json"),
@@ -553,7 +626,7 @@ async fn verify_with(
         kind: VerifyKind::Prill,
         program: launcher(dir.path(), knob).display().to_string(),
         args,
-        timeout_seconds: 60,
+        timeout_seconds,
         sign_key: sign_key.map(str::to_owned),
     };
     let workspace = Workspace {
@@ -562,8 +635,20 @@ async fn verify_with(
         path: workspace_path.clone(),
         base_revision: "main".to_owned(),
     };
-    let limits = ProcessLimits::new(1024 * 1024, 1024 * 1024, Duration::from_secs(60));
-    let result = run_verifier(&config, &limits, &workspace, &scratch).await;
+    let limits = ProcessLimits::new(
+        1024 * 1024,
+        1024 * 1024,
+        Duration::from_secs(timeout_seconds),
+    );
+    let result = run_verifier(
+        &config,
+        &limits,
+        &workspace,
+        &scratch,
+        &crate::config::ProcessEnv::default(),
+        steps.and_then(|(_, uri)| uri),
+    )
+    .await;
     Verified {
         result,
         scratch,
@@ -586,11 +671,26 @@ async fn a_prill_pack_is_translated_and_staged() {
     )
     .await;
     let staged = verified.result.expect("a pack");
-    assert_eq!(staged.len(), 1, "an unsigned run stages the pack alone");
+    assert_eq!(
+        staged.len(),
+        2,
+        "an unsigned run stages the translated pack and prill's own"
+    );
+    let original = staged[1].clone();
     let staged = &staged[0];
     assert_eq!(staged["kind"], "mrp");
     assert_eq!(staged["name"], "mrp.json");
     assert_eq!(staged["media_type"], MRP_MEDIA_TYPE);
+
+    // prill's pack goes up as prill printed it, so `prill record mrp` can take it.
+    assert_eq!(original["kind"], "mrp_prill");
+    assert_eq!(original["name"], "mrp.prill.json");
+    assert_eq!(original["media_type"], "application/vnd.prill.mrp+json");
+    let given = fs::read(repo_root().join("docs/contracts/mrp-v1/fixtures/prill/m2-sections.json"))
+        .expect("fixture");
+    let uploaded = fs::read(verified.scratch.join("evidence/mrp.prill.json")).expect("original");
+    assert_eq!(uploaded, given);
+    assert_eq!(original["sha256"], sha256_hex(&given));
 
     let evidence = verified.scratch.join("evidence");
     let translated = fs::read(evidence.join("mrp.json")).expect("translated pack");
@@ -641,6 +741,92 @@ async fn a_prill_pack_is_translated_and_staged() {
     assert_eq!(argv[7], "--out");
     assert_eq!(Path::new(argv[8]), prill_dir);
     assert_eq!(&argv[9..], ["--json", "--no-sandbox"]);
+}
+
+fn recorded_steps() -> Value {
+    json!([
+        {"role": "lead", "model": "big", "class": "strong", "family": "anthropic", "prompts": []},
+        {"role": "implementer", "model": "qwen2.5-coder:7b", "class": "cheap", "family": "qwen",
+         "prompts": [{"layer": "hop", "name": "implementer", "version": "1.0.0",
+                      "sha256": "ab", "scope": "shipped", "tokens": 12}]},
+        {"role": "reviewer", "model": "big", "class": "strong", "family": "anthropic", "prompts": []},
+    ])
+}
+
+#[test]
+fn the_family_is_the_last_implementer_steps_and_never_inferred() {
+    let mut evidence = tack_evidence("att_1", &"a".repeat(40), measured_usage());
+    evidence.terminal_reason = json!({"code": "done", "steps": recorded_steps()});
+    let document = attempt_evidence(&evidence, &"b".repeat(40), None);
+    assert_eq!(
+        document["generator"],
+        json!({"model": "claude-x", "family": "qwen"})
+    );
+    assert!(document.get("trajectory").is_none());
+
+    // A step that recorded no family, or a run with no step at all, declares none.
+    evidence.terminal_reason =
+        json!({"code": "done", "steps": [{"role": "implementer", "family": null}]});
+    let document = attempt_evidence(&evidence, &"b".repeat(40), None);
+    assert_eq!(document["generator"], json!({"model": "claude-x"}));
+    evidence.terminal_reason = json!({"code": "done"});
+    assert_eq!(
+        attempt_evidence(&evidence, &"b".repeat(40), None)["generator"],
+        json!({"model": "claude-x"})
+    );
+}
+
+#[tokio::test]
+async fn prill_is_given_the_trajectory_with_the_digest_of_the_stored_artifact() {
+    let steps = recorded_steps();
+    let uri = "http://board.test/api/executions/req_1/attempts/1/artifacts/art_1/content";
+    let verified = verify_steps(&steps, Some(uri)).await;
+    verified.result.expect("a pack");
+    let stored = fs::read(verified.scratch.join("src/trajectory.json")).expect("stored artifact");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stored).expect("json"),
+        steps
+    );
+    let document = read_json(
+        &verified
+            .scratch
+            .join("evidence/prill/attempt-evidence.json"),
+    );
+    assert_eq!(
+        document["trajectory"],
+        json!({"uri": uri, "digest": format!("sha256:{}", sha256_hex(&stored))})
+    );
+    assert_eq!(document["generator"]["family"], "qwen");
+    assert!(document.get("claims").is_none());
+}
+
+#[tokio::test]
+async fn a_run_with_no_steps_sends_neither_family_nor_trajectory() {
+    let verified = verify_with(
+        "TACK_FAKE_PRILL_FIXTURE=human-review-no-sandbox",
+        Vec::new(),
+        false,
+        None,
+    )
+    .await;
+    verified.result.expect("a pack");
+    let document = read_json(
+        &verified
+            .scratch
+            .join("evidence/prill/attempt-evidence.json"),
+    );
+    assert!(document.get("trajectory").is_none());
+    assert!(document["generator"].get("family").is_none());
+
+    // Steps with no address to serve them from: the file is not described either.
+    let verified = verify_steps(&recorded_steps(), None).await;
+    verified.result.expect("a pack");
+    let document = read_json(
+        &verified
+            .scratch
+            .join("evidence/prill/attempt-evidence.json"),
+    );
+    assert!(document.get("trajectory").is_none());
 }
 
 #[tokio::test]
@@ -702,6 +888,15 @@ async fn a_refusal_is_a_failure_naming_prills_error_code() {
 }
 
 #[tokio::test]
+async fn a_prill_that_does_not_answer_in_time_is_a_failure_naming_the_wait() {
+    let verified = verify_within("TACK_FAKE_PRILL_HANG=1", Vec::new(), true, None, 1).await;
+    let error = verified.result.expect_err("a timeout is a failure");
+    assert_eq!(error.exit_code, None);
+    assert_eq!(error.reason, "prill did not finish within 1 seconds");
+    assert!(!verified.scratch.join("evidence/mrp.json").exists());
+}
+
+#[tokio::test]
 async fn a_workspace_that_is_not_a_repository_cannot_be_verified() {
     let dir = tempfile::tempdir().expect("temporary directory");
     let workspace_path = dir.path().join("ws");
@@ -731,9 +926,16 @@ async fn a_workspace_that_is_not_a_repository_cannot_be_verified() {
         base_revision: "main".to_owned(),
     };
     let limits = ProcessLimits::new(1024 * 1024, 1024 * 1024, Duration::from_secs(60));
-    let error = run_verifier(&config, &limits, &workspace, &scratch)
-        .await
-        .expect_err("no snapshot, no verification");
+    let error = run_verifier(
+        &config,
+        &limits,
+        &workspace,
+        &scratch,
+        &crate::config::ProcessEnv::default(),
+        None,
+    )
+    .await
+    .expect_err("no snapshot, no verification");
     assert_eq!(error.exit_code, None);
     assert!(
         error
@@ -756,14 +958,15 @@ async fn a_signed_run_stages_the_envelope_and_names_it_in_the_pack() {
     )
     .await;
     let staged = verified.result.expect("a signed pack");
-    assert_eq!(staged.len(), 2);
+    assert_eq!(staged.len(), 3);
     assert_eq!(staged[0]["kind"], "mrp");
-    assert_eq!(staged[1]["kind"], "mrp_attestation");
-    assert_eq!(staged[1]["name"], "mrp.intoto.json");
-    assert_eq!(staged[1]["media_type"], "application/vnd.in-toto+json");
+    assert_eq!(staged[1]["kind"], "mrp_prill");
+    assert_eq!(staged[2]["kind"], "mrp_attestation");
+    assert_eq!(staged[2]["name"], "mrp.intoto.json");
+    assert_eq!(staged[2]["media_type"], "application/vnd.in-toto+json");
     let evidence = verified.scratch.join("evidence");
     let envelope = fs::read(evidence.join("prill/mrp.intoto.json")).expect("envelope");
-    assert_eq!(staged[1]["sha256"], sha256_hex(&envelope));
+    assert_eq!(staged[2]["sha256"], sha256_hex(&envelope));
     let pack: MergeReadinessPack =
         serde_json::from_slice(&fs::read(evidence.join("mrp.json")).unwrap()).expect("mrp-v1");
     assert_eq!(

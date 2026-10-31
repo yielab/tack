@@ -2,7 +2,7 @@
 
 # Plan: executing Phase 64
 
-How the stages of Phase 64 (`docs/book/src/roadmap.md`, ADR 0068) are cut into tasks an
+How the stages of Phase 64 (`docs/book/src/roadmap.md`, ADR 0010) are cut into tasks an
 agent can carry out alone, in what order, and under which limits. Stage 3's tasks are
 detailed in `docs/plans/harnesses.md`; every other stage is detailed here.
 
@@ -100,9 +100,9 @@ These are review criteria. A task that breaks one is sent back, not merged and f
 
 ### M0 — measure (Stage 0)
 
-Read-only on code. **Files:** ADR 0068 (a dated amendment, never a rewrite) and this file.
+Read-only on code. **Files:** ADR 0010 (a dated amendment, never a rewrite) and this file.
 
-1. Re-run every table in ADR 0068's *Full reasoning* with its command; record the new
+1. Re-run every table in ADR 0010's *Full reasoning* with its command; record the new
    numbers and date in an amendment.
 2. Produce the exact file lists R1–R4 and T1 need, and write them into those sections here:
    every file of the bridge by layer; which files under `crates/tack-api/tests/orchestration/`
@@ -213,7 +213,7 @@ hand against the real `claude` and a loopback model server, and written into the
 ### R1–R4 — retire the Docket control plane (Stage 5)
 
 Serial, callers before callees, so the tree compiles after each. File lists are M0's; the
-layers, from ADR 0068:
+layers, from ADR 0010:
 
 | Task | Removes | Notes |
 |---|---|---|

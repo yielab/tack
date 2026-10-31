@@ -3,8 +3,9 @@ import { Badge, Button, Field } from '../ui';
 import type { BadgeTone } from '../ui';
 import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
-import { mrpApi, type MrpCriterionStatus, type MrpReview } from '../execution/api';
+import { mrpApi, type MrpCriterionStatus, type MrpPack, type MrpReview } from '../execution/api';
 import type { AttemptMerge } from '../execution/attempts';
+import { LEVEL_MEANING } from '../help/texts';
 
 export interface MrpPanelProps {
   requestId: string;
@@ -31,7 +32,7 @@ const NotRun: Component = () => (
 
 const Section: Component<{ title: string; children: JSX.Element }> = (props) => (
   <section class="space-y-2">
-    <h5 class="text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
+    <h5 class="text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-text-tertiary)' }}>
       {props.title}
     </h5>
     {props.children}
@@ -47,6 +48,10 @@ const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
     const parts = [m.level, m.domain ? `domain ${m.domain}` : null].filter(Boolean);
     return `Merged by Tack${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
   };
+  const levelSentence = () => {
+    const m = props.merge.merged;
+    return m && m.trigger !== 'button' && m.level && m.level in LEVEL_MEANING ? LEVEL_MEANING[m.level as keyof typeof LEVEL_MEANING] : null;
+  };
   return (
     <Show when={label() ?? props.merge.reason}>
       {(text) => (
@@ -57,6 +62,11 @@ const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
             </Show>
             {text()}
           </p>
+          <Show when={levelSentence()}>
+            {(sentence) => (
+              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{sentence()}</p>
+            )}
+          </Show>
           <Show when={props.merge.merged?.policy_snapshot}>
             {(policy) => (
               <details class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
@@ -74,6 +84,23 @@ const MergeState: Component<{ merge: AttemptMerge }> = (props) => {
 };
 
 const mono = { 'font-family': 'var(--font-mono)' } as const;
+
+/** Whether the verifier signed the pack, in plain words; the pack names no key, only what was signed. */
+const SignatureState: Component<{ signature: MrpPack['signature'] | undefined }> = (props) => (
+  <p data-testid="mrp-signature" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+    <Show
+      when={props.signature?.kind === 'in-toto' ? props.signature : null}
+      fallback={<>Not signed: the verifier put no signature on this pack.</>}
+    >
+      {(signed) => (
+        <>
+          Signed by the verifier. What it signed has the fingerprint{' '}
+          <span style={mono}>{signed().statement_sha256.slice(0, 12)}</span>.
+        </>
+      )}
+    </Show>
+  </p>
+);
 
 /**
  * The verifier's merge-readiness pack for one attempt, with the accept /
@@ -152,6 +179,8 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                   </ul>
                 </Show>
               </div>
+
+              <SignatureState signature={pack().signature} />
 
               <Show when={props.merge}>{(m) => <MergeState merge={m()} />}</Show>
 

@@ -1,0 +1,106 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: the hop starts and cannot reach a model.",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "task": {
+    "objective": "Capture only",
+    "acceptance": [
+      "nothing"
+    ]
+  },
+  "externalRef": "capture-item/attempt-6",
+  "idempotencyKey": "capture-attempt-6",
+  "baseRef": "main",
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "lead hop failed: no output cap is known for claude-haiku-4-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-4-5 --max-tokens N",
+  "pendingApprovalIndex": null,
+  "hops": [
+    {
+      "role": "lead",
+      "member": "saas-dev-lead",
+      "ok": false,
+      "output": "",
+      "costUsd": 0.0,
+      "error": "no output cap is known for claude-haiku-4-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-4-5 --max-tokens N",
+      "attempts": 1,
+      "stepId": "lead",
+      "artifact": {
+        "summary": "",
+        "files_changed": [],
+        "diff_ref": null,
+        "diff": "",
+        "verdict": null,
+        "brief": null
+      },
+      "nextStep": null,
+      "parked": false,
+      "verify": null,
+      "evidence": null,
+      "usage": null,
+      "trace": {
+        "project": "saas-dev",
+        "session": "agent:saas-dev:task-00000000-0000-0000-0000-000000000000",
+        "firstTs": "2026-01-01T00:00:00Z",
+        "lastTs": "2026-01-01T00:00:00Z"
+      },
+      "repoFiles": null,
+      "model": "anthropic/claude-haiku-4-5",
+      "provider": "anthropic",
+      "promptManifest": {
+        "layers": [
+          {
+            "layer": "identity",
+            "name": "lead",
+            "version": "1.1.0",
+            "sha256": "7fc6794fc418c74e6b156e95d8ee382b23e093c6d114230074faa7d80af3e25f",
+            "scope": "shipped",
+            "tokens": 220
+          },
+          {
+            "layer": "hop",
+            "name": "lead",
+            "version": "1.0.0",
+            "sha256": "2df7c458fd5d7ab6cdc4954307888ef16ac6cc25dd76df0db340c2c3a1b92107",
+            "scope": "shipped",
+            "tokens": 28
+          }
+        ],
+        "model": "anthropic/claude-haiku-4-5",
+        "family": "anthropic",
+        "class": "any",
+        "profile": "hosted"
+      }
+    }
+  ],
+  "costUsd": 0.0,
+  "worktree": {
+    "dir": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "baseRef": "main",
+    "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo/.git"
+  },
+  "pipelineSource": "default",
+  "gateApplied": false,
+  "usage": {
+    "input": 0,
+    "cached": 0,
+    "cacheWrite": 0,
+    "output": 0,
+    "byModel": {
+      "anthropic/claude-haiku-4-5": {
+        "input": 0,
+        "cached": 0,
+        "cacheWrite": 0,
+        "output": 0
+      }
+    }
+  },
+  "tokenBudget": 100000
+}

@@ -8,6 +8,8 @@ interface ProjectItemsContextValue {
   /** True only while there are no items for this project yet — the first
    *  load, or a switch to another project. A refetch keeps what is shown. */
   loading: Accessor<boolean>;
+  /** Why the items did not load, or undefined. Reading a failed resource throws, so the lenses never see one. */
+  error: Accessor<unknown>;
   refetch: () => void;
 }
 
@@ -47,7 +49,8 @@ export const ProjectItemsProvider: ParentComponent = (props) => {
   );
 
   const value: ProjectItemsContextValue = {
-    items: () => resource()?.items,
+    items: () => (resource.error ? undefined : resource()?.items),
+    error: () => resource.error,
     loading: () => resource.loading && resource.latest?.id !== params.id,
     refetch,
   };

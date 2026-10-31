@@ -1,6 +1,5 @@
-use axum::Json;
-use axum::extract::rejection::JsonRejection;
-use axum::extract::{Path, Query, State};
+use crate::extract::{Json, Path, Query};
+use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
@@ -9,8 +8,9 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::{CreateItem, Item, ItemFilter, UpdateItem};
+use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
+use tack_protocol::execution::StableErrorCode;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::websocket::{self, BoardEvent};
@@ -27,19 +27,15 @@ fn item_etag(id: Uuid, version: i64) -> String {
     format!("\"{id}-{version}\"")
 }
 
-/// A stale `If-Match` never becomes an [`ApiError`] — this
-/// hand-builds the exact `{"error": {"status", "message"}}` envelope
-/// `ApiError`'s `IntoResponse` impl produces, rather than adding a new
-/// variant to `error.rs`. A client that already parses that
-/// shape for every other 4xx from this API needs no special case for 412.
+/// A stale `If-Match` answers 412 with the same `{"error": {status, message, code}}` envelope
+/// every other failure of this API has.
 fn precondition_failed(message: String) -> Response {
-    let body = serde_json::json!({
-        "error": {
-            "status": StatusCode::PRECONDITION_FAILED.as_u16(),
-            "message": message,
-        }
-    });
-    (StatusCode::PRECONDITION_FAILED, Json(body)).into_response()
+    ApiError::Coded {
+        code: StableErrorCode::PreconditionFailed,
+        message,
+        field: None,
+    }
+    .into_response()
 }
 
 /// Converts a matching `If-Match` into the version guarded by the repository
@@ -73,7 +69,7 @@ fn expected_version_from_if_match(
     ),
     request_body = tack_core::models::CreateItem,
     responses(
-        (status = 200, description = "Item created", body = tack_core::models::Item),
+        (status = 200, description = "Item created", body = tack_core::models::ItemCard),
         (status = 400, description = "Validation error", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
     ),
@@ -96,10 +92,13 @@ pub async fn create_item(
 
     let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
 
-    let item = state
-        .repo
-        .create_item(project_id, &initial_status, input)
-        .await?;
+    // A new task has no run history yet, so its card is the bare item.
+    let item = ItemCard::from(
+        state
+            .repo
+            .create_item(project_id, &initial_status, input)
+            .await?,
+    );
 
     // Broadcast WebSocket event
     websocket::broadcast_event(
@@ -204,7 +203,7 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
     ),
     request_body = tack_core::models::UpdateItem,
     responses(
-        (status = 200, description = "Updated item; carries the ETag for the exact returned snapshot", body = tack_core::models::Item,
+        (status = 200, description = "Updated item; carries the ETag for the exact returned snapshot", body = tack_core::models::ItemCard,
             headers(("ETag" = String, description = "Version-derived entity tag for the returned item snapshot"))
         ),
         (status = 400, description = "Invalid transition / validation error", body = crate::openapi::ErrorEnvelope),
@@ -217,11 +216,8 @@ pub async fn update_item(
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     from_mcp: Option<axum::Extension<crate::middleware::FromMcp>>,
-    input: Result<Json<UpdateItem>, JsonRejection>,
+    Json(input): Json<UpdateItem>,
 ) -> ApiResult<Response> {
-    // A body that is not an `UpdateItem` (a `run_settings` that is not an
-    // object or null, say) is a 400, not axum's default 422.
-    let Json(input) = input.map_err(|e| ApiError::BadRequest(e.body_text()))?;
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
@@ -309,8 +305,16 @@ pub async fn update_item(
             item.id.to_string(),
             item.project_id.to_string(),
         );
-        tokio::spawn(async move {
-            crate::merge::on_done(&app, &item_id, &project_id, over_mcp).await;
+        state.tasks.spawn(async move {
+            tack_app::merge::on_done(
+                &app.repo,
+                &tack_protocol::SystemClock,
+                &app.ports(),
+                &item_id,
+                &project_id,
+                over_mcp,
+            )
+            .await;
         });
     }
 
@@ -339,10 +343,7 @@ async fn create_next_recurrence(
         return;
     }
     let Ok(made) =
-        sqlx::query_scalar::<_, String>("SELECT status FROM items WHERE recurrence_of = ?")
-            .bind(item.id.to_string())
-            .fetch_all(state.repo.pool())
-            .await
+        tack_db::queries::items::statuses_of_recurrences(&state.repo, &item.id.to_string()).await
     else {
         return;
     };
@@ -395,7 +396,7 @@ async fn create_next_recurrence(
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the
 /// Done boundary, close (or reopen) its GitHub issue. No-op unless a token
 /// resolves (the item's project's own `github_token_ref`, else
-/// `TACK_GITHUB_TOKEN` — see `github_sync::github_token_for_project`) and the
+/// `TACK_GITHUB_TOKEN` — see `GitHub::token_for_project`) and the
 /// item has a `github_links` row.
 pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status: &str) {
     if item.status == old_status {
@@ -407,21 +408,20 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
     let Ok(Some(proj)) = state.repo.get_project(item.project_id).await else {
         return;
     };
-    let Some(token) = crate::github_sync::github_token_for_project(state, item.project_id).await
-    else {
+    let Some(token) = state.github_token(item.project_id).await else {
         return;
     };
-    let Some(closed) = crate::github_sync::state_change(
+    let Some(closed) = tack_app::github_sync::state_change(
         proj.workflow.is_done_status(old_status),
         proj.workflow.is_done_status(&item.status),
     ) else {
         return;
     };
 
-    let base = state.config.github_api_base.clone();
-    tokio::spawn(async move {
+    let base = state.github().api_base;
+    state.tasks.spawn(async move {
         if let Err(e) =
-            crate::github_sync::push_issue_state(&base, &token, &repo, number, closed).await
+            tack_app::github_sync::push_issue_state(&base, &token, &repo, number, closed).await
         {
             tracing::warn!(repo = %repo, issue = number, error = %e, "GitHub status push failed");
         }

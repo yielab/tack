@@ -1,0 +1,23 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: capture-needs-approval holds this enqueue for a person.",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "externalRef": "capture-item/attempt-3",
+  "idempotencyKey": "capture-attempt-3",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline",
+  "status": "waiting_approval",
+  "startedAt": null,
+  "completedAt": null,
+  "claimedAt": null,
+  "reason": "",
+  "pendingApprovalIndex": 0,
+  "hops": [],
+  "costUsd": 0.0,
+  "escalations": [
+    "esc-000000000000"
+  ],
+  "tokenBudget": 100000
+}

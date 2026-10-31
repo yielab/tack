@@ -6,10 +6,10 @@ import { openPalette } from '../state/commandPalette';
 import { isDarkActive, toggleTheme } from '../state/theme';
 import {
   BrandMark,
-  IconSearch, IconBoard, IconList, IconTable, IconCalendar, IconTimeline, IconSprint,
-  IconOverview, IconProjects, IconTemplates, IconAgent, IconSettings, IconSun, IconMoon,
+  IconSearch, IconList, IconSun, IconMoon,
   IconChevronDown, type IconProps,
 } from './icons';
+import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from './destinations';
 import KbdHint from './KbdHint';
 import { useVocab } from '../vocab/useVocab';
 
@@ -179,24 +179,17 @@ const Sidebar: Component = () => {
             </div>
           </div>
 
-          <NavButton href={`/projects/${currentProjectId()}/board`} icon={IconBoard} label="Board" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/list`} icon={IconList} label="List" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/table`} icon={IconTable} label="Table" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/calendar`} icon={IconCalendar} label="Calendar" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/timeline`} icon={IconTimeline} label="Timeline" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/sprint`} icon={IconSprint} label={t('sprint')} onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/overview`} icon={IconOverview} label="Overview" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/factory`} icon={IconOverview} label="Factory metrics" onClick={close} />
-          <NavButton href={`/projects/${currentProjectId()}/settings`} icon={IconSettings} label="Project settings" onClick={close} />
+          <For each={PROJECT_DESTINATIONS}>
+            {(d) => <NavButton href={d.path(currentProjectId() ?? '')} icon={d.icon} label={d.label(t)} onClick={close} />}
+          </For>
 
           <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '10px 10px' }} />
         </Show>
 
         <SectionLabel label="Workspace" />
-        <NavButton href="/projects" end icon={IconProjects} label="All projects" onClick={close} />
-        <NavButton href="/templates" icon={IconTemplates} label="Templates" onClick={close} />
-        <NavButton href="/agents" icon={IconAgent} label="Agents" onClick={close} />
-        <NavButton href="/settings" icon={IconSettings} label="Settings" onClick={close} />
+        <For each={WORKSPACE_DESTINATIONS}>
+          {(d) => <NavButton href={d.path('')} end={d.end} icon={d.icon} label={d.label(t)} onClick={close} />}
+        </For>
       </nav>
 
       {/* footer: theme + display settings + identity */}

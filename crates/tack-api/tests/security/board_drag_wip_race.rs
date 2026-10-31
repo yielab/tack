@@ -14,7 +14,6 @@ use axum::http::{Method, Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::router::{AppState, build_router};
-use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -22,17 +21,8 @@ use uuid::Uuid;
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 async fn app_with_state() -> (Router, AppState) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'CI Workspace', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
 
     let (tx, _rx) = broadcast::channel(16);
     let config = AppConfig {
@@ -40,12 +30,13 @@ async fn app_with_state() -> (Router, AppState) {
         ..AppConfig::default()
     };
     let state = AppState {
-        repo: Repository::new(pool),
+        repo,
         config,
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
 
     (
@@ -177,8 +168,7 @@ async fn dragging_many_cards_at_once_never_exceeds_the_wip_cap() {
 
 /// A `PATCH` that only touches non-status fields (title here) must not pay
 /// for the WIP-checked transaction path at all — it should behave exactly
-/// as it did before, going straight through the ordinary field-by-field
-/// `Repository::update_item`.
+/// as it did before.
 #[tokio::test]
 async fn patch_without_status_change_is_unaffected() {
     let (app, _state) = app_with_state().await;

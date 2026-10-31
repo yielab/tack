@@ -9,7 +9,7 @@ export const Heading = (props: { children: JSX.Element }) => (
 );
 
 export const Note = (props: { children: JSX.Element; testid?: string }) => (
-  <p data-testid={props.testid} class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+  <p data-testid={props.testid} class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
     {props.children}
   </p>
 );

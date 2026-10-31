@@ -20,7 +20,7 @@ The contract itself is the set of language-neutral fixtures in `docs/contracts/r
 
 ### What the harness receives
 
-Whoever creates the request, the server writes the instructions the harness is given: the agent profile's own text, then the item's title and description, then the item's brief (its definition of done, acceptance criteria and constraints) when it has one. The title and description are labelled with where they came from and marked as data to work from, not as instructions that change the agent's rules, because an imported item's text was written by someone else. The brief is also saved with the request, and the attempt keeps a copy of it as `brief.json` beside its `evidence.json`. An item without a brief still reaches the harness with its title and description.
+Whoever creates the request, the server writes the instructions the harness is given: the agent profile's own text, then the item's title and description, then the item's brief (its definition of done, acceptance criteria and constraints) when it has one. The title and description are labelled with where they came from and marked as data to work from, not as instructions that change the agent's rules, because an imported item's text was written by someone else. The brief is also saved with the request, and the attempt keeps a copy of it as `brief.json` beside its `evidence.json`. An item without a brief still reaches the harness with its title and description. The request also carries the item as plain data (`task`: the profile's own instructions, title, description, kept comments, brief, definition of done, kind and source), which the prose is rendered from; a harness that takes the card as fields, docket today, reads it instead of the prose.
 
 ## The protocol surface
 
@@ -32,11 +32,15 @@ The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outsi
 | Work | `claim`, `heartbeat` |
 | One attempt | `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT, the bytes), `completion`, `cancellation-observation`, `recovery-observation` |
 
-Thirteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The frozen fixtures under `docs/contracts/runner-v1/` are 48 files, including 15 error envelopes under `errors/`. They are pinned by FNV-1a hash in `crates/tack-orch/tests/runner_contract/fixtures.rs`, which asserts the count.
+Thirteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The frozen fixtures under `docs/contracts/runner-v1/` are 48 files, including 15 error envelopes under `errors/`. They are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the count.
 
 ### Several attempts at once
 
 A runner reports `concurrency { total, available }` in its capability snapshot and sends one heartbeat for all its leases (`heartbeat.request.two-active.json` shows two). The server accepts up to 64 active attempts per heartbeat (`active_attempts_per_heartbeat_max` in `limits.json`) and answers a conflict to a heartbeat whose `available_capacity` is not the runner's total capacity minus the attempts the server itself holds as active for it. A cancellation asked for an attempt arrives in the `lease_results` of that heartbeat, and the runner flips that attempt's cancel signal. A folder worked in place stays one attempt at a time, by the runner's own lock on the folder.
+
+Every runner message (enrollment, refresh, claim, heartbeat, accept and start, events, decisions, the artifact manifest, completion and the cancellation and recovery observations) is a struct in `tack-protocol` (`execution/messages.rs`, plus the recovery observation in `types.rs`): the server's handlers and the runner's transport both serialize and deserialize them, and the contract test round-trips each matching fixture through them, so a field added to a fixture without a field on the struct fails there. They do not deny unknown fields, because `protocol.json` has an unknown optional field ignored. A request that does not fit its struct answers `400 invalid_request` with the field it got wrong in `details.field` (`options[0].label`, `fencing_token`).
+
+Every request carries a correlation id in the `x-request-id` header, which the runner makes anew for each HTTP request, retries included. The board uses it as the `request_id` of any error body it answers with, repeats it in the response's `x-request-id` header and logs it; a request without one, or with one longer than 64 characters or made of anything but letters, digits and `_-.:`, gets an id the board makes.
 
 ### Decisions
 
@@ -84,9 +88,9 @@ Separately, each runner reports its own `runner_version` (a free-form string in 
 
 ## docket
 
-docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 5, which needs docket 0.2.0-beta.6.
+docket is reached as any other agent: as a harness (`--harness docket`) on a runner-v1 execution request. Its adapter does not spawn a process per run. It speaks docket's operator HTTP API, version 6, which needs docket 0.2.0-beta.6.
 
-- An `apiVersion` below 5, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 5); this docket answers API N" and no task is posted.
+- An `apiVersion` below 6, or one that is not a number, is reported as "needs docket 0.2.0-beta.6 (API 6); this docket answers API N" and no task is posted.
 - `docket exec`, the contract probe, the NDJSON output parser and the stdin answers of the earlier adapter are gone. Nothing in the runner starts a throwaway docket per run.
 - One attempt is one task posted to a team, with the attempt id as the idempotency key. The adapter follows the team's trace, carries approvals and parked questions to the inbox as decisions, cancels over HTTP, and reads the task's branch from the repository; the runner makes no checkout for it.
 - The daemon is supervised by the runner only when `[docket].binary` is set in its configuration.
@@ -105,7 +109,7 @@ These are documented rather than papered over, per this project's "unsupported i
 
 Read this section before treating any earlier claim on this page as a promise about a live, end-to-end run. This is the one page where test names belong.
 
-**Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-orch/tests/runner_contract.rs` (byte-pins all 48 frozen fixtures), and the integrator test files referenced throughout this page.
+**Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-protocol/tests/runner_contract.rs` (byte-pins all 48 frozen fixtures), and the integrator test files referenced throughout this page.
 
 **The `tack-runner` binary's own network transport is wired and proven.** `tack_runner::bootstrap::build_runtime` is the one composition root that both the standalone `tack-runner` binary and the embedded `tack serve --with-runner` and `tack runner start` paths call. It wires the real `HttpPullProtocol`, not `UnavailableProtocolClient`. `UnavailableProtocolClient` still exists in the crate as an explicit no-client fallback, reachable only if something constructs a runtime without attaching a protocol client, and stays pinned by `runtime::tests::unavailable_protocol_is_a_typed_failure_not_success` so that path fails as a typed `RunnerError::ProtocolUnavailable` rather than a silent success.
 
@@ -115,4 +119,4 @@ Live, end-to-end proof of the real client: `crates/tack-runner/tests/bootstrap_e
 
 **docket is proved against a fake, not a real docket.** `crates/tack-runner/tests/docket_v5.rs` drives `DocketAdapter` against `crates/tack-runner/tests/fake_docket/mod.rs`, an in-process docket written from the published API specification. It covers the version probe and the "needs docket 0.2.0-beta.6" refusal, the teams and the ceiling, the task body key by key, the default team named for the folder, the trace cursor surviving a restart, approvals and parked questions as decisions, and the task's branch coming back into the worktree. The daemon's supervision is proved in `crates/tack-runner/src/harness/docket/daemon/tests.rs`. Until a real docket 0.2.0-beta.6 exists, nothing proves the fake matches it.
 
-The whole workflow through the browser is proven by hand with `scripts/docket-prill-e2e.sh`. It builds Tack from the checkout, runs docket and prill from their own source trees against a local model, and drives a project, its runner, its settings, a bug, a feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a screenshot per step. It makes real model calls, so CI never runs it.
+The whole workflow through the browser is proven by hand with a local suite that is not versioned (`onboarding-lab/e2e/docket-prill-e2e.sh` in the maintainer's checkout). It builds Tack from the checkout, runs docket and prill from their own source trees against a local model, and drives a project, its runner, its settings, a bug, a feature, a task and a run that asks through the UI, each verified by prill and reviewed, with a screenshot per step. It makes real model calls, so CI never runs it.

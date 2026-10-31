@@ -147,7 +147,7 @@ impl IntoResponse for ApiError {
                 CoreError::WipLimitExceeded {..}  => (StatusCode::BAD_REQUEST, ...),
                 // ...
             },
-            ApiError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, ...),
+            ApiError::Store(_) => (StatusCode::INTERNAL_SERVER_ERROR, ...),
         };
 
         let body = json!({ "error": { "status": status.as_u16(), "message": message } });

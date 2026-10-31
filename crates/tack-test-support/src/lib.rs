@@ -6,7 +6,6 @@
 //! dev-dependency cycle — `tack-api/tests/common` needs test-app/server helpers this crate
 //! has no business owning, so it stays where it is instead of moving here.
 
-use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -18,8 +17,21 @@ use tack_core::{
 use tack_db::{Repository, init_pool, migrations};
 use uuid::Uuid;
 
+pub mod completion;
+pub mod ids;
+pub mod seed;
+
+mod clock;
 mod poll;
+pub use clock::FixedClock;
 pub use poll::{poll_until, poll_until_sync};
+
+/// A value that lives for the whole test process, for a store input that borrows it (such as
+/// `Completion<'a>`) when the helper that builds the input cannot own what it borrows. Like the
+/// interned ids in [`ids`], the handful of values a test run keeps makes the leak irrelevant.
+pub fn kept<T>(value: T) -> &'static T {
+    Box::leak(Box::new(value))
+}
 
 /// Create an in-memory SQLite pool with all migrations applied.
 pub async fn setup_test_db() -> Repository {
@@ -62,6 +74,33 @@ pub async fn make_project(repo: &Repository, workspace_id: Uuid) -> tack_core::m
     .expect("create project")
 }
 
+/// Apply `input` to the item the way the update path does, under its project's own workflow, and
+/// return the updated item. Panics when the item is missing or the update is rejected.
+pub async fn update_item(
+    repo: &Repository,
+    id: Uuid,
+    input: tack_core::models::UpdateItem,
+) -> tack_core::models::Item {
+    let item = repo
+        .get_item(id)
+        .await
+        .expect("read item")
+        .expect("item exists");
+    let project = repo
+        .get_project(item.project_id)
+        .await
+        .expect("read project")
+        .expect("project exists");
+    match repo
+        .update_item_atomically(id, input, &project.workflow, None)
+        .await
+        .expect("update item")
+    {
+        tack_db::repo::items::AtomicItemUpdateOutcome::Updated { item, .. } => item.item,
+        other => panic!("the update was not applied: {other:?}"),
+    }
+}
+
 /// Create a minimal task item in the project's initial workflow status.
 pub async fn make_item(
     repo: &Repository,
@@ -97,9 +136,9 @@ pub async fn make_item(
 }
 
 /// A shared, settable point in time for tests that must control "now" instead of reading
-/// the real clock. Crate-local fake-clock types — each implementing that crate's own clock
-/// trait (`tack-orch`'s `RetentionClock`, `tack-runner`'s `Clock`, ...) — wrap one of these
-/// in a newtype rather than hand-rolling the `Arc<Mutex<_>>` storage again.
+/// the real clock. Fake-clock types — each implementing `tack-protocol`'s `Clock` or
+/// `tack-runner`'s own — wrap one of these in a newtype rather than hand-rolling the
+/// `Arc<Mutex<_>>` storage again.
 #[derive(Clone)]
 pub struct ControllableClock(Arc<Mutex<DateTime<Utc>>>);
 
@@ -126,11 +165,12 @@ impl ControllableClock {
     }
 }
 
-/// Read a fixture file's bytes from `<manifest_dir>/tests/<relative>`, panicking with the
-/// resolved path if it is missing. `manifest_dir` is the caller's own
-/// `env!("CARGO_MANIFEST_DIR")` — this helper cannot know which crate's `tests/` directory
-/// to look under, since that macro resolves at the call site, not here.
-pub fn read_fixture(manifest_dir: &str, relative: &str) -> Vec<u8> {
-    let path = Path::new(manifest_dir).join("tests").join(relative);
-    fs::read(&path).unwrap_or_else(|error| panic!("fixture {} not found: {error}", path.display()))
+/// Create a file-backed SQLite store at `path` with all migrations applied, for a test that
+/// needs real write contention between connections, which `sqlite::memory:` cannot give.
+pub async fn setup_file_test_db(path: &Path) -> Repository {
+    let pool = init_pool(&format!("sqlite://{}?mode=rwc", path.display()))
+        .await
+        .expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    Repository::new(pool)
 }

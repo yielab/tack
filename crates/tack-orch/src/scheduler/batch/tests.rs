@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{Duration, TimeZone};
 
 use super::*;
-use crate::execution::{HarnessCapability, HarnessKind};
 use crate::scheduler::types::{Priority, RunnerState};
+use tack_protocol::execution::{HarnessCapability, HarnessKind};
 
 fn now() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, 0).unwrap()
@@ -39,7 +39,7 @@ fn candidate(id: &str, capacity: u32) -> RunnerCandidate {
 }
 
 fn request(id: &str, priority: Priority, created_at: DateTime<Utc>) -> SchedulingRequest {
-    use crate::execution::RunnerSelector;
+    use tack_protocol::execution::RunnerSelector;
     SchedulingRequest {
         request_id: ExecutionRequestId::new(id),
         selector: RunnerSelector::Any,

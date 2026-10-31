@@ -2,7 +2,7 @@ constructed
 route: GET /traces/<pod>
 status: 200
 built-from: the payload of a hop_finished event, as docket's dispatch.py writes it (the trace_locked call "hop_finished") with usage from _hop_usage
-docket: 0.2.0b6 (API 5), source develop 6fba7057, the keys from da556114
-source: src/docket/core/dispatch.py _hop_usage (usage input, cached, cacheWrite, output) and the "hop_finished" trace write; src/docket/core/llm.py TokenUsage (cached and cache_write_tokens are subsets of input; counted_tokens is input - cached + output)
-date: 2026-10-18
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+source: specs/api/operator-api.spec.md "Trace events" (the hop_finished payload) and src/docket/tasks/application/record.py _hop_usage and the "hop_finished" trace write, at 9954b4f8
+date: 2026-10-26
 note: not captured, because a hop would have to run on a model for docket to send it; the values are made up. This is the event's payload, not the line around it (traces-events.json has the line).

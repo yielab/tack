@@ -1,3 +1,4 @@
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -12,7 +13,8 @@ impl Repository {
         &self,
         project_id: Uuid,
         input: CreateSprint,
-    ) -> Result<Sprint, sqlx::Error> {
+    ) -> Result<Sprint, StoreError> {
+        self.require_project(project_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();
@@ -48,7 +50,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_sprint(&self, id: Uuid) -> Result<Option<Sprint>, sqlx::Error> {
+    pub async fn get_sprint(&self, id: Uuid) -> Result<Option<Sprint>, StoreError> {
         let row = sqlx::query_as::<_, SprintRow>(
             "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
              FROM sprints WHERE id = ?"
@@ -57,11 +59,11 @@ impl Repository {
         .fetch_optional(self.pool())
         .await?;
 
-        Ok(row.map(|r| r.into_sprint()))
+        row.map(SprintRow::into_sprint).transpose()
     }
 
     #[instrument(skip(self))]
-    pub async fn list_sprints(&self, project_id: Uuid) -> Result<Vec<Sprint>, sqlx::Error> {
+    pub async fn list_sprints(&self, project_id: Uuid) -> Result<Vec<Sprint>, StoreError> {
         let rows = sqlx::query_as::<_, SprintRow>(
             "SELECT id, project_id, name, goal, start_date, end_date, status, created_at, updated_at
              FROM sprints WHERE project_id = ? ORDER BY created_at DESC"
@@ -70,7 +72,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_sprint()).collect())
+        rows.into_iter().map(SprintRow::into_sprint).collect()
     }
 
     /// Replaces a sprint's editable fields and returns the stored row, or
@@ -80,7 +82,7 @@ impl Repository {
         &self,
         id: Uuid,
         input: UpdateSprint,
-    ) -> Result<Option<Sprint>, sqlx::Error> {
+    ) -> Result<Option<Sprint>, StoreError> {
         let now = Utc::now().to_rfc3339();
         let result = sqlx::query(
             "UPDATE sprints SET name = ?, goal = ?, start_date = ?, end_date = ?, updated_at = ?
@@ -108,7 +110,7 @@ impl Repository {
         &self,
         id: Uuid,
         status: SprintStatus,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let now = Utc::now().to_rfc3339();
         let result = sqlx::query("UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?")
             .bind(status.to_string())
@@ -135,30 +137,19 @@ struct SprintRow {
 }
 
 impl SprintRow {
-    fn into_sprint(self) -> Sprint {
-        Sprint {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            project_id: Uuid::parse_str(&self.project_id).unwrap(),
+    fn into_sprint(self) -> Result<Sprint, StoreError> {
+        const TABLE: &str = "sprints";
+        Ok(Sprint {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
             name: self.name,
             goal: self.goal,
-            start_date: self.start_date.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            end_date: self.end_date.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
+            start_date: decode::optional_instant(TABLE, "start_date", self.start_date.as_deref())?,
+            end_date: decode::optional_instant(TABLE, "end_date", self.end_date.as_deref())?,
             status: parse_sprint_status(&self.status),
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-        }
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
     }
 }
 

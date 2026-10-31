@@ -113,7 +113,7 @@ line, not a UI-facing capability from §VI.0's surface map.
 
 - Tokens read before the first edit (cold start): read the card's named files only —
   `README.md` header + Wave 18 block (~3k), `VI-C32.md`'s Known limitations section only
-  (~0.6k), ADR 0061 Decision 1 (~1.1k), `secrets.rs` whole (~6k), `doctor.rs`'s targeted
+  (~0.6k), ADR 0005 Decision 1 (~1.1k), `secrets.rs` whole (~6k), `doctor.rs`'s targeted
   ranges (~1.5k), `CONFIG.md` grep hits (~0.3k), plus the two `pub fn new` greps into the
   keyring store crate source (~0.1k). Roughly 13k against the block's ≈12k estimate — close.
 - Context size at handoff: comfortably under the wave's ceilings; no stop condition hit.

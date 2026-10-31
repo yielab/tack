@@ -2,7 +2,7 @@
 
 This page is for contributors who change the project file and for integrators who write one from a script or an assistant. It is the reference: every key of every section, the order in which the file is checked and written, what is refused and what only warns, and the routes that carry it. After reading it you can produce a file the board accepts and add a new key without missing a place.
 
-People use the file through [Import, Export & Project Files](../user-guide/import-export.md). The decision behind it is ADR 0081, which extends the outline of ADR 0076; see [Architecture Decisions](decisions.md).
+People use the file through [Import, Export & Project Files](../user-guide/import-export.md). The decision behind it is ADR 0022, which extends the outline of ADR 0017; see [Architecture Decisions](decisions.md).
 
 ## What the file is
 

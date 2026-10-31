@@ -217,7 +217,7 @@ afterward — nothing to do with this card. Per the card prompt's own instructio
 regenerated file was **not** committed; the diff also correctly shows this card's own 5
 removed entries (`traces.rs:155/195/271/327`, `runs.rs` equivalents,
 `retention.rs:210`) alongside the stale ones, but regenerating and committing now would
-bundle an unrelated, much larger fix into this card. Whoever owns closing ADR 0064
+bundle an unrelated, much larger fix into this card. Whoever owns closing ADR 0007
 should regenerate once after every IX-M4 sub-card affecting `tack-orch`/`tack-api` has
 landed, not per sub-card.
 
@@ -277,7 +277,7 @@ a future flake by reverting to a single bump without re-deriving why two were ch
 They also cannot yet regenerate `docs/adr/0064-fixed-waits.txt` and get a clean signal
 from it for this crate alone — the tracked file's drift from `IX-M1` means it currently
 overstates how many fixed waits remain in `tack-orch`/`tack-api` production code, and
-that will stay misleading until whoever closes ADR 0064 regenerates it once, after every
+that will stay misleading until whoever closes ADR 0007 regenerates it once, after every
 sub-card touching those crates has landed.
 
 ## Context spent

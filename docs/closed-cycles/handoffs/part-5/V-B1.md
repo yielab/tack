@@ -6,16 +6,16 @@
   own SHA references and carry no other change.
 - Files changed (must equal ownership list): `crates/tack-api/src/middleware.rs`,
   `crates/tack-api/src/config.rs`, `docs/CONFIG.md` (one row),
-  `docs/book/src/user-guide/administration.md`, `docs/adr/0059-single-operator-identity-posture.md`,
+  `docs/book/src/user-guide/administration.md`, `docs/adr/0004-single-operator-identity-posture.md`,
   this handoff. `config.rs` is **not** on the card's literal ownership list but is where
   the non-loopback/no-token check actually lives (see "Where the check lives" below) —
   it is not owned by any other in-flight card (only `server.rs` was flagged as a
   possible conflict, and the check is not there).
 - Contract fixtures consumed: none. This card is entirely inside the operator `/api`
-  surface (`require_token`); `docs/contracts/runner-v1/` is untouched, as ADR 0059
+  surface (`require_token`); `docs/contracts/runner-v1/` is untouched, as ADR 0004
   itself states.
 - Behavior implemented:
-  1. `docs/adr/0059-single-operator-identity-posture.md` — the primary deliverable.
+  1. `docs/adr/0004-single-operator-identity-posture.md` — the primary deliverable.
      Records Tack v1 as single-operator, names and gives reasons for rejecting full
      multi-user accounts, OIDC/SSO, and per-user API tokens, and states the
      loopback/non-loopback safety posture as a consequence of that scope decision.
@@ -27,7 +27,7 @@
      new condition is `&&`-ed onto a branch that is never entered when
      `binds_loopback()` is true, so it cannot affect that path either way.
   3. `crates/tack-api/src/middleware.rs`: two doc-comment additions on `require_token`
-     tying the runtime mechanism (single shared token, no per-user branch) to ADR 0059,
+     tying the runtime mechanism (single shared token, no per-user branch) to ADR 0004,
      and noting that a non-loopback+no-token request never reaches this function
      because startup already refused to bind. No behavioral change — `require_token`
      itself is correct as-is and out of scope for a code change.
@@ -152,7 +152,7 @@ e.g. near that table or in a short paragraph before it):
 > permissions. `assignee` is a free-text label on an item, not an account. Every
 > request that authenticates at all authenticates as the same single operator, via
 > one shared bearer token. This is a deliberate v1 scope decision, not an
-> oversight — see [ADR 0059](../../../adr/0059-single-operator-identity-posture.md) for
+> oversight — see [ADR 0004](../../../adr/0004-single-operator-identity-posture.md) for
 > what was considered and rejected (full multi-user accounts, OIDC, per-user
 > tokens) and why. A non-loopback bind with no token now refuses to start rather
 > than silently exposing full read/write access to the network; an explicit,

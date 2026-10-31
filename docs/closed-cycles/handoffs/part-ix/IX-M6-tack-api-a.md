@@ -176,7 +176,7 @@ clean.
   all (the dispatch prompt's acceptance criteria were complete, as advertised), did not
   read any file outside the nine owned plus the dev-notes tree plus a handful of ADRs
   checked for overlap (`0060`, `0065`).
-- Files opened and not used: `docs/adr/0060-docket-control-plane-disposition.md` and
+- Files opened and not used: `docs/closed-cycles/adr/0060-docket-control-plane-disposition.md` and
   `0065-docket-pipeline-dispatch-trigger.md` were read to check for ADR overlap before
   deciding no new ADR was needed for `dispatcher.md`'s content — used as evidence, not
   wasted.

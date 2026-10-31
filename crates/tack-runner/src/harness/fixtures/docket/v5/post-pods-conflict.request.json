@@ -1,5 +1,4 @@
 {
   "name": "saas-dev",
-  "location": "/scratch/repo",
-  "blueprint": "software"
+  "location": "/scratch/repo"
 }

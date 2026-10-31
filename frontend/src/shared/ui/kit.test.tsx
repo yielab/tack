@@ -9,6 +9,11 @@ import Select from './Select';
 import Modal from './Modal';
 import Drawer from './Drawer';
 import Tabs from './Tabs';
+import RouteBoundary from './RouteBoundary';
+import LoadError from './LoadError';
+import Card from './Card';
+import Switch from './Switch';
+import { createConfirm } from './ConfirmDialog';
 import { IconList } from './icons';
 
 const disposers: Array<() => void> = [];
@@ -46,6 +51,22 @@ describe('Button', () => {
     expect(btn.disabled).toBe(true);
     expect(btn.getAttribute('aria-busy')).toBe('true');
   });
+
+  it('shows its reason beside the button, tied to it, only while it is disabled', () => {
+    const [off, setOff] = createSignal(true);
+    const c = mount(() => (
+      <Button disabled={off()} reason="Set up cloud backup first" aria-describedby="other">
+        Back up
+      </Button>
+    ));
+    const btn = c.querySelector('button')!;
+    const reason = c.querySelector('span[id]')!;
+    expect(reason.textContent).toBe('Set up cloud backup first');
+    expect(btn.getAttribute('aria-describedby')).toBe(`other ${reason.id}`);
+    setOff(false);
+    expect(c.querySelector('span[id]')).toBeNull();
+    expect(btn.getAttribute('aria-describedby')).toBe('other');
+  });
 });
 
 describe('Badge / EmptyState / Field', () => {
@@ -70,6 +91,15 @@ describe('Badge / EmptyState / Field', () => {
     expect(label.getAttribute('for')).toBe(input.id);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(c.textContent).toContain('Required');
+  });
+
+  it('Field points aria-describedby at its error, else its hint', () => {
+    const [error, setError] = createSignal<string | undefined>('Required');
+    const c = mount(() => <Field label="Name" error={error()} hint="Three letters" value="" />);
+    const input = c.querySelector('input')!;
+    expect(c.querySelector(`#${CSS.escape(input.getAttribute('aria-describedby')!)}`)!.textContent).toBe('Required');
+    setError(undefined);
+    expect(c.querySelector(`#${CSS.escape(input.getAttribute('aria-describedby')!)}`)!.textContent).toBe('Three letters');
   });
 
   it('a_field_with_help_renders_the_hint', () => {
@@ -184,6 +214,47 @@ describe('Tabs', () => {
     expect(tabs()[1].getAttribute('aria-selected')).toBe('true');
     expect(c.textContent).toContain('panel-b');
   });
+
+  it('ties each tab to the panel it controls and the panel back to its tab', () => {
+    const c = mount(() => (
+      <Tabs tabs={[{ id: 'a', label: 'A' }, { id: 'b', label: 'B' }]} active="b" onChange={() => {}}>
+        <span>panel</span>
+      </Tabs>
+    ));
+    const tabs = Array.from(c.querySelectorAll('[role="tab"]'));
+    const panel = c.querySelector('[role="tabpanel"]')!;
+    expect(tabs[1].getAttribute('aria-controls')).toBe(panel.id);
+    expect(panel.getAttribute('aria-labelledby')).toBe(tabs[1].id);
+  });
+});
+
+describe('RouteBoundary / LoadError', () => {
+  it('a_screen_that_throws_shows_a_message_and_draws_again_on_Try_again', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    let broken = true;
+    const Screen = () => {
+      if (broken) throw new Error('The items would not draw');
+      return <p>drawn</p>;
+    };
+    const c = mount(() => (
+      <RouteBoundary>
+        <Screen />
+      </RouteBoundary>
+    ));
+    expect(c.querySelector('[role="alert"]')!.textContent).toContain('The items would not draw');
+    broken = false;
+    Array.from(c.querySelectorAll('button')).find((b) => b.textContent === 'Try again')!.click();
+    expect(c.textContent).toBe('drawn');
+  });
+
+  it('LoadError says what could not load and retries', () => {
+    const onRetry = vi.fn();
+    const c = mount(() => <LoadError what="the roles" error={new Error('Timed out')} onRetry={onRetry} />);
+    expect(c.querySelector('[role="alert"]')!.textContent).toContain('Could not load the roles.');
+    expect(c.textContent).toContain('Timed out');
+    c.querySelector('button')!.click();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
 });
 
 describe('icons', () => {
@@ -225,5 +296,73 @@ describe('Select', () => {
     setValue('low');
     await flush();
     expect(c.querySelector('select')!.value).toBe('low');
+  });
+});
+
+describe('Card', () => {
+  it('is the card radius on the panel surface, with the caller\'s classes and attributes added', () => {
+    const c = mount(() => <Card class="px-5 py-4" role="status" data-testid="panel">Body</Card>);
+    const el = c.querySelector('[data-testid="panel"]')!;
+    expect(el.classList.contains('rounded-card')).toBe(true);
+    expect(el.classList.contains('bg-panel')).toBe(true);
+    expect(el.classList.contains('px-5')).toBe(true);
+    expect(el.getAttribute('role')).toBe('status');
+    expect(el.textContent).toBe('Body');
+  });
+});
+
+describe('Switch', () => {
+  it('is a checkbox with role switch, named by its text, that reports the new value', () => {
+    const onChange = vi.fn();
+    const c = mount(() => <Switch checked={false} onChange={onChange}>Web tools</Switch>);
+    const input = c.querySelector<HTMLInputElement>('input')!;
+    expect(input.getAttribute('role')).toBe('switch');
+    expect(c.querySelector('label')!.textContent).toContain('Web tools');
+    input.click();
+    expect(onChange).toHaveBeenCalledWith(true);
+  });
+
+  it('is disabled when told to be', () => {
+    const c = mount(() => <Switch checked disabled onChange={() => {}}>Push</Switch>);
+    expect(c.querySelector<HTMLInputElement>('input')!.disabled).toBe(true);
+  });
+});
+
+describe('createConfirm', () => {
+  function Asker(props: { onAnswer: (ok: boolean) => void }) {
+    const [ask, Host] = createConfirm();
+    const run = async () => props.onAnswer(await ask({ title: 'Delete?', message: 'Gone.', confirmLabel: 'Delete', danger: true }));
+    return (
+      <div>
+        <button id="go" onClick={() => void run()}>go</button>
+        <Host />
+      </div>
+    );
+  }
+  const dialogButton = (text: string) =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(
+      (b) => b.textContent?.trim() === text,
+    )!;
+
+  it('resolves true when the confirm button is pressed', async () => {
+    const onAnswer = vi.fn();
+    const c = mount(() => <Asker onAnswer={onAnswer} />);
+    c.querySelector<HTMLButtonElement>('#go')!.click();
+    await flush();
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain('Gone.');
+    dialogButton('Delete').click();
+    await flush();
+    expect(onAnswer).toHaveBeenCalledWith(true);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('resolves false when cancelled', async () => {
+    const onAnswer = vi.fn();
+    const c = mount(() => <Asker onAnswer={onAnswer} />);
+    c.querySelector<HTMLButtonElement>('#go')!.click();
+    await flush();
+    dialogButton('Cancel').click();
+    await flush();
+    expect(onAnswer).toHaveBeenCalledWith(false);
   });
 });

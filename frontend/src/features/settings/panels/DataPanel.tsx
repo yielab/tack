@@ -60,7 +60,7 @@ const DataPanel: Component = () => {
 
   const CARD = 'flex flex-col gap-2.5 rounded-[26px] bg-panel p-[18px]';
   const TITLE = 'text-[1.1875rem] leading-tight';
-  const NOTE = 'text-[0.78125rem]';
+  const NOTE = 'text-caption';
   const CODE = 'font-mono';
 
   return (

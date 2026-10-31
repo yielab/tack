@@ -1,7 +1,7 @@
 # VI-A2 handoff
 
 **ACCEPTANCE (fill in by the user, do not self-mark):**
-`docs/adr/0061-provider-credentials-at-the-runner-boundary.md` is **NOT YET ACCEPTED**.
+`docs/adr/0005-provider-credentials-at-the-runner-boundary.md` is **NOT YET ACCEPTED**.
 Wave 15 (VI-B1/VI-B2/VI-B3) may not branch until a human records acceptance here as a
 dated amendment (see the template's own instruction below):
 
@@ -12,7 +12,7 @@ dated amendment (see the template's own instruction below):
   tip, matches the Wave 14 dispatch SHA in `docs/agent-handoffs/part-vi/README.md`'s table),
   branch `agent/vi-a2-adr-0061`, final SHA — see the last commit on this branch (uncommitted
   at handoff time per instruction; not committed).
-- Files changed (must equal ownership list): `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`
+- Files changed (must equal ownership list): `docs/adr/0005-provider-credentials-at-the-runner-boundary.md`
   (new), `docs/CONFIG.md` (the one provider-credentials bullet, l.89-108 before the edit),
   `docs/agent-handoffs/part-vi/VI-A2.md` (this file). Nothing else. No code.
 - Contract fixtures consumed: none. `docs/contracts/runner-v1/` is unaffected — the ADR's
@@ -54,9 +54,9 @@ dated amendment (see the template's own instruction below):
 
 | Claim (user-visible, added or kept) | Evidence — command, test name, or transcript |
 |---|---|
-| ADR 0061 exists and makes six decisions, each with rejected options and a cost | `grep -c "^### " docs/adr/0061-provider-credentials-at-the-runner-boundary.md` → 6; `grep -c "Rejected:" docs/adr/0061-*.md` → 11 (decisions 1 and 2 each reject two options, decisions 3, 4, 5 and 6 each reject two, one, one and two respectively) |
-| ADR cites 0050 and 0058 by line for what it reaffirms and bounds | `grep -n "l\.29-30\|l\.80-83\|l\.69-75\|l\.99" docs/adr/0061-*.md` — matches `docs/adr/0050-runner-control-plane.md:29-30` ("never becomes a model proxy") and `:99` ("a Tack model gateway"), `docs/adr/0058-standalone-single-binary-runner.md:80-83` ("Vendor credentials remain outside Tack") and `:69-75` (off-by-default / loopback-only) |
-| `docs/CONFIG.md`'s provider bullet no longer states an absolute negation | `git diff docs/CONFIG.md` — the sentence "there is no `TACK_*` variable for a model provider or endpoint, by design" is replaced with the API-server-scoped rule plus a pointer to ADR 0061 for the runner-side exception |
+| ADR 0005 exists and makes six decisions, each with rejected options and a cost | `grep -c "^### " docs/adr/0005-provider-credentials-at-the-runner-boundary.md` → 6; `grep -c "Rejected:" docs/adr/0005-*.md` → 11 (decisions 1 and 2 each reject two options, decisions 3, 4, 5 and 6 each reject two, one, one and two respectively) |
+| ADR cites 0002 and 0003 by line for what it reaffirms and bounds | `grep -n "l\.29-30\|l\.80-83\|l\.69-75\|l\.99" docs/adr/0005-*.md` — matches `docs/adr/0002-runner-control-plane.md:29-30` ("never becomes a model proxy") and `:99` ("a Tack model gateway"), `docs/adr/0003-standalone-single-binary-runner.md:80-83` ("Vendor credentials remain outside Tack") and `:69-75` (off-by-default / loopback-only) |
+| `docs/CONFIG.md`'s provider bullet no longer states an absolute negation | `git diff docs/CONFIG.md` — the sentence "there is no `TACK_*` variable for a model provider or endpoint, by design" is replaced with the API-server-scoped rule plus a pointer to ADR 0005 for the runner-side exception |
 | The status quo before this ADR had zero UI-written provider credentials and zero resolved `secret_reference` entries | `rg -n "secret_reference" crates/tack-runner/src/harness/{claude_code,codex}.rs` → both skip/warn, never resolve, per the ADR's own Measurement section |
 | Every sentence in `docs/` / `README.md` the ADR makes imprecise is listed below | see "Sentence list" section — the exact grep from the card's Tasks, run before and after this card's `docs/CONFIG.md` edit |
 
@@ -68,19 +68,19 @@ provider\|never reads, stores, or forwards" docs/ README.md`
 **Before this card's edit**, non-ADR hits were:
 - `docs/CONFIG.md:104` — "there is no `TACK_*` variable for a model provider or endpoint,
   by design." **Fixed by this card** (see diff above).
-- `docs/book/src/roadmap.md:3273` — "ADR 0050 says the Tack API 'never becomes a model
-  proxy'; ADR 0058 says 'vendor credentials remain outside Tack'. Both are statements
+- `docs/book/src/roadmap.md:3273` — "ADR 0002 says the Tack API 'never becomes a model
+  proxy'; ADR 0003 says 'vendor credentials remain outside Tack'. Both are statements
   about the API server and both are correct. Both are cited … as if they meant 'Tack
   cannot help you configure a provider'." **Not fixed by this card** — it is not in this
   card's `Owns`, and on inspection it already correctly frames the confusion (it is the
   roadmap's own diagnosis of the problem VI-A2 exists to solve, not an instance of the
-  confusion). Flagged for VI-A1/VI-D1 to consider adding a forward reference to ADR 0061
+  confusion). Flagged for VI-A1/VI-D1 to consider adding a forward reference to ADR 0005
   once accepted, but it asserts nothing false as written.
 
 **After this card's edit**, re-running the same grep, the only remaining hits are:
-- `docs/adr/0050-runner-control-plane.md:30` — the ADR itself, correctly stating its own
+- `docs/adr/0002-runner-control-plane.md:30` — the ADR itself, correctly stating its own
   scope (exempt by design).
-- `docs/CONFIG.md:112` — now an attributed quote of ADR 0050's exact wording ("See … ('the
+- `docs/CONFIG.md:112` — now an attributed quote of ADR 0002's exact wording ("See … ('the
   Tack API never starts a coding harness and never becomes a model proxy')"), immediately
   preceded by the bounded, corrected sentence. This still matches the grep literally
   (it contains the quoted string) but no longer asserts the negation as the whole truth —
@@ -96,7 +96,7 @@ this ADR; VI-A3 is a separate concern (the two-component story), not this grep.
 
 ## Measured numbers
 
-- 6 decisions in the ADR, `grep -c "^### " docs/adr/0061-*.md`.
+- 6 decisions in the ADR, `grep -c "^### " docs/adr/0005-*.md`.
 - 11 distinct "Rejected:" paragraphs across the 6 decisions, `grep -c "Rejected:" docs/adr/0061-*.md`.
 - 1 file changed outside the new ADR and this handoff: `docs/CONFIG.md`, 1 bullet
   (l.89-108 in the pre-edit file), confirmed by `git diff --stat`.
@@ -128,12 +128,12 @@ the UI.
 
 - Tokens read before the first edit (cold start): the block's own estimate was ~12k. My
   actual reads: `TODO.md` header (58 lines) + §VI.0-§VI.3 prelude (~260 lines) + the VI-A2
-  card section (76 lines) + ADR 0050 whole (99 lines) + ADR 0058 whole (103 lines) +
-  `head -40` of ADR 0060 + `head -40` of ADR 0059 (read instead of 0060 alone, since 0060's
-  own header pointed at 0059 for the "Measurement" section shape) + the named `docs/CONFIG.md`,
+  card section (76 lines) + ADR 0002 whole (99 lines) + ADR 0003 whole (103 lines) +
+  `head -40` of ADR 0060 + `head -40` of ADR 0004 (read instead of 0060 alone, since 0060's
+  own header pointed at 0004 for the "Measurement" section shape) + the named `docs/CONFIG.md`,
   `wiring.rs`, `claude_code.rs`, `codex.rs`, `config.rs`, `local_runner.rs`, `settings.rs`
   ranges + the IV-A5 grep. Estimated ~13-15k tokens — close to the block's estimate, slightly
-  over because I also read ADR 0059's header (not named in the read list) to see a second
+  over because I also read ADR 0004's header (not named in the read list) to see a second
   worked example of the house format before committing to a structure.
 - Context size at handoff: comfortably under the 120k ceiling; nowhere near the ~150k stop
   threshold.
@@ -143,7 +143,7 @@ the UI.
   existing wire type's exact shape (the flattened `additional` map) accurately rather than
   from memory of the crate map alone. Recorded here per the instruction to justify any read
   outside the named list, even though it was small and load-bearing rather than wasted.
-  `docs/adr/0059-single-operator-identity-posture.md`'s header (40 lines) was likewise not
+  `docs/adr/0004-single-operator-identity-posture.md`'s header (40 lines) was likewise not
   named but read to see two examples of the house format's "Measurement" section before
   writing one; also small and used.
 - Read-list lines that were wrong: none found — every named range existed at the stated
@@ -161,7 +161,7 @@ with a Status/Date/Supersedes/Contract block and evidence-heavy prose, and the s
 actual decisions didn't appear in plain language until well past the first screen. That
 is a real defect in a document whose only job is getting a human to say yes or no.
 
-Rewrote `docs/adr/0061-provider-credentials-at-the-runner-boundary.md` following a new
+Rewrote `docs/adr/0005-provider-credentials-at-the-runner-boundary.md` following a new
 `.claude/decision-contract.md` (added at the same time, modeled on the existing
 `reporting-contract.md`): a three-line "Decide / Why now / If you do nothing" block and
 a one-row-per-decision table now open the file, in plain language with no citations; all
@@ -177,7 +177,7 @@ standard way to hold harness and provider credentials, and for a multi-tenant or
 authentication design alongside it. The answer, recorded in the roadmap's new
 "Credentials: who runs what, where, and how a key is kept" section under Phase 60:
 
-- Decision 1 of ADR 0061 is refined from "an owner-only file" to "the platform keychain
+- Decision 1 of ADR 0005 is refined from "an owner-only file" to "the platform keychain
   first, an owner-only file only where no platform store answers, and the runner reports
   which backend holds a key" — the `gh` / `docker` pattern. Table row 1, the opening
   "Decide" paragraph and Full reasoning §1 changed (one rejected option added); decisions
@@ -187,14 +187,14 @@ authentication design alongside it. The answer, recorded in the roadmap's new
 - Multi-tenant / identity is answered as a deferred direction with a trigger — a second
   person sharing one board — not as a Part. The user's own framing is that the normal
   case is one person, several projects, their own keys, their own machine, where the
-  runner already is the per-person credential boundary. ADR 0059 stands; the shape a
+  runner already is the per-person credential boundary. ADR 0004 stands; the shape a
   future identity Part takes is written down so it is not re-derived.
 
 Status remains `proposed`. The acceptance line above is still the user's to fill.
 
 **2026-09-03 — ACCEPTANCE, recorded by the integrator on the user's behalf.** The user
-accepted ADR 0061 in chat with the word "listo" in reply to the integrator's explicit
-request to accept ADRs 0061 and 0062 ("Pendiente de ti: aceptar ADR 0062 (y la 0061, con la
+accepted ADR 0005 in chat with the word "listo" in reply to the integrator's explicit
+request to accept ADRs 0005 and 0006 ("Pendiente de ti: aceptar ADR 0006 (y la 0005, con la
 decisión 1 ya refinada)"). The acceptance covers the six decisions as they stand in the
 file at this date, including the refined decision 1. If the user disagrees with this
 reading, they strike this paragraph and Wave 15 stops. **User acceptance date: 2026-09-03.**

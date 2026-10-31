@@ -8,7 +8,7 @@ export const HELP = {
   pushTheBranch: { text: 'After a run, push the branch to your remote with your own git credentials. Off keeps everything local.', href: BOOK.automation },
   mergeOnDone: { text: 'When you move a finished task to Done, Tack merges its pull request for you, once CI has passed.', href: BOOK.automation },
   autonomyLevel: { text: 'How much Tack may merge without you. At L3 you press Merge yourself. L4 and L5 let Tack merge when a check you trust has passed.', href: BOOK.automation },
-  verifyRequire: { text: 'The checks prill must have run before Tack merges on its own. Leave empty to ask for none.', href: BOOK.automation },
+  verifyRequire: { text: 'The checks the verifier must have run before Tack merges on its own. Leave empty to ask for none.', href: BOOK.automation },
   loopCap: { text: 'How many times a rejected change goes back to the agent to be fixed. 0 sends it back never.', href: BOOK.automation },
   budgets: { text: 'Limits for work Tack does by itself, per day. Empty means no limit.', href: BOOK.automation },
   model: { text: "The agent's default is what it uses when you run it yourself. Pick a specific one only if you need to.", href: BOOK.automation },
@@ -25,6 +25,7 @@ export const HELP = {
   teamBadge: { text: 'The team that ran this task, named by the profile the run used.', href: BOOK.automation },
   mergedByItself: { text: 'Tack merged this change on its own, under the verifier\'s signed verdict.', href: BOOK.automation },
   automationRow: { text: 'What happens to this task without you: whether it starts by itself, which team takes it, and how far Tack may merge it.', href: BOOK.automation },
+  decisionToken: { text: 'A second secret, apart from signing in, that your administrator sets up. Needed to answer the agent; never sent when you only look.', href: BOOK.decisionToken },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;
 
@@ -42,7 +43,7 @@ export interface AgentSafetyReport {
 }
 
 /** Whether an agent runs sandboxed, runs unsandboxed and asks first, or does not run at all —
- *  the runner refuses an agent with no sandbox that cannot ask (ADR 0077). Across several
+ *  the runner refuses an agent with no sandbox that cannot ask (ADR 0018). Across several
  *  runners the least safe report decides; `null` when no runner says. */
 export function agentSafety(reports: readonly AgentSafetyReport[]): { text: string; tone: 'ok' | 'asks' | 'blocked' } | null {
   const known = reports.filter((r) => r.sandbox === 'bwrap' || r.sandbox === 'none' || r.sandbox === 'harness');
@@ -58,3 +59,10 @@ export const SAFETY_TEXT = {
   asks: "Not sandboxed on this computer, so the agent asks before each action unless you turn that off",
   blocked: "Doesn't run on this computer: it isn't sandboxed and can't ask before it acts. Install bubblewrap (Linux), or update the agent to a version that can ask.",
 } as const;
+
+/** What a level allows, in one sentence; the words the Merging guide uses. */
+export const LEVEL_MEANING: Record<'L3' | 'L4' | 'L5', string> = {
+  L3: 'L3: you approve each step that needs it, and you merge every change yourself.',
+  L4: 'L4: Tack merges by itself inside the domains you name; you approve the rest.',
+  L5: 'L5: Tack merges by itself anywhere in the repository, once its checks pass.',
+};

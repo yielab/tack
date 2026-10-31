@@ -5,20 +5,21 @@ import CreateProjectModal from './CreateProjectModal';
 import { Button, Skeleton } from '../../shared/ui';
 import { IconBoard, IconPlus } from '../../shared/ui/icons';
 import { projectTypePillStyle } from '../../shared/ui/projectTypeTone';
+import Card from '../../shared/ui/Card';
 
 /** Six card-shaped placeholders in the loaded grid's container shape. */
 const ProjectsGridSkeleton: Component = () => (
   <div class="grid grid-cols-1 gap-[18px] md:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
     <For each={[1, 2, 3, 4, 5, 6]}>
       {() => (
-        <div class="flex h-[150px] flex-col gap-2.5 rounded-[28px] bg-panel p-[18px]">
+        <Card class="flex h-[150px] flex-col gap-2.5 p-[18px]">
           <Skeleton width="70%" height="16px" />
           <Skeleton width="90%" height="10px" />
           <Skeleton width="60%" height="10px" />
           <div class="mt-auto">
             <Skeleton width="40%" height="10px" />
           </div>
-        </div>
+        </Card>
       )}
     </For>
   </div>
@@ -95,7 +96,7 @@ const Projects: Component = () => {
               {(project) => (
                 <A
                   href={`/projects/${project.id}/board`}
-                  class="flex min-h-[170px] flex-col gap-2.5 rounded-[28px] border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
+                  class="flex min-h-[170px] flex-col gap-2.5 rounded-card border-2 border-transparent bg-panel p-5 transition-[border-color,box-shadow] hover:border-brand hover:shadow-[var(--shadow-md)] focus:outline-none focus-visible:border-brand"
                 >
                   <div class="flex items-start gap-2.5">
                     <h3 class="min-w-0 text-[1.3125rem] leading-[1.15] text-content">

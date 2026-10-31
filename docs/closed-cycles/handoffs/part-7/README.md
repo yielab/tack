@@ -11,14 +11,14 @@ Each card writes **exactly one**; corrections are dated amendments. No card edit
 board in `TODO.md`; the wave integrator does, after independent verification.
 
 The board is `TODO.md` → **Part VII**, §VII.0–§VII.6 (it sits **above** Part VI). The
-decision of record is `docs/adr/0062-desktop-app-and-background-service.md`, accepted
+decision of record is `docs/adr/0006-desktop-app-and-background-service.md`, accepted
 2026-09-03 — its first table is the contract every card implements.
 
 ## Waves, order, and the base to branch from
 
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
-| 18 | VII-A2 · VII-B1 | yes | ADR 0062 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `2958e9e` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
+| 18 | VII-A2 · VII-B1 | yes | ADR 0006 accepted (done); Tauri prerequisites verified installed 2026-09-03 (tauri-cli 2.11.4, webkit2gtk-4.1) | `2958e9e` — **both dispatched 2026-09-03**; — the 2026-09-03 planning commit; branch from the `develop` tip |
 | 19 | VII-B2 · VII-B3 | yes | B1 integrated | **Integrated 2026-09-04** — dispatched from `8b71756` |
 | 20 | VII-C1 → VII-C2 | no | C1: B2 + B3; C2: C1 **and Part VI's VI-C1** | Wave 19 is integrated; pin the tip with `git rev-parse --short develop` at dispatch. C1 also owns collapsing the two first-run signals Wave 19 left in the data root (B2's `.autostart-initialized` marker and B3's `settings.json`) |
 | 20b | VII-C3 | — | VII-C1 merged |  `develop` tip at dispatch |
@@ -134,7 +134,7 @@ n=$(grep -n "### VII-<ID> " TODO.md|cut -d: -f1); sed -n "${n},$((n+45))p" TODO.
 **Branch:** `agent/vii-a2-service` from the Wave 18 base.
 
 **Read (≈ 14k):**
-- The board prelude (~6k) and the VII-A2 card (~1k). ADR 0062 decisions 5 and 8 only:
+- The board prelude (~6k) and the VII-A2 card (~1k). ADR 0006 decisions 5 and 8 only:
   `sed -n '/^| 5 |/p;/^| 8 |/p' docs/adr/0062-*.md`.
 - The CLI's command enum and one existing arm as the shape to copy:
   `n=$(grep -n "enum Commands" crates/tack-cli/src/main.rs|cut -d: -f1); sed -n "${n},$((n+70))p" crates/tack-cli/src/main.rs`;
@@ -170,7 +170,7 @@ exact error and prove the unit-file content by test only; say the live proof is
 that output, and finish. Nothing in this card can be proven without it.
 
 **Read (≈ 18k, plus the two Tauri pages):**
-- The board prelude (~6k) and the VII-B1 card (~1k). ADR 0062 whole (~3k) — it is the
+- The board prelude (~6k) and the VII-B1 card (~1k). ADR 0006 whole (~3k) — it is the
   contract for decisions 1, 2, 4.
 - Tauri, exactly two pages: `https://v2.tauri.app/develop/sidecar/` and
   `https://v2.tauri.app/start/create-project/` (the manual/`cargo` route, not `create-tauri-app`).
@@ -210,7 +210,7 @@ $XDG_SESSION_TYPE`, retry once with `GDK_BACKEND=x11`, record both).
 **Branch:** `agent/vii-b2-tray-lifecycle` from the Wave 18 integration SHA.
 
 **Read (≈ 20k, plus three Tauri pages):**
-- The board prelude and the VII-B2 card; ADR 0062 decision 3 (`sed -n '/^| 3 |/p' docs/adr/0062-*.md`
+- The board prelude and the VII-B2 card; ADR 0006 decision 3 (`sed -n '/^| 3 |/p' docs/adr/0006-*.md`
   and `sed -n '/^### 3\./,/^### 4\./p' docs/adr/0062-*.md`).
 - `docs/agent-handoffs/part-vii/VII-B1.md` (~2k) — the supervisor's API and the
   `tauri.conf.json` keys are copied there.
@@ -245,7 +245,7 @@ environment and prove every action through the window instead; say the tray is
 **Branch:** `agent/vii-b3-data-folders` from the Wave 18 integration SHA.
 
 **Read (≈ 18k, plus one Tauri page):**
-- The board prelude (the folder table is the authority) and the VII-B3 card; ADR 0062
+- The board prelude (the folder table is the authority) and the VII-B3 card; ADR 0006
   decision 5 (`sed -n '/^### 5\./,/^### 6\./p' docs/adr/0062-*.md`).
 - `docs/agent-handoffs/part-vii/VII-B1.md` (~2k); `crates/tack-desktop/src/supervisor.rs` whole.
 - Server defaults you are overriding: `sed -n '225,245p' crates/tack-api/src/config.rs`;
@@ -277,7 +277,7 @@ the integrator.
 **Branch:** `agent/vii-c1-release-bundles` from the Wave 19 integration SHA.
 
 **Read (≈ 22k, plus one page):**
-- The board prelude and the VII-C1 card; ADR 0062 decision 7 and `### 7.`.
+- The board prelude and the VII-C1 card; ADR 0006 decision 7 and `### 7.`.
 - The three Wave 18–19 handoffs' "Claim → evidence" tables only
   (`sed -n '/^## Claim/,/^## Measured/p' docs/agent-handoffs/part-vii/VII-B{1,2,3}.md`).
 - `.github/workflows/release.yml` lines 100–200 (the build matrix and the archive steps);

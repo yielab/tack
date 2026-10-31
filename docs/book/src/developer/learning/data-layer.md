@@ -15,7 +15,7 @@ items = session.query(Item).filter(Item.project_id == project_id).all()
 // Sequelize (Node) — ORM generates the SQL:
 const items = await Item.findAll({ where: { projectId } })
 
-// sqlx (Rust) — you write the SQL; sqlx validates it at compile time:
+// sqlx (Rust) — you write the SQL; sqlx maps the rows to your type:
 let rows = sqlx::query_as::<_, ItemRow>(
     "SELECT id, project_id, title, status FROM items WHERE project_id = ?"
 )
@@ -24,7 +24,7 @@ let rows = sqlx::query_as::<_, ItemRow>(
 .await?;
 ```
 
-The key feature: **sqlx checks your SQL against a real database at compile time**. If the column does not exist, the type is wrong, or the parameter count is off, it will not compile. This is enforced by a cached database schema checked in at `.sqlx/`. If you add a column to a migration and forget to update a query that reads that table, `cargo build` fails with a clear error before you can ever run the broken code.
+sqlx can check queries against a real database at compile time (its `query!` macros). Tack does not use them: its queries are plain strings run through `query`/`query_as`, so a wrong column name or a wrong type shows up when the query runs, not when the code compiles. That is why the repository tests run against a real in-memory database (see below).
 
 This comes at a cost: you write more SQL. The payoff: you have full SQL power — CTEs, `WITH RECURSIVE`, `json_each`, FTS5 `MATCH`, window functions — without fighting an ORM's abstraction layer.
 
@@ -37,7 +37,7 @@ All database operations live in `crates/tack-db/src/repo/`. The structure:
 ```
 crates/tack-db/src/
 ├── lib.rs           # declares Repository struct; re-exports all repo modules
-├── migrations.rs    # 18 migrations embedded as strings
+├── migrations.rs    # the migrations, embedded as strings
 └── repo/
     ├── items.rs
     ├── projects.rs
@@ -159,7 +159,7 @@ This dynamic approach is necessary because `sqlx`'s compile-time checking only w
 
 ## Migrations
 
-Tack has 18 migrations, embedded as constant string arrays in `crates/tack-db/src/migrations.rs`. They run automatically on server startup via `migrations::run_all(&pool)`.
+Tack's migrations are embedded as constant string arrays in `crates/tack-db/src/migrations.rs`. They run automatically on server startup via `migrations::run_all(&pool)`.
 
 ```rust
 // From crates/tack-db/src/migrations.rs

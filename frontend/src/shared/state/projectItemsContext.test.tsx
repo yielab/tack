@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { ProjectItemsProvider, useProjectItems, shareUnchanged } from './projectItemsContext';
 import type { Item } from '../types';
+import { flush } from '../../test/flush';
 
 // Mock useParams so we don't need a live router in these unit tests.
 vi.mock('@solidjs/router', () => ({
@@ -12,8 +13,6 @@ const ITEMS = [
   { id: 'i1', project_id: 'test-proj', title: 'Alpha', item_type: 'task', status: 'todo', priority: 'medium', tags: [], estimate_unit: 'story_points', sort_order: 0, created_at: '', updated_at: '' },
   { id: 'i2', project_id: 'test-proj', title: 'Beta',  item_type: 'bug',  status: 'done', priority: 'high',   tags: [], estimate_unit: 'story_points', sort_order: 1, created_at: '', updated_at: '' },
 ];
-
-const flush = () => new Promise<void>((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -57,6 +56,20 @@ function mount(Child: () => unknown) {
 }
 
 describe('ProjectItemsProvider', () => {
+  it('a_failed_load_is_an_error_and_not_an_empty_list', async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'The board is unreachable' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+    let error: () => unknown = () => undefined;
+    const { container } = mount(() => {
+      const ctx = useProjectItems();
+      error = ctx.error;
+      return <span data-testid="count">{String(ctx.items()?.length ?? -1)}</span>;
+    });
+    await flush();
+    await flush();
+    expect(container.querySelector('[data-testid="count"]')!.textContent).toBe('-1');
+    expect((error() as Error).message).toBe('The board is unreachable');
+  });
+
   it('fetches items from GET /api/projects/{id}/items on mount', async () => {
     const { dispose } = mount(() => <Consumer />);
     await flush();

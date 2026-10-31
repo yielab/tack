@@ -238,10 +238,6 @@ fn update_item_double_option_separates_absent_null_and_value() {
     let id = Uuid::new_v4();
     let set: UpdateItem = serde_json::from_value(json!({"sprint_id": id.to_string()})).unwrap();
     assert_eq!(set.sprint_id, Some(Some(id)));
-
-    // status_category is server-only: never populated from client JSON.
-    let with_cat: UpdateItem = serde_json::from_value(json!({"status_category": "done"})).unwrap();
-    assert_eq!(with_cat.status_category, None);
 }
 
 // ─── ItemSource — the prompt-injection trust boundary ─────────────────

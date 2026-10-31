@@ -93,6 +93,14 @@
       "tokens": null
     },
     {
+      "name": "coverage",
+      "status": "not_applicable",
+      "reason": "no_coverage_command",
+      "detail": null,
+      "durationS": 0.0,
+      "tokens": null
+    },
+    {
       "name": "mutation",
       "status": "passed",
       "reason": null,

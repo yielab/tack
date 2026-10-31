@@ -6,7 +6,5 @@
 //! once — rather than through HTTP; `handlers/production_router.rs` covers
 //! the same lifecycle through the real production router.
 
-mod common;
-
 #[path = "runner_vertical_slice/repository_crash.rs"]
 mod repository_crash;

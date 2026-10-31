@@ -103,6 +103,37 @@ pub struct Transition {
     pub to: String,
 }
 
+/// What a store asks, inside the transaction that moves an item, to learn whether the move is
+/// allowed. The store supplies the facts it alone can read atomically; the decision is core's.
+pub trait StatusGate: Sync {
+    /// Whether an item may go from `from` to `to`, when `occupied` items already sit in `to`.
+    /// Answers the category of `to` (`None` when the workflow does not list it), which says
+    /// which of the item's `started_at` / `completed_at` stamps the move maintains.
+    fn admit_move(
+        &self,
+        from: &str,
+        to: &str,
+        occupied: usize,
+    ) -> Result<Option<StatusCategory>, CoreError>;
+}
+
+impl StatusGate for WorkflowConfig {
+    fn admit_move(
+        &self,
+        from: &str,
+        to: &str,
+        occupied: usize,
+    ) -> Result<Option<StatusCategory>, CoreError> {
+        self.validate_transition(from, to)?;
+        self.check_wip_limit(to, occupied)?;
+        Ok(self
+            .statuses
+            .iter()
+            .find(|status| status.name == to)
+            .map(|status| status.category.clone()))
+    }
+}
+
 impl WorkflowConfig {
     /// Validate that a status transition is allowed.
     pub fn validate_transition(&self, from: &str, to: &str) -> Result<(), CoreError> {

@@ -3,4 +3,4 @@ opencode debug config
 env: the maintainer's own HOME and PATH
 2026-10-13
 
-The resolved config: the person's provider (llamacpp), model, small_model, five MCP servers, a plugin and permission allows. Redacted: any string under a key naming an api key, token, secret or authorization; /home/ox to /home/person; username. Trimmed: agent, command and mode keep three names each; instructions and skills are placeholders (together ~1 MB of the person's prompts).
+The resolved config: the person's provider (llamacpp), model, small_model, five MCP servers, a plugin and permission allows. Redacted: any string under a key naming an api key, token, secret or authorization; the home folder to /home/person; username. Trimmed: agent, command and mode keep three names each; instructions and skills are placeholders (together ~1 MB of the person's prompts).

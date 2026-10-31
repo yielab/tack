@@ -3,7 +3,7 @@
 - Base SHA / branch / card SHA / accepted Wave 0 integration SHA: `1d71785` /
   `agent/iii-a0-contract` / `ce50316` / `f042085`.
 - Files changed: `TODO.md` Part III Wave 0 status row;
-  `docs/adr/0050-runner-control-plane.md`; `docs/contracts/runner-v1/**`;
+  `docs/adr/0002-runner-control-plane.md`; `docs/contracts/runner-v1/**`;
   `docs/agent-handoffs/part-iii/{README,III-A0}.md`.
 - Contract fixtures consumed: none; this card creates the v1 authority.
 - Behavior implemented: documentation-only contract freeze for scheduler/process
@@ -82,7 +82,7 @@ Wave 1 branch point after the combined tree passed:
 - `protocol.json` now expressly permits and names additive authenticated operations that leave
   every existing v1 operation's fields, enum meanings, limits, and semantics unchanged.
   `lifecycle-transitions.json` records authoritative recovery disposition and replay rules;
-  the existing state-pair rules remain unchanged. ADR 0050 records the route and safety rule.
+  the existing state-pair rules remain unchanged. ADR 0002 records the route and safety rule.
 - Required downstream work: B1 adds shared DTOs; B2 persists/replays recovery outcomes; C2
   implements the fenced route; C3 consumes disposition instead of treating all acknowledgements
   alike; B4 adds fixture conformance. Stable existing errors cover malformed input, stale fence,

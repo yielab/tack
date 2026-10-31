@@ -2,6 +2,7 @@ use crate::common::{self, create_test_workspace, setup_test_db};
 use tack_core::models::*;
 use tack_core::vocabulary;
 use tack_core::workflow;
+use tack_protocol::Clock;
 
 /// A `CreateItem` with every field but `title` at its zero/default value —
 /// tests override only the fields their assertions actually check via
@@ -98,9 +99,9 @@ fn board_input(name: &str, grouping: BoardGrouping, is_default: bool) -> CreateB
 }
 
 /// Applies `input` and returns the updated item — panics on a missing item,
-/// which none of this file's `update_item` tests exercise.
+/// which none of this file's update tests exercise.
 async fn set_item(repo: &tack_db::Repository, id: uuid::Uuid, input: UpdateItem) -> Item {
-    repo.update_item(id, input).await.unwrap().unwrap()
+    common::update_item(repo, id, input).await
 }
 
 /// Re-fetches an item, panicking if it no longer exists.
@@ -128,11 +129,10 @@ async fn assert_sprint_id(
     assert_eq!(item_now(repo, item_id).await.sprint_id, expected, "{msg}");
 }
 
-/// An `UpdateItem` moving to `status`/`category`, nothing else changed.
-fn status_update(status: &str, category: workflow::StatusCategory) -> UpdateItem {
+/// An `UpdateItem` moving to `status`, nothing else changed.
+fn status_update(status: &str) -> UpdateItem {
     UpdateItem {
         status: Some(status.into()),
-        status_category: Some(category),
         ..Default::default()
     }
 }
@@ -350,17 +350,7 @@ async fn update_item_status() {
 
     assert_eq!(item.status, "Backlog");
 
-    let updated = repo
-        .update_item(
-            item.id,
-            UpdateItem {
-                status: Some("In Progress".into()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let updated = set_item(&repo, item.id, status_update("In Progress")).await;
 
     assert_eq!(updated.status, "In Progress");
 }
@@ -616,7 +606,7 @@ async fn create_and_get_template() {
         automation: None,
     };
 
-    let template = templates::create_template(repo.pool(), template_data)
+    let template = templates::create_template(&repo, template_data)
         .await
         .unwrap();
 
@@ -624,9 +614,7 @@ async fn create_and_get_template() {
     assert_eq!(template.project_type, ProjectType::Software);
     assert!(!template.is_builtin);
 
-    let fetched = templates::get_template(repo.pool(), template.id)
-        .await
-        .unwrap();
+    let fetched = templates::get_template(&repo, template.id).await.unwrap();
     assert_eq!(fetched.name, "My Software Template");
 }
 
@@ -637,20 +625,18 @@ async fn list_templates_with_filter() {
 
     // Create templates of different types
     let software = template_input("Software Template", ProjectType::Software);
-    templates::create_template(repo.pool(), software)
-        .await
-        .unwrap();
+    templates::create_template(&repo, software).await.unwrap();
     let construction = template_input("Construction Template", ProjectType::Construction);
-    templates::create_template(repo.pool(), construction)
+    templates::create_template(&repo, construction)
         .await
         .unwrap();
 
     // List all templates
-    let all = templates::list_templates(repo.pool(), None).await.unwrap();
+    let all = templates::list_templates(&repo, None).await.unwrap();
     assert_eq!(all.len(), 2);
 
     // Filter by type
-    let software_only = templates::list_templates(repo.pool(), Some(ProjectType::Software))
+    let software_only = templates::list_templates(&repo, Some(ProjectType::Software))
         .await
         .unwrap();
     assert_eq!(software_only.len(), 1);
@@ -665,7 +651,7 @@ async fn delete_template_not_builtin() {
     use tack_db::repo::templates;
 
     let user_template = templates::create_template(
-        repo.pool(),
+        &repo,
         CreateProjectTemplate {
             name: "User Template".into(),
             description: None,
@@ -683,12 +669,12 @@ async fn delete_template_not_builtin() {
     .unwrap();
 
     // Should be able to delete user template
-    templates::delete_template(repo.pool(), user_template.id)
+    templates::delete_template(&repo, user_template.id)
         .await
         .unwrap();
 
     // Verify deleted
-    let result = templates::get_template(repo.pool(), user_template.id).await;
+    let result = templates::get_template(&repo, user_template.id).await;
     assert!(result.is_err());
 }
 
@@ -701,7 +687,7 @@ async fn create_and_list_custom_fields() {
     let project = common::make_project(&repo, ws_id).await;
     use tack_db::repo::custom_fields;
 
-    let field1 = custom_fields::create_field(repo.pool(), project.id, text_field("Customer"))
+    let field1 = custom_fields::create_field(&repo, project.id, text_field("Customer"))
         .await
         .unwrap();
     assert_eq!(field1.name, "Customer");
@@ -709,14 +695,14 @@ async fn create_and_list_custom_fields() {
     assert!(!field1.required);
 
     let select = select_field("Priority Level", &["Low", "Medium", "High"]);
-    let field2 = custom_fields::create_field(repo.pool(), project.id, select)
+    let field2 = custom_fields::create_field(&repo, project.id, select)
         .await
         .unwrap();
     assert_eq!(field2.field_type, CustomFieldType::Select);
     assert!(field2.required);
     assert_eq!(field2.options.as_ref().unwrap().len(), 3);
 
-    let fields = custom_fields::list_fields_for_project(repo.pool(), project.id)
+    let fields = custom_fields::list_fields_for_project(&repo, project.id)
         .await
         .unwrap();
     assert_eq!(fields.len(), 2);
@@ -730,21 +716,20 @@ async fn custom_field_value_upsert() {
     let item = common::make_item(&repo, &project).await;
     use tack_db::repo::custom_fields;
 
-    let field = custom_fields::create_field(repo.pool(), project.id, text_field("Customer"))
+    let field = custom_fields::create_field(&repo, project.id, text_field("Customer"))
         .await
         .unwrap();
 
     // `set_field_value` upserts and returns the freshly-reloaded row, so its
     // own return value already proves the write landed — no separate get.
-    let pool = repo.pool();
     let value =
-        custom_fields::set_field_value(pool, item.id, field.id, serde_json::json!("Acme Corp"))
+        custom_fields::set_field_value(&repo, item.id, field.id, serde_json::json!("Acme Corp"))
             .await
             .unwrap();
     assert_eq!(value.value, serde_json::json!("Acme Corp"));
 
     let updated =
-        custom_fields::set_field_value(pool, item.id, field.id, serde_json::json!("Updated Corp"))
+        custom_fields::set_field_value(&repo, item.id, field.id, serde_json::json!("Updated Corp"))
             .await
             .unwrap();
     assert_eq!(updated.value, serde_json::json!("Updated Corp"));
@@ -759,27 +744,20 @@ async fn custom_field_cascade_delete() {
 
     use tack_db::repo::custom_fields;
 
-    let field = custom_fields::create_field(repo.pool(), project.id, text_field("Test Field"))
+    let field = custom_fields::create_field(&repo, project.id, text_field("Test Field"))
         .await
         .unwrap();
 
     // Set value
-    custom_fields::set_field_value(
-        repo.pool(),
-        item.id,
-        field.id,
-        serde_json::json!("Test Value"),
-    )
-    .await
-    .unwrap();
-
-    // Delete field - should cascade delete values
-    custom_fields::delete_field(repo.pool(), field.id)
+    custom_fields::set_field_value(&repo, item.id, field.id, serde_json::json!("Test Value"))
         .await
         .unwrap();
 
+    // Delete field - should cascade delete values
+    custom_fields::delete_field(&repo, field.id).await.unwrap();
+
     // Value should be gone
-    let result = custom_fields::get_field_value(repo.pool(), item.id, field.id).await;
+    let result = custom_fields::get_field_value(&repo, item.id, field.id).await;
     assert!(result.is_err());
 }
 
@@ -793,19 +771,17 @@ async fn create_and_list_boards() {
     use tack_db::repo::boards;
 
     let main = board_input("Main Board", BoardGrouping::Status, true);
-    let board1 = boards::create_board(repo.pool(), project.id, main)
-        .await
-        .unwrap();
+    let board1 = boards::create_board(&repo, project.id, main).await.unwrap();
     assert_eq!(board1.name, "Main Board");
     assert!(board1.is_default);
 
     let priority = board_input("Priority View", BoardGrouping::Priority, false);
-    let board2 = boards::create_board(repo.pool(), project.id, priority)
+    let board2 = boards::create_board(&repo, project.id, priority)
         .await
         .unwrap();
     assert!(!board2.is_default);
 
-    let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
+    let all_boards = boards::list_boards(&repo, project.id).await.unwrap();
     assert_eq!(all_boards.len(), 2);
 }
 
@@ -818,22 +794,16 @@ async fn default_board_management() {
 
     // Create first board as default, then create a second and make it default.
     let one = board_input("Board 1", BoardGrouping::Status, true);
-    let board1 = boards::create_board(repo.pool(), project.id, one)
-        .await
-        .unwrap();
+    let board1 = boards::create_board(&repo, project.id, one).await.unwrap();
     let two = board_input("Board 2", BoardGrouping::Priority, true);
-    let board2 = boards::create_board(repo.pool(), project.id, two)
-        .await
-        .unwrap();
+    let board2 = boards::create_board(&repo, project.id, two).await.unwrap();
 
     // Board 1 should no longer be default; board 2 should be.
-    let board1_updated = boards::get_board(repo.pool(), board1.id).await.unwrap();
+    let board1_updated = boards::get_board(&repo, board1.id).await.unwrap();
     assert!(!board1_updated.is_default);
     assert!(board2.is_default);
 
-    let default = boards::get_default_board(repo.pool(), project.id)
-        .await
-        .unwrap();
+    let default = boards::get_default_board(&repo, project.id).await.unwrap();
     assert_eq!(default.unwrap().id, board2.id);
 }
 
@@ -854,19 +824,19 @@ async fn board_grouping_types() {
 
     for (name, grouping) in groupings {
         let input = board_input(name, grouping, false);
-        let board = boards::create_board(repo.pool(), project.id, input)
+        let board = boards::create_board(&repo, project.id, input)
             .await
             .unwrap();
         assert_eq!(board.name, name);
     }
 
-    let all_boards = boards::list_boards(repo.pool(), project.id).await.unwrap();
+    let all_boards = boards::list_boards(&repo, project.id).await.unwrap();
     assert_eq!(all_boards.len(), 4);
 }
 
 // ─── Correctness hotfix regressions ─────────────────
 
-/// `update_item` must persist a sprint assignment and later clear it when
+/// an item update must persist a sprint assignment and later clear it when
 /// the PATCH sends `null` (double-`Option` `Some(None)`), while an absent field
 /// (outer `None`) leaves the value untouched.
 #[tokio::test]
@@ -946,8 +916,6 @@ async fn update_item_persists_and_clears_due_date() {
 /// completed_at; leave done → clear completed_at (keeping started_at).
 #[tokio::test]
 async fn status_transition_timestamps() {
-    use tack_core::workflow::StatusCategory;
-
     let repo = setup_test_db().await;
     let ws = create_test_workspace(&repo).await;
     let project = common::make_project(&repo, ws).await;
@@ -956,20 +924,20 @@ async fn status_transition_timestamps() {
     assert!(item.completed_at.is_none());
 
     // → In Progress: started_at stamped, completed_at still empty.
-    let in_progress = status_update("In Progress", StatusCategory::InProgress);
+    let in_progress = status_update("In Progress");
     let updated = set_item(&repo, item.id, in_progress).await;
     assert!(updated.started_at.is_some(), "started_at must stamp");
     assert!(updated.completed_at.is_none());
     let started = updated.started_at;
 
     // → Done: completed_at stamped, started_at preserved.
-    let done = status_update("Done", StatusCategory::Done);
+    let done = status_update("Done");
     let updated = set_item(&repo, item.id, done).await;
     assert!(updated.completed_at.is_some(), "completed_at must stamp");
     assert_eq!(updated.started_at, started, "started_at preserved");
 
     // → back to a Todo column: completed_at cleared, started_at preserved.
-    let todo = status_update("To Do", StatusCategory::Todo);
+    let todo = status_update("To Do");
     let updated = set_item(&repo, item.id, todo).await;
     assert!(
         updated.completed_at.is_none(),
@@ -1094,7 +1062,7 @@ async fn outline_batch_failing_midway_writes_nothing() {
 #[tokio::test]
 async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_place() {
     use tack_core::outline::bundle::ProfileRow;
-    use tack_db::repo::execution::SystemExecutionClock;
+    use tack_protocol::SystemClock;
 
     let repo = setup_test_db().await;
     let ws_id = create_test_workspace(&repo).await;
@@ -1170,11 +1138,11 @@ async fn bundle_reads_return_what_two_inserts_put_in_and_a_profile_writes_in_pla
         delivers: Some("an answer".into()),
         builtin: true,
     };
-    repo.write_agent_profile(&row, &SystemExecutionClock)
+    repo.write_agent_profile(&row, SystemClock.now())
         .await
         .unwrap();
     row.name = "Second".into();
-    repo.write_agent_profile(&row, &SystemExecutionClock)
+    repo.write_agent_profile(&row, SystemClock.now())
         .await
         .unwrap();
     let rows = repo.list_agent_profile_rows().await.unwrap();

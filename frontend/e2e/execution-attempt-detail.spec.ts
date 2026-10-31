@@ -150,7 +150,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // Enter the deployment's real decision token (this file's own
     // `playwright.config.ts` addition configures `TACK_EXECUTION_DECISION_TOKEN`
     // for exactly this test).
-    await drawer.getByLabel('Your decision token').fill('e2e-decision-token');
+    await drawer.getByLabel('Your decision token', { exact: true }).fill('e2e-decision-token');
     await drawer.getByRole('button', { name: 'Save' }).click();
 
     // Resolve the REAL decision from its listed row — a genuine POST to the
@@ -234,7 +234,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // FIELD's own local input state, distinct from the persisted
     // preference `decisionTokenStore` already covers; only a live,
     // continuously-mounted `DecisionInbox` keeps it.
-    const tokenField = drawer.getByLabel('Your decision token');
+    const tokenField = drawer.getByLabel('Your decision token', { exact: true });
     await tokenField.fill('typed-not-saved-token');
     await drawer.getByText('Allow once', { exact: true }).click();
 

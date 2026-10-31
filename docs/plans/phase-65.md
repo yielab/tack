@@ -16,12 +16,12 @@ task that seems to need one of them reversed stops and reports.
 
 | Decided | Where |
 |---|---|
-| A run can pause and ask on every harness; Tack builds it once in the core, each harness uses it when its CLI offers a stdio way, and declares `decisions: unsupported` with a measured reason until then. Only a stdio channel fits the seam; an HTTP one is refused until a second harness needs it. | ADR 0068 amendment 2026-09-18; ADR 0066 amendment |
-| DAG-ordered sprint dispatch is gone and comes back only on evidence of use. | ADR 0068 amendment 2026-09-18 |
-| Desktop bundles ship unsigned; signing is a separate decision with money attached. | ADR 0062 §7 |
-| Windows has no background service: the desktop app supervises the server there. | ADR 0062 |
-| One operator, one identity. No multi-user, no SSO. | ADR 0059 |
-| `tack.toml` never reads the `--with-runner` gate; the gate belongs to `tack-cli`. | ADR 0058 |
+| A run can pause and ask on every harness; Tack builds it once in the core, each harness uses it when its CLI offers a stdio way, and declares `decisions: unsupported` with a measured reason until then. Only a stdio channel fits the seam; an HTTP one is refused until a second harness needs it. | ADR 0010 amendment 2026-09-18; ADR 0008 amendment |
+| DAG-ordered sprint dispatch is gone and comes back only on evidence of use. | ADR 0010 amendment 2026-09-18 |
+| Desktop bundles ship unsigned; signing is a separate decision with money attached. | ADR 0006 §7 |
+| Windows has no background service: the desktop app supervises the server there. | ADR 0006 |
+| One operator, one identity. No multi-user, no SSO. | ADR 0004 |
+| `tack.toml` never reads the `--with-runner` gate; the gate belongs to `tack-cli`. | ADR 0003 |
 | A provider is one module under `crates/tack-runner/src/provider/`; today `anthropic` and `vercel_ai_gateway`. | ADR 0063, amendment 2026-09-19 |
 | No plugin seam, no descriptors from a file, no grammar DSL, no remote docket, no docket pods, no import from `tack_orch::adapters`, no new `TACK_*` variable for a harness, no copied docket source or fixtures. | harness plan, "Refused, by name" (archived) |
 | GitHub push is best-effort and fire-and-forget; Tack-initiated last write wins on the way out. | `docs/GITHUB-SYNC.md` |
@@ -36,12 +36,14 @@ reverse:
   deliver to it. A poll with the token that push already uses reaches every install. A
   webhook route is refused until an install that is reachable from the internet asks.
 - **opencode attempts share one package cache and nothing else.** Each attempt keeps its
-  own `HOME` and config directory (ADR 0067 decision 4); only the npm cache that the
+  own `HOME` and config directory (ADR 0009 decision 4); only the npm cache that the
   `@ai-sdk/openai-compatible` install fills moves to one directory under the runner's
   state dir. Attempts see each other's downloaded packages and none of each other's
   sessions.
 
 ## Wave 0 — the user, no agent
+
+**Cancelled 2026-10-27:** the rows still open (0.3, 0.7, 0.8, 0.9) were never approved as work and are no longer tracked. The rows marked done stay as history.
 
 Each of these was refused to an agent by the permission classifier, costs money, or needs
 a machine this one is not. They are listed once, here, with the command.
@@ -56,7 +58,7 @@ a machine this one is not. They are listed once, here, with the command.
 | 0.6 | **Done 2026-09-21.** All nine checklist items walked and green, `main` fast-forwarded to `ca97e48`, `v0.1.0-beta.9` tagged and pushed. Release run 35657940977: thirteen jobs, all success. Twenty-three assets, including the five desktop bundles, and `packaging/` re-pointed with `scripts/sync-packaging.sh`. The published one-liner was then run end to end and verified its checksum. |
 | 0.7 | The publish list in the checklist: seven issues, four posts, two Discussions. | as written there |
 | 0.8 | Install on a macOS and a Windows machine once, following `README.md`. | `curl -fsSL https://raw.githubusercontent.com/yielab/tack/main/install.sh \| sh`, and the `.dmg` / `.msi` from the tag above |
-| 0.9 | Code signing (ADR 0062 §7): an Apple developer account and a Windows certificate. Until decided, nothing is scheduled. | — |
+| 0.9 | Code signing (ADR 0006 §7): an Apple developer account and a Windows certificate. Until decided, nothing is scheduled. | — |
 
 Waves 1–4 do not wait for Wave 0. What they build ships as `v0.1.0-beta.9`.
 

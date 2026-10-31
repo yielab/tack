@@ -61,7 +61,7 @@ cargo build --release -p tack-cli --features embed-spa
 cargo build --release -p tack-runner   # for two-machines.png's second real runner process
 
 # 2. Own database/storage/state, inside this worktree; own port; embedded runner
-#    (ADR 0061 decision 6 — "tack serve --with-runner" is the intended path).
+#    (ADR 0005 decision 6 — "tack serve --with-runner" is the intended path).
 TACK_DATABASE_URL='sqlite:<worktree>/.vi-d2-work/tack.db?mode=rwc' \
 TACK_PORT=3311 \
 TACK_STORAGE_DIR=<worktree>/.vi-d2-work/storage \

@@ -32,12 +32,16 @@ const ItemDetailDrawer: Component = () => {
   // unchanged) does not re-apply the tab — a narrower, and much less
   // surprising, edge case than the leak this avoids.
   const [activeTab, setActiveTab] = createSignal(tabFromSearchParam(untrack(() => searchParams.tab)));
+  // `?run=` is read and cleared the same way: it names the run the Execution tab opens on.
+  const [activeRun, setActiveRun] = createSignal<string | undefined>(undefined);
   createEffect(() => {
     const id = itemId();
     if (!id) return;
     const requestedTab = untrack(() => searchParams.tab);
+    const requestedRun = untrack(() => searchParams.run);
     setActiveTab(tabFromSearchParam(requestedTab));
-    if (requestedTab !== undefined) setSearchParams({ tab: undefined }, { replace: true });
+    setActiveRun(typeof requestedRun === 'string' ? requestedRun : undefined);
+    if (requestedTab !== undefined || requestedRun !== undefined) setSearchParams({ tab: undefined, run: undefined }, { replace: true });
   });
 
   const close = () => setSearchParams({ item: undefined });
@@ -49,7 +53,8 @@ const ItemDetailDrawer: Component = () => {
   const expand = () => {
     const it = item();
     if (!it) return;
-    const tab = activeTab() === 'details' ? '' : `?tab=${activeTab()}`;
+    const run = activeTab() === 'execution' && activeRun() ? `&run=${encodeURIComponent(activeRun()!)}` : '';
+    const tab = activeTab() === 'details' ? '' : `?tab=${activeTab()}${run}`;
     navigate(`/projects/${it.project_id}/items/${it.id}${tab}`);
   };
 
@@ -76,7 +81,7 @@ const ItemDetailDrawer: Component = () => {
         }
       >
         {(it) => (
-          <ItemBody item={it()} editor={editor} layout="drawer" tab={activeTab()} onTabChange={setActiveTab} />
+          <ItemBody item={it()} editor={editor} layout="drawer" tab={activeTab()} onTabChange={(id) => { setActiveTab(id); setActiveRun(undefined); }} run={activeRun()} onRunChange={setActiveRun} />
         )}
       </Show>
     </Drawer>

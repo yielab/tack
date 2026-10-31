@@ -2,8 +2,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import FirstRunBanner from './FirstRunBanner';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 
 function mockRunners(data: unknown[]) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(() =>

@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
 };
 

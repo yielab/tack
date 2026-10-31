@@ -19,26 +19,24 @@
 //! writes `items.status`, directly or indirectly: `resolve` never touches the
 //! `items` table.
 
+use crate::extract::{Json, Path, RawBody};
 use axum::{
-    Json, Router,
-    body::Bytes,
-    extract::{Path, State},
+    Router,
+    extract::State,
     http::{HeaderMap, StatusCode},
     routing::post,
 };
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{Value, json};
-use sqlx::{Row, SqlitePool};
-use std::collections::BTreeSet;
 use std::sync::Arc;
-use tack_db::{
-    Repository,
-    repo::execution::{ExecutionClock, resume_attempt_after_decisions},
-};
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_app::runs::resolve_decision::ResolveOutcome;
+use tack_app::{AppError, runs};
+use tack_core::decision::DecisionResolvedBy;
+use tack_db::Repository;
+use tack_protocol::Clock;
+use tack_protocol::execution::{AttemptId, StableErrorCode};
+use utoipa::ToSchema;
 
-use crate::handlers::executions::canonical_json;
 use crate::middleware::constant_time_eq;
 
 /// `docs/contracts/runner-v1/limits.json`'s `decision_answer_bytes_max`,
@@ -56,7 +54,7 @@ const DECISION_ANSWER_BYTES_MAX: u64 = 32_768;
 #[derive(Clone)]
 pub struct DecisionOperatorState {
     pub repo: Repository,
-    pub clock: Arc<dyn ExecutionClock>,
+    pub clock: Arc<dyn Clock>,
     /// `TACK_EXECUTION_DECISION_TOKEN`. `None` means
     /// "not configured on this server" — the fail-closed default: nothing
     /// is ever compared against an unset token. See
@@ -68,7 +66,7 @@ impl DecisionOperatorState {
     /// `decision_token` defaults to `None` (fail-closed) — a caller must
     /// opt in via [`Self::with_decision_token`] to ever allow a resolve
     /// through.
-    pub fn with_clock(repo: Repository, clock: Arc<dyn ExecutionClock>) -> Self {
+    pub fn with_clock(repo: Repository, clock: Arc<dyn Clock>) -> Self {
         Self {
             repo,
             clock,
@@ -85,11 +83,6 @@ impl DecisionOperatorState {
     }
 }
 
-/// Static request-correlation id placeholder, matching
-/// `executions::OPERATOR_REQUEST_ID`'s own convention — no per-request
-/// correlation id is wired into these error envelopes yet.
-const OPERATOR_REQUEST_ID: &str = "req_operator_decisions";
-
 /// Builds the stable v1 error envelope via `ProtocolErrorEnvelope::new`,
 /// which derives `retryable` from `code` so it can never drift from
 /// `docs/contracts/runner-v1/errors/*.json`. `details` follows the per-code
@@ -100,11 +93,7 @@ fn error(
     message: &str,
     details: Value,
 ) -> (StatusCode, Json<Value>) {
-    let envelope = ProtocolErrorEnvelope::new(code, message, OPERATOR_REQUEST_ID, details);
-    (
-        status,
-        Json(serde_json::to_value(envelope).expect("envelope serializes")),
-    )
+    crate::handlers::runner_protocol::runner_auth::protocol_error(status, code, message, details)
 }
 
 fn internal_error() -> (StatusCode, Json<Value>) {
@@ -181,10 +170,6 @@ fn principal(headers: &HeaderMap) -> Result<String, (StatusCode, Json<Value>)> {
         })
 }
 
-fn canonical_string(value: &Value) -> String {
-    serde_json::to_string(&canonical_json(value.clone())).unwrap_or_default()
-}
-
 pub fn routes(state: DecisionOperatorState) -> Router {
     Router::new()
         .route(
@@ -199,240 +184,26 @@ pub fn routes(state: DecisionOperatorState) -> Router {
 }
 
 // ---------------------------------------------------------------------
-// Repository layer: `BEGIN IMMEDIATE` per CLAUDE.md's read-then-write rule
-// — this is a read-then-write site outside `repo/execution.rs`/`repo.rs`.
-// ---------------------------------------------------------------------
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ResolveOutcome {
-    /// No `execution_decisions` row exists for this exact
-    /// `(attempt_id, decision_id)` pair — covers both "never existed" and
-    /// "exists, but under a different attempt" (cross-attempt access). Both
-    /// write nothing; the caller cannot distinguish them, by design (an
-    /// attacker guessing another attempt's `decision_id` learns nothing).
-    NotFound,
-    /// The submitted `answer.option_id` is non-empty but not one of this
-    /// decision's own recorded `options` (only checked when `options` is
-    /// non-empty — a freeform decision has none to check against).
-    InvalidOption,
-    /// Terminal, fail-closed: this decision is expired (either already
-    /// recorded as such, or just transitioned to `expired` by this very
-    /// call) and can never be resolved with an operator's answer, no matter
-    /// what that answer is.
-    Expired {
-        resolved_at: String,
-        resolved_by: Value,
-    },
-    /// Already resolved with a *different* answer than the one just
-    /// submitted — a genuine conflict, not a replay.
-    IdempotencyConflict { stored_answer: Value },
-    /// A fresh resolution, or a byte-identical idempotent replay of one
-    /// (`replayed` distinguishes the two; both return the same fields).
-    Resolved {
-        resolved_at: String,
-        resolved_by: Value,
-        answer: Value,
-        replayed: bool,
-    },
-    /// Defensive: a `state` value neither this module nor
-    /// `create_execution_decision`/`create_decision` ever writes. Never
-    /// silently treated as any of the above.
-    UnknownState(String),
-}
-
-/// Resolves (or fail-closed-expires) exactly one decision, scoped to the
-/// exact `(attempt_id, decision_id)` pair — the only thing that makes
-/// cross-attempt access denial possible. One `BEGIN IMMEDIATE` transaction:
-/// the SELECT and the conditional UPDATE below never run as two separate
-/// un-transacted statements, which is what would let a concurrent resolve
-/// (or a concurrent expiry sweep, see [`expire_overdue_decisions`]) land a
-/// second, conflicting write between this function's own read and write.
-/// Settling the attempt's last pending decision, by answer or by expiry,
-/// resumes the attempt and its request from `waiting_decision` to `running`
-/// in that same transaction (`resume_attempt_after_decisions`).
-pub async fn resolve_decision_row(
-    pool: &SqlitePool,
-    attempt_id: &str,
-    decision_id: &str,
-    submitted_answer: &Value,
-    resolved_by: &Value,
-    now: DateTime<Utc>,
-) -> Result<ResolveOutcome, sqlx::Error> {
-    let now_s = now.to_rfc3339();
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let row = sqlx::query(
-        "SELECT id, state, options, answer, expires_at, resolved_at, resolved_by \
-         FROM execution_decisions WHERE attempt_id = ? AND decision_id = ?",
-    )
-    .bind(attempt_id)
-    .bind(decision_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let Some(row) = row else {
-        tx.commit().await?;
-        return Ok(ResolveOutcome::NotFound);
-    };
-    let row_id: String = row.get("id");
-    let state: String = row.get("state");
-
-    match state.as_str() {
-        "expired" => {
-            let resolved_at: Option<String> = row.get("resolved_at");
-            let resolved_by_raw: Option<String> = row.get("resolved_by");
-            tx.commit().await?;
-            Ok(ResolveOutcome::Expired {
-                resolved_at: resolved_at.unwrap_or_default(),
-                resolved_by: resolved_by_raw
-                    .and_then(|raw| serde_json::from_str(&raw).ok())
-                    .unwrap_or(Value::Null),
-            })
-        }
-        "resolved" => {
-            let stored_answer_raw: Option<String> = row.get("answer");
-            let stored_answer: Value = stored_answer_raw
-                .as_deref()
-                .and_then(|raw| serde_json::from_str(raw).ok())
-                .unwrap_or(Value::Null);
-            let stored_resolved_at: String = row
-                .get::<Option<String>, _>("resolved_at")
-                .unwrap_or_default();
-            let stored_resolved_by_raw: Option<String> = row.get("resolved_by");
-            let stored_resolved_by: Value = stored_resolved_by_raw
-                .and_then(|raw| serde_json::from_str(&raw).ok())
-                .unwrap_or(Value::Null);
-            tx.commit().await?;
-            if canonical_string(&stored_answer) == canonical_string(submitted_answer) {
-                Ok(ResolveOutcome::Resolved {
-                    resolved_at: stored_resolved_at,
-                    resolved_by: stored_resolved_by,
-                    answer: stored_answer,
-                    replayed: true,
-                })
-            } else {
-                Ok(ResolveOutcome::IdempotencyConflict { stored_answer })
-            }
-        }
-        "pending" => {
-            let expires_at: Option<String> = row.get("expires_at");
-            let is_overdue = expires_at
-                .as_deref()
-                .is_some_and(|value| value <= now_s.as_str());
-            if is_overdue {
-                let system_resolved_by = json!({"kind": "system", "subject_id": "expiry"});
-                let resolved_by_json = serde_json::to_string(&system_resolved_by).unwrap();
-                sqlx::query(
-                    "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
-                     WHERE id=? AND state='pending'",
-                )
-                .bind(&now_s)
-                .bind(&resolved_by_json)
-                .bind(&now_s)
-                .bind(&row_id)
-                .execute(&mut *tx)
-                .await?;
-                resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
-                tx.commit().await?;
-                return Ok(ResolveOutcome::Expired {
-                    resolved_at: now_s,
-                    resolved_by: system_resolved_by,
-                });
-            }
-
-            let options_json: String = row.get("options");
-            let options: Vec<Value> = serde_json::from_str(&options_json).unwrap_or_default();
-            let option_id = submitted_answer
-                .get("option_id")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            let option_known = options
-                .iter()
-                .any(|opt| opt.get("option_id").and_then(Value::as_str) == Some(option_id));
-            if !options.is_empty() && !option_known {
-                tx.commit().await?;
-                return Ok(ResolveOutcome::InvalidOption);
-            }
-
-            let answer_json = serde_json::to_string(submitted_answer).unwrap();
-            let resolved_by_json = serde_json::to_string(resolved_by).unwrap();
-            sqlx::query(
-                "UPDATE execution_decisions SET state='resolved', answer=?, resolved_at=?, resolved_by=?, updated_at=? \
-                 WHERE id=? AND state='pending'",
-            )
-            .bind(&answer_json)
-            .bind(&now_s)
-            .bind(&resolved_by_json)
-            .bind(&now_s)
-            .bind(&row_id)
-            .execute(&mut *tx)
-            .await?;
-            resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
-            tx.commit().await?;
-            Ok(ResolveOutcome::Resolved {
-                resolved_at: now_s,
-                resolved_by: resolved_by.clone(),
-                answer: submitted_answer.clone(),
-                replayed: false,
-            })
-        }
-        other => {
-            tx.commit().await?;
-            Ok(ResolveOutcome::UnknownState(other.to_string()))
-        }
-    }
-}
-
-/// Fail-closed bulk expiry sweep: transitions every still-`pending` decision
-/// whose `expires_at` has passed into `state='expired'` with a `system`
-/// `resolved_by` — the same terminal shape [`resolve_decision_row`] writes
-/// lazily for a single row — and, like it, resumes each attempt the sweep
-/// left with no pending decision. Not called by this module's own handler,
-/// which only ever touches one row at a time — wired instead as a periodic
-/// caller in `execution_runtime.rs`. Returns the number of decisions expired.
-pub async fn expire_overdue_decisions(
-    pool: &SqlitePool,
-    now: DateTime<Utc>,
-) -> Result<u64, sqlx::Error> {
-    let now_s = now.to_rfc3339();
-    let system_resolved_by = json!({"kind": "system", "subject_id": "expiry"});
-    let resolved_by_json = serde_json::to_string(&system_resolved_by).unwrap();
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let expired = sqlx::query(
-        "UPDATE execution_decisions SET state='expired', answer=NULL, resolved_at=?, resolved_by=?, updated_at=? \
-         WHERE state='pending' AND expires_at IS NOT NULL AND expires_at <= ? \
-         RETURNING attempt_id",
-    )
-    .bind(&now_s)
-    .bind(&resolved_by_json)
-    .bind(&now_s)
-    .bind(&now_s)
-    .fetch_all(&mut *tx)
-    .await?;
-    let attempts: BTreeSet<String> = expired
-        .iter()
-        .map(|row| row.get::<String, _>("attempt_id"))
-        .collect();
-    for attempt_id in &attempts {
-        resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
-    }
-    tx.commit().await?;
-    Ok(expired.len() as u64)
-}
-
-// ---------------------------------------------------------------------
 // HTTP handler.
 // ---------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+/// `POST .../decisions/{decision_id}/resolve` response body.
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ResolveDecisionResponse {
     pub protocol_version: u32,
     pub decision_id: String,
     /// Always `"resolved"` on a 200 — an expired/not-found/conflicting
     /// decision is a distinct error response, never a 200 with a different
     /// state string, so a caller need not switch on this field.
+    #[schema(example = "resolved")]
     pub state: String,
+    /// The answer as submitted (or as stored, on a replay), echoed back as
+    /// the operator sent it, extra keys included.
+    #[schema(value_type = crate::openapi::DecisionAnswerSchema)]
     pub answer: Value,
     pub resolved_at: String,
+    /// Who resolved the decision.
+    #[schema(value_type = DecisionResolvedBy)]
     pub resolved_by: Value,
     /// `true` when this response is a byte-identical idempotent replay of an
     /// already-committed resolution rather than a fresh write.
@@ -498,23 +269,26 @@ fn validate_answer(value: &Value) -> Result<Value, (StatusCode, Json<Value>)> {
 pub async fn mark_decision_viewed(
     State(state): State<DecisionOperatorState>,
     headers: HeaderMap,
-    Path((attempt_id, decision_id)): Path<(String, String)>,
+    Path((attempt_id, decision_id)): Path<(AttemptId, String)>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     principal(&headers)?;
-    let viewed_at = state
-        .repo
-        .mark_execution_decision_viewed(&attempt_id, &decision_id, state.clock.as_ref())
-        .await
-        .map_err(|_| internal_error())?;
-    match viewed_at {
-        Some(viewed_at) => Ok(Json(json!({"viewed_at": viewed_at}))),
-        None => Err(error(
+    let viewed_at = runs::mark_decision_viewed::mark_decision_viewed(
+        &state.repo,
+        state.clock.now(),
+        &attempt_id,
+        &decision_id,
+    )
+    .await
+    .map_err(|failure| match failure {
+        AppError::NotFound => error(
             StatusCode::NOT_FOUND,
             StableErrorCode::NotFound,
             "The requested resource does not exist",
             json!({"resource": "decision"}),
-        )),
-    }
+        ),
+        _ => internal_error(),
+    })?;
+    Ok(Json(json!({"viewed_at": viewed_at})))
 }
 
 /// `POST /attempts/{attempt_id}/decisions/{decision_id}/resolve` —
@@ -523,13 +297,14 @@ pub async fn mark_decision_viewed(
 pub async fn resolve_decision(
     State(state): State<DecisionOperatorState>,
     headers: HeaderMap,
-    Path((attempt_id, decision_id)): Path<(String, String)>,
-    body: Bytes,
+    Path((attempt_id, decision_id)): Path<(AttemptId, String)>,
+    RawBody(body): RawBody,
 ) -> Result<Json<ResolveDecisionResponse>, (StatusCode, Json<Value>)> {
     require_decision_token(&state, &headers)?;
     let principal_id = principal(&headers)?;
 
-    let value: Value = serde_json::from_slice(&body).map_err(|_| {
+    let value: Value = serde_json::from_slice(&body).map_err(|failure| {
+        tracing::warn!(error = %failure, "Request body must be valid JSON");
         error(
             StatusCode::BAD_REQUEST,
             StableErrorCode::InvalidRequest,
@@ -539,18 +314,17 @@ pub async fn resolve_decision(
     })?;
     let answer = validate_answer(&value)?;
 
-    let now = state.clock.now();
-    let resolved_by = json!({"kind": "operator", "subject_id": principal_id});
-    let outcome = resolve_decision_row(
-        state.repo.pool(),
+    let resolved_by = DecisionResolvedBy::operator(principal_id);
+    let outcome = runs::resolve_decision::resolve_decision(
+        &state.repo,
+        state.clock.now(),
         &attempt_id,
         &decision_id,
         &answer,
         &resolved_by,
-        now,
     )
     .await
-    .map_err(|err| {
+    .map_err(|err: AppError| {
         tracing::error!(
             attempt_id = %attempt_id,
             decision_id = %decision_id,
@@ -589,7 +363,7 @@ pub async fn resolve_decision(
                 json!({"field": "answer.option_id"}),
             ))
         }
-        ResolveOutcome::Expired { .. } => {
+        ResolveOutcome::Expired => {
             tracing::info!(
                 attempt_id = %attempt_id,
                 decision_id = %decision_id,
@@ -603,7 +377,7 @@ pub async fn resolve_decision(
                 json!({"decision_id": decision_id}),
             ))
         }
-        ResolveOutcome::IdempotencyConflict { .. } => {
+        ResolveOutcome::IdempotencyConflict => {
             tracing::info!(
                 attempt_id = %attempt_id,
                 decision_id = %decision_id,
@@ -674,7 +448,7 @@ mod tests {
     /// frozen lifecycle, not an invention of the decision code.
     #[test]
     fn decision_state_moves_are_lease_owner_lifecycle_edges() {
-        use tack_orch::execution::{ExecutionState, TransitionActor, validate_transition};
+        use tack_protocol::execution::{ExecutionState, TransitionActor, validate_transition};
         assert!(
             validate_transition(
                 ExecutionState::Running,
@@ -691,15 +465,6 @@ mod tests {
             )
             .is_ok()
         );
-    }
-
-    #[test]
-    fn canonical_string_is_stable_across_key_order() {
-        let a = json!({"option_id": "allow_once", "text": null});
-        let b = json!({"text": null, "option_id": "allow_once"});
-        assert_eq!(canonical_string(&a), canonical_string(&b));
-        let c = json!({"option_id": "deny", "text": null});
-        assert_ne!(canonical_string(&a), canonical_string(&c));
     }
 
     #[test]

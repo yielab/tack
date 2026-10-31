@@ -13,6 +13,7 @@ pub mod error;
 pub mod evidence;
 pub mod filesystem;
 pub mod harness;
+pub mod logging;
 pub mod prepare;
 pub mod process;
 pub mod runtime;
@@ -24,8 +25,8 @@ pub mod verify;
 pub use client::{RunnerProtocolClient, UnavailableProtocolClient};
 pub use clock::{Clock, SystemClock};
 pub use config::{
-    ConfigOverrides, EnrollmentCredential, RunnerConfig, RunnerConfigSources, VerifyConfig,
-    VerifyKind,
+    ConfigOverrides, EnrollmentCredential, PlatformStore, ProcessEnv, RunnerConfig,
+    RunnerConfigSources, VerifyConfig, VerifyKind,
 };
 pub use error::{ConfigError, RunnerError};
 pub use filesystem::{LocalFilesystem, RunnerFilesystem};

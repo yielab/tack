@@ -1,0 +1,59 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: this task fails at claim, no agent runs.\n\n## Pre-brief\nObjective: Capture only\n\nAcceptance:\n- nothing\n\nConstraints:\n- nothing",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "brief": {
+    "objective": "Capture only",
+    "acceptance": [
+      "nothing"
+    ],
+    "context": [],
+    "constraints": [
+      "nothing"
+    ],
+    "assumptions": [],
+    "questions": [],
+    "resources": [],
+    "expectedRiskyActions": [],
+    "answers": []
+  },
+  "externalRef": "capture-item/attempt-1",
+  "idempotencyKey": "capture-attempt-1",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline",
+  "gate": {
+    "command": "true",
+    "timeoutS": 600
+  },
+  "maxTokens": 1000,
+  "restrictions": {
+    "deniedTools": [
+      "bash"
+    ],
+    "network": "none"
+  },
+  "autonomy": "L3",
+  "status": "blocked",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "the question expired with no answer",
+  "pendingApprovalIndex": null,
+  "hops": [],
+  "costUsd": 0.0,
+  "worktree": {
+    "dir": "/scratch/home/.docket/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "baseRef": "main",
+    "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo/.git"
+  },
+  "tokenBudget": 1000,
+  "blockedReason": "input_expired",
+  "escalations": [
+    "esc-000000000000"
+  ]
+}

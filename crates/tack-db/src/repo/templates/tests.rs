@@ -1,19 +1,19 @@
 use super::*;
 
-async fn test_pool() -> SqlitePool {
+async fn test_repo() -> Repository {
     let pool = crate::init_pool("sqlite::memory:")
         .await
         .expect("in-memory pool");
     crate::migrations::run_all(&pool).await.expect("migrations");
-    pool
+    Repository::new(pool)
 }
 
 /// Seed the built-ins (twice, to exercise the idempotent re-seed path too) and return
 /// every `ProjectType::Construction` template.
-async fn seeded_construction_templates(pool: &SqlitePool) -> Vec<ProjectTemplate> {
-    seed_builtin_templates(pool).await.expect("seed");
-    seed_builtin_templates(pool).await.expect("re-seed");
-    list_templates(pool, Some(ProjectType::Construction))
+async fn seeded_construction_templates(repo: &Repository) -> Vec<ProjectTemplate> {
+    seed_builtin_templates(repo).await.expect("seed");
+    seed_builtin_templates(repo).await.expect("re-seed");
+    list_templates(repo, Some(ProjectType::Construction))
         .await
         .expect("list")
 }
@@ -27,8 +27,8 @@ fn find_template<'a>(templates: &'a [ProjectTemplate], name: &str) -> &'a Projec
 
 #[tokio::test]
 async fn construction_seed_creates_four_templates_once_each() {
-    let pool = test_pool().await;
-    let construction = seeded_construction_templates(&pool).await;
+    let repo = test_repo().await;
+    let construction = seeded_construction_templates(&repo).await;
 
     for name in [
         "Construction Project",
@@ -49,8 +49,8 @@ async fn construction_seed_creates_four_templates_once_each() {
 
 #[tokio::test]
 async fn wood_frame_keeps_construction_vocabulary() {
-    let pool = test_pool().await;
-    let construction = seeded_construction_templates(&pool).await;
+    let repo = test_repo().await;
+    let construction = seeded_construction_templates(&repo).await;
     let wood = find_template(&construction, "Wood Frame Build");
 
     assert_eq!(
@@ -65,8 +65,8 @@ async fn wood_frame_keeps_construction_vocabulary() {
 
 #[tokio::test]
 async fn wood_frame_has_stud_spacing_select_field() {
-    let pool = test_pool().await;
-    let construction = seeded_construction_templates(&pool).await;
+    let repo = test_repo().await;
+    let construction = seeded_construction_templates(&repo).await;
     let wood = find_template(&construction, "Wood Frame Build");
 
     assert_eq!(wood.custom_fields.len(), 4);
@@ -84,8 +84,8 @@ async fn wood_frame_has_stud_spacing_select_field() {
 
 #[tokio::test]
 async fn sip_panel_template_has_panel_count_number_field() {
-    let pool = test_pool().await;
-    let construction = seeded_construction_templates(&pool).await;
+    let repo = test_repo().await;
+    let construction = seeded_construction_templates(&repo).await;
     let sip = find_template(&construction, "SIP Panel Build");
 
     let panel_count = sip
@@ -98,10 +98,10 @@ async fn sip_panel_template_has_panel_count_number_field() {
 
 #[tokio::test]
 async fn seeded_vertical_workflows_enforce_transitions() {
-    let pool = test_pool().await;
-    seed_builtin_templates(&pool).await.expect("seed");
+    let repo = test_repo().await;
+    seed_builtin_templates(&repo).await.expect("seed");
 
-    let construction = list_templates(&pool, Some(ProjectType::Construction))
+    let construction = list_templates(&repo, Some(ProjectType::Construction))
         .await
         .expect("list");
 
@@ -135,10 +135,10 @@ async fn seeded_vertical_workflows_enforce_transitions() {
 
 #[tokio::test]
 async fn the_three_bundle_templates_are_listed_once_with_roles_profiles_and_level_three() {
-    let pool = test_pool().await;
-    seed_builtin_templates(&pool).await.expect("seed");
-    seed_builtin_templates(&pool).await.expect("re-seed");
-    let all = list_templates(&pool, None).await.expect("list");
+    let repo = test_repo().await;
+    seed_builtin_templates(&repo).await.expect("seed");
+    seed_builtin_templates(&repo).await.expect("re-seed");
+    let all = list_templates(&repo, None).await.expect("list");
 
     for (name, roles, profiles) in [
         ("Web product with content", 6, 6),

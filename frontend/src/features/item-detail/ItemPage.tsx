@@ -9,7 +9,8 @@ import { useItemEditor } from './useItemEditor';
 /**
  * An item on a page of its own, `/projects/:id/items/:itemId`: the same body
  * the drawer shows, with a side column for the properties. `?tab=` picks the tab
- * and follows it, so the address is always a link to what is on screen.
+ * and `?run=` the run on the Execution tab; both follow what is on screen, so the
+ * address is always a link to it.
  */
 const ItemPage: Component = () => {
   const params = useParams();
@@ -48,7 +49,9 @@ const ItemPage: Component = () => {
           editor={editor}
           layout="page"
           tab={tabFromSearchParam(searchParams.tab)}
-          onTabChange={(id) => setSearchParams({ tab: id === 'details' ? undefined : id }, { replace: true })}
+          onTabChange={(id) => setSearchParams({ tab: id === 'details' ? undefined : id, run: undefined }, { replace: true })}
+          run={typeof searchParams.run === 'string' ? searchParams.run : undefined}
+          onRunChange={(run) => setSearchParams({ tab: 'execution', run }, { replace: true })}
           headerActions={
             <Button size="sm" variant="secondary" onClick={() => void copyLink()}>
               <span class="inline-flex items-center gap-1.5">

@@ -1,7 +1,9 @@
 //! The rate card's routes. The card and its pricing are
 //! `tack_core::rate_card`; where it is kept is `tack_db::repo::rate_card`.
 
-use axum::{Json, extract::State};
+use crate::extract::Json;
+use axum::extract::State;
+use tack_db::Repository;
 use tracing::instrument;
 
 use crate::error::{ApiError, ApiResult};
@@ -10,8 +12,11 @@ use crate::router::AppState;
 pub use tack_core::rate_card::{ModelPrice, RateCard, price};
 
 /// The stored card, or `None` when the operator never entered one.
-pub async fn load(pool: &sqlx::SqlitePool) -> Option<RateCard> {
-    tack_db::repo::rate_card::load(pool).await.ok().flatten()
+pub async fn load(repo: &Repository) -> Option<RateCard> {
+    tack_db::queries::rate_card::stored_card(repo)
+        .await
+        .ok()
+        .flatten()
 }
 
 /// GET /api/settings/rate-card
@@ -23,7 +28,7 @@ pub async fn load(pool: &sqlx::SqlitePool) -> Option<RateCard> {
     responses((status = 200, description = "The rate card, or null when none was entered", body = Option<RateCard>)),
 )]
 pub async fn get_rate_card(State(state): State<AppState>) -> Json<Option<RateCard>> {
-    Json(load(state.pool()).await)
+    Json(load(&state.repo).await)
 }
 
 /// PUT /api/settings/rate-card
@@ -52,6 +57,6 @@ pub async fn put_rate_card(
             "every price must be a number that is not negative".into(),
         ));
     }
-    tack_db::repo::rate_card::save(state.pool(), &card).await?;
+    state.repo.save_rate_card(&card).await?;
     Ok(Json(card))
 }

@@ -22,14 +22,10 @@ interface Props {
  * The ladder owns what two rungs share: the project's roles and its autonomy settings.
  */
 const Ladder: Component<Props> = (props) => {
-  const [roles, { refetch: refetchRoles }] = createResource(
-    () => props.projectId,
-    (id) => api.roles.list(id).catch(() => []),
-  );
-  const [settings, { mutate }] = createResource(
-    () => props.projectId,
-    (id) => api.autonomy.get(id).catch(() => null),
-  );
+  const [roles, { refetch: refetchRoles }] = createResource(() => props.projectId, (id) => api.roles.list(id));
+  const [resource, { mutate, refetch: refetchSettings }] = createResource(() => props.projectId, (id) => api.autonomy.get(id));
+  /** Reading a failed resource throws; the rungs read this and are told of the failure beside it. */
+  const settings = () => (resource.error ? undefined : resource());
   const saveAutonomy = async (patch: Partial<AutonomySettings>) => {
     const current = settings();
     if (!current) return;
@@ -39,7 +35,7 @@ const Ladder: Component<Props> = (props) => {
       toast.error(err instanceof Error ? err.message : 'Failed to save');
     }
   };
-  const roleList = () => (Array.isArray(roles()) ? roles()! : []);
+  const roleList = () => (roles.error || !Array.isArray(roles()) ? [] : roles()!);
 
   return (
     <div class="flex flex-col gap-4" data-testid="ladder">
@@ -47,13 +43,15 @@ const Ladder: Component<Props> = (props) => {
         roles={roleList}
         profiles={props.profiles}
         settings={settings}
+        rolesError={() => roles.error}
+        onRetryRoles={() => void refetchRoles()}
         project={props.project}
         onRoleSaved={() => void refetchRoles()}
         onDefaultProfile={(id) => void props.saveProject({ default_profile_id: id })}
       />
       <Start project={props.project} roles={roleList} statuses={props.statuses} save={props.saveProject} />
-      <Merge settings={settings} save={saveAutonomy} />
-      <Ceiling settings={settings} />
+      <Merge settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} save={saveAutonomy} />
+      <Ceiling settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} />
     </div>
   );
 };

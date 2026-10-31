@@ -1,0 +1,4 @@
+{
+  "ok": false,
+  "error": "autonomy L5 is above this pod's ceiling L3 (profile attended); set the pod profile to lights-out for L5"
+}

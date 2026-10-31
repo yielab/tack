@@ -10,6 +10,7 @@ import { priorityColor } from '../../shared/ui/PriorityDot';
 import { typeBadgeTone } from '../../shared/ui/TypeBadge';
 import type { JSX } from 'solid-js';
 import type { Priority } from '../../shared/types';
+import Card from '../../shared/ui/Card';
 
 export default function Dashboard() {
   const params = useParams();
@@ -43,7 +44,7 @@ export default function Dashboard() {
         <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
           Overview
         </h1>
-        <p class="mt-0.5 text-[0.8125rem] text-content-muted">
+        <p class="mt-0.5 text-small text-content-muted">
           Project statistics and progress
         </p>
       </div>
@@ -54,13 +55,13 @@ export default function Dashboard() {
           <For each={[1, 2, 3, 4]}>{() => <Skeleton height="90px" class="rounded-[24px]!" />}</For>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5" aria-hidden="true">
-          <For each={[1, 2]}>{() => <Skeleton height="180px" class="rounded-[28px]!" />}</For>
+          <For each={[1, 2]}>{() => <Skeleton height="180px" class="rounded-card!" />}</For>
         </div>
       </Show>
 
       {/* No items yet */}
       <Show when={!items.loading && (items() ?? []).length === 0}>
-        <div class="rounded-[28px] bg-panel">
+        <Card>
           <EmptyState
             icon={<IconOverview size={28} />}
             title="No data to show yet"
@@ -71,7 +72,7 @@ export default function Dashboard() {
               </Button>
             }
           />
-        </div>
+        </Card>
       </Show>
 
       {/* Stats Grid */}
@@ -142,13 +143,13 @@ export default function Dashboard() {
           {/* Story Points Progress */}
           <Show when={stats().totalEstimate > 0}>
             <MeterCard title={`${t('story_points')} Progress`}>
-              <div class="flex items-center justify-between text-[0.8125rem]">
+              <div class="flex items-center justify-between text-small">
                 <span class="text-content-muted">Total Points</span>
                 <span class="font-heading text-2xl text-content">
                   {stats().totalEstimate}
                 </span>
               </div>
-              <div class="flex items-center justify-between text-[0.8125rem]">
+              <div class="flex items-center justify-between text-small">
                 <span class="text-content-muted">Completed</span>
                 <span class="font-heading text-2xl" style={{ color: 'var(--color-success-600)' }}>
                   {stats().completedEstimate}
@@ -178,7 +179,7 @@ function typeBarColor(key: string): string {
 function StatTile(props: { label: string; accent?: boolean; sub?: JSX.Element; children: JSX.Element }) {
   return (
     <div
-      class="rounded-[28px] px-5 py-[18px] flex flex-col gap-1.5"
+      class="rounded-card px-5 py-[18px] flex flex-col gap-1.5"
       style={props.accent
         ? { 'background-color': 'var(--color-primary-600)', color: 'var(--color-on-accent)' }
         : { 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
@@ -201,17 +202,17 @@ function StatTile(props: { label: string; accent?: boolean; sub?: JSX.Element; c
 
 function MeterCard(props: { title: string; children: JSX.Element }) {
   return (
-    <div class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-2.5">
+    <Card class="px-5 py-[18px] flex flex-col gap-2.5">
       <h2 class="text-lg text-content">{props.title}</h2>
       {props.children}
-    </div>
+    </Card>
   );
 }
 
 function Meter(props: { label: string; value: string; percent: number; color: string; capitalize?: boolean }) {
   return (
     <div class="flex flex-col gap-1">
-      <div class="flex items-center text-[0.8125rem]">
+      <div class="flex items-center text-small">
         <span class="text-content" classList={{ capitalize: !!props.capitalize }}>{props.label}</span>
         <span class="ml-auto text-content-muted">{props.value}</span>
       </div>

@@ -215,7 +215,7 @@ Then add the routes in the `api` router builder:
 .route("/milestones/{id}", delete(milestones::delete_milestone))
 ```
 
-At this point the feature is complete. Run `cargo nextest run --workspace` to verify nothing is broken, then add repository tests under `crates/tack-db/tests/repository/` and handler tests under `crates/tack-api/tests/handlers/` — each `tests/*.rs` file is its own binary and the directories hold its modules, so add to the module whose subject fits rather than creating a new binary (see [Testing](testing.md)).
+At this point the feature is complete. Run `cargo nextest run --workspace` to verify nothing is broken, then add repository tests under `crates/tack-db/tests/repository/` and handler tests under `crates/tack-api/tests/handlers/` — each crate's `tests/*.rs` files are modules of one test binary, `tests/it.rs`, so add to the module whose subject fits; a new subject is one more `mod` line there (see [Testing](testing.md)).
 
 ---
 

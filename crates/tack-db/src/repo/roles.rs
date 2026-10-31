@@ -1,3 +1,4 @@
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
@@ -12,7 +13,8 @@ impl Repository {
         &self,
         project_id: Uuid,
         input: CreateRole,
-    ) -> Result<Role, sqlx::Error> {
+    ) -> Result<Role, StoreError> {
+        self.require_project(project_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let color = input.color.unwrap_or_else(|| "#6366f1".into());
@@ -49,7 +51,7 @@ impl Repository {
         &self,
         id: Uuid,
         input: UpdateRole,
-    ) -> Result<Option<Role>, sqlx::Error> {
+    ) -> Result<Option<Role>, StoreError> {
         let (set_profile, profile) = match input.agent_profile_id {
             Some(value) => (1, value),
             None => (0, None),
@@ -78,7 +80,7 @@ impl Repository {
         .bind(id.to_string())
         .fetch_one(self.pool())
         .await?;
-        Ok(Some(row.into_role()))
+        row.into_role().map(Some)
     }
 
     /// The item's roles, each with the profile it names: `(role name, profile id)`, by name.
@@ -86,7 +88,7 @@ impl Repository {
     pub async fn profiles_for_item(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<(String, Option<String>)>, sqlx::Error> {
+    ) -> Result<Vec<(String, Option<String>)>, StoreError> {
         sqlx::query_as(
             "SELECT r.name, r.agent_profile_id FROM roles r
              JOIN item_roles ir ON r.id = ir.role_id
@@ -95,10 +97,11 @@ impl Repository {
         .bind(item_id.to_string())
         .fetch_all(self.pool())
         .await
+        .map_err(StoreError::from)
     }
 
     #[instrument(skip(self))]
-    pub async fn list_roles(&self, project_id: Uuid) -> Result<Vec<Role>, sqlx::Error> {
+    pub async fn list_roles(&self, project_id: Uuid) -> Result<Vec<Role>, StoreError> {
         let rows = sqlx::query_as::<_, RoleRow>(
             "SELECT id, project_id, name, color, icon, agent_profile_id, created_at
              FROM roles WHERE project_id = ? ORDER BY name",
@@ -107,7 +110,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_role()).collect())
+        rows.into_iter().map(RoleRow::into_role).collect()
     }
 
     /// Every `(item, role)` pair of the project's items.
@@ -115,7 +118,7 @@ impl Repository {
     pub async fn item_roles_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+    ) -> Result<Vec<(Uuid, Uuid)>, StoreError> {
         let rows: Vec<(String, String)> = sqlx::query_as(
             "SELECT ir.item_id, ir.role_id FROM item_roles ir
              JOIN items i ON i.id = ir.item_id
@@ -137,7 +140,23 @@ impl Repository {
         &self,
         item_id: Uuid,
         role_id: Uuid,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
+        let project_id: Option<String> =
+            sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
+                .bind(item_id.to_string())
+                .fetch_optional(self.pool())
+                .await?;
+        let project_id = project_id.ok_or(StoreError::not_found("item"))?;
+        let in_project: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM roles WHERE id = ? AND project_id = ?)",
+        )
+        .bind(role_id.to_string())
+        .bind(project_id)
+        .fetch_one(self.pool())
+        .await?;
+        if !in_project {
+            return Err(StoreError::not_found("role"));
+        }
         sqlx::query("INSERT OR IGNORE INTO item_roles (item_id, role_id) VALUES (?, ?)")
             .bind(item_id.to_string())
             .bind(role_id.to_string())
@@ -151,7 +170,7 @@ impl Repository {
         &self,
         item_id: Uuid,
         role_id: Uuid,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         sqlx::query("DELETE FROM item_roles WHERE item_id = ? AND role_id = ?")
             .bind(item_id.to_string())
             .bind(role_id.to_string())
@@ -161,7 +180,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_roles_for_item(&self, item_id: Uuid) -> Result<Vec<Role>, sqlx::Error> {
+    pub async fn get_roles_for_item(&self, item_id: Uuid) -> Result<Vec<Role>, StoreError> {
         let rows = sqlx::query_as::<_, RoleRow>(
             "SELECT r.id, r.project_id, r.name, r.color, r.icon, r.agent_profile_id, r.created_at
              FROM roles r
@@ -173,11 +192,11 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_role()).collect())
+        rows.into_iter().map(RoleRow::into_role).collect()
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_role(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_role(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM roles WHERE id = ?")
             .bind(id.to_string())
             .execute(self.pool())
@@ -198,17 +217,16 @@ struct RoleRow {
 }
 
 impl RoleRow {
-    fn into_role(self) -> Role {
-        Role {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            project_id: Uuid::parse_str(&self.project_id).unwrap(),
+    fn into_role(self) -> Result<Role, StoreError> {
+        const TABLE: &str = "roles";
+        Ok(Role {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
             name: self.name,
             color: self.color,
             icon: self.icon,
             agent_profile_id: self.agent_profile_id,
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
-        }
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+        })
     }
 }

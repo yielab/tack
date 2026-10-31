@@ -1,9 +1,6 @@
+use crate::extract::{Json, Path, Query};
 use axum::response::IntoResponse;
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-    http::StatusCode,
-};
+use axum::{extract::State, http::StatusCode};
 use serde::Deserialize;
 use tack_core::models::*;
 use tack_core::outline::bundle::{Parts, ProfileRow, to_bundle};
@@ -13,7 +10,6 @@ use tack_core::outline::{
 };
 use tack_core::workflow::{StatusCategory, StatusDef};
 use tack_db::repo;
-use tack_db::repo::autonomy as store;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -75,7 +71,7 @@ pub async fn create_template(
     }
 
     Ok(Json(
-        repo::templates::create_template(state.pool(), data).await?,
+        repo::templates::create_template(&state.repo, data).await?,
     ))
 }
 
@@ -96,7 +92,7 @@ pub async fn list_templates(
     State(state): State<AppState>,
     Query(params): Query<ListTemplatesQuery>,
 ) -> Result<Json<Vec<ProjectTemplate>>, StatusCode> {
-    repo::templates::list_templates(state.pool(), params.project_type)
+    repo::templates::list_templates(&state.repo, params.project_type)
         .await
         .map(Json)
         .map_err(|e| {
@@ -123,13 +119,10 @@ pub async fn get_template(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ProjectTemplate>, StatusCode> {
-    repo::templates::get_template(state.pool(), id)
+    repo::templates::get_template(&state.repo, id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, template_id = %id, "Failed to get template");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// DELETE /api/templates/:id - Delete a template (user-created only)
@@ -149,7 +142,7 @@ pub async fn delete_template(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    repo::templates::delete_template(state.pool(), id)
+    repo::templates::delete_template(&state.repo, id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| {
@@ -176,16 +169,15 @@ pub(crate) async fn build_project_from_template(
     template_id: Uuid,
     data: CreateProjectFromTemplate,
 ) -> Result<Project, StatusCode> {
-    data.validate()
-        .map_err(|_| StatusCode::UNPROCESSABLE_ENTITY)?;
+    data.validate().map_err(|failure| {
+        tracing::warn!(error = %failure, "Request body failed validation");
+        StatusCode::UNPROCESSABLE_ENTITY
+    })?;
 
     // Get the template
-    let template = repo::templates::get_template(state.pool(), template_id)
+    let template = repo::templates::get_template(&state.repo, template_id)
         .await
-        .map_err(|e| {
-            tracing::error!(error = %e, template_id = %template_id, "Template not found");
-            StatusCode::NOT_FOUND
-        })?;
+        .map_err(|e| crate::error::status_of_store_failure(&e))?;
 
     // The template is a project file without items: the same code an import
     // runs makes the project, its fields, profiles, roles and automation.
@@ -238,7 +230,10 @@ pub(crate) async fn build_project_from_template(
         items: Vec::new(),
     };
     // The first workspace of the board (made when there is none) owns it.
-    let workspace_id = get_or_create_default_workspace(state.pool()).await?;
+    let workspace_id = state.repo.first_workspace_or_create().await.map_err(|e| {
+        tracing::error!(error = %e, "Failed to resolve the default workspace");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let scoped = AppState {
         workspace_id,
         ..state.clone()
@@ -279,7 +274,7 @@ pub(crate) async fn build_project_from_template(
             is_default: Some(idx == 0), // First board is default
         };
 
-        repo::boards::create_board(state.pool(), project.id, board_data)
+        repo::boards::create_board(&state.repo, project.id, board_data)
             .await
             .map_err(|e| {
                 tracing::warn!(error = %e, board_name = %board_template.name, "Failed to create board from template");
@@ -368,7 +363,7 @@ pub async fn save_project_as_template(
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Snapshot custom field definitions (strip per-project ids so they become template-level)
-    let field_defs = repo::custom_fields::list_fields_for_project(state.pool(), project_id)
+    let field_defs = repo::custom_fields::list_fields_for_project(&state.repo, project_id)
         .await
         .unwrap_or_default();
 
@@ -391,7 +386,7 @@ pub async fn save_project_as_template(
         .collect();
 
     // Snapshot boards — columns are derived from workflow statuses
-    let boards = repo::boards::list_boards(state.pool(), project_id)
+    let boards = repo::boards::list_boards(&state.repo, project_id)
         .await
         .unwrap_or_default();
 
@@ -422,47 +417,52 @@ pub async fn save_project_as_template(
 
     // The project's roles, the profiles they use and its automation settings,
     // written the way an export writes them.
-    let internal = |e: sqlx::Error| {
-        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
-        StatusCode::INTERNAL_SERVER_ERROR
-    };
     let profiles: Vec<ProfileRow> = state
         .repo
         .list_agent_profile_rows()
         .await
-        .map_err(internal)?;
-    let roles = state.repo.list_roles(project_id).await.map_err(internal)?;
+        .map_err(read_failed(project_id))?;
+    let roles = state
+        .repo
+        .list_roles(project_id)
+        .await
+        .map_err(read_failed(project_id))?;
     let sprints = state
         .repo
         .list_sprints(project_id)
         .await
-        .map_err(internal)?;
-    let fleets = state.repo.fleet_names().await.map_err(internal)?;
-    let autonomy = store::get_settings(state.pool(), &project_id.to_string())
+        .map_err(read_failed(project_id))?;
+    let fleets = state
+        .repo
+        .fleet_names()
         .await
-        .map_err(internal)?
-        .map(|s| BundleAutonomy {
-            level: Some(s.level.to_string()),
-            domains: s
-                .domains
-                .into_iter()
-                .map(|d| BundleDomain {
-                    name: d.name,
-                    paths: d.path_globs,
-                    item_types: d.item_types,
-                    level: d.level.to_string(),
-                })
-                .collect(),
-            verify_require: Some(s.verify_require),
-            verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
-            budgets: Some(BundleBudgets {
-                tokens_per_day: s.budgets.tokens_per_day,
-                auto_merges_per_day: s.budgets.auto_merges_per_day,
-                queue_items_max: s.budgets.queue_items_max,
-                ..Default::default()
-            }),
-            merge_on_done: Some(s.merge_on_done),
-        });
+        .map_err(read_failed(project_id))?;
+    let autonomy =
+        tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string())
+            .await
+            .map_err(read_failed(project_id))?
+            .map(|s| BundleAutonomy {
+                level: Some(s.level.to_string()),
+                domains: s
+                    .domains
+                    .into_iter()
+                    .map(|d| BundleDomain {
+                        name: d.name,
+                        paths: d.path_globs,
+                        item_types: d.item_types,
+                        level: d.level.to_string(),
+                    })
+                    .collect(),
+                verify_require: Some(s.verify_require),
+                verify_loop_max_attempts: Some(s.verify_loop_max_attempts),
+                budgets: Some(BundleBudgets {
+                    tokens_per_day: s.budgets.tokens_per_day,
+                    auto_merges_per_day: s.budgets.auto_merges_per_day,
+                    queue_items_max: s.budgets.queue_items_max,
+                    ..Default::default()
+                }),
+                merge_on_done: Some(s.merge_on_done),
+            });
     let bundle = to_bundle(&Parts {
         project: &project,
         fields: &[],
@@ -503,7 +503,7 @@ pub async fn save_project_as_template(
         automation: bundle.automation,
     };
 
-    repo::templates::create_template(state.pool(), template_data)
+    repo::templates::create_template(&state.repo, template_data)
         .await
         .map(Json)
         .map_err(|e| {
@@ -523,47 +523,11 @@ fn grouping_to_string(g: BoardGrouping) -> String {
     }
 }
 
-/// Helper: Get or create default workspace
-async fn get_or_create_default_workspace(pool: &sqlx::SqlitePool) -> Result<Uuid, StatusCode> {
-    // Try to get first workspace
-    #[derive(sqlx::FromRow)]
-    struct WorkspaceId {
-        id: String,
-    }
-
-    let existing = sqlx::query_as::<_, WorkspaceId>("SELECT id FROM workspaces LIMIT 1")
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to query workspaces");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    if let Some(row) = existing {
-        Ok(Uuid::parse_str(&row.id).unwrap())
-    } else {
-        // Create default workspace
-        let id = Uuid::new_v4();
-        let now = chrono::Utc::now();
-
-        sqlx::query(
-            "INSERT INTO workspaces (id, name, description, default_vocabulary, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?)"
-        )
-        .bind(id.to_string())
-        .bind("Default Workspace")
-        .bind("Auto-created default workspace")
-        .bind("{}")
-        .bind(now.to_rfc3339())
-        .bind(now.to_rfc3339())
-        .execute(pool)
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "Failed to create default workspace");
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-        Ok(id)
+/// Logs a failed read of the project for a template and answers 500.
+fn read_failed<E: std::fmt::Display>(project_id: Uuid) -> impl Fn(E) -> StatusCode {
+    move |e| {
+        tracing::error!(error = %e, project_id = %project_id, "Failed to read project for template");
+        StatusCode::INTERNAL_SERVER_ERROR
     }
 }
 

@@ -1,7 +1,7 @@
 # opencode removal handoff
 
 Not a board card — dispatched directly by the user, implementing decision 8 of
-`docs/adr/0063-harness-credential-modes.md` ("opencode is removed from the tree —
+`docs/closed-cycles/adr/0063-harness-credential-modes.md` ("opencode is removed from the tree —
 adapter, tests, fixtures and documentation. Tack supports claude-code and codex."),
 plus the adjacent dead `HarnessRegistry` the user asked to be removed in the same pass.
 Uses `docs/agent-handoffs/part-vi/TEMPLATE.md` as the body; *Surface-map delta*,
@@ -123,8 +123,8 @@ Part VI's provider/credential surface.
   "two-component story" blockquote) were fixed, but its closed-phase historical log
   (roughly its own Phases 39-56 section, which the file itself calls "implementation and
   decision history") was deliberately left naming opencode. The remaining 29 of the 41
-  received no edit at all: the 26 `agent-handoffs/**` files and all 3 ADRs (`0050`,
-  `0061`, and `0063` itself, which the task explicitly forbade editing) — see "What I did
+  received no edit at all: the 26 `agent-handoffs/**` files and all 3 ADRs (`0002`,
+  `0005`, and `0063` itself, which the task explicitly forbade editing) — see "What I did
   not touch, and why" below for the reasoning. Plus `CLAUDE.md` (outside `docs/`,
   not in either count, but the single most load-bearing live doc in the tree — every
   future agent session loads it) was also fixed.
@@ -216,7 +216,7 @@ outside `docs/`, and deliberately left 29 untouched:
   edit this document myself (it is Part VI's own dispatch plan, not mine to rewrite under
   the same "never rewritten" logic), but whoever next works from it should know those two
   citations are dead.
-- **`docs/adr/0050-runner-control-plane.md` and `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`**
+- **`docs/adr/0002-runner-control-plane.md` and `docs/adr/0005-provider-credentials-at-the-runner-boundary.md`**
   (both accepted, dated ADRs, treated the same as `0063` itself, which the task explicitly
   said not to touch) — their `opencode` mentions are dated context-at-decision-time
   statements ("Codex, Claude Code and OpenCode are coding harnesses, not remote

@@ -2,8 +2,8 @@
 
 # Plan: four harnesses on one core
 
-Implements ADR 0066 (docket as a third harness) and ADR 0067 (opencode readmitted as a
-fourth), both accepted, under the rules of ADR 0068. It is Stage 3 of Phase 64; the order of
+Implements ADR 0008 (docket as a third harness) and ADR 0009 (opencode readmitted as a
+fourth), both accepted, under the rules of ADR 0010. It is Stage 3 of Phase 64; the order of
 every stage, and how a task is handed to an agent, is in `docs/plans/phase-64.md`. The audit
 that first proposed the shape is archived at
 `docs/closed-cycles/plans/harness-maintainability-audit.md`.
@@ -56,16 +56,16 @@ loopback, with `DOCKET_HOME` in a scratch directory:
 | `docket harness status TOKEN` answers `finished` / `unknown`, but the token is only on stdout | not used: the core cannot journal a token it has not read yet, and the argv check above is enough |
 | `docket --version` is not a plain `X.Y.Z` | the core's version parser reports it as unrecognized today; fixed in H2 |
 
-What ADR 0066 described and did not ship — a stdin flag, `--attempt`, `docket harness
+What ADR 0008 described and did not ship — a stdin flag, `--attempt`, `docket harness
 capabilities`, child process-group events — is not needed for any of the above.
 
 ### opencode, measured against `opencode 1.18.30`
 
-ADR 0067's table stands. Two rows were added today, same method:
+ADR 0009's table stands. Two rows were added today, same method:
 
 | Fact | What it means for Tack |
 |---|---|
-| With no positional message, `opencode run` takes the prompt from stdin and completes once stdin closes | the core's stdin delivery works unchanged. ADR 0067's "open stdin hangs" is the same fact seen from the other side: Tack always closes it |
+| With no positional message, `opencode run` takes the prompt from stdin and completes once stdin closes | the core's stdin delivery works unchanged. ADR 0009's "open stdin hangs" is the same fact seen from the other side: Tack always closes it |
 | It creates `HOME` and `OPENCODE_CONFIG_DIR` when they do not exist, and fills them with 38 MB including an `.npm` cache (`du -sh`) | the grammar only names the paths; whether that first run reaches the network is still unmeasured and is H3's first step |
 
 ## The shape
@@ -247,7 +247,7 @@ and is reported.
 - *Descriptor:* kind and program `opencode`; `Wire::OpenAiChatCompletions`;
   `ModelSelection::Explicit`; `inherited_env: &["PATH"]`; `credential_env: None`;
   `observes_served_model: false`; a probe note naming `1.18.30` as the tested version (ADR
-  0067 decision 9 — outside it the note says untested, never a refusal).
+  0009 decision 9 — outside it the note says untested, never a refusal).
 - *`invocation()`:* rejects a request with no resolved endpoint. Args: `run --pure --format
   json --title tack -m tack/<model id>`, no positional message — the prompt arrives on
   stdin. Env: `HOME=<workspace root>/.tack-runner/opencode-home`, `OPENCODE_CONFIG_DIR`
@@ -255,14 +255,14 @@ and is reported.
   set to `1`, and `OPENCODE_CONFIG_CONTENT` built with `serde_json::json!`: one provider
   `tack` on `@ai-sdk/openai-compatible` with the endpoint's base URL, the key reference and
   the one requested model, plus the `permission` block — `webfetch` and `task` denied unless
-  the policy grants network or sub-agents, `edit` and `bash` from the tool list (ADR 0067
+  the policy grants network or sub-agents, `edit` and `bash` from the tool list (ADR 0009
   decision 6).
 - *`report()`:* from the events, never the exit code (a denied tool exits 0). Success is a
   final `step_finish` with `reason: "stop"` and no `error` event; tokens are summed from
   `step_finish.tokens`; `cost` is always `None` (the stream says `0` for an unknown model);
   `observed_model` is `None`, so every attempt is `requested_not_confirmed`. Exit 143 with
   no terminal event is a failed run whose reason says `cancelled`.
-- *`capabilities()`:* as ADR 0067 decisions 3, 7 and 8; `permission_policy` advisory, with
+- *`capabilities()`:* as ADR 0009 decisions 3, 7 and 8; `permission_policy` advisory, with
   the mapping above as its reason.
 
 **Tests — five functions:** the command line and environment for a request; the

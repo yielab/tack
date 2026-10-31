@@ -169,8 +169,7 @@ async fn run(harness: &Harness, spec: &ExecutionSpec) -> HarnessOutcome {
 fn absent_binary() -> BinaryLocator {
     BinaryLocator::Search {
         program: PLAIN.program.to_owned(),
-        path: Some(std::ffi::OsString::new()),
-        home: None,
+        env: crate::config::ProcessEnv::from_pairs([("PATH", "")]),
     }
 }
 
@@ -881,9 +880,7 @@ fn usage_detail_names_only_what_the_harness_reported() {
 #[cfg(unix)]
 #[tokio::test]
 async fn two_attempts_run_at_once_and_a_cancel_reaches_only_the_one_named() {
-    use crate::client::{
-        AttemptId, Checkpoint, FencingToken, HeartbeatRequest, LeaseResult, Timestamp,
-    };
+    use crate::client::{AttemptId, Checkpoint, FencingToken, HeartbeatRequest, LeaseResult};
     let fixture: HeartbeatRequest = serde_json::from_str(include_str!(
         "../../../../../docs/contracts/runner-v1/heartbeat.request.two-active.json"
     ))
@@ -918,7 +915,7 @@ async fn two_attempts_run_at_once_and_a_cancel_reaches_only_the_one_named() {
     active.apply(&[LeaseResult {
         attempt_id: AttemptId::new(claims[1].0),
         fencing_token: FencingToken(3),
-        lease_expires_at: Timestamp::new("2026-08-06T12:21:15Z"),
+        lease_expires_at: "2026-08-06T12:21:15Z".parse().expect("an RFC 3339 instant"),
         cancellation_requested: true,
     }]);
     let asked: Vec<bool> = running

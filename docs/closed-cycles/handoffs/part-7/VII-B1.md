@@ -23,7 +23,7 @@
     metadata`"), `crates/tack-desktop/dist/index.html` (a one-line placeholder;
     `build.frontendDist` needs *some* directory to point at even though the real window
     never loads it — see the tauri.conf.json notes below).
-- Contract fixtures consumed: none. ADR 0062 states the wire contract is unaffected;
+- Contract fixtures consumed: none. ADR 0006 states the wire contract is unaffected;
   this card touches no `docs/contracts/runner-v1/` fixture.
 - Behavior implemented: `crates/tack-desktop/src/supervisor.rs` — probes
   `GET /api/health`; attaches if something answers, otherwise checks whether the port has
@@ -257,7 +257,7 @@ exactly the process that was there before the app ever ran.
 - `build.frontendDist: "dist"` points at `crates/tack-desktop/dist/index.html`, a
   one-line placeholder (`<!doctype html><title>Tack</title>`) that Tauri's build wants to
   exist but that the app never actually navigates to — the real window always loads the
-  server's URL above, per ADR 0062 decision 4 (one UI, loaded from the local server).
+  server's URL above, per ADR 0006 decision 4 (one UI, loaded from the local server).
 - `bundle.externalBin: ["binaries/tack"]` — the platform suffix is appended by Tauri's
   own tooling; the file on disk must be named `binaries/tack-<host-triple>` (this
   machine: `binaries/tack-x86_64-unknown-linux-gnu`), produced by `make desktop-sidecar`
@@ -284,7 +284,7 @@ exactly the process that was there before the app ever ran.
 ## Context spent
 
 - Tokens read before the first edit (cold start): followed the block's read list
-  (`README.md` header + VII-B1 block, `TODO.md` head + §VII.0–§VII.4, ADR 0062 whole,
+  (`README.md` header + VII-B1 block, `TODO.md` head + §VII.0–§VII.4, ADR 0006 whole,
   the named source-file ranges) plus two small reads not in the list — root `Cargo.toml`
   lines 1–40 (the block's own recipe only bounds the `members` array; writing a
   conforming `crates/tack-desktop/Cargo.toml` with `version.workspace = true` etc.

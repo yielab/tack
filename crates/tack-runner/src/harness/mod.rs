@@ -30,7 +30,7 @@ pub(crate) mod test_support;
 use std::{collections::BTreeMap, path::Path, sync::Arc};
 
 use async_trait::async_trait;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     CapabilitySupport, ExecutionRequestSnapshot, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind,
 };
@@ -139,10 +139,10 @@ pub(crate) fn resolve_environment(
 /// Harness discovery/capability reporting, independent of any specific
 /// claimed attempt — needed because `engine::HarnessAdapter`'s methods all
 /// take an `ExecutionSpec`/`LocalRunHandle`, which only exist once a request
-/// is claimed (ADR 0066 has the full rationale).
+/// is claimed (ADR 0008 has the full rationale).
 ///
 /// Capability honesty is inherited from the frozen
-/// `tack_orch::execution::capabilities` types this trait returns:
+/// `tack_protocol::execution::capabilities` types this trait returns:
 /// [`HarnessCapability`] carries a nullable `probe_error` (a probe failure
 /// is not this runner's own bug), and every `FeatureCapabilities` entry is a
 /// `CapabilityValue { support, reason }` with three explicit levels, never a
@@ -219,6 +219,18 @@ pub(crate) fn time_ran_out(timeout: std::time::Duration, waiting_for_an_answer: 
     )
 }
 
+/// The reason a run ends with when a question went unanswered until it expired: when, if docket
+/// said, and that a person did not answer. Never "time ran out", which is about the agent's work.
+pub(crate) fn not_answered(expired: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    match expired {
+        Some(at) => format!(
+            "Nobody answered the question before it expired at {}",
+            at.format("%Y-%m-%d %H:%M UTC")
+        ),
+        None => "Nobody answered the question before it expired".to_owned(),
+    }
+}
+
 pub fn descriptor(kind: &str) -> Option<&'static local_process::HarnessDescriptor> {
     DESCRIPTORS
         .into_iter()
@@ -236,10 +248,10 @@ pub fn discover(
     request_may_reference: &[String],
     own_environment: &BTreeMap<String, String>,
     docket: &crate::config::DocketConfig,
+    env: &crate::config::ProcessEnv,
 ) -> (AdapterRegistry, BTreeMap<String, String>) {
     let mut found = (AdapterRegistry::new(), BTreeMap::new());
-    let (path, home) = locate::snapshot();
-    let sandbox = sandbox::detect(path.as_deref(), home.as_deref());
+    let sandbox = sandbox::detect(env.search_path().as_deref(), env.home().as_deref());
     let machine = (
         &sandbox,
         limits,
@@ -247,6 +259,7 @@ pub fn discover(
         secrets,
         request_may_reference,
         own_environment,
+        env,
     );
     install(&mut found, machine, codex::CodexGrammar);
     install(&mut found, machine, claude_code::ClaudeCodeGrammar);
@@ -257,7 +270,13 @@ pub fn discover(
         let state_dir = staging_root.parent().unwrap_or(staging_root).to_path_buf();
         if found
             .0
-            .register(docket::DocketAdapter::new(docket.clone(), state_dir))
+            .register(docket::DocketAdapter::new(
+                crate::config::DocketConfig {
+                    process: env.clone(),
+                    ..docket.clone()
+                },
+                state_dir,
+            ))
             .is_err()
         {
             tracing::warn!(
@@ -281,11 +300,14 @@ type Machine<'a> = (
     &'a SecretStore,
     &'a [String],
     &'a BTreeMap<String, String>,
+    &'a crate::config::ProcessEnv,
 );
 
 fn install<G: local_process::HarnessGrammar>(
     (registry, missing): &mut (AdapterRegistry, BTreeMap<String, String>),
-    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment): Machine<'_>,
+    (sandbox, limits, staging_root, secrets, request_may_reference, own_environment, env): Machine<
+        '_,
+    >,
     grammar: G,
 ) {
     let kind = grammar.descriptor().kind;
@@ -294,6 +316,7 @@ fn install<G: local_process::HarnessGrammar>(
         limits.clone(),
         staging_root.to_path_buf(),
         secrets.clone(),
+        env,
     );
     match harness {
         Ok(harness) => {
@@ -318,7 +341,7 @@ fn install<G: local_process::HarnessGrammar>(
 
 /// Dispatches the frozen [`HarnessAdapter`] lifecycle across every
 /// registered harness kind, and aggregates [`HarnessProbe`] reports. Keys
-/// on `tack_orch::execution::HarnessKind`.
+/// on `tack_protocol::execution::HarnessKind`.
 ///
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(...)` is a
 /// complete, multi-harness runner with no `engine.rs` changes: adding a

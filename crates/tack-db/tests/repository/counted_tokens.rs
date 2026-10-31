@@ -4,10 +4,11 @@
 use crate::common;
 
 use chrono::{TimeZone, Utc};
-use tack_db::repo::{
+use tack_db::queries::{
+    agent_profiles::successful_run_tokens,
     budgets::{counted_by_request, spent_today},
-    metrics::{attempt_totals, profile_successful_run_tokens},
 };
+use tack_db::repo::metrics::attempt_totals;
 
 #[tokio::test]
 async fn cache_reads_are_shown_and_never_counted() {
@@ -78,15 +79,12 @@ async fn cache_reads_are_shown_and_never_counted() {
     let project = project.id.to_string();
     let now = Utc.with_ymd_and_hms(2026, 10, 18, 12, 0, 0).unwrap();
     // 100 000 − 90 000 + 2 000 = 12 000, and 500 + 100 = 600 whole.
-    assert_eq!(
-        spent_today(repo.pool(), &project, now).await.unwrap(),
-        12_600
-    );
+    assert_eq!(spent_today(&repo, &project, now).await.unwrap(), 12_600);
     // A run's own figure is the same sum.
     let ids = ["R1", "R2"].map(String::from);
-    let by_run = counted_by_request(repo.pool(), &ids).await.unwrap();
+    let by_run = counted_by_request(&repo, &ids).await.unwrap();
     assert_eq!((by_run["R1"], by_run["R2"]), (12_000, 600));
-    let totals = attempt_totals(repo.pool(), &project, None).await.unwrap();
+    let totals = attempt_totals(&repo, &project, None).await.unwrap();
     let split = totals.implementation;
     assert_eq!(
         (
@@ -211,13 +209,9 @@ async fn a_profiles_history_counts_its_last_successful_measured_runs() {
     }
 
     // Counted, newest first: the 50 000 cache read of each is left out, so each counts twice its output.
-    let counted = profile_successful_run_tokens(repo.pool(), "P", 20)
-        .await
-        .unwrap();
+    let counted = successful_run_tokens(&repo, "P", 20).await.unwrap();
     assert_eq!(counted, vec![8000, 4000, 6000, 2000]);
     // Only the last `limit`.
-    let last_two = profile_successful_run_tokens(repo.pool(), "P", 2)
-        .await
-        .unwrap();
+    let last_two = successful_run_tokens(&repo, "P", 2).await.unwrap();
     assert_eq!(last_two, vec![8000, 4000]);
 }

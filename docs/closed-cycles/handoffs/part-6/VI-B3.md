@@ -64,7 +64,7 @@ auto-start check (`server.rs::serve_inner`), I first wrote the auto-start condit
 `if let Some(control) = &local_runner && effective_local_runner_enabled(...)` — no loopback
 check. That is wrong: a preference saved as "on" from an earlier loopback session, on a
 server later bound to `0.0.0.0`, would have silently started the embedded runner on a
-non-loopback bind — the exact thing ADR 0061 decision 6 exists to prevent, and worse than
+non-loopback bind — the exact thing ADR 0005 decision 6 exists to prevent, and worse than
 the route just being unreachable, because the runner itself would still be live and
 executing arbitrary agent processes.
 
@@ -239,7 +239,7 @@ above; not committed anywhere, its value never appeared in any command this card
 ## Context spent
 
 - Cold start: the dispatch README header + VI-B3 block (~1k), `VI-B1.md` in full (329
-  lines, ~3k), ADR 0061's decision table (~1k, read incidentally while resolving the ADR-
+  lines, ~3k), ADR 0005's decision table (~1k, read incidentally while resolving the ADR-
   number discrepancy below) — in the same range as the block's ~20k estimate for this
   section, though the actual session ran considerably longer than a cold-start budget once
   implementation began (see below).
@@ -248,11 +248,11 @@ above; not committed anywhere, its value never appeared in any command this card
   and 6 are the ones your block names." Measured against both ADR files: ADR 0063's
   decisions 2 and 6 are "a gateway and a vendor's own API are one mode" and "a quoted price
   is never a measured spend" — neither is about this card's toggle or secret-write surface.
-  ADR 0061's decisions 2 and 6 ("one narrow route lets the UI hand a key to the runner
+  ADR 0005's decisions 2 and 6 ("one narrow route lets the UI hand a key to the runner
   sharing its machine" and "add a one-click switch to start/stop the built-in runner") are
   the ones that actually describe VI-B3, and are exactly what TODO.md's own VI-B3 card body
   cites ("Needs VI-B1 (the store) and VI-A2 (decisions 2 and 6)" — VI-A2 is the card that
-  wrote ADR 0061). Implemented against ADR 0061 decisions 2 and 6; flagging the mismatch
+  wrote ADR 0005). Implemented against ADR 0005 decisions 2 and 6; flagging the mismatch
   rather than silently substituting one ADR for another.
 - Files opened beyond the read list, and why: `crates/tack-runner/src/bootstrap.rs`
   (targeted grep + small ranges, sanctioned by the block itself: "a grep for the re-probe

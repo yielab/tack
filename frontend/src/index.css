@@ -224,19 +224,6 @@
 
   --color-focus-ring: var(--color-primary-600);
 
-  /* Radius (static across themes). The shape language is over-rounded:
-     controls (buttons, inputs, tags, tabs) are pills, items inside a
-     container are --radius-item, the containers themselves --radius-card. */
-  /* These names also back Tailwind's rounded-sm/-md/-lg/-xl/-2xl utilities. */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 22px;
-  --radius-2xl: 28px;
-  --radius-item: 20px;
-  --radius-card: 28px;
-  --radius-pill: 999px;
-
   /* Type: Bricolage Grotesque is the display voice (headings, step numbers,
      primary actions), Figtree the body, JetBrains Mono ids, kbd hints,
      estimates. */
@@ -570,6 +557,30 @@
   --shadow-md: 0 3px 10px rgb(0 0 0 / 0.35);
   --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.55);
   --shadow-xl: 0 22px 52px rgb(0 0 0 / 0.62);
+}
+
+/*
+ * Radius and type tokens (static across themes). Radius: the shape language
+ * is over-rounded: controls (buttons, inputs, tags, tabs) are pills, items
+ * inside a container are rounded-item, the containers themselves rounded-card.
+ * The rounded-sm/-md/-lg/-xl/-2xl utilities read the same names. Type: text
+ * sizes in rem, so they follow the user's text size (display.ts).
+ * `static` emits every name, so inline styles can read var(--radius-pill).
+ */
+@theme static {
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-item: 20px;
+  --radius-card: 28px;
+  --radius-pill: 999px;
+
+  --text-micro: 0.6875rem;
+  --text-caption: 0.78125rem;
+  --text-small: 0.8125rem;
+  --text-lead: 0.9375rem;
 }
 
 /*

@@ -1,6 +1,5 @@
 {
   "name": "saas-dev",
   "location": "/scratch/repo",
-  "blueprint": "software",
   "ensure": true
 }

@@ -17,7 +17,7 @@ cp /var/tmp/tack-agent-targets/VI-D1-stranger/release/tack build/tack
 docker build -t tack-vi-d1-stranger-proof ./build
 
 # Fresh container per run — --network host because bare `tack serve` binds
-# loopback-only by design (ADR 0061 decision 6: this is what keeps the
+# loopback-only by design (ADR 0005 decision 6: this is what keeps the
 # embedded-runner control routes reachable at all), so a normal bridge
 # `-p hostport:3210` cannot reach it (confirmed: connection reset) without
 # either breaking that loopback bind or adding an unwanted extra proxy layer.

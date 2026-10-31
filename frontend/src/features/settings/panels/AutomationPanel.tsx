@@ -7,7 +7,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, HelpHint, Select } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, Switch, type FieldHelp } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
@@ -33,20 +33,26 @@ function checkSentence(r: FolderCheck): string {
 }
 
 /** A settings section folded into one line until opened: the heading, then what it is set to. */
-const Fold = (props: { id?: string; title: string; summary: string; help?: JSX.Element; children: JSX.Element }) => (
+const Fold = (props: { id?: string; title: string; summary: string; help?: FieldHelp; children: JSX.Element }) => (
   <details id={props.id} class={SECTION}>
-    <summary class="flex cursor-pointer flex-wrap items-center gap-2">
-      <Heading>{props.title}</Heading>
-      {props.help}
-      <span class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+    <summary class="min-h-6 cursor-pointer">
+      {/* The summary itself stays `display: list-item`: a flex summary loses its disclosure marker. */}
+      <span class="inline-flex flex-wrap items-center gap-2 align-middle">
+        <Heading>{props.title}</Heading>
+        <span class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+      </span>
     </summary>
-    <div class="mt-2.5 flex flex-col gap-2.5">{props.children}</div>
+    <div class="mt-2.5 flex flex-col gap-2.5">
+      {/* The help sits in the body: a button inside the summary would be interactive inside interactive. */}
+      <Show when={props.help}>{(help) => <HelpNote help={help()} />}</Show>
+      {props.children}
+    </div>
   </details>
 );
 
 const Radio = (props: { name: string; checked: boolean; onChange: () => void; children: JSX.Element }) => (
   <label class="flex cursor-pointer items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-    <input type="radio" name={props.name} checked={props.checked} onChange={props.onChange} />
+    <input type="radio" class="size-6" name={props.name} checked={props.checked} onChange={props.onChange} />
     {props.children}
   </label>
 );
@@ -95,10 +101,12 @@ const AutomationPanel: Component = () => {
     }
   };
 
-  const [check] = createResource(
+  const [folderCheck, { refetch: refetchCheck }] = createResource(
     () => (hasFolder() ? p()?.repository || null : null),
-    (path) => api.projects.checkFolder(path).catch(() => null),
+    (path) => api.projects.checkFolder(path),
   );
+  /** Reading a failed resource throws; a failed check is told of beside the folder instead. */
+  const check = () => (folderCheck.error ? undefined : folderCheck());
 
   const saveFolder = async (path: string) => {
     const value = path.trim();
@@ -113,8 +121,10 @@ const AutomationPanel: Component = () => {
     await save({ repository: value, default_branch: branch });
   };
 
-  const [runners] = createResource(() => runnersApi.list().then((r) => r.data.data).catch(() => []));
-  const [profiles] = createResource(() => agentProfilesApi.list().then((r) => r.data.data).catch(() => []));
+  const [runnerList, { refetch: refetchRunners }] = createResource(() => runnersApi.list().then((r) => r.data.data));
+  const [profileList, { refetch: refetchProfiles }] = createResource(() => agentProfilesApi.list().then((r) => r.data.data));
+  const runners = () => (runnerList.error ? undefined : runnerList());
+  const profiles = () => (profileList.error ? undefined : profileList());
   const snapshots = createMemo(() =>
     (runners() ?? []).map((r) => r.capability_snapshot as { harnesses?: SnapshotHarness[]; push_configured?: boolean } | null),
   );
@@ -152,7 +162,7 @@ const AutomationPanel: Component = () => {
             No code yet
           </Radio>
           <details open={origin() === 'url'}>
-            <summary class="cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
+            <summary class="min-h-6 cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
             <Radio name="code-origin" checked={origin() === 'url'} onChange={() => void save({ code_origin: 'url' })}>
               A repository URL, cloned per run
             </Radio>
@@ -177,18 +187,19 @@ const AutomationPanel: Component = () => {
             value={p()?.default_branch ?? ''}
             onChange={(e) => void save({ default_branch: e.currentTarget.value.trim() || null })}
           />
+          <Show when={hasFolder() && folderCheck.error}>
+            {(error) => <LoadError what="what is in that folder" error={error()} onRetry={() => void refetchCheck()} />}
+          </Show>
           <Show when={hasFolder() && check()}>
             <Note>{checkSentence(check()!)}</Note>
           </Show>
-          <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={p()?.prepare_command !== ''}
-              onChange={(e) => void save({ prepare_command: e.currentTarget.checked ? null : '' })}
-            />
+          <Switch
+            checked={p()?.prepare_command !== ''}
+            onChange={(checked) => void save({ prepare_command: checked ? null : '' })}
+            style={{ color: 'var(--color-text-primary)' }}
+          >
             Install dependencies before each run
-          </label>
+          </Switch>
           <Show when={p()?.prepare_command !== ''}>
             <Field
               label="Install command"
@@ -202,7 +213,7 @@ const AutomationPanel: Component = () => {
         </Show>
       </Fold>
 
-      <Fold title="How the agent works on it" summary={howSummary()} help={<HelpHint label="How the agent works" help={HELP.howTheAgentWorks} />}>
+      <Fold title="How the agent works on it" summary={howSummary()} help={HELP.howTheAgentWorks}>
         <Show
           when={origin() !== 'none'}
           fallback={
@@ -222,23 +233,21 @@ const AutomationPanel: Component = () => {
               In the folder, directly
             </Radio>
             <details open={mode() === 'clone'}>
-              <summary class="cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
+              <summary class="min-h-6 cursor-pointer text-sm" style={{ color: 'var(--color-text-secondary)' }}>Advanced</summary>
               <Radio name="workspace-mode" checked={mode() === 'clone'} onChange={() => void save({ workspace_mode: 'clone' })}>
                 A fresh clone per run
               </Radio>
             </details>
           </div>
           <div class="flex items-center gap-2">
-            <label class="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={!!p()?.push_after_run}
-                disabled={pushDisabledReason() !== null}
-                onChange={(e) => void save({ push_after_run: e.currentTarget.checked })}
-              />
+            <Switch
+              checked={!!p()?.push_after_run}
+              disabled={pushDisabledReason() !== null}
+              onChange={(checked) => void save({ push_after_run: checked })}
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Push the branch when a run finishes
-            </label>
+            </Switch>
             <HelpHint label="Push the branch" help={HELP.pushTheBranch} />
           </div>
           <Show when={pushDisabledReason()}>
@@ -260,7 +269,7 @@ const AutomationPanel: Component = () => {
             rows={3}
             value={p()?.definition_of_done ?? ''}
             onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
-            class="w-full resize-none rounded-[20px] border px-3.5 py-2 text-sm"
+            class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
             style={{
               'background-color': 'var(--color-bg-base)',
               color: 'var(--color-text-primary)',
@@ -273,7 +282,10 @@ const AutomationPanel: Component = () => {
       <Fold title="Agent" summary={p()?.default_harness ? agentLabel(p()!.default_harness!) : 'No default agent'}>
         <FieldShell label="Agent" help={HELP.sandbox}>
           <div class="flex flex-wrap gap-2">
-            <For each={harnesses()} fallback={<Note>No runner reports an agent yet.</Note>}>
+            <Show when={runnerList.error}>
+              {(error) => <LoadError what="the runners" error={error()} onRetry={() => void refetchRunners()} />}
+            </Show>
+            <For each={harnesses()} fallback={<Show when={!runnerList.error}><Note>No runner reports an agent yet.</Note></Show>}>
               {(h) => (
                 <Pill active={p()?.default_harness === h} onClick={() => { void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
                   {agentLabel(h)}
@@ -313,7 +325,10 @@ const AutomationPanel: Component = () => {
         </Show>
         <FieldShell label="Default profile" help={HELP.profile}>
           <div class="flex flex-wrap gap-2">
-            <For each={profiles()} fallback={<Note>No agent profiles yet.</Note>}>
+            <Show when={profileList.error}>
+              {(error) => <LoadError what="the agent profiles" error={error()} onRetry={() => void refetchProfiles()} />}
+            </Show>
+            <For each={profiles()} fallback={<Show when={!profileList.error}><Note>No agent profiles yet.</Note></Show>}>
               {(pr) => (
                 <Pill
                   active={p()?.default_profile_id === pr.agent_profile_id}
@@ -331,6 +346,9 @@ const AutomationPanel: Component = () => {
         </FieldShell>
       </Fold>
 
+      <Show when={profileList.error}>
+        {(error) => <LoadError what="the agent profiles the roles choose from" error={error()} onRetry={() => void refetchProfiles()} />}
+      </Show>
       <Show when={projectId()}>
         {(id) => (
           <Ladder

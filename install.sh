@@ -4,14 +4,14 @@
 # Fetch the installer from the release you are installing, not from a branch
 # that moves, and name that release:
 #
-#   TAG=v0.1.0-beta.10
+#   TAG=$(curl -fsSL "https://api.github.com/repos/yielab/tack/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 #   curl --proto '=https' --tlsv1.2 -fsSL \
 #     "https://github.com/yielab/tack/releases/download/$TAG/install.sh" \
 #     | TACK_VERSION="$TAG" sh
 #
 # Options (environment variables):
 #   TACK_INSTALL_DIR   target directory (default: $HOME/.local/bin)
-#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.10 (default: newest)
+#   TACK_VERSION       release tag to install, e.g. v0.2.0-beta.1 (default: newest)
 #   TACK_SKIP_CHECKSUM set to 1 to skip the SHA256SUMS and signature checks
 #                      (only needed for v0.1.0-beta.6 and earlier, which
 #                      predate the file)

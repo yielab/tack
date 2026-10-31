@@ -1,7 +1,7 @@
 # Plan: Phase 67 — a run a normal person can start
 
-**Status: proposed 2026-10-07, waiting on the maintainer's go.** Serves ADR 0074 (which amends
-0069, 0071 and 0072). Written against `develop` at `c859729`; every locator below was read on
+**Status: proposed 2026-10-07, waiting on the maintainer's go.** Serves ADR 0015 (which amends
+0011, 0013 and 0014). Written against `develop` at `c859729`; every locator below was read on
 that commit. Re-run `rg -n` before trusting a line number. Nothing is dispatched.
 
 What this phase builds, in one paragraph. Today a run is started from a dialog that asks, in
@@ -75,7 +75,7 @@ on 2026-10-07, each one line to reverse:
   changes not captured (workspace kept). Red: failed, reason first.
 - **Nothing resets.** `items.run_settings` holds only what the person changed for that task;
   the idempotency key alone is fresh per open.
-- **Vocabulary** per ADR 0074 decision 9. The wire, the CLI flags and the contracts keep their
+- **Vocabulary** per ADR 0015 decision 9. The wire, the CLI flags and the contracts keep their
   names; only screens and the book change.
 - **The migrations of this phase land together, first (S0)**, exactly as spelled there. A
   consumer that finds a column wrong adds `083_…` and reports; it never edits S0's.
@@ -443,7 +443,7 @@ returns the seeded attempt's time; `.githooks/pre-push` passes.
 ### S3 — project creation asks where the code is; Settings gets Automation
 
 **Files:** `frontend/src/features/projects/CreateProjectModal.tsx` (one step "Does this project
-have code?" with the three radios of ADR 0074 decision 2; "Browse…" calls
+have code?" with the three radios of ADR 0015 decision 2; "Browse…" calls
 `@tauri-apps/plugin-dialog`'s `open({directory: true})` when `window.__TAURI_INTERNALS__`
 exists, else the path is typed; the chosen path is checked through S2 and the result shown
 under the field as a sentence); `frontend/src/features/settings/ProjectSettings.tsx` (the
@@ -474,7 +474,7 @@ toast on failure; `.githooks/pre-push` passes.
 removed — `ModelDefaultStep.tsx` deleted); `steps/HarnessStep.tsx` (each row's badge: "Installed
 v… · Signed in <date>" from S2's `harness-verification`, "Installed · Not signed in — run
 `claude` once in a terminal" otherwise, "Not installed" with the npm line);
-`steps/ProviderStep.tsx` (one paragraph as ADR 0074 decision 1; the gateway key panel beneath,
+`steps/ProviderStep.tsx` (one paragraph as ADR 0015 decision 1; the gateway key panel beneath,
 unchanged); `steps/TestRunStep.tsx` (one button, no fields; calls S5's route; shows the
 `ExecutionTimeline` for the returned request); `AgentsPage.test.tsx`; `agentsProjectPreference.ts`
 deleted.
@@ -651,7 +651,7 @@ two criteria, containing the DoD section when the project has one and not otherw
 
 ### T2b — the dialog is a pre-flight
 
-**Files:** `frontend/src/shared/runWithAgent/RunFlow.tsx` (rewritten to ADR 0074's shape: one
+**Files:** `frontend/src/shared/runWithAgent/RunFlow.tsx` (rewritten to ADR 0015's shape: one
 summary line — agent · model · "on a new branch of ~/…" / "in ~/…" — each word a link to
 Automation; a collapsed *What the agent will read* fetching T2a; profile pills with the
 summary as `title`; two switches, "Ask before each action" (disabled with reason when
@@ -889,9 +889,9 @@ V1 names them; `.githooks/pre-push` passes.
 | Item | Why |
 |---|---|
 | Remote runners choosing a folder on their own machine | `clone` covers them; a per-runner folder map is a fleet feature, no user asked |
-| A pull request per run from the dialog | ADR 0071: opened automatically for a pushed branch with a linked issue; unchanged |
+| A pull request per run from the dialog | ADR 0013: opened automatically for a pushed branch with a linked issue; unchanged |
 | A live model catalog from a gateway | M0's measured lists suffice for four harnesses; the gateway catalog count stays informational |
-| Profiles per project | ADR 0072 deferred it to a project-type system; `default_profile_id` is the project's choice among global profiles |
+| Profiles per project | ADR 0014 deferred it to a project-type system; `default_profile_id` is the project's choice among global profiles |
 | Snapshot evidence for a non-git folder with a patch | files only; a patch needs a baseline copy, which doubles the folder |
 | docket and opencode in the dialog's model lists | M0 measures them too; the lists ship when measured, same table |
 
@@ -936,7 +936,7 @@ Follow-ups found while executing, not yet scheduled (small, one task each when a
 | S3 | `schema.gen.ts` types the check-folder response as `unknown` and `AgentProfileSummary` has no `summary`: the S2/S6 handlers need `ToSchema` response types. |
 | Z2 | When `WorkspaceManager::keep` itself fails, the workspace is still deleted by the later cleanup; log it at warn. |
 | S4 | The agents-page e2e asserts only that "Run test" is enabled; the click flow is asserted once S5's route exists. |
-| T1 | The brief's `definition_of_done` lost its only editor when `BriefTab` went; ADR 0074 moves it to the project. The Automation panel needs a "Definition of done" textarea writing `projects.definition_of_done` (T2a appends it to what the agent reads). |
+| T1 | The brief's `definition_of_done` lost its only editor when `BriefTab` went; ADR 0015 moves it to the project. The Automation panel needs a "Definition of done" textarea writing `projects.definition_of_done` (T2a appends it to what the agent reads). |
 | S5 | "This machine's runner" is found as the newest active `local-%` runner; a runner-id accessor on `LocalRunnerControl` would make it exact. |
 | T3a/T3b | `run_settings` is typed `Object` in OpenAPI, which generates `Record<string, never>`; the dialog casts. A `schema(value_type = Value)` or a named schema fixes the generated type. |
 | T3b | `agent_profile_id` is remembered whenever the auto-selected profile differs from the project's default, so a project without a default stores it needlessly; store it only when the person picked a pill. |

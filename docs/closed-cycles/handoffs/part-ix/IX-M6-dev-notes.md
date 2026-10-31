@@ -8,7 +8,7 @@
   `crates/tack-orch/src/adapters/legacy_bridge.rs`, `model_policy/wiring.rs`,
   `scheduler/mod.rs`; `crates/tack-runner/src/git.rs`, `harness/event_sink.rs`,
   `transport.rs`); plus the two destinations content moved to
-  (`docs/adr/0060-docket-control-plane-disposition.md`,
+  (`docs/closed-cycles/adr/0060-docket-control-plane-disposition.md`,
   `crates/tack-orch/tests/fixtures/README.md`, `docs/contracts/runner-v1/README.md`) and one
   table row in `docs/plans/human-maintainability.md` recording the directory's deletion.
 - Contract fixtures consumed: none changed; `docs/contracts/runner-v1/README.md` gained one
@@ -34,7 +34,7 @@
 | Every origin module's preamble is ≤ 30 lines and does not worsen its comment-share ratchet | `python3 scripts/maintainability.py check --changed` → `✓ maintainability budgets hold (12 files checked)` |
 | No `//!`/`///` comment reintroduces board archaeology | `./scripts/check-comments.sh` → `✓ no board archaeology in crates/ frontend/src frontend/e2e` |
 | Workspace still compiles | `cargo check --workspace` → `Finished` |
-| The one design-rationale note whose subject already has an ADR was appended there, not duplicated in the module | `git diff docs/adr/0060-docket-control-plane-disposition.md` adds one new `## Provider-scoped ids and the normalized-attempt projection` section; `legacy_bridge.rs`'s preamble now points to it instead of re-deriving the same text |
+| The one design-rationale note whose subject already has an ADR was appended there, not duplicated in the module | `git diff docs/closed-cycles/adr/0060-docket-control-plane-disposition.md` adds one new `## Provider-scoped ids and the normalized-attempt projection` section; `legacy_bridge.rs`'s preamble now points to it instead of re-deriving the same text |
 | The one vendor/wire-behavior note was moved to the fixture README that already covers that fixture | `git diff crates/tack-orch/tests/fixtures/README.md` adds the docket `POST /pods` 500/rollback paragraph next to the existing `POST /pods` bullet |
 
 A row with no evidence is a claim to delete, not a row to leave blank.

@@ -1,8 +1,8 @@
 # Plan: Phase 72 — merge authority follows the autonomy level you set
 
 **Status: opened 2026-10-13; every task but K2 merged into `develop` the same day. K2, reshaped
-so it does not wait on prill, closed 2026-10-14. Phase 72 is closed.** Serves ADR 0079
-(`docs/adr/0079-merge-authority-follows-the-autonomy-level-you-set.md`), whose closing section
+so it does not wait on prill, closed 2026-10-14. Phase 72 is closed.** Serves ADR 0020
+(`docs/adr/0020-merge-authority-follows-the-autonomy-level-you-set.md`), whose closing section
 "Amendments agreed 2026-10-13" wins where it disagrees with the table. Written against `develop`
 at `11de5f2e`, prill at `324842e` (ADR 0014 accepted, M6 specified, not built) and docket at
 `e8774fad` (ADR 0025 accepted with amendments). Re-run `rg -n` before trusting a line number.
@@ -22,7 +22,7 @@ Tack's cost. A project that stays at L3 behaves exactly as today.
 
 The owner's rule (2026-10-13): each responsibility has exactly one owner among the three tools;
 nothing is computed twice and nothing is left half-built. This table is that rule applied, read
-from Tack ADR 0079, prill ADR 0014 and docket ADR 0025 as each stands today.
+from Tack ADR 0020, prill ADR 0014 and docket ADR 0025 as each stands today.
 
 | Responsibility | Owner | What the others do |
 |---|---|---|
@@ -45,7 +45,7 @@ from Tack ADR 0079, prill ADR 0014 and docket ADR 0025 as each stands today.
 | # | Decision | State |
 |---|---|---|
 | X1 | Decision 6 (directives) is not built. Tack will apply directives prill proposes; it never groups them itself. Trigger: prill publishes `directives-proposal/v1` and a contract through which Tack sends the human corrections it holds. | **Taken** |
-| X2 | Reshaped by the ownership rule: Tack drops its own PQC (ADR 0079 decision 4(d)) and keeps 4(a), 4(b), 4(c). prill's store lives **on the board's host**, one per repository, so outcomes never cross machines. Without prill on the board, the page shows Tack's own facts and says the quality figures need prill. | **Taken (reshaped)** |
+| X2 | Reshaped by the ownership rule: Tack drops its own PQC (ADR 0020 decision 4(d)) and keeps 4(a), 4(b), 4(c). prill's store lives **on the board's host**, one per repository, so outcomes never cross machines. Without prill on the board, the page shows Tack's own facts and says the quality figures need prill. | **Taken (reshaped)** |
 | X3 | Budgets: `tokens_per_day`, `usd_per_day`, `auto_merges_per_day`, `queue_items_max`; enforced at the attempt boundary and in the merge check. | **Taken** |
 | X4 | L5 has no limits of its own: L5 is L4 over every domain, because one revert already demotes. | **Taken** (read from the owner's answer A; say so if not) |
 | X5 | No `brief_version` in the pack; the request snapshot records it, the hash already identifies it. | **Taken** |
@@ -66,7 +66,7 @@ from Tack ADR 0079, prill ADR 0014 and docket ADR 0025 as each stands today.
 |---|---|
 | 1 Signing key | A file path in the runner's `[verify] sign_key`; the board stores the project's public key (PEM). |
 | 2 Defect window | prill's: 14 days, a constant of `prill metrics` (ADR 0014). Tack keeps no window of its own. |
-| 3 Second person for L4 | No; the merge record holds the policy, not a person (ADR 0059 stands). |
+| 3 Second person for L4 | No; the merge record holds the policy, not a person (ADR 0004 stands). |
 | 4 Authoritative CI | Both GitHub signals on the commit: every check run completed `success`/`neutral`/`skipped`, and the combined status not `failure`/`pending`. No check and no status at all is **not** green. |
 | 5 Merge method | GitHub's default, branch kept; a 405 holds the item with GitHub's message. |
 | 6 Rate card | By hand, dated; every dollar figure shows the date. |
@@ -100,7 +100,7 @@ from Tack ADR 0079, prill ADR 0014 and docket ADR 0025 as each stands today.
 
 ## Decided — not re-opened by any task
 
-Every row of ADR 0079's table as amended, the "Who owns what" table, the cuts, the defaults, and:
+Every row of ADR 0020's table as amended, the "Who owns what" table, the cuts, the defaults, and:
 
 | Question | Decision |
 |---|---|
@@ -140,7 +140,7 @@ As `docs/closed-cycles/plans/phase-67.md` § "How a task is handed to an agent",
 first line of the brief, the three lines Phase 69 added, and these:
 
 ```
-The ADR is docs/adr/0079-merge-authority-follows-the-autonomy-level-you-set.md; its closing amendments and this plan's "Who owns what" and "Decided" tables are the decision, do not re-open them.
+The ADR is docs/adr/0020-merge-authority-follows-the-autonomy-level-you-set.md; its closing amendments and this plan's "Who owns what" and "Decided" tables are the decision, do not re-open them.
 Tack computes no quality figure prill owns and re-checks no stage prill judged. If your task seems to need one, stop and report it.
 Migration 087 exists; never edit it. A shape it lacks is a finding: stop and report it.
 GitHub is never reached: every GitHub response in a test is a fixture under crates/tack-api/tests/fixtures/github/ served by the mock-server pattern of github_sync.rs's tests.
@@ -164,10 +164,10 @@ the launcher (the Agent tool's own isolation cuts from `main`).
   `check-runs` (all success, one failure, one in progress, none), `status` (success, pending with
   zero statuses, failure), `merge` (200, 405, 409), and a default-branch `commits` list holding a
   `This reverts commit <sha>` message.
-- Text fixes: "Assay" → prill in ADR 0071 and `docs/contracts/mrp-v1/fixtures/*.json`; the
+- Text fixes: "Assay" → prill in ADR 0013 and `docs/contracts/mrp-v1/fixtures/*.json`; the
   `require_token` comment and `README.md:136` gain the
   `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` exception.
-- ADR 0079's status line, once accepted.
+- ADR 0020's status line, once accepted.
 
 ### S — migration 087 (Haiku)
 
@@ -449,7 +449,7 @@ string plus CI minute and human hour, and the date.
 **Do:** when a completed attempt's pack says `reject`, carries `next_steps`, and the project's
 `verify_loop_max_attempts` is above the length of its `rework_of` chain: enqueue a follow-up on the
 same item, harness, profile and model, with `metadata.rework_of` = the original request and the
-next steps appended, one per line (`message`, `path:line`, `command`), inside ADR 0077 decision
+next steps appended, one per line (`message`, `path:line`, `command`), inside ADR 0018 decision
 13's fenced block. No follow-up when: the pack has no `next_steps`, the last two packs carry the
 same set of `code`s (no progress), the previous follow-up was cancelled, or the pack says
 `review`. Budgets are the scheduler's (U): a follow-up over a budget is enqueued and waits with
@@ -556,7 +556,7 @@ tree; `scripts/smoke.sh` fake mode.
   - U, integrator fix: `queue_items` counted every pack never reviewed, for ever, so packs left on finished or superseded items would have filled the queue for good. It now counts the project's unfinished items that show Needs your review, through the board's own `NEEDS_REVIEW_SQL` (made `pub(crate)`): one definition, not two.
   - U's calls, kept: a request held by a budget never fails on the 30-minute unclaimable timer; `spent_today` and `auto_merges_today` take `now`; `BudgetKind` and `project_of_request` are the two helpers it named itself.
   - K1, integrator fix: `attest_verify` returns `Ok(key id)` instead of `Check::Pass`, because the merge record keeps `attestation_keyid`.
-  - K1's calls, kept: `statement_sha256` is the digest of the envelope file (ADR 0079 decision 3 says the envelope's digest; no base64 dependency added); `run` and `attest_verify` take the program from `AppConfig.prill_program`; `NextStep.severity` is a string and `line` a `u32`; a new `signed-with-next-steps.json` fixture in Tack's `mrp-v1`, pinned.
+  - K1's calls, kept: `statement_sha256` is the digest of the envelope file (ADR 0020 decision 3 says the envelope's digest; no base64 dependency added); `run` and `attest_verify` take the program from `AppConfig.prill_program`; `NextStep.severity` is a string and `line` a `u32`; a new `signed-with-next-steps.json` fixture in Tack's `mrp-v1`, pinned.
 - **Round 3** closed 2026-10-13. A2 merged in `52508637`, P in `4dd77075`. On the merged tree the gate is green, nextest is 1251/1251, the frontend typechecks and vitest is 602/602. Both agents quoted their RED.
   - A2, integrator fix (safety): the candidate query took every succeeded attempt with an unreviewed `merge` pack, for ever, so a promotion could have merged a run a newer request replaced, or the pack of an item already Done. It now takes only the newest finished attempt of an unfinished item's newest request, in a project not archived. A test proves each case, and fails without the filter.
   - A2, integrator fix (cost): a held candidate ran `prill attest verify` every tick. The key id verified once is kept on its `tack_merges` row and reused; saving the project's settings clears it on every unmerged row, so a replaced public key is always checked afresh.
@@ -576,7 +576,7 @@ tree; `scripts/smoke.sh` fake mode.
 - **Round 5 (F)** closed 2026-10-13, merged in `9d26dbeb`; its locally declared Autonomy types were replaced by the generated ones. On the merged tree: the gate is green, nextest is 1257/1257, vitest is 622/622, the token gate passes, Playwright chromium is 54/54 (`--workers=2`, headless; firefox and webkit are not installed on this machine), and `scripts/smoke.sh` fake mode passes.
   - F's calls, kept: L4/L5 are disabled while `automatic_merge_blocked_by` is non-empty, with its sentences under the levels; the badge's label is chosen from the note's wording; the badge sits on the board card, the list row and the table's Review column; a system comment's author reads "Tack".
 - **Z** done 2026-10-13: `docs/CONFIG.md` (`TACK_PRILL_PROGRAM`, `[verify] sign_key`, the metric criterion and `--sign`/`--db` corrected), the changelog's beta.10 section (phase 72, migrations 078–087), the book's "Merging from Tack" page.
-- **K2** reshaped and closed 2026-10-14 (the integrator, no agent: four small edits). The owner asked why Tack waited on prill when prill is not a dependency. It did not need to: the pack already carried what both checks need. ADR 0079's amendments say so, dated.
+- **K2** reshaped and closed 2026-10-14 (the integrator, no agent: four small edits). The owner asked why Tack waited on prill when prill is not a dependency. It did not need to: the pack already carried what both checks need. ADR 0020's amendments say so, dated.
   - The runner copies prill's `stages` (name, status, reason) and its `nextSteps` into Tack's pack; `stages` is a new optional field of `mrp-v1`.
   - The automatic merge's require check is `MergeReadinessPack::required_stage_missing`: every stage in `verify_require` must be listed as `passed`; `not_applicable` or absent holds the merge, naming the stage. `can_require` and the `--config` layer are dropped.
   - The loop back to the agent uses `MergeReadinessPack::what_to_fix`: prill's next steps when it gave some, else each failed criterion and each failed stage but `criteria`.

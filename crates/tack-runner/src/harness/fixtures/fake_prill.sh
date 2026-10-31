@@ -9,6 +9,7 @@
 #   TACK_FAKE_PRILL_ERROR    when set, prints an `error/v1` document with it
 #                            as the code on stdout and exits 2, as prill does
 #                            when it can emit no pack.
+#   TACK_FAKE_PRILL_HANG     when set, never answers, so the runner's timeout is what ends it.
 #   TACK_FAKE_PRILL_FIXTURE  otherwise, copies
 #                            docs/contracts/mrp-v1/fixtures/prill/<name>.json
 #                            to `<out>/mrp.json`, prints it on stdout and
@@ -33,6 +34,10 @@ done
 [ -n "$out" ] || { echo "fake prill: no --out" >&2; exit 2; }
 mkdir -p "$out"
 printf '%s\n' "$@" > "$out/argv"
+
+if [ -n "${TACK_FAKE_PRILL_HANG:-}" ]; then
+    exec sleep 60
+fi
 
 if [ -n "${TACK_FAKE_PRILL_ERROR:-}" ]; then
     printf '{"contract": "error/v1", "code": "%s", "message": "fake prill refusing on request"}\n' "$TACK_FAKE_PRILL_ERROR"

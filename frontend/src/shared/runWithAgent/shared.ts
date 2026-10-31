@@ -91,6 +91,8 @@ export interface RunWithAgentFormValues {
   /** Sent only as `false`: a request can decline what the runner has, never enable it. */
   verify?: boolean;
   pushBranch?: boolean;
+  /** Sent as is when set: the run may not have more autonomy than this. */
+  autonomy?: 'L3';
 }
 
 /**
@@ -147,6 +149,7 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
     status_map_policy_id: null,
     ...(values.verify === false ? { verify: false } : {}),
     ...(values.pushBranch === false ? { push_branch: false } : {}),
+    ...(values.autonomy ? { autonomy: values.autonomy } : {}),
   };
 }
 
@@ -212,6 +215,9 @@ export function gateHarnessModelSelection(
   return { allowed: true, reason: "Uses the agent's own model" };
 }
 
+/** Why every agent but docket is disabled when the run carries a level. */
+export const LEVEL_NEEDS_DOCKET = 'A level applies only to a docket run';
+
 // ─── Lifecycle-state display ────────────────────────────────────────────────
 
 export type StateTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
@@ -221,7 +227,7 @@ const STATE_LABEL: Record<string, string> = {
   leased: 'Starting',
   preparing: 'Preparing',
   running: 'Running',
-  waiting_decision: 'Asking you',
+  waiting_decision: 'Needs a person',
   succeeded: 'Finished',
   failed: 'Failed',
   cancelled: 'Cancelled',
@@ -408,6 +414,8 @@ export interface RunWithAgentModalProps {
   onCreated?: (requestId: string) => void;
   /** Opens the dialog with this token limit already typed, as "Run again with more" does. */
   initialTokenLimit?: number;
+  /** Starts the run attended, as "Run again at L3" does: it may not have more than this autonomy. */
+  autonomy?: 'L3';
   /** Tests only: replaces the capabilities the submit gate reads. The target
    *  picker always reads the live `GET /runners`. */
   capabilities?: () => RunnerCapabilities[];

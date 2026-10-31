@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render } from 'solid-js/web';
 import RateCardForm from './RateCardForm';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 
 const CARD = {
   as_of: '2026-10-01',

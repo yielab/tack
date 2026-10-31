@@ -220,7 +220,7 @@ convention is that handoffs get amendments, never rewrites.
   `TODO.md` — the wave integrator owns it") and per §VIII.2's chokepoint table, which
   reserves `TODO.md` for the wave integrator. Flagging it here for the integrator to
   correct in the same pass.
-- `docs/adr/0060-docket-control-plane-disposition.md` — this is the document that had the
+- `docs/closed-cycles/adr/0060-docket-control-plane-disposition.md` — this is the document that had the
   claim **right**; no amendment was needed. (Had it needed one, the rule is a dated
   amendment appended at the bottom, never a rewrite of the body — not applicable here.)
 - `docs/plans/agnostic-control-plane.md:741,743` — uses `orch_runs_new` correctly, as the

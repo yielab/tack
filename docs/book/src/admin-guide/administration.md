@@ -111,7 +111,8 @@ Tack can push database snapshots to any S3-compatible object store — AWS S3, C
 Two layers feed the effective config:
 
 1. **Environment defaults** (`TACK_BACKUP_*`), applied at startup.
-2. **UI overrides** (Settings → Cloud Backup), stored in the board's database.
+2. **UI overrides** (Settings → Cloud Backup), stored in the board's database. Until cloud backup is set
+   up, the page shows its buttons disabled with the reason "Set up cloud backup first".
 
 The UI values override the environment for these fields: endpoint, bucket, region, access key, secret key, prefix, retention. A blank UI field clears the override and falls back to the environment default. The one exception is the auto-backup **interval**, which is environment-only (`TACK_BACKUP_INTERVAL_SECS`) and applied at startup — it is not editable from the UI.
 

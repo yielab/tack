@@ -117,7 +117,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ResolveDecisionResponseSchema"];
+                        "application/json": components["schemas"]["ResolveDecisionResponse"];
                     };
                 };
                 /** @description invalid_request (missing/malformed answer, or answer.option_id is not one of this decision's own recorded options) */
@@ -944,16 +944,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * GET /api/local-runner — the persisted preference, the live runtime
-         *     state. Only mounted on a loopback bind
-         *     with a control actually wired in — see `router.rs`'s `local_runner_routes`.
+         * GET /api/local-runner — the persisted preference, the live runtime state. Only mounted on a
+         *     loopback bind with a control actually wired in — see `router.rs`'s `local_runner_routes`.
          */
         get: operations["get_local_runner"];
         /**
-         * PUT /api/local-runner — save the preference and start/stop the embedded
-         *     runner to match, immediately, with no restart. Persist first, then
-         *     reconcile the runtime: a crash between the two still boots correctly
-         *     next time.
+         * PUT /api/local-runner — save the preference and start/stop the embedded runner to match,
+         *     immediately, with no restart. Persist first, then reconcile the runtime: a crash between the
+         *     two still boots correctly next time.
          */
         put: operations["put_local_runner"];
         post?: never;
@@ -990,8 +988,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * POST /api/local-runner/init-folder — creates `path` and runs `git init`.
-         *     An existing non-empty directory (or a file) is a 409.
+         * POST /api/local-runner/init-folder — creates `path` and runs `git init`. An existing
+         *     non-empty directory (or a file) is a 409.
          */
         post: operations["init_local_runner_folder"];
         delete?: never;
@@ -1010,10 +1008,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * POST /api/local-runner/test-run — runs the harness once on this machine
-         *     from an empty scratch directory: no remote, no typed model. It files the
-         *     run under an archived `Agent tests` project (created on first use, so it
-         *     never shows in the project list) and answers the new request's id.
+         * POST /api/local-runner/test-run — runs the harness once on this machine from an empty
+         *     scratch directory: no remote, no typed model. It files the run under an archived
+         *     `Agent tests` project (created on first use, so it never shows in the project list) and
+         *     answers the new request's id.
          */
         post: operations["post_test_run"];
         delete?: never;
@@ -3137,6 +3135,11 @@ export interface components {
             state: string;
             url: string;
         };
+        /** @description The "Run again at L3" button's state: `reason` says why it is disabled, `null` when enabled. */
+        AttemptRerun: {
+            enabled: boolean;
+            reason?: string | null;
+        };
         /** @description An operator's verdict on one attempt: `verdict` is `accepted` or `rejected`. */
         AttemptReview: {
             note?: string | null;
@@ -3151,7 +3154,7 @@ export interface components {
          */
         AttemptSummary: {
             /**
-             * @description `tack_orch::execution::ActualExecution` once the attempt has
+             * @description `tack_protocol::execution::ActualExecution` once the attempt has
              *     reported one, else `null`.
              */
             actual_execution?: unknown;
@@ -3182,9 +3185,10 @@ export interface components {
             lease_issued_at: string;
             /** @description Whether the Merge button may be pressed, and why not. */
             merge: components["schemas"]["AttemptMerge"];
-            model_provenance?: null | components["schemas"]["ModelProvenanceSchema"];
+            model_provenance?: null | components["schemas"]["ModelProvenance"];
             pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
+            rerun_at_l3?: null | components["schemas"]["AttemptRerun"];
             review?: null | components["schemas"]["AttemptReview"];
             runner_id: string;
             /**
@@ -3197,22 +3201,22 @@ export interface components {
             terminal_reason?: null | components["schemas"]["TerminalReason"];
             updated_at: string;
             /**
-             * @description `tack_orch::execution::Usage` once reported, else `null` — never a
+             * @description `tack_protocol::execution::Usage` once reported, else `null` — never a
              *     fabricated zero.
              */
             usage?: unknown;
             /**
-             * @description `tack_orch::usage_provenance::UsageEconomics` — two
+             * @description `tack_protocol::usage_provenance::UsageEconomics` — two
              *     independently-provenanced dollar dimensions, never summed. Absent
              *     usage/timestamps serialize as `{"value": null, "source":
              *     "not_measured"}`, never a structural zero; no runner infra cost-rate
              *     is stored anywhere in this schema today, so
              *     `runner_time_cost.cost_usd_estimated` is always `not_measured` in
              *     every real response from this endpoint. `#[schema(...)]` below
-             *     points the generated document at `UsageEconomicsSchema`, the same
-             *     fix as `model_provenance` above.
+             *     points the generated document at the real type, the same fix as
+             *     `model_provenance` above.
              */
-            usage_economics: components["schemas"]["UsageEconomicsSchema"];
+            usage_economics: components["schemas"]["UsageEconomics"];
             workspace_id?: string | null;
         };
         AutonomySettings: {
@@ -3289,7 +3293,7 @@ export interface components {
             wip_limit?: number | null;
         };
         BoardColumnWithItems: {
-            items: components["schemas"]["Item"][];
+            items: components["schemas"]["ItemCard"][];
             name: string;
             wip_exceeded: boolean;
             wip_limit?: number | null;
@@ -3591,6 +3595,13 @@ export interface components {
              */
             agent_profile_id?: string | null;
             /**
+             * @description The autonomy level a docket run is asked for: `L3`, `L4` or `L5`, sent to docket as it is.
+             *     Absent, docket decides from the team's profile; the project's level is never sent. `L3` is
+             *     "Run again at L3". Any other value, or a level for an agent other than docket, is
+             *     `invalid_request`.
+             */
+            autonomy?: string | null;
+            /**
              * @description A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;
              *     `null`: no limit for this run even when the profile has one; a positive integer: that
              *     many. `0`, a negative number or a non-number is refused (`invalid_request`, field
@@ -3609,7 +3620,7 @@ export interface components {
              */
             origin?: string | null;
             /**
-             * @description `tack_orch::execution::PermissionPolicy` (`{tools, network,
+             * @description `tack_protocol::execution::PermissionPolicy` (`{tools, network,
              *     approvals}`). `network` absent: the resolved profile's `tool_policy.network`, else
              *     off; `true` or `false` is kept as sent. `approvals` is `"auto"` or `"ask"`; absent means
              *     `"auto"`. `"ask"` is rejected at scheduling time for a runner whose
@@ -3622,7 +3633,7 @@ export interface components {
              */
             push_branch?: boolean | null;
             /**
-             * @description `tack_orch::execution::RepositorySnapshot` (`{kind, remote,
+             * @description `tack_protocol::execution::RepositorySnapshot` (`{kind, remote,
              *     base_revision, subdirectory}`). Omitted (or `{}`) the server fills it
              *     from the item's project. An explicit one must name the project's own
              *     repository (`details.reason = "repository_differs_from_project"`) and
@@ -3866,16 +3877,12 @@ export interface components {
             risks?: string[] | null;
         };
         /**
-         * @description Schema-only mirror of `resolved_by`'s two observed shapes:
-         *     `{"kind": "operator", "subject_id": <x-tack-principal>}` for a live
-         *     resolve, or `{"kind": "system", "subject_id": "expiry"}` for a
-         *     fail-closed lazy expiry. Deliberately not a closed/tagged enum — nothing
-         *     in `docs/contracts/runner-v1/` fixes this shape (decision resolution has
-         *     no runner-v1 fixture at all; see `handlers::decisions`'s own module doc,
-         *     "No item-status mapping"), so this stays an open two-field object rather
-         *     than an invented contract.
+         * @description The `resolved_by` of a settled decision: `{"kind": "operator", "subject_id": <principal>}`
+         *     for an operator's answer, `{"kind": "system", "subject_id": "expiry"}` for a decision that
+         *     passed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`
+         *     fixes this shape, so it stays an open two-field object.
          */
-        DecisionResolvedBySchema: {
+        DecisionResolvedBy: {
             /** @example operator */
             kind: string;
             subject_id: string;
@@ -3947,16 +3954,28 @@ export interface components {
         };
         ErrorBody: {
             /**
-             * @description Stable, machine-readable error code. Present on a narrow set of
-             *     responses where a caller needs to branch on *why* without parsing
-             *     `message`. Absent on ordinary errors.
+             * @description Stable, machine-readable error code, on every error: a caller branches on *why* with it,
+             *     never by parsing `message`. The code decides `status`.
              */
-            code?: string | null;
+            code: components["schemas"]["StableErrorCode"];
+            /**
+             * @description What the error blames. `details.field` names the request field, path parameter or query
+             *     parameter that failed, when one did.
+             */
+            details: components["schemas"]["ErrorDetails"];
             /**
              * @description Human-readable, end-user-facing message.
              * @example Item not found
              */
             message: string;
+            /**
+             * @description The id of the request this answers, the one the client sent in `x-request-id` when it was
+             *     usable; the response carries it in the same header.
+             * @example req_6f1c0d2a9b7e4c3f8a5d1e0b2c4a6f80
+             */
+            request_id: string;
+            /** @description Whether repeating the same request can succeed (`StableErrorCode::retryable`). */
+            retryable: boolean;
             /**
              * Format: int32
              * @description HTTP status code, duplicated in the body for convenience.
@@ -3964,9 +3983,17 @@ export interface components {
              */
             status: number;
         };
+        ErrorDetails: {
+            /**
+             * @description The request field the error blames.
+             * @example title
+             */
+            field?: string | null;
+        };
         /**
          * @description Structured error envelope returned by every failing endpoint — see
-         *     `crate::error::ApiError`. The body is always `{ "error": { status, message } }`.
+         *     `crate::error::ApiError`. The body is always
+         *     `{ "error": { status, code, message, retryable, request_id, details } }`.
          */
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
@@ -4052,6 +4079,14 @@ export interface components {
              *     rate. Absent without a rate card.
              */
             cost_usd?: number | null;
+            /**
+             * Format: int64
+             * @description Attempts with at least one escalation the agent's policy settled itself, and no
+             *     person was asked: a count apart from `decisions`, which only a person's answer makes.
+             */
+            decided_alone: number;
+            /** @description decided_alone ÷ attempts. */
+            decided_alone_rate: components["schemas"]["Ratio"];
             /** Format: int64 */
             decisions: number;
             /**
@@ -4209,15 +4244,6 @@ export interface components {
             /** Format: uuid */
             id: string;
             item_type: components["schemas"]["ItemType"];
-            /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
-            merge_note?: string | null;
-            /** @description How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged. */
-            merged_by?: string | null;
-            /**
-             * @description True when the latest finished attempt left a patch or a kept
-             *     workspace that nobody has reviewed yet.
-             */
-            needs_review?: boolean;
             /** Format: uuid */
             parent_id?: string | null;
             priority: components["schemas"]["Priority"];
@@ -4236,7 +4262,7 @@ export interface components {
              * @description Sticky provenance marker for the prompt-injection
              *     trust boundary: set once at creation time by whichever handler
              *     created the item, and never mutated afterward — `UpdateItem` has no
-             *     `source` field, and the repository's `update_item` has no code path
+             *     `source` field, and the repository's item update has no code path
              *     that writes this column, so an item's source can never change once
              *     set. `#[serde(default)]` matters here: any JSON that predates this
              *     field (an old export, or a hand-built import payload) deserializes
@@ -4251,12 +4277,8 @@ export interface components {
             sprint_id?: string | null;
             /** Format: date-time */
             started_at?: string | null;
-            /** @description `auto_start` when the newest request was started by the project's own rule, else `None`. */
-            started_by?: string | null;
             status: string;
             tags: string[];
-            /** @description The docket team named by the newest request's resolved profile, else `None`. */
-            team?: string | null;
             title: string;
             /** Format: date-time */
             updated_at: string;
@@ -4296,12 +4318,32 @@ export interface components {
             version: number;
         };
         /**
+         * @description An item as the board and the item page show it: the [`Item`] plus what the run history says
+         *     about it. The extra fields are derived on read from executions and merges, never stored on the
+         *     item and never written back, which is why they are not part of the aggregate.
+         */
+        ItemCard: components["schemas"]["Item"] & {
+            /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
+            merge_note?: string | null;
+            /** @description How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged. */
+            merged_by?: string | null;
+            /**
+             * @description True when the latest finished attempt left a patch or a kept
+             *     workspace that nobody has reviewed yet.
+             */
+            needs_review?: boolean;
+            /** @description `auto_start` when the newest request was started by the project's own rule, else `None`. */
+            started_by?: string | null;
+            /** @description The docket team named by the newest request's resolved profile, else `None`. */
+            team?: string | null;
+        };
+        /**
          * @description Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
          *     and dependency edges.
          */
         ItemDetail: {
             dependencies: components["schemas"]["Dependency"][];
-            item: components["schemas"]["Item"];
+            item: components["schemas"]["ItemCard"];
             roles: components["schemas"]["Role"][];
         };
         ItemRole: {
@@ -4346,16 +4388,18 @@ export interface components {
             team_id?: string | null;
         };
         /**
-         * @description Documents `tack_orch::execution::MeasurementSource`'s wire shape —
-         *     used by `AttemptSummary.usage_economics`. Defined here, not in
-         *     `crate::openapi`, for the exact reason `RunnerV1ErrorEnvelope` above is.
-         *     `tack-orch` has no `ToSchema` (see `usage_provenance.rs`'s own module
-         *     doc), so this is a hand-verified mirror, never constructed or serialized
-         *     by real code. `not_measured` is the honest value whenever a figure
-         *     genuinely is not known — never a fabricated zero.
+         * @description How a numeric usage figure was obtained.
          * @enum {string}
          */
-        MeasurementSourceSchema: "measured" | "estimated" | "not_measured";
+        MeasurementSource: "measured" | "estimated" | "not_measured";
+        /** @description A nullable metric paired with its provenance, avoiding fabricated zeros. */
+        Measurement_f64: {
+            source: components["schemas"]["MeasurementSource"];
+            /** Format: double */
+            value?: number;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * @description The merge that happened for an attempt: `trigger` is what asked for it
          *     (`button`, `done`, `auto`), `merge_sha` the commit it landed on.
@@ -4387,13 +4431,11 @@ export interface components {
             output_per_mtok: number;
         };
         /**
-         * @description Documents `tack_orch::usage_provenance::ModelProvenance` —
-         *     `AttemptSummary.model_provenance`'s real shape (`null` while the attempt
-         *     has not yet reported `actual_execution`). Both model strings are carried
-         *     in full, never reconciled, so a caller can show a request and a served
-         *     model that differ.
+         * @description What an execution request asked for vs. what an attempt ran on: both
+         *     model strings in full, and who named the served one (`reported`,
+         *     `requested` or `agent_default`).
          */
-        ModelProvenanceSchema: {
+        ModelProvenance: {
             /** @description The model the request named; `null` when it named none. */
             requested?: string | null;
             /** @description The model the attempt ran on; `null` when nothing named one. */
@@ -4443,7 +4485,7 @@ export interface components {
          */
         Outline: {
             automation?: null | components["schemas"]["BundleAutomation"];
-            /** @description Custom fields of the project, by name (ADR 0081). */
+            /** @description Custom fields of the project, by name (ADR 0022). */
             fields?: components["schemas"]["BundleField"][];
             items?: components["schemas"]["OutlineItem"][];
             /** @description Agent profiles, by name; shared by every project of the board. */
@@ -4548,7 +4590,7 @@ export interface components {
          *     unpaginated match count so clients can render "N of M".
          */
         PaginatedItems: {
-            data: components["schemas"]["Item"][];
+            data: components["schemas"]["ItemCard"][];
             /** Format: int32 */
             page: number;
             /** Format: int32 */
@@ -4735,26 +4777,28 @@ export interface components {
         ResolveDecisionRequest: {
             answer: components["schemas"]["DecisionAnswerSchema"];
         };
-        /**
-         * @description `POST .../decisions/{decision_id}/resolve` response body — mirrors
-         *     `handlers::decisions::ResolveDecisionResponse` exactly.
-         */
-        ResolveDecisionResponseSchema: {
+        /** @description `POST .../decisions/{decision_id}/resolve` response body. */
+        ResolveDecisionResponse: {
+            /**
+             * @description The answer as submitted (or as stored, on a replay), echoed back as
+             *     the operator sent it, extra keys included.
+             */
             answer: components["schemas"]["DecisionAnswerSchema"];
             decision_id: string;
             /** Format: int32 */
             protocol_version: number;
             /**
-             * @description `true` when this response is a byte-identical idempotent replay of
-             *     an already-committed resolution rather than a fresh write.
+             * @description `true` when this response is a byte-identical idempotent replay of an
+             *     already-committed resolution rather than a fresh write.
              */
             replayed: boolean;
             resolved_at: string;
-            resolved_by: components["schemas"]["DecisionResolvedBySchema"];
+            /** @description Who resolved the decision. */
+            resolved_by: components["schemas"]["DecisionResolvedBy"];
             /**
              * @description Always `"resolved"` on a 200 — an expired/not-found/conflicting
              *     decision is a distinct error response, never a 200 with a different
-             *     state string.
+             *     state string, so a caller need not switch on this field.
              * @example resolved
              */
             state: string;
@@ -4889,17 +4933,15 @@ export interface components {
             updated_at: string;
         };
         /**
-         * @description Documents `tack_orch::usage_provenance::RunnerTimeCost`.
-         *     `cost_usd_estimated` is `{"value": null, "source": "not_measured"}` in
-         *     every real response today — no runner infra cost-rate is stored anywhere
-         *     in this schema (see `CLAUDE.md`'s `TACK_EXECUTION_*` config table);
-         *     `runner_rate_usd_per_hour` must be supplied by the caller for a real
-         *     dollar figure to appear. `wall_clock_ms` is a plain derivable fact, not
-         *     itself a `Measurement` — `null` only until both the attempt's
-         *     `started_at`/`ended_at` are known.
+         * @description Runner-observed wall-clock time cost — entirely different provenance
+         *     from the harness's self-reported [`Usage`]. `wall_clock_ms` is a fact the
+         *     runner/API directly witnesses (attempt start/end), never wrapped in a
+         *     [`Measurement`] since there is no "estimated" wall clock. No infra rate
+         *     is stored anywhere in this schema today, so `cost_usd_estimated` stays
+         *     `not_measured` unless a caller supplies `runner_rate_usd_per_hour`.
          */
-        RunnerTimeCostSchema: {
-            cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
+        RunnerTimeCost: {
+            cost_usd_estimated: components["schemas"]["Measurement_f64"];
             /** Format: int64 */
             wall_clock_ms?: number | null;
         };
@@ -4926,7 +4968,7 @@ export interface components {
             retryable: boolean;
         };
         /**
-         * @description Documents `tack_orch::execution::ProtocolErrorEnvelope`'s real wire shape
+         * @description Documents `tack_protocol::execution::ProtocolErrorEnvelope`'s real wire shape
          *     (`docs/contracts/runner-v1/errors/*.json`) for every operator
          *     execution/fleet/runner/profile route — not `crate::openapi::ErrorEnvelope`,
          *     a different, incompatible shape. A doc-only mirror, not a second runtime
@@ -4987,6 +5029,15 @@ export interface components {
         };
         /** @enum {string} */
         SprintStatus: "planning" | "active" | "review" | "closed";
+        /**
+         * @description Stable error codes: the only values a client may branch on; error text and `details` remain
+         *     display and diagnostic data. The first fifteen are the runner-v1 contract
+         *     (`docs/contracts/runner-v1/errors/*.json`); the rest are the operator API's own, which the
+         *     runner routes never answer: one per rule the board enforces and one per failure of the HTTP
+         *     layer. The code decides the HTTP status ([`StableErrorCode::status`]) in one place.
+         * @enum {string}
+         */
+        StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
         /** @enum {string} */
         StatusCategory: "todo" | "in_progress" | "done";
         StatusDef: {
@@ -5010,6 +5061,26 @@ export interface components {
              *     computer reports the team or its harness does not say.
              */
             read_only?: string[] | null;
+            /**
+             * @description The record sets the team keeps and how many rows each holds; `null` when the harness does
+             *     not say.
+             */
+            records?: components["schemas"]["TeamRecords"][] | null;
+            /**
+             * @description `repository` or `folder`; `null` when no computer reports the team or its harness does not
+             *     say. A folder team's work stays in its folder: nothing is merged.
+             */
+            works_in?: string | null;
+        };
+        /** @description One set of records a team keeps. */
+        TeamRecords: {
+            description: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description Rows in the set, whichever run wrote them.
+             */
+            rows: number;
         };
         /**
          * @description Terminal reason from a runner attempt: `code`, `message`, and optional
@@ -5185,28 +5256,18 @@ export interface components {
             risk?: null | components["schemas"]["Risk"];
         };
         /**
-         * @description Documents `tack_orch::usage_provenance::UsageEconomics` —
-         *     `AttemptSummary.usage_economics`'s real shape. Always present (never
-         *     `null`), unlike `ModelProvenanceSchema` below: two
-         *     independently-provenanced dollar dimensions, deliberately never summed
-         *     into one figure.
+         * @description Two independently-provenanced dollar dimensions, deliberately never
+         *     summed into one figure — see this module's doc comment.
          */
-        UsageEconomicsSchema: {
-            model_token_cost_usd_estimated: components["schemas"]["UsdMeasurementSchema"];
-            runner_time_cost: components["schemas"]["RunnerTimeCostSchema"];
-        };
-        /**
-         * @description Documents `tack_orch::execution::Measurement<f64>` — every dollar figure
-         *     in this API (`*_usd_estimated`) uses this shape. `value` is `null`
-         *     whenever `source` is `not_measured`; `tack-orch`'s own
-         *     `absent_usage_never_serializes_as_zero` test asserts the literal JSON,
-         *     not just the Rust type: unmeasured is documented as genuinely nullable,
-         *     never a number defaulting to `0`.
-         */
-        UsdMeasurementSchema: {
-            source: components["schemas"]["MeasurementSourceSchema"];
-            /** Format: double */
-            value?: number | null;
+        UsageEconomics: {
+            /**
+             * @description Pass-through of `Usage.cost_usd` — the harness/vendor's own
+             *     self-reported dollar figure, provenance (`measured` / `estimated` /
+             *     `not_measured`) preserved verbatim, never reinterpreted.
+             */
+            model_token_cost_usd_estimated: components["schemas"]["Measurement_f64"];
+            /** @description This module's own derived dimension — see [`RunnerTimeCost`]. */
+            runner_time_cost: components["schemas"]["RunnerTimeCost"];
         };
         VerificationTax: {
             /**
@@ -5671,6 +5732,15 @@ export interface operations {
             };
             /** @description Not configured, or restore would lose newer work */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The archive or its manifest cannot be read (`unreadable_archive`) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6598,7 +6668,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Item"];
+                    "application/json": components["schemas"]["ItemCard"];
                 };
             };
             /** @description Invalid transition / validation error */
@@ -7350,6 +7420,15 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description The item or the role does not exist, or they belong to different projects */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     remove_role: {
@@ -7948,7 +8027,7 @@ export interface operations {
                 format?: string;
                 /**
                  * @description `snapshot` (the default) is the database dump `POST /api/projects/import`
-                 *     reads; `bundle` is the project file of ADR 0081 (JSON or YAML).
+                 *     reads; `bundle` is the project file of ADR 0022 (JSON or YAML).
                  */
                 scope?: string;
             };
@@ -8402,7 +8481,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Item"];
+                    "application/json": components["schemas"]["ItemCard"];
                 };
             };
             /** @description Validation error */

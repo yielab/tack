@@ -36,14 +36,14 @@ export function allSignedIn(runner: RunnerSummary | null): boolean {
 const SignInStep: Component<SignInStepProps> = (props) => {
   const agents = () => installedAgents(props.thisMachineRunner);
   return (
-    <section class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-[22px] py-5">
+    <section class="flex flex-col gap-2.5 rounded-card bg-panel px-[22px] py-5">
       <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
         Sign in
       </h2>
       <Show
         when={agents().length > 0}
         fallback={
-          <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+          <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             Install an agent above, then sign it in here.
           </p>
         }
@@ -53,7 +53,7 @@ const SignInStep: Component<SignInStepProps> = (props) => {
             const signIn = () => harness.sign_in ?? null;
             const link = () => harness.docs?.sign_in;
             return (
-              <div class="flex flex-wrap items-center gap-3 rounded-[22px] bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
+              <div class="flex flex-wrap items-center gap-3 rounded-xl bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
                 <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{label}</span>
                 <Show
                   when={signIn()?.state === 'signed_in'}

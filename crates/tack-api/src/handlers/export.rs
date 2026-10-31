@@ -1,8 +1,7 @@
+use crate::extract::{Json, Path, Query, RawBody};
 use std::collections::HashMap;
 
-use axum::Json;
-use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::State;
 use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -16,7 +15,6 @@ use tack_core::models::{
 };
 use tack_core::outline::bundle::{Parts, to_bundle};
 use tack_core::outline::{BundleAutoStart, BundleAutonomy, BundleBudgets, BundleDomain};
-use tack_db::repo::autonomy as store;
 
 use crate::error::ApiError;
 use crate::router::AppState;
@@ -27,7 +25,7 @@ pub struct ExportQuery {
     #[serde(default = "default_format")]
     format: String,
     /// `snapshot` (the default) is the database dump `POST /api/projects/import`
-    /// reads; `bundle` is the project file of ADR 0081 (JSON or YAML).
+    /// reads; `bundle` is the project file of ADR 0022 (JSON or YAML).
     scope: Option<String>,
 }
 
@@ -79,10 +77,14 @@ pub async fn export_project(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
 
-    let items = state
+    // The export carries the items themselves, not the run-history projections of their cards.
+    let items: Vec<Item> = state
         .repo
         .list_items(project_id, &Default::default())
-        .await?;
+        .await?
+        .into_iter()
+        .map(|card| card.item)
+        .collect();
     if bundle {
         return bundle_response(&state, &project, &items, &query.format).await;
     }
@@ -173,7 +175,7 @@ pub async fn export_project(
     }
 }
 
-/// The project as one project file (ADR 0081), written the way `import` reads it.
+/// The project as one project file (ADR 0022), written the way `import` reads it.
 async fn bundle_response(
     state: &AppState,
     project: &Project,
@@ -191,7 +193,8 @@ async fn bundle_response(
     let item_fields = state.repo.field_values_for_project(project_id).await?;
     let dependencies = state.repo.list_dependencies_for_project(project_id).await?;
     let fleets = state.repo.fleet_names().await?;
-    let settings = store::get_settings(state.repo.pool(), &project_id.to_string()).await?;
+    let settings =
+        tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string()).await?;
     let autonomy = settings.map(|s| BundleAutonomy {
         level: Some(s.level.to_string()),
         domains: s
@@ -326,7 +329,7 @@ struct ImportPayload {
 pub async fn import_project(
     State(state): State<AppState>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!("Import endpoint called");
 
@@ -473,10 +476,9 @@ async fn run_import(
             && let (Some(&new_id), Some(&new_parent)) =
                 (item_id_map.get(&item.id), item_id_map.get(&old_parent))
         {
-            sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
-                .bind(new_parent.to_string())
-                .bind(new_id.to_string())
-                .execute(state.repo.pool())
+            state
+                .repo
+                .set_item_parent(new_id, new_parent)
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?;
         }

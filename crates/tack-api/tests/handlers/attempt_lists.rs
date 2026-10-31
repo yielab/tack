@@ -2,8 +2,8 @@
 //! `.../decisions` (`crate::handlers::attempt_lists`): an unauthenticated
 //! caller is rejected, and the two routes' ordering matches the handler's
 //! own query guarantee. Each test runs once per [`ResourceKind`] since the
-//! two routes are structurally identical. Rows are seeded with a direct
-//! `sqlx::query` insert, not the runner-protocol write routes — the write
+//! two routes are structurally identical. Rows are seeded with
+//! `tack_test_support::seed`, not the runner-protocol write routes — the write
 //! side is exercised in `runner_protocol/artifact_events.rs` and
 //! `runner_protocol/decisions.rs`; this file only covers what the two
 //! *read* routes return, so a claimed (`leased`) attempt is enough.
@@ -14,24 +14,16 @@ use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::handlers::executions::TerminalReason;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
-use uuid::Uuid;
+use tack_db::Repository;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 
 const OPERATOR_TOKEN: &str = "c5-attempt-lists-operator-token";
 const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
 
 async fn setup() -> (axum::Router, Repository, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'C5 attempt lists', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("workspace");
-    let repo = Repository::new(pool);
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -44,6 +36,7 @@ async fn setup() -> (axum::Router, Repository, String) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = crate::common::with_default_host(build_router(state));
     let project = repo
@@ -249,45 +242,6 @@ async fn claim_as_runner(app: &axum::Router, item_id: &str, label: &str) -> Clai
     }
 }
 
-/// Seeds one `execution_artifacts` manifest row directly — the write path's
-/// own fencing/attempt-state gate is proven elsewhere
-/// (`runner_protocol/artifact_events.rs`); this file only needs a real row
-/// with a chosen `created_at` to test the read route.
-async fn insert_artifact(repo: &Repository, attempt_id: &str, artifact_id: &str, created_at: &str) {
-    sqlx::query(
-        "INSERT INTO execution_artifacts \
-         (id, attempt_id, artifact_id, kind, name, size_bytes, sha256, created_at) \
-         VALUES (?, ?, ?, 'patch', 'changes.patch', 42, ?, ?)",
-    )
-    .bind(format!("art_row_{}", Uuid::new_v4()))
-    .bind(attempt_id)
-    .bind(artifact_id)
-    .bind("a".repeat(64))
-    .bind(created_at)
-    .execute(repo.pool())
-    .await
-    .expect("insert artifact fixture");
-}
-
-/// Seeds one `execution_decisions` row directly — same rationale as
-/// [`insert_artifact`], mirroring `runner_protocol/decisions.rs` for the
-/// write side.
-async fn insert_decision(repo: &Repository, attempt_id: &str, decision_id: &str, created_at: &str) {
-    sqlx::query(
-        "INSERT INTO execution_decisions \
-         (id, attempt_id, decision_id, kind, prompt, created_at, updated_at) \
-         VALUES (?, ?, ?, 'approval', 'Proceed?', ?, ?)",
-    )
-    .bind(format!("dec_row_{}", Uuid::new_v4()))
-    .bind(attempt_id)
-    .bind(decision_id)
-    .bind(created_at)
-    .bind(created_at)
-    .execute(repo.pool())
-    .await
-    .expect("insert decision fixture");
-}
-
 /// The two list routes below (`.../artifacts` and `.../decisions`) are
 /// structurally identical, so every test in this file runs once per kind
 /// rather than existing as two near-duplicate functions.
@@ -321,8 +275,12 @@ impl ResourceKind {
 
     async fn insert(self, repo: &Repository, attempt_id: &str, id: &str, created_at: &str) {
         match self {
-            ResourceKind::Artifact => insert_artifact(repo, attempt_id, id, created_at).await,
-            ResourceKind::Decision => insert_decision(repo, attempt_id, id, created_at).await,
+            ResourceKind::Artifact => {
+                seed::execution_artifact(repo, attempt_id, id, created_at).await
+            }
+            ResourceKind::Decision => {
+                seed::execution_decision(repo, attempt_id, id, created_at).await
+            }
         }
     }
 }
@@ -607,14 +565,13 @@ fn terminal_reason_round_trips_typed() {
 async fn a_reviewed_attempt_clears_needs_review() {
     let (app, repo, item_id) = setup().await;
     let (request_id, attempt_id) = request_and_claim(&app, &item_id, "review").await;
-    sqlx::query(
-        "UPDATE execution_attempts SET state = 'succeeded', terminal_reason = ? WHERE id = ?",
+    seed::execution_attempt_ended(
+        &repo,
+        &attempt_id,
+        ExecutionState::Succeeded,
+        &json!({"artifacts": [{"kind": "patch", "size_bytes": 12}]}).to_string(),
     )
-    .bind(json!({"artifacts": [{"kind": "patch", "size_bytes": 12}]}).to_string())
-    .bind(&attempt_id)
-    .execute(repo.pool())
-    .await
-    .expect("terminal attempt fixture");
+    .await;
 
     let item_path = format!("/api/items/{item_id}");
     let review_path = format!("/api/executions/{request_id}/attempts/1/review");
@@ -674,15 +631,15 @@ async fn the_start_report_reads_back_on_the_attempt() {
     let cases = [
         (
             "kept",
-            json!({"environment_names": ["B", "A", 7, null], "sandbox": "bwrap"}),
+            json!({"environment_names": ["B", "A"], "sandbox": "bwrap"}),
             json!(["B", "A"]),
             json!("bwrap"),
         ),
         ("none", json!({"sandbox": "none"}), json!([]), json!("none")),
         ("absent", json!({}), json!([]), Value::Null),
         (
-            "bogus",
-            json!({"environment_names": "A", "sandbox": "rm -rf"}),
+            "unknown sandbox",
+            json!({"sandbox": "rm -rf"}),
             json!([]),
             Value::Null,
         ),
@@ -744,6 +701,40 @@ async fn the_start_report_reads_back_on_the_attempt() {
         .await;
         assert_eq!(listed["data"][0]["environment_names"], names, "{label}");
         assert_eq!(listed["data"][0]["sandbox"], sandbox, "{label}");
+    }
+}
+
+/// The start request is the protocol's struct: a list of names with anything but strings in it is
+/// refused with 400 and the field it got wrong, as the contract fixture and every runner say.
+#[tokio::test]
+async fn a_start_report_whose_names_are_not_strings_is_refused() {
+    for (label, names) in [("mixed", json!(["B", 7, null])), ("not a list", json!("A"))] {
+        let (app, _repo, item_id) = setup().await;
+        let claimed = claim_as_runner(&app, &item_id, "start-report-types").await;
+        let (status, refused, _) = common::send_with_raw(
+            &app,
+            "POST",
+            &format!("/api/runner/v1/attempts/{}/start", claimed.attempt_id),
+            json!({
+                "protocol_version": 1,
+                "runner_id": claimed.runner_id,
+                "attempt_id": claimed.attempt_id,
+                "fencing_token": claimed.fencing_token,
+                "workspace_id": "ws-1",
+                "base_revision": BASE_REVISION,
+                "process_id": "pid-1",
+                "environment_names": names,
+            }),
+            &headers_ref(&claimed.auth),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{label}: {refused}");
+        assert!(
+            refused["error"]["details"]["field"]
+                .as_str()
+                .is_some_and(|field| field.starts_with("environment_names")),
+            "{label}: {refused}"
+        );
     }
 }
 
@@ -828,12 +819,7 @@ async fn the_attempt_list_carries_the_counted_tokens() {
         let (app, repo, item_id) = setup().await;
         let (request_id, attempt_id) = request_and_claim(&app, &item_id, "counted").await;
         if let Some(usage) = &usage {
-            sqlx::query("UPDATE execution_attempts SET usage = ? WHERE id = ?")
-                .bind(usage.to_string())
-                .bind(&attempt_id)
-                .execute(repo.pool())
-                .await
-                .expect("store usage");
+            seed::execution_attempt_usage(&repo, &attempt_id, &usage.to_string()).await;
         }
         let (status, listed, _) = common::send_with_raw(
             &app,

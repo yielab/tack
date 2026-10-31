@@ -10,19 +10,22 @@
 // `executions` is used read-only here so the operator/runner auth
 // non-substitution test below can exercise the real operator router.
 use tack_api::handlers::{executions, runner_protocol};
+use tack_protocol::Clock;
 
 use std::sync::{Arc, Mutex};
 
 use crate::common::send_str_strict as send;
-use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
+use crate::runner_protocol::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use tack_db::{
-    Repository, init_pool, migrations,
-    repo::execution::{EnrollmentToken, ExecutionClock, NewRunner},
+    Repository,
+    queries::agent_runners,
+    repo::execution::{EnrollmentToken, NewRunner},
 };
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-c2";
@@ -37,7 +40,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -57,15 +60,8 @@ impl Fixture {
         // Must run before anything else in every test — see
         // `log_capture.rs`'s doc comment for the race this closes.
         ensure_global_log_capture_installed();
-        let pool = init_pool("sqlite::memory:").await.expect("pool");
-        migrations::run_all(&pool).await.expect("migrations");
-        let repo = Repository::new(pool);
-        let workspace = Uuid::new_v4();
-        sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'C2', '{}')")
-            .bind(workspace.to_string())
-            .execute(repo.pool())
-            .await
-            .expect("workspace");
+        let repo = setup_test_db().await;
+        create_test_workspace(&repo).await;
 
         let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 6, 12, 0, 0).unwrap());
         let credential_hash = runner_protocol::runner_auth::credential_hash(RUNNER_CREDENTIAL);
@@ -81,7 +77,7 @@ impl Fixture {
                 capability_snapshot: &capability_snapshot,
                 protocol_version: 1,
             },
-            &clock,
+            clock.now(),
         )
         .await
         .expect("runner");
@@ -106,19 +102,19 @@ impl Fixture {
     }
 
     async fn credential_hash_of(&self, runner_id: &str) -> String {
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(runner_id)
-            .fetch_one(self.repo.pool())
+        agent_runners::runner_identity(&self.repo, runner_id)
             .await
             .unwrap()
+            .expect("runner")
+            .credential_hash
     }
 
     async fn runner_name(&self, runner_id: &str) -> String {
-        sqlx::query_scalar("SELECT name FROM agent_runners WHERE id=?")
-            .bind(runner_id)
-            .fetch_one(self.repo.pool())
+        agent_runners::runner_identity(&self.repo, runner_id)
             .await
             .unwrap()
+            .expect("runner")
+            .name
     }
 }
 
@@ -168,7 +164,7 @@ async fn create_pending(
             token_hash: &token_hash,
             expires_at: clock.now() + Duration::hours(1),
         },
-        clock,
+        clock.now(),
     )
     .await
     .expect("pending runner");
@@ -478,17 +474,7 @@ async fn concurrent_refresh_rotations_exactly_one_wins() {
     // before the other is even polled, so the loser sees a plain
     // `unauthorized` (already-rotated hash) rather than the `conflict` this
     // test exists to prove.
-    let mut holder = fx
-        .repo
-        .pool()
-        .begin_with("BEGIN IMMEDIATE")
-        .await
-        .expect("hold the runner row");
-    sqlx::query("UPDATE agent_runners SET updated_at=updated_at WHERE id=?")
-        .bind(RUNNER_ID)
-        .execute(&mut *holder)
-        .await
-        .expect("no-op hold write");
+    let holder = seed::agent_runner_row_held(&fx.repo, RUNNER_ID).await;
 
     let app_a = fx.app.clone();
     let app_b = fx.app.clone();
@@ -509,7 +495,7 @@ async fn concurrent_refresh_rotations_exactly_one_wins() {
     for _ in 0..512 {
         tokio::task::yield_now().await;
     }
-    holder.commit().await.expect("release the hold");
+    holder.release().await;
 
     let results = [
         task_a.await.expect("rotation task a did not panic"),
@@ -607,4 +593,69 @@ async fn superseded_credential_refresh_returns_conflict_not_401() {
         ),
         "the stored credential remains exactly the winner's"
     );
+}
+
+/// An unauthenticated claim, which every runner request can be turned into, with the given
+/// `x-request-id` header (or none): the answer's status, its `x-request-id` header and the
+/// `request_id` in its error body.
+async fn rejected_claim(app: &Router, request_id: Option<&str>) -> (StatusCode, String, String) {
+    use tower::ServiceExt;
+
+    let mut builder = axum::http::Request::builder()
+        .method("POST")
+        .uri("/claim")
+        .header("content-type", "application/json");
+    if let Some(request_id) = request_id {
+        builder = builder.header("x-request-id", request_id);
+    }
+    let response = app
+        .clone()
+        .oneshot(builder.body(axum::body::Body::from("{}")).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let echoed = response
+        .headers()
+        .get("x-request-id")
+        .expect("the board echoes the request id")
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    (
+        status,
+        echoed,
+        body["error"]["request_id"].as_str().unwrap().to_owned(),
+    )
+}
+
+#[tokio::test]
+async fn an_error_carries_the_request_id_the_runner_sent_and_each_request_has_its_own() {
+    let fx = Fixture::new().await;
+
+    let (status, echoed, in_body) = rejected_claim(&fx.app, Some("req_runner_first")).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        (echoed.as_str(), in_body.as_str()),
+        ("req_runner_first", "req_runner_first")
+    );
+    let (_, echoed, in_body) = rejected_claim(&fx.app, Some("req_runner_second")).await;
+    assert_eq!(
+        (echoed.as_str(), in_body.as_str()),
+        ("req_runner_second", "req_runner_second")
+    );
+
+    // A request without an id, or with one that is not safe in a log line, gets one the board
+    // makes, and never the same twice.
+    let (_, first_echoed, first_body) = rejected_claim(&fx.app, None).await;
+    let (_, second_echoed, second_body) = rejected_claim(&fx.app, Some("bad id with spaces")).await;
+    for (echoed, in_body) in [(&first_echoed, &first_body), (&second_echoed, &second_body)] {
+        assert!(echoed.starts_with("req_"), "{echoed}");
+        assert_eq!(echoed, in_body);
+    }
+    assert_ne!(first_echoed, second_echoed);
+    assert_ne!(first_echoed, "req_runner");
 }

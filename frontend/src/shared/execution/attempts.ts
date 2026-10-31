@@ -11,21 +11,17 @@
 // in `executions.rs`), the same hand-typed-from-Rust convention `api.ts`'s
 // header comment documents for this whole domain (this domain's OpenAPI
 // schemas type `model_provenance`/`usage_economics` via
-// `#[schema(value_type = ...)]` mirrors defined in `executions.rs` itself,
-// not surfaced as reusable named schemas in `schema.gen.ts`).
+// `#[schema(value_type = ...)]`, pointing at the real `tack-protocol` types).
 //
 // `model_provenance` (nullable — `null` until the attempt reports
 // `actual_execution`) and `usage_economics` (always present) on
-// `AttemptSummary` wire `tack_orch::usage_provenance`'s pure resolution into
-// this handler. Both are typed here from
-// `tack_orch::usage_provenance::{ModelProvenance, UsageEconomics,
-// RunnerTimeCost}` (via `executions.rs`'s own
-// `ModelProvenanceSchema`/`UsageEconomicsSchema`/`RunnerTimeCostSchema`
-// OpenAPI mirrors, which this file matches byte-for-byte).
+// `AttemptSummary` carry `tack_protocol::usage_provenance::{ModelProvenance,
+// UsageEconomics, RunnerTimeCost}`; the generated document describes them
+// straight from those types.
 
 import { requestWithHeaders } from '../api/client';
 import type { components } from '../api/schema.gen';
-import type { Measurement } from './types';
+import type { Measurement, RunRecordSet, RunStep, RunStepPrompt } from './types';
 
 /** `executions.rs`'s `TerminalReason`: the five named keys the UI reads, plus whatever else the runner sent. */
 export type TerminalReason = components['schemas']['TerminalReason'];
@@ -37,7 +33,7 @@ export type TerminalReason = components['schemas']['TerminalReason'];
  * never reconciled; `source` says who named the served one (`reported`,
  * `requested` or `agent_default`).
  */
-export type ModelProvenance = components['schemas']['ModelProvenanceSchema'];
+export type ModelProvenance = components['schemas']['ModelProvenance'];
 
 // ─── Pull request (`executions.rs::AttemptPullRequest`) ────────────────────
 
@@ -95,7 +91,7 @@ export type AttemptMerge = components['schemas']['AttemptMerge'];
  * One attempt, exactly as `executions.rs`'s `AttemptSummary` serializes it.
  * `actual_execution`/`usage` stay `unknown` (untyped JSON) here for the same
  * reason the Rust struct types them as a bare `Value`: the real types
- * (`tack_orch::execution::{ActualExecution, Usage}`) live in a crate this
+ * (`tack_protocol::execution::{ActualExecution, Usage}`) live in a crate this
  * frontend has no generated bridge to yet — this file only needs enough shape
  * to drive `model_provenance`/`usage_economics` display, which are already
  * fully typed above. `terminal_reason` is typed from the generated schema.
@@ -130,6 +126,8 @@ export interface AttemptSummary {
   pull_request: AttemptPullRequest | null;
   /** The Merge button's state. Absent from a server that predates it. */
   merge?: AttemptMerge;
+  /** The "Run again at L3" button's state; present only on an attempt that ended asking for a person. */
+  rerun_at_l3?: { enabled: boolean; reason: string | null };
   /** Names (never values) of the environment variables the runner gave the harness, as it reported at start. */
   environment_names?: string[];
   /** What the harness ran inside, as the runner reported at start; `null` when it did not say. */
@@ -166,6 +164,63 @@ export interface EventSummary {
 export interface EventListResult {
   protocol_version: number;
   data: EventSummary[];
+}
+
+// ─── What the run was made of (`terminal_reason`: `steps`, `records`, `outside_repository`) ──
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const plainText = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
+const plainTexts = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : [];
+
+/** The hops of a docket task, in order; `undefined` when the run has none (a run from before the
+ *  field existed, or a task with no hops). Read defensively: a key the run lacks reads as absent. */
+export function readRunSteps(terminalReason: unknown): RunStep[] | undefined {
+  const raw = isRecord(terminalReason) ? terminalReason.steps : undefined;
+  if (!Array.isArray(raw)) return undefined;
+  return raw.filter(isRecord).map((step) => ({
+    role: plainText(step.role),
+    model: plainText(step.model),
+    class: plainText(step.class),
+    family: plainText(step.family),
+    verdict: plainText(step.verdict),
+    ok: typeof step.ok === 'boolean' ? step.ok : null,
+    summary: plainText(step.summary),
+    prompts: Array.isArray(step.prompts)
+      ? step.prompts.filter(isRecord).map((p): RunStepPrompt => ({
+          layer: plainText(p.layer) ?? '',
+          name: plainText(p.name) ?? '',
+          version: typeof p.version === 'string' ? p.version : '',
+          sha256: plainText(p.sha256) ?? '',
+          scope: plainText(p.scope) ?? '',
+          tokens: typeof p.tokens === 'number' ? p.tokens : null,
+        }))
+      : [],
+    assumptions: plainTexts(step.assumptions),
+    questions: plainTexts(step.questions),
+  }));
+}
+
+/** The record sets the run wrote; `undefined` when it wrote none. */
+export function readRunRecords(terminalReason: unknown): RunRecordSet[] | undefined {
+  const raw = isRecord(terminalReason) ? terminalReason.records : undefined;
+  if (!Array.isArray(raw)) return undefined;
+  return raw.filter(isRecord).map((set) => ({
+    set: plainText(set.set) ?? '',
+    columns: plainTexts(set.columns),
+    rows: Array.isArray(set.rows) ? set.rows.filter(isRecord) : [],
+    cut: set.cut === true,
+  }));
+}
+
+/** Whether the run was a folder team's: docket's task is done and there was no repository to change. */
+export function isFolderRun(terminalReason: unknown): boolean {
+  return isRecord(terminalReason) && terminalReason.outside_repository === true;
+}
+
+/** A folder team's result: what its last step said it did. */
+export function folderRunSummary(terminalReason: unknown): string | null {
+  return isRecord(terminalReason) ? plainText(terminalReason.summary) : null;
 }
 
 export const attemptsApi = {

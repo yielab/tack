@@ -19,7 +19,7 @@ and never guesses at one it does not.
 1. **The attempt's pack route**, which serves a stored pack and records a human's review of it.
 2. **The review panel** on an attempt, which shows the criteria, the checks and the
    recommendation to the person deciding.
-3. **The pull-request body**, rendered by `tack_core::mrp::render_markdown`.
+3. **The pull-request body**, rendered by `tack_protocol::mrp::render_markdown`.
 
 ## Schema
 

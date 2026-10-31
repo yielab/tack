@@ -6,7 +6,7 @@
 //
 // Live-observed convention this module depends on: the embedded/
 // self-provisioned runner (`docs/CONFIG.md`'s "Embedded runner" section,
-// ADR 0061 decision 6) is named `local-<uuid>`, or "This computer (host name)" once the server renamed it — confirmed against a
+// ADR 0005 decision 6) is named `local-<uuid>`, or "This computer (host name)" once the server renamed it — confirmed against a
 // real `tack serve --with-runner` process across a restart (the name is
 // stable, reused from the on-disk credential, never regenerated). There is
 // no dedicated wire field for "is this the embedded runner"; this is the

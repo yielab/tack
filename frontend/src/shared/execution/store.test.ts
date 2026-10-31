@@ -7,6 +7,7 @@ import type { ExecutionSummary } from './api';
 import { attemptsApi } from './attempts';
 import type { AttemptSummary } from './attempts';
 import type { ExecutionRealtime, ExecutionInvalidationEvent } from './realtime';
+import { flush } from '../../test/flush';
 
 vi.mock('./api', () => ({
   executionsApi: {
@@ -93,8 +94,6 @@ beforeEach(() => {
  *  mocked API promise's own resolution — a `setTimeout` macrotask always
  *  runs after every microtask already queued, so this is enough regardless
  *  of how many microtask hops `loadForItems` needs. */
-const flush = () => new Promise((r) => setTimeout(r, 0));
-
 describe('createExecutionStore — loadOne / loadList', () => {
   it('loadOne populates a ready record consumers can read', async () => {
     mockedApi.get.mockResolvedValue(withHeaders(summary()));

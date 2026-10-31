@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::harness::test_support::{finished, spec};
-use tack_orch::execution::Approvals;
+use tack_protocol::execution::Approvals;
 
 fn request(tools: &[&str], network: bool) -> crate::harness::ExecutionSpec {
     let mut request = spec(DESCRIPTOR.kind, std::path::Path::new("/unused"));
@@ -19,6 +19,7 @@ fn invocation(spec: &crate::harness::ExecutionSpec) -> Result<Invocation, Harnes
         spec,
         scratch: std::path::Path::new("unused"),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     })
 }
 
@@ -161,6 +162,7 @@ fn a_permission_request_line_becomes_a_question() {
         spec: &spec,
         scratch: std::path::Path::new("unused"),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     let request_line =
         include_str!("../fixtures/claude_code/2.1.273/ask-tool-permission-request.jsonl");
@@ -267,6 +269,7 @@ fn read(exit: ProcessExit, stdout: &str) -> RunReport {
         spec: &spec,
         scratch: std::path::Path::new("unused"),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     ClaudeCodeGrammar.report(&run, &finished(exit, stdout))
 }

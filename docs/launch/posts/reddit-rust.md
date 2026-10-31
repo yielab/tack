@@ -14,13 +14,14 @@ recoverable state, not an incident
 
 ## Post body
 
-Six-crate Cargo workspace (`tack-core`, `tack-db`, `tack-orch`, `tack-api`, `tack-runner`,
-`tack-cli`), Axum + `sqlx`/SQLite on the server, a separate binary for the piece that
-actually shells out to an agent CLI (four supported today: Claude Code, Codex, docket,
-opencode). The layering rule that's
-actually enforced, not just documented: `tack-core` has zero I/O — no `tokio`, no
-`sqlx`, nothing — and `tack-orch` (the reconciliation/execution-domain crate) is not
-permitted to depend on `tack-api`, checked by grep in CI so it can't regress silently.
+Nine-crate Cargo workspace (`tack-protocol`, `tack-core`, `tack-orch`, `tack-db`, `tack-app`,
+`tack-api`, `tack-runner`, `tack-cli`, and `tack-test-support` for tests), Axum + `sqlx`/SQLite
+on the server, a separate binary for the piece that actually shells out to an agent CLI (four
+supported today: Claude Code, Codex, docket, opencode). The layering rule that's actually
+enforced, not just documented: `tack-protocol`, `tack-core` and `tack-orch` do no I/O — no
+`tokio`, no `sqlx`, nothing — `tack-app` never names `axum` or `sqlx`, and `sqlx` and the raw
+pool live only in `tack-db` (and the test support crate). `scripts/check-crate-graph.sh` fails on
+any edge its table does not allow, and runs before every push, so it can't regress silently.
 
 **The part I think is actually interesting for this sub:** the runner talks to the
 server over a pull-based HTTP protocol (`/api/runner/v1`), and every attempt-scoped
@@ -33,14 +34,14 @@ deferred transactions here deadlock under real concurrency, and that's caught by
 concurrency tests running against a file-backed DB rather than the shared in-memory
 harness (the in-memory one won't reproduce it).
 
-Numbers, measured today (`2026-09-19`), not aspirational:
+Numbers, measured `2026-10-26` (the release binary is the last measurement CI made), not aspirational:
 
 | | |
 | --- | --- |
-| Rust | 96,629 lines across the six crates (`find crates -name '*.rs' \| xargs wc -l`) |
-| Tests | 1,049 Rust tests (`cargo nextest run --workspace`, ~27 s) and 551 frontend tests (`npx vitest run`, ~5 s) |
-| Migrations | 72, one `ALTER` per migration file — the runner has no transaction wrapping a whole migration, so a multi-statement migration failing halfway would brick the install; the fix was a rule, not a retry loop |
-| API surface | 78 documented paths, OpenAPI-generated, diffed against the handler set in CI (a drift gate, not just docs) |
+| Rust | 154,519 lines across the nine crates (`find crates -name '*.rs' \| xargs wc -l`) |
+| Tests | 1,505 Rust tests (`cargo nextest run --workspace`) and 772 frontend tests (`npx vitest run`, ~9 s) |
+| Migrations | 95, one `ALTER` per migration file — the runner has no transaction wrapping a whole migration, so a multi-statement migration failing halfway would brick the install; the fix was a rule, not a retry loop |
+| API surface | 97 documented paths, OpenAPI-generated, diffed against the handler set in CI (a drift gate, not just docs) |
 | Release binary | 18.4 MiB, `lto = true, opt-level = "z"`, measured in CI (`stat -c%s target/release/tack`) |
 
 Frontend is SolidJS, types generated from the OpenAPI spec rather than hand-kept in
@@ -48,14 +49,10 @@ sync — `schema.gen.ts` is regenerated and diffed in CI so a Rust response-shap
 that doesn't update the frontend fails the build instead of shipping a silent mismatch.
 
 Things I'd genuinely like eyes on:
-- The `remote_string_enum!` macro pattern for round-tripping an external system's enum
-  values including an `Unknown(String)` variant that never loses the original wire
-  string — used for a third-party control-plane integration where the upstream project
-  is beta and can add variants without warning.
-- Whether the crate-boundary rule (`tack-core` zero-I/O, `tack-orch` never depends on
-  `tack-api`) is enforced the right way — right now it's `grep -rn tack_api
-  crates/tack-orch/` in review/CI rather than a workspace-level lint; happy to hear if
-  there's a cleaner way to fail this at compile time.
+- Whether the crate-boundary rule (`tack-protocol`, `tack-core` and `tack-orch` do no I/O;
+  `sqlx` stays inside `tack-db`) is enforced the right way — right now it's a table of allowed
+  crate edges checked by a script in the pre-push hook rather than a workspace-level lint;
+  happy to hear if there's a cleaner way to fail this at compile time.
 - General Axum/`sqlx` review — this is a real, running system, not a toy, so actual
   criticism is more useful than encouragement.
 

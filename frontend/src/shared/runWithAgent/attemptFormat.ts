@@ -16,6 +16,7 @@
 // (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
 // same guarantee; this file is the frontend half.
 
+import { isFolderRun } from '../execution/attempts';
 import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
 import type { Measurement } from '../execution/types';
 import { HARNESS_KINDS, describeExecutionState, type StateTone } from './shared';
@@ -263,9 +264,10 @@ export function changedNoFile(attempt: AttemptDelivery): boolean {
   );
 }
 
-/** Whether a person can still give the attempt a verdict: it changed files, or it only answered. */
+/** Whether a person can still give the attempt a verdict: it changed files, or it only answered.
+ *  A folder team's run has nothing to accept or reject: its result is what it did, and it is done. */
 export function needsVerdict(attempt: AttemptDelivery): boolean {
-  return isReviewableAttempt(attempt) || changedNoFile(attempt);
+  return !isFolderRun(attempt.terminal_reason) && (isReviewableAttempt(attempt) || changedNoFile(attempt));
 }
 
 /** How many files a unified diff touches. */
@@ -274,8 +276,8 @@ export function countPatchFiles(patch: string): number {
 }
 
 /** A path, or text that holds paths, as the project knows it: the runner's workspace
- *  prefix is left off, so `/var/tmp/ws-123/src/app.ts` reads `src/app.ts` and the
- *  workspace itself reads `.`. Without a workspace the text comes back as it was. */
+ *  prefix is left off, so a file under `/var/tmp/ws-123/` reads as its path inside the
+ *  project and the workspace itself reads `.`. Without a workspace the text comes back as it was. */
 export function inProject(text: string, workspace: string | null | undefined): string {
   const root = (workspace ?? '').trim().replace(/\/+$/, '');
   if (root === '' || text === '') return text;
@@ -333,6 +335,9 @@ export interface AttemptOutcome {
   badge: { label: string; tone: StateTone; detail?: string } | null;
 }
 
+/** What a run that ended with the code `needs_human` says when the agent gave no sentence of its own. */
+export const NEEDS_A_PERSON_TEXT = 'The agent needed a person to decide, and nobody did';
+
 /** `terminal_reason` is untyped on the wire; read it defensively. */
 export function describeAttemptOutcome(state: string, terminalReason: unknown): AttemptOutcome {
   const reason = (terminalReason && typeof terminalReason === 'object' ? terminalReason : {}) as {
@@ -348,7 +353,7 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
     const text =
       str(reason.message) ??
-      (reason.code === 'timeout' ? "The run's time ran out" : str(reason.code)) ??
+      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
       'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
     if (reason.reason === 'exit_status') {
@@ -365,7 +370,9 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     }
   }
   let badge: AttemptOutcome['badge'] = null;
-  if (state === 'succeeded') {
+  if (state === 'failed' && reason.code === 'needs_human') {
+    badge = { label: 'Needs a person', tone: 'warning' };
+  } else if (state === 'succeeded') {
     const patch = (Array.isArray(reason.artifacts) ? reason.artifacts : []).find(
       (a) => a && typeof a === 'object' && (a as { kind?: unknown }).kind === 'patch',
     ) as { size_bytes?: unknown } | undefined;

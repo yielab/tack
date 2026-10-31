@@ -2,7 +2,7 @@
 
 **Status: opened 2026-10-08 by the maintainer ("continue the roadmap"); every task merged and
 the phase closed the same day — see Status at the end.**
-Serves ADR 0074 (accepted, executed): every task here finishes a decision that ADR already
+Serves ADR 0015 (accepted, executed): every task here finishes a decision that ADR already
 takes. No new ADR: nothing below is a decision a reader could disagree with, only work the
 phase-67 agents found and did not have room for. Written against `develop` at `7470450`; every
 locator was read on that commit. Re-run `rg -n` before trusting a line number.
@@ -12,7 +12,7 @@ Status table, each found by the agent that built the task next to it. Three are 
 the wire (a response typed `unknown`, a settings object typed as "no keys", a runner found by
 a `LIKE`); one is a workspace that can still be deleted after the runner decided to keep it;
 one is provenance (a subtask created from a plan forgets the plan); four are the Automation
-panel and the dialog finishing what ADR 0074 decisions 4, 6 and 8 asked for (a specific model,
+panel and the dialog finishing what ADR 0015 decisions 4, 6 and 8 asked for (a specific model,
 the definition of done, a sentence under the field, remembering only what the person picked);
 one is the attempt card finding the folder for a run that worked in the user's own repo; three
 are the kit (`Select` has no `(?)`, the popover does not close, one attention tone); one is an
@@ -92,7 +92,7 @@ as `npx playwright test --project=chromium --workers=1 --reporter=line` from the
 
 ### K1 — a workspace that cannot be kept is not deleted
 
-**Decision served:** ADR 0074 decision 7 (a run that could not capture its changes keeps them).
+**Decision served:** ADR 0015 decision 7 (a run that could not capture its changes keeps them).
 **Files:** `crates/tack-runner/src/engine.rs` (the `keep` call and the cleanup after the
 terminal report), `crates/tack-runner/tests/crash_matrix.rs` or `h3_checkout.rs` (whichever
 already asserts `workspace_kept_at`; extend that one).
@@ -111,7 +111,7 @@ workspace directory still present and `workspace_kept_at` equal to its original 
 
 ### K2 — the API names its shapes: `RunSettings`, and the folder check
 
-**Decision served:** ADR 0074 decision 8 (nothing resets; every field validates where it is
+**Decision served:** ADR 0015 decision 8 (nothing resets; every field validates where it is
 typed) needs the wire to say what a run setting is.
 **Files:** `crates/tack-core/src/models.rs` (`Item.run_settings`, `UpdateItem.run_settings`,
 new `RunSettings`), `crates/tack-api/src/handlers/items.rs` (the "object or null" check
@@ -137,7 +137,7 @@ response by name; `cargo nextest run -p tack-api -p tack-core` green; the gate g
 
 ### K3 — a subtask created from a plan remembers the plan
 
-**Decision served:** ADR 0074 decision 5 (the Planner proposes; a person creates — and the
+**Decision served:** ADR 0015 decision 5 (the Planner proposes; a person creates — and the
 record says so).
 **Files:** `crates/tack-core/src/models.rs` (`ItemSource::Plan`, `Item.source_artifact_id`,
 `CreateItem.source_artifact_id`), `crates/tack-db/src/migrations.rs` (`083_plan_source`:
@@ -160,7 +160,7 @@ the gate green.
 
 ### K4 — the embedded runner says which runner it is
 
-**Decision served:** ADR 0074 decision 1 (the machine layer is exact, not inferred).
+**Decision served:** ADR 0015 decision 1 (the machine layer is exact, not inferred).
 **Files:** `crates/tack-api/src/handlers/local_runner.rs` (the `LocalRunnerControl` trait
 and `post_test_run`), `crates/tack-cli/src/local_runner.rs` (`EmbeddedRunnerControl`),
 `crates/tack-api/src/server/tests.rs` (the fake control), the handler test that covers
@@ -179,7 +179,7 @@ tack-cli` green; the gate green.
 
 ### D1 — Automation finishes: a specific model, the definition of done, a sentence under the field
 
-**Decision served:** ADR 0074 decisions 4, 6 and 8.
+**Decision served:** ADR 0015 decisions 4, 6 and 8.
 **Files:** `frontend/src/features/settings/panels/AutomationPanel.tsx` and its test,
 `frontend/src/shared/api/client.ts` (`ApiError.field` from `error.details.field`),
 `frontend/src/shared/runWithAgent/models.ts` and `shared.ts` only to *import* the measured
@@ -203,7 +203,7 @@ folder renders the message under the field and no toast. `client.test.ts`: `fiel
 
 ### D2 — the dialog remembers only what was picked; the card finds the folder
 
-**Decision served:** ADR 0074 decisions 7 and 8.
+**Decision served:** ADR 0015 decisions 7 and 8.
 **Files:** `frontend/src/shared/runWithAgent/RunWithAgentModal.tsx` and its test,
 `frontend/src/shared/runWithAgent/AttemptList.tsx` and its test. Needs K2 merged: read
 `item().run_settings` through the generated `RunSettings` type and delete both `as` casts.
@@ -223,7 +223,7 @@ project's folder.
 
 ### D3 — three kit changes and a second tone
 
-**Decision served:** ADR 0074 decisions 7 and 9.
+**Decision served:** ADR 0015 decisions 7 and 9.
 **Files:** `frontend/src/shared/ui/Select.tsx`, `Field.tsx` (`HelpHint`), `HelpButton.tsx`,
 `kit.test.tsx`, `frontend/src/shared/runWithAgent/RunFlow.tsx:230-236` (the Model `(?)`),
 `DecisionInbox.tsx:124` (`Pending` → `info`), `frontend/src/index.css` only for a z-index
@@ -306,5 +306,5 @@ Follow-ups found while executing, not yet scheduled:
 |---|---|
 | D1 | A "Through the gateway" choice beside the native provider in Automation, when a gateway key is set. |
 | K2 | A stored `run_settings` that does not fit `RunSettings` reads back as `None` (the row conversion's `.ok()`); log it at warn so a typed-wrong value is not silent. |
-| D4 | **A request no runner can ever claim stays Queued forever, silently.** The scheduler's ineligibility reason (`AutoSelectNotVerified`, no capable runner, …) is computed on every claim and thrown away. Record the last reason on the request and show it on the card ("Waiting: codex needs a model named"), and let a request that has been ineligible for N minutes fail with that reason. This is the same class as ADR 0074's finding 11 and deserves a task of its own. |
+| D4 | **A request no runner can ever claim stays Queued forever, silently.** The scheduler's ineligibility reason (`AutoSelectNotVerified`, no capable runner, …) is computed on every claim and thrown away. Record the last reason on the request and show it on the card ("Waiting: codex needs a model named"), and let a request that has been ineligible for N minutes fail with that reason. This is the same class as ADR 0015's finding 11 and deserves a task of its own. |
 | D4 | `EmbeddedRunnerControl::runner_id` has no test against the real implementation; a test that enrols the embedded runner against a loopback API and reads the id back would have caught K4. |

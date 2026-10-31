@@ -4,8 +4,7 @@ import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import AgentsPage from './AgentsPage';
 import Layout from '../../app/Layout';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 
 afterEach(() => {
   vi.restoreAllMocks();

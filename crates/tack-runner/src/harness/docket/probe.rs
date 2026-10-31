@@ -5,18 +5,19 @@
 use std::collections::BTreeSet;
 
 use chrono::Utc;
-use tack_orch::execution::{
+use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamReport, TeamViolation,
+    SignInReport, SignInState, TeamRecordSet, TeamReport, TeamViolation, WorksIn,
 };
 
-use super::client::Client;
+use super::{
+    client::Client,
+    wire::{PodList, PodReport, RecordList, StatusAnswer},
+};
 
-/// The oldest operator API version this harness speaks; a later one is accepted too.
-pub const MIN_API_VERSION: u32 = 5;
-
-/// The first API version whose task body carries `prepare`.
-pub(super) const PREPARE_API_VERSION: u32 = 6;
+/// The oldest operator API version this harness speaks; a later one is accepted too. It is the
+/// first whose docket keeps the escalation record and whose task body carries `prepare`.
+pub const MIN_API_VERSION: u32 = 6;
 
 /// The profile a team must hold to run without a person.
 const LIGHTS_OUT: &str = "lights-out";
@@ -25,9 +26,10 @@ fn needs_beta_6(found: &str) -> String {
     format!("needs docket 0.2.0-beta.6 (API {MIN_API_VERSION}); this docket answers API {found}")
 }
 
-/// Whether the answered API version is at least `minimum`.
-pub(super) fn api_at_least(api: &str, minimum: u32) -> bool {
-    api.parse::<u32>().is_ok_and(|found| found >= minimum)
+fn without_escalations(found: u32) -> String {
+    format!(
+        "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API {found} without it"
+    )
 }
 
 /// What `GET /status.json` says.
@@ -36,8 +38,8 @@ pub(super) struct Status {
     pub models: Vec<String>,
     /// docket's own version, when it sends one.
     pub version: Option<String>,
-    /// The operator API version it answered, as it wrote it.
-    pub api: String,
+    /// The operator API version it answered.
+    pub api: u32,
 }
 
 /// `GET /status.json`, or the sentence saying why this docket cannot be used.
@@ -53,72 +55,109 @@ pub(super) async fn status(client: &Client) -> Result<Status, String> {
             reply.error()
         ));
     }
-    let found = reply.body["apiVersion"].as_str().unwrap_or("unknown");
-    if !api_at_least(found, MIN_API_VERSION) {
-        return Err(needs_beta_6(found));
-    }
-    let models: BTreeSet<String> = reply.body["agents"]
-        .as_array()
+    let answer: StatusAnswer = reply
+        .read()
+        .map_err(|why| format!("docket's status could not be read: {why}"))?;
+    let api = match answer.api_version.parse::<u32>() {
+        Ok(found) if found >= MIN_API_VERSION => found,
+        _ => return Err(needs_beta_6(&answer.api_version)),
+    };
+    let models: BTreeSet<String> = answer
+        .agents
         .into_iter()
-        .flatten()
-        .filter_map(|agent| agent["model"].as_str())
+        .filter_map(|agent| agent.model)
         .filter(|model| !model.is_empty())
-        .map(str::to_owned)
         .collect();
-    let version = reply.body["version"]
-        .as_str()
-        .filter(|version| !version.is_empty())
-        .map(str::to_owned);
     Ok(Status {
         models: models.into_iter().collect(),
-        version,
-        api: found.to_owned(),
+        version: answer.version.filter(|version| !version.is_empty()),
+        api,
+    })
+}
+
+/// Whether docket keeps the escalation record, which every question and approval is read from.
+/// `apiVersion` is the same with and without it, so the route decides: `GET /escalations` answers
+/// `200` or this docket cannot be used.
+pub(super) async fn escalation_record(client: &Client, api: u32) -> Result<(), String> {
+    let reply = client
+        .escalations(0, None)
+        .await
+        .map_err(|why| format!("docket is not answering at {}: {why}", client.base()))?;
+    if reply.status == 200 {
+        Ok(())
+    } else {
+        Err(without_escalations(api))
+    }
+}
+
+/// The record sets a team declares, with how many rows each holds. `None` when docket has no such
+/// route (an older one answers `404`) or its answer cannot be read: that is not "no sets".
+async fn record_sets(client: &Client, name: &str) -> Option<Vec<TeamRecordSet>> {
+    let reply = client
+        .records(name)
+        .await
+        .ok()
+        .filter(|r| r.status == 200)?;
+    let list: RecordList = reply
+        .read()
+        .inspect_err(|why| tracing::warn!(why, "docket's record sets could not be read"))
+        .ok()?;
+    Some(
+        list.records
+            .into_iter()
+            .map(|set| TeamRecordSet {
+                name: set.name,
+                description: set.description.unwrap_or_default(),
+                rows: set.rows,
+            })
+            .collect(),
+    )
+}
+
+/// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
+/// where it works and what it keeps.
+async fn team(client: &Client, name: &str) -> Result<TeamReport, String> {
+    let reply = client.pod(name).await?;
+    if reply.status != 200 {
+        return Err(reply.error());
+    }
+    let report: PodReport = reply.read()?;
+    Ok(TeamReport {
+        name: name.to_owned(),
+        profile: report.profile.name,
+        violations: report
+            .profile
+            .violations
+            .into_iter()
+            .map(|violation| TeamViolation {
+                requirement: violation.requirement,
+                fix: violation.fix,
+            })
+            .collect(),
+        // An older docket sends no key; that stays unknown rather than becoming "none".
+        read_only: report.read_only,
+        // Likewise: no `repoConfigDir` key is an older docket, not a team without a repository.
+        works_in: report.repo_config_dir.as_deref().map(|dir| {
+            if dir.is_empty() {
+                WorksIn::Folder
+            } else {
+                WorksIn::Repository
+            }
+        }),
+        records: record_sets(client, name).await,
     })
 }
 
 /// The teams docket reports, each with its profile's violations and the folders its sandbox reads.
 pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
-    let list = client.pods().await?;
-    if list.status != 200 {
-        return Err(list.error());
+    let reply = client.pods().await?;
+    if reply.status != 200 {
+        return Err(reply.error());
     }
+    let list: PodList = reply.read()?;
     let mut teams = Vec::new();
-    for pod in list.body["pods"].as_array().into_iter().flatten() {
-        let Some(name) = pod["name"].as_str() else {
-            continue;
-        };
-        let report = client.pod(name).await?;
-        if report.status != 200 {
-            return Err(report.error());
-        }
-        let profile = &report.body["profile"];
-        teams.push(TeamReport {
-            name: name.to_owned(),
-            profile: profile["name"]
-                .as_str()
-                .or_else(|| pod["profile"].as_str())
-                .unwrap_or_default()
-                .to_owned(),
-            violations: profile["violations"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|violation| TeamViolation {
-                    requirement: violation["requirement"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .to_owned(),
-                    fix: violation["fix"].as_str().unwrap_or_default().to_owned(),
-                })
-                .collect(),
-            // An older docket sends no key; that stays unknown rather than becoming "none".
-            read_only: report.body["readOnly"].as_array().map(|paths| {
-                paths
-                    .iter()
-                    .filter_map(|path| path.as_str().map(str::to_owned))
-                    .collect()
-            }),
-        });
+    for pod in &list.pods {
+        teams.push(team(client, &pod.name).await?);
     }
     Ok(teams)
 }
@@ -130,7 +169,7 @@ fn capped(team: &TeamReport) -> bool {
 
 pub(super) async fn probe(
     client: &Client,
-    decisions: tack_orch::execution::CapabilityValue,
+    decisions: tack_protocol::execution::CapabilityValue,
 ) -> HarnessCapability {
     let mut capability = HarnessCapability {
         harness_kind: DomainHarnessKind::new(super::DESCRIPTOR.kind),
@@ -176,7 +215,11 @@ pub(super) async fn probe(
         }
     };
     capability.installed_version = version.unwrap_or_default();
-    capability.set_api_version(&api);
+    capability.set_api_version(&api.to_string());
+    if let Err(why) = escalation_record(client, api).await {
+        capability.probe_error = Some(why);
+        return capability;
+    }
     let signed_in = !models.is_empty();
     capability.sign_in = Some(SignInReport {
         state: if signed_in {

@@ -1,0 +1,28 @@
+{
+  "records": [
+    {
+      "name": "entries",
+      "description": "One row per thing the pod has captured, found again by its ref.",
+      "key": "ref",
+      "rows": 0,
+      "columns": [
+        {
+          "name": "ref",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "amount",
+          "type": "number",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "problems": []
+}

@@ -3,13 +3,13 @@ import { A } from '@solidjs/router';
 import { runnersApi } from '../execution';
 import { IconAgent } from '../ui/icons';
 
-// Lives in `shared/**`, not `features/agents/**`: `Board.tsx`
-// (`features/board/**`) mounts this, and `architecture.test.ts` forbids one
-// `features/*` importing another — the same reason `shared/runWithAgent/**`
-// exists instead of living under `features/execution/**`. Reads only
+// Lives in `shared/**`, not in the agents feature: the board feature's
+// `Board.tsx` mounts this, and `architecture.test.ts` forbids one
+// feature importing another — the same reason `shared/runWithAgent/**`
+// exists instead of living in the execution feature. Reads only
 // `GET /api/runners` (`shared/execution`, already a legitimate shared
 // import) rather than the Agents page's own local-runner client
-// (`features/agents/api.ts`) — the embedded runner shows up
+// (the agents feature's own `api.ts`) — the embedded runner shows up
 // as an ordinary active row there once it's on, so no second endpoint is
 // needed to answer "is any agent execution active anywhere".
 
@@ -62,7 +62,7 @@ const FirstRunBanner: Component<FirstRunBannerProps> = (props) => {
         <A href="/agents" class="font-bold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>Turn on</A>
         <button
           type="button"
-          class="rounded-full px-1.5 text-[0.8125rem] focus:outline-none focus-visible:ring-2"
+          class="rounded-full px-1.5 text-small focus:outline-none focus-visible:ring-2"
           style={{ color: 'var(--color-text-secondary)' }}
           aria-label="Dismiss"
           onClick={() => {

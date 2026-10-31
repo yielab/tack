@@ -93,6 +93,60 @@ async fn a_changed_workspace_yields_a_patch_and_a_file_list() {
 }
 
 #[tokio::test]
+async fn the_steps_a_harness_recorded_are_staged_as_one_artifact() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("skipped: the git binary is not on PATH");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let path = root.path().join("ws");
+    fs::create_dir_all(&path).expect("workspace");
+    assert!(git(&path, &["init", "--quiet"]));
+    fs::write(path.join("keep.txt"), "keep\n").expect("keep");
+    assert!(git(&path, &["add", "-A"]));
+    assert!(git(&path, &["commit", "--quiet", "-m", "base"]));
+    let workspace = Workspace {
+        attempt_id: AttemptId::new("attempt"),
+        id: WorkspaceId::new("ws_attempt"),
+        path,
+        base_revision: "HEAD".to_owned(),
+    };
+    let workspaces =
+        WorkspaceManager::new(root.path().join("root"), GitWorktreeProvisioner::default());
+    let steps = serde_json::json!([{"role": "implementer", "prompts": []}]);
+    for (reason, staged_steps) in [
+        (serde_json::json!({"code": "done", "steps": steps}), true),
+        (serde_json::json!({"code": "done", "steps": []}), false),
+        (serde_json::json!({"code": "done"}), false),
+    ] {
+        let (scratch, staged) = capture(
+            &workspaces,
+            &workspace,
+            "docket".to_owned(),
+            reason,
+            serde_json::Value::Null,
+            None,
+            None,
+            ("Tack <t@localhost>", "work"),
+            None,
+        )
+        .await;
+        let trajectory = staged.iter().find(|item| item["name"] == TRAJECTORY_FILE);
+        assert_eq!(trajectory.is_some(), staged_steps);
+        if let Some(trajectory) = trajectory {
+            let bytes = fs::read(trajectory["staged_path"].as_str().unwrap()).unwrap();
+            assert_eq!(trajectory["kind"], "trajectory");
+            assert_eq!(trajectory["sha256"], sha256_hex(&bytes));
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+                steps
+            );
+        }
+        fs::remove_dir_all(scratch).expect("scratch");
+    }
+}
+
+#[tokio::test]
 async fn a_plan_file_is_staged_and_excluded_from_the_patch() {
     if Command::new("git").arg("--version").output().is_err() {
         eprintln!("skipped: the git binary is not on PATH");

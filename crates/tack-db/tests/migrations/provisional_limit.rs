@@ -1,6 +1,7 @@
 //! Migration 094: a project's budgets row gets the default provisional limit; a project with no row has it too.
 
-use tack_db::repo::budgets::{self, DEFAULT_PROVISIONAL_TOKENS, ProjectBudgets};
+use tack_db::queries::budgets::provisional_tokens;
+use tack_db::repo::budgets::{DEFAULT_PROVISIONAL_TOKENS, ProjectBudgets};
 use tack_db::{Repository, init_pool, migrations};
 
 #[tokio::test]
@@ -25,20 +26,19 @@ async fn migration_094_gives_an_existing_budgets_row_the_default_provisional_lim
         .await
         .expect("budgets at 092");
     migrations::run_all(&pool).await.expect("upgrade to 094");
+    let repo = Repository::new(pool);
 
     assert_eq!(
-        budgets::provisional_tokens(&pool, "p").await.unwrap(),
+        provisional_tokens(&repo, "p").await.unwrap(),
         Some(DEFAULT_PROVISIONAL_TOKENS)
     );
     // A project with no row has the default; one that turned it off, or set 0, has none.
     assert_eq!(
-        budgets::provisional_tokens(&pool, "nobody").await.unwrap(),
+        provisional_tokens(&repo, "nobody").await.unwrap(),
         Some(DEFAULT_PROVISIONAL_TOKENS)
     );
-    let repo = Repository::new(pool);
     for off in [None, Some(0)] {
-        budgets::put(
-            repo.pool(),
+        repo.put_project_budgets(
             "p",
             &ProjectBudgets {
                 provisional_tokens_per_run: off,
@@ -47,9 +47,6 @@ async fn migration_094_gives_an_existing_budgets_row_the_default_provisional_lim
         )
         .await
         .unwrap();
-        assert_eq!(
-            budgets::provisional_tokens(repo.pool(), "p").await.unwrap(),
-            None
-        );
+        assert_eq!(provisional_tokens(&repo, "p").await.unwrap(), None);
     }
 }

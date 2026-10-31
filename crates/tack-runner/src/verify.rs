@@ -12,7 +12,7 @@
 //!
 //! - `command`: `<program> <args…> --evidence <scratch>/evidence --workspace
 //!   <workspace> --output <scratch>/evidence/mrp.json`, and the pack it
-//!   writes is read through [`tack_core::mrp`] as it is.
+//!   writes is read through [`tack_protocol::mrp`] as it is.
 //! - `prill`: the program is prill, whose command line, input documents and
 //!   pack are all its own; [`prill`] is the seam that snapshots the
 //!   workspace, writes prill's documents, runs `<program> verify …` and
@@ -30,7 +30,7 @@ use std::{
     time::Duration,
 };
 
-use tack_core::mrp::MergeReadinessPack;
+use tack_protocol::mrp::MergeReadinessPack;
 
 use crate::{
     client::workspace::Workspace,
@@ -66,29 +66,58 @@ fn failure(exit_code: Option<i32>, reason: impl Into<String>) -> VerifyFailure {
     }
 }
 
+/// A failure whose cause is an I/O error. The reason names the step and the kind of the error,
+/// never the error's own text: the operating system's text can name a path.
+fn io_failure(
+    exit_code: Option<i32>,
+    step: impl Into<String>,
+    error: &std::io::Error,
+) -> VerifyFailure {
+    failure(exit_code, format!("{} ({})", step.into(), error.kind()))
+}
+
+/// A failure whose cause is a JSON error. The reason says what kind of JSON failure it was, never
+/// the text the parser or serializer would quote.
+fn json_failure(
+    exit_code: Option<i32>,
+    step: impl Into<String>,
+    error: &serde_json::Error,
+) -> VerifyFailure {
+    let kind = match error.classify() {
+        serde_json::error::Category::Io => "read failed",
+        serde_json::error::Category::Syntax => "not valid JSON",
+        serde_json::error::Category::Data => "JSON of the wrong shape",
+        serde_json::error::Category::Eof => "cut off before the end",
+    };
+    failure(exit_code, format!("{} ({kind})", step.into()))
+}
+
 /// Whether `program` resolves: a path with a separator is looked at directly,
 /// a bare name is looked for in every `PATH` directory.
-pub fn program_found(program: &str) -> bool {
+pub fn program_found(program: &str, env: &crate::config::ProcessEnv) -> bool {
     if program.contains('/') {
         return Path::new(program).is_file();
     }
-    #[allow(clippy::disallowed_methods)]
-    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path = env.search_path().unwrap_or_default();
     std::env::split_paths(&path).any(|directory| directory.join(program).is_file())
 }
 
 /// Runs the verifier for one attempt. `scratch` is the evidence capture's
 /// scratch directory; its `src` holds the files already staged. Returns the
 /// staged `mrp.json`, in the shape `terminal_reason.artifacts` entries have.
+/// `trajectory_uri` is where the board will serve the run's staged `trajectory.json`, when it
+/// has one; a prill verifier is given it with the file's digest.
 pub async fn run(
     config: &VerifyConfig,
     limits: &ProcessLimits,
     workspace: &Workspace,
     scratch: &Path,
+    env: &crate::config::ProcessEnv,
+    trajectory_uri: Option<&str>,
 ) -> Result<Vec<serde_json::Value>, VerifyFailure> {
     let evidence = scratch.join("evidence");
     fs::create_dir_all(&evidence)
-        .map_err(|_| failure(None, "the evidence directory could not be created"))?;
+        .map_err(|error| io_failure(None, "the evidence directory could not be created", &error))?;
     if let Ok(entries) = fs::read_dir(scratch.join("src")) {
         for entry in entries.flatten() {
             let _ = fs::copy(entry.path(), evidence.join(entry.file_name()));
@@ -97,13 +126,33 @@ pub async fn run(
     let output = evidence.join("mrp.json");
 
     match config.kind {
-        VerifyKind::Command => run_command(config, limits, workspace, &evidence, &output).await?,
-        VerifyKind::Prill => prill::run(config, limits, workspace, &evidence, &output).await?,
+        VerifyKind::Command => {
+            run_command(config, limits, workspace, &evidence, &output, env).await?
+        }
+        VerifyKind::Prill => {
+            prill::run(
+                config,
+                limits,
+                workspace,
+                &evidence,
+                &output,
+                env,
+                trajectory_uri,
+            )
+            .await?
+        }
     }
 
     let attempt_id = workspace.attempt_id.as_str();
     let stager = ArtifactStager::new(scratch.join("staged"));
     let mut files = vec![("mrp.json", "mrp", MRP_MEDIA_TYPE)];
+    if config.kind == VerifyKind::Prill {
+        files.push((
+            prill::ORIGINAL_FILE,
+            "mrp_prill",
+            prill::ORIGINAL_MEDIA_TYPE,
+        ));
+    }
     if config.kind == VerifyKind::Prill && config.sign_key.is_some() {
         files.push((
             prill::ENVELOPE_FILE,
@@ -115,7 +164,7 @@ pub async fn run(
     for (name, kind, media_type) in files {
         let artifact = stager
             .stage_file(attempt_id, &evidence, Path::new(name), kind, media_type)
-            .map_err(|_| failure(Some(0), format!("{name} could not be staged")))?;
+            .map_err(|error| failure(Some(0), format!("{name} could not be staged ({error})")))?;
         staged.push(serde_json::json!({
             "kind": artifact.kind,
             "name": artifact.name,
@@ -136,6 +185,7 @@ async fn run_command(
     workspace: &Workspace,
     evidence: &Path,
     output: &Path,
+    env: &crate::config::ProcessEnv,
 ) -> Result<(), VerifyFailure> {
     let mut args = config.args.clone();
     args.extend([
@@ -146,7 +196,7 @@ async fn run_command(
         "--output".to_owned(),
         output.display().to_string(),
     ]);
-    let result = spawn_verifier(config, limits, workspace, args).await?;
+    let result = spawn_verifier(config, limits, workspace, args, env).await?;
     let stderr = stderr_prefix(&result);
     match result.exit {
         ProcessExit::Exited(0) => {}
@@ -174,7 +224,8 @@ async fn run_command(
         }
     }
 
-    let bytes = fs::read(output).map_err(|_| failure(Some(0), "the verifier wrote no pack"))?;
+    let bytes = fs::read(output)
+        .map_err(|error| io_failure(Some(0), "the verifier wrote no pack", &error))?;
     if serde_json::from_slice::<MergeReadinessPack>(&bytes).is_err() {
         return Err(failure(
             Some(0),
@@ -192,9 +243,9 @@ async fn spawn_verifier(
     limits: &ProcessLimits,
     workspace: &Workspace,
     args: Vec<String>,
+    env: &crate::config::ProcessEnv,
 ) -> Result<ProcessResult, VerifyFailure> {
-    #[allow(clippy::disallowed_methods)]
-    let path = std::env::var("PATH").unwrap_or_default();
+    let path = env.path_or_standard();
     let spec = ProcessSpec {
         program: PathBuf::from(&config.program),
         args,
@@ -208,14 +259,21 @@ async fn spawn_verifier(
         timeout: Duration::from_secs(config.timeout_seconds),
         ..limits.clone()
     };
-    let process = spec
-        .spawn()
-        .await
-        .map_err(|_| failure(None, format!("{} could not be started", config.program)))?;
+    let process = spec.spawn().await.map_err(|error| {
+        failure(
+            None,
+            format!("{} could not be started ({error})", config.program),
+        )
+    })?;
     process
         .wait_with_capture(&limits, &SecretMaterial::new())
         .await
-        .map_err(|_| failure(None, "the verifier could not be supervised"))
+        .map_err(|error| {
+            failure(
+                None,
+                format!("the verifier could not be supervised ({error})"),
+            )
+        })
 }
 
 fn stderr_prefix(result: &ProcessResult) -> String {

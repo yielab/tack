@@ -11,20 +11,116 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
-Phase 73 (ADR 0080): every run of the docket agent goes to a team that already exists and keeps
+---
+
+## [0.2.0-beta.1] - 2026-10-30
+
+The version moves to `0.2.0` because this release changes what Tack needs from docket (HTTP API
+version 6, docket `0.2.0-beta.6` or later) and reshapes the code it is built from. It carries
+Phases 73 to 82. The `v0.1.0-beta.10` tag of 2026-10-14 never had a release, so everything since
+`v0.1.0-beta.9` ships here, and the `[0.1.0-beta.10]` section below is the part of it that was
+written first.
+
+Phases 79 to 82 are the newest part: `tack-app` owns the host work behind small traits, the
+runner has a crate of its own, a run that waits on a person waits without a clock, the audit of
+that tree is fixed, and the task goes to docket as fields with the run recording which prompts
+made it.
+
+- The Execution tab shows, for each step of a docket run, the role, the model in words, the verdict and the prompts it read (with version and where each came from), what the step assumed and asked, and the rows the team recorded; a folder team's run says it has nothing to merge.
+- A wait is no longer a question, and an action that leaves is seen before it is approved. A docket step that waits until a time shows on the timeline as "The team waits until 14:00. Nobody needs to answer." with a clock, never asks anything, and the run's time limit does not run while it waits; a wait that ran out with no step to go to next ends the run with that sentence. An approval of something that leaves the team (an email, a post, a write to a service) is titled "This action leaves the team" and shows the whole action above the options, scrolling past twenty lines; Tack keeps it only while the question is open and erases it in the same write that answers or expires the question, and when docket does not show it Tack does not ask.
+- A docket run now receives the card as fields. The request carries the item as data (`task`), and the adapter sends docket's `task` (objective, done when, acceptance, constraints, risk, kind, the paths the criteria name) beside a `description` that holds only the profile's instructions and the card's fenced text, so the brief and the definition of done are no longer sent twice and the adapter no longer cuts them out of prose. "Run again" sends the questions docket asked in the previous attempt with the option a person picked, so nobody is asked the same thing twice. The other three agents read the same prose as before.
+- Internal: an item and its run history are two types. `Item` is the stored row, read through one column list; `ItemCard` (the item plus `needs_review`, `merge_note`, `started_by`, `team` and `merged_by`) is what the board, the item page and a PATCH answer return, and the HTTP shape of those answers is unchanged. The workflow and WIP rules of a move are `tack-core`'s `StatusGate`, which the store consults inside its transaction instead of holding them. A task whose stored run settings no longer fit is now a corrupt-row error naming the column, instead of reading as having none. A project export no longer carries the five derived fields on its items.
+- Internal: the background loops' settings are one `LoopConfig` owned by `tack-app` (the keys and variables keep their names), and the process environment is read once in each crate's config module and handed down as values: the runner's harness search, readiness check, verifier, install and `env:` secrets, the CLI's `~/.tackrc` lookup, the API's `PATH` for prill and the launch nonce. No test sets a process variable any more. New: `[secrets] platform_store = "off"` in the runner's file skips the OS credential store and uses the owner-only file.
+- Internal: `Host` is gone. `tack-app` owns the GitHub calls, the pull request an accepted attempt opens and the move an accepted pack makes; what it still needs from `tack-api` is three small traits with typed errors (the prill check, stored artifacts, board events). `tack serve --with-runner` reaches the server as a value instead of through a process-wide environment variable, and the server reads its configuration once.
+- A docket run keeps what each step was made of. When the task ends, the run's result holds one entry per hop with the prompts it ran (layer, name, version, hash, scope), the model and its class and family, the verdict, and what the agent assumed and asked; a hop recorded before docket kept a manifest says it recorded no prompt. The same list is stored as an artifact of the attempt, and a prill verifier is given the model's family and that artifact's address and digest as the attempt's trajectory.
+- A docket team may work in a folder, and a run keeps the records it wrote. A task given to a team with no repository ends Succeeded with what the team's last step said it did, with nothing to merge or open as a pull request, instead of failing with "branch not applied" (a team that has a repository and ends with no work still fails). When a docket task ends, the run's result holds the rows the team wrote in it, for each record set the team declares (at most 50 per set, read only), beside the steps; Settings → Automation → Teams says which teams work in a folder and what record sets they keep. Tack no longer names a team shape when it creates a team, so docket's own default stands.
+- `tack serve --with-runner` no longer exits at boot on a slow machine. The server announced its address and started the embedded runner at once, while the address reached the runner on another task; when the runner was first, the start failed and took the server down with exit status 1. The start now waits (up to ten seconds) for the address.
+
+Phase 73 (ADR 0021): every run of the docket agent goes to a team that already exists and keeps
 existing, a role chooses who takes its tasks, a task can start by itself and repeat, and a
 project's automation is set on one screen. Then a whole project goes in and out through one file,
-and a template is that file without items (ADR 0081). Beside them: Settings → Display &
+and a template is that file without items (ADR 0022). Beside them: Settings → Display &
 accessibility and the fixes from an accessibility audit, and the documentation split into a
 User, an Administrator and a Developer Guide.
 
 Two behaviours change for docket users: the runner needs docket `0.2.0-beta.6` (HTTP API
-version 5) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
+version 6) and a `[docket]` table naming its `binary`; an older docket reads "needs docket
 0.2.0-beta.6". Upgrading applies migrations 088–092 on first start: a role's profile and a
 profile's fleet, a task's recurrence, the auto-start settings, the roles, profiles and
 automation a template carries, and the removal of dollars per day.
 
 ### Added
+
+- **The artifact upload's answer is a message struct.** `PUT .../artifacts/{id}/content` was the
+  last runner-protocol message the board built with `json!`; it is now `ArtifactContentResponse` in
+  `tack-protocol`, like every other request and response of the protocol.
+
+- **A request the server cannot read answers the same error body as any other failure.** A body
+  that is not JSON, a field that is missing, a wrong content type, a body over the limit, a path
+  or query parameter that is not valid, a route that is not there and a method a route does not
+  accept used to get axum's plain text (or nothing) with no code. Every handler now reads its
+  request through `tack_api::extract` (`Json`, `Path`, `Query`, `RawBody`, `Multipart`,
+  `Upgrade`), which refuses with `invalid_request` (400, `details.field` when the failing field is
+  known), `unsupported_media_type` (415), `payload_too_large` (413) or the new `method_not_allowed`
+  (405). A body whose shape is wrong answers 400, not axum's 422. Every error body, on the `/api`
+  routes and the runner routes alike, now carries `retryable`, `request_id` and `details` beside
+  `status`, `code` and `message`, and every request has a request id (the `x-request-id` it sent,
+  or one the board makes) that the body and the response header name; the four fixed
+  `req_operator...` ids are gone.
+
+- **Every error body has a `code` a client can match on.** `StableErrorCode` is the one enum of
+  codes, and it knows its HTTP status (`status()`), so no handler names a status beside a code.
+  `AppError` carries a code, a refused run (`Refusal`) is one of its variants, and turning it into
+  an `ApiError` keeps the code, where it used to be dropped. Each rule of the core answers a code of
+  its own instead of the shared 400: `wip_limit_exceeded`, `invalid_status_transition`,
+  `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`,
+  `has_children`, `invalid_workflow` and `validation_failed`; the HTTP layer's failures
+  (`misdirected_host`, `cross_site_request`, `unsupported_media_type`, `unreadable_archive`,
+  `precondition_failed`, `section_failed`) and the plain kinds (`not_found`, `conflict`,
+  `internal_error`, ...) are in the same enum, and the OpenAPI error envelope documents `code` as
+  that enum. The frontend's list of codes is the generated type. One status moved to the
+  code's: a lifecycle transition the board refuses (`AppError::InvalidTransition`) is 409 like the
+  runner routes, not 400. A run sent to a revoked machine keeps its 409 under the new code
+  `machine_revoked` (`runner_revoked` is the runner's own credential, 403).
+- **A write to a parent that is not there answers 404.** Creating a sprint or a role in a project
+  that does not exist answered 500 from the database's foreign key, and so did a dependency on an
+  item that does not exist; the store now checks the project or the item first and raises
+  `NotFound`, and a test drives each such route to a missing parent.
+  The same holds for a new item that names a parent item, a sprint or a project that is not
+  there, and for a `PATCH` that moves an item to a sprint that is not there (both were 500s), and
+  a test drives the briefs, boards, GitHub link, plan, autonomy, imports, outline, execution,
+  decision, review and attachment routes to a missing parent.
+- **The runner's file failures keep their kind.** A workspace or journal operation that failed on a
+  file now says how (`runner workspace operation failed: entity not found`) instead of a bare
+  "failed", and a poisoned lock is logged; the operating system's own text, which can name a path,
+  is still never kept. About 50 of the `map_err(|_| …)` that dropped their cause are gone, and the
+  runner's state-directory, session-file, config-file, client-task and shutdown-signal failures
+  (`RunnerError::Filesystem`, `ConfigError::Unreadable`, `ClientTaskJoin`, `ShutdownSignal`) now say
+  which kind of failure it was.
+- **The store says what is wrong with a stored value.** `StoreError` gains `Corrupt { table, column }`
+  for a value that cannot be read back and `NotFound { entity }` for a row of a named kind that is
+  not there; row mapping returns them instead of panicking on a corrupt row or inventing a default
+  (the 78 `unwrap`s in the store's row mapping are gone), and the 500 for a corrupt row is logged
+  with the table and the column. A restore whose archive or manifest cannot be read answers 422
+  with the code `unreadable_archive` instead of 500, and the server-side failures that used to
+  drop their cause (`map_err(|_| …)`) now log it.
+- **A run that needed a person is its own outcome.** An attempt of the docket agent that ends because a
+  tool call needs a person shows "Needs a person" with docket's sentence and offers **Run again at L3**,
+  which opens the Run dialog for the same task with the run attended from the start; it is disabled, with
+  its reason, when the run did not use docket or already ran at L3, and it never starts by itself.
+  `POST /api/executions` takes an optional `autonomy` (`L3`, `L4` or `L5`), and the claim hands a docket
+  runner that level as it is; a run created with none carries none.
+- **Factory metrics count what the agent decided alone.** A new **Decided alone** card gives the runs in
+  which docket's own policy settled at least one question, and their rate over runs, beside the escalation
+  rate and the human minutes, which still count only questions a person answered.
+- **The docket agent sends the run's autonomy level.** The task goes to docket with `autonomy` only when a
+  person asked for a level ("Run again at L3"), exactly as asked; the project's merge level is never turned
+  into it, and docket decides from the team's profile otherwise. A docket that refuses the level answers
+  `422` with its own sentence, and the attempt fails with it. A task docket ends with `needs_human` ends the attempt
+  `failed` with the code `needs_human` and docket's sentence; nothing queues it again by itself.
+- **The timeline shows every escalation.** Each question docket opens, each answer a person gave, each
+  one that expired and each one docket's policy settled alone is a line on the run's timeline
+  ("decided alone: option deny (policy deny, level L5)"); a notification delivered is not.
 
 - **The Run dialog follows the profile.** Pressing a profile picks the agent it is written for and says
   so when that replaces the task's; profiles you made are listed first with their "delivers" line, the
@@ -144,7 +240,7 @@ automation a template carries, and the removal of dollars per day.
   be used is shown disabled with its reason. The board, the list and the table carry
   "Started by itself", "Team: …" and "Merged by itself"; the task drawer has an Automation
   row; the run dialog says "Chosen by the role …".
-- **A whole project goes in and out through one file** (ADR 0081). The outline of ADR 0076
+- **A whole project goes in and out through one file** (ADR 0022). The outline of ADR 0017
   may carry `fields`, `profiles`, `roles`, `sprints` and `automation` beside its items, and
   the project's vocabulary and workflow; items may name their roles, sprint, fields,
   recurrence and estimate unit. The file is checked whole, every problem reported at once,
@@ -174,6 +270,110 @@ automation a template carries, and the removal of dollars per day.
 
 ### Changed
 
+- **The runner's remaining failures say what kind of failure they were.** The process supervisor, the artifact stager, the verifier, the secret store, the journal's setup, the workspace and git path checks, the docket and protocol helpers and the log filter used to fail with a bare word or a dropped error; they now name the kind (a file's kind, a JSON error's category, a spawn or pipe failure). The operating system's text, secrets and file contents are still never kept or logged.
+
+- **The claim, heartbeat, event-batch and completion messages are one set of types.** `tack-protocol` now defines
+  them, and the board and the runner both read and write those types instead of building and picking apart JSON by
+  hand, so the shape of `claim`, `heartbeat`, `event-batch` and `completion` fixtures is written once and a test
+  checks every one of them against it. On the wire nothing changes for a valid message. A body that does not fit now
+  answers `400 invalid_request` with the field named when it is missing, where a few mistakes (a negative
+  `available_capacity`, a heartbeat `journal_state` that is not one of the runner's journal states) were accepted
+  before. A heartbeat's `journal_state` may be `terminal_report_pending`, which a runner has always been able to send.
+- **Every runner message is one set of types, and every runner request has an id of its own.** Enrollment, refresh,
+  accept and start, decisions, the artifact manifest and the cancellation observation join the claim, heartbeat,
+  event-batch and completion messages in `tack-protocol`, and the board and the runner read and write them with no
+  hand-built JSON left. On the wire nothing changes for a valid message (the board's timestamps in these answers are
+  written with a `Z` instead of `+00:00`). A request that does not fit answers `400 invalid_request` and names the
+  field, such as `options[0].label` or `fencing_token`, where a few mistakes were named only as `body`. The runner now
+  sends an `x-request-id` it makes anew for every request; the board puts it in the error body's `request_id` (it was
+  always `req_runner`), echoes it in its answer and logs it.
+- **A recovery observation is stored as the protocol's type.** The store takes a runner's recovery details as the
+  protocol's `RecoveryDetails` and encodes them itself, and the lease sweep writes `lease_expired` as a real journal
+  state of the protocol (`RecoveryJournalState::LeaseExpired`) instead of a code string dressed as one.
+- **The rest of what the store was handed as JSON text is the protocol's type.** A completion's `actual_execution` and
+  `usage`, an event's payload, a decision's options, metadata and recommendation, and a heartbeat's journal state cross
+  from the handler to the store as the protocol's values and are encoded inside the store. A report whose body the
+  protocol could not read was already refused with 400; nothing a runner sends changes.
+- **One kit for the cards, switches and confirms.** Panels share one card with the theme's radius and text sizes, and
+  the six on/off switches share one switch. The eight browser confirm boxes are one dialog that says what happens;
+  the runner revoke question no longer shows the runner's internal id. The command palette lists the same places as
+  the sidebar, with the same labels and icons, and now includes Agents.
+- **A fencing token that is negative or too large is refused as malformed.** The runner protocol's store now takes and returns the protocol's own ids and fencing token instead of text and integers, so a token below zero or above 9223372036854775807, in the `X-Tack-Fencing-Token` header or in a request body, answers `400 invalid_request` where it used to reach the store and come back as a stale lease.
+- **The execution store takes the instant as a value.** Every store method that read a clock (claims, heartbeats, completions, decisions, recoveries, artifacts, runners, fleets, profiles) and every run use case now take the `now` their caller read once at the edge, and where a lease sweep, the default machine of a run and the built-in profiles used to read the system time themselves they use that instant too. No endpoint changes; a test that sets a clock back now sees every row stamped with it.
+- **A run request names its machine, level and permissions with the protocol's types.** `POST /api/executions` refuses a `permission_policy` that is not a `{tools, network, approvals}` object with `400` "permission_policy is invalid" (field `permission_policy`), where it used to answer "Execution request snapshot is incomplete or invalid" after most of the work was done, and a half-named machine or a level that is not `L3`, `L4` or `L5` is refused before the item is read. The JSON the endpoint accepts is unchanged.
+- **The list of a run's attempts is read in one pass and fails loudly.** `GET /api/executions/{id}/attempts` used to ask the database three more questions per attempt (pull request, review, merge) and, when the pull-request lookup failed, silently showed the attempt without one. The store now reads each of the three tables once for the whole run, and any failure answers `500` instead of a list with holes.
+- **A heartbeat that names a state the lifecycle does not have answers `400 invalid_request`.** The runner's report of each lease it holds used to be stored and echoed back as any text; the store's listings and responses now carry the lifecycle's own state type, so a corrupt state column surfaces as an error instead of a guess. The JSON on the wire is unchanged.
+- **The frozen lifecycle table grew by the two moves the store always made.** `docs/contracts/runner-v1/lifecycle-transitions.json` now lists `queued` → `failed` by the scheduler (a request no runner could ever claim) and `cancelled` by an operator from `leased`, `preparing`, `running`, `waiting_decision` and `needs_operator` (a run nobody holds any more, ended without waiting for a runner). Both were plain filters in the store; now every `UPDATE ... WHERE state` guard comes from the table. No runner-visible behaviour changes.
+- **A runner can no longer end an attempt it has not started.** The store used to accept a success report for an attempt still `leased`; every guard on a state change now comes from the lifecycle table in the protocol crate, so the store and the table cannot disagree, and no query spells a state name.
+- **A level can only reach docket, and a run is a link.** `POST /api/executions` refuses an `autonomy` for any
+  agent but docket with `400` "A level applies only to a docket run", where the level used to be kept and then
+  dropped in silence. The dialog "Run again at L3" opens keeps docket and shows the other agents disabled with
+  that reason, and the run it starts is the one the tab shows. `?tab=execution&run=<id>` opens the Execution tab
+  on a given run, and picking a chip writes it into the address.
+- **A run that needs a person is one state.** "Needs a person" is the same word and the same colour while the
+  agent waits for an answer ("Asking you" is gone) and after it ended asking for one; it never shows the code
+  `needs_human`, and the card and the attempt both have **Open the question**. State changes of a run are
+  announced politely to a screen reader.
+- **The timeline reads in words.** The steps docket takes and every question it opens, has answered, lets
+  expire, settles alone or cannot put to a person have a label of their own, and a refused task, an answer docket
+  did not take and a question Tack cannot put to a person are drawn in the failure colour.
+- **A level says what it allows.** Wherever L3, L4 or L5 stands beside a run (the "Run again at L3" button, the
+  attended run's note, "Merged by Tack (L4, …)"), a sentence says what it means.
+- **The run surface says when it cannot load.** The run's events, attempts, files, questions, merge-readiness
+  pack, what the agent read, and the Run dialog's profiles, computers and groups say what could not load with
+  "Try again", instead of an empty list; the Run dialog cannot start a run meanwhile. The decision token's hint
+  no longer names an environment variable or a file; it links to the Administrator Guide.
+
+- **A screen that cannot load says so, with "Try again".** A failed load is no longer shown as "nothing
+  here": the Automation ladder, the folder check, the runners and profiles, the roles, a task's Automation
+  row, a profile's run history, the Timeline's blocked marks and a project's items each say what could not
+  load, and why when the board said. Every route draws inside its own error boundary, and the app has one
+  more around it, so a screen that fails to draw leaves the sidebar standing and offers "Try again".
+- **A disabled button says why.** `Button` takes a `reason`, shown beside the button while it is disabled and
+  tied to it for screen readers. "Browse…" in the new-project dialog is shown in a browser tab, disabled,
+  with "Available in the desktop app", and the cloud backup buttons (Back up now, Restore latest, Verify
+  latest, refresh) are shown with "Set up cloud backup first" until it is set up; none is hidden any more.
+- **Screens say "the verifier", and name no variable or command.** The Merge step, Factory metrics, the
+  enrolment token and the runner's settings file link to the Administrator Guide in place of `prill`,
+  `TACK_RUNNER_ENROLLMENT_TOKEN`, `docket init` and `docket setup sandbox read add`. The board's "not
+  installed" sentence for the verifier and the "Run again at L3" reason follow the same rule.
+- **The Automation ladder reads as one list.** Its folded sections have their disclosure marker back, and the
+  four steps lose the numbers 1 to 4, which sat beside the levels L3 to L5.
+- **Fields and tabs are tied for assistive technology.** A field's error or hint is its `aria-describedby`,
+  each tab names the panel it controls, and the accessibility scan also covers the project's settings tabs,
+  the item's own page, Factory metrics, the create-project dialog and the command palette.
+- **The install commands name no release.** The README, the quick start and the deployment guide look up the
+  newest published release (pre-releases included) and install it from that release's own installer, so they
+  stay true after every release and never point at a tag that has no release yet.
+- **A build of the tests takes a third of the disk.** Each crate's integration tests are one binary, `it`,
+  with each file under `tests/` a module of it, and dependencies carry no debug info: a clean build of
+  every test went from 7.6 GB to 2.4 GB and from 107 s to 91 s (ADR 0029). Select a file of tests with
+  `cargo nextest run --workspace -E 'test(/^<module>::/)'`; `binary(<file>)` filters no longer match.
+- **The docket agent reads every question and approval from docket's one escalation record.** A tool call docket's policy holds, a step's question, an `input` step, a gate and a change to the files that check it are each an escalation: the runner reads them from `GET /escalations`, builds one question from the record with docket's own options, recommendation and expiry, and answers through `POST /escalations/<id>`. The runner needs a docket that keeps the record (`0.2.0-beta.6` with the escalation record; a docket without it reads "needs docket 0.2.0-beta.6 with the escalation record"), and no longer reads the inbox, `GET /approvals` or the task's question. A question's deadline is the escalation's own `expiresAt`; one docket marks expired ends the run like one that passed it. A runner restarted with a question open asks it again.
+- **The runner no longer compiles the board's database code.** The runner-v1 contract (the types the board
+  and a runner exchange, the attempt lifecycle, the merge-readiness pack and the prepare step) is its own
+  crate, `tack-protocol`, and the runner builds on that and on `tack-core` only.
+- **The workspace has a new layer, `tack-app`.** What Tack does with a run (claim, heartbeat, start,
+  complete, cancel, decide) and every background loop (auto-start, the automatic merge, the GitHub
+  poll, the remote backup, the due-soon announcement, retention, the health snapshot) moved out of
+  `tack-api`'s handlers into use cases and ticks that a test calls directly, with no router and
+  no sleeping. `tack-api` keeps only HTTP.
+- **`tack-orch` is pure.** It holds the scheduler and the model policy over plain values, with no
+  database; the code that reads the rows is in `tack-app`.
+- **SQL has one home, `tack-db`.** Commands are `Repository` methods, reads are functions in
+  `queries/`, and every call answers with `StoreError`; `ApiError::Database` is gone. The raw pool
+  is public only behind the `raw-pool` feature, which only `tack-test-support` turns on.
+- **The allowed crate dependencies are checked.** `scripts/check-crate-graph.sh` (run by pre-push)
+  fails on an edge outside its table and on `sqlx` or the raw pool outside `tack-db` and
+  `tack-test-support`; `deny.toml` bans `sqlx` and `axum` outside their crates.
+- **Tests plant rows with `tack_test_support::seed` and read them with `queries::`**, so a test of a
+  route or a use case no longer writes SQL.
+- **`scripts/arch-facts.sh` prints the counts** (crates, documented paths, migrations, tests) and the
+  allowed edges; the architecture documents point to it instead of quoting numbers.
+- **The big files are cut by what each part does:** the `tack` command's subcommands (`board`,
+  `entities`, `backup`, `runs`), the execution repository (enqueue, claim, events, decisions, artifacts,
+  completion, recovery) and the runner's engine (decisions, outcome, resume). In the frontend, `shared/`
+  no longer imports from `features/`, and a test forbids it.
 - A docket run makes one copy of the code, docket's own: the runner no longer checks out a second one, and reads the base commit and the task's branch from the project's repository, whose working tree, index and `HEAD` it never changes. A command verifier (`kind = "command"`) has no working copy to read for such a run and records `attempt.verify_failed`; use `kind = "prill"`.
 - **"prill is not installed on the board" names both ways to fix it:** a `[verify]` table naming
   prill in the runner's settings file, or `TACK_PRILL_PROGRAM`.
@@ -183,12 +383,12 @@ automation a template carries, and the removal of dollars per day.
   with no limit of its own, in a project with a daily limit, runs with what is left of the day.
   While a docket run runs, the tokens each step reports count toward the day and the run reserves
   only what is left of its limit. Settings → Automation shows the day as a bar (counted, reserved, room), amber at 80%
-  (ADR 0083 decision 5).
+  (ADR 0024 decision 5).
 - **Every run says its token limit and who applies it,** in one sentence the server writes:
   "300 000 tokens · from the profile Implementer · docket stops the task there", "No limit set
   in Tack · docket stops each step at its own limit (docket's setting)", or "measured, not
   enforced" for an agent Tack cannot stop. Dollars read "≈ $0.42 (estimated)" or "not priced",
-  and the Factory page says how many of the models used have a price (ADR 0083 decisions 3–4).
+  and the Factory page says how many of the models used have a price (ADR 0024 decisions 3–4).
 - **The run dialog says the token limit before you start.** Under the Token limit field it prints
   the same sentence the run will carry, and it changes as you edit the limit, clear it or choose
   another agent; an invalid value shows none. `GET /api/items/{id}/agent-context` takes the
@@ -207,12 +407,12 @@ automation a template carries, and the removal of dollars per day.
   Claude Code's run there". opencode's cache reads and writes are now named instead of dropped, and an error it
   prints (an expired key) fails the attempt with its own message instead of "malformed output".
   A profile's tools for Claude Code (`tool_policy.tools`) are used when a run names none, and
-  Claude Code no longer reads its auto-memory index into the prompt (ADR 0083).
+  Claude Code no longer reads its auto-memory index into the prompt (ADR 0024).
 - **A token counted is a new one.** The day's token limit, a run's summary and the Factory page
   count uncached input, cache writes and output; what the cache served is shown beside it and
   never counted ("48 210 tokens (+ 412 000 read from cache, not counted)", or "cache not
   reported" for an agent that does not say). Dollars still price every kind at its own rate
-  (ADR 0083 decision 2).
+  (ADR 0024 decision 2).
 - **A run's usage leads with the tokens that were counted.** The attempt's panel prints
   "289 710 tokens counted" with the input and output beside it in smaller text and the cache
   reads named as not counted; the server does the arithmetic, so the screen and the limit never
@@ -226,7 +426,7 @@ automation a template carries, and the removal of dollars per day.
   structured brief docket renders, not again in the description; a rework replaces the previous
   round's fix section instead of adding one; a card's comments go newest first up to 4 000
   characters, with a line counting the ones left out; the sentence saying a card's text is data
-  is said once (ADR 0083).
+  is said once (ADR 0024).
 - **Headings use Bricolage Grotesque** instead of Caprasimo. All text is sized in rem, so it
   follows the text size; `npm run lint:tokens` fails on a new px font size.
 - **The palette moved from the sidebar to Settings.** The sidebar keeps the light/dark button and
@@ -258,6 +458,19 @@ automation a template carries, and the removal of dollars per day.
 - A section of a project file that fails to write answers a 500 that names the section and says
   whether what came before stayed. An `auto_start` block that omits `enabled` leaves the
   project's switch as it is.
+- **A slow docket delays only the team it is slow for.** The runner no longer holds a lock across
+  its call that makes sure a team exists, so a docket run on one team starts while another team's
+  call is still unanswered.
+- **Every answer docket sends is read through a typed shape.** A question of a kind Tack does not
+  know is no longer taken for an approval: the timeline says docket asked something this Tack cannot
+  put to the person, and to answer it in docket. The runner accepts docket's API version 6 and
+  later (it was 5, which no docket with the escalation record answers).
+- **The timeline words docket's escalations for a person.** It says what was asked, the label of the
+  option a person picked, and "docket decided this on its own", with no option ids, policy names or
+  levels. The event kinds the runner writes and the metrics query reads are one set of constants.
+- prill's fixtures are copied again from its `mrp/v1` contracts (the `coverage` stage and the
+  `m6-fields` pack are among them), and a test covers a prill that does not answer in time.
+  prill's `coverage` section is not carried into the merge-readiness pack; its stage is.
 
 ### Removed
 
@@ -265,12 +478,76 @@ automation a template carries, and the removal of dollars per day.
   `usd_per_day` are gone (migration 092 drops the column); a project file that still has it
   imports without it, with a warning in the preview. A request whose `budgets` carries
   `cost_usd` is refused `field_removed`, and Claude Code is no longer given `--max-budget-usd`:
-  a dollar limit stopped only the models that had a price (ADR 0083 decision 3).
+  a dollar limit stopped only the models that had a price (ADR 0024 decision 3).
+- **The live Tack + docket + prill suite leaves the tree.** `scripts/docket-prill-e2e.sh`,
+  `frontend/e2e/docket-prill.spec.ts` and `frontend/playwright.docket-prill.config.ts` now live in
+  the git-ignored `onboarding-lab/e2e/`, since the suite needs real programs and spends model calls
+  and CI never runs it.
 - `make changelog`, `make changelog-release` and `cliff.toml`. The changelog is written by hand
   in each change, and a release's notes are its section here.
 
 ### Fixed
+- **A checklist line is sent to docket once.** A line of the card's checklist reached docket's task as "The whole suite passes: The whole suite passes", its title and its text joined; a criterion whose title is its text now reads as that text alone.
+- **A docket team that works in a folder is recognised.** Tack read where a team works from a key docket's report of one team does not carry, so a folder team counted as having a repository; it now reads the report's configuration directory, which is empty for a team with no codebase, and Settings → Automation → Teams and a run's end tell a folder team from one in a repository.
+- **A retry of a run no longer answers 409 after the card's title was edited.** The instructions composed from the card's text are no longer part of what an exact retry is compared by, so the same request after an edit replays the run it made.
+- A `(?)` help button no longer sits inside a folded heading: the help of "How the agent works on it" and "For the agent" is a line in the opened section, every `(?)` is at least 24 pixels wide, and the radio buttons of where the code lives are big enough to hit, so a keyboard or screen-reader user no longer meets a button inside a button.
 
+- **The "No role" row of Settings → Automation counts the project's default profile.** The page listed only the teams of
+  the project's roles, so a task with no role, which runs with the default profile, showed no team state and its team
+  did not hold the ceiling. That profile's team is listed and holds the ceiling like any role's.
+- **The pack card says whether the pack is signed.** It showed the verdict, the criteria and the review but never
+  that the verifier had signed the pack. It now reads "Signed by the verifier" with the fingerprint of what was
+  signed, or "Not signed" when the pack carries no signature.
+- **The board can record a pack in prill's store.** `prill record mrp` was handed the pack Tack shows, a translation
+  prill refuses ("Extra inputs are not permitted"), so no run was ever recorded. The runner now also uploads the
+  pack as prill printed it (`mrp.prill.json`), and the board hands prill that one. A run whose verifier was not
+  prill, or one made before this change, holds no such pack and is not recorded.
+- **A restarted runner starts from its saved session.** With a valid `session.json` in its state folder the runner stopped
+  with "runner enrollment credential is required", so the spent single-use token had to be supplied again. The
+  credential is now needed only when there is no saved session; if the server refuses the saved session (expired or
+  revoked) and there is no credential, the runner says that the session was refused. `tack serve --with-runner` no
+  longer hands the runner a placeholder credential to get past the check.
+- **The last hop of a docket run no longer goes missing from the attempt's timeline.** docket holds back the newest
+  second of its trace, and the runner ended the attempt the moment the task was done, so a run's final
+  `agent.hop_finished` could be left out. After the task ends, the runner reads the trace again until every hop
+  on the task's record has shown its end, for at most three seconds.
+- **`cargo deny` passes again.** `zstd`, `zstd-safe` and `zstd-sys` move to their patched releases (four advisories
+  published since the last run); only the lockfile changes.
+- **A dependency is deleted only through one of its own items.** `DELETE /api/items/{item}/dependencies/{id}` ignored
+  the item in its path, so a dependency of one item could be deleted through another's. It answers 404 now.
+- **Assigning a role that does not exist, or one from another project, answers 404**, not a server error, and assigns nothing.
+- **A sprint lane's progress follows its items.** The "done/total items · points · %" line and the bar were
+  worked out once, when the lane first appeared, so a lane that appeared before the items loaded, or
+  an item dragged into it, left them at 0/0 until the page reloaded.
+- **Stopping the server stops every background loop and waits for what a request started.** The loops
+  (auto-start, the GitHub poll, due-soon, retention, the health watch, the remote backup) were
+  fire-and-forget: a panic in one was lost without a line, and two of them had no stop signal at all.
+  They now share one stop signal, finish the pass they are in, and a panic is logged with the loop's name.
+  A merge, a GitHub push or the pack going to prill, started when a request answered, is waited for
+  (up to ten seconds) instead of being cut off half done.
+- **A finished run's board move and its follow-up are written with its completion.** The item moved to its
+  finish status and the follow-up run for a rejected change were written after the attempt had ended, each
+  in a transaction of its own, so a crash between them left a finished run with the board unmoved and no
+  follow-up. They are decided before the report is stored and written in the same transaction, so the
+  attempt ends with both or stays open for the runner to report again.
+- **With retention on, only one loop deletes execution events.** A second sweep, kept in the API beside the
+  artifact sweep, deleted every event older than the window, including those of an attempt that was `lost`
+  or `needs_operator`; the retention loop keeps those on purpose. That second sweep is gone, so an event of
+  an attempt still waiting for a person is not purged. Overdue questions are expired by the retention loop,
+  on the same `TACK_EXECUTION_RETENTION_ENABLE` flag as before.
+- **A long status name no longer wraps in its board column header.** It is cut with an ellipsis and its
+  full name is the header's tooltip.
+- **The Dependencies tab's links open the item's own page**, `/projects/<id>/items/<item>`, not the drawer,
+  so they can be opened in a new tab.
+- **A runner that is only waiting for work is no longer refused its heartbeat.** The runner took the
+  slots that were asking the server for work as busy, reported less capacity than the server held
+  against it, and the server answered a conflict, so a runner started on its own stayed "not answering"
+  and the Run dialog would not offer it. It now reports its total less the attempts it holds, as the
+  contract says.
+- **`tack runner start` writes a log.** It installed none, so a runner on a machine of its own said
+  nothing, not even why it had stopped heartbeating. It logs its own events from `info`, and `RUST_LOG`
+  sets any other level, as it already did for `tack-runner`.
+- **A run waiting for your answer is no longer cancelled by its time limit.** With the docket agent, the attempt's time limit counted the minutes a question sat open, so a person who stepped away came back to a cancelled run that read as a timeout. The clock now stops while docket holds the task for a person. A question ends the run only when docket itself says it expired: the run then fails with "Nobody answered the question before it expired" and the time. A question docket gives no expiry (every consult so far) waits until it is answered or you stop the run.
 - **A project you just made is named in the sidebar's switcher.** The switcher read the project list once,
   so a project created from the board stayed out of it and the switcher showed no name until a reload.
 - **The Agents page finds this computer's runner under its new name.** The runner is named "This computer
@@ -335,7 +612,7 @@ automation a template carries, and the removal of dollars per day.
   project file's check names the profile, and a profile stored that way before is refused at
   the run instead of running with no limit. `timeout_seconds` is optional on the API, MCP and `tack execution
   create`: absent, the profile's time limit applies, else one hour. The run dialog pre-fills
-  both from the profile (ADR 0083 decision 1).
+  both from the profile (ADR 0024 decision 1).
 - **A run that cannot start ends Failed with the reason**, whether the folder could not be
   prepared or the agent refused the run at validation or at start (for docket: "docket did not
   accept the team"). Before, it stayed in "Preparing" with no reason anywhere.
@@ -401,6 +678,18 @@ automation a template carries, and the removal of dollars per day.
   place of an older stored reason. A retry with the same idempotency key after the task's type or priority
   changed replays the request instead of answering 409, and a different request still conflicts. A run with
   no limit in a project with a daily limit is told it gets what is left of today's limit, with the tokens left.
+- **The server logs the address it bound.** "Server listening" now carries the real address, so a
+  server started on port 0 says which port it got, and the banner prints that port.
+- **CI and the gate check what the docs say they check.** The merge-tier end-to-end job runs
+  `scripts/smoke.sh` in fake mode against the binaries it built, and a manual dispatch runs all three
+  browsers as the weekly run does. `pre-push` runs `vitest run --changed` against what the push sends.
+  The tests that start a real `tack serve` take port 0 and read the port it logs, so none picks a port by
+  binding and dropping and `.config/nextest.toml` has no serial entries left. `RunWithAgentModal`'s limit
+  test moves a fake clock in place of waiting, `api.spec.ts` creates the project it exports instead of
+  skipping, and the coverage floor has one rule: the `develop` total the job measured, minus one point,
+  re-measured at each round's gate.
+
+[0.2.0-beta.1]: https://github.com/yielab/tack/compare/v0.1.0-beta.10...v0.2.0-beta.1
 
 ---
 
@@ -415,22 +704,22 @@ verifier you run yourself can judge the work and Tack shows its merge-readiness 
 to accept or reject; the branch can be pushed and its pull request followed; and a Factory
 metrics page per project measures the loop.
 
-A run a normal person can start (Phases 67 and 68, ADR 0074): a project knows where its code
+A run a normal person can start (Phases 67 and 68, ADR 0015): a project knows where its code
 is, the agent works on a branch of that folder or in the folder itself, its own model is the
 default, and a finished run hands over what it did for review. Then the first live run of
 the whole workflow, with docket as the agent and prill as the verifier, and what it found
-(ADR 0075). And a project with all its items from one outline or CSV (ADR 0076).
+(ADR 0016). And a project with all its items from one outline or CSV (ADR 0017).
 
 A tag `v0.1.0-beta.10` was pushed on 2026-10-12 and withdrawn the same day: a security audit
 found that the board answered anyone without a token, a web page could post to it, an agent
 ran with permissions off and Tack's own file access, and the evidence was computed from names
-the agent could move. Phase 69 (ADR 0077) closes those before the release is cut again; see
+the agent could move. Phase 69 (ADR 0018) closes those before the release is cut again; see
 **Security** below. Phase 70 then finished what earlier phases had written down, the weightiest
 a run that waited in Queued without a word. Two behaviours change for everyone: the API always requires a token
 (the board's page holds it as a cookie it cannot read, the CLI finds it beside the
 database), and a pull request opens when you accept the run, not when it finishes.
 
-Phase 72 (ADR 0079) lets Tack merge: a **Merge** button on a finished task, a project option
+Phase 72 (ADR 0020) lets Tack merge: a **Merge** button on a finished task, a project option
 that merges when you move the task to Done, and, for a project that allows it, a merge Tack
 makes by itself inside the parts of the code you authorise (L4) or everywhere (L5), only when
 the verifier said merge, its pack shows every stage you require as passed, the pack is signed for that exact
@@ -722,9 +1011,9 @@ GitHub sync in both directions.
   each bundled harness through the gateway's own per-harness endpoint and exposes
   its model catalog — price, context window and modality per model — to the model
   picker. The key lives only in the runner's own secret store; the board and its
-  database never see it. `docs/adr/0061-provider-credentials-at-the-runner-boundary.md`
+  database never see it. `docs/adr/0005-provider-credentials-at-the-runner-boundary.md`
   records the boundary this draws and why: the API server still never holds, forwards,
-  or proxies a credential (ADR 0050, ADR 0058 stand) — only the runner may, on its own
+  or proxies a credential (ADR 0002, ADR 0003 stand) — only the runner may, on its own
   machine, opt in.
 - **Turn the embedded runner on from the UI.** `PUT /api/local-runner` starts or stops
   the runner that `tack serve --with-runner` used to require a restart to reach —
@@ -817,7 +1106,7 @@ GitHub sync in both directions.
   subsets of the same suite; coverage and the embedded-SPA release build run on pull
   requests and `main` rather than on every push; and the dev profile keeps line tables
   instead of full debuginfo, so a test binary drops from 344 MB to 139 MB. Select tests
-  with `-E 'package(...)'`, never `-p`, which builds a second copy of every crate. ADR 0064.
+  with `-E 'package(...)'`, never `-p`, which builds a second copy of every crate. ADR 0007.
 
 - **Minimum supported Rust version is now 1.89** (was 1.85). Edition 2024 still only needs
   1.85, but the dependency graph does not: `object_store` pulls `crc-fast` (1.89),

@@ -61,7 +61,7 @@ capability moving into the UI. No §VI.0 surface-map row is affected.
 
 **Chosen — (c): treat a loopback-bound server's loopback origins as same-machine**, inside
 `board_websocket_is_authorized` only (not the CORS layer — see above). This directly
-matches the posture ADR 0059 already states for the rest of this API: "on a single
+matches the posture ADR 0004 already states for the rest of this API: "on a single
 machine, whoever can reach 127.0.0.1 on that machine already has an equivalent or greater
 level of access to it." A browser cannot forge its own `Origin` header (it's set by the
 browser's network stack from the page's own script origin, never from where a URL later
@@ -119,7 +119,7 @@ Not applicable — this card is not `A3`/`C1`/`C2`/`D1`/`D2`.
   (its "What a stranger still cannot do" section and integrator amendments only), and the
   code files the card named (`middleware.rs`, `config.rs`, `router.rs`'s CORS block,
   `vite.config.ts`, `playwright.config.ts`'s env line, `docs/CONFIG.md`'s row,
-  `quick-start.md`, `frontend.md`, the `Makefile`'s `dev:` target, ADR 0059). No file
+  `quick-start.md`, `frontend.md`, the `Makefile`'s `dev:` target, ADR 0004). No file
   outside the card's own read list was opened.
 - Context size at handoff: mid-size — the from-scratch proof (building two binaries,
   running `npm install`, driving a real Chromium session twice) was the largest single

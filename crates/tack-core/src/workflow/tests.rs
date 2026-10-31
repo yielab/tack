@@ -235,6 +235,25 @@ fn kanban_in_progress_limit_three() {
     assert!(wf.check_wip_limit("In Progress", 3).is_err());
 }
 
+// ── StatusGate ───────────────────────────────────────────
+
+#[test]
+fn a_move_is_admitted_with_the_category_of_its_target_and_refused_at_the_limit() {
+    let wf = scrum_workflow(); // In Progress limit = 5
+    assert_eq!(
+        wf.admit_move("Backlog", "In Progress", 4).unwrap(),
+        Some(StatusCategory::InProgress)
+    );
+    assert!(matches!(
+        wf.admit_move("Backlog", "In Progress", 5),
+        Err(CoreError::WipLimitExceeded { .. })
+    ));
+    assert!(matches!(
+        wf.admit_move("Backlog", "Nowhere", 0),
+        Err(CoreError::InvalidTransition { .. })
+    ));
+}
+
 // ── find_first_done_status ────────────────────────────────
 
 #[test]

@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 
 use super::select::{SchedulingPolicy, select_runner};
 use super::types::{RunnerCandidate, SchedulingRequest, SelectionOutcome};
-use crate::execution::{ExecutionRequestId, RunnerId};
+use tack_protocol::execution::{ExecutionRequestId, RunnerId};
 
 /// Schedules every request in `requests` against the shared `candidates`
 /// pool: highest [`super::types::Priority`] first, then oldest `created_at`,

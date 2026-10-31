@@ -152,6 +152,14 @@ export const IconComment = stroke(
   { width: 1.8 },
 );
 
+export const IconClock = stroke(
+  <>
+    <circle cx="8" cy="8" r="5.6" />
+    <path d="M8 4.8V8l2.2 1.4" stroke-linecap="round" stroke-linejoin="round" />
+  </>,
+  { width: 1.6 },
+);
+
 export const IconClose = stroke(
   <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />,
   { width: 1.7 },

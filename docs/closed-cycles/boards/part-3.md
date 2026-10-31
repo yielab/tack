@@ -350,7 +350,7 @@ The status board changes only when the wave gate passes on the integration branc
 
 ### III-A0 — Contract/ADR and clean-baseline owner
 
-**Owns:** new `docs/adr/0050-runner-control-plane.md`, new
+**Owns:** new `docs/adr/0002-runner-control-plane.md`, new
 `docs/contracts/runner-v1/**`, new `docs/agent-handoffs/part-iii/README.md` and A0 handoff;
 Part III status rows only.
 

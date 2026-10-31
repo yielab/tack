@@ -43,7 +43,7 @@ pub struct Outline {
     /// The project to create. Read only when the outline creates a project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<OutlineProject>,
-    /// Custom fields of the project, by name (ADR 0081).
+    /// Custom fields of the project, by name (ADR 0022).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<BundleField>,
     /// Agent profiles, by name; shared by every project of the board.

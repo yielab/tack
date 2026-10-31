@@ -18,7 +18,10 @@ use tack_api::config::AppConfig;
 use tack_api::openapi::ApiDoc;
 use tack_api::{AppState, router::build_router};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::{Repository, queries};
+use tack_protocol::Clock;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
 use utoipa::OpenApi;
 use uuid::Uuid;
@@ -32,10 +35,10 @@ const OPERATOR_TOKEN: &str = "c5-operator-secret-token";
 // rebuilding a fresh router/AppState around the *same* pool.
 // ---------------------------------------------------------------------
 
-async fn app_state(config: AppConfig, pool: sqlx::SqlitePool, workspace_id: Uuid) -> AppState {
+async fn app_state(config: AppConfig, repo: Repository, workspace_id: Uuid) -> AppState {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     AppState {
-        repo: Repository::new(pool),
+        repo,
         config: AppConfig {
             database_url: "sqlite::memory:".to_string(),
             ..config
@@ -44,6 +47,7 @@ async fn app_state(config: AppConfig, pool: sqlx::SqlitePool, workspace_id: Uuid
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     }
 }
 
@@ -51,16 +55,9 @@ async fn app_state(config: AppConfig, pool: sqlx::SqlitePool, workspace_id: Uuid
 /// fixture project/item created directly through the repository (the same
 /// setup precedent every other test file in this crate uses — the fixture
 /// data itself is not what's under test here).
-async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool, Uuid, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'C5', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(&pool)
-        .await
-        .expect("workspace");
-    let repo = Repository::new(pool.clone());
+async fn setup(config: AppConfig) -> (axum::Router, Repository, Uuid, String) {
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace_id,
@@ -100,11 +97,10 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool
         )
         .await
         .expect("item");
-    let state = app_state(config, pool.clone(), workspace_id).await;
+    let state = app_state(config, repo.clone(), workspace_id).await;
     (
         crate::common::with_default_host(build_router(state)),
         repo,
-        pool,
         workspace_id,
         item.id.to_string(),
     )
@@ -115,8 +111,8 @@ async fn setup(config: AppConfig) -> (axum::Router, Repository, sqlx::SqlitePool
 /// router/middleware closures themselves) is newly constructed, while only
 /// the database survives, exactly like restarting the `tack serve` process
 /// against its existing (in production, file-backed) database.
-async fn restart(pool: sqlx::SqlitePool, config: AppConfig, workspace_id: Uuid) -> axum::Router {
-    let state = app_state(config, pool, workspace_id).await;
+async fn restart(repo: Repository, config: AppConfig, workspace_id: Uuid) -> axum::Router {
+    let state = app_state(config, repo, workspace_id).await;
     crate::common::with_default_host(build_router(state))
 }
 
@@ -132,8 +128,8 @@ fn bearer(token: &str) -> String {
 /// body in this file names one (see `requested_harness_kind`
 /// call sites) — and uses the *real* current wall-clock time as
 /// `reported_at`/`probed_at`, not a frozen fixture date: this file drives
-/// the real production router (`SystemExecutionClock`), and
-/// `tack_orch::scheduler::wiring` falls back to a capability report's own
+/// the real production router (`SystemClock`), and
+/// `tack_app::scheduler_wiring` falls back to a capability report's own
 /// `reported_at` as a liveness signal for a runner that has never sent a
 /// `/heartbeat` yet (true of every runner here). A hardcoded past date
 /// would make that fallback correctly, honestly judge the runner stale.
@@ -202,7 +198,7 @@ async fn mock_vertical_slice_completes_and_survives_restart() {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
     };
-    let (app, repo, pool, workspace_id, item_id) = setup(config.clone()).await;
+    let (app, repo, workspace_id, item_id) = setup(config.clone()).await;
     let op = operator_headers();
 
     // Operator: create an agent profile.
@@ -359,7 +355,7 @@ async fn mock_vertical_slice_completes_and_survives_restart() {
     assert_eq!(detail["state"], "succeeded");
 
     // --- Restart: rebuild the router/AppState from the same pool. ---
-    let app = restart(pool, config, workspace_id).await;
+    let app = restart(repo.clone(), config, workspace_id).await;
 
     let (status, detail_after_restart) = common::send(
         &app,
@@ -390,19 +386,16 @@ async fn mock_vertical_slice_completes_and_survives_restart() {
     // No credential material ever appeared in a response body across the
     // whole lifecycle — the redaction guarantee, verified here end-to-end
     // through the real mounted router.
-    let stored_hash: String =
-        sqlx::query_scalar("SELECT credential_hash FROM agent_runners WHERE id=?")
-            .bind(&runner_id)
-            .fetch_one(repo.pool())
+    let stored_hash = queries::agent_runners::runner_identity(&repo, &runner_id)
+        .await
+        .unwrap()
+        .expect("runner exists")
+        .credential_hash;
+    let token_hash =
+        queries::agent_enrollment_tokens::latest_token_hash_of_runner(&repo, &runner_id)
             .await
-            .unwrap();
-    let token_hash: String = sqlx::query_scalar(
-        "SELECT token_hash FROM agent_enrollment_tokens WHERE runner_id=? ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(&runner_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
+            .unwrap()
+            .expect("enrollment token exists");
     // `pending` and `enrolled` are the two documented, intentional
     // one-time issuance points (the raw enrollment token and the raw
     // runner credential, respectively) — everything *else* in the
@@ -443,7 +436,7 @@ async fn x_tack_principal_from_client_is_stripped_and_overridden() {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
     };
-    let (app, repo, _pool, _workspace_id, item_id) = setup(config).await;
+    let (app, repo, _workspace_id, item_id) = setup(config).await;
 
     let (status, profile) = common::send(
         &app,
@@ -526,12 +519,10 @@ async fn x_tack_principal_from_client_is_stripped_and_overridden() {
     // Directly inspect the persisted immutable snapshot: the recorded
     // principal is neither client-supplied string.
     let request_id = as_victim["request_id"].as_str().unwrap();
-    let snapshot: String =
-        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id=?")
-            .bind(request_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let snapshot = queries::execution_requests::request_snapshot(&repo, request_id)
+        .await
+        .unwrap()
+        .expect("request exists");
     let snapshot: Value = serde_json::from_str(&snapshot).unwrap();
     let subject_id = snapshot["created_by"]["subject_id"].as_str().unwrap();
     assert_ne!(subject_id, "victim");
@@ -562,13 +553,13 @@ async fn production_router_rejects_substituted_credentials() {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
     };
-    let (app, repo, _pool, _workspace_id, _item_id) = setup(config).await;
+    let (app, repo, _workspace_id, _item_id) = setup(config).await;
 
     // Register one real runner so its credential is a genuinely valid
     // runner bearer value — the strongest version of this test uses a real
     // credential, not a guess, so the negative results below cannot be
     // explained away as "it was just an unrecognized token either way".
-    let clock = tack_db::repo::execution::SystemExecutionClock;
+    let clock = tack_protocol::SystemClock;
     let credential_hash = hex::encode(sha2::Sha256::digest(b"c5-real-runner-credential"));
     repo.register_runner(
         tack_db::repo::execution::NewRunner {
@@ -581,7 +572,7 @@ async fn production_router_rejects_substituted_credentials() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -646,7 +637,7 @@ async fn every_execution_and_runner_v1_path_requires_auth_live() {
         api_token: Some(OPERATOR_TOKEN.into()),
         ..AppConfig::default()
     };
-    let (app, _repo, _pool, _workspace_id, _item_id) = setup(config).await;
+    let (app, _repo, _workspace_id, _item_id) = setup(config).await;
 
     for (method, path) in [
         ("POST", "/api/executions"),
@@ -763,7 +754,7 @@ async fn openapi_enumerates_mounted_operator_and_runner_v1_routes() {
 
 #[tokio::test]
 async fn runner_v1_and_execution_routes_share_global_cors_policy() {
-    let (app, _repo, _pool, _workspace_id, _item_id) = setup(AppConfig::default()).await;
+    let (app, _repo, _workspace_id, _item_id) = setup(AppConfig::default()).await;
     let allowed_origin = "http://localhost:8080"; // AppConfig::default()'s allow-list.
 
     for uri in ["/api/runner/v1/claim", "/api/executions"] {
@@ -945,7 +936,7 @@ async fn runner_v1_router_enforces_configured_body_limit() {
             max_body_size_bytes: configured_limit,
             ..AppConfig::default()
         };
-        let (app, repo, _pool, _workspace_id, item_id) = setup(config).await;
+        let (app, repo, _workspace_id, item_id) = setup(config).await;
         let (runner_id, request_id, credential) =
             queue_one_claimable_runner_v1_request(&app, &item_id).await;
 
@@ -963,18 +954,15 @@ async fn runner_v1_router_enforces_configured_body_limit() {
             "{name}: {}",
             String::from_utf8_lossy(&body_bytes)
         );
-        // Genuine layer-level rejection, not merely a handler-level error:
-        // every error this handler itself produces (including its own
-        // `payload_too_large` for `json_body_bytes_max`) is a JSON envelope
-        // with an `error` object and `request_id: "req_runner"`
-        // (`runner_auth::protocol_error`). Axum's own body-extraction
-        // rejection is not that shape at all, proving the handler — and
-        // therefore `runner_auth::authenticate` — never ran.
-        let as_value: Option<Value> = serde_json::from_slice(&body_bytes).ok();
+        // The body extractor's rejection, not a handler-level error: the handler's own
+        // `payload_too_large` (for `json_body_bytes_max`) names the `limit` it enforced in
+        // `details`, and the extractor's does not. The state checks below are the direct proof
+        // that the handler body, and so `runner_auth::authenticate`, never ran.
+        let as_value: Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(as_value["error"]["code"], "payload_too_large", "{name}");
         assert!(
-            as_value.as_ref().and_then(|v| v.get("error")).is_none(),
-            "{name}: expected axum's own body-limit rejection, not the handler's JSON error envelope: {}",
-            String::from_utf8_lossy(&body_bytes)
+            as_value["error"]["details"].get("limit").is_none(),
+            "{name}: expected the body extractor's rejection, not the handler's: {as_value}"
         );
 
         // Wrote nothing: the request is still queued and no attempt/lease
@@ -982,16 +970,12 @@ async fn runner_v1_router_enforces_configured_body_limit() {
         // 'leased' and inserted an `execution_attempts` row, so this is
         // direct proof the handler body never executed, not just that the
         // HTTP layer said no.
-        let state: String = sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-            .bind(&request_id)
-            .fetch_one(repo.pool())
+        let state = queries::execution_requests::request_state(&repo, &request_id)
             .await
             .unwrap();
-        assert_eq!(state, "queued", "{name}");
-        let attempt_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id=?")
-                .bind(&request_id)
-                .fetch_one(repo.pool())
+        assert_eq!(state, Some(ExecutionState::Queued), "{name}");
+        let attempt_count =
+            queries::execution_attempts::attempt_count_of_request(&repo, &request_id)
                 .await
                 .unwrap();
         assert_eq!(attempt_count, 0, "{name}");
@@ -1010,4 +994,27 @@ async fn runner_v1_router_enforces_configured_body_limit() {
         assert_eq!(status, StatusCode::OK, "{name}: {claimed}");
         assert_eq!(claimed["request"]["request_id"], request_id, "{name}");
     }
+}
+
+#[tokio::test]
+async fn runner_v1_errors_name_the_request_the_runner_sent() {
+    let (app, _repo, _workspace_id, _item_id) = setup(AppConfig::default()).await;
+    let mut seen = Vec::new();
+    for sent in ["req_a1b2", "req_c3d4"] {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/runner/v1/claim")
+            .header("content-type", "application/json")
+            .header("x-request-id", sent)
+            .body(Body::from("{}"))
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()["x-request-id"], sent);
+        let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["error"]["request_id"], sent);
+        seen.push(body["error"]["request_id"].clone());
+    }
+    assert_ne!(seen[0], seen[1], "each request has an id of its own");
 }

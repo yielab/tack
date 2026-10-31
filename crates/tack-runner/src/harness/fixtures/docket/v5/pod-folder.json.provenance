@@ -1,0 +1,10 @@
+captured
+route: GET /pods/<pod>
+status: 200
+tack-sends: yes
+note: a team with no codebase: repoConfigDir is empty, and the report carries no codebase key (the list of teams does)
+command: curl -X GET http://127.0.0.1:<port>/pods/saas-notes (bearer token from docket's --token-file)
+docket: docket 0.2.0b6 (API 6), source checkout 115e9027
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
+date: 2026-10-30
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

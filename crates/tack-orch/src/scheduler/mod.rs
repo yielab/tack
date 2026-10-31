@@ -6,7 +6,6 @@
 pub mod batch;
 pub mod select;
 pub mod types;
-pub mod wiring;
 
 pub use batch::schedule;
 pub use select::{SchedulingPolicy, select_runner};
@@ -14,4 +13,3 @@ pub use types::{
     BudgetKind, IneligibleReason, Priority, RunnerCandidate, RunnerState, SchedulingRequest,
     Selection, SelectionOutcome,
 };
-pub use wiring::choose_request_for_runner;

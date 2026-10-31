@@ -2,9 +2,9 @@
 
 # A codebase for human maintainers (Phase 64)
 
-**Status:** closed 2026-09-19. Opened 2026-09-18, when ADR 0068 was accepted with its
+**Status:** closed 2026-09-19. Opened 2026-09-18, when ADR 0010 was accepted with its
 stages reordered (the amendment at the bottom of that ADR says why); aligned with ADRs
-0066 and 0067 and supersedes ADRs 0060 and 0065 and parts of 0050 and 0064. Every stage
+0008 and 0009 and supersedes ADRs 0060 and 0065 and parts of 0002 and 0007. Every stage
 below shipped — `docs/plans/phase-64.md`'s status table records each task. Work is
 recorded in ADRs, this page and the commit history — not in a card board.
 
@@ -27,10 +27,10 @@ on a coverage measurement, not on lost coverage.
 
 | # | Stage | What it removes or changes | Done when |
 |---|---|---|---|
-| 0 | **Measure** | Nothing. Re-measure ADR 0068's tables with their commands: the legacy surface file by file, which `tests/orchestration` files are runner-v1, every caller of DAG-ordered sprint dispatch. | Every table in ADR 0068 re-measured and dated. |
+| 0 | **Measure** | Nothing. Re-measure ADR 0010's tables with their commands: the legacy surface file by file, which `tests/orchestration` files are runner-v1, every caller of DAG-ordered sprint dispatch. | Every table in ADR 0010 re-measured and dated. |
 | 1 | **CI and coverage first** | Five per-crate coverage builds → one `cargo llvm-cov nextest --workspace` run that is also the test run; one workspace floor; ≥ 80 % patch coverage; three tiers (pull request / merge to `main` / nightly); the `main` ruleset's required checks updated to match. The rustls advisory resolved. | Pull request #56 is green and merged into `main`; a pull-request run completes in under 15 minutes. |
 | 2 | **Agent scaffolding out** | `.claude/`, `TODO.md`'s boards, dispatch plans, per-card handoffs (frozen into `docs/closed-cycles/`), `scripts/maintainability.py` and its baseline, `list-fixed-waits.py`, `check-test-hygiene.sh` → clippy lints; `CLAUDE.md` ≤ 40 lines. | `docs/closed-cycles/` is the only place history lives and no check reads it; `pre-push` runs fmt and clippy only. |
-| 3 | **Harnesses on one core** | **Core landed 2026-09-18:** a harness is a `HarnessDescriptor` plus a four-method `HarnessGrammar` on `harness/local_process.rs`; `codex.rs` 886 → 189 lines, `claude_code.rs` 1 141 → 305, harness unit tests 3 240 → 1 554. **Remaining:** the Chat Completions wire, the docket grammar (against docket's shipped `harness-v1` contract) and the opencode grammar, each with captured fixtures and one zero-spend end-to-end test. Plan: `docs/plans/harnesses.md`. | As in ADRs 0066 and 0067; `tack runner doctor` lists four harnesses on a machine that has them. |
+| 3 | **Harnesses on one core** | **Core landed 2026-09-18:** a harness is a `HarnessDescriptor` plus a four-method `HarnessGrammar` on `harness/local_process.rs`; `codex.rs` 886 → 189 lines, `claude_code.rs` 1 141 → 305, harness unit tests 3 240 → 1 554. **Remaining:** the Chat Completions wire, the docket grammar (against docket's shipped `harness-v1` contract) and the opencode grammar, each with captured fixtures and one zero-spend end-to-end test. Plan: `docs/plans/harnesses.md`. | As in ADRs 0008 and 0009; `tack runner doctor` lists four harnesses on a machine that has them. |
 | 4 | **Mechanisms with no caller** | `model_profiles` goes (table, routes, MCP tool, panel). The `decisions` path stays and gets the caller it never had: one seam in the harness core that lets any CLI pause and ask the operator, claude-code first, and a choice at dispatch between `auto` and `ask`. | `git grep` finds `model_profiles` nowhere outside the migration that drops it; a run dispatched with `ask` reaches `waiting_decision` and continues when answered. |
 | 5 | **Retire the Docket control plane** | `ControlPlane` trait, reconciler, adapters (docket, github_actions, prometheus, registry, legacy_bridge), orch routes and tokens, `tack orch`, the Fleet/Approvals/Economics/Provision screens, their tests; one migration per dropped table, the rows kept in the whole-database snapshot the migration runner takes before a table drop. **Not before Stage 3's docket harness has landed.** | No `orch_*` table on a fresh install; `TACK_ORCH_*` gone from `docs/CONFIG.md`; upgrade from a populated database tested once. |
 | 6 | **Test suite rebuilt by layer** | Each invariant kept at its lowest layer plus at most one HTTP test; wave gates and narrative multi-claim tests deleted after their real claims move; behaviour tests added for the board features with no coverage; E2E reduced to critical journeys (Chromium on merge, cross-browser nightly); weekly report-only `cargo-mutants` on `tack-core` and `tack-db`. | Workspace line coverage at or above its Stage 1 floor with fewer tests; every public API route has a success, auth and error test; flaky-test quarantine documented in `docs/TESTING.md`. |

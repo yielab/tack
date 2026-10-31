@@ -15,8 +15,11 @@ fn help_is_available_without_configuration() {
 
 #[test]
 fn missing_enrollment_credential_fails_without_echoing_config() {
+    // An empty state folder: a session left there by an earlier run would be a way to start.
+    let state = tempfile::tempdir().expect("state dir");
     let output = runner()
         .env_remove("TACK_RUNNER_ENROLLMENT_TOKEN")
+        .env("TACK_RUNNER_STATE_DIR", state.path())
         .output()
         .expect("runner starts");
 

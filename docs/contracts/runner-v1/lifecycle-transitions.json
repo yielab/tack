@@ -18,16 +18,17 @@
       "from": "queued",
       "allow": {
         "leased": ["scheduler"],
+        "failed": ["scheduler"],
         "cancelled": ["operator"]
       },
-      "deny": ["queued", "preparing", "running", "waiting_decision", "succeeded", "failed", "lost", "needs_operator"]
+      "deny": ["queued", "preparing", "running", "waiting_decision", "succeeded", "lost", "needs_operator"]
     },
     {
       "from": "leased",
       "allow": {
         "preparing": ["lease_owner"],
         "failed": ["lease_owner"],
-        "cancelled": ["lease_owner"],
+        "cancelled": ["lease_owner", "operator"],
         "lost": ["recovery_service"],
         "needs_operator": ["recovery_service"]
       },
@@ -38,7 +39,7 @@
       "allow": {
         "running": ["lease_owner"],
         "failed": ["lease_owner"],
-        "cancelled": ["lease_owner"],
+        "cancelled": ["lease_owner", "operator"],
         "lost": ["recovery_service"],
         "needs_operator": ["recovery_service"]
       },
@@ -50,7 +51,7 @@
         "waiting_decision": ["lease_owner"],
         "succeeded": ["lease_owner"],
         "failed": ["lease_owner"],
-        "cancelled": ["lease_owner"],
+        "cancelled": ["lease_owner", "operator"],
         "lost": ["recovery_service"],
         "needs_operator": ["recovery_service"]
       },
@@ -62,7 +63,7 @@
         "running": ["lease_owner"],
         "succeeded": ["lease_owner"],
         "failed": ["lease_owner"],
-        "cancelled": ["lease_owner"],
+        "cancelled": ["lease_owner", "operator"],
         "lost": ["recovery_service"],
         "needs_operator": ["recovery_service"]
       },
@@ -95,9 +96,10 @@
       "from": "needs_operator",
       "allow": {
         "queued": ["operator"],
-        "failed": ["operator"]
+        "failed": ["operator"],
+        "cancelled": ["operator"]
       },
-      "deny": ["leased", "preparing", "running", "waiting_decision", "succeeded", "cancelled", "lost", "needs_operator"]
+      "deny": ["leased", "preparing", "running", "waiting_decision", "succeeded", "lost", "needs_operator"]
     }
   ],
   "replay_rule": "A byte-equivalent report with the same idempotency key returns the original success without invoking the transition validator",

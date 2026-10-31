@@ -18,6 +18,9 @@ export type {
   Measurement,
   Usage,
   StableErrorCode,
+  RunStep,
+  RunStepPrompt,
+  RunRecordSet,
 } from './types';
 export { TERMINAL_EXECUTION_STATES, isTerminalExecutionState } from './types';
 
@@ -58,7 +61,7 @@ export type {
   EventListResult,
   TerminalReason,
 } from './attempts';
-export { attemptsApi } from './attempts';
+export { attemptsApi, readRunSteps, readRunRecords, isFolderRun, folderRunSummary } from './attempts';
 
 export type {
   DecisionOption,

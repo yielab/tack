@@ -12,8 +12,22 @@ mod chaos_common;
 use crate::common;
 use axum::http::StatusCode;
 use chaos_common::*;
-use chrono::Utc;
 use serde_json::{Value, json};
+use tack_db::queries::{agent_runners, execution_attempts, execution_requests};
+use tack_db::{Repository, init_pool, migrations};
+use tack_protocol::Clock;
+use tack_protocol::SystemClock;
+use tack_protocol::execution::ExecutionState;
+
+pub async fn app_file_backed(
+    db_path: &std::path::Path,
+    storage_dir: &std::path::Path,
+) -> (axum::Router, Repository) {
+    let url = format!("sqlite:{}?mode=rwc", db_path.to_string_lossy());
+    let pool = init_pool(&url).await.expect("file-backed pool");
+    migrations::run_all(&pool).await.expect("migrations");
+    build_app(Repository::new(pool), storage_dir, url).await
+}
 
 // =======================================================================
 // 1. Multi-runner contention: two distinct, independently-enrolled runners
@@ -27,39 +41,24 @@ async fn fleet_race_between_two_runners_grants_exactly_one_lease() {
     let dir = dir_guard.path();
     let db_path = dir.join("g2-fleet-race.sqlite3");
     let storage_dir = dir.join("storage");
-    let (app, pool) = app_file_backed(&db_path, &storage_dir).await;
+    let (app, repo) = app_file_backed(&db_path, &storage_dir).await;
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "fleet-race").await;
     let runner_a = enroll_runner(&app, "Fleet racer A").await;
     let runner_b = enroll_runner(&app, "Fleet racer B").await;
 
-    // Direct SQL, not `POST /api/runner-fleets/{fleet_id}/members`, so this
-    // fixture setup doesn't depend on that route's own behavior — exactly
-    // as `repository_crash.rs` inserts fixture rows directly for setup it
-    // cannot reach through HTTP.
+    // Straight through the store, not `POST /api/runner-fleets/{fleet_id}/members`, so this
+    // fixture setup doesn't depend on that route's own behavior.
     let fleet_id = "fleet-g2-race";
-    let now = Utc::now().to_rfc3339();
-    sqlx::query(
-        "INSERT INTO agent_fleets (id, name, concurrency_limit, default_policy, created_at, updated_at) \
-         VALUES (?, 'G2 race fleet', NULL, '{}', ?, ?)",
-    )
-    .bind(fleet_id)
-    .bind(&now)
-    .bind(&now)
-    .execute(&pool)
-    .await
-    .expect("insert fleet");
-    for runner_id in [&runner_a.runner_id, &runner_b.runner_id] {
-        sqlx::query(
-            "INSERT INTO agent_fleet_members (fleet_id, runner_id, created_at) VALUES (?, ?, ?)",
-        )
-        .bind(fleet_id)
-        .bind(runner_id)
-        .bind(&now)
-        .execute(&pool)
+    let clock = SystemClock;
+    repo.create_agent_fleet(fleet_id, "G2 race fleet", None, "{}", clock.now())
         .await
-        .expect("insert fleet member");
+        .expect("insert fleet");
+    for runner_id in [&runner_a.runner_id, &runner_b.runner_id] {
+        repo.add_fleet_member(fleet_id, runner_id, clock.now())
+            .await
+            .expect("insert fleet member");
     }
 
     let request_id = create_execution_request(
@@ -99,20 +98,14 @@ async fn fleet_race_between_two_runners_grants_exactly_one_lease() {
     // Direct proof, not just "one response had a lease": exactly one
     // execution_attempts row exists for this request, and the request
     // moved to `leased` — not "queued twice" or "leased twice".
-    let attempt_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id = ?")
-            .bind(&request_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+        .await
+        .unwrap();
     assert_eq!(attempt_count, 1, "no blind duplicate execution");
-    let request_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_requests WHERE id = ?")
-            .bind(&request_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(request_state, "leased");
+    let request_state = execution_requests::request_state(&repo, &request_id)
+        .await
+        .unwrap();
+    assert_eq!(request_state, Some(ExecutionState::Leased));
 
     let _ = tokio::fs::remove_dir_all(&dir).await;
 }
@@ -128,9 +121,9 @@ async fn duplicated_credential_race_grants_exactly_one_lease() {
     let dir = dir_guard.path();
     let db_path = dir.join("g2-dup-credential.sqlite3");
     let storage_dir = dir.join("storage");
-    let (app, pool) = app_file_backed(&db_path, &storage_dir).await;
+    let (app, repo) = app_file_backed(&db_path, &storage_dir).await;
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "dup-cred").await;
     let runner = enroll_runner(&app, "Duplicated-credential runner").await;
     let request_id = create_execution_request(
@@ -165,30 +158,21 @@ async fn duplicated_credential_race_grants_exactly_one_lease() {
     let won: Vec<&Value> = leases.iter().filter(|l| !l.is_null()).copied().collect();
     assert_eq!(won.len(), 1, "got {body_a} / {body_b}");
 
-    let attempt_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id = ?")
-            .bind(&request_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+        .await
+        .unwrap();
     assert_eq!(attempt_count, 1);
-    let distinct_fences: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT fencing_token) FROM execution_attempts WHERE request_id = ?",
-    )
-    .bind(&request_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let distinct_fences = execution_attempts::fence_count_of_request(&repo, &request_id)
+        .await
+        .unwrap();
     assert_eq!(
         distinct_fences, 1,
         "only one fence may ever be issued for this request"
     );
-    let capacity: i64 =
-        sqlx::query_scalar("SELECT available_capacity FROM agent_runners WHERE id = ?")
-            .bind(&runner.runner_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let capacity = agent_runners::available_capacity(&repo, &runner.runner_id)
+        .await
+        .unwrap()
+        .expect("runner exists");
     assert_eq!(
         capacity, 0,
         "capacity must be decremented exactly once, not twice"
@@ -205,9 +189,9 @@ async fn duplicated_credential_race_grants_exactly_one_lease() {
 async fn revoked_credential_rejected_everywhere_freezes_attempt() {
     let storage_dir_guard = distinctive_temp_dir("revoke");
     let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
+    let (app, repo) = app_in_memory(storage_dir).await;
 
-    let item_id = create_project_and_item(&app).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "revoke").await;
     let runner = enroll_runner(&app, "Revoked runner").await;
     let _request_id = create_execution_request(
@@ -270,32 +254,26 @@ async fn revoked_credential_rejected_everywhere_freezes_attempt() {
     )
     .await;
     assert_ne!(status, StatusCode::OK, "{hb_resp}");
-    let attempt_state: String =
-        sqlx::query_scalar("SELECT state FROM execution_attempts WHERE id = ?")
-            .bind(&attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let attempt_state = execution_attempts::attempt_state(&repo, &attempt_id)
+        .await
+        .unwrap()
+        .expect("attempt exists");
     assert_eq!(
-        attempt_state, "leased",
+        attempt_state,
+        ExecutionState::Leased,
         "a revoked runner's heartbeat must not move the attempt forward"
     );
-    let last_heartbeat: Option<String> =
-        sqlx::query_scalar("SELECT last_heartbeat_at FROM execution_attempts WHERE id = ?")
-            .bind(&attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let last_heartbeat = execution_attempts::last_heartbeat_at(&repo, &attempt_id)
+        .await
+        .unwrap();
     assert_eq!(last_heartbeat, None, "no heartbeat timestamp was recorded");
 
     // The runner row itself is genuinely revoked in the database, not just
     // rejected at the HTTP layer by coincidence.
-    let (state, revoked_at): (String, Option<String>) =
-        sqlx::query_as("SELECT state, revoked_at FROM agent_runners WHERE id = ?")
-            .bind(&runner.runner_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(state, "revoked");
-    assert!(revoked_at.is_some());
+    let lifecycle = agent_runners::runner_lifecycle(&repo, &runner.runner_id)
+        .await
+        .unwrap()
+        .expect("runner exists");
+    assert_eq!(lifecycle.state, "revoked");
+    assert!(lifecycle.revoked_at.is_some());
 }

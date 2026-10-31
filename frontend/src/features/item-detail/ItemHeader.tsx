@@ -58,7 +58,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
-        class="font-heading -mx-2 w-[calc(100%+1rem)] rounded-[20px] border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
+        class="font-heading -mx-2 w-[calc(100%+1rem)] rounded-item border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
         style={{
           'background-color': 'transparent',
           color: 'var(--color-text-primary)',
@@ -69,7 +69,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
 
       {/* Status pills */}
       <div
-        class="inline-flex max-w-full flex-wrap gap-1 rounded-[22px] p-1"
+        class="inline-flex max-w-full flex-wrap gap-1 rounded-xl p-1"
         style={{ 'background-color': 'var(--color-bg-panel)' }}
         role="group"
         aria-label="Status"
