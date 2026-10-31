@@ -426,6 +426,136 @@ async fn probe_reports_the_folders_each_teams_sandbox_reads() {
 }
 
 #[tokio::test]
+async fn probe_reads_a_team_whole_when_docket_sends_every_key() {
+    use tack_protocol::execution::{
+        TeamDecides, TeamNetwork, TeamStep, TeamStepCheck, TeamStepKind, WorksIn,
+    };
+    let fake = pods_fake().await;
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let teams = adapter.probe().await.teams.expect("teams");
+    let team = &teams[0];
+    assert_eq!(team.name, POD);
+    let members = team.members.as_ref().expect("members");
+    assert_eq!(
+        members
+            .iter()
+            .map(|m| (m.role.as_str(), m.model.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("lead", Some("local/local-model")),
+            ("implementer", Some("local/local-model"))
+        ]
+    );
+    assert_eq!(team.decides, Some(TeamDecides::ToTheEnd));
+    assert_eq!(team.network, Some(TeamNetwork::Closed));
+    let queue = team.queue.expect("queue");
+    assert_eq!((queue.waiting, queue.running), (0, 0));
+    assert_eq!(team.shape.as_deref(), Some("build"));
+    assert_eq!(team.works_in, Some(WorksIn::Repository));
+    let step =
+        |name: &str, kind, role: Option<&str>, checked_by, back: Option<(&str, u32)>| TeamStep {
+            name: name.to_owned(),
+            kind,
+            role: role.map(str::to_owned),
+            checked_by,
+            sends_back_to: back.map(|(to, _)| to.to_owned()),
+            sends_back_max: back.map(|(_, max)| max),
+        };
+    assert_eq!(
+        team.steps,
+        Some(vec![
+            step("plan", TeamStepKind::Agent, Some("lead"), None, None),
+            step(
+                "build",
+                TeamStepKind::Agent,
+                Some("implementer"),
+                Some(TeamStepCheck::Command),
+                None
+            ),
+            step(
+                "review",
+                TeamStepKind::Agent,
+                Some("reviewer"),
+                Some(TeamStepCheck::Reviewer),
+                Some(("build", 2))
+            ),
+            step(
+                "confirm",
+                TeamStepKind::Ask,
+                None,
+                Some(TeamStepCheck::Person),
+                None
+            ),
+            step("settle", TeamStepKind::Wait, None, None, None),
+            step("checks", TeamStepKind::Parallel, None, None, None),
+            step(
+                "ship",
+                TeamStepKind::Command,
+                None,
+                Some(TeamStepCheck::External),
+                None
+            ),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn probe_reads_a_team_without_the_two_asks_of_an_older_docket() {
+    use tack_protocol::execution::{TeamDecides, TeamNetwork};
+    let fake = pods_fake().await;
+    fake.add_pod("saas-content", "attended", &[]);
+    fake.without_shape_and_steps();
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let capability = adapter.probe().await;
+    assert_eq!(capability.probe_error, None);
+    let teams = capability.teams.expect("teams");
+    assert_eq!(teams.len(), 2);
+    for team in &teams {
+        assert_eq!(team.shape, None, "{}", team.name);
+        assert_eq!(team.steps, None, "{}", team.name);
+        // Everything else the report carries is still read.
+        assert_eq!(team.members.as_ref().map(Vec::len), Some(2));
+        assert_eq!(team.network, Some(TeamNetwork::Closed));
+    }
+    let content = teams.iter().find(|t| t.name == "saas-content").unwrap();
+    assert_eq!(content.decides, Some(TeamDecides::AsksAPerson));
+}
+
+#[tokio::test]
+async fn works_in_is_read_from_workspace_kind_and_from_the_config_dir_without_it() {
+    use tack_protocol::execution::WorksIn;
+    // (the key is sent, a folder team) -> the key says so; (no key, either team) -> the old reading.
+    for (sends_key, folder, expected) in [
+        (true, true, WorksIn::Folder),
+        (true, false, WorksIn::Repository),
+        (false, true, WorksIn::Folder),
+        (false, false, WorksIn::Repository),
+    ] {
+        let fake = FakeDocket::start().await;
+        if folder {
+            fake.add_folder_pod("saas-notes");
+        } else {
+            fake.add_pod("saas-notes", "lights-out", &[]);
+        }
+        if !sends_key {
+            fake.without_workspace_kind();
+        }
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+        let teams = adapter.probe().await.teams.expect("teams");
+        assert_eq!(
+            teams[0].works_in,
+            Some(expected),
+            "key sent: {sends_key}, folder team: {folder}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn registers_with_the_registry_because_cancel_goes_over_the_api() {
     let fake = pods_fake().await;
     let scene = scene();
@@ -1860,6 +1990,7 @@ async fn an_older_docket_has_no_records_and_its_teams_say_neither_where_they_wor
  {
     let fake = pods_fake().await;
     fake.without_records();
+    fake.without_workspace_kind();
     let (outcome, scene) = run_script(
         &fake,
         Script {
@@ -3771,7 +3902,7 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
 
 #[tokio::test]
 async fn the_fake_answers_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = FakeDocket::as_captured().await;
     let mut seen: Vec<(&str, Value)> = Vec::new();
     let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
 
@@ -4101,7 +4232,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
 
 #[tokio::test]
 async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = FakeDocket::as_captured().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set(
         "saas-notes",

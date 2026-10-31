@@ -38,8 +38,27 @@ pub(super) struct PodList {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct PodRow {
     pub name: String,
+    /// How many tasks the pod holds in each state; absent from a docket that sends none.
+    pub queue: Option<PodQueue>,
+    /// `codebase` or `workdir`: where the team works. Absent from a docket before that key.
+    pub workspace_kind: Option<String>,
+}
+
+/// The counts of a row's `queue` that Tack reads. A state with no count is zero.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PodQueue {
+    #[serde(default)]
+    pub pending: u64,
+    #[serde(default)]
+    pub running: u64,
+    #[serde(default)]
+    pub waiting_approval: u64,
+    #[serde(default)]
+    pub waiting_input: u64,
 }
 
 /// `GET /pods/<pod>`: the keys Tack reads of it. `readOnly` is absent from an older docket.
@@ -52,6 +71,59 @@ pub(super) struct PodReport {
     /// works in a folder (`GET /pods/<pod>` carries no `codebase`; the list does). Absent from a
     /// docket before that was possible.
     pub repo_config_dir: Option<String>,
+    /// `codebase` or `workdir`, the same key the row of the list carries. Absent from a docket
+    /// before that key; `repoConfigDir` then says where the team works.
+    pub workspace_kind: Option<String>,
+    /// The team's members. Absent from a docket that sends none.
+    pub members: Option<Vec<PodMember>>,
+    /// What the team's agents may reach: `none` or `open`.
+    pub network: Option<PodNetwork>,
+    /// The shape the team was provisioned with. Absent from a docket that does not send it (the
+    /// first of the two asks of ADR 0032).
+    pub blueprint: Option<String>,
+    pub pipeline: Option<PodPipeline>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct PodMember {
+    pub role: String,
+    pub model: Option<PodMemberModel>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct PodMemberModel {
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct PodNetwork {
+    pub mode: String,
+}
+
+/// `pipeline` of a pod's report: `source` is docket's; `steps` is the second ask of ADR 0032 and
+/// is absent from a docket that does not send it. Each step is kept as it came and read on its
+/// own, so a step Tack cannot read costs the steps and never the team.
+#[derive(Debug, Deserialize)]
+pub(super) struct PodPipeline {
+    pub steps: Option<Vec<Value>>,
+}
+
+/// One entry of `pipeline.steps`: its id, its kind, who does it, what checks it and where a failed
+/// check sends the work back.
+#[derive(Debug, Deserialize)]
+pub(super) struct PodStep {
+    pub id: String,
+    pub kind: String,
+    pub role: Option<String>,
+    /// The kind of gate that decides the step: `mechanical`, `verdict`, `approval` or `external`.
+    pub gate: Option<String>,
+    pub rework: Option<PodRework>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct PodRework {
+    pub to: String,
+    pub max: Option<u32>,
 }
 
 /// `GET /pods/<pod>/records`: the sets the team declares. `problems` (documents that do not

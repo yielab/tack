@@ -55,5 +55,7 @@ mod rejections;
 mod remote_backup;
 #[path = "handlers/rework.rs"]
 mod rework;
+#[path = "handlers/teams.rs"]
+mod teams;
 #[path = "handlers/templates.rs"]
 mod templates;

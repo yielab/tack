@@ -62,7 +62,7 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 |---|---|---|
 | Version | `GET /status.json`; `apiVersion` must be a number, 6 or later | `probe::status` |
 | The escalation record | `GET /escalations?since=0` must answer `200` | `probe::escalation_record` |
-| Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each, and `GET /pods/<pod>/records` for the record sets (`404` on an older docket) | `probe::teams` |
+| Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each, and `GET /pods/<pod>/records` for the record sets (`404` on an older docket). Every pod the list names is reported, whether or not a profile names it | `probe::teams` |
 | Make the team once per process | `POST /pods` with `ensure: true` and no `blueprint`: docket's own default shape stands | `Client::ensure_pod` |
 | Where the team works | `GET /pods/<pod>` once when the run starts: `repoConfigDir` is `""` for a folder team (and the run then sends no `baseRef` and no `prepare`); a missing key counts as a repository | `DocketAdapter::has_repository` |
 | What the team wrote in this task | `GET /pods/<pod>/records/<set>?limit=50&sql=SELECT * FROM <set> WHERE _task = '<task>'`, once per declared set, after the task ends | `records::kept` |
@@ -128,11 +128,25 @@ A team that declares a set named `tack_proposals` proposes items through it, bec
 
 ## The ceiling
 
-`probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport { name, profile, violations, read_only, works_in, records }`; `read_only` is `GET /pods/<team>`'s `readOnly`, the folders the team's sandbox may read, `works_in` is `repository` or `folder` from `codebase`, and `records` the team's record sets with their row counts from `GET /pods/<team>/records`; each stays absent for a docket that sends no such key).
+`probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport`), the one description of a team any agent fills in Tack's own words (ADR 0032). `name`, `profile` and `violations` are always there; every other field is optional, and absent means the agent did not say, which is never "none". No field carries a docket word: docket's own names arrive only as data, in `shape`, in a member's or step's `role` and in a step's `name`. The docket adapter fills them from `GET /pods` and `GET /pods/<team>` (`probe::team`):
+
+| Field | Read from |
+|---|---|
+| `read_only` | `readOnly`, the folders the team's sandbox may read |
+| `works_in` (`repository` or `folder`) | `workspaceKind` (`codebase` or `workdir`) on the report, else on the list's row; with neither key (an older docket), `repoConfigDir`, `""` meaning a folder |
+| `records` | `GET /pods/<team>/records`, the sets with their row counts |
+| `members` (`role`, `model`) | `members[].role` and `members[].model.value` |
+| `decides` (`to_the_end` or `asks_a_person`) | the profile verdict: `asks_a_person` when `probe::capped` says the team needs a person, else `to_the_end` |
+| `network` (`none`, `limited`, `open`) | `network.mode`; a mode Tack has no word for stays absent |
+| `queue` (`waiting`, `running`) | the list row's `queue`: `waiting` is `pending`, `waitingApproval` and `waitingInput`, `running` is `running` |
+| `shape` | `blueprint`, shown and never sent (the first ask of ADR 0032; absent from a docket that does not send it) |
+| `steps` (`name`, `kind`, `role`, `checked_by`, `sends_back_to`, `sends_back_max`) | `pipeline.steps` (the second ask; absent from a docket that does not send it). Step kinds `role`/`agent`, `run`/`command`, `input`/`ask`, `wait` and `parallel` map to `agent`, `command`, `ask`, `wait` and `parallel`; gate kinds `mechanical`, `verdict`, `approval` and `external` to `checked_by` `command`, `reviewer`, `person` and `external`; `rework.to` and `rework.max` to `sends_back_to` and `sends_back_max`. A step Tack cannot read or has no word for leaves `steps` absent, because a pipeline with a step missing would read as another one |
 
 The ceiling is read at merge time, never frozen in the request. `tack_db::queries::autonomy::attempt_ceiling_inputs` joins the attempt to its runner's capability snapshot and to `resolved_agent_profile.tool_policy.docket.team` in the request. `tack_app::autonomy::ceiling_of` then returns `L3` when the profile names a team the runner reports and that team is attended. When the profile names no team, or the runner does not report the one it names, it falls back to the agent's own `autonomy_ceiling`: `L3` when any team the runner reports is capped, else `L5`. An agent that reports neither leaves the ceiling unknown (`None`), and an unknown ceiling is no hold.
 
 `tack_core::autonomy::Facts.ceiling` carries it. In `evaluate`, `Hold::HarnessCeiling { ceiling, wanted }` is checked in the `Trigger::Auto` branch only, right after `LevelBelowL4`. The Merge button and the merge on Done are not held by the ceiling. The reason is that the policy must say what will actually happen next time, and a team's profile can change between the run and the merge.
+
+`GET /api/teams` lists every team any active runner reports, once per name and agent (the newest report wins), each with its agent, the runner that reports it, when, the whole `TeamReport` and the profiles that name it (`tool_policy.docket.team`, and `tool_policy.agent` when the profile names one); a name a profile uses that no runner reports comes last in the same list with `reported: false` and no report. An agent that reports no `teams` adds none. `crates/tack-api/src/handlers/teams.rs` reads the runners' stored snapshots and the profiles, nothing else.
 
 `GET /api/projects/{id}/autonomy` reports `ceiling` and a `teams` line for each team a role uses (`TeamLine { name, profile, caps_at, fix, read_only, works_in, records }`). The Ceiling rung of the UI reads it.
 
@@ -165,7 +179,7 @@ The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows come
 
 ## The fake docket
 
-No test in CI runs a real docket. `crates/tack-runner/tests/fake_docket/mod.rs` is an in-process docket on a loopback port, answering from recordings of a real docket (API 6, made by `scripts/capture-docket-fixtures.sh`) with the keys it has and no others. Its README, `crates/tack-runner/src/harness/fixtures/docket/v5/README.md`, lists the routes it implements and the keys it leaves out (the directory and the test keep the name `v5`; the answers are API 6). The adapter is tested against it in `crates/tack-runner/tests/docket_v5.rs`.
+No test in CI runs a real docket. `crates/tack-runner/tests/fake_docket/mod.rs` is an in-process docket on a loopback port, answering from recordings of a real docket (API 6, made by `scripts/capture-docket-fixtures.sh`) with the keys it has and no others, plus the keys docket sent after the recordings were made (`workspaceKind`, `blueprint`, `pipeline.steps`), which `without_workspace_kind()` and `without_shape_and_steps()` leave out as an older docket would. The tests that compare the fake's keys with the recordings leave them out until the recordings are retaken. Its README, `crates/tack-runner/src/harness/fixtures/docket/v5/README.md`, lists the routes it implements and the keys it leaves out (the directory and the test keep the name `v5`; the answers are API 6). The adapter is tested against it in `crates/tack-runner/tests/docket_v5.rs`.
 
 To extend it:
 
