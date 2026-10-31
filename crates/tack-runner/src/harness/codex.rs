@@ -100,7 +100,8 @@ fn describe_capture(output: &CapturedOutput) -> serde_json::Value {
 }
 
 /// `--sandbox`'s value, and the value `signal`'s `thread/start` request puts
-/// under `sandbox`: a write-capable tool (`bash`, `shell`, `edit`, `write`
+/// under `sandbox` (from `ExecutionRequestSnapshot::tools_for`: the request's list, else the
+/// profile's): a write-capable tool (`bash`, `shell`, `edit`, `write`
 /// or `apply_patch`, case-insensitively) selects `workspace-write`; an empty
 /// or read-only tool list selects `read-only` (measured accepted by
 /// `codex app-server` too — `fixtures/codex/README.md` "Measured",
@@ -215,7 +216,7 @@ impl HarnessGrammar for CodexGrammar {
         &DESCRIPTOR
     }
 
-    /// `permission_policy.tools` maps onto `--sandbox`: a write-capable tool
+    /// The tool list (`ExecutionRequestSnapshot::tools_for`) maps onto `--sandbox`: a write-capable tool
     /// (`bash`, `shell`, `edit`, `write` or `apply_patch`, case-insensitively
     /// — the `grants` convention `opencode.rs` uses) selects
     /// `--sandbox workspace-write`; an empty or read-only tool list selects
@@ -249,7 +250,7 @@ impl HarnessGrammar for CodexGrammar {
             });
         }
         let model = run.spec.work.request.requested_model.as_ref();
-        let sandbox = sandbox_mode(&run.spec.work.request.permission_policy.tools);
+        let sandbox = sandbox_mode(&run.spec.work.request.tools_for(DESCRIPTOR.kind));
         args.extend([
             "exec".to_owned(),
             "--json".to_owned(),
@@ -303,7 +304,7 @@ impl HarnessGrammar for CodexGrammar {
             ) else {
                 return None;
             };
-            let sandbox = sandbox_mode(&request.permission_policy.tools);
+            let sandbox = sandbox_mode(&request.tools_for(DESCRIPTOR.kind));
             let mut params = serde_json::Map::new();
             params.insert(
                 "cwd".to_owned(),
@@ -321,13 +322,7 @@ impl HarnessGrammar for CodexGrammar {
         }
         if id == Some(2) && value.get("result").is_some() {
             let thread_id = value.pointer("/result/thread/id")?.clone();
-            let prompt = run
-                .spec
-                .work
-                .request
-                .resolved_agent_profile
-                .instructions
-                .clone();
+            let prompt = super::local_prompt(&run.spec.work);
             let reply = serde_json::json!({
                 "id": 3,
                 "method": "turn/start",
@@ -508,7 +503,7 @@ impl HarnessGrammar for CodexGrammar {
             )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
-                "the request's tool list is enforced as codex's sandbox mode (a write-capable \
+                "the tool list (the request's, else the profile's for codex) is enforced as codex's sandbox mode (a write-capable \
                  tool grants `--sandbox workspace-write`, none grants `--sandbox read-only`; \
                  read-only's denial of a write was observed, and workspace-write's denial of a \
                  write outside the workspace was observed through `--approve-for-me`); network \

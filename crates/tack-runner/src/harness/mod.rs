@@ -136,6 +136,62 @@ pub(crate) fn resolve_environment(
     Ok(resolved)
 }
 
+/// The kind of the profile a run uses (`planner`, `researcher`, …), empty when it has none.
+pub(crate) fn profile_kind(request: &ExecutionRequestSnapshot) -> &str {
+    request
+        .resolved_agent_profile
+        .additional
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+}
+
+/// What a plan-proposing profile is told about where the plan goes, by kind. The profile's own
+/// instructions say what to propose and name no file, because the place is a fact about the agent:
+/// Claude Code, Codex and opencode leave `tack-plan.json` in their work tree.
+fn plan_channel(kind: &str) -> Option<&'static str> {
+    match kind {
+        "planner" => Some("Write the plan as `tack-plan.json` at the root of your work tree."),
+        "researcher" => Some(
+            "If you propose work, write the plan as `tack-plan.json` at the root of your work tree.",
+        ),
+        _ => None,
+    }
+}
+
+/// What a docket Planner or Researcher is told instead: its team proposes through the
+/// `tack_proposals` record set (nine string columns: ref, title, description, type, role, team,
+/// parent, depends_on, acceptance), in docket's own wording, and writes no file.
+const DOCKET_PROPOSALS: &str = "Propose items by calling rec__tack_proposals__add once per item, parent before its children. ref is a short unique name in this task; parent and depends_on name earlier refs; acceptance is one sentence per line; title is required. If the tool returns an error, fix the call and repeat it. Do not write a tack-plan.json file.";
+
+/// The sentence a docket task carries for how a Planner or Researcher proposes items, `None` for
+/// any other profile.
+pub(crate) fn docket_plan_channel(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
+    matches!(profile_kind(request), "planner" | "researcher").then_some(DOCKET_PROPOSALS)
+}
+
+/// The prompt a local agent (Claude Code, Codex, opencode) is given: the composed instructions,
+/// and for a Planner or Researcher the sentence naming the file it proposes through. A run with
+/// no work tree of its own (the agent works in the user's repository itself) is not told to
+/// write a file it cannot leave, and neither is docket's (see [`docket_plan_channel`]).
+pub(crate) fn local_prompt(work: &crate::client::ClaimedWork) -> String {
+    let request = &work.request;
+    let mut prompt = request.resolved_agent_profile.instructions.clone();
+    // The engine has already derived the repository to start the run, so an error here is only a
+    // request it did not start; such a run has the work tree the other modes make.
+    let has_work_tree = !matches!(
+        work.workspace_repository(),
+        Ok(repository) if repository.workspace_mode == crate::client::WorkspaceMode::Repository
+    );
+    if let Some(sentence) = plan_channel(profile_kind(request))
+        .filter(|_| request.writes_only_the_plan() && has_work_tree)
+    {
+        prompt.push_str("\n\n");
+        prompt.push_str(sentence);
+    }
+    prompt
+}
+
 /// Harness discovery/capability reporting, independent of any specific
 /// claimed attempt — needed because `engine::HarnessAdapter`'s methods all
 /// take an `ExecutionSpec`/`LocalRunHandle`, which only exist once a request

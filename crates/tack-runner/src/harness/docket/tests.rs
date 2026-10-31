@@ -314,3 +314,59 @@ async fn a_failure_code_tack_does_not_translate_shows_dockets_text_labelled() {
         json!("docket said: the day's tokens are spent")
     );
 }
+
+/// A docket Planner or Researcher is told to propose through its team's `tack_proposals` records
+/// and to write no file; any other profile gets the instructions as they are. The local agents get
+/// the file sentence instead (`harness::tests`).
+#[test]
+fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_write_no_file() {
+    let state = crate::harness::test_support::scratch("docket-plan-channel");
+    let description = |kind: Option<&str>, with_task: bool| {
+        let mut spec = crate::harness::test_support::spec("docket", state.path());
+        let request = &mut spec.work.request;
+        request.resolved_agent_profile.instructions = "Do the thing.".into();
+        if let Some(kind) = kind {
+            request
+                .resolved_agent_profile
+                .additional
+                .insert("kind".into(), kind.into());
+        }
+        request.task = with_task.then(|| tack_protocol::execution::TaskDocument {
+            instructions: "Do the thing.".into(),
+            title: "A card".into(),
+            description: None,
+            comments: Vec::new(),
+            comments_left_out: 0,
+            brief: None,
+            definition_of_done: None,
+            kind: "task".into(),
+            source: "human".into(),
+        });
+        let body = super::task::body(request, "attempt", 1, Some("main"), None);
+        body["description"]
+            .as_str()
+            .expect("description")
+            .to_owned()
+    };
+    for kind in ["planner", "researcher"] {
+        for with_task in [true, false] {
+            let text = description(Some(kind), with_task);
+            assert!(
+                text.starts_with("Do the thing.\n\nPropose items by calling rec__tack_proposals__add once per item,"),
+                "{kind} {with_task}: {text}"
+            );
+            assert!(
+                text.contains("Do not write a tack-plan.json file."),
+                "{kind} {with_task}: {text}"
+            );
+            assert!(!text.contains("at the root of your work tree"), "{text}");
+        }
+    }
+    for kind in [Some("implementer"), Some("reviewer"), None] {
+        let text = description(kind, true);
+        assert!(
+            !text.contains("rec__tack_proposals__add"),
+            "{kind:?}: {text}"
+        );
+    }
+}

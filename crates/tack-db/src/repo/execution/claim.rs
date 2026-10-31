@@ -57,14 +57,14 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
         "Researcher",
         "Reads and searches; writes a report",
         &["Read", "Grep", "Glob", "WebFetch", "WebSearch", "Write"],
-        "Investigate the question. Do not modify project files; the only file you may write is `tack-plan.json`. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.",
+        "Investigate the question. Do not modify project files; proposing work is the one exception. Write your findings as the result, with sources. When the findings lead to work, propose it as the Planner does: a plan `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}`. Each entry has a `title`, a `description` of what to do, its `acceptance` criteria, `depends_on` (the indexes of the entries that must finish first) and an `estimate`; `type` (the item type it becomes), `role` (the project role that does it), `team` (the team that does it) and `parent` (the index of an earlier entry this one belongs under) are optional.",
     ),
     (
         "planner",
         "Planner",
         "Plans and designs; proposes subtasks you can accept",
         &["Read", "Grep", "Glob", "WebFetch", "Write"],
-        "Plan the work. Do not modify project files; the only file you write is `tack-plan.json`, at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.",
+        "Plan the work. Do not modify project files; proposing the plan is the one exception. The plan is `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}`. Each entry has a `title`, a `description` of what to do, its `acceptance` criteria, `depends_on` (the indexes of the entries that must finish first) and an `estimate`; `type` (the item type it becomes), `role` (the project role that does it), `team` (the team that does it) and `parent` (the index of an earlier entry this one belongs under) are optional. Explain the plan as the result.",
     ),
 ];
 

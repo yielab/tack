@@ -671,3 +671,41 @@ async fn a_failed_model_listing_leaves_the_probe_whole() {
     );
     assert!(!probe.requires_model);
 }
+
+/// A Planner or Researcher on Claude Code, Codex or opencode is told where the plan goes, after
+/// the composed instructions; docket's run, an Implementer and a custom profile get the
+/// instructions as they are. The profile's own text names no file.
+#[test]
+fn the_plan_channel_is_added_to_the_prompt_of_a_local_planner_or_researcher_only() {
+    let state = test_support::scratch("plan-channel");
+    let prompt = |harness: &str, kind: Option<&str>| {
+        let mut spec = test_support::spec(harness, state.path());
+        spec.work.request.resolved_agent_profile.instructions = "Do the thing.".into();
+        if let Some(kind) = kind {
+            spec.work
+                .request
+                .resolved_agent_profile
+                .additional
+                .insert("kind".into(), kind.into());
+        }
+        local_prompt(&spec.work)
+    };
+    for harness in ["claude-code", "codex", "opencode"] {
+        assert_eq!(
+            prompt(harness, Some("planner")),
+            "Do the thing.\n\nWrite the plan as `tack-plan.json` at the root of your work tree.",
+            "{harness}"
+        );
+        assert_eq!(
+            prompt(harness, Some("researcher")),
+            "Do the thing.\n\nIf you propose work, write the plan as `tack-plan.json` at the root of your work tree.",
+            "{harness}"
+        );
+        for kind in [Some("implementer"), Some("reviewer"), Some("custom"), None] {
+            assert_eq!(prompt(harness, kind), "Do the thing.", "{harness} {kind:?}");
+        }
+    }
+    // Docket proposes through its team's records, not a file.
+    assert_eq!(prompt("docket", Some("planner")), "Do the thing.");
+    assert_eq!(prompt("docket", Some("researcher")), "Do the thing.");
+}

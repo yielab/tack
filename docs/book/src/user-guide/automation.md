@@ -385,7 +385,9 @@ A profile is what the agent is told to be and which tools it may use. Four are b
 
 You pick one with the pills in the run dialog; each pill has a tooltip saying what it may do. You edit a
 profile in a form on the Agents page, never as JSON. A profile you change is copied into each request when
-the request is created, so editing it later never changes the history of an earlier run. A profile that gives
+the request is created, so editing it later never changes the history of an earlier run. The profile's list of
+tools for an agent is the default for every agent: a run that names its own tools (from the command line or an
+MCP client) uses those, and a run that names none uses the profile's. A profile that gives
 the agent no tools gets a warning in the dialog: it can only answer in text.
 
 Each profile also carries one line saying what it delivers (a change on a branch, a document in a folder, an

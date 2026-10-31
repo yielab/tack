@@ -24,6 +24,71 @@ fn the_built_in_planner_and_researcher_list_grants_opencode_the_edit_tool() {
     assert!(!grants(&["webfetch".to_owned()], "edit"));
 }
 
+/// A run that names no tools takes the profile's list for `opencode`, as Claude Code does: the
+/// `permission` block opencode is given grants edit and bash from it. A list the run names wins;
+/// a profile with nothing for opencode leaves both denied.
+#[cfg(unix)]
+#[test]
+fn a_profiles_tools_set_the_permissions_of_a_run_that_names_none() {
+    use std::os::unix::fs::PermissionsExt;
+    let state = scratch("opencode-profile-tools");
+    // Stands in for the opencode binary: `debug config` and `debug paths` are all it is asked.
+    let program = state.path().join("opencode");
+    std::fs::write(
+        &program,
+        "#!/bin/sh\nif [ \"$2\" = config ]; then echo '{\"model\":\"p/m\"}'; else echo 'data /nonexistent'; fi\n",
+    )
+    .expect("shim");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let host = crate::config::ProcessEnv::from_pairs([
+        ("HOME", state.path().as_os_str()),
+        ("PATH", std::ffi::OsStr::new("/usr/bin:/bin")),
+    ]);
+    let profile = |tools: serde_json::Value| serde_json::json!({"tools": {"opencode": tools}});
+    let rows: [(&[&str], Value, &str, &str); 5] = [
+        (&[], profile(serde_json::json!(["*"])), "allow", "allow"),
+        (&[], profile(serde_json::json!(["edit"])), "allow", "deny"),
+        // The run's own list wins over the profile's, in both directions.
+        (
+            &["webfetch"],
+            profile(serde_json::json!(["*"])),
+            "deny",
+            "deny",
+        ),
+        (
+            &["*"],
+            profile(serde_json::json!(["webfetch"])),
+            "allow",
+            "allow",
+        ),
+        // No entry for opencode: unchanged.
+        (
+            &[],
+            serde_json::json!({"tools": {"codex": ["*"]}}),
+            "deny",
+            "deny",
+        ),
+    ];
+    for (tools, policy, edit, bash) in rows {
+        let mut request = networked(state.path());
+        request.work.request.permission_policy.tools =
+            tools.iter().map(|tool| (*tool).to_owned()).collect();
+        request.work.request.resolved_agent_profile.tool_policy = policy.clone();
+        let invocation = OpencodeGrammar
+            .invocation(&RunContext {
+                spec: &request,
+                scratch: state.path(),
+                program: Some(&program),
+                host: &host,
+            })
+            .expect("invocation");
+        let config: Value =
+            serde_json::from_str(&invocation.env["OPENCODE_CONFIG_CONTENT"]).expect("config");
+        assert_eq!(config["permission"]["edit"], edit, "{tools:?} {policy}");
+        assert_eq!(config["permission"]["bash"], bash, "{tools:?} {policy}");
+    }
+}
+
 #[test]
 fn opencode_declares_decisions_supported_over_acp() {
     let declared = OpencodeGrammar.capabilities();

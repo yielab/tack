@@ -628,6 +628,23 @@ impl ExecutionRequestSnapshot {
                 .is_some_and(|kind| PLAN_WRITER_KINDS.contains(&kind))
     }
 
+    /// The tools this run gives `harness`: the run's own list when it names any (the person typed
+    /// it for this run), else the profile's list for that agent (`tool_policy.tools[harness]`,
+    /// the shape the Run dialog and auto-start read), else none. One owner of the rule, for every
+    /// agent that maps a tool list onto what it may do.
+    pub fn tools_for(&self, harness: &str) -> Vec<String> {
+        if !self.permission_policy.tools.is_empty() {
+            return self.permission_policy.tools.clone();
+        }
+        self.resolved_agent_profile.tool_policy["tools"][harness]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .collect()
+    }
+
     /// Whether this run is expected to change the repository, so that a run which
     /// reports success and delivers no change did not do its work. One owner of the
     /// rule, for every harness. In this order:
@@ -662,10 +679,7 @@ impl ExecutionRequestSnapshot {
             Vec::new()
         };
         let denies = |tool: &str| denied.iter().any(|name| name.eq_ignore_ascii_case(tool));
-        let mut tools = self.permission_policy.tools.clone();
-        if tools.is_empty() {
-            tools = strings(&profile.tool_policy["tools"][harness]);
-        }
+        let tools = self.tools_for(harness);
         let wildcard = tools.iter().any(|tool| tool == PermissionPolicy::ALL_TOOLS);
         let kind = profile
             .additional

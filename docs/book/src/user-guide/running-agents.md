@@ -73,11 +73,14 @@ offers; see [CLI](cli.md#runner).
   and search tools by name. Its shell can still reach the network if the allowed tools include it, so
   narrow the tool list too for a sensitive task.
 - **Codex.** Reports tokens, not cost. Allowing a tool that writes files runs Codex in its
-  workspace-write sandbox; allowing none, or only read tools, runs it read-only. With **Ask before each
+  workspace-write sandbox; allowing none, or only read tools, runs it read-only. When the run names no
+  tools, the profile's list for Codex decides. With **Ask before each
   action** off, a write the sandbox forbids simply fails inside the run. With it on, Codex pauses only for a
   command that needs to escape the sandbox; a command inside the sandbox runs without asking. Codex has no
   switch for web tools or a token limit, so neither reaches it.
-- **opencode.** Reports tokens, summed over the run, with what its cache served counted apart. Tack stops it when the tokens it has used reach the run's token limit. A model that refuses the run, for example because its key has expired, fails the attempt with the model's own sentence. It reaches the npm registry and installs packages before
+- **opencode.** Reports tokens, summed over the run, with what its cache served counted apart. It may edit files
+  and run commands only when the tools you allow include them; when the run names none, the profile's list for
+  opencode is used. Tack stops it when the tokens it has used reach the run's token limit. A model that refuses the run, for example because its key has expired, fails the attempt with the model's own sentence. It reaches the npm registry and installs packages before
   it does anything else, on every run, so a request that turns the network off is refused before opencode starts. A run gets
   its own copy of your opencode sign-in and model settings; its other settings (extra tool servers,
   plugins, permissions) do not reach the run.

@@ -385,7 +385,7 @@ pub trait HarnessGrammar: Send + Sync + 'static {
     /// run whose stdin is closed reaches no one.
     /// `run` is what the grammar needs to build the handshake's requests
     /// from a reply: the prompt text is
-    /// `run.spec.work.request.resolved_agent_profile.instructions`, the
+    /// `harness::local_prompt(&run.spec.work)` (the composed instructions), the
     /// workspace is `run.spec.workspace.path`, and the scratch dir is its
     /// own field.
     fn signal(&self, _run: &RunContext<'_>, _line: &str) -> Option<StreamSignal> {
@@ -850,7 +850,7 @@ impl<G: HarnessGrammar, C: Clock> LocalProcessHarness<G, C> {
         })?;
         args.extend(invocation.args);
         env.extend(invocation.env);
-        let prompt = request.resolved_agent_profile.instructions.clone();
+        let prompt = super::local_prompt(&spec.work);
         secrets.register(prompt.clone());
         secrets.register_all(invocation.secrets);
         let stdin_stays_open = invocation.stdin_stays_open;
