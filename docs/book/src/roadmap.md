@@ -33,14 +33,18 @@ and it is not a card.
 
 **[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
 as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is proposed;
-no card starts before it is accepted, except H and I, which fix a folder team (ADR 0031, accepted) and
-start now. Every card speaks of teams, who does a task and proposals in terms no agent owns: each
-agent reports what it can, and a screen shows the rest disabled with the agent's reason. Ten cards
+no card starts before it is accepted, except H, I, K and L, which fix defects
+accepted decisions already cover (a folder team; a queued run that does not say why; an unanswered
+question read as a refusal) and start now. Every card speaks of teams, who does a task and proposals in terms no agent owns: each
+agent reports what it can, and a screen shows the rest disabled with the agent's reason. Twelve cards
 in six rounds:
 
 - **H** A task given to a team that works in a folder starts: the runner sends it no base commit and
   no install, and the fake docket refuses one as docket does.
 - **I** Run with agent says where the team works, with no branch and no install line for a folder team.
+- **K** A queued run says what it waits behind: the run holding the computer and, when that one waits
+  on a person, the question, with a way to answer it.
+- **L** A question nobody answered ends its run as "nobody answered", never as "approval denied".
 - **A** One description of a team for any agent (members, models, steps, where it works, how it
   decides, queue), filled by docket; the board lists every team any agent reports.
 - **D** One proposal format for any agent: the plan file gains type, role, team and parent;

@@ -1,8 +1,10 @@
 # Phase 83: a team is shown as it is, a task can go to a team, and what a run finds can become items
 
 **Status: PROPOSED 2026-10-31.** ADR 0032 (proposed) holds the decisions; this plan is the cards.
-No card starts before the ADR is accepted, except H and I: they fix what an onboarding run on
-2026-10-31 found in ADR 0031 decision 1 (a folder team), which is accepted, and wait on nothing.
+No card starts before the ADR is accepted, except H, I, K and L: they fix what onboarding runs on
+2026-10-31 found (a folder team, ADR 0031 decision 1; a run queued for 52 minutes behind a question
+nobody saw, then failed in half a second), which accepted decisions already cover, and wait on
+nothing.
 docket's two asks (ADR 0032 "What this asks of docket") block no card: each card reads them when
 present and says so on screen when absent. Tack edits nothing in docket's or prill's repositories.
 
@@ -12,8 +14,8 @@ fields it can and reports through its capabilities what it cannot. A screen show
 and renders the rest disabled with the harness's reason. No card adds a docket word to the API, the
 database or the screen; docket's own role and shape names arrive as data.
 
-Ten cards, sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
-names. Six rounds.
+Twelve cards, sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
+names. Six rounds; round 0 runs in two halves.
 
 ## How every card runs
 
@@ -33,7 +35,7 @@ real one.
 
 | Round | Cards | Gate |
 |---|---|---|
-| 0 | **H ∥ I** (H owns the run's start in `harness/docket.rs` and `task.rs`, I owns `shared/runWithAgent/RunFlow.tsx` and `install.ts`); starts now, before ADR 0032 is accepted | full suites once on the merged tree |
+| 0 | **H ∥ I**, then **K ∥ L** (H owns the run's start in `harness/docket.rs` and `task.rs`, I owns `shared/runWithAgent/RunFlow.tsx` and `install.ts`; K owns the queued run's reason, L the settle's `approval_denied` arm in `harness/docket.rs`, after H is merged); starts now, before ADR 0032 is accepted | full suites once per half on the merged tree |
 | 1 | **A ∥ D** (`capabilities.rs` is split: A edits only `TeamReport` and its new types, D only `FeatureCapabilities`; whoever merges second rebases) | full suites once on the merged tree |
 | 2 | **B ∥ J** (B owns `features/agents/`; J owns docket's records and settle; the fake docket: J only the records routes) | full suites once |
 | 3 | **C ∥ E** (C owns `features/board/CreateItemModal.tsx`, `item-detail/AutomationRow.tsx` and auto-start; E owns `PlanPanel.tsx` and a new `item-detail/ProposeFromFile.tsx`, plus the one line in the item page that places it) | full suites once |
@@ -52,6 +54,8 @@ real one.
 | G | The local suite proves it against docket | Sonnet | `onboarding-lab/e2e/` (script, spec), recaptured fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, `TESTING.md`'s live-suite section | all |
 | H | A folder team's run starts | Sonnet | `tack-runner/src/harness/docket.rs` (the run's start only: `start`, `has_repository`), `harness/docket/task.rs` (`body`), the fake's `POST /tasks/<pod>` rule, a fixture under `harness/fixtures/docket/v5/`, `docket_v5.rs` (task tests), ADR 0031's evidence line on `GET /pods/<p>`, the administrator guide's folder-team paragraph | — |
 | I | The run dialog says where the team works | Haiku | `frontend/src/shared/runWithAgent/RunFlow.tsx` (`where`), `install.ts`, their tests, the user guide's "Run with agent" paragraph | — |
+| K | A queued run says what it waits behind | Sonnet | `tack-app/src/scheduler_wiring.rs` (a new pure function beside `waiting_note`), the request view in `tack-api` `handlers/executions.rs`, a `tack-db` query for a runner's open attempts, `shared/runWithAgent/LatestRunSummary.tsx` (the queued line only), the user guide's "waiting" paragraph | — |
+| L | A question nobody answered does not read as "denied" | Sonnet | `tack-runner/src/harness/docket.rs` (the settle's failure arms only), `harness/docket/tests.rs`, the fake's approval expiry, the user guide's decisions paragraph | H |
 
 ## Left out, and why
 
@@ -62,7 +66,9 @@ repository; the project file as the proposal format; a pipeline chooser per task
 There is no docs card and no measurement card.
 
 **Done when:** a task given to a team that works in a folder starts and ends Succeeded with what
-the team handed off, and the run dialog says where it will work before it starts; Agents → Teams
+the team handed off, and the run dialog says where it will work before it starts; a queued run
+names the run it waits behind, and the question that one waits on; a question nobody answered ends
+its run as "nobody answered", never as "denied"; Agents → Teams
 shows every team any agent reports with what it reported (members, models, where it works, how it
 decides, queue, records, and steps when reported) and every profile with no team as one agent; a
 reported team with no profile can get one in one click; a new item can be given whoever does it in
@@ -286,6 +292,59 @@ Settings → Automation → Teams shows.
 2. Changing the profile updates the line.
 3. Tests: a folder team's profile shows the folder line and no install; a repository team and a
    profile with no team keep today's lines.
+
+### K. A queued run says what it waits behind
+
+**Model:** Sonnet. **Waits on:** nothing. Phase 70's rule that a queued run says why it waits.
+
+**Why.** On 2026-10-31 a run sat Queued for 52 minutes saying only "Waiting for a runner to pick it
+up." The only runner runs one attempt at a time and was holding another run, parked on an approval
+nobody saw for 57 minutes. The waiting reason is written only by `record_waiting`, inside
+`choose_request_for_runner`, which runs only when a runner asks for work; a runner whose slots are
+full does not ask (`transport.rs`, `taken < total`), so a request queued behind a busy runner never
+gets a reason, and the screen falls back to the generic line (`LatestRunSummary.tsx`).
+
+**Read first:** `tack-app/src/scheduler_wiring.rs` (`waiting_note`, `record_waiting`,
+`describe_ineligible`); `tack-runner/src/transport.rs` (the claim loop, read only); the request
+view in `handlers/executions.rs` (`waiting_code`, `waiting_reason`); `tack-db` decisions (a pending
+decision per attempt); `LatestRunSummary.tsx`.
+
+**Does.**
+1. When the request view finds a queued request with no waiting reason, it works one out at read
+   time, writing nothing: every runner the selector names, with its open attempts (item title,
+   started at) and, for each, whether it waits on a person (the pending decision's question and
+   since when). A pure function turns that into one sentence: "This computer runs 1 at a time and
+   is busy with 'Corpus de referencia…' since 15:30, which waits for your answer since 15:33", with
+   the busy attempt's item as a link. Several runners: one clause each.
+2. The queued line shows that sentence and, when the busy run waits on a person, **Answer it**
+   (the decision) beside **Run on another computer**. "Runs at a time" links to where the runner's
+   limit is set.
+3. Tests: a full runner with an attempt parked on a decision yields the sentence with the question;
+   a full runner with a running attempt yields it without; a runner with room leaves the reason the
+   poll wrote; the screen shows the sentence and the button.
+
+### L. A question nobody answered does not read as "denied"
+
+**Model:** Sonnet. **Waits on:** H (same file). Phase 80's rule that an unanswered question ends as
+`not_answered`.
+
+**Why.** The run that blocked the runner ended with "approval denied". Nobody denied anything: its
+second approval was asked at 15:33 and never answered in Tack (no `escalation.resolved`), and
+docket's approval timeout resolves to denied. Tack maps docket's `input_expired` to `not_answered`
+but passes `approval_denied` through as is, so the person reads a refusal they never gave.
+
+**Read first:** `harness/docket.rs` (the settle's `blocked` and `failed` arms, `not_answered`);
+`harness/docket/tests.rs`; how the adapter knows whether it answered an escalation; the fake's
+approval route.
+
+**Does.**
+1. When docket ends a task as `approval_denied` and the adapter did not send a denial for that
+   escalation, the attempt ends with `not_answered`: "Nobody answered '<question>' (asked 15:33); the
+   team stopped after <how long>." A denial a person gave keeps `approval_denied`.
+2. Any docket failure code the adapter does not translate is shown as docket's text under "docket
+   said:", never as Tack's own sentence.
+3. Tests: an approval that expires unanswered ends `not_answered` with the question; one a person
+   denied ends `approval_denied`; an unknown code keeps docket's text, labelled.
 
 ### F. A run shows the team's steps as it goes
 
