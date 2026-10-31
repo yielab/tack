@@ -152,6 +152,9 @@ drawer and in the side column of the item's page, takes the colour and the butto
   it took and how many files it changed, with **Accept**, **Reject…** (which asks for an optional
   reason) and **See what it did**. A run that changed no file shows the agent's answer as what it
   delivered and offers **Accept**, not **Merge**.
+- **Needs a person** puts the question first, with its answers already open: choose one and press
+  **Resolve** without leaving the card. A question the agent asks after the page was opened appears
+  by itself.
 - **Failed** says why it stopped. **Merged** says when. **Queued** says why the run still waits
   (for example, that the computer it asked for has not answered) and offers **Run on another
   computer**.
@@ -203,7 +206,7 @@ shows only the run you picked, in this order:
 - **Show questions & files** opens the questions the agent asked, the files from the run and, when a
   verifier ran, the merge-readiness pack. A question that is still waiting appears there, with the
   command it is about, why the agent's policy stopped it, the options, their risks and the agent's
-  recommendation.
+  recommendation. When the run is waiting for you, this opens by itself.
 
 Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on
 the computer that ran it.

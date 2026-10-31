@@ -1,4 +1,4 @@
-import { type Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
+import { type Component, For, Show, createEffect, createMemo, createResource, createSignal, on } from 'solid-js';
 import { Badge, Button, LoadError, Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { api } from '../api';
@@ -352,7 +352,10 @@ const AttemptRow: Component<{
   sideTarget?: HTMLElement;
   onReviewed?: () => void;
 }> = (props) => {
-  const [expanded, setExpanded] = createSignal(false);
+  // An attempt that waits for an answer opens its questions by itself, also when it starts to wait while the page is open.
+  const waiting = () => props.attempt.state === 'waiting_decision';
+  const [expanded, setExpanded] = createSignal(waiting());
+  createEffect(on(waiting, (w) => { if (w) setExpanded(true); }, { defer: true }));
   // The agent stopped to ask a person, or ended because it needed one: the question is one press away.
   const personNeeded = () => props.attempt.state === 'waiting_decision' || needsAPerson(props.attempt);
   let questions: HTMLHeadingElement | undefined;
@@ -508,6 +511,7 @@ const AttemptRow: Component<{
               requestId={props.requestId}
               attemptNumber={props.attempt.attempt_number}
               attemptId={props.attempt.attempt_id}
+              attemptState={props.attempt.state}
             />
           </section>
 

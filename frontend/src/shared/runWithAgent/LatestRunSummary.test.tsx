@@ -25,9 +25,10 @@ const ATTEMPT = {
   pull_request: null, review: null,
 };
 
-function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = [], reviewInTab = false) {
+function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = [], reviewInTab = false, decisions: unknown[] = []) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith('/decisions')) return new Response(JSON.stringify({ protocol_version: 1, data: decisions }), { status: 200 });
     if (url.includes('/artifacts')) return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
     if (url.includes('/events')) return new Response(JSON.stringify({ protocol_version: 1, data: events }), { status: 200 });
     if (url.includes('/attempts')) return new Response(JSON.stringify({ protocol_version: 1, data: attempts }), { status: 200 });
@@ -150,6 +151,43 @@ describe('LatestRunSummary', () => {
     expect(buttons(card)).not.toContain('Follow live');
     [...card.querySelectorAll('button')].find((b) => b.textContent === 'Open the question')!.click();
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  const QUESTION = {
+    decision_id: 'dec-1', attempt_id: 'att-1', kind: 'choice', prompt: 'Which chart library should it add?',
+    options: [{ option_id: 'uplot', label: 'uPlot' }, { option_id: 'svg', label: 'Hand-written SVG' }], metadata: {},
+    expires_at: '2026-10-08T13:00:00Z', state: 'pending', answer: null, resolved_at: null, resolved_by: null,
+    created_at: '2026-10-08T12:00:00Z', updated_at: '2026-10-08T12:00:00Z',
+  };
+  const waitingAttempt = { ...ATTEMPT, state: 'waiting_decision', terminal_reason: null, ended_at: null };
+
+  it('a question waiting for the person is the first thing in the card, with its answer controls open', async () => {
+    const c = mount([{ ...RUN, state: 'running' }], () => {}, [waitingAttempt], [], false, [QUESTION]);
+    for (let i = 0; i < 6; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.textContent).toContain('Which chart library should it add?');
+    expect(card.querySelector('button[type="submit"]')?.textContent).toBe('Resolve');
+    expect(card.querySelectorAll('input[type="radio"]').length).toBe(2);
+    // Before the card's own lines, and not behind a toggle.
+    const question = card.querySelector('form')!;
+    const working = card.querySelector('[role="status"]')!;
+    expect(working.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect([...card.querySelectorAll('button')].some((b) => b.textContent === 'Show questions & files')).toBe(false);
+  });
+
+  it('a question that was answered, or a run that does not wait, shows no question in the card', async () => {
+    const answered = mount([{ ...RUN, state: 'running' }], () => {}, [waitingAttempt], [], false, [{ ...QUESTION, state: 'resolved', answer: { option_id: 'svg', text: null } }]);
+    for (let i = 0; i < 6; i++) await flush();
+    expect(answered.querySelector('[data-testid="latest-run"] form')).toBeNull();
+    const plain = mount([RUN], () => {}, [ATTEMPT], [], false, [QUESTION]);
+    for (let i = 0; i < 6; i++) await flush();
+    expect(plain.textContent).not.toContain('Which chart library');
+  });
+
+  it('on the Execution tab the card leaves the question to the attempt', async () => {
+    const c = mount([{ ...RUN, state: 'running' }], () => {}, [waitingAttempt], [], true, [QUESTION]);
+    for (let i = 0; i < 6; i++) await flush();
+    expect(c.querySelector('[data-testid="latest-run"] form')).toBeNull();
   });
 
   it('a queued card offers to run on another computer', async () => {

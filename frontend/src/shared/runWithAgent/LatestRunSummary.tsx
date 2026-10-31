@@ -18,6 +18,7 @@ import {
   needsVerdict,
   readAttemptUsage,
 } from './attemptFormat';
+import DecisionInbox from './DecisionInbox';
 import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
@@ -273,6 +274,21 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               {relativeTimeFromIso(attempt()?.ended_at ?? attempt()?.started_at ?? run().created_at)}
             </span>
           </div>
+
+          {/* A question waiting for the person comes first, with its answer open. On the Execution
+              tab the attempt shows it, so it is asked for in one place. */}
+          <Show when={asking() && !props.reviewInTab && attempt()}>
+            {(a) => (
+              <DecisionInbox
+                requestId={a().request_id}
+                attemptNumber={a().attempt_number}
+                attemptId={a().attempt_id}
+                attemptState={a().state}
+                pendingOnly
+                onResolved={reload}
+              />
+            )}
+          </Show>
 
           <Show when={attempts().status === 'error'}>
             {(() => {

@@ -446,4 +446,56 @@ describe('DecisionInbox — the consultation pack', () => {
       expect(c.querySelector('[data-testid="decision-call"]')).toBeNull();
     });
   });
+
+  describe('while the attempt is not over', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('a question asked after the page opened appears with no reload', async () => {
+      vi.useFakeTimers();
+      let rows: DecisionRecord[] = [];
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonOk({ protocol_version: 1, data: rows })),
+      );
+      const running = mount({ attemptState: 'running', pendingOnly: true });
+      await vi.advanceTimersByTimeAsync(10);
+      expect(running.textContent).not.toContain('Allow this agent');
+
+      rows = [PENDING_WITH_OPTIONS];
+      await vi.advanceTimersByTimeAsync(3100);
+      expect(running.textContent).toContain('Allow this agent');
+      expect(running.querySelector('button[type="submit"]')?.textContent).toBe('Resolve');
+    });
+
+    it('a finished attempt does not read again', async () => {
+      vi.useFakeTimers();
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonOk({ protocol_version: 1, data: [RESOLVED] })),
+      );
+      mount({ attemptState: 'succeeded' });
+      await vi.advanceTimersByTimeAsync(10);
+      const first = spy.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(spy.mock.calls.length).toBe(first);
+    });
+
+    it('only the questions that wait are shown, and nothing when none does', async () => {
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonOk({ protocol_version: 1, data: [RESOLVED, PENDING_WITH_OPTIONS] })),
+      );
+      const some = mount({ pendingOnly: true });
+      await flush();
+      await flush();
+      expect(some.querySelectorAll('li').length).toBe(1);
+      expect(some.textContent).not.toContain('Answered');
+      disposers.pop()!();
+      vi.restoreAllMocks();
+      vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+        Promise.resolve(jsonOk({ protocol_version: 1, data: [RESOLVED] })),
+      );
+      const none = mount({ pendingOnly: true });
+      await flush();
+      await flush();
+      expect(none.textContent).toBe('');
+    });
+  });
 });

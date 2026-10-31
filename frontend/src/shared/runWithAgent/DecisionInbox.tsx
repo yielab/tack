@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource, createSignal, onMount } from 'solid-js';
+import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from 'solid-js';
 import { Badge, Button, EmptyState, Field, LoadError } from '../ui';
 import { HELP } from '../help/texts';
 import { toast } from '../ui/toast';
@@ -15,6 +15,10 @@ import {
   type ResolveDecisionResult,
 } from '../execution';
 import RadioRow from './RadioRow';
+import { isTerminalAttemptState } from './attemptFormat';
+
+/** How often a question asked after the page opened is looked for, while the attempt is not over. */
+const LIVE_RELOAD_MS = 3000;
 
 export interface DecisionInboxProps {
   requestId: string;
@@ -28,6 +32,11 @@ export interface DecisionInboxProps {
    *  immediately after, so a resolved row's badge updates without the
    *  caller needing to do anything. */
   onResolved?: (result: ResolveDecisionResult) => void;
+  /** The attempt's state. While it is not finished the list is read again every few seconds, so a
+   *  question asked after the page opened appears; when it is finished, or absent, it is read once. */
+  attemptState?: string;
+  /** Only the questions still waiting for an answer, and nothing at all when there is none. */
+  pendingOnly?: boolean;
 }
 
 /** Shared resolve call + user-facing toast — one place maps every distinct
@@ -296,10 +305,37 @@ const DecisionRow: Component<{
  */
 const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   const [tokenInput, setTokenInput] = createSignal(decisionTokenStore.get() ?? '');
-  const [decisions, { refetch }] = createResource(
+  // A reload hands back the rows it already had, so a row being answered keeps what was typed in it.
+  let previous: DecisionRecord[] = [];
+  const unchanged = (a: DecisionRecord, b: DecisionRecord) =>
+    JSON.stringify({ ...a, viewed_at: null }) === JSON.stringify({ ...b, viewed_at: null });
+  const [decisions, { refetch }] = createResource<DecisionRecord[], string>(
     () => `${props.requestId}:${props.attemptNumber}`,
-    () => decisionsApi.list(props.requestId, props.attemptNumber),
+    async (_key, { refetching }) => {
+      // A reload that fails keeps the questions already on screen; only the first read reports an error.
+      const fresh = await decisionsApi.list(props.requestId, props.attemptNumber).catch((err) => {
+        if (refetching && previous.length > 0) return previous;
+        throw err;
+      });
+      const merged = fresh.map((row) => {
+        const prior = previous.find((p) => p.decision_id === row.decision_id);
+        return prior && unchanged(prior, row) ? prior : row;
+      });
+      previous = merged;
+      return merged;
+    },
   );
+  const shown = () => {
+    const all = decisions.error ? [] : (decisions.latest ?? []);
+    return props.pendingOnly ? all.filter((d) => d.state === 'pending') : all;
+  };
+  const firstLoad = () => decisions.loading && decisions.latest === undefined;
+
+  createEffect(() => {
+    if (props.attemptState === undefined || isTerminalAttemptState(props.attemptState)) return;
+    const timer = setInterval(() => void refetch(), LIVE_RELOAD_MS);
+    onCleanup(() => clearInterval(timer));
+  });
 
   // One `viewed` call per decision id for as long as the inbox is mounted:
   // a refetch hands every row a new object and remounts it, and must not
@@ -325,26 +361,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
 
   return (
     <div class="space-y-3">
-      <div
-        class="flex flex-wrap items-end gap-2 rounded-item px-4 py-3"
-        style={{ 'background-color': 'var(--color-bg-panel)' }}
-      >
-        <Field
-          label="Your decision token"
-          type="password"
-          autocomplete="off"
-          value={tokenInput()}
-          onInput={(e) => setTokenInput(e.currentTarget.value)}
-          hint="Ask your administrator for it. Kept only for this browser session."
-          help={HELP.decisionToken}
-          class="min-w-56 flex-1"
-        />
-        <Button size="sm" variant="secondary" onClick={saveToken}>
-          Save
-        </Button>
-      </div>
-
-      <Show when={decisions.loading}>
+      <Show when={firstLoad() && !props.pendingOnly}>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           Loading decisions…
         </p>
@@ -352,17 +369,38 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
       <Show when={decisions.error}>
         <LoadError what="the questions" error={decisions.error} onRetry={() => void refetch()} />
       </Show>
-      <Show when={!decisions.loading && !decisions.error && (decisions() ?? []).length === 0}>
+      <Show when={!firstLoad() && !decisions.error && !props.pendingOnly && shown().length === 0}>
         <EmptyState title="No decisions raised yet" />
       </Show>
-      <Show when={!decisions.loading && !decisions.error && (decisions() ?? []).length > 0}>
+      <Show when={shown().length > 0}>
         <ul class="space-y-2">
-          <For each={decisions()}>
+          <For each={shown()}>
             {(decision) => (
               <DecisionRow attemptId={props.attemptId} decision={decision} onResolved={handleResolved} onView={markViewed} />
             )}
           </For>
         </ul>
+      </Show>
+
+      <Show when={!props.pendingOnly || shown().length > 0}>
+        <div
+          class="flex flex-wrap items-end gap-2 rounded-item px-4 py-3"
+          style={{ 'background-color': 'var(--color-bg-panel)' }}
+        >
+          <Field
+            label="Your decision token"
+            type="password"
+            autocomplete="off"
+            value={tokenInput()}
+            onInput={(e) => setTokenInput(e.currentTarget.value)}
+            hint="Ask your administrator for it. Kept only for this browser session."
+            help={HELP.decisionToken}
+            class="min-w-56 flex-1"
+          />
+          <Button size="sm" variant="secondary" onClick={saveToken}>
+            Save
+          </Button>
+        </div>
       </Show>
     </div>
   );
