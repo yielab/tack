@@ -52,7 +52,7 @@ async function resolveAndNotify(
     toast.success(
       result.replayed
         ? 'Already resolved — this is the previously recorded answer.'
-        : 'Decision resolved.',
+        : 'Answer sent.',
     );
     onResolved?.(result);
   } catch (err) {
@@ -61,15 +61,15 @@ async function resolveAndNotify(
         'Rejected — either this board has no decision token set up, or the token entered above is wrong.',
       );
     } else if (isDecisionExpired(err)) {
-      toast.error('This decision already expired — it can no longer be resolved.');
+      toast.error('This question already expired — it can no longer be answered.');
     } else if (isDecisionIdempotencyConflict(err)) {
       toast.error('Already resolved with a different answer than the one just submitted.');
     } else if (isDecisionNotFound(err)) {
-      toast.error('No decision with that id exists for this attempt.');
+      toast.error('That question no longer exists for this run.');
     } else if (isDecisionInvalidOption(err)) {
-      toast.error("That answer wasn't one of this decision's declared options.");
+      toast.error("That answer wasn't one of the options offered.");
     } else {
-      toast.error(err instanceof Error ? err.message : 'Failed to resolve the decision.');
+      toast.error(err instanceof Error ? err.message : 'Could not send the answer.');
     }
     throw err;
   }
@@ -215,7 +215,7 @@ const DecisionRow: Component<{
                 value={optionId()}
                 onInput={(e) => setOptionId(e.currentTarget.value)}
                 required
-                hint="This decision declared no fixed options — enter any non-empty answer id."
+                hint="This question has no fixed options — type any answer."
               />
             }
           >
@@ -370,7 +370,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         <LoadError what="the questions" error={decisions.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={!firstLoad() && !decisions.error && !props.pendingOnly && shown().length === 0}>
-        <EmptyState title="No decisions raised yet" />
+        <EmptyState title="The agent has asked nothing yet" />
       </Show>
       <Show when={shown().length > 0}>
         <ul class="space-y-2">
