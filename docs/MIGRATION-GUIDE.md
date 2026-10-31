@@ -1,144 +1,110 @@
 # Migration Guide
 
-This guide covers two things: how Tack's automatic schema migrations behave (safe by
-default, with an automatic pre-upgrade snapshot before the one genuinely risky class
-of migration), and how to safely enable the runner-fleet execution features added in
-Part III on an existing deployment.
+How Tack upgrades its own database, and what to check before and after. Schema migrations are
+automatic and safe by default; a snapshot is taken by itself before the one class of migration that
+cannot simply be retried.
 
-If you are only running Tack as a project manager and have never created an
-execution request, upgrading is exactly one step:
-**back up, then start the new binary.** Everything below the first section is opt-in.
+If you only use Tack as a project manager, upgrading is two steps: **back up, then start the new
+binary.**
 
 ---
 
-## Upgrading the binary (routine)
+## Upgrading the binary
 
-1. **Back up first**, always — see [Backup and Restore](book/src/admin-guide/backup-restore.md).
-   Migrations run automatically on the next startup; there is no separate "run
-   migrations" command to skip.
+1. **Back up first**, always. See [Backup and Restore](book/src/admin-guide/backup-restore.md).
+   Migrations run on the next startup; there is no separate "run migrations" command.
 
    ```sh
    tack backup /backups/tack-pre-upgrade.db
    ```
 
-2. **Replace the binary** and start it. `tack_api::serve()` runs
-   `migrations::run_all()` before accepting any request
-   (`crates/tack-api/src/server.rs`).
+2. **Replace the binary** and start it. The server runs every pending migration before it accepts a
+   request.
 
 3. **What happens automatically:**
-   - Every already-applied migration is checked against the binary's own ordered
-     list by **name and by a deterministic checksum** — if your database's history
-     isn't an exact prefix of what this binary expects, or a previously-applied
-     migration's definition changed, startup refuses to proceed rather than guess
-     (`crates/tack-db/src/migrations.rs::verify_applied_migration_invariant`). This
-     is what prevents silently running an edited or reordered migration history.
-   - Every ordinary migration runs inside its own transaction; a failing statement
-     rolls the whole migration back rather than leaving a half-applied schema.
-   - A few migrations cannot simply be retried from the prior schema if they fail:
-     037/038 (a `COPY`/verify/swap table rebuild), 063 (drops the unused
-     `model_profiles` table) and 064–073 (drop the legacy Docket control-plane
-     bridge's tables — see below). **Before the first of these that your database
-     still has to run**, Tack takes one whole-database `VACUUM INTO` snapshot next to
-     your database file, named `<your-db-file>.before-<migration-name>.sqlite`. One
-     snapshot covers every migration in that startup. Upgrading from any release up
-     to `v0.1.0-beta.7`, the first such migration is 063, so the file is
-     `<your-db-file>.before-063_drop_model_profiles.sqlite` — and it is the file that
-     holds your `control_planes` and `orch_*` rows, whatever its name says. A retry
-     never overwrites it. The rebuild design is in
-     `docs/adr/0001-transactional-migration-rebuild-recovery.md`. Once you are past
-     073 this step does nothing until a later release adds another such migration.
-   - The rebuild migrations themselves run with `PRAGMA defer_foreign_keys=ON` inside
-     their transaction, compare row counts and an explicit bidirectional column
-     projection between the old and new table before dropping the original, and run
-     `PRAGMA foreign_key_check` before committing — a lossy or FK-violating copy
-     never reaches a committed state.
+   - Every already-applied migration is checked against the binary's own ordered list by **name and by
+     a deterministic checksum**. If your database's history is not an exact prefix of what this binary
+     expects, or a previously applied migration's definition changed, startup refuses to proceed rather
+     than guess. This is what prevents silently running an edited or reordered history.
+   - Every ordinary migration runs in its own transaction; a failing statement rolls the whole
+     migration back instead of leaving a half-applied schema.
+   - A few migrations cannot simply be retried from the prior schema if they fail: the table rebuilds
+     (037 and 038) and the ones that drop a table (063, and 064–073, which drop the legacy Docket
+     control-plane bridge). **Before the first of these that your database has not yet run**, Tack
+     takes one whole-database `VACUUM INTO` snapshot next to your database file, named
+     `<your-db-file>.before-<migration-name>.sqlite`. One snapshot covers every such migration in that
+     startup, and a retry never overwrites it. From `v0.1.0-beta.7` the first such migration is 063,
+     so the file is `<your-db-file>.before-063_drop_model_profiles.sqlite`, and it is the file that
+     holds your `control_planes` and `orch_*` rows, whatever its name says. A database from
+     `v0.1.0-beta.9` has already run all of them, so upgrading from it takes no snapshot. The design is
+     in `docs/adr/0001-transactional-migration-rebuild-recovery.md`.
+   - The rebuild migrations run with `PRAGMA defer_foreign_keys=ON` inside their transaction, compare
+     row counts and an explicit bidirectional column projection between the old and new table before
+     dropping the original, and run `PRAGMA foreign_key_check` before committing, so a lossy or
+     foreign-key-violating copy never reaches a committed state.
 
-4. **If startup refuses to proceed:** don't force it. The error names the mismatch
-   (unexpected entry, out-of-order name, or changed checksum) and tells you to
-   restore a database with an intact `_migrations` history. Restore your pre-upgrade
-   backup, confirm you're running the intended binary version, and try again.
+4. **If startup refuses to proceed,** do not force it. The error names the mismatch (unexpected entry,
+   out-of-order name, or changed checksum). Confirm you are running the intended binary version; if the
+   history itself is damaged, restore your pre-upgrade backup and try again.
 
-`GET /api/health` reports `migrations_applied` — read that field rather than a
-hand-written count, which this document does not track. Migrations 039–048 added the
-ten neutral runner-v1 execution tables; later ones refined execution replay, recovery
-and attempt-start facts; 063 dropped the unused `model_profiles` table; 064–073 drop
-the legacy Docket control-plane bridge (below). Everything from 039 through 062 is
-additive, and so are 075–077 (the columns GitHub sync keeps: a link's last sync time, a
-comment's GitHub id, a project's token reference) and 078–081 (item briefs, a decision's recommendation and when it was first seen, merge-readiness pack reviews, pull requests — new tables and columns only); 063, 064–073 and 074 (an unused column
-of `project_templates`) are the only migrations in this history that remove data.
+`GET /api/health` reports `migrations_applied`; read that field rather than a hand-written count.
 
-This upgrade drops the legacy Docket control-plane bridge: `control_planes` and the
-nine `orch_*` tables — agent-fleet/control-plane registrations, dispatched tasks,
-runs, events, approvals, metrics and their daily rollups, and trace cursors. If you
-had registered a Docket control plane, dispatched work through it, or read its
-per-item token/cost counts, none of that survives in the running database after this
-upgrade — the rows exist only in the automatic pre-upgrade `VACUUM INTO` snapshot
-this upgrade takes beside your database file (see step 3 above). That snapshot is a
-full copy of the database as it was, so it holds the control-plane tokens you had stored,
-unencrypted: keep it where your database backups live, and delete it once you no longer
-need those rows. Docket itself stays
-reachable as a harness on a runner-v1 execution request
+## What an upgrade removes
+
+Almost every migration only adds tables and columns. These remove or reshape data:
+
+| Migrations | What changes |
+|---|---|
+| 037, 038 | `orch_runs` and `orch_approvals` are rebuilt (copied, verified, swapped). |
+| 063 | The unused `model_profiles` table is dropped. |
+| 064–073 | The legacy Docket control-plane bridge is dropped: `control_planes` and the nine `orch_*` tables (registrations, dispatched tasks, runs, events, approvals, metrics and their daily rollups, trace cursors). |
+| 074 | The unused `orchestration` column of `project_templates` is dropped. |
+| 086 | A model becomes one string: a request's model provider and model id are replaced by a single `requested_model`, and stored snapshots and project and item defaults are rewritten to match. |
+| 092 | Dollars per day is no longer a limit; the `usd_per_day` column of a project's budgets is dropped. Every limit is in tokens. |
+
+The 064–073 drop means that if you had registered a Docket control plane, dispatched work through it, or
+read its per-item token and cost counts, none of that survives in the running database. The rows exist
+only in the automatic snapshot beside your database file. That
+snapshot is a full copy of the database as it was, so it holds the control-plane tokens you had stored,
+unencrypted: keep it where your database backups live, and delete it once you no longer need those rows.
+Docket itself stays reachable as a harness on an execution request
 ([Running Agents on Tasks](book/src/user-guide/running-agents.md)); only the old bridge is gone.
 
----
+Migration 094 adds a provisional token limit per project: a run whose profile sets no token limit runs
+under the project's provisional one, 2,000,000 tokens unless the project changes it or turns it off.
 
-## Enabling the runner-fleet execution features
+## Settings that act after an upgrade
 
-Nothing described on the [Running Agents on Tasks](book/src/user-guide/running-agents.md) page
-activates by touching a migration. All of it is env-var gated, off by default, and the
-gates are independent of each other — enabling one does not enable the others.
+The execution, runner and fleet API is always mounted and has no enable switch. Creating an execution
+request or enrolling a runner does nothing until something acts on it. Three settings change
+behaviour, each independent of the others; their defaults and full descriptions are in
+[`docs/CONFIG.md`](CONFIG.md):
 
-| You want... | Set | Off-by-default because |
-|---|---|---|
-| The execution/runner/fleet API surface to exist at all (`POST /api/executions`, `/api/runners/*`, etc.) | Nothing — this surface has no `_ENABLE` gate; it's always mounted | Creating an execution request or enrolling a runner has no side effect on its own until something acts on it |
-| Resolving a scoped execution decision | `TACK_EXECUTION_DECISION_TOKEN=<secret>` | Fail-closed by design — with it unset, `POST .../decisions/{id}/resolve` rejects every request rather than falling back to the ordinary operator token |
-| Automatic deletion of old execution history, replay bookkeeping, and artifact blobs | `TACK_EXECUTION_RETENTION_ENABLE=true` | **Deletes rows and on-disk blobs.** Off by default deliberately: data deletion is an explicit operator opt-in |
-| The read-only execution health watch (logs a `warn!` on stale-lease/`needs_operator` onset) | Nothing to do — `TACK_EXECUTION_HEALTH_ENABLE=true` is the default | Reads and logs only; no data is deleted or sent anywhere |
+| You want | Set |
+|---|---|
+| Answer a run's questions from the Inbox | `TACK_EXECUTION_DECISION_TOKEN`. Left unset on a loopback bind, the server makes its own file; elsewhere, with it unset, resolving a decision is refused rather than falling back to the operator token. |
+| Delete old execution history, replay bookkeeping and artifact blobs | `TACK_EXECUTION_RETENTION_ENABLE=true`, with `TACK_EXECUTION_RETENTION_DAYS` (default 90). **This is the one setting that deletes data.** It is off by default. |
+| Watch for stale claims and runs that need an operator | On by default (`TACK_EXECUTION_HEALTH_ENABLE`). It reads and logs only. |
 
-**Recommended enablement order for a first rollout:**
-
-1. Upgrade the binary with everything above still off. Confirm `/api/health` and your
-   existing board still work exactly as before — the new tables exist but nothing
-   reads or writes them yet.
-2. If you plan to resolve execution decisions from the UI, set
-   `TACK_EXECUTION_DECISION_TOKEN` before anyone needs to use that feature — it's
-   fail-closed, so forgetting it just means decisions can't be resolved yet, not an
-   open door.
-3. Only enable `TACK_EXECUTION_RETENTION_ENABLE` once you've decided how long you
-   want execution history and artifact blobs to live
-   (`TACK_EXECUTION_RETENTION_DAYS`, default 90) — this is the one setting on this
-   page that deletes data.
-
-Docket is reached the same way as any other coding agent, as a harness
-(`--harness docket`) on a runner-v1 execution request — see
-[Running Agents on Tasks](book/src/user-guide/running-agents.md). It needs no separate
-enablement step here.
-
-Full variable reference, defaults, and cross-references: `docs/CONFIG.md`.
-
----
+For a first rollout on an existing deployment: upgrade with retention still off, confirm `/api/health`
+and your board behave as before, and turn retention on only once you have decided how long execution
+history and artifacts should live.
 
 ## Downgrading
 
-Migrations are forward-only. There is no `tack migrate down`. If you need to run an
-older Tack binary against a database that has already been migrated forward, restore
-the pre-upgrade backup you took in step 1 above — that is the only supported path
-back. Running an old binary directly against a newer schema is not supported and will
-fail the same checksum/order invariant described above (the old binary's migration
-list won't be a prefix match for the newer database's history).
-
----
+Migrations are forward-only. There is no `tack migrate down`. To run an older Tack binary against a
+database that has been migrated forward, restore the pre-upgrade backup from step 1; that is the only
+supported path back. An old binary pointed directly at a newer schema fails the same checksum and order
+check described above.
 
 ## See also
 
-- [Backup and Restore](book/src/admin-guide/backup-restore.md) — routine snapshot and
-  staged-restore mechanics, remote/cloud backup, and what's included in each.
-- [Running Agents on Tasks](book/src/user-guide/running-agents.md) — what each
-  gate above actually turns on, and the capability/security posture of the runner
-  fleet.
-- [Recovery Runbook](book/src/admin-guide/recovery-runbook.md) — attempt-level
-  recovery (a crashed runner or harness process), a different concern from schema
-  migration recovery.
-- `docs/CONFIG.md` — the authoritative table of every `TACK_*` variable.
-- `docs/adr/0001-transactional-migration-rebuild-recovery.md` — the design rationale
-  for the rebuild-migration snapshot/verify/swap mechanism.
+- [Backup and Restore](book/src/admin-guide/backup-restore.md): routine snapshots, staged restore and
+  remote backup.
+- [Troubleshooting](book/src/admin-guide/troubleshooting.md#startup-fails-with-a-migration-error): a
+  startup that stops on a migration error.
+- [Recovery Runbook](book/src/admin-guide/recovery-runbook.md): attempt-level recovery after a crashed
+  runner or agent, a different concern from schema migration.
+- [`docs/CONFIG.md`](CONFIG.md): every `TACK_*` variable.
+- `docs/adr/0001-transactional-migration-rebuild-recovery.md`: why rebuild migrations snapshot, verify
+  and swap.

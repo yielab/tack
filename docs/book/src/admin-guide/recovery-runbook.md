@@ -5,11 +5,11 @@ what happened when a runner, its machine or the agent it started died in the mid
 know whether Tack retried the attempt by itself, and put a stuck attempt back in the queue when it is
 safe.
 
-**The governing rule, stated once so nothing below contradicts it:** Tack does not
+**The governing rule:** Tack does not
 claim that an agent runs exactly once. The board can make sure two runners never hold the same attempt
 at once, but a runner or network crash after a process has actually started
 can leave it genuinely unclear whether that process is still running, and nothing on the board can prove
-it is dead. The promise is narrower and honest: at most one runner holds an attempt at a time, the runner
+it is dead. The promise is narrower: at most one runner holds an attempt at a time, the runner
 writes a local journal before it starts any process, repeated completion reports change nothing, and
 an attempt goes to `needs_operator` whenever a safe retry cannot be proven. **A runner going quiet never,
 by itself, starts a second process on the same workspace.**
@@ -88,8 +88,8 @@ already had on file for that attempt:
   but changes nothing.
 
 Recovery observations are idempotent, scoped by a caller-supplied `recovery_key`: a
-second call with the byte-identical request replays the same response
-(a replayed response); a second call with a *different* body under
+second call with the byte-identical request replays the same response;
+a second call with a *different* body under
 the same key returns `409 idempotency_conflict` rather than silently overwriting the
 first audit record.
 
@@ -170,8 +170,3 @@ A cancellation observation on an attempt that already reached a terminal state r
 
 - **Database or migration recovery** (a crashed migration, a corrupted `.db` file). See
   [Backup and Restore](backup-restore.md).
-- **The proof of these boundaries**: duplicated or revoked runner credentials, corrupt or truncated
-  runner journals, oversized or path-traversal artifact uploads, reordered or replayed event batches,
-  and killing the board at each protocol step. That evidence, with the test names, is in the Developer
-  Guide's [What actually runs today](../developer/runner-contract.md#what-actually-runs-today). Running
-  out of disk space in the middle of a write has no test and remains unverified.

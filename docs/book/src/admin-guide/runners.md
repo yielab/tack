@@ -152,7 +152,7 @@ running.
 - **Off unless asked.** A plain `tack serve` starts no runner.
 - **Its state directory** is `<TACK_STORAGE_DIR>/runner` unless `TACK_RUNNER_STATE_DIR` says
   otherwise. Tying it to the storage directory keeps two boards from sharing one runner's state. A
-  state directory from an older default location is moved there once, never the other way.
+  state directory in a former default location is moved there on the first start.
 - **Its settings file.** Put it at `~/.config/tack/runner.toml` and the embedded runner reads it on
   every start, including a service installed by `tack service install`. Wiping the board's data
   folder leaves it in place. To use another file, pass `tack serve --runner-config <path>` (or set
@@ -276,9 +276,6 @@ checks the version before every task. A version below 6 is reported as "needs do
 (API 6); this docket answers API N", and no task is sent to it. docket installs the project's
 dependencies in its own copy, using the project's install setting.
 
-Tack's support for this API was written from docket's published specification and exercised against a
-stand-in for docket. Run `tack runner doctor` before you rely on it.
-
 Add a `[docket]` table to the runner's settings file:
 
 ```toml
@@ -349,7 +346,7 @@ work.
 docket
   status:      present
   ...
-  api:         5
+  api:         6
   daemon:      running on 127.0.0.1:7399
   team saas-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
   team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work
@@ -493,10 +490,11 @@ pushes it to the remote the repository came from, using your own git credentials
 default. A failed push records `attempt.push_failed`. Turn it on only for agents you would trust with
 those credentials. The Configuration Reference says what the push does and does not guard against.
 
-**Pull request.** When the attempt pushed a branch, its item is linked to a GitHub issue and a GitHub
-token is configured, the board opens a pull request from that branch, with the merge-readiness pack as
-its body. The attempt then shows a **PR #n** link and a badge: open, merged, closed or reverted. The
-state follows GitHub on the sync poll; see
+**Pull request.** Not at completion: the board opens it when the attempt is accepted, in the attempt
+review or the merge-readiness pack review, or by a project's automatic merge. It needs a pushed branch, an item linked
+to a GitHub issue and a GitHub token. The pull request has the merge-readiness pack as its body, and the
+attempt then shows a **PR #n** link and a badge: open, merged, closed or reverted. The state follows
+GitHub on the sync poll; see
 [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md). An item with no link,
 or a board with no token, gets no pull request and nothing else changes.
 
@@ -520,7 +518,7 @@ is about the part you run. It happens **in the board's process**, not in a runne
 - **What it does.** For each project it takes the tasks waiting in the project's start status that
   have a role, orders them by priority and position, and starts as many as the project's conditions
   allow: no open run on the task, no unfinished blocker, room under the next column's work-in-progress
-  limit, the daily budget not spent, and fewer open runs than the project's cap. It then moves each
+  limit, the day's token limit not reached, and fewer open runs than the project's cap. It then moves each
   started task to the first in-progress status and writes "Started by itself" on its activity.
 - **Which machine.** The run goes to the fleet its profile names. If the profile names none, there
   must be exactly one active runner, and that runner is used. With several runners and no fleet the
