@@ -175,6 +175,12 @@ export interface HarnessCapability {
    * `select.rs` treatment.
    */
   decisions?: CapabilityValue;
+  /** What this agent itself reports it can do, by feature. A feature it leaves out is shown as not
+   *  reported, never guessed from the computer's own report. */
+  features?: Partial<FeatureCapabilities> & {
+    /** Whether its runs can propose items (a plan in plan-v1), and why not. */
+    proposals?: CapabilityValue;
+  };
   /** How the runner confines this harness: `"bwrap"` or `"none"`. Optional: older runners omit it. */
   sandbox?: 'bwrap' | 'none';
   /** Why the harness is not sandboxed, when `sandbox` is `"none"`. */

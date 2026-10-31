@@ -1,9 +1,21 @@
-import { type Component, For, Show, createResource, createSignal, createUniqueId } from 'solid-js';
+import { type Component, For, Show, createEffect, createResource, createSignal, createUniqueId } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
-import { Badge, Button, EmptyState, Field, FieldShell, LoadError, Skeleton } from '../../../shared/ui';
+import { Badge, Button, EmptyState, Field, FieldShell, HelpHint, LoadError, Skeleton } from '../../../shared/ui';
+import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import { IconSettings } from '../../../shared/ui/icons';
-import { agentProfilesApi, teamOf, type AgentProfileSummary, type ProfileHistory } from '../../../shared/execution';
+import {
+  PER_TASK_AGENT_TEXT,
+  SINGLE_AGENT_TEXT,
+  agentProfilesApi,
+  profileAgentText,
+  teamChoices,
+  teamOf,
+  teamsApi,
+  type AgentProfileSummary,
+  type ProfileHistory,
+} from '../../../shared/execution';
+import { profileEditRequest, requestProfileEdit } from '../profileEditRequest';
 import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
 
 /**
@@ -13,8 +25,8 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  * existing policy are kept untouched on edit, except `network`: the "needs the network" box sets
  * `network: true`, and unticked it leaves the key out (absent is off). The limits form edits `limits.budgets.tokens`
  * and `limits.timeout_seconds`; any other key in an existing `limits` is kept. The team select sets
- * `tool_policy.docket.team` (the other `docket` keys stay); its options are the teams the board's
- * profiles already name. "Delivers" is one line the profile carries; what the profile can do is
+ * `tool_policy.docket.team` (the other `docket` keys stay); its options are the teams an agent reports
+ * (`GET /api/teams`), then the names only profiles use. "Delivers" is one line the profile carries; what the profile can do is
  * derived by the server from its tools and only shown.
  */
 const HARNESSES = Object.keys(KNOWN_TOOLS);
@@ -121,9 +133,12 @@ const AgentProfilesPanel: Component = () => {
   const [saving, setSaving] = createSignal(false);
 
   const rows = (): AgentProfileSummary[] => profiles()?.data.data ?? [];
-  /** The teams the board's profiles name, and the one being edited, once each. */
-  const teams = (): string[] =>
-    [...new Set([...rows().map((p) => teamOf(p)), team()].filter((t): t is string => !!t))].sort();
+
+  const [teamList] = createResource(() => teamsApi.list());
+  /** The teams an agent reports, then the names only profiles use (and the one being edited). */
+  const choices = () =>
+    teamChoices(teamList.error ? [] : (teamList() ?? []), [...rows().map((p) => teamOf(p)), team()]);
+  const reportedTeam = (name: string | null) => !!name && choices().reported.includes(name);
 
   // The history of the profile being edited; a new profile has none.
   const [historyResource, { refetch: refetchHistory }] = createResource(
@@ -167,6 +182,21 @@ const AgentProfilesPanel: Component = () => {
     setTimeLimit(seconds);
     setShowForm(true);
   };
+
+  // A team's "Make a profile for this team" asks for the new profile to open here.
+  createEffect(() => {
+    const id = profileEditRequest();
+    if (!id) return;
+    requestProfileEdit(null);
+    void (async () => {
+      const fresh = await agentProfilesApi.list().catch(() => undefined);
+      void refetch();
+      const wanted = fresh?.data.data.find((p) => p.agent_profile_id === id);
+      if (!wanted) return;
+      openForm(wanted);
+      document.getElementById('profiles')?.scrollIntoView?.({ block: 'start' });
+    })();
+  });
 
   const limitsInvalid = () => limitNumber(tokenLimit()) === undefined || limitNumber(timeLimit()) === undefined;
 
@@ -235,6 +265,15 @@ const AgentProfilesPanel: Component = () => {
 
   return (
     <div id="profiles" class="space-y-4">
+      <div class="space-y-1" data-testid="builtin-explained">
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+          <HelpHint label="Built-in profiles" help={HELP.builtInProfiles} />{' '}
+          A profile says what an agent may do and how it is told to work. The built-in profiles (Implementer,
+          Reviewer, Researcher and Planner) come with Tack: you can edit them, but not delete them. A profile
+          that names no agent runs with whichever agent you pick for the task.
+        </p>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{PER_TASK_AGENT_TEXT}</p>
+      </div>
       <Show when={profiles.loading}>
         <Skeleton height="60px" />
       </Show>
@@ -266,6 +305,9 @@ const AgentProfilesPanel: Component = () => {
                     <Show when={profile.builtin}>
                       <Badge tone="neutral">Built-in</Badge>
                     </Show>
+                    <Show when={teamOf(profile)}>
+                      <Badge tone="primary">Team</Badge>
+                    </Show>
                     <span class="ml-auto flex gap-1">
                       <Button variant="ghost" size="sm" onClick={() => openForm(profile)}>Edit</Button>
                       <Show when={!profile.builtin}>
@@ -273,10 +315,22 @@ const AgentProfilesPanel: Component = () => {
                       </Show>
                     </span>
                   </div>
+                  <Show when={profile.summary}>
+                    <p data-testid="profile-summary" class="text-small" style={{ color: 'var(--color-text-primary)' }}>
+                      {profile.summary}
+                    </p>
+                  </Show>
+                  <p data-testid="profile-runs" class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+                    Runs with {profileAgentText(profile)} ·{' '}
+                    {teamOf(profile) ? `Team ${teamOf(profile)}` : SINGLE_AGENT_TEXT}
+                  </p>
+                  <Show when={teamOf(profile) && !teamList.loading && !teamList.error && !reportedTeam(teamOf(profile))}>
+                    <p class="text-caption" style={{ color: 'var(--color-text-tertiary)' }} aria-disabled="true">
+                      No computer reports this team, so what it can do is not known.
+                    </p>
+                  </Show>
                   <div class="flex flex-wrap items-center gap-2 text-caption" style={{ color: 'var(--color-text-secondary)' }}>
-                    <span data-testid="profile-delivers">
-                      {profile.delivers || 'Delivers: not said'} · on {(profile.tool_policy as { agent?: string } | null)?.agent ?? 'any agent'}
-                    </span>
+                    <span data-testid="profile-delivers">{profile.delivers || 'Delivers: not said'}</span>
                     <CapabilityChips profile={profile} />
                   </div>
                   <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>{profile.instructions}</p>
@@ -336,7 +390,7 @@ const AgentProfilesPanel: Component = () => {
             value={delivers()}
             onInput={(e) => setDelivers(e.currentTarget.value)}
           />
-          <FieldShell label="Team" for={teamId} hint="The docket team that runs this profile. Teams come from the board's profiles.">
+          <FieldShell label="Team" for={teamId} hint="The team that runs this profile. Teams an agent reports come first; a name only profiles use is marked as not reported.">
             <select
               id={teamId}
               value={team()}
@@ -349,7 +403,16 @@ const AgentProfilesPanel: Component = () => {
               }}
             >
               <option value="" selected={!team()}>No team</option>
-              <For each={teams()}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
+              <Show when={choices().reported.length > 0}>
+                <optgroup label="Reported by an agent">
+                  <For each={choices().reported}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
+                </optgroup>
+              </Show>
+              <Show when={choices().notReported.length > 0}>
+                <optgroup label="Not reported by any computer">
+                  <For each={choices().notReported}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
+                </optgroup>
+              </Show>
             </select>
           </FieldShell>
           <Field

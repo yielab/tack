@@ -107,3 +107,19 @@ export type {
   ExecutionStore,
 } from './store';
 export { createExecutionStore } from './store';
+
+export type { TeamEntry, TeamReport, TeamStep } from './teams';
+export { teamsApi, teamChoices, stepText, networkText, queueText } from './teams';
+
+export type { AgentCapabilityId, AgentCapabilityLine } from './agents';
+export {
+  AGENT_KINDS,
+  AGENT_NAMES,
+  agentName,
+  agentCapabilityLines,
+  agentCanSentence,
+  pickHarness,
+  profileAgentText,
+  SINGLE_AGENT_TEXT,
+  PER_TASK_AGENT_TEXT,
+} from './agents';

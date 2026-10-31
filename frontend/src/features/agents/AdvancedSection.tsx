@@ -1,6 +1,7 @@
-import { type Component, createSignal, Show } from 'solid-js';
+import { type Component, createEffect, createSignal, Show } from 'solid-js';
 import { IconChevronDown, IconChevronRight } from '../../shared/ui/icons';
 import RunnerFleetSection from './runnerFleet/RunnerFleetSection';
+import { profileEditRequest } from './profileEditRequest';
 
 /**
  * Everything `RunnerFleetSection.tsx` provides (enrollment, fleets, agent
@@ -14,6 +15,10 @@ import RunnerFleetSection from './runnerFleet/RunnerFleetSection';
  */
 const AdvancedSection: Component = () => {
   const [open, setOpen] = createSignal(false);
+  // A profile asked to be opened for editing (a team's "Make a profile") lives in here.
+  createEffect(() => {
+    if (profileEditRequest()) setOpen(true);
+  });
 
   return (
     <section id="advanced" class="space-y-4">

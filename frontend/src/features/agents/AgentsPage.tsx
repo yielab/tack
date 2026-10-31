@@ -6,6 +6,8 @@ import HarnessStep from './steps/HarnessStep';
 import SignInStep, { allSignedIn } from './steps/SignInStep';
 import TestRunStep from './steps/TestRunStep';
 import AdvancedSection from './AdvancedSection';
+import AgentCapabilities from './AgentCapabilities';
+import TeamsPanel from './TeamsPanel';
 import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isReady, isThisMachineRunner } from './runnerObservations';
 
 /** How often this page re-polls `GET /api/runners` while mounted — enough
@@ -170,6 +172,10 @@ const AgentsPage: Component = () => {
       </div>
 
       <TestRunStep thisMachineRunner={thisMachineRunner()} />
+
+      <AgentCapabilities runners={runners()} />
+
+      <TeamsPanel runners={runners()} />
 
       <AdvancedSection />
     </div>

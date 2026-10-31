@@ -1,8 +1,9 @@
-import { type Component, Show, createSignal } from 'solid-js';
+import { type Component, Show, createEffect, createSignal } from 'solid-js';
 import { Tabs } from '../../../shared/ui';
 import EnrollmentPanel from './EnrollmentPanel';
 import FleetsPanel from './FleetsPanel';
 import AgentProfilesPanel from './AgentProfilesPanel';
+import { profileEditRequest } from '../profileEditRequest';
 
 const TABS = [
   { id: 'runners', label: 'Runners' },
@@ -25,7 +26,10 @@ type TabId = (typeof TABS)[number]['id'];
  * default policy.
  */
 const RunnerFleetSection: Component = () => {
-  const [active, setActive] = createSignal<TabId>('runners');
+  const [active, setActive] = createSignal<TabId>(profileEditRequest() ? 'agent-profiles' : 'runners');
+  createEffect(() => {
+    if (profileEditRequest()) setActive('agent-profiles');
+  });
 
   return (
     <Tabs tabs={[...TABS]} active={active()} onChange={(id) => setActive(id as TabId)}>
