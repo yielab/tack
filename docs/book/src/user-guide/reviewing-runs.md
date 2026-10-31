@@ -49,11 +49,22 @@ automation badges; the state chip is on the board only.
 The badges that start with Started, Team and Merged are explained in
 [Automating a Project](automation.md#what-tack-shows-when-it-acts).
 
-### A Planner run
+### When a run proposes items
 
-A task run with the **Planner** profile changes no files. Its attempt shows **The Planner proposes N
-subtasks**, each with a checkbox and its title, description and acceptance criteria editable. Nothing is
-created until you press **Create selected**, so no agent writes to your board on its own.
+A run with the **Planner** profile changes no files and can end with a list of items it proposes. The
+attempt shows **The Planner proposes N items**, with one row per item. Each row has a checkbox, and its
+title, description and acceptance criteria can be edited. Its **Type** and **Role** can be changed, and
+**Who does it** names the team that will do the item once it is created. **Waits on** names the items it
+must wait for. An item nested under another is unticked when its parent is unticked. Nothing is created
+until you press **Create selected**, so no agent writes to your board on its own.
+
+To propose items from a file, open the item and use **Propose items from a file**, under Run with agent.
+Choose a `tack-plan.json`. Tack checks it and names the first entry that does not fit, and why. A file that
+fits opens the same list.
+
+After you create the items, they appear as links. Under them, Tack says what it could not fill: a role or a
+type the project does not have, or a team that no single profile names. Such an item is created without that
+part.
 
 ### Merging a reviewed run
 
