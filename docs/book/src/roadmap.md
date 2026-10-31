@@ -28,41 +28,17 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 82 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+Phases 73 to 83 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
 
 **[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
-as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is accepted 2026-10-31;
-H, I, K and L, which fix defects
-accepted decisions already cover, are built (a folder team; a queued run that does not say why; an unanswered
-question read as a refusal). Every card speaks of teams, who does a task and proposals in terms no agent owns: each
-agent reports what it can, and a screen shows the rest disabled with the agent's reason. Twelve cards
-in six rounds:
-
-- **H** A task given to a team that works in a folder starts: the runner sends it no base commit and
-  no install, and the fake docket refuses one as docket does.
-- **I** Run with agent says where the team works, with no branch and no install line for a folder team.
-- **K** A queued run says what it waits behind: the run holding the computer and, when that one waits
-  on a person, the question, with a way to answer it.
-- **L** A question nobody answered ends its run as "nobody answered", never as "approval denied".
-- **L2** Tack's own timeout is never answered "no" for you: an expired question cancels the task, and
-  docket's `approval_expired` reads as "nobody answered".
-- **P** Each agent says what it can do (stop, resume, answer questions, propose items, usage), a run
-  says which profile and agent run it, and an accepted proposal entry may name any profile.
-- **N** The item page follows its run with no reload, a question waiting for you is the first thing on
-  it and has a count in the sidebar, and the Execution tab drops what nobody understands.
-- **A** One description of a team for any agent (members, models, steps, where it works, how it
-  decides, queue), filled by docket; the board lists every team any agent reports.
-- **D** One proposal format for any agent: the plan file gains type, role, team and parent;
-  accepting keeps dependencies as blockers; every agent says whether its runs can propose.
-- **B** Agents → Teams: one card per team, from what its agent reported; a profile with no team is
-  one agent.
-- **J** A docket team proposes items through a `tack_proposals` record set.
-- **C** A task says who does it, from the new-item dialog and the item, and starts by itself
-  without a role.
-- **E** The person chooses which proposed items to create, from a run or from a file they upload.
-- **F** A run shows the team's steps as it goes, when its agent reports them.
-- **G** The local suite proves it against docket, a folder team's run included.
+as it is, a task can go to a team, and what a run finds can become items.** Built 2026-10-31 (ADR 0032,
+accepted the same day) and in `develop`; its cards H, I, K, L, L2, P, N, A, D, B, J, C, E, F and G, with
+M, M2 and Q after, are not open. Agents → Teams lists every team any agent reports and what each
+member can do; a task says who does it and starts by itself without a role; a run's findings reach one
+accept panel from a plan file, a team's `tack_proposals` records or an uploaded file, and a person
+always accepts. The local suite proves it against docket (19 of 20 tests pass; the fifteenth needs the local
+model's lead step, which repeats itself); nothing in it is a card.
 
 What is not a card is in "Cancelled" below.
 
