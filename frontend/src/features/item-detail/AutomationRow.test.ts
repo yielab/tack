@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { automationSentence } from './AutomationRow';
+import { automationSentence, choiceSource, withProfile } from './AutomationRow';
 
 const base = { startsAt: 'To Do', starts: true, team: 'saas-content', merge: 'L4', roleWithoutProfile: null, hasProfile: true };
 
@@ -15,5 +15,26 @@ describe('automationSentence', () => {
   });
   it('says so when the project does not start tasks by itself', () => {
     expect(automationSentence({ ...base, starts: false })).toBe("By hand: this project doesn't start tasks by itself");
+  });
+});
+
+describe('who does it', () => {
+  it('names the profile and where the choice came from', () => {
+    expect(automationSentence({ ...base, who: 'Content writer (chosen on this task)' })).toBe(
+      'Starts by itself when it reaches To Do · Goes to Content writer (chosen on this task) · Team saas-content · Merge L4',
+    );
+  });
+  it('says the choice was made on the task, or by the role', () => {
+    expect(choiceSource({ onTask: true, role: 'Content' })).toBe('chosen on this task');
+    expect(choiceSource({ onTask: false, role: 'Content' })).toBe('from the role Content');
+    expect(choiceSource({ onTask: false, role: null })).toBeNull();
+  });
+  it('sets the profile in the run settings and keeps the rest', () => {
+    expect(withProfile({ timeout_seconds: 900, later_key: 1 }, 'p1')).toEqual({ timeout_seconds: 900, later_key: 1, agent_profile_id: 'p1' });
+    expect(withProfile(null, 'p1')).toEqual({ agent_profile_id: 'p1' });
+  });
+  it('clears the profile, and the settings when nothing else is left', () => {
+    expect(withProfile({ agent_profile_id: 'p1', timeout_seconds: 900 }, null)).toEqual({ timeout_seconds: 900 });
+    expect(withProfile({ agent_profile_id: 'p1' }, null)).toBeNull();
   });
 });

@@ -75,7 +75,8 @@ machine ("this computer" or the name of a fleet).
 
 When a run does not name a profile, Tack takes the first of these that exists:
 
-1. The settings saved on the task, from an earlier run of it.
+1. The profile chosen on the task itself (**Who does it**, below), or the settings saved from an earlier run
+   of it.
 2. The profile of the task's role. If the task has several roles with different profiles, the project's
    default profile is used instead, and the run dialog says "More than one role has a profile, so the
    project default is used".
@@ -83,8 +84,8 @@ When a run does not name a profile, Tack takes the first of these that exists:
 4. The built-in **Implementer**.
 
 The run dialog says which of these applied: "Chosen by the role Content", "Project default", "Saved on this
-task" or "The built-in Implementer". To use another profile for one run, press another name in the dialog's
-**Profile** row; see [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
+task" or "The built-in Implementer". To use another profile for one run, choose another one under **Who does
+it** in the dialog; see [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
 ### Teams and docket
 
@@ -185,7 +186,7 @@ About every thirty seconds Tack looks at the tasks in that status and starts the
 high, medium, low, none), and within the same priority in board order. A task starts only when all of these
 hold:
 
-- It has a role.
+- It has a role, or a profile chosen on the task itself (see **Who does it** below).
 - It has no open run (queued, starting, running or waiting on you).
 - It has no unfinished blocker.
 - A profile resolves for it, as under [Teams](#teams), and an agent is named by the profile or by the
@@ -197,7 +198,9 @@ hold:
 - Fewer than the cap of runs are open in the project.
 
 A task that starts moves to the first In progress status, and its activity says "Started by itself: it
-reached To Do with the role Content". The agent works with the tools its profile allows. Web tools are on
+reached To Do with the role Content", or, for a task with no role, "Started by itself: it reached To Do with
+no role, and goes to the team saas-content" (or to the agent, such as Codex, when the profile names no team).
+The agent works with the tools its profile allows. Web tools are on
 only when the profile says its role needs the network. The run lasts as long as the profile's time limit
 allows, and one hour when it sets none.
 
@@ -212,6 +215,20 @@ yourself.
 
 How often Tack looks is the administrator's setting; see
 [Configuration Reference](../admin-guide/configuration-reference.md).
+
+### Who does it
+
+A task does not need a role to start by itself: you can say who does it on the task. **Who does it** is on the
+new-item dialog, on the item's Automation row and in the Run with agent dialog, and it is the same list in all
+three. It shows every profile, grouped by the team the profile names (with what the team is made of) or, for a
+profile that names no team, by the agent that runs it: Claude Code, Codex, OpenCode or Docket. Each agent says
+in one line what it can do, from what it told Tack about itself; what it cannot do, or did not say, is shown in
+grey, with its reason. A team that an agent reports but no profile names is greyed too, with "Make a profile
+for it on the Agents page". Each task can use a different agent; the choice is for this task.
+
+Choosing a profile saves it on the task. **Nobody yet** removes it, and the task goes back to the profile of
+its role or the project's default. The Automation row says where the choice came from: "chosen on this task"
+or "from the role Content". The Run with agent dialog always needs a profile, so it has no **Nobody yet**.
 
 ---
 

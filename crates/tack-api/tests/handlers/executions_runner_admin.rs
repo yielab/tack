@@ -2617,6 +2617,95 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     assert_eq!(status_of(&repo, &next).await, "To Do");
 }
 
+/// Put `settings` on the task, as the Run dialog or the picker would.
+async fn set_run_settings(
+    repo: &Repository,
+    item_id: &str,
+    settings: tack_core::models::RunSettings,
+) {
+    let id: Uuid = item_id.parse().unwrap();
+    let item = repo.get_item(id).await.unwrap().unwrap();
+    let project = repo.get_project(item.project_id).await.unwrap().unwrap();
+    repo.update_item_atomically(
+        id,
+        tack_core::models::UpdateItem {
+            run_settings: Some(Some(settings)),
+            ..tack_core::models::UpdateItem::default()
+        },
+        &project.workflow,
+        None,
+    )
+    .await
+    .unwrap();
+}
+
+/// Choose the profile on the task itself, as the item's run settings.
+async fn choose_profile(repo: &Repository, item_id: &str, profile: &str) {
+    let settings = tack_core::models::RunSettings {
+        agent_profile_id: Some(profile.to_owned()),
+        ..Default::default()
+    };
+    set_run_settings(repo, item_id, settings).await;
+}
+
+async fn said_by_the_board(repo: &Repository, item_id: &str) -> Vec<String> {
+    repo.list_comments(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|c| c.author.as_deref() == Some("system"))
+        .map(|c| c.content)
+        .collect()
+}
+
+// A task with a profile in its run settings and no role starts by itself, and the sentence names
+// the agent; a task with neither role nor profile stays. A team in the profile is named instead.
+#[tokio::test]
+async fn the_auto_start_tick_starts_a_task_with_a_profile_in_its_run_settings_and_no_role() {
+    let (repo, state, _item_id, project_id) = auto_start_board().await;
+    add_profile_with_policy(
+        &repo,
+        "profile-team",
+        &json!({"agent": "docket", "docket": {"team": "saas-content"}}),
+    )
+    .await;
+    let chosen = add_item(&repo, project_id, "chosen").await;
+    choose_profile(&repo, &chosen, "profile-c1").await;
+    let team = add_item(&repo, project_id, "team").await;
+    choose_profile(&repo, &team, "profile-team").await;
+    let neither = add_item(&repo, project_id, "neither").await;
+    // Run settings that choose no profile are not a choice.
+    let settings_only = add_item(&repo, project_id, "settings only").await;
+    let timeout_only = tack_core::models::RunSettings {
+        timeout_seconds: Some(900),
+        ..Default::default()
+    };
+    set_run_settings(&repo, &settings_only, timeout_only).await;
+    seed::project_auto_start_max_open(&repo, &project_id.to_string(), 10).await;
+
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
+
+    assert_eq!(requests_of(&repo, &chosen).await.len(), 1);
+    assert_eq!(status_of(&repo, &chosen).await, "In Progress");
+    let metadata: Value = serde_json::from_str(&requests_of(&repo, &chosen).await[0].2).unwrap();
+    assert_eq!(metadata["profile_source"], "run_settings");
+    assert_eq!(
+        said_by_the_board(&repo, &chosen).await,
+        ["Started by itself: it reached To Do with no role, and goes to Codex"]
+    );
+    assert_eq!(requests_of(&repo, &team).await.len(), 1);
+    assert_eq!(
+        said_by_the_board(&repo, &team).await,
+        ["Started by itself: it reached To Do with no role, and goes to the team saas-content"]
+    );
+    assert!(requests_of(&repo, &neither).await.is_empty());
+    assert_eq!(status_of(&repo, &neither).await, "To Do");
+    assert!(requests_of(&repo, &settings_only).await.is_empty());
+    assert_eq!(status_of(&repo, &settings_only).await, "To Do");
+}
+
 // A role that needs the network (`tool_policy.network`) starts its auto-started run with it.
 #[tokio::test]
 async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {

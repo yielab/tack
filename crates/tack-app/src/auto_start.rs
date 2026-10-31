@@ -1,5 +1,5 @@
 //! A project that starts its own work: the tick that turns a task in the project's
-//! auto-start status, with a role, into a run and moves it to the first in-progress
+//! auto-start status, with a role or a profile chosen on it, into a run and moves it to the first in-progress
 //! status. Which tasks and how many is `tack_core::auto_start::pick`'s; this is the
 //! rows that feed it and the enqueue and the move that follow.
 
@@ -92,7 +92,7 @@ async fn project_tick(
         return Ok(0);
     };
     let project_id = project.id.to_string();
-    let rows = queries::items::waiting_with_a_role(repo, &project_id, waiting_in).await?;
+    let rows = queries::items::waiting_with_someone_to_do_it(repo, &project_id, waiting_in).await?;
     if rows.is_empty() {
         return Ok(0);
     }
@@ -307,16 +307,45 @@ async fn start(
             .ok()
             .and_then(|roles| roles.into_iter().next().map(|(name, _)| name)),
     };
+    let who = match role {
+        Some(role) => format!("with the role {role}"),
+        None => {
+            format!(
+                "with no role, and goes to {}",
+                destination(policy.as_ref(), &harness)
+            )
+        }
+    };
     merge::tell(
         repo,
         &item.id.to_string(),
-        format!(
-            "Started by itself: it reached {old_status} with the role {}",
-            role.unwrap_or_default()
-        ),
+        format!("Started by itself: it reached {old_status} {who}"),
     )
     .await;
     true
+}
+
+/// Where a task with no role goes, in words: the team its profile names, else the agent.
+fn destination(policy: Option<&Value>, harness: &str) -> String {
+    let team = policy
+        .and_then(|policy| policy["docket"]["team"].as_str())
+        .filter(|team| !team.is_empty());
+    match team {
+        Some(team) => format!("the team {team}"),
+        None => agent_name(harness),
+    }
+}
+
+/// The name a person reads for an agent kind.
+fn agent_name(kind: &str) -> String {
+    match kind {
+        "claude-code" => "Claude Code",
+        "codex" => "Codex",
+        "opencode" => "OpenCode",
+        "docket" => "Docket",
+        other => other,
+    }
+    .to_owned()
 }
 
 /// Whether every machine the run may land on (the profile's fleet, else the only

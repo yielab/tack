@@ -66,6 +66,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // The ones whose heartbeat is current: the only machines a run can be sent to.
   const answeringRunners = (): RunnerSummary[] => activeRunners().filter(isAnsweringRunner);
 
+  // What every agent on an active computer reported, for the picker's lines about what each can do.
+  const agentReports = () => activeRunners().map(runnerSummaryToCapabilities).flatMap((c) => c?.harnesses ?? []);
+
   const capabilities = (): RunnerCapabilities[] => props.capabilities?.() ?? targetCapabilities();
 
   const fleetsData = () => (fleets.error !== undefined ? [] : (fleets() ?? []));
@@ -486,6 +489,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             checkedCard={() => (checkedCard.loading ? undefined : checkedCard())}
             profilesLoading={() => agentProfiles.loading}
             profiles={agentProfilesData}
+            agentReports={agentReports}
             creatingProfile={creatingProfile}
             createDefaultProfile={createDefaultProfile}
             harnessOptions={harnessOptions}
