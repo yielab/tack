@@ -109,6 +109,43 @@ repository and ends with no work to read still fails, with "branch not applied".
 leads · 2 rows, listings · 1 row." The number is every row the set holds, whichever run wrote it; a run's own
 rows are the ones its result keeps.
 
+### What the Agents page shows about a team
+
+The **Agents** page answers three questions that the profile list alone cannot: which agent does what, what
+each agent can do, and what a team is made of. Each task can use a different agent, so none of this is a
+global choice: you pick the profile, and with it the agent and team, for each task.
+
+**What each agent can do** names the four agents (Claude Code, Codex, OpenCode and Docket) and says, from what
+the agent itself reported, whether it can stop a run, pick a run back up after a restart, answer your
+questions, propose items and report what a run used. A thing the agent cannot do keeps its reason in a greyed
+line. A thing the agent did not report reads "Not reported by" the agent: Tack never guesses it.
+
+**Teams** has one card per team any agent reports. A card shows only what the agent said:
+
+- The agent that runs the team, and the shape it calls it.
+- **Works in this repository** or **Works in a folder**.
+- Its members, as "Lead · opus": the role as the agent names it, and the model.
+- **Runs to the end by itself** or **Stops to ask a person**, with what to change so that it runs to the end.
+- Its network, what it has waiting and running ("3 waiting, 1 running") and the record sets it keeps.
+- **Can propose items**, or the reason it cannot.
+- Its steps in order, each with what checks it, and where a failed check sends the work back and how many
+  times ("sent back to write up to 2 times").
+
+A line the agent did not report is one greyed line, "Not reported by Docket", so that "no network" and "the
+agent did not say" are never mixed up. A team that only your profiles name, and no computer reports, is marked
+**Not reported by any computer**.
+
+A reported team that no profile uses has **Make a profile for this team**. It creates a profile for that
+agent and team with the Implementer's tools, and opens it so you can change its name, instructions and limits.
+
+Under the teams, **Profiles with no team** lists each profile that runs a single agent, under the agent that
+runs it ("One agent · opus"), or "A single agent, no team" when the profile lets you pick the agent for each
+task. The four profiles that come with Tack (**Implementer**, **Reviewer**, **Researcher** and **Planner**)
+are of this kind. You can edit them but not delete them, and each shows its description and the agent that
+runs it. In a profile's **Team** field, the teams an agent reports come first; a name that only profiles use
+follows, under **Not reported by any computer**. The **Teams** step of Automation offers the same grouping when
+you choose a profile for a role.
+
 ### The Apply button
 
 **Apply the repository's teams** is always disabled. Its reason reads: "Tack cannot run this on the

@@ -7,6 +7,7 @@ export const BOOK = {
   runDialog: `${BOOK_BASE}user-guide/running-agents.html#the-run-with-agent-dialog`,
   workspace: `${BOOK_BASE}user-guide/automation.html#where-the-agent-works`,
   items: `${BOOK_BASE}user-guide/items.html`,
+  agentTeams: `${BOOK_BASE}user-guide/automation.html#what-the-agents-page-shows-about-a-team`,
   teamsAdmin: `${BOOK_BASE}admin-guide/runners.html#docket-teams`,
   toolchain: `${BOOK_BASE}admin-guide/runners.html#what-a-teams-sandbox-can-read`,
   enrolling: `${BOOK_BASE}admin-guide/runners.html#redeeming-the-token-on-the-runner`,

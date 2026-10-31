@@ -25,6 +25,9 @@ export const HELP = {
   teamBadge: { text: 'The team that ran this task, named by the profile the run used.', href: BOOK.automation },
   mergedByItself: { text: 'Tack merged this change on its own, under the verifier\'s signed verdict.', href: BOOK.automation },
   automationRow: { text: 'What happens to this task without you: whether it starts by itself, which team takes it, and how far Tack may merge it.', href: BOOK.automation },
+  agentCapabilities: { text: 'What each agent told Tack it can do. A line it did not report, or that it cannot do, is greyed out with its reason. Each task chooses its own agent.', href: BOOK.agentTeams },
+  teamsPanel: { text: 'Each card shows only what the agent that runs the team reported. A line it left out says so, so you can tell "none" from "not said".', href: BOOK.agentTeams },
+  builtInProfiles: { text: 'Implementer, Reviewer, Researcher and Planner come with Tack. You can edit them, not delete them. A profile that names no agent runs with the agent you pick for the task.', href: BOOK.agentTeams },
   decisionToken: { text: 'A second secret, apart from signing in, that your administrator sets up. Needed to answer the agent; never sent when you only look.', href: BOOK.decisionToken },
   forTheAgent: { text: 'Checks a machine can run, limits on what it may touch, and the risk you see. Optional.', href: BOOK.items },
 } satisfies Record<string, FieldHelp>;

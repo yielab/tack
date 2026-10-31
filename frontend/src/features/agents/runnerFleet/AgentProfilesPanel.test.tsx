@@ -7,10 +7,15 @@ function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const dispose = render(() => <AgentProfilesPanel />, container);
+  disposers.push(dispose);
   return { container, dispose };
 }
 
+// A panel left mounted would also answer a request to open a profile.
+const disposers: Array<() => void> = [];
+
 afterEach(() => {
+  disposers.splice(0).forEach((d) => d());
   vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
@@ -168,11 +173,12 @@ describe('AgentProfilesPanel', () => {
     const { container } = mount();
     await flush();
     const rows = container.querySelectorAll('li');
-    expect(rows[0].querySelector('[data-testid="profile-delivers"]')!.textContent).toBe('a document in a folder · on claude-code');
+    expect(rows[0].querySelector('[data-testid="profile-delivers"]')!.textContent).toBe('a document in a folder');
+    expect(rows[0].querySelector('[data-testid="profile-runs"]')!.textContent).toBe('Runs with Claude Code · Team saas-content');
     expect(rows[0].querySelector('[data-testid="cap-files"]')!.getAttribute('data-can')).toBe('yes');
     // A capability the profile lacks is shown, dimmed, never hidden.
     expect(rows[0].querySelector('[data-testid="cap-commands"]')!.textContent).toBe('Runs no commands');
-    expect(rows[1].querySelector('[data-testid="profile-delivers"]')!.textContent).toContain('on any agent');
+    expect(rows[1].querySelector('[data-testid="profile-runs"]')!.textContent).toBe('Runs with Any agent, chosen for each task · A single agent, no team');
 
     Array.from(rows[1].querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
     await flush();
@@ -180,6 +186,7 @@ describe('AgentProfilesPanel', () => {
     type(container.querySelector<HTMLInputElement>('input[placeholder="a change on a branch"]')!, 'an answer');
     const select = container.querySelector<HTMLSelectElement>('select')!;
     expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['No team', 'saas-content']);
+    expect(Array.from(select.querySelectorAll('optgroup')).map((g) => g.label)).toEqual(['Not reported by any computer']);
     select.value = 'saas-content';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await flush();
@@ -211,5 +218,57 @@ describe('AgentProfilesPanel', () => {
     expect(items[0].textContent).not.toContain('Delete');
     expect(items[1].textContent).not.toContain('Built-in');
     expect(items[1].textContent).toContain('Delete');
+  });
+
+  it('says what a built-in profile is, with its description and the agent that runs it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const body = String(input).endsWith('/api/teams')
+        ? { teams: [] }
+        : { protocol_version: 1, data: [{ agent_profile_id: 'ap_b', name: 'Reviewer', instructions: 'Look.', tool_policy: {}, limits: {}, kind: 'reviewer', builtin: true, summary: 'Reads and reports; changes nothing' }] };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const item = container.querySelector('li')!;
+    expect(container.querySelector('[data-testid="builtin-explained"]')!.textContent).toContain('come with Tack');
+    expect(item.querySelector('[data-testid="profile-summary"]')!.textContent).toBe('Reads and reports; changes nothing');
+    expect(item.querySelector('[data-testid="profile-runs"]')!.textContent).toBe('Runs with Any agent, chosen for each task · A single agent, no team');
+    expect(container.textContent).toContain('Each task can use a different agent');
+  });
+
+  it('offers the reported teams first, then the names only profiles use, in two groups', async () => {
+    const profiles = [{ agent_profile_id: 'ap_a', name: 'scout', instructions: 'Look.', tool_policy: { docket: { team: 'old-team' } }, limits: {} }];
+    const teams = [
+      { name: 'old-team', harness: null, reported: false, profiles: [{ id: 'ap_a', name: 'scout' }], report: null },
+      { name: 'saas-code', harness: 'docket', reported: true, profiles: [], report: { name: 'saas-code', profile: 'p' } },
+    ];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const body = String(input).endsWith('/api/teams') ? { teams } : { protocol_version: 1, data: profiles };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
+    await flush();
+    const groups = Array.from(container.querySelectorAll('select optgroup'));
+    expect(groups.map((g) => g.getAttribute('label'))).toEqual(['Reported by an agent', 'Not reported by any computer']);
+    expect(Array.from(groups[0].querySelectorAll('option')).map((o) => o.textContent)).toEqual(['saas-code']);
+    expect(Array.from(groups[1].querySelectorAll('option')).map((o) => o.textContent)).toEqual(['old-team']);
+  });
+
+  it('opens the profile a team just made for editing', async () => {
+    const { requestProfileEdit } = await import('../profileEditRequest');
+    const profiles = [{ agent_profile_id: 'ap_new', name: 'saas-code', instructions: 'Do it.', tool_policy: { agent: 'docket', docket: { team: 'saas-code' } }, limits: {} }];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const body = String(input).endsWith('/api/teams') ? { teams: [] } : { protocol_version: 1, data: profiles };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    requestProfileEdit('ap_new');
+    const { container } = mount();
+    await flush();
+    await flush();
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!.value).toBe('saas-code');
   });
 });

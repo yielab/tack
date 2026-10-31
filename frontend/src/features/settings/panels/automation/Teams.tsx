@@ -1,7 +1,7 @@
 import { type Accessor, type Component, For, Show, createResource } from 'solid-js';
 import { api } from '../../../../shared/api';
 import type { AutonomySettings } from '../../../../shared/api/autonomy';
-import { fleetsApi, type AgentProfileSummary } from '../../../../shared/execution';
+import { SINGLE_AGENT_TEXT, fleetsApi, teamChoices, teamsApi, type AgentProfileSummary } from '../../../../shared/execution';
 import { Button, HelpHint, LoadError } from '../../../../shared/ui';
 import { toast } from '../../../../shared/ui/toast';
 import { HELP } from '../../../../shared/help/texts';
@@ -27,6 +27,19 @@ interface Props {
 const Teams: Component<Props> = (props) => {
   const [fleetList, { refetch: refetchFleets }] = createResource(() => fleetsApi.list().then((r) => r.data.data ?? []));
   const fleets = () => (fleetList.error ? [] : fleetList());
+  const [teamList] = createResource(() => teamsApi.list());
+  /** The profiles under the team each names: teams an agent reports first, then names only profiles use. */
+  const groups = () => {
+    const named = props.profiles().filter((p) => teamOf(p));
+    if (named.length === 0) return null;
+    const { reported, notReported } = teamChoices(teamList.error ? [] : (teamList() ?? []), named.map((p) => teamOf(p)));
+    const under = (team: string) => named.filter((p) => teamOf(p) === team);
+    return [
+      ...reported.map((team) => ({ label: team, profiles: under(team) })),
+      ...notReported.map((team) => ({ label: `${team} (not reported by any computer)`, profiles: under(team) })),
+      { label: SINGLE_AGENT_TEXT, profiles: props.profiles().filter((p) => !teamOf(p)) },
+    ].filter((g) => g.profiles.length > 0);
+  };
   /** What the server says about a team: lights-out, needs a person, or nothing while no computer reports it. */
   const stateOf = (team: string) => {
     const line = props.settings()?.teams?.find((t) => t.name === team);
@@ -107,9 +120,26 @@ const Teams: Component<Props> = (props) => {
       onChange={(e) => p.onChange(e.currentTarget.value)}
     >
       <option value="" selected={!p.value}>No profile</option>
-      <For each={props.profiles()}>
-        {(pr) => <option value={pr.agent_profile_id} selected={pr.agent_profile_id === p.value}>{pr.name}</option>}
-      </For>
+      <Show
+        when={groups()}
+        fallback={
+          <For each={props.profiles()}>
+            {(pr) => <option value={pr.agent_profile_id} selected={pr.agent_profile_id === p.value}>{pr.name}</option>}
+          </For>
+        }
+      >
+        {(list) => (
+          <For each={list()}>
+            {(group) => (
+              <optgroup label={group.label}>
+                <For each={group.profiles}>
+                  {(pr) => <option value={pr.agent_profile_id} selected={pr.agent_profile_id === p.value}>{pr.name}</option>}
+                </For>
+              </optgroup>
+            )}
+          </For>
+        )}
+      </Show>
     </select>
   );
 
