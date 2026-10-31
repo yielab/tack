@@ -152,7 +152,10 @@ fn capabilities() -> FeatureCapabilities {
             CapabilitySupport::Supported,
             "the task record carries the tokens used, in total and by model",
         ),
-        proposals: None,
+        proposals: Some(capability(
+            CapabilitySupport::Supported,
+            "through a team's `tack_proposals` record set",
+        )),
         additional: policy_capability(
             CapabilitySupport::Supported,
             "the profile's denied tools and the network flag become the task's restrictions, \
@@ -1157,6 +1160,13 @@ impl DocketAdapter {
         if !records.is_empty()
             && let Some(object) = outcome.terminal_reason.as_object_mut()
         {
+            // The proposal the rows make: the capture stages it as a file's plan would be, or
+            // says why it cannot.
+            match records::proposal(&records) {
+                Some(Ok(plan)) => object.insert("plan".to_owned(), plan),
+                Some(Err(why)) => object.insert("plan_invalid".to_owned(), Value::String(why)),
+                None => None,
+            };
             object.insert("records".to_owned(), Value::Array(records));
         }
         outcome
