@@ -286,6 +286,12 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             ]),
             works_in: None,
             records: None,
+            members: None,
+            decides: None,
+            network: None,
+            queue: None,
+            shape: None,
+            steps: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
@@ -297,6 +303,12 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             read_only: Some(Vec::new()),
             works_in: None,
             records: None,
+            members: None,
+            decides: None,
+            network: None,
+            queue: None,
+            shape: None,
+            steps: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
@@ -305,6 +317,12 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             read_only: None,
             works_in: None,
             records: None,
+            members: None,
+            decides: None,
+            network: None,
+            queue: None,
+            shape: None,
+            steps: None,
         },
     ]);
     assert_eq!(

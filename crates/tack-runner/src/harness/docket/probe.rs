@@ -7,12 +7,13 @@ use std::collections::BTreeSet;
 use chrono::Utc;
 use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamRecordSet, TeamReport, TeamViolation, WorksIn,
+    SignInReport, SignInState, TeamDecides, TeamMember, TeamNetwork, TeamQueue, TeamRecordSet,
+    TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
 };
 
 use super::{
     client::Client,
-    wire::{PodList, PodReport, RecordList, StatusAnswer},
+    wire::{PodList, PodReport, PodRow, PodStep, RecordList, StatusAnswer},
 };
 
 /// The oldest operator API version this harness speaks; a later one is accepted too. It is the
@@ -114,16 +115,79 @@ async fn record_sets(client: &Client, name: &str) -> Option<Vec<TeamRecordSet>> 
     )
 }
 
+/// Where the team works: the explicit key when docket sends one, else what `repoConfigDir` says.
+/// Neither is "did not say", which is not the same as a repository.
+fn works_in(row: &PodRow, report: &PodReport) -> Option<WorksIn> {
+    match report
+        .workspace_kind
+        .as_deref()
+        .or(row.workspace_kind.as_deref())
+    {
+        Some("workdir") => return Some(WorksIn::Folder),
+        Some("codebase") => return Some(WorksIn::Repository),
+        _ => {}
+    }
+    report.repo_config_dir.as_deref().map(|dir| {
+        if dir.is_empty() {
+            WorksIn::Folder
+        } else {
+            WorksIn::Repository
+        }
+    })
+}
+
+/// A kind of step docket names, in Tack's words; `None` for a kind Tack has no word for.
+fn step_kind(kind: &str) -> Option<TeamStepKind> {
+    Some(match kind {
+        "role" | "agent" => TeamStepKind::Agent,
+        "run" | "command" => TeamStepKind::Command,
+        "input" | "ask" => TeamStepKind::Ask,
+        "wait" => TeamStepKind::Wait,
+        "parallel" => TeamStepKind::Parallel,
+        _ => return None,
+    })
+}
+
+/// The steps of a pod's pipeline. A step Tack cannot read or has no word for makes the whole list
+/// absent: a pipeline with a step missing would read as a different one.
+fn steps(raw: Vec<serde_json::Value>) -> Option<Vec<TeamStep>> {
+    raw.into_iter()
+        .map(|value| {
+            let step: PodStep = serde_json::from_value(value).ok()?;
+            Some(TeamStep {
+                kind: step_kind(&step.kind)?,
+                name: step.id,
+                role: step.role,
+                checked_by: step.gate.as_deref().and_then(|gate| match gate {
+                    "mechanical" => Some(TeamStepCheck::Command),
+                    "verdict" => Some(TeamStepCheck::Reviewer),
+                    "approval" => Some(TeamStepCheck::Person),
+                    "external" => Some(TeamStepCheck::External),
+                    _ => None,
+                }),
+                sends_back_to: step.rework.as_ref().map(|rework| rework.to.clone()),
+                sends_back_max: step.rework.and_then(|rework| rework.max),
+            })
+        })
+        .collect::<Option<Vec<_>>>()
+        .or_else(|| {
+            tracing::warn!("docket's pipeline steps could not be read");
+            None
+        })
+}
+
 /// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
-/// where it works and what it keeps.
-async fn team(client: &Client, name: &str) -> Result<TeamReport, String> {
+/// where it works, who is in it, how it decides, what it holds and what it keeps.
+async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
+    let name = &row.name;
     let reply = client.pod(name).await?;
     if reply.status != 200 {
         return Err(reply.error());
     }
     let report: PodReport = reply.read()?;
-    Ok(TeamReport {
-        name: name.to_owned(),
+    let works_in = works_in(row, &report);
+    let mut team = TeamReport {
+        name: name.clone(),
         profile: report.profile.name,
         violations: report
             .profile
@@ -136,16 +200,42 @@ async fn team(client: &Client, name: &str) -> Result<TeamReport, String> {
             .collect(),
         // An older docket sends no key; that stays unknown rather than becoming "none".
         read_only: report.read_only,
-        // Likewise: no `repoConfigDir` key is an older docket, not a team without a repository.
-        works_in: report.repo_config_dir.as_deref().map(|dir| {
-            if dir.is_empty() {
-                WorksIn::Folder
-            } else {
-                WorksIn::Repository
-            }
-        }),
+        works_in,
         records: record_sets(client, name).await,
-    })
+        members: report.members.map(|members| {
+            members
+                .into_iter()
+                .map(|member| TeamMember {
+                    role: member.role,
+                    model: member.model.and_then(|model| model.value),
+                })
+                .collect()
+        }),
+        decides: None,
+        network: report
+            .network
+            .and_then(|network| match network.mode.as_str() {
+                "none" => Some(TeamNetwork::Closed),
+                "limited" => Some(TeamNetwork::Limited),
+                "open" => Some(TeamNetwork::Open),
+                _ => None,
+            }),
+        queue: row.queue.as_ref().map(|queue| TeamQueue {
+            waiting: queue.pending + queue.waiting_approval + queue.waiting_input,
+            running: queue.running,
+        }),
+        shape: report.blueprint.filter(|shape| !shape.is_empty()),
+        steps: report
+            .pipeline
+            .and_then(|pipeline| pipeline.steps)
+            .and_then(steps),
+    };
+    team.decides = Some(if capped(&team) {
+        TeamDecides::AsksAPerson
+    } else {
+        TeamDecides::ToTheEnd
+    });
+    Ok(team)
 }
 
 /// The teams docket reports, each with its profile's violations and the folders its sandbox reads.
@@ -157,7 +247,7 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
     let list: PodList = reply.read()?;
     let mut teams = Vec::new();
     for pod in &list.pods {
-        teams.push(team(client, &pod.name).await?);
+        teams.push(team(client, pod).await?);
     }
     Ok(teams)
 }

@@ -350,6 +350,10 @@ struct World {
     without_records: bool,
     /// Sets whose statement docket refuses with `400`.
     refused_sets: BTreeSet<String>,
+    /// A docket that sends neither `blueprint` nor `pipeline.steps` on a team's report.
+    without_shape_and_steps: bool,
+    /// A docket before `workspaceKind`: neither the list nor a report sends it.
+    without_workspace_kind: bool,
 }
 
 pub struct FakeDocket {
@@ -380,6 +384,8 @@ impl FakeDocket {
             records: BTreeMap::new(),
             without_records: false,
             refused_sets: BTreeSet::new(),
+            without_shape_and_steps: false,
+            without_workspace_kind: false,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -398,6 +404,16 @@ impl FakeDocket {
             shared,
             token_file,
         }
+    }
+
+    /// The fake as the docket the captures were taken from: the captures predate `workspaceKind`,
+    /// `blueprint` and `pipeline.steps` (Phase 83's card G retakes them), so the tests that compare
+    /// the fake's keys with theirs start here.
+    pub async fn as_captured() -> Self {
+        let fake = Self::start().await;
+        fake.without_workspace_kind();
+        fake.without_shape_and_steps();
+        fake
     }
 
     pub fn token_file(&self) -> PathBuf {
@@ -436,6 +452,16 @@ impl FakeDocket {
             .get_mut(name)
             .unwrap()
             .folder = true;
+    }
+
+    /// Makes the fake a docket that sends neither `blueprint` nor `pipeline.steps`.
+    pub fn without_shape_and_steps(&self) {
+        self.shared.lock().unwrap().without_shape_and_steps = true;
+    }
+
+    /// Makes the fake a docket before `workspaceKind`.
+    pub fn without_workspace_kind(&self) {
+        self.shared.lock().unwrap().without_workspace_kind = true;
     }
 
     /// Makes the fake a docket before folders and records.
@@ -776,6 +802,9 @@ fn pods(state: &World) -> Response {
             entry["name"] = json!(name);
             entry["codebase"] = json!(pod.codebase);
             entry["profile"] = json!(pod.profile);
+            if !state.without_workspace_kind {
+                entry["workspaceKind"] = json!(workspace_kind(pod));
+            }
             entry["queue"] = json!({
                 "pending": count("pending"), "running": count("running"),
                 "waitingApproval": count("waiting_approval"),
@@ -787,6 +816,25 @@ fn pods(state: &World) -> Response {
         })
         .collect();
     reply(200, json!({"pods": pods}))
+}
+
+/// `workspaceKind` as docket sends it on a row of the list and on a report.
+fn workspace_kind(pod: &Pod) -> &'static str {
+    if pod.folder { "workdir" } else { "codebase" }
+}
+
+/// `pipeline.steps` of a report: every kind of step and of gate docket names.
+fn pipeline_steps() -> Value {
+    json!([
+        {"id": "plan", "kind": "role", "role": "lead"},
+        {"id": "build", "kind": "role", "role": "implementer", "gate": "mechanical"},
+        {"id": "review", "kind": "role", "role": "reviewer", "gate": "verdict",
+         "rework": {"to": "build", "max": 2}},
+        {"id": "confirm", "kind": "input", "gate": "approval"},
+        {"id": "settle", "kind": "wait"},
+        {"id": "checks", "kind": "parallel"},
+        {"id": "ship", "kind": "run", "gate": "external"}
+    ])
 }
 
 fn pod_report(state: &World, name: &str) -> Response {
@@ -805,6 +853,13 @@ fn pod_report(state: &World, name: &str) -> Response {
     };
     if state.without_records {
         report.as_object_mut().unwrap().remove("repoConfigDir");
+    }
+    if !state.without_workspace_kind {
+        report["workspaceKind"] = json!(workspace_kind(pod));
+    }
+    if !state.without_shape_and_steps {
+        report["blueprint"] = json!(if pod.folder { "routine" } else { "build" });
+        report["pipeline"]["steps"] = pipeline_steps();
     }
     let violations: Vec<Value> = pod
         .violations

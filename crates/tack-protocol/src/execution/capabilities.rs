@@ -122,7 +122,13 @@ impl HarnessCapability {
 }
 
 /// One team a harness runs.
+///
+/// Every optional field below is in Tack's own words, filled by the harness's adapter from what
+/// its agent reports. Absent means the harness did not say, which is never the same as "none":
+/// a screen shows what was reported and nothing it had to guess. No field may carry a harness's
+/// own key name; a harness's own labels arrive only as data (`shape`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TeamReport {
     pub name: String,
     pub profile: String,
@@ -141,10 +147,136 @@ pub struct TeamReport {
     /// has no such thing or did not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub records: Option<Vec<TeamRecordSet>>,
+    /// Who does the work: one entry per member, with the model it runs on. Absent means the
+    /// harness did not say; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members: Option<Vec<TeamMember>>,
+    /// Whether the team runs to the end alone or stops for a person. Absent means the harness did
+    /// not say; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decides: Option<TeamDecides>,
+    /// How far the team's agents can reach over the network. Absent means the harness did not
+    /// say; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<TeamNetwork>,
+    /// How much work the team holds now. Absent means the harness did not say; no field of this
+    /// type may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<TeamQueue>,
+    /// A label the harness gives the team's shape, shown as it came and never sent anywhere.
+    /// Absent means the harness did not say; no field may carry a harness's own key
+    /// name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<String>,
+    /// The steps a task goes through, in order. Absent means the harness did not say (an empty
+    /// list is a team that reported no steps); no field may carry a harness's own
+    /// key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Vec<TeamStep>>,
+}
+
+/// One member of a team.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamMember {
+    /// What the member does, in the harness's own word for it, shown as data.
+    pub role: String,
+    /// The model the member runs on. Absent means the harness did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// Whether a team runs to the end alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamDecides {
+    /// Nothing in a run waits for a person.
+    ToTheEnd,
+    /// A run can stop and wait for a person.
+    AsksAPerson,
+}
+
+/// How far a team's agents can reach over the network.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamNetwork {
+    /// No network.
+    #[serde(rename = "none")]
+    Closed,
+    /// Only some destinations.
+    Limited,
+    /// Anywhere.
+    Open,
+}
+
+/// The work a team holds now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamQueue {
+    /// Tasks that have not started or wait for a person.
+    pub waiting: u64,
+    /// Tasks being worked now.
+    pub running: u64,
+}
+
+/// One step of the way a team handles a task.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct TeamStep {
+    pub name: String,
+    pub kind: TeamStepKind,
+    /// Who does an `agent` step, in the harness's own word for it, shown as data. Absent for a
+    /// step nobody in the team does, or when the harness did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// What decides the step passed. Absent means nothing checks it, or the harness did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked_by: Option<TeamStepCheck>,
+    /// The earlier step the work goes back to when the check fails. Absent means it goes nowhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sends_back_to: Option<String>,
+    /// How many times it may go back. Absent means the harness did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sends_back_max: Option<u32>,
+}
+
+/// What a step is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamStepKind {
+    /// A member of the team works.
+    Agent,
+    /// A command runs.
+    Command,
+    /// A person is asked.
+    Ask,
+    /// The team waits for a time or a condition.
+    Wait,
+    /// Several steps run side by side.
+    Parallel,
+}
+
+/// What decides a step passed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamStepCheck {
+    /// A command's exit.
+    Command,
+    /// A reviewing member's verdict.
+    Reviewer,
+    /// A person's approval.
+    Person,
+    /// A check outside the team.
+    External,
 }
 
 /// Where a team does its work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WorksIn {
     /// A repository: its work comes back as a branch.
@@ -155,6 +287,7 @@ pub enum WorksIn {
 
 /// One set of records a team keeps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TeamRecordSet {
     pub name: String,
     pub description: String,
@@ -163,6 +296,7 @@ pub struct TeamRecordSet {
 
 /// One thing that makes a team need a person during a run, and how to fix it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TeamViolation {
     pub requirement: String,
     pub fix: String,

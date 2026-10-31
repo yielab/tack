@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (97 paths, 135 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (98 paths, 136 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -396,6 +396,20 @@ Roles / specialties and their assignment to items.
 | 200 | Role updated | `Role` |
 | 400 | Validation error or unknown agent profile | `ErrorEnvelope` |
 | 404 | Role not found | `ErrorEnvelope` |
+
+---
+
+## Teams
+
+The teams the board's agents report, with the profiles that name them.
+
+#### `GET /api/teams`
+
+GET /api/teams
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every team any active runner reports, once per name and agent, with the profiles that name it; plus the names profiles use that no runner reports | `TeamList` |
 
 ---
 

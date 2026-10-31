@@ -25,5 +25,6 @@ pub mod settings;
 #[cfg(feature = "embed-spa")]
 pub mod spa;
 pub mod sprints;
+pub mod teams;
 pub mod templates;
 pub mod websocket;
