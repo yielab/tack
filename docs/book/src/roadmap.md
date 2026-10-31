@@ -28,8 +28,24 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-No card is open: Phases 73 to 82 are built and in `develop`. The one thing left is the
-maintainer's own step, and it is not a card: tagging `v0.2.0-beta.1`.
+Phases 73 to 82 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+and it is not a card.
+
+**[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
+as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is proposed;
+no card starts before it is accepted. Seven cards in four rounds:
+
+- **A** Tack reads the whole team from docket: members, models, where it works, how it decides,
+  queue, and its steps and shape when docket reports them; the board lists every team.
+- **D** A run's findings become a proposal from any agent: the plan file gains type, role, team and
+  parent; accepting keeps dependencies as blockers; a docket team proposes through a
+  `tack_proposals` record set.
+- **B** Agents → Teams: one card per team; a profile's Team field offers the teams docket reports.
+- **C** A task goes to a team from the new-item dialog and the item, and starts by itself without
+  a role.
+- **E** The person chooses which proposed items to create, with their type, role, team and nesting.
+- **F** A run shows the team's steps as it goes.
+- **G** The local suite proves it against docket.
 
 What is not a card is in "Cancelled" below.
 
