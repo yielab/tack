@@ -178,7 +178,6 @@ fn default_allowed_origins() -> Vec<String> {
         "http://127.0.0.1:8080".into(),
         "http://localhost:3210".into(),
         "http://127.0.0.1:3210".into(),
-        "https://tack.test".into(),
     ]
 }
 

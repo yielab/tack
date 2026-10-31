@@ -1,6 +1,6 @@
 # ADR 0023: what the first real project found, and what Tack changes for it
 
-**Status: ACCEPTED 2026-10-17.** Executed by Phase 74 (`docs/plans/phase-74.md`). Amends no
+**Status: ACCEPTED 2026-10-17.** Executed by Phase 74 (`docs/closed-cycles/plans/phase-74.md`). Amends no
 decision; it closes the holes the first real project fell into, inside ADR 0002 (leases and
 recovery), ADR 0006 §5 (where the data lives) and ADR 0021 (teams and the ceiling).
 

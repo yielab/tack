@@ -4,8 +4,8 @@
 on 2026-10-11 after the second run.**
 Amends ADR 0015 (a run a normal person can start) and ADR 0013 (where a run's work ends up).
 Decision 1 (a docket harness among the run dialog's kinds) is changed by ADR 0021 decision 1: one HTTP docket harness.
-The test that found everything here is `frontend/e2e/docket-prill.spec.ts`, run through
-`scripts/docket-prill-e2e.sh`.
+The test that found everything here is `onboarding-lab/e2e/docket-prill.spec.ts`, run through
+`onboarding-lab/e2e/docket-prill-e2e.sh`.
 
 **Partly superseded 2026-10-13 by ADR 0019:** decisions 3 and 7 (`[provider.openai_compatible]`, the Automation panel's `{provider, model_id}`). The rest stands.
 

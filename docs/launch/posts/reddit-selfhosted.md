@@ -56,7 +56,7 @@ recording of the full sequence (kill → needs_operator → no duplicate → ope
 - No accounts — one shared bearer token (generated on first start), no per-user permissions
 - No email notifications (signed outbound webhooks exist, nothing else) — you check the board
 - English-only UI
-- One contributor, zero outside users so far — this is a genuinely new project
+- One contributor — this is a new project
 - Backup is snapshot replication (S3-compatible), not live multi-writer sync — one
   SQLite writer at a time
 - Not code-signed yet (right-click-Open on macOS, SmartScreen click-through on Windows)

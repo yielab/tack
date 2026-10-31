@@ -1,6 +1,6 @@
 # ADR 0018: the agent reaches only what you gave it
 
-**Status: ACCEPTED 2026-10-12 (the maintainer: "add a phase that implements every improvement"); executed the same day by Phase 69 (`docs/plans/phase-69.md`).** Decision 9 reverses ADR 0013 decision 5 in one point: the pull request opens when you accept, not on completion.
+**Status: ACCEPTED 2026-10-12 (the maintainer: "add a phase that implements every improvement"); executed the same day by Phase 69 (`docs/closed-cycles/plans/phase-69.md`).** Decision 9 reverses ADR 0013 decision 5 in one point: the pull request opens when you accept, not on completion.
 
 **Decide:** that nothing can read Tack's data or start a run on your machine except you, and that
 an agent Tack runs cannot reach your credentials, approve its own work, or change what Tack

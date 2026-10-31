@@ -1,7 +1,7 @@
 # ADR 0022: a whole project goes in and out through one file
 
 **Status: ACCEPTED 2026-10-17 (the maintainer: "continua", on the schema shown 2026-10-14);
-executed as wave 7 of Phase 73 (`docs/plans/phase-73.md`, tasks B1–B3).** Extends ADR 0017
+executed as wave 7 of Phase 73 (`docs/closed-cycles/plans/phase-73.md`, tasks B1–B3).** Extends ADR 0017
 (the outline) and reads ADR 0021 (roles, profiles, teams, auto-start) as what the file
 describes. ADR 0025 amends decisions 2 and 6 (an import never deletes; the export carries no ids).
 

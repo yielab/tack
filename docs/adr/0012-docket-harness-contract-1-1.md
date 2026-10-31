@@ -53,7 +53,7 @@ agent for Tack.
 | The agent profile's `tool_policy` is opaque JSON edited raw | `crates/tack-db/src/migrations.rs:1398-1406`; `frontend/src/features/agents/runnerFleet/AgentProfilesPanel.tsx:46` |
 | `budgets.tokens` is already in the frozen fixture | `docs/contracts/runner-v1/claim.response.json:24` |
 | docket's side: contract 1.1, `--answers stdin` refuses a stdin task, `files`, `--token-file`, `--max-tokens`, `--policy`, `--recipe` | `../rack-cli/docs/adr/0017-…md` §1–3; `../rack-cli/TODO.md` P35-2, P35-3, P35-5, P35-6, P35-9 |
-| M3's four items and U8's gate | `docs/plans/phase-65.md`, M3 and U8 |
+| M3's four items and U8's gate | `docs/closed-cycles/plans/phase-65.md`, M3 and U8 |
 
 ## What this reverses or amends
 

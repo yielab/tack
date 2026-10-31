@@ -51,7 +51,7 @@ The token value is never written to logs. Use a long, random string and rotate i
 Browsers block cross-origin API calls unless the server explicitly allows the page's origin. Tack's allow-list is `TACK_ALLOWED_ORIGINS`, a comma-separated list of exact origins (scheme + host + port). The default is:
 
 ```
-http://localhost:8080,http://127.0.0.1:8080,http://localhost:3210,http://127.0.0.1:3210,https://tack.test
+http://localhost:8080,http://127.0.0.1:8080,http://localhost:3210,http://127.0.0.1:3210
 ```
 
 Change it when the browser loads the UI from a different origin than the API — for example a reverse-proxy hostname or a separate frontend dev server:

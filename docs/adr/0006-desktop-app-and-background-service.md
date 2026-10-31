@@ -185,7 +185,7 @@ Scheduler path.
 - The workspace gains `crates/tack-desktop`; CI gains the Tauri Linux prerequisites and
   per-platform bundle steps; the release page gains four artifacts.
 - Part VII's board (`TODO.md` §VII.0–§VII.6) and dispatch plan
-  (`docs/agent-handoffs/part-vii/README.md`) implement this ADR card by card.
+  (`docs/closed-cycles/handoffs/part-7/README.md`) implement this ADR card by card.
 
 ## Amendments
 

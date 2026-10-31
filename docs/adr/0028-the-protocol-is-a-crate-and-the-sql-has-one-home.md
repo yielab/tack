@@ -3,7 +3,7 @@
 **Status: ACCEPTED 2026-10-26 by the maintainer. Proposed 2026-10-20, revised 2026-10-25 after an
 audit of the first draft, built 2026-10-26 (the build ran on the maintainer's go-ahead; the
 acceptance was recorded the same day, after it).** Executed by Phase 79
-(`docs/plans/phase-79.md`, §8 lists what the execution found, including the one `Host` trait
+(`docs/closed-cycles/plans/phase-79.md`, §8 lists what the execution found, including the one `Host` trait
 through which `tack-app` calls back into `tack-api`).
 
 **Decide:** that the runner-v1 contract becomes its own crate, `tack-protocol`, with no
@@ -44,7 +44,7 @@ which has SQL in it.
 ## Evidence
 
 Measured on `develop` at `9c046fba` (2026-10-20) and re-measured on `d130d103` (2026-10-25); the
-commands are in `docs/plans/phase-79.md` §1.
+commands are in `docs/closed-cycles/plans/phase-79.md` §1.
 
 - `cargo tree -p tack-runner -e normal` lists `sqlx`, `sqlx-sqlite`, `libsqlite3-sys` and
   `tack-db`.

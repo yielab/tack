@@ -454,9 +454,6 @@ horizontal write scaling — that is a deliberate design choice, not a gap. Prac
   `tack` server per database file.
 - Multi-user auth, per-user identity, and Postgres are out of scope for the current design.
 
-For the numbers this design gives, see the
-[benchmarks](https://github.com/yielab/tack/blob/develop/docs/BENCHMARKS.md).
-
 ---
 
 ## Maintenance

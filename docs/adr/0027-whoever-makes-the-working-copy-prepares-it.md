@@ -3,7 +3,7 @@
 **Status: ACCEPTED 2026-10-19.** The maintainer accepted decisions 1 to 4 on 2026-10-19, after the
 My SaaS onboarding rerun, and decision 5 (token limits by kind of task) later the same day. Decision 5
 amends ADR 0024 decision 1: a run now always has a limit. Executed by Phase 77
-(`docs/plans/phase-77.md`).
+(`docs/closed-cycles/plans/phase-77.md`).
 
 **Decide:** that a run's dependencies are installed by **whoever makes the copy of the code the
 agent works in**: docket for a docket run, Tack's runner for Claude Code, Codex and opencode. That
