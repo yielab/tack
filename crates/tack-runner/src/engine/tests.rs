@@ -3598,6 +3598,115 @@ async fn a_run_that_delivers_no_change_and_cannot_write_stays_succeeded() {
     }
 }
 
+const EMPTY_PLAN: &str = r#"{"v":"1","subtasks":[]}"#;
+
+fn write_only_the_plan(workspace: &Path) {
+    std::fs::write(workspace.join("tack-plan.json"), EMPTY_PLAN).expect("plan");
+}
+
+fn write_the_plan_and_two_more(workspace: &Path) {
+    write_only_the_plan(workspace);
+    std::fs::write(workspace.join("a.rs"), "a\n").expect("a");
+    std::fs::write(workspace.join("b.rs"), "b\n").expect("b");
+}
+
+fn as_kind(work: &mut ClaimedWork, kind: &str) {
+    tools(
+        work,
+        "claude-code",
+        &["Read", "Grep", "Glob", "WebFetch", "Write"],
+    );
+    work.request
+        .resolved_agent_profile
+        .additional
+        .insert("kind".into(), kind.into());
+}
+
+async fn run_as(label: &str, kind: &'static str, change: fn(&Path)) -> EvidenceRun {
+    let tune: fn(&mut ClaimedWork) = match kind {
+        "planner" => |w| as_kind(w, "planner"),
+        "researcher" => |w| as_kind(w, "researcher"),
+        _ => |w| as_kind(w, "implementer"),
+    };
+    run_evidence_attempt_tuned(
+        label,
+        false,
+        change,
+        None,
+        None,
+        false,
+        (None, None, false),
+        tune,
+        None,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn a_planner_or_researcher_that_writes_only_the_plan_stays_succeeded() {
+    for kind in ["planner", "researcher"] {
+        let run = run_as(&format!("plan-only-{kind}"), kind, write_only_the_plan).await;
+        assert_eq!(reported_end(&run).0, AttemptState::Succeeded, "{kind}");
+    }
+    // A Researcher that found nothing worth planning writes no file, and that is not a failure.
+    let run = run_as("researcher-no-plan", "researcher", |_| {}).await;
+    assert_eq!(reported_end(&run).0, AttemptState::Succeeded);
+}
+
+#[tokio::test]
+async fn a_planner_or_researcher_that_changes_more_than_the_plan_is_flagged_with_the_files() {
+    for kind in ["planner", "researcher"] {
+        let run = run_as(
+            &format!("plan-and-more-{kind}"),
+            kind,
+            write_the_plan_and_two_more,
+        )
+        .await;
+        let (state, reason) = reported_end(&run);
+        assert_eq!(state, AttemptState::Failed, "{kind}");
+        assert_eq!(reason["code"], "changed_beyond_plan");
+        assert_eq!(
+            reason["message"],
+            "This run was meant only to write a plan, but it also changed: a.rs, b.rs"
+        );
+        assert_eq!(reason["changed_files"], serde_json::json!(["a.rs", "b.rs"]));
+        // The evidence still holds the change, and says the same.
+        let state = run.data_protocol.state.lock().expect("lock");
+        let evidence: crate::evidence::AttemptEvidence =
+            serde_json::from_slice(&uploaded(&state, "evidence.json")).expect("evidence");
+        assert_eq!(evidence.terminal_reason["code"], "changed_beyond_plan");
+    }
+}
+
+#[tokio::test]
+async fn a_run_of_another_profile_kind_is_judged_as_before() {
+    let run = run_as(
+        "implementer-plan-and-more",
+        "implementer",
+        write_the_plan_and_two_more,
+    )
+    .await;
+    assert_eq!(reported_end(&run).0, AttemptState::Succeeded);
+}
+
+#[test]
+fn the_files_a_run_changed_beyond_the_plan_are_named_up_to_a_limit() {
+    let mut outcome = HarnessOutcome {
+        terminal_state: AttemptState::Succeeded,
+        terminal_reason: serde_json::json!({"code": "done"}),
+        final_checkpoint: None,
+        actual_execution: actual_execution(),
+        usage: usage(),
+    };
+    let files: Vec<String> = (1..=8).map(|n| format!("f{n}.rs")).collect();
+    outcome::changed_beyond_the_plan(&mut outcome, &files);
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        "This run was meant only to write a plan, but it also changed: f1.rs, f2.rs, f3.rs, f4.rs, f5.rs, f6.rs and 2 more"
+    );
+}
+
 #[tokio::test]
 async fn an_outcome_that_worked_outside_the_repository_stays_succeeded_and_publishes_nothing() {
     let reason = serde_json::json!({"code": "done", "outside_repository": true,

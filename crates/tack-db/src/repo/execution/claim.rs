@@ -56,15 +56,15 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
         "researcher",
         "Researcher",
         "Reads and searches; writes a report",
-        &["Read", "Grep", "Glob", "WebFetch", "WebSearch"],
-        "Investigate the question. Do not modify project files. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.",
+        &["Read", "Grep", "Glob", "WebFetch", "WebSearch", "Write"],
+        "Investigate the question. Do not modify project files; the only file you may write is `tack-plan.json`. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.",
     ),
     (
         "planner",
         "Planner",
         "Plans and designs; proposes subtasks you can accept",
-        &["Read", "Grep", "Glob", "WebFetch"],
-        "Plan the work. Do not modify project files. Write `tack-plan.json` at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.",
+        &["Read", "Grep", "Glob", "WebFetch", "Write"],
+        "Plan the work. Do not modify project files; the only file you write is `tack-plan.json`, at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.",
     ),
 ];
 

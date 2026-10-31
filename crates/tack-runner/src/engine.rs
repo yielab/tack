@@ -826,6 +826,7 @@ where
                     }
                     // After the verifier, whose refusal of an empty change stays an
                     // event: the empty change is the headline, not that refusal.
+                    Self::fail_beyond_the_plan(spec, &scratch, &mut staged, &mut outcome);
                     Self::fail_without_change(spec, &scratch, &mut staged, &mut outcome);
                 }
                 if let Some(reason) = outcome.terminal_reason.as_object_mut() {

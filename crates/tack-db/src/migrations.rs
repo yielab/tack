@@ -157,6 +157,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("093_project_prepare_command", &MIGRATION_093[..]),
         ordinary("094_provisional_tokens_per_run", &MIGRATION_094[..]),
         ordinary("095_profile_delivers", &MIGRATION_095[..]),
+        ordinary("096_planner_researcher_write_plan", &MIGRATION_096[..]),
     ]
 }
 
@@ -1879,3 +1880,23 @@ const MIGRATION_094: [&str; 1] =
 // 095: a profile says in one line what it delivers (a change on a branch, a document in a folder, an
 // answer); NULL says nothing. What it may do is read from its tools, not stored.
 const MIGRATION_095: [&str; 1] = ["ALTER TABLE agent_profiles ADD COLUMN delivers TEXT"];
+
+// 096: the built-in Planner and Researcher may write `tack-plan.json`, so Claude Code gives them `Write`.
+// A row whose Claude Code list still equals the one that shipped gets it, and instructions still equal to
+// the shipped text get the new sentence; a profile someone edited keeps their edit.
+const MIGRATION_096: [&str; 4] = [
+    r##"UPDATE agent_profiles
+        SET tool_policy = json_set(tool_policy, '$.tools."claude-code"', json('["Read","Grep","Glob","WebFetch","Write"]'))
+        WHERE builtin = 1 AND kind = 'planner' AND json_valid(tool_policy)
+            AND json_extract(tool_policy, '$.tools."claude-code"') = '["Read","Grep","Glob","WebFetch"]'"##,
+    r##"UPDATE agent_profiles
+        SET instructions = 'Plan the work. Do not modify project files; the only file you write is `tack-plan.json`, at the workspace root: `{"v":"1","subtasks":[{"title","description","acceptance":["…"],"depends_on":[index…],"estimate":"S|M|L","type":"…","role":"…","team":"…","parent":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.'
+        WHERE builtin = 1 AND kind = 'planner' AND instructions = 'Plan the work. Do not modify project files. Write `tack-plan.json` at the workspace root: `{"v":"1","subtasks":[{"title","description","acceptance":["…"],"depends_on":[index…],"estimate":"S|M|L","type":"…","role":"…","team":"…","parent":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.'"##,
+    r##"UPDATE agent_profiles
+        SET tool_policy = json_set(tool_policy, '$.tools."claude-code"', json('["Read","Grep","Glob","WebFetch","WebSearch","Write"]'))
+        WHERE builtin = 1 AND kind = 'researcher' AND json_valid(tool_policy)
+            AND json_extract(tool_policy, '$.tools."claude-code"') = '["Read","Grep","Glob","WebFetch","WebSearch"]'"##,
+    r##"UPDATE agent_profiles
+        SET instructions = 'Investigate the question. Do not modify project files; the only file you may write is `tack-plan.json`. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.'
+        WHERE builtin = 1 AND kind = 'researcher' AND instructions = 'Investigate the question. Do not modify project files. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.'"##,
+];

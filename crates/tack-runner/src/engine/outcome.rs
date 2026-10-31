@@ -86,6 +86,37 @@ pub(super) fn no_change_delivered(outcome: &mut HarnessOutcome) {
     outcome.terminal_reason = serde_json::Value::Object(reason);
 }
 
+/// The most files a run's reason names before it says how many more there were.
+const NAMED_FILES_MAX: usize = 6;
+
+/// The attempt of a Planner or Researcher whose agent reported success but changed more than the
+/// plan ends failed, with the sentence its panel prints as the reason; what the harness reported
+/// stays beside it. Nothing is lost: the evidence still holds the change.
+pub(super) fn changed_beyond_the_plan(outcome: &mut HarnessOutcome, files: &[String]) {
+    outcome.terminal_state = AttemptState::Failed;
+    let mut reason = match std::mem::take(&mut outcome.terminal_reason) {
+        serde_json::Value::Object(reason) => reason,
+        _ => serde_json::Map::new(),
+    };
+    let mut named = files
+        .iter()
+        .take(NAMED_FILES_MAX)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if files.len() > NAMED_FILES_MAX {
+        named.push_str(&format!(" and {} more", files.len() - NAMED_FILES_MAX));
+    }
+    reason.insert("reason".to_owned(), "changed_beyond_plan".into());
+    reason.insert("code".to_owned(), "changed_beyond_plan".into());
+    reason.insert(
+        "message".to_owned(),
+        format!("This run was meant only to write a plan, but it also changed: {named}").into(),
+    );
+    reason.insert("changed_files".to_owned(), files.into());
+    outcome.terminal_reason = serde_json::Value::Object(reason);
+}
+
 impl HarnessOutcome {
     /// The usage the evidence carries: the measured counters, plus the
     /// agent's version and the model it ran, which the verifier reads from
@@ -443,6 +474,47 @@ where
             return;
         };
         no_change_delivered(outcome);
+        evidence.terminal_reason = outcome.terminal_reason.clone();
+        Self::restage_evidence(&evidence_path, staged, &evidence);
+    }
+
+    /// A Planner or Researcher run (`ExecutionRequestSnapshot::writes_only_the_plan`) whose agent
+    /// reported success and whose captured evidence holds any file other than `tack-plan.json`
+    /// ends failed, naming the files: it was meant only to write a plan, and a change nobody
+    /// asked for is not accepted silently. A run that worked outside the repository is left as
+    /// it is.
+    pub(super) fn fail_beyond_the_plan(
+        spec: &ExecutionSpec,
+        scratch: &std::path::Path,
+        staged: &mut [serde_json::Value],
+        outcome: &mut HarnessOutcome,
+    ) {
+        if outcome.terminal_state != AttemptState::Succeeded
+            || outcome.terminal_reason["outside_repository"] == serde_json::Value::Bool(true)
+            || !spec.work.request.writes_only_the_plan()
+        {
+            return;
+        }
+        let evidence_path = scratch.join("src/evidence.json");
+        let Some(mut evidence) = std::fs::read(&evidence_path)
+            .ok()
+            .and_then(|bytes| {
+                serde_json::from_slice::<crate::evidence::AttemptEvidence>(&bytes).ok()
+            })
+            .filter(|evidence| evidence.captured)
+        else {
+            return;
+        };
+        let others: Vec<String> = evidence
+            .files
+            .iter()
+            .map(|file| file.path.clone())
+            .filter(|path| path != crate::evidence::PLAN_FILE)
+            .collect();
+        if others.is_empty() {
+            return;
+        }
+        changed_beyond_the_plan(outcome, &others);
         evidence.terminal_reason = outcome.terminal_reason.clone();
         Self::restage_evidence(&evidence_path, staged, &evidence);
     }

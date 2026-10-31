@@ -604,12 +604,28 @@ const WRITE_TOOLS: [&str; 7] = [
 /// they decide only when no explicit tool list does.
 const READ_ONLY_PROFILE_KINDS: [&str; 3] = ["reviewer", "researcher", "planner"];
 
+/// The profile kinds that write `tack-plan.json` and no other file.
+const PLAN_WRITER_KINDS: [&str; 2] = ["planner", "researcher"];
+
 impl ExecutionRequestSnapshot {
     /// The autonomy level a person asked this run to have, when the board said (the `autonomy`
     /// key of `additional`). Absent means none was asked for, and a value that is not one of the
     /// three levels reads as absent.
     pub fn autonomy(&self) -> Option<AutonomyLevel> {
         serde_json::from_value(self.additional.get("autonomy")?.clone()).ok()
+    }
+
+    /// Whether this run's profile is a Planner or a Researcher on an agent other than docket:
+    /// the one file it may write is `tack-plan.json`. Docket's researcher writes a document,
+    /// which is its delivery.
+    pub fn writes_only_the_plan(&self) -> bool {
+        self.requested_harness_kind.as_str() != "docket"
+            && self
+                .resolved_agent_profile
+                .additional
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|kind| PLAN_WRITER_KINDS.contains(&kind))
     }
 
     /// Whether this run is expected to change the repository, so that a run which
@@ -620,7 +636,8 @@ impl ExecutionRequestSnapshot {
     ///   profile's for that agent, when it is not `*`. Naming a write tool (`bash`,
     ///   `shell`, `edit`, `multiedit`, `notebookedit`, `write`, `apply_patch`) means
     ///   a change is expected, whatever the profile's kind; naming only read tools
-    ///   means none is;
+    ///   means none is. The exception is `write` on a `planner` or `researcher` outside
+    ///   `docket`: that is the plan file those profiles write, not a change;
     /// - with `*` or no list at all, a profile of kind `reviewer`, `researcher` or
     ///   `planner` is read-only, and any other expects a change. No list at all
     ///   changes nothing, except for `docket`, which applies its team's own tools;
@@ -650,19 +667,21 @@ impl ExecutionRequestSnapshot {
             tools = strings(&profile.tool_policy["tools"][harness]);
         }
         let wildcard = tools.iter().any(|tool| tool == PermissionPolicy::ALL_TOOLS);
+        let kind = profile
+            .additional
+            .get("kind")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let writes_the_plan = self.writes_only_the_plan();
         if !tools.is_empty() && !wildcard {
             return tools.iter().any(|tool| {
                 WRITE_TOOLS
                     .iter()
                     .any(|write| tool.eq_ignore_ascii_case(write))
                     && !denies(tool)
+                    && !(writes_the_plan && tool.eq_ignore_ascii_case("write"))
             });
         }
-        let kind = profile
-            .additional
-            .get("kind")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_default();
         if READ_ONLY_PROFILE_KINDS.contains(&kind) {
             return false;
         }
