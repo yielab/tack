@@ -89,10 +89,10 @@ task" or "The built-in Implementer". To use another profile for one run, press a
 ### Teams and docket
 
 With docket, a profile names a team, and every run goes to that team: see [Choosing an
-agent](running-agents.md#details-per-agent). A profile with no team uses a team named for the project's
-folder. A profile also names its agent when you want that profile to always use one agent. The team and the
-agent are set in the profile's definition in the [project file](import-export.md); the profile form on the
-Agents page does not offer them.
+agent](running-agents.md#details-per-agent). A profile with no team uses the project's default team, named
+for the project's folder. You choose a profile's team in the **Team** field of its form on the Agents page.
+A profile can also name its agent, so that it always runs with one agent; that is set in the profile's
+definition in the [project file](import-export.md) or with `--tool-policy` on `tack agent-profile create`.
 
 **Lights-out** means the team can run to the end without a person. **Needs a person** means the team stops
 for a person during a run, or breaks a rule of its profile. The line says which. An administrator checks
@@ -109,7 +109,7 @@ rows are the ones its result keeps.
 
 ### The Apply button
 
-**Apply the repository's teams** is always disabled today. Its reason reads: "Tack cannot run this on the
+**Apply the repository's teams** is always disabled. Its reason reads: "Tack cannot run this on the
 team's computer from the board yet." The board has no channel to the machine where the team lives, so you
 create the team there yourself; the link beside the button, **How to set up a team there**, opens the
 [Administrator Guide](../admin-guide/runners.md#docket-teams). **Manage profiles** links to the profiles on
@@ -152,14 +152,15 @@ hold:
 - A profile resolves for it, as under [Teams](#teams), and an agent is named by the profile or by the
   project's default agent.
 - There is a machine to run on: the profile's fleet, or exactly one active runner.
-- The project's daily limits are not spent (tokens, dollars, items waiting for your review; see
+- The project's daily limits are not spent (tokens, items waiting for your review; see
   [Budgets](merging.md#budgets)).
 - The first In progress column has room under its work-in-progress limit.
 - Fewer than the cap of runs are open in the project.
 
 A task that starts moves to the first In progress status, and its activity says "Started by itself: it
-reached To Do with the role Content". The run lasts at most an hour. The agent works with the tools its
-profile allows and with web tools off.
+reached To Do with the role Content". The agent works with the tools its profile allows. Web tools are on
+only when the profile says its role needs the network. The run lasts as long as the profile's time limit
+allows, and one hour when it sets none.
 
 **It asks before each action unless every machine that could run it sandboxes the agent.** On a machine
 where the agent is not sandboxed, a run started by itself pauses at each action and waits for your answer,
@@ -209,22 +210,9 @@ stays at L3: it needs a person during a run".
 
 ## Repeating a task
 
-A task can repeat **weekly**, **monthly** or **quarterly**. Closing it creates the next one, once.
-
-Set it in the task's header, in **Repeats** (Never, Weekly, Monthly, Quarterly); see
-[Working with Items](items.md#repeating-a-task). Tasks that repeat carry a **Repeats** badge on the board.
-
-When the task moves into a Done status from a status that is not Done, Tack creates the next one if no task
-made from it is still unfinished. The next task:
-
-- is in the first To do column;
-- is due at the end of the next period, counted from the closed task's due date (from today if it had none):
-  a week later, the last day of the next month, or the last day of the next quarter;
-- copies the title, description, type, parent, priority, estimate, tags, repeat setting and roles;
-- does not copy the sprint or the assignee.
-
-The closed task's activity says "Created the next one, due" with the date. Reopening a task and closing it
-again does not make a second one while the first is unfinished.
+A task can repeat **weekly**, **monthly** or **quarterly**: closing it creates the next one, once. Set
+it in the task's **Repeats** field; the rules for the next task's date and what it copies are in
+[Working with Items](items.md#repeating-a-task).
 
 The next task has the roles of the old one and starts in the first To do column. If that column is the
 project's start status, Tack starts it on its next look, so a repeating task can run on its own each period.
@@ -280,7 +268,10 @@ The answer to **Does this project have code?** from when you created the project
 computer, or no code yet. Under **Advanced** there is also a repository URL, for a repository the agent
 should clone. For a folder, the tab reads it back in one sentence ("A git repository on branch main, no
 uncommitted files", "A folder without git: the agent will work in it directly", "That path does not exist").
-A **Branch** field names the branch to work from.
+A **Branch** field names the branch to work from. **Install dependencies before each run** is on by default:
+Tack prepares the agent's copy with the command that matches the folder's lockfile, installs nothing when
+there is no lockfile, and uses the command you type in **Install command** instead when you give one. A line
+under it says which applies.
 
 ### Where the agent works
 
@@ -346,4 +337,4 @@ answer), which the Agents page shows beside the agent that runs it. Three chips 
 profile's tools can change files, run commands or use the network; they are read from the tools you tick, so
 you never type them, and a chip that does not apply stays on the row, dimmed. The profile form also has a
 **Team** select, for the team that takes its runs; it lists the teams your profiles already name, and "No team"
-leaves the choice to docket.
+sends the runs to the project's default team.

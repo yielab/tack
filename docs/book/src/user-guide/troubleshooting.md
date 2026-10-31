@@ -1,6 +1,6 @@
 # Troubleshooting & FAQ
 
-This page is for people who use Tack every day and hit something unexpected. Each entry gives the symptom, what causes it, and what to do. Problems with installing, exposing, securing or recovering the server belong to whoever runs it; this page points them to the [Administrator Guide](../admin-guide/index.md).
+This page is for people who use Tack every day and hit something unexpected. Each entry gives the symptom, what causes it, and what to do. Problems with installing, exposing, securing or recovering the server, and with installing agents on a runner, belong to whoever runs it: the table points to the [Administrator Guide's troubleshooting page](../admin-guide/troubleshooting.md) for those.
 
 ---
 
@@ -8,25 +8,17 @@ This page is for people who use Tack every day and hit something unexpected. Eac
 
 | Symptom | Go to |
 |---|---|
-| The page is blank, or the board never loads | [The board or UI won't load](#the-board-or-ui-wont-load) |
+| The page is blank, or the board never loads | [The board does not load](../admin-guide/troubleshooting.md#the-board-does-not-load) (Administrator Guide) |
 | A label or the theme "didn't change" | [A vocabulary or theme change did not apply](#a-vocabulary-or-theme-change-did-not-apply) |
 | The Run with agent button says execution is off | [Agent execution is off](#agent-execution-is-off) |
 | A run succeeded but there is no pull request, pack or branch | [A run succeeded, but there is no pull request, pack or branch](#a-run-succeeded-but-there-is-no-pull-request-pack-or-branch) |
 | The Start switch is greyed out, or auto-start turned itself off | [Auto-start is off, and says why](#auto-start-is-off-and-says-why) |
 | A task reached the Start column and nothing happened | [A task did not start by itself](#a-task-did-not-start-by-itself) |
-| `tack runner doctor` says "needs docket 0.2.0-beta.6" | [docket says it needs 0.2.0-beta.6](#docket-says-it-needs-020-beta6) |
-| The project never merges by itself, and Settings names a team | [A team runs attended and the project stays at L3](#a-team-runs-attended-and-the-project-stays-at-l3) |
+| `tack runner doctor` says "needs docket 0.2.0-beta.6" | [A runner shows "needs docket 0.2.0-beta.6"](../admin-guide/troubleshooting.md#a-runner-shows-needs-docket-020-beta6) (Administrator Guide) |
+| The project never merges by itself, and Settings names a team | [A team is attended](../admin-guide/troubleshooting.md#a-team-is-attended) (Administrator Guide) |
 | An import says "This file cannot be imported" | [A project file was refused](#a-project-file-was-refused) |
 | An import says a section could not be written | [A section failed to write](#a-section-failed-to-write) |
 | Port in use, database locked, failed migration, `401`, CORS, upload limits | [Server problems](#server-problems) |
-
----
-
-## The board or UI won't load
-
-**Cause.** The web page and the API come from the same server. A blank page, a loading skeleton that never ends, or network errors almost always mean the server is not running at the address you opened.
-
-**What to do.** Open `http://127.0.0.1:3210/api/health` (or the address you started Tack on). A running server answers `{"status":"ok", …}`. If nothing answers, start it with `tack serve`, or reopen the desktop app, and read the console for the reason. If you run Tack as a background service, `tack service status` says whether it is active. If the address answers but the page still fails, see [Server problems](#server-problems).
 
 ---
 
@@ -40,17 +32,17 @@ This page is for people who use Tack every day and hit something unexpected. Eac
 
 ## Agent execution is off
 
-**Cause.** Tack is a project manager first. Until a runner is active on this computer, the **Run with agent** button shows "Agent execution is off" instead of a form.
+**Cause.** Tack is a project manager first. Until agents are turned on for this computer, the **Run with agent** button shows "Agent execution is off" instead of a form.
 
-**What to do.** Open **Agents** in the sidebar and press **Turn on**, then sign in to the agent you want from its own command. [Running Agents on Tasks](running-agents.md) walks through it. To attach runners on other computers, see [Installing and Operating Runners](../admin-guide/runners.md).
+**What to do.** Open **Agents** in the sidebar and press **Turn on**, then sign in to the agent you want from its own command. [Running Agents on Tasks](running-agents.md#agents-on-this-computer) walks through it. To attach runners on other computers, see [Installing and Operating Runners](../admin-guide/runners.md).
 
 ---
 
 ## A run succeeded, but there is no pull request, pack or branch
 
-**Cause.** Everything after a succeeded run is optional and best-effort, and none of it changes the run's result. The run's timeline says which step was skipped and why: verification not set up, the branch not pushed, git without credentials for the remote, or a task that is not linked to a GitHub issue, which a pull request needs.
+**Cause.** Everything after a succeeded run is optional and none of it changes the run's result. The run's timeline says which step was skipped and why: verification not set up, the branch not pushed, or a task that is not linked to a GitHub issue, which a pull request needs.
 
-**What to do.** Read the skipped step on the run's timeline. Verification, pushing and pull requests are set up on the runner, by whoever installed it; see [After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt). On the computer that runs the agent, `tack runner doctor` shows whether verification is on and found. To open pull requests, link the task to its issue and ask the administrator to set a GitHub token. Then run the task again.
+**What to do.** Read the skipped step on the run's timeline. To open pull requests, link the task to its issue (in the **Link GitHub issue** section of its Overview tab). Verification, pushing and the GitHub token are set up by whoever installed the runner; the steps are in the [Administrator Guide](../admin-guide/troubleshooting.md#a-succeeded-run-has-no-pull-request-pack-or-branch). Then run the task again.
 
 ---
 
@@ -69,38 +61,9 @@ Auto-start is off by default for every project. A project file never switches it
 
 ## A task did not start by itself
 
-**Cause.** Tack starts a task only when all of these are true:
+**Cause.** Tack starts a task only when every condition listed under [Start](automation.md#start) holds: the switch is on and the task is in the chosen status, it has a role that leads to a profile and an agent, a machine can run it, nothing is already open on it, nothing blocks it, and the project's work-in-progress, daily limits and open-run cap have room.
 
-1. The Start switch is on, and the task is in the status you chose in **Settings → Automation → Start**.
-2. The task has at least one role.
-3. A profile resolves for the task (its role's profile, else the project's default profile, else the built-in Implementer), and an agent is named by that profile or by the project.
-4. A machine can run it: the profile's fleet, or exactly one active runner.
-5. The task has no open run, and no unfinished blocker.
-6. The first in-progress column has room under its WIP limit.
-7. The project's daily budget is not used up.
-8. Fewer runs are open than the cap in "Keep at most N runs open".
-
-Tack looks every 30 seconds by default, so the start can lag a little. An administrator can change the interval or switch the check off; see [Configuration](../admin-guide/configuration.md).
-
-**What to do.** Walk down the list. The task's **Automation** row in its drawer says what happens to it: "Starts by itself when it reaches …", or "By hand: this project doesn't start tasks by itself", or that a role has no profile. When it starts, the task is moved to the first in-progress column and its activity reads "Started by itself: it reached … with the role …". If it still waits, start it by hand with **Run with agent**.
-
----
-
-## docket says it needs 0.2.0-beta.6
-
-**Cause.** Tack sends each docket run to a long-lived docket team over docket's HTTP interface, version 6, which needs docket 0.2.0-beta.6. Any other version is reported as "needs docket 0.2.0-beta.6" by `tack runner doctor`, and no run is sent to it.
-
-**What to do.** Install docket 0.2.0-beta.6 on the computer that runs the agent, then check it with `tack runner doctor`: the docket block should show `api: 5`. The administrator's steps are in [Installing and Operating Runners](../admin-guide/runners.md).
-
----
-
-## A team runs attended and the project stays at L3
-
-**What you see.** The project's merge level is higher than L3, yet its tasks do not merge by themselves. **Settings → Automation → Ceiling** lists a team with "keeps its tasks at L3" and a fix.
-
-**Cause.** A docket team that needs a person during a run is called *attended*. Tack caps the automatic merge at what the team allows, so tasks run by an attended team stay at L3 however high the project's level. The **Merge** button is not held back; only the automatic merge is.
-
-**What to do.** Apply the fix the Ceiling rung shows, which is a docket command for that team. `tack runner doctor` prints the same fix beside the team's name: `team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work`. When the team reports `lights-out`, the ceiling lifts. The button that would apply a repository's teams for you is shown disabled, because the board has no way to reach the computer that runs the agent.
+**What to do.** Open the task. Its **Automation** row says what happens to it: "Starts by itself when it reaches …", "By hand: this project doesn't start tasks by itself", or that a role has no profile. Tack looks about every 30 seconds, so a start can lag a little; if it never comes, the administrator can check that the look is switched on, as the [Administrator Guide](../admin-guide/troubleshooting.md#auto-start-does-not-tick) explains. Until then, start the task by hand with **Run with agent**.
 
 ---
 
@@ -135,8 +98,9 @@ The full list of refusals, and the warnings that do not stop an import, is in [I
 
 These belong to whoever runs the server. If you run it yourself, the [Administrator Guide](../admin-guide/index.md) has the steps.
 
-A server that exits at once, a locked or damaged database, a failed migration, `401 Unauthorized` on every request, CORS errors in the browser console, uploads rejected as too large and a restore that did not apply are server-side problems. The [Troubleshooting page of the Administrator Guide](../admin-guide/troubleshooting.md) has an entry for each:
+A blank page, a server that exits at once, a locked or damaged database, a failed migration, `401 Unauthorized` on every request, CORS errors in the browser console, uploads rejected as too large and a restore that did not apply are server-side problems. The [Troubleshooting page of the Administrator Guide](../admin-guide/troubleshooting.md) has an entry for each:
 
+- [The board does not load](../admin-guide/troubleshooting.md#the-board-does-not-load);
 - [The server says the port is in use](../admin-guide/troubleshooting.md#the-server-says-the-port-is-in-use);
 - [The database is locked](../admin-guide/troubleshooting.md#the-database-is-locked);
 - [Startup fails with a migration error](../admin-guide/troubleshooting.md#startup-fails-with-a-migration-error);

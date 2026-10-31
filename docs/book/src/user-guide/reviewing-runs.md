@@ -122,7 +122,7 @@ every run with a rate card you enter once.
 
 ## Factory metrics
 
-**Factory metrics** is in a project's sidebar (the page is `/projects/<id>/factory`). It summarises all the
+**Factory metrics** is in a project's sidebar. It summarises all the
 runs, questions and verification in a project, as one card per measure. The page covers all time. Each card
 shows a figure, or **Not measured** with its reason when there is nothing to measure.
 
@@ -161,6 +161,6 @@ not to one project.
 4. Save. Every Cost figure on the page updates.
 
 A run is priced as the model the agent reported, or else the model you requested. A model that is not on the
-card cannot be priced. The CI-minute price is kept on the card but is not part of the Cost figure yet.
+card cannot be priced. The CI-minute price is kept on the card but is not part of the Cost figure.
 
-The project's daily dollar limit uses the same card: see [Budgets](merging.md#budgets).
+Dollar figures are estimates for reading only. Limits are in tokens: see [Budgets](merging.md#budgets).

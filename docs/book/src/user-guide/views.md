@@ -1,9 +1,9 @@
 # Views
 
-Tack has six **work tabs** — Board, List, Table, Calendar, Timeline, Sprint — all showing the
-same item set. Switching between tabs never re-fetches data; an item created on the Board
-appears immediately in every other view. Two more screens, **Overview (Dashboard)** and
-**Factory metrics**, are accessible from the sidebar and show project statistics.
+Tack has six **work tabs** — Board, List, Table, Calendar, Timeline and Sprint (the last takes your
+project's word for a sprint) — all showing the same items. An item created in one appears at once
+in the others. Two more screens, **Overview** and **Factory metrics**, are in the sidebar and show
+project statistics.
 
 Every view shares the same shell: a sidebar to switch project and view, a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
@@ -16,42 +16,40 @@ on `Ctrl+K`. Theme, palette, text size and zoom are set in Settings → Display 
 
 Kanban columns driven by the project's workflow statuses.
 
-- Each column corresponds to one workflow status. Names, order, and WIP limits come from **Settings → Workflow**. Columns derive directly from the workflow — no "create a board" step is needed.
-- **Drag and drop** a card to change its status. Changes save immediately with optimistic UI.
+- Each column is one workflow status. Names, order, and WIP limits come from **Settings → Workflow**; there is no separate "create a board" step.
+- **Drag and drop** a card to change its status. The change saves at once.
 - **Move a card by keyboard.** Tab to the small arrow on a card, or hover the card to see it, and press Enter or Space to open **Move to…**. The arrow keys choose a column, Enter moves the card and the page announces where it went, and Escape closes the menu. Each column is a named region that scrolls inside itself: Tab into its list and use the arrow keys or Page Down to reach the last card, while the board's own scroll bar stays at the bottom of the screen.
 - **WIP limit** is shown in the column header when set. Dragging a card into a full column is blocked.
-- **Click a card** to open the item detail drawer (tabs such as Details, Activity, Execution, Dependencies, Files and Fields).
-- **Badges on a card** say what has happened to it. **Needs your review** means a finished run is waiting for you to accept or reject it. **Repeats** means closing the task creates the next one. Three more show what Tack did without you: **Started by itself**, **Team: name** (the docket team that ran it) and **Merged by itself**. The List and Table views show the three automation badges too. See [Automating a Project](automation.md).
-- **Add an item** via the **Add item** button inside a column header (pre-sets the status) or the toolbar **+ New** button.
-- Board state syncs in real time via WebSocket — changes in one browser tab appear in another.
-- Empty projects show a three-step onboarding checklist until the first item is created.
+- **Click a card** to open the item drawer (tabs Overview, Activity, Execution, Dependencies, Files and Fields; see [Working with Items](items.md)).
+- **Badges on a card** say what has happened to it. **Needs your review** means a finished run is waiting for you to accept or reject it. **Repeats** means closing the task creates the next one. Three more show what Tack did without you: **Started by itself**, **Team: name** (the docket team that ran it) and **Merged by itself**. The List shows the same badges, and the Table shows them in its Review column. See [Automating a Project](automation.md).
+- **Add an item** with the **Add item** button in a column header (it starts in that status), the **+ New** button in the top bar, or the `n` key (first column).
+- Press `r` to refresh the board. Changes made in another browser tab or by another person appear without refreshing.
+- An empty project shows a three-step checklist until the first item exists.
 
 ---
 
 ## List
 
-Sortable, flat or hierarchical table of all items.
+Every item as a row, children indented under their parent.
 
-- **Flat mode** (default): items sorted by creation date; use the sort dropdown to reorder by priority, status, or type.
-- **Hierarchy toggle**: enable in the toolbar to indent items by `parent_id`. Expand/collapse with the ▸ arrow. When every child of an item reaches a Done status, the parent auto-moves to Done — cascading up the hierarchy.
-- **Inline create:** click `+` at any level to create a new item at that position.
-- **Inline edit:** click any field (title, type, priority, status) in the row to edit it.
-- **Bulk operations:** check multiple rows, then use the bulk action bar to move all to a new status or delete them.
-- Filter by status, priority, and type using the toolbar dropdowns.
+- Rows are ordered by creation date within each level. A parent with children shows how many it has; use the arrow to expand or collapse it, or **Expand all** and **Collapse all** in the header.
+- Each row shows the type, title, priority, status, tags and the badges the Board shows. Click the title to open the item drawer.
+- **New Item** in the header adds an item at the top level. On a row, **+** (shown on hover or keyboard focus) adds a child under it and the bin deletes it after a confirmation.
+- When every child of an item reaches a Done status, the parent moves to Done too, and so on up the hierarchy.
+- The List does not filter or sort, and a row cannot be dragged under another parent. Use the [Table](#table) to sort and filter.
 
 ---
 
 ## Table
 
-A dense spreadsheet view of every item — title, type, status, priority, assignee, and due date
-in sortable columns.
+A dense spreadsheet view of every item — title, type, status, priority, assignee, due date and a
+Review column that flags runs waiting for you.
 
-- **Click a column header** to sort by it; click again to reverse. Title, status, priority,
-  assignee, and due date are all sortable.
-- **Filter** with the search box — matches across title, assignee, and status as you type.
-- **Inline edit:** click an editable cell (title, status, priority, assignee, due date) to
-  change it in place; the edit saves immediately.
-- Best for scanning or bulk-triaging a large backlog where the card layout is too tall.
+- **Click a column header** to sort by it; click again to reverse.
+- **Filter…** matches as you type against the title, assignee and status.
+- **Inline edit:** click an editable cell (title, status, priority, assignee, due date) to change it in place; the edit saves at once.
+- **Columns** shows or hides columns, and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser.
+- Best for scanning or triaging a large backlog where the card layout is too tall.
 
 ---
 
@@ -59,10 +57,10 @@ in sortable columns.
 
 Monthly grid positioned by due date. Drag to reschedule.
 
-- Items appear on the day matching their `due_date`. Items without a due date appear in the **No Date** tray at the bottom.
-- **Drag** an item from one day cell to another to change its `due_date`. Drag from the No Date tray onto a day to schedule it.
-- Navigate months with `←` / `→` or jump to today.
-- Click an item to open the detail drawer.
+- Items appear on the day of their due date. Items without one are listed in the **Unscheduled** tray under the grid.
+- **Drag** an item from one day to another to change its due date, or from the tray onto a day to schedule it. Drop an item on the tray to clear its due date.
+- **← Previous**, **Next →** and **Today** move between months.
+- Click an item to open the item drawer.
 
 ---
 
@@ -70,34 +68,33 @@ Monthly grid positioned by due date. Drag to reschedule.
 
 Gantt-style horizontal bar chart. Drag to reschedule.
 
-- Each item with a `started_at` and/or `due_date` is rendered as a bar spanning its date range.
-- **Drag a bar** horizontally to shift the date range. **Drag either edge** to resize (set `started_at` or `due_date` independently). Changes snap to the active grid.
-- **View modes:** Week, Month, Quarter — toggle in the toolbar.
-- **Dependency overlay:** items blocked by another item are marked with an indicator from the dependency graph.
-- Scroll horizontally to see longer projects. Click a bar to open the detail drawer.
+- Each item with a start date or a due date is a bar spanning its dates.
+- **Drag a bar** sideways to shift both dates. **Drag either edge** to change the start date or the due date on its own.
+- **Week**, **Month** and **Quarter** in the toolbar set the zoom; **Today** returns to the present.
+- An item blocked by another carries a marker.
+- Scroll sideways to see a longer project. Click a bar to open the item drawer.
 
 ---
 
 ## Sprint
 
-Two-pane sprint planning surface.
+Two-pane sprint planning. The tab and the words below follow your project's [vocabulary](vocabulary.md): a construction project sees "Phase", for example.
 
-- **Left pane (Backlog):** items not assigned to any sprint, sorted by priority.
-- **Right pane (Sprint lanes):** one lane per sprint in Planning or Active state, showing capacity vs. commitment (story points), item count, and a done/total progress bar.
-- **Drag from the Backlog** into a sprint lane to assign `sprint_id`. Drag between sprint lanes to reassign. Drag back to the Backlog to unassign.
-- The server enforces the rule that items can only join sprints in Planning or Active state.
-- Sprints move through four states: `Planning → Active → Review → Closed`. Advance the lifecycle with the status buttons on each sprint lane header.
+- **Left pane (backlog):** items not assigned to any sprint, sorted by priority.
+- **Right pane:** one lane per sprint that is not closed, showing its dates, the done and total items, the points done and planned, and a progress bar. **New sprint** adds one; **Edit** on a lane changes its name, goal and dates.
+- **Drag from the backlog** into a lane to assign the item. Drag between lanes to reassign. Drag back to the backlog to unassign. A sprint accepts items only while it is planning or active.
+- A sprint moves through *planning*, *active*, *review* and *closed*. The button on each lane takes it to the next one: **Start**, **Complete** (to review), then **Close**.
 
 ---
 
-## Overview (Dashboard)
+## Overview
 
-Read-only project statistics — accessible from the sidebar.
+Read-only project statistics, in the sidebar.
 
-- Throughput chart: items completed per time period.
-- Status breakdown: item counts per workflow column with colour-coded category bars.
-- Priority breakdown: counts by priority level.
-- All statistics are computed live from the item set — no aggregation job.
+- Tiles for the total number of items, how many are completed, the completion rate and what was completed in the last 7 and 30 days.
+- A breakdown by workflow status, by priority and by item type, as bars.
+- Progress in story points (or your project's word for them), when items carry estimates.
+- Everything is computed from the items when you open the page.
 
 ---
 
@@ -105,11 +102,8 @@ Read-only project statistics — accessible from the sidebar.
 
 Read-only, per project — **Factory metrics** in the sidebar. It answers how well agent work is
 going on this project: how often a run needed a person, how long the person took, what verification
-cost in tokens, how often a merge-readiness pack was accepted, how many pull requests agents
-opened, merged, closed or had reverted, and what the runs cost. A card whose input does not exist
-yet says **Not measured** and why, never `0`. The **Cost** card, the **Cost by model** table and,
-when runs went to named teams, the **By team** table price the tokens from one rate card; a run
-that cannot be priced reads **Not measured**. Every number, its definition and the counts behind it
-are in [Factory metrics](reviewing-runs.md#factory-metrics).
+cost, how many changes were accepted and merged, and what the runs cost. A card with nothing to
+measure says **Not measured** and why, never `0`. Every card is defined in
+[Factory metrics](reviewing-runs.md#factory-metrics).
 
 <img src="../screenshots/factory-metrics.png" width="98%" alt="The Factory metrics page: escalation rate 50% (1 decision / 2 attempts), human minutes per decision Not measured with its reason, human minutes per pack review, pack acceptance rate 100%, verification tax 4.2% in tokens with its inputs, and pull-request outcomes.">

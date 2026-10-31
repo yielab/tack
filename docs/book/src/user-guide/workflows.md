@@ -1,4 +1,4 @@
-# Workflows
+# Workflows & Statuses
 
 A **workflow** is the set of named status columns that items move through in a project. Each column has:
 
@@ -101,11 +101,11 @@ Every column belongs to one category:
 
 | Category | Meaning | Side effects |
 |---|---|---|
-| `todo` | Not started | Items default here on creation |
-| `in_progress` | Being worked on | Sets `started_at` on first move in |
-| `done` | Complete | Sets `completed_at`; triggers auto-complete check on parent |
+| `todo` | Not started | New items start in the first one |
+| `in_progress` | Being worked on | The item's start date is set the first time it moves in |
+| `done` | Complete | The completion date is set, and the parent is checked (see below) |
 
-Categories drive reporting (cycle time, throughput) and auto-complete logic. Only column names are shown in the UI.
+Categories are what the Overview, [starting tasks by itself](automation.md#start) and the parent rollup read. The board shows only column names.
 
 ---
 
@@ -120,4 +120,4 @@ When an item moves to a `done` column, Tack checks whether all siblings under th
 3. Complete Login → epic unchanged.
 4. Complete Logout → all children done → **epic auto-completes**. ✓
 
-Auto-complete is best-effort: errors (e.g., parent has no done column) are silently ignored and do not block the child update.
+If the parent cannot move, for example because its workflow has no Done column, it stays where it is and the child's move still succeeds.

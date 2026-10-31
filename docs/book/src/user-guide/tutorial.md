@@ -2,9 +2,8 @@
 
 From a fresh machine to a finished agent run: install Tack, create a project, add tasks, say
 what "done" means for one of them, turn on the agent that will work on it, hand the task to
-Claude Code, watch it run, and read the result. Every image below is a real capture from one
-live session against a clean database — including the runs, which are real model calls, not
-mocks.
+Claude Code, watch it run, and read the result. Every image below is a capture from one
+session against a clean database — including the runs, which are real model calls.
 
 The whole loop in one recording — a new project pointed at a folder, a task with its acceptance
 criteria, a Claude Code run tracked from the card, the finished run reviewed and accepted, and
@@ -12,9 +11,9 @@ the files it changed (the wait for the agent is shortened):
 
 <img src="../screenshots/workflow.gif" width="98%" alt="The whole workflow, recorded: a new project 'Docs Site' created with an existing folder on this computer as its code; a task 'Add a changelog page' added on the board with two acceptance criteria; Run with agent with Claude Code; the card's chip and the Execution tab following the run until it reads 'Finished — needs your review'; Accept; what the agent did; the files from the run; and the board again.">
 
-This page walks **one** path: the release binary, the web UI, and the embedded runner. The
-[Quick Start](quick-start.md) covers the alternatives — desktop app, CLI-only agent runs,
-building from source.
+This page walks **one** path: the release binary and the web UI. The
+[Quick Start](quick-start.md) covers the alternatives — the desktop app, Docker, building from
+source.
 
 ---
 
@@ -24,7 +23,7 @@ Tack is a single self-contained binary — web UI, REST API, and SQLite engine i
 file. One line installs it:
 
 ```sh
-TAG=v0.2.0-beta.1
+TAG=$(curl -fsSL "https://api.github.com/repos/yielab/tack/releases?per_page=1" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 tack            # starts the server + web UI at http://localhost:3210
 ```
@@ -33,7 +32,7 @@ Verify it's up:
 
 ```sh
 curl http://localhost:3210/api/health
-# {"migrations_applied":…,"status":"ok","version":"0.2.0-beta.1"}
+# {"migrations_applied":…,"status":"ok","version":"…"}
 ```
 
 `version` is the build you installed, and `migrations_applied` is how many database migrations
@@ -67,7 +66,7 @@ workflow, plus a three-step onboarding card:
 
 ## 4. Add tasks
 
-Click the **+** in any column (or the onboarding card's **+ Add Item**). Only the
+Click the **+** in any column (or the onboarding card's **+ Add item**). Only the
 title is required; type, priority, description, story points, subtasks and tags are
 there when you want them. The first task is the one an agent will write:
 
@@ -98,13 +97,12 @@ The agent that does the work — Claude Code here — is a program on your compu
 install it or sign you in to it: install Claude Code and sign in once with its own `claude`
 command, exactly as you would to use it by hand. Tack then finds it.
 
-By default **nothing here executes anything** — the server is a full project manager with agent
+Until you turn it on, **nothing here runs an agent** — Tack is a project manager with agent
 execution off. Open the **Agents** page from the sidebar. Step 1 is the one switch that matters:
 
 <img src="../screenshots/tutorial/07-agents-off.png" width="98%" alt="The Agents page with execution off: step 1 'Agent execution on this machine' shows a Stopped badge, 'Off since this server started' and a Turn on button; step 2 says to turn execution on to see what is installed; step 3 Sign in waits on step 2; the Test run section begins below.">
 
-Click **Turn on**. This starts an embedded runner inside the same server process — no restart, no
-second binary. Step 2 lists the agents it found on this machine with their installed versions;
+Click **Turn on**. It starts at once, with no restart and no second program. Step 2 lists the agents it found on this machine with their installed versions;
 this machine has Codex and Claude Code, and the tutorial uses Claude Code. Step 3 is **Sign in**,
 one row per installed agent. Each asks the agent itself, so a row reads **Signed in**, or **Not
 signed in. Run `<command>` in a terminal.** with a link to that agent's own documentation; Tack
@@ -144,22 +142,10 @@ Click **Create**.
 
 Back on the board, every card carries a **Run with agent** button (the ▶ on the card, or the
 same button in the task's drawer). The dialog opens with a one-line summary of the run — the
-profile, the model and where the agent works — and asks only what you might want to change:
-
-- **What the agent will read** shows exactly the text it will be given: the task, its acceptance
-  criteria and the project's definition of done.
-- **Profile** — the one Tack picks for the task (the profile of the task's role, else the
-  project's default, else the built-in **Implementer**), with a line saying which; this tutorial
-  picks *Announcement writer*.
-- **Ask before each action** pauses the agent before each tool call until you answer on the
-  task; **Web tools** lets it use its own web-fetch and web-search tools. **Web tools** starts
-  off. **Ask before each action** starts off when the agent runs inside a sandbox, as Claude
-  Code does here, and on when it does not.
-- **Advanced for this run** is where this run differs from the project: the **Agent** (here
-  **Claude Code**), the model (the same field as in the project's settings; **Agent's default** works for Claude Code), the branch,
-  the tools allowed, and the timeout. **Verify the result**, **Push the branch** and **Open a pull
-  request** are shown disabled, each with the reason and the setting that turns it on (see
-  [After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt)).
+profile, the model and where the agent works — and asks only what you might want to change.
+This tutorial picks the profile *Announcement writer* and leaves everything else as it is. What
+each part of the dialog does, and where its defaults come from, is in
+[The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
 <img src="../screenshots/tutorial/11-run-with-agent.png" width="60%" alt="The Run with agent dialog for 'Draft the launch announcement': the summary 'Announcement writer · the agent's default model · on a new branch of' a local repository; What the agent will read; the profile pills with Announcement writer selected; Ask before each action and Web tools unticked; Advanced for this run open with Agent Claude Code, the Model field set to Agent's default, Branch, Claude Code's tool checkboxes, Allowed tools left blank to use the profile's Read, Grep and Glob, Token limit empty for no limit, a 3600-second timeout, and Verify the result, Push the branch and Open a pull request disabled with their reasons; Cancel and Run.">
 
@@ -209,7 +195,7 @@ tracked live, and closed with a result you can check. From here:
   before each action, and the same run from the CLI.
 - [Automating a Project](automation.md) — let Tack start a task when it reaches a column,
   choose the profile from the task's role, and merge finished work by itself.
-- [Quick Start — Run an item with an agent](quick-start.md#run-an-item-with-an-agent)
-  — the same flow driven entirely from the CLI.
+- [Running from the command line](running-agents.md#running-from-the-command-line)
+  — the same run started from a terminal.
 - [Workflows & Statuses](workflows.md) and [Vocabulary](vocabulary.md) — make the
   board speak your domain's language.
