@@ -10,7 +10,7 @@ anywhere in the stream — see "Measured" below. The grammar's tests are pure
 resolve a real `codex` from `PATH`, skip cleanly without it, and are `#[ignore]`d.
 
 What a user reads about this harness — install, capabilities, caveats — is
-[Choosing a harness](../../../../../../docs/book/src/user-guide/running-agents.md#choosing-a-harness)
+[Choosing an agent](../../../../../../docs/book/src/user-guide/running-agents.md#choosing-an-agent)
 in the user guide.
 
 **Observed on:** `codex-cli 0.149.1`, one machine, one point in time.

@@ -9,7 +9,7 @@ endpoint — never a real model endpoint, never the real `~/.config/opencode`.
 **Observed on:** `opencode 1.18.30`, one machine, one point in time.
 
 What a user reads about this harness — install, capabilities, caveats — is
-[Choosing a harness](../../../../../../docs/book/src/user-guide/running-agents.md#choosing-a-harness)
+[Choosing an agent](../../../../../../docs/book/src/user-guide/running-agents.md#choosing-an-agent)
 in the user guide.
 
 ## Fixture provenance

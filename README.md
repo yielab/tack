@@ -40,7 +40,7 @@ file. It requires no account.
   reads and edits files, runs commands and uses whatever model you set it up with. Tack
   holds no model key. docket needs version 0.2.0-beta.6 or later.
 
-  [Choosing a harness](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-harness) says
+  [Choosing an agent](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-an-agent) says
   what each one supports.
 - **Optional:** git, so the agent works on a branch instead of directly in your folder.
 
