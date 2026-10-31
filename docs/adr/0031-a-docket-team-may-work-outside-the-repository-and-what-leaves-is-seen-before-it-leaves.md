@@ -36,8 +36,11 @@ Every locator is docket's; Tack reads them and edits none.
 
 - `GET /pods` carries `codebase` on each row and `GET /pods/<p>` carries `repoConfigDir`, each `""`
   for a pod with no repository (`hops/application/report.py`, `pod_summary`, `pod_detail`); the
-  detail has no `codebase`. A workdir pod's task record has no
-  `worktree`.
+  detail has no `codebase`. From docket `df17a145` (2026-10-31) both routes also carry
+  `workspaceKind`, `"codebase"` or `"workdir"`, the one field that says it; `codebase` and
+  `repoConfigDir` keep their meaning. A workdir pod's task record has no
+  `worktree`, and a task that carries `baseRef` or a non-empty `prepare` is failed at claim
+  (`failureKind` `base_ref` or `prepare`) with "pod '<p>' works in a folder (workspaceKind workdir); ...".
 - Escalation kind `wait` (`operator-loop.spec.md` area 11 item 2; `operator-api.spec.md` "Wait"):
   `policy` `machine`, the one option `resume`, `expiresAt` the due time; the task is
   `waiting_input`; it is never a `needsYou` item. A client "MUST ignore an escalation kind it does
