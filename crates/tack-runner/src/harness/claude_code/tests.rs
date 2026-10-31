@@ -402,6 +402,16 @@ fn output_with_no_json_falls_back_to_the_exit_status() {
 fn claude_code_declares_advisory_cancel_artifacts_and_policy() {
     let declared = ClaudeCodeGrammar.capabilities();
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
+    let proposals = declared.proposals.expect("reports proposals");
+    assert_eq!(proposals.support, CapabilitySupport::Supported);
+    assert!(
+        proposals
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("tack-plan.json"),
+        "{proposals:?}"
+    );
     assert_eq!(declared.artifacts.support, CapabilitySupport::Advisory);
     assert_eq!(
         declared.additional["permission_policy"]["support"],

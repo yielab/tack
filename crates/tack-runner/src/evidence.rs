@@ -121,7 +121,8 @@ pub const PLAN_INVALID_FILE: &str = "plan-invalid.txt";
 /// and the `HEAD` it was made on. The verifier and the publish read it.
 pub const CAPTURED_COMMIT_FILE: &str = "captured-commit.txt";
 
-/// `tack-plan.json`, the shape pinned by `docs/contracts/plan-v1/`.
+/// `tack-plan.json`, the shape pinned by `docs/contracts/plan-v1/`. The format belongs to no
+/// harness: any agent, record set or uploaded file that produces it is accepted the same way.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanV1 {
     pub v: String,
@@ -138,6 +139,18 @@ pub struct PlanSubtask {
     pub depends_on: Vec<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub estimate: Option<String>,
+    /// The item type the entry becomes, when the project has it.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub item_type: Option<String>,
+    /// The project role, by name, that does the entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// The team, by name, that does the entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<String>,
+    /// The index of an earlier entry this one is a sub-item of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<u32>,
 }
 
 /// The steps of a run that recorded them (`terminal_reason.steps`), staged as one artifact.

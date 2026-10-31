@@ -445,6 +445,12 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                  price, not a bill. While it runs, each model call's tokens are read from its \
                  `assistant` line, once per message id, with the output low until the result.",
             ),
+            proposals: Some(capability(
+                CapabilitySupport::Supported,
+                "the agent writes `tack-plan.json` at the root of its work tree and the runner \
+                 reads it after the run; a run whose workspace has no work tree has no file to \
+                 read, and proposes nothing",
+            )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "the tool list is enforced through --tools; `network: false` leaves WebFetch and \

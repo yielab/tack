@@ -312,6 +312,7 @@ impl HarnessGrammar for RunGrammar {
             )
         };
         tack_protocol::execution::FeatureCapabilities {
+            proposals: None,
             cancel: value(),
             resume: value(),
             decisions: value(),

@@ -1392,6 +1392,143 @@ async fn subtasks_from_plan_create_children_with_criteria() {
     assert_eq!(subtask_2["parent_id"], parent_id.to_string());
 }
 
+/// Reads one item with its roles and dependencies.
+async fn item_detail(app: &Router, id: &str) -> Value {
+    let (status, item) =
+        common::send(app, "GET", &format!("/api/items/{id}"), Value::Null, &[]).await;
+    assert_eq!(status, StatusCode::OK, "{item}");
+    item
+}
+
+#[tokio::test]
+async fn a_nested_plan_with_dependencies_creates_the_tree_and_the_blockers() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let parent_id = common::create_item(&app, pid, "Parent Item").await;
+    let (_, role) = common::send(
+        &app,
+        "POST",
+        &format!("/api/projects/{pid}/roles"),
+        json!({"name": "Backend"}),
+        &[],
+    )
+    .await;
+    let (_, profile) = common::send_as_operator(
+        &app,
+        "POST",
+        "/api/agent-profiles",
+        json!({"name": "Research team", "instructions": "x",
+               "tool_policy": {"agent": "claude-code", "docket": {"team": "my-saas-dev"},
+                               "tools": {"claude-code": ["Read"]}}})
+        .to_string(),
+    )
+    .await;
+    let profile_id = profile["agent_profile_id"].as_str().unwrap();
+
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        json!({
+            "artifact_id": "plan-artifact-1",
+            "subtasks": [
+                {"title": "Per-user settings", "acceptance": [], "type": "feature",
+                 "role": "Backend", "team": "my-saas-dev"},
+                {"title": "Settings table", "acceptance": [], "type": "task", "parent": 0},
+                {"title": "Settings page", "acceptance": [], "parent": 0, "depends_on": [1]}
+            ]
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let created = body["created"].as_array().unwrap();
+    assert_eq!(created.len(), 3);
+    assert!(
+        created.iter().all(|c| c.get("unknown_role").is_none()
+            && c.get("unknown_type").is_none()
+            && c.get("unresolved_team").is_none()),
+        "{body}"
+    );
+    let ids: Vec<String> = created
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_owned())
+        .collect();
+
+    let top = item_detail(&app, &ids[0]).await;
+    assert_eq!(top["item"]["parent_id"], parent_id.to_string());
+    assert_eq!(top["item"]["item_type"], "feature");
+    assert_eq!(top["roles"][0]["id"], role["id"]);
+    assert_eq!(top["item"]["run_settings"]["agent_profile_id"], profile_id);
+
+    let table = item_detail(&app, &ids[1]).await;
+    assert_eq!(table["item"]["parent_id"], ids[0]);
+    assert_eq!(table["item"]["item_type"], "task");
+
+    let page = item_detail(&app, &ids[2]).await;
+    assert_eq!(page["item"]["parent_id"], ids[0]);
+    assert_eq!(
+        page["item"]["item_type"], "task",
+        "no type keeps the item's own"
+    );
+    // The entry depends on the table, so the table blocks the page.
+    let dependency = &page["dependencies"][0];
+    assert_eq!(dependency["source_item_id"], ids[1]);
+    assert_eq!(dependency["target_item_id"], ids[2]);
+    assert_eq!(dependency["dependency_type"], "blocks");
+}
+
+#[tokio::test]
+async fn a_plan_with_no_artifact_id_is_a_file_the_person_uploaded() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let parent_id = common::create_item(&app, pid, "Parent Item").await;
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        json!({"subtasks": [{"title": "From a file", "acceptance": []}]}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let id = body["created"][0]["id"].as_str().unwrap();
+    let item = item_detail(&app, id).await;
+    assert_eq!(item["item"]["source"], "plan");
+    assert!(item["item"]["source_artifact_id"].is_null(), "{item}");
+}
+
+#[tokio::test]
+async fn an_unknown_role_type_or_team_is_reported_on_its_entry_and_refuses_nothing() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let parent_id = common::create_item(&app, pid, "Parent Item").await;
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        json!({"subtasks": [
+            {"title": "Lost keys", "acceptance": [], "type": "saga", "role": "Ghost", "team": "nobody"},
+            {"title": "Clean", "acceptance": []}
+        ]}),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let created = body["created"].as_array().unwrap();
+    assert_eq!(created.len(), 2, "both entries are created");
+    assert_eq!(created[0]["unknown_role"], "Ghost");
+    assert_eq!(created[0]["unknown_type"], "saga");
+    assert_eq!(created[0]["unresolved_team"], "nobody");
+    assert!(created[1].get("unknown_role").is_none(), "{body}");
+    let item = item_detail(&app, created[0]["id"].as_str().unwrap()).await;
+    assert_eq!(
+        item["item"]["item_type"], "task",
+        "the item's own type stays"
+    );
+    assert!(item["roles"].as_array().unwrap().is_empty());
+}
+
 // ─── Item provenance / trust boundary ────────────────────────────
 
 /// Mount a GitHub `GET /repos/acme/widgets/issues` mock returning one open issue.

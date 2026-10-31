@@ -504,6 +504,12 @@ impl HarnessGrammar for OpencodeGrammar {
                  cost is always null on the installed version for an unrecognized model, so cost \
                  is never reported",
             ),
+            proposals: Some(capability(
+                CapabilitySupport::Supported,
+                "the agent writes `tack-plan.json` at the root of its work tree and the runner \
+                 reads it after the run; a run whose workspace has no work tree has no file to \
+                 read, and proposes nothing",
+            )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "webfetch is gated on permission_policy.network and edit/bash/task on \

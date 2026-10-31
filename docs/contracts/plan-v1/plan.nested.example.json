@@ -1,0 +1,34 @@
+{
+  "v": "1",
+  "subtasks": [
+    {
+      "title": "Per-user settings",
+      "description": "Let each user keep their own settings across sessions.",
+      "acceptance": ["A setting survives a new session"],
+      "depends_on": [],
+      "estimate": "L",
+      "type": "feature",
+      "role": "Backend",
+      "team": "my-saas-dev"
+    },
+    {
+      "title": "Add the settings table",
+      "description": "Create the migration and the repository functions for per-user settings.",
+      "acceptance": ["The migration applies to an empty database"],
+      "depends_on": [],
+      "estimate": "S",
+      "type": "task",
+      "parent": 0
+    },
+    {
+      "title": "Settings page in the frontend",
+      "description": "Render the settings form against the new routes.",
+      "acceptance": ["Saving a value shows it after a reload"],
+      "depends_on": [1],
+      "estimate": "M",
+      "type": "task",
+      "role": "Frontend",
+      "parent": 0
+    }
+  ]
+}

@@ -80,6 +80,14 @@ tack execution reconcile <request-id> \
 
 This calls `POST /api/executions/{id}/requeue`, which only succeeds for a request the server itself authoritatively recovered. An unresolved or already-queued request returns `409 invalid_transition` with the current state named in `details`, never a silent no-op. `crates/tack-cli/tests/e6_scheduler_e2e_test.rs` pins it.
 
+## Proposals: the plan format
+
+What a run finds can become items, whichever agent ran it. The format is plan-v1 (`tack-plan.json`, `docs/contracts/plan-v1/`): a list of subtasks with a title, a description, acceptance sentences, `depends_on` indexes, an estimate and four optional keys, `type`, `role`, `team` and `parent` (the index of an earlier entry). `v` stays `"1"`, the format belongs to no harness, and two examples are pinned by `crates/tack-runner/tests/plan_contract.rs`: the frozen `plan.example.json` and `plan.nested.example.json`, which carries the four keys.
+
+Each agent's adapter turns its own way in into the same `plan` artifact, and says in `features.proposals` (a capability value, optional like `teams`) whether its runs can. Claude Code, Codex and opencode write the file at the root of their work tree and report it supported; an adapter that reports nothing reads as unsupported, "this agent does not say".
+
+`POST /api/items/{id}/subtasks-from-plan` accepts a proposal without knowing where it came from. Each entry carries the four keys and `depends_on`; `artifact_id` is optional, and absent means a file the person uploaded (the new items' source says `plan` either way). Entries are created in list order, each under its `parent`'s new item or under the item. `type` is used when the project has it, else the item's own; `role` by name when the project has it; `team` becomes the run settings' profile when exactly one profile names it. `depends_on` becomes blockers between the new items. An unknown role or type, or a team that no profile or several profiles name, is reported on that entry of the response (`unknown_role`, `unknown_type`, `unresolved_team`) and never refuses the request; an index outside the list, a parent that is not earlier, or a loop of blockers does, before anything is written. Nothing creates items from a proposal except a person accepting it.
+
 ## Version compatibility
 
 Every runner-v1 request body that carries JSON holds `"protocol_version": 1`. The server rejects anything else outright. `check_protocol_version` in `crates/tack-api/src/handlers/runner_protocol.rs` returns `unsupported_protocol` (the fixture is `docs/contracts/runner-v1/errors/unsupported-protocol.json`) for any other number, and `invalid_request` when the field is missing or not a number, on every one of the 13 operations that carry a JSON body. There is no negotiated fallback: a v2 protocol, if it ever exists, is a new contract revision, not a version range this server tries to interpolate.

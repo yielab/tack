@@ -622,11 +622,28 @@ pub struct CreateSubtaskFromPlan {
     pub description: Option<String>,
     #[validate(length(max = 50, message = "at most 50 acceptance criteria"))]
     pub acceptance: Vec<String>,
+    /// Indexes of entries in this list that block this one.
+    #[serde(default)]
+    pub depends_on: Vec<u32>,
+    /// The item type, when the project has it; else the parent item's.
+    #[serde(default, rename = "type")]
+    pub item_type: Option<String>,
+    /// A project role, by name.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// A team, by name; the one profile that names it goes into the item's run settings.
+    #[serde(default)]
+    pub team: Option<String>,
+    /// The index of an earlier entry this one is a sub-item of; absent means a sub-item of the item.
+    #[serde(default)]
+    pub parent: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Validate, Serialize, utoipa::ToSchema)]
 pub struct CreateSubtasksFromPlanRequest {
-    pub artifact_id: String,
+    /// The plan artifact the entries came from; absent means a file the person uploaded.
+    #[serde(default)]
+    pub artifact_id: Option<String>,
     #[validate(length(min = 1, message = "subtasks list must not be empty"))]
     pub subtasks: Vec<CreateSubtaskFromPlan>,
 }
@@ -635,11 +652,56 @@ pub struct CreateSubtasksFromPlanRequest {
 pub struct CreatedSubtask {
     pub id: Uuid,
     pub title: String,
+    /// The role name the project does not have; the item has no role.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_role: Option<String>,
+    /// The type the project does not have; the item has its parent's type.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unknown_type: Option<String>,
+    /// The team that no profile, or more than one, names; the item's run settings name no profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unresolved_team: Option<String>,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct CreateSubtasksFromPlanResponse {
     pub created: Vec<CreatedSubtask>,
+}
+
+/// The entries' indexes must point inside the list, a parent before its child, and the blockers
+/// must not loop; checked before anything is written.
+fn check_plan_links(subtasks: &[CreateSubtaskFromPlan]) -> Result<(), ApiError> {
+    let ids: Vec<Uuid> = subtasks.iter().map(|_| Uuid::new_v4()).collect();
+    let mut graph = tack_core::dependency::DependencyGraph::new();
+    for (idx, entry) in subtasks.iter().enumerate() {
+        if entry.parent.is_some_and(|parent| parent as usize >= idx) {
+            return Err(ApiError::BadRequest(format!(
+                "subtasks[{idx}]: parent must be the index of an earlier entry"
+            )));
+        }
+        for &blocker in &entry.depends_on {
+            let blocker = blocker as usize;
+            if blocker >= subtasks.len() || blocker == idx {
+                return Err(ApiError::BadRequest(format!(
+                    "subtasks[{idx}]: depends_on {blocker} is not another entry of the list"
+                )));
+            }
+            graph
+                .validate_new_edge(ids[blocker], ids[idx])
+                .map_err(ApiError::Core)?;
+            graph.add_edge(
+                ids[blocker],
+                ids[idx],
+                tack_core::models::DependencyType::Blocks,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// A name from the plan, or `None` when it is absent or blank.
+fn named(value: &Option<String>) -> Option<&str> {
+    value.as_deref().map(str::trim).filter(|v| !v.is_empty())
 }
 
 #[instrument(skip(state, input))]
@@ -666,6 +728,12 @@ pub async fn create_subtasks_from_plan(
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    for (idx, subtask_input) in input.subtasks.iter().enumerate() {
+        subtask_input
+            .validate()
+            .map_err(|e| ApiError::BadRequest(format!("subtasks[{}]: {}", idx, e)))?;
+    }
+    check_plan_links(&input.subtasks)?;
 
     // Get parent item
     let parent = state
@@ -682,14 +750,43 @@ pub async fn create_subtasks_from_plan(
         .ok_or_else(|| ApiError::NotFound(format!("Project {} not found", parent.project_id)))?;
 
     let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
+    let roles = state.repo.list_roles(parent.project_id).await?;
+    // Team name -> the profiles whose tool policy names it.
+    let mut profiles_by_team: std::collections::HashMap<String, Vec<String>> = Default::default();
+    for profile in tack_db::queries::agent_profiles::profiles_by_name(&state.repo).await? {
+        let policy: serde_json::Value =
+            serde_json::from_str(&profile.tool_policy).unwrap_or_default();
+        if let Some(team) = policy["docket"]["team"].as_str() {
+            profiles_by_team
+                .entry(team.to_owned())
+                .or_default()
+                .push(profile.id);
+        }
+    }
 
-    let mut created = Vec::new();
+    let mut created: Vec<CreatedSubtask> = Vec::new();
 
-    // Create each subtask
-    for (idx, subtask_input) in input.subtasks.iter().enumerate() {
-        subtask_input
-            .validate()
-            .map_err(|e| ApiError::BadRequest(format!("subtasks[{}]: {}", idx, e)))?;
+    // Create each subtask, in list order
+    for subtask_input in &input.subtasks {
+        let mut unknown_type = None;
+        let item_type = match named(&subtask_input.item_type) {
+            None => parent.item_type.clone(),
+            Some(wanted) => match tack_core::outline::parse_item_type(wanted) {
+                Some(found)
+                    if !matches!(found, tack_core::models::ItemType::Custom(_))
+                        && project.vocabulary.contains_key(&found.to_string()) =>
+                {
+                    found
+                }
+                _ => {
+                    unknown_type = Some(wanted.to_owned());
+                    parent.item_type.clone()
+                }
+            },
+        };
+        let parent_id = subtask_input
+            .parent
+            .map_or(id, |index| created[index as usize].id);
 
         // Create the item
         let item = state
@@ -700,9 +797,9 @@ pub async fn create_subtasks_from_plan(
                 CreateItem {
                     title: subtask_input.title.clone(),
                     description: subtask_input.description.clone(),
-                    item_type: Some(parent.item_type.clone()),
-                    parent_id: Some(id),
-                    source_artifact_id: Some(input.artifact_id.clone()),
+                    item_type: Some(item_type),
+                    parent_id: Some(parent_id),
+                    source_artifact_id: input.artifact_id.clone(),
                     ..Default::default()
                 },
                 tack_core::models::ItemSource::Plan,
@@ -740,10 +837,64 @@ pub async fn create_subtasks_from_plan(
                 .await?;
         }
 
+        let mut unknown_role = None;
+        if let Some(wanted) = named(&subtask_input.role) {
+            match roles.iter().find(|r| r.name.eq_ignore_ascii_case(wanted)) {
+                Some(role) => state.repo.assign_role_to_item(item.id, role.id).await?,
+                None => unknown_role = Some(wanted.to_owned()),
+            }
+        }
+
+        let mut unresolved_team = None;
+        if let Some(wanted) = named(&subtask_input.team) {
+            match profiles_by_team.get(wanted).map(Vec::as_slice) {
+                Some([profile_id]) => {
+                    let settings = tack_core::models::RunSettings {
+                        agent_profile_id: Some(profile_id.clone()),
+                        ..Default::default()
+                    };
+                    state
+                        .repo
+                        .update_item_atomically(
+                            item.id,
+                            UpdateItem {
+                                run_settings: Some(Some(settings)),
+                                ..UpdateItem::default()
+                            },
+                            &project.workflow,
+                            None,
+                        )
+                        .await?;
+                }
+                _ => unresolved_team = Some(wanted.to_owned()),
+            }
+        }
+
         created.push(CreatedSubtask {
             id: item.id,
             title: item.title,
+            unknown_role,
+            unknown_type,
+            unresolved_team,
         });
+    }
+
+    // Each entry is blocked by the entries it depends on.
+    for (idx, subtask_input) in input.subtasks.iter().enumerate() {
+        let blockers: std::collections::BTreeSet<u32> =
+            subtask_input.depends_on.iter().copied().collect();
+        for blocker in blockers {
+            state
+                .repo
+                .create_dependency(
+                    created[blocker as usize].id,
+                    tack_core::models::CreateDependency {
+                        target_item_id: created[idx].id,
+                        dependency_type: tack_core::models::DependencyType::Blocks,
+                    },
+                )
+                .await?;
+        }
     }
 
     // Broadcast WebSocket event

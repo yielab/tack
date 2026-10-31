@@ -11,6 +11,10 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+### Changed
+
+- A proposal of items is one format whichever agent made it: each plan entry may carry a `type`, a `role`, a `team` and a `parent`, and accepting it creates the sub-items under their parents with their type, role and team, and the entries' `depends_on` as blockers. An accept with no plan artifact (a file a person uploaded) works, and an unknown role, type or team is reported on its entry instead of failing the request. Claude Code, Codex and opencode report whether their runs can propose, and the Researcher is told to write the plan file when its findings lead to work.
+
 ### Fixed
 
 - A task waiting behind a computer that is full now says what holds it ("This computer runs 1 at a time and is busy with 'Release notes' since 15:30, which waits for your answer since 15:33"), links that task and the limit, and offers **Answer it** when the run in front is waiting for you, instead of only "Waiting for a runner to pick it up".

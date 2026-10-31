@@ -3803,11 +3803,25 @@ export interface components {
         };
         CreateSubtaskFromPlan: {
             acceptance: string[];
+            /** @description Indexes of entries in this list that block this one. */
+            depends_on?: number[];
             description?: string | null;
+            /**
+             * Format: int32
+             * @description The index of an earlier entry this one is a sub-item of; absent means a sub-item of the item.
+             */
+            parent?: number | null;
+            /** @description A project role, by name. */
+            role?: string | null;
+            /** @description A team, by name; the one profile that names it goes into the item's run settings. */
+            team?: string | null;
             title: string;
+            /** @description The item type, when the project has it; else the parent item's. */
+            type?: string | null;
         };
         CreateSubtasksFromPlanRequest: {
-            artifact_id: string;
+            /** @description The plan artifact the entries came from; absent means a file the person uploaded. */
+            artifact_id?: string | null;
             subtasks: components["schemas"]["CreateSubtaskFromPlan"][];
         };
         CreateSubtasksFromPlanResponse: {
@@ -3817,6 +3831,12 @@ export interface components {
             /** Format: uuid */
             id: string;
             title: string;
+            /** @description The role name the project does not have; the item has no role. */
+            unknown_role?: string | null;
+            /** @description The type the project does not have; the item has its parent's type. */
+            unknown_type?: string | null;
+            /** @description The team that no profile, or more than one, names; the item's run settings name no profile. */
+            unresolved_team?: string | null;
         };
         CustomFieldDefinition: {
             /** Format: date-time */

@@ -351,6 +351,7 @@ async fn report_capabilities<C: Clock>(
                 tack_protocol::execution::CapabilitySupport::Advisory,
                 Some("usage is reported only when a harness emits it"),
             ),
+            proposals: None,
             additional: BTreeMap::new(),
         },
         limits: CapabilityLimits {

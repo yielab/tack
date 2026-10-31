@@ -19,6 +19,16 @@ fn networked(state: &std::path::Path) -> crate::harness::ExecutionSpec {
 fn opencode_declares_decisions_supported_over_acp() {
     let declared = OpencodeGrammar.capabilities();
     assert_eq!(declared.decisions.support, CapabilitySupport::Supported);
+    let proposals = declared.proposals.expect("reports proposals");
+    assert_eq!(proposals.support, CapabilitySupport::Supported);
+    assert!(
+        proposals
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("tack-plan.json"),
+        "{proposals:?}"
+    );
     let reason = declared.decisions.reason.as_deref().unwrap_or_default();
     assert!(reason.contains("acp"), "{reason}");
     assert!(reason.contains("session/request_permission"), "{reason}");

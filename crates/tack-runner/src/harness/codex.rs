@@ -500,6 +500,12 @@ impl HarnessGrammar for CodexGrammar {
                  --json`'s terminal `turn.completed` line, measured on codex-cli 0.149.1; no \
                  cost_usd field exists in the output, so cost is never reported",
             ),
+            proposals: Some(capability(
+                CapabilitySupport::Supported,
+                "the agent writes `tack-plan.json` at the root of its work tree and the runner \
+                 reads it after the run; a run whose workspace has no work tree has no file to \
+                 read, and proposes nothing",
+            )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "the request's tool list is enforced as codex's sandbox mode (a write-capable \
