@@ -117,7 +117,11 @@ pub(super) struct PodStep {
     pub role: Option<String>,
     /// The kind of gate that decides the step: `mechanical`, `verdict`, `approval` or `external`.
     pub gate: Option<String>,
-    pub rework: Option<PodRework>,
+    /// Where the work goes back to, as docket lists it: each route has its labels (`when`, not
+    /// read), the step it goes to and how many times. Empty or absent for a step that sends
+    /// nothing back.
+    #[serde(default)]
+    pub rework: Vec<PodRework>,
 }
 
 #[derive(Debug, Deserialize)]

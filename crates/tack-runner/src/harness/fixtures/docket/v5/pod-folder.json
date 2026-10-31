@@ -1,5 +1,6 @@
 {
   "pod": "saas-notes",
+  "blueprint": "routine",
   "members": [
     {
       "id": "saas-notes-lead",
@@ -133,7 +134,41 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "blueprint 'routine'"
+    "source": "blueprint 'routine'",
+    "steps": [
+      {
+        "id": "compile",
+        "kind": "agent",
+        "role": "analyst",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "draft",
+        "kind": "agent",
+        "role": "writer",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "review",
+        "kind": "agent",
+        "role": "reviewer",
+        "modelClass": "strong",
+        "gate": "verdict",
+        "rework": [
+          {
+            "when": [
+              "request-changes"
+            ],
+            "to": "draft",
+            "max": 1
+          }
+        ]
+      }
+    ]
   },
   "network": {
     "mode": "none",
@@ -148,6 +183,7 @@
     "violations": []
   },
   "pipelineSource": "blueprint 'routine'",
+  "workspaceKind": "workdir",
   "repoConfigDir": "",
   "readOnly": [
     "/scratch/toolchain/node"

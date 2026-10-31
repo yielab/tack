@@ -64,7 +64,7 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 | The escalation record | `GET /escalations?since=0` must answer `200` | `probe::escalation_record` |
 | Teams and their profiles | `GET /pods`, then `GET /pods/<pod>` for each, and `GET /pods/<pod>/records` for the record sets (`404` on an older docket). Every pod the list names is reported, whether or not a profile names it | `probe::teams` |
 | Make the team once per process | `POST /pods` with `ensure: true` and no `blueprint`: docket's own default shape stands | `Client::ensure_pod` |
-| Where the team works | `GET /pods/<pod>` once when the run starts: `repoConfigDir` is `""` for a folder team (and the run then sends no `baseRef` and no `prepare`); a missing key counts as a repository | `DocketAdapter::has_repository` |
+| Where the team works | `GET /pods/<pod>` once when the run starts: `workspaceKind` is `workdir` for a folder team (and the run then sends no `baseRef` and no `prepare`, which docket refuses there); a docket that does not send it is read by `repoConfigDir`, `""` for a folder; a missing key counts as a repository | `DocketAdapter::has_repository` |
 | What the team wrote in this task | `GET /pods/<pod>/records/<set>?limit=50&sql=SELECT * FROM <set> WHERE _task = '<task>'`, once per declared set, after the task ends | `records::kept` |
 | Post the attempt | `POST /tasks/<pod>` | `Client::enqueue_task` |
 | Read the task | `GET /tasks/<pod>/<id>` | `Client::task` |

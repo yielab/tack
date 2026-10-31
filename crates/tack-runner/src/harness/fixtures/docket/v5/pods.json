@@ -3,6 +3,8 @@
     {
       "name": "saas-dev",
       "codebase": "/scratch/repo",
+      "workspaceKind": "codebase",
+      "blueprint": "build",
       "members": 2,
       "profile": "attended",
       "queue": {
@@ -19,6 +21,8 @@
     {
       "name": "saas-lights",
       "codebase": "/scratch/repo2",
+      "workspaceKind": "codebase",
+      "blueprint": "build",
       "members": 2,
       "profile": "lights-out",
       "queue": {

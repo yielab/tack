@@ -378,18 +378,24 @@ impl DocketAdapter {
         }
     }
 
-    /// Whether the team works in a repository, read once when its run starts. Anything docket
-    /// does not say counts as yes: a folder team is the one thing it has to say outright.
+    /// Whether the team works in a repository, read once when its run starts: `workspaceKind` when
+    /// docket sends it, else `repoConfigDir` (`""` for a folder). Anything docket does not say
+    /// counts as yes: a folder team is the one thing it has to say outright.
     async fn has_repository(&self, pod: &str) -> bool {
         let Ok(reply) = self.client.pod(pod).await else {
             return true;
         };
-        reply.status != 200
-            || reply
-                .read::<PodReport>()
-                .ok()
-                .and_then(|report| report.repo_config_dir)
-                .is_none_or(|dir| !dir.is_empty())
+        if reply.status != 200 {
+            return true;
+        }
+        let Ok(report) = reply.read::<PodReport>() else {
+            return true;
+        };
+        match report.workspace_kind.as_deref() {
+            Some("workdir") => false,
+            Some(_) => true,
+            None => report.repo_config_dir.is_none_or(|dir| !dir.is_empty()),
+        }
     }
 
     /// The commit the request's base revision names in the repository, which
