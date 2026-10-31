@@ -494,6 +494,34 @@ fn request_for(
     request
 }
 
+/// One owner of "which tools does this run give this agent": the run's own list wins when it
+/// names any, else the profile's list for that agent, else none.
+#[test]
+fn a_runs_tools_are_its_own_list_else_the_profiles_for_that_agent_else_none() {
+    let profile = serde_json::json!({"tools": {"codex": ["*"], "claude-code": ["Read"]}});
+    let strings = |tools: &[&str]| tools.iter().map(|t| (*t).to_owned()).collect::<Vec<_>>();
+    for (harness, own, policy, expected) in [
+        ("codex", vec![], profile.clone(), strings(&["*"])),
+        ("claude-code", vec![], profile.clone(), strings(&["Read"])),
+        ("codex", vec!["read"], profile.clone(), strings(&["read"])),
+        ("opencode", vec![], profile.clone(), strings(&[])),
+        ("codex", vec![], serde_json::json!({}), strings(&[])),
+        (
+            "codex",
+            vec![],
+            serde_json::json!({"tools": {"codex": "*"}}),
+            strings(&[]),
+        ),
+    ] {
+        let request = request_for(harness, &own, policy.clone(), None);
+        assert_eq!(
+            request.tools_for(harness),
+            expected,
+            "{harness} {own:?} {policy}"
+        );
+    }
+}
+
 #[test]
 fn a_run_expects_a_change_when_its_explicit_tools_write_else_when_its_kind_is_not_read_only() {
     let none = serde_json::json!({});

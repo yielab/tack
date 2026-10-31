@@ -222,12 +222,22 @@ pub(super) fn body(
     autonomy: Option<AutonomyLevel>,
 ) -> Value {
     let docket = request.resolved_agent_profile.tool_policy.get("docket");
+    // A Planner or Researcher proposes through the team's `tack_proposals` records, never a file:
+    // the sentence that says so follows the profile's instructions.
+    let instructions = |instructions: &str| match super::super::docket_plan_channel(request) {
+        Some(channel) => format!("{instructions}\n\n{channel}"),
+        None => instructions.to_owned(),
+    };
     let description = match &request.task {
         Some(task) => {
             let fence = uuid::Uuid::new_v4().simple().to_string();
-            format!("{}{}", task.instructions, task.item_section(&fence[..8]))
+            format!(
+                "{}{}",
+                instructions(&task.instructions),
+                task.item_section(&fence[..8])
+            )
         }
-        None => request.resolved_agent_profile.instructions.clone(),
+        None => instructions(&request.resolved_agent_profile.instructions),
     };
     let mut body = Map::new();
     body.insert("description".into(), json!(description));

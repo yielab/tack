@@ -397,7 +397,7 @@ impl HarnessGrammar for OpencodeGrammar {
         let ask = matches!(request.permission_policy.approvals, Some(Approvals::Ask));
         let granted = if ask { "ask" } else { "allow" };
 
-        let tools = &request.permission_policy.tools;
+        let tools = &request.tools_for(DESCRIPTOR.kind);
         let mut config_content = serde_json::Value::Object(login.copied.clone());
         config_content["permission"] = serde_json::json!({
             "webfetch": "allow",
@@ -513,7 +513,7 @@ impl HarnessGrammar for OpencodeGrammar {
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "webfetch is gated on permission_policy.network and edit/bash/task on \
-                 tool-list membership, each through opencode's own `permission` block, granted \
+                 tool-list membership (the request's list, else the profile's for opencode), each through opencode's own `permission` block, granted \
                  as \"allow\" or, when the request's approvals is ask, as \"ask\" (so \
                  `opencode acp --pure` pauses on session/request_permission instead of running \
                  it); budgets are not passed at all",
@@ -572,13 +572,7 @@ impl HarnessGrammar for OpencodeGrammar {
             })))),
             2 => {
                 let session_id = result.get("sessionId")?.as_str()?;
-                let prompt = run
-                    .spec
-                    .work
-                    .request
-                    .resolved_agent_profile
-                    .instructions
-                    .clone();
+                let prompt = super::local_prompt(&run.spec.work);
                 Some(StreamSignal::Reply(line_bytes(&serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": 3,

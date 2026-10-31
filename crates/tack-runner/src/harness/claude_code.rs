@@ -68,21 +68,10 @@ const EVERY_TOOL: &[&str] = &[
 /// as Claude's (measured on 2.1.302, it reaches every call with tools).
 const SETTINGS: &str = r#"{"includeCoAuthoredBy":false}"#;
 
-/// The tools this run gives Claude Code: the run's own list, else the profile's for this
-/// agent (`tool_policy.tools["claude-code"]`, the shape the Run dialog and auto-start read),
-/// else none. The run's list wins because the person typed it for this run.
+/// The tools this run gives Claude Code: the run's own list, else the profile's for this agent
+/// (`ExecutionRequestSnapshot::tools_for`), else none.
 fn tools(run: &RunContext<'_>) -> Vec<String> {
-    let request = &run.spec.work.request;
-    if !request.permission_policy.tools.is_empty() {
-        return request.permission_policy.tools.clone();
-    }
-    request.resolved_agent_profile.tool_policy["tools"][DESCRIPTOR.kind]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect()
+    run.spec.work.request.tools_for(DESCRIPTOR.kind)
 }
 
 pub struct ClaudeCodeGrammar;

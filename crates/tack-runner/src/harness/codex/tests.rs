@@ -220,6 +220,80 @@ fn the_permission_policy_maps_onto_the_sandbox_flag() {
     }
 }
 
+/// A run that names no tools takes the profile's list for `codex`, as Claude Code does, so a run
+/// from the CLI or MCP gets the sandbox its profile says; a list the run names wins; a profile with
+/// nothing for codex leaves the sandbox read-only. Never `danger-full-access`.
+#[test]
+fn a_profiles_tools_select_the_sandbox_of_a_run_that_names_none() {
+    let state = scratch("codex-profile-tools");
+    let profile = |tools: serde_json::Value| serde_json::json!({"tools": {"codex": tools}});
+    let rows: [(&[&str], serde_json::Value, &str); 6] = [
+        (&[], profile(serde_json::json!(["*"])), "workspace-write"),
+        (
+            &[],
+            profile(serde_json::json!(["edit", "read"])),
+            "workspace-write",
+        ),
+        (&[], profile(serde_json::json!(["read"])), "read-only"),
+        // The run's own list wins over the profile's, in both directions.
+        (&["read"], profile(serde_json::json!(["*"])), "read-only"),
+        (
+            &["bash"],
+            profile(serde_json::json!(["read"])),
+            "workspace-write",
+        ),
+        // No entry for codex: unchanged.
+        (
+            &[],
+            serde_json::json!({"tools": {"claude-code": ["*"]}}),
+            "read-only",
+        ),
+    ];
+    for (tools, policy, sandbox) in rows {
+        for ask in [false, true] {
+            let mut request = spec(DESCRIPTOR.kind, state.path());
+            request.work.request.permission_policy.tools =
+                tools.iter().map(|tool| (*tool).to_owned()).collect();
+            request.work.request.resolved_agent_profile.tool_policy = policy.clone();
+            let run = RunContext {
+                spec: &request,
+                scratch: state.path(),
+                program: None,
+                host: &crate::config::ProcessEnv::default(),
+            };
+            if !ask {
+                let args = CodexGrammar.invocation(&run).expect("invocation").args;
+                let at = args
+                    .iter()
+                    .position(|arg| arg == "--sandbox")
+                    .expect("flag");
+                assert_eq!(args[at + 1], sandbox, "{tools:?} {policy}");
+                continue;
+            }
+            // The `ask` conversation names the same sandbox in `thread/start`.
+            request.work.request.permission_policy.approvals = Some(Approvals::Ask);
+            let run = RunContext {
+                spec: &request,
+                scratch: state.path(),
+                program: None,
+                host: &crate::config::ProcessEnv::default(),
+            };
+            let reply = CodexGrammar
+                .signal(&run, r#"{"id":1,"result":{}}"#)
+                .expect("reply");
+            let StreamSignal::Reply(bytes) = reply else {
+                panic!("not a reply");
+            };
+            let text = String::from_utf8(bytes).expect("utf8");
+            assert!(
+                text.contains(&format!(r#""sandbox":"{sandbox}""#)),
+                "{tools:?} {policy}: {text}"
+            );
+            assert!(!text.contains("danger-full-access"), "{text}");
+        }
+    }
+}
+
 /// `(transcript, succeeded, tokens_in, tokens_out, cached_input_tokens)`. Numbers for the real
 /// capture are re-measured straight off its own `turn.completed` line
 /// (`grep turn.completed exec-tool-call.jsonl`), not trusted from a brief.

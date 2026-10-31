@@ -78,7 +78,9 @@ async fn rows_that_still_hold_what_shipped_get_write_and_the_new_instructions() 
         r#"["Read","Grep","Glob","WebFetch","WebSearch"]"#,
     )
     .await;
-    migrations::run_all(&pool).await.expect("upgrade to 096");
+    migrations::run_up_to(&pool, "096_planner_researcher_write_plan")
+        .await
+        .expect("upgrade to 096");
 
     let (instructions, policy) = row(&pool, "planner").await;
     assert_eq!(
@@ -104,7 +106,8 @@ async fn rows_that_still_hold_what_shipped_get_write_and_the_new_instructions() 
         "{instructions}"
     );
 
-    // What a fresh database seeds is exactly what the migration produces.
+    // What a fresh database seeds has the migration's tool lists (its instructions moved on in 097,
+    // see `plan_instructions_name_no_file.rs`).
     let fresh = init_pool("sqlite::memory:").await.expect("pool");
     migrations::run_all(&fresh).await.expect("migrations");
     let repo = Repository::new(fresh.clone());
@@ -131,7 +134,6 @@ async fn rows_that_still_hold_what_shipped_get_write_and_the_new_instructions() 
             "{kind}"
         );
         let migrated = row(&pool, kind).await;
-        assert_eq!(seeded.0, migrated.0, "{kind} instructions");
         let seeded: serde_json::Value = serde_json::from_str(&seeded.1).expect("policy");
         assert_eq!(seeded, migrated.1, "{kind} tool policy");
     }
@@ -158,7 +160,9 @@ async fn a_row_someone_edited_keeps_its_edit() {
         r#"["Read","Grep","Glob","WebFetch","WebSearch"]"#,
     )
     .await;
-    migrations::run_all(&pool).await.expect("upgrade to 096");
+    migrations::run_up_to(&pool, "096_planner_researcher_write_plan")
+        .await
+        .expect("upgrade to 096");
 
     let (instructions, policy) = row(&pool, "planner").await;
     assert_eq!(
@@ -191,7 +195,9 @@ async fn a_custom_profile_of_the_same_shape_is_left_alone() {
     .execute(&pool)
     .await
     .expect("custom");
-    migrations::run_all(&pool).await.expect("upgrade to 096");
+    migrations::run_up_to(&pool, "096_planner_researcher_write_plan")
+        .await
+        .expect("upgrade to 096");
     let (instructions, policy) = row(&pool, "mine").await;
     assert_eq!(instructions, OLD_PLANNER);
     assert_eq!(claude_code(&policy), ["Read", "Grep", "Glob", "WebFetch"]);

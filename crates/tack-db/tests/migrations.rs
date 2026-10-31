@@ -17,6 +17,8 @@ mod item_recurrence;
 mod item_source_migration;
 #[path = "migrations/one_model_string.rs"]
 mod one_model_string;
+#[path = "migrations/plan_instructions_name_no_file.rs"]
+mod plan_instructions_name_no_file;
 #[path = "migrations/planner_writes_plan.rs"]
 mod planner_writes_plan;
 #[path = "migrations/provisional_limit.rs"]
