@@ -159,6 +159,9 @@ drawer and in the side column of the item's page, takes the colour and the butto
 **Merge** shows whenever a run could be merged. When it cannot run it stays disabled and says why
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
+While a run is going, the item follows it: its status, who it is assigned to and the other details beside
+it change when the run does, with no reload, and stop being checked once the run has ended.
+
 On the tab, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest first, each with a dot in
 the colour of its state, and the latest is shown until you pick another. The address names the run you picked (`?tab=execution&run=…` on the item's own page), so a run can be
 linked to and opened again. **Run again** starts a new

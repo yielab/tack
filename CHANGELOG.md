@@ -18,6 +18,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- An item follows its run: while the run is going, the item's status, assignee and side details change as the run does, on the item's page and in the drawer, with no reload.
 - A run shows its team's steps as it goes: when the team reports its steps, a line above the timeline lists them in order, each done, running or waiting, with what checks it (a command, a reviewer who can send it back so many times, you, or a check outside the team); a step sent back runs again, and a step nobody on the team does carries no mark. When the team or its agent reports none, the run says the agent does not report its steps in advance.
 - An accepted plan entry may name a `profile_id`, any profile with a team or without (a built-in one has none); it goes into the item's run settings and wins over the entry's `team`, and an id no profile has is reported on that entry as `unknown_profile` instead of refusing the request.
 - A run says which profile and which agent it was made with: `GET /api/executions` and `GET /api/executions/{id}` answer `agent_profile_id` and `requested_harness_kind`, so a screen finds the run's team and agent from the run and not from the item's current setting.
