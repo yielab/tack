@@ -2920,6 +2920,23 @@ export interface paths {
         patch: operations["update_sprint_status"];
         trace?: never;
     };
+    "/api/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/teams */
+        get: operations["list_teams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/templates": {
         parameters: {
             query?: never;
@@ -5077,6 +5094,32 @@ export interface components {
             order: number;
             wip_limit?: number | null;
         };
+        /**
+         * @description Whether a team runs to the end alone.
+         * @enum {string}
+         */
+        TeamDecides: "to_the_end" | "asks_a_person";
+        /** @description One team: what an agent reported about it, or only the name a profile gives it. */
+        TeamEntry: {
+            /** @description The agent that runs the team; `null` for a name only a profile that names no agent uses. */
+            harness?: string | null;
+            name: string;
+            /** @description The profiles that name the team. */
+            profiles: components["schemas"]["TeamProfile"][];
+            report?: null | components["schemas"]["TeamReport"];
+            /**
+             * @description Whether an active runner reports this team. When `false`, everything below besides
+             *     `profiles` is `null`: the board knows the name and nothing else.
+             */
+            reported: boolean;
+            /**
+             * Format: date-time
+             * @description When that runner's agent last reported.
+             */
+            reported_at?: string | null;
+            /** @description The runner whose report this is: the newest one when several report the team. */
+            runner?: string | null;
+        };
         /** @description A team one of the project's roles runs, and whether it caps the project's autonomy. */
         TeamLine: {
             /** @description The level the team's tasks stay at; `null` for a team that runs lights-out. */
@@ -5102,6 +5145,47 @@ export interface components {
              */
             works_in?: string | null;
         };
+        /** @description Every team any agent reports. */
+        TeamList: {
+            teams: components["schemas"]["TeamEntry"][];
+        };
+        /** @description One member of a team. */
+        TeamMember: {
+            /** @description The model the member runs on. Absent means the harness did not say. */
+            model?: string | null;
+            /** @description What the member does, in the harness's own word for it, shown as data. */
+            role: string;
+        };
+        /**
+         * @description How far a team's agents can reach over the network.
+         * @enum {string}
+         */
+        TeamNetwork: "none" | "limited" | "open";
+        /** @description A profile that names a team. */
+        TeamProfile: {
+            id: string;
+            name: string;
+        };
+        /** @description The work a team holds now. */
+        TeamQueue: {
+            /**
+             * Format: int64
+             * @description Tasks being worked now.
+             */
+            running: number;
+            /**
+             * Format: int64
+             * @description Tasks that have not started or wait for a person.
+             */
+            waiting: number;
+        };
+        /** @description One set of records a team keeps. */
+        TeamRecordSet: {
+            description: string;
+            name: string;
+            /** Format: int64 */
+            rows: number;
+        };
         /** @description One set of records a team keeps. */
         TeamRecords: {
             description: string;
@@ -5111,6 +5195,84 @@ export interface components {
              * @description Rows in the set, whichever run wrote them.
              */
             rows: number;
+        };
+        /**
+         * @description One team a harness runs.
+         *
+         *     Every optional field below is in Tack's own words, filled by the harness's adapter from what
+         *     its agent reports. Absent means the harness did not say, which is never the same as "none":
+         *     a screen shows what was reported and nothing it had to guess. No field may carry a harness's
+         *     own key name; a harness's own labels arrive only as data (`shape`).
+         */
+        TeamReport: {
+            decides?: null | components["schemas"]["TeamDecides"];
+            /**
+             * @description Who does the work: one entry per member, with the model it runs on. Absent means the
+             *     harness did not say; no field may carry a harness's own key name.
+             */
+            members?: components["schemas"]["TeamMember"][] | null;
+            name: string;
+            network?: null | components["schemas"]["TeamNetwork"];
+            profile: string;
+            queue?: null | components["schemas"]["TeamQueue"];
+            /**
+             * @description The folders the team's sandbox may read besides its own work, as docket resolved them
+             *     (its machine-wide grants narrowed by the team's own setting); empty when there are none.
+             *     Absent when the harness did not say, which is not the same as none.
+             */
+            read_only?: string[] | null;
+            /**
+             * @description The record sets the team keeps, with how many rows each holds. Absent when the harness
+             *     has no such thing or did not say.
+             */
+            records?: components["schemas"]["TeamRecordSet"][] | null;
+            /**
+             * @description A label the harness gives the team's shape, shown as it came and never sent anywhere.
+             *     Absent means the harness did not say; no field may carry a harness's own key
+             *     name.
+             */
+            shape?: string | null;
+            /**
+             * @description The steps a task goes through, in order. Absent means the harness did not say (an empty
+             *     list is a team that reported no steps); no field may carry a harness's own
+             *     key name.
+             */
+            steps?: components["schemas"]["TeamStep"][] | null;
+            violations?: components["schemas"]["TeamViolation"][];
+            works_in?: null | components["schemas"]["WorksIn"];
+        };
+        /** @description One step of the way a team handles a task. */
+        TeamStep: {
+            checked_by?: null | components["schemas"]["TeamStepCheck"];
+            kind: components["schemas"]["TeamStepKind"];
+            name: string;
+            /**
+             * @description Who does an `agent` step, in the harness's own word for it, shown as data. Absent for a
+             *     step nobody in the team does, or when the harness did not say.
+             */
+            role?: string | null;
+            /**
+             * Format: int32
+             * @description How many times it may go back. Absent means the harness did not say.
+             */
+            sends_back_max?: number | null;
+            /** @description The earlier step the work goes back to when the check fails. Absent means it goes nowhere. */
+            sends_back_to?: string | null;
+        };
+        /**
+         * @description What decides a step passed.
+         * @enum {string}
+         */
+        TeamStepCheck: "command" | "reviewer" | "person" | "external";
+        /**
+         * @description What a step is.
+         * @enum {string}
+         */
+        TeamStepKind: "agent" | "command" | "ask" | "wait" | "parallel";
+        /** @description One thing that makes a team need a person during a run, and how to fix it. */
+        TeamViolation: {
+            fix: string;
+            requirement: string;
         };
         /**
          * @description Terminal reason from a runner attempt: `code`, `message`, and optional
@@ -5365,6 +5527,11 @@ export interface components {
         };
         /** @enum {string} */
         WorkflowType: "scrum" | "kanban" | "mixed" | "simple" | "construction" | "legal" | "research" | "event" | "custom";
+        /**
+         * @description Where a team does its work.
+         * @enum {string}
+         */
+        WorksIn: "repository" | "folder";
         Workspace: {
             /** Format: date-time */
             created_at: string;
@@ -9390,6 +9557,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_teams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every team any active runner reports, once per name and agent, with the profiles that name it; plus the names profiles use that no runner reports */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamList"];
                 };
             };
         };
