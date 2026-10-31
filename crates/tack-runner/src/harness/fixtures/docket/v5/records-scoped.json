@@ -4,7 +4,8 @@
       "name": "entries",
       "description": "One row per thing the pod has captured, found again by its ref.",
       "key": "ref",
-      "rows": 0,
+      "scope": "pod",
+      "rows": 2,
       "columns": [
         {
           "name": "ref",
@@ -21,8 +22,61 @@
           "type": "number",
           "required": false
         }
-      ],
-      "scope": "task"
+      ]
+    },
+    {
+      "name": "tack_proposals",
+      "description": "Items that the team proposes to Tack, one row each.",
+      "key": "ref",
+      "scope": "task",
+      "rows": 4,
+      "columns": [
+        {
+          "name": "ref",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "description",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "role",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "team",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "parent",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "depends_on",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "acceptance",
+          "type": "string",
+          "required": false
+        }
+      ]
     }
   ],
   "problems": []

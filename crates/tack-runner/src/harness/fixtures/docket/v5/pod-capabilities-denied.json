@@ -1,0 +1,200 @@
+{
+  "pod": "saas-lights",
+  "blueprint": "build",
+  "members": [
+    {
+      "id": "saas-lights-lead",
+      "role": "lead",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-lights-lead",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "rec__query",
+          "skill"
+        ],
+        "records": {
+          "write": [],
+          "query": true
+        }
+      }
+    },
+    {
+      "id": "saas-lights-implementer",
+      "role": "implementer",
+      "model": {
+        "value": "anthropic/claude-sonnet-4-6",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-lights-implementer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "rec__export",
+          "rec__query",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": true
+        }
+      }
+    }
+  ],
+  "settings": {
+    "budgetUsd": {
+      "value": 0.0,
+      "source": "default"
+    },
+    "maxReworkCycles": {
+      "value": 1,
+      "source": "default"
+    },
+    "turnTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "verifyTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "approvalMode": {
+      "value": "wait",
+      "source": "default"
+    },
+    "approvalExpiryHours": {
+      "value": 24,
+      "source": "default"
+    },
+    "inputExpiryHours": {
+      "value": 72,
+      "source": "default"
+    },
+    "allowCommands": {
+      "value": "",
+      "source": "default"
+    },
+    "pipeline": {
+      "value": null,
+      "source": "default"
+    },
+    "schedule": {
+      "value": null,
+      "source": "default"
+    },
+    "projectInstructions": {
+      "value": "",
+      "source": "default"
+    },
+    "mcpServers": {
+      "value": null,
+      "source": "default"
+    },
+    "deniedTools": {
+      "value": "record",
+      "source": "set"
+    },
+    "requireVerify": {
+      "value": false,
+      "source": "default"
+    },
+    "maxConsultationsPerTask": {
+      "value": 3,
+      "source": "default"
+    },
+    "consultMode": {
+      "value": "park",
+      "source": "default"
+    },
+    "network": {
+      "value": "open",
+      "source": "default"
+    },
+    "profile": {
+      "value": "lights-out",
+      "source": "set"
+    },
+    "readOnly": {
+      "value": "none",
+      "source": "set"
+    },
+    "prepare": {
+      "value": "",
+      "source": "default"
+    },
+    "protects": {
+      "value": "",
+      "source": "default"
+    }
+  },
+  "approvalMode": {
+    "effective": "park",
+    "source": "unset"
+  },
+  "pipeline": {
+    "source": "blueprint 'build'",
+    "steps": [
+      {
+        "id": "lead",
+        "kind": "agent",
+        "role": "lead",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "implementer",
+        "kind": "agent",
+        "role": "implementer",
+        "modelClass": "strong",
+        "gate": "mechanical",
+        "rework": []
+      }
+    ]
+  },
+  "network": {
+    "mode": "none",
+    "scope": "global"
+  },
+  "budgetUnpriced": [],
+  "configSource": "/scratch/plan-team",
+  "configDigest": "012329d1929178444ca5215a85d31f2055867fd95e3ff879446bc28467982a80",
+  "drift": "no",
+  "profile": {
+    "name": "lights-out",
+    "violations": [
+      {
+        "requirement": "external-gate",
+        "fix": "add 'gate: {external: <verifier command>}' to step 'implementer'"
+      }
+    ]
+  },
+  "pipelineSource": "blueprint 'build'",
+  "workspaceKind": "codebase",
+  "repoConfigDir": "/scratch/repo2/.docket",
+  "readOnly": []
+}

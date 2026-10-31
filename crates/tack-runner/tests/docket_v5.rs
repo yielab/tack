@@ -545,8 +545,9 @@ async fn probe_reads_a_team_without_the_two_asks_of_an_older_docket() {
 
 #[tokio::test]
 async fn probe_reads_what_each_member_reaches_and_leaves_it_unsaid_for_an_older_docket() {
-    // The roles of the pod, as the constructed `pod-capabilities` gives them: the lead proposes and
-    // only reads, the implementer changes the project and proposes nothing.
+    // The roles of the pod, as the captures give them: the lead only reads, the implementer changes
+    // the project, and a role proposes once the team declares `tack_proposals` (`record` is a kind
+    // of its own, so the lead that cannot write still can), whichever role it is.
     let reach = |teams: Vec<tack_protocol::execution::TeamReport>| {
         teams[0]
             .members
@@ -556,14 +557,23 @@ async fn probe_reads_what_each_member_reaches_and_leaves_it_unsaid_for_an_older_
             .map(|m| (m.role.clone(), m.can_propose, m.writes_project))
             .collect::<Vec<_>>()
     };
-    let fake = pods_fake().await;
     let scene = scene();
+    let fake = pods_fake().await;
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    assert_eq!(
+        reach(teams),
+        [
+            ("lead".to_owned(), Some(false), Some(false)),
+            ("implementer".to_owned(), Some(false), Some(true)),
+        ]
+    );
+    fake.add_record_set_scoped(POD, "tack_proposals", "Items", &["ref", "title"], "task");
     let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
     assert_eq!(
         reach(teams),
         [
             ("lead".to_owned(), Some(true), Some(false)),
-            ("implementer".to_owned(), Some(false), Some(true)),
+            ("implementer".to_owned(), Some(true), Some(true)),
         ]
     );
 
@@ -4152,11 +4162,11 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
     }
 }
 
-/// The docket of the captures: before the scope of a record set and what a member reaches.
+/// The docket of the captures: the committed one, with the scope of a record set, `_role` on a row
+/// and what a member reaches. `before_task_scope()` is the docket before that, of which there is no
+/// capture.
 async fn captured_docket() -> FakeDocket {
-    let fake = FakeDocket::start().await;
-    fake.before_task_scope();
-    fake
+    FakeDocket::start().await
 }
 
 #[tokio::test]
@@ -4533,30 +4543,73 @@ async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_cap
 }
 
 #[tokio::test]
-async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_constructed_files() {
+async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_captures() {
     let fake = FakeDocket::start().await;
     fake.add_folder_pod("saas-notes");
+    fake.add_record_set_scoped("saas-notes", "entries", "Things", &["ref", "title"], "pod");
     fake.add_record_set_scoped(
         "saas-notes",
-        "entries",
-        "Things",
-        &["ref", "title", "amount"],
+        "tack_proposals",
+        "Items",
+        &[
+            "ref",
+            "title",
+            "description",
+            "type",
+            "role",
+            "team",
+            "parent",
+            "depends_on",
+            "acceptance",
+        ],
         "task",
     );
     fake.add_record_row(
         "saas-notes",
-        "entries",
+        "tack_proposals",
         "task-a",
-        json!({"ref": "story-1", "title": "A story", "amount": 12.5}),
+        json!({"ref": "research", "title": "Research it"}),
     );
+    fake.add_record_row(
+        "saas-notes",
+        "tack_proposals",
+        "task-a",
+        json!({"ref": "copy", "title": "Fix the copy", "parent": "research"}),
+    );
+    fake.add_pod("saas-dev", "attended", &[]);
+    fake.add_record_set_scoped("saas-dev", "tack_proposals", "Items", &["ref"], "task");
+    fake.add_pod("saas-lights", "lights-out", &[]);
     let mut wrong = Vec::new();
     for (name, path) in [
         ("records-scoped", "/pods/saas-notes/records"),
         (
             "records-rows-task",
-            "/pods/saas-notes/records/entries?task=task-a",
+            "/pods/saas-notes/records/tack_proposals?task=task-a",
         ),
-        ("pod-capabilities", "/pods/saas-notes"),
+        (
+            "records-rows-task-limit",
+            "/pods/saas-notes/records/tack_proposals?task=task-a&limit=1",
+        ),
+        (
+            "records-rows-task-other",
+            "/pods/saas-notes/records/tack_proposals?task=task-b",
+        ),
+        (
+            "records-task-unknown",
+            "/pods/saas-notes/records/tack_proposals?task=task-never-wrote",
+        ),
+        (
+            "records-rows-pod-shared",
+            "/pods/saas-notes/records/entries?task=task-b",
+        ),
+        (
+            "records-rows-sql-columns",
+            "/pods/saas-notes/records/tack_proposals?sql=SELECT%20*%20FROM%20tack_proposals",
+        ),
+        ("pod-capabilities-folder", "/pods/saas-notes"),
+        ("pod-capabilities", "/pods/saas-dev"),
+        // Shape only: the fake does not model a denied kind, so the capture shows what it is.
+        ("pod-capabilities-denied", "/pods/saas-lights"),
     ] {
         let (status, answer) = ask(&fake, "GET", path, None).await;
         assert_eq!(status, 200, "{name}: {answer}");
@@ -4565,37 +4618,39 @@ async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_constructed
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
-    assert_eq!(
-        ask(&fake, "GET", "/pods/saas-notes/records", None).await.1["records"][0]["scope"],
-        "task"
-    );
-    // The rows of one task, and none for a task that wrote none.
+    let (_, listing) = ask(&fake, "GET", "/pods/saas-notes/records", None).await;
+    assert_eq!(listing["records"][0]["scope"], "pod");
+    assert_eq!(listing["records"][1]["scope"], "task");
+    // The rows of one task, in write order with the role of the hop, and none for a task that wrote
+    // none; `limit` counts what it left out in `cut`.
     let (_, rows) = ask(
         &fake,
         "GET",
-        "/pods/saas-notes/records/entries?task=task-b",
-        None,
-    )
-    .await;
-    assert_eq!(rows["rows"], json!([]));
-    let (_, rows) = ask(
-        &fake,
-        "GET",
-        "/pods/saas-notes/records/entries?task=task-a",
+        "/pods/saas-notes/records/tack_proposals?task=task-a&limit=1",
         None,
     )
     .await;
     assert_eq!(rows["rows"][0]["_role"], "lead");
+    assert_eq!((rows["rows"].as_array().map(Vec::len), &rows["cut"]), (Some(1), &json!(1)));
+    let (_, rows) = ask(
+        &fake,
+        "GET",
+        "/pods/saas-notes/records/tack_proposals?task=task-b",
+        None,
+    )
+    .await;
+    assert_eq!(rows["rows"], json!([]));
 
-    // An empty task, or a task together with a statement, is a 400 in docket's error shape.
+    // An empty task, or a task together with a statement, is a 400 in docket's error shape with
+    // the one sentence docket gives both.
     for (name, path) in [
         (
             "records-task-empty",
-            "/pods/saas-notes/records/entries?task=",
+            "/pods/saas-notes/records/tack_proposals?task=",
         ),
         (
             "records-task-and-sql",
-            "/pods/saas-notes/records/entries?task=task-a&sql=SELECT%20*%20FROM%20entries",
+            "/pods/saas-notes/records/tack_proposals?task=task-a&sql=SELECT%20*%20FROM%20tack_proposals",
         ),
     ] {
         let (status, answer) = ask(&fake, "GET", path, None).await;
@@ -4603,8 +4658,21 @@ async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_constructed
         assert_eq!(answer, fake_docket::fixture(name), "{name}");
     }
 
+    // What the captured members of a team that declares the set can do.
+    let (_, report) = ask(&fake, "GET", "/pods/saas-dev", None).await;
+    for member in report["members"].as_array().unwrap() {
+        assert_eq!(
+            member["capabilities"]["records"]["write"],
+            json!(["tack_proposals"]),
+            "{member}"
+        );
+    }
+    let (_, report) = ask(&fake, "GET", "/pods/saas-notes", None).await;
+    assert!(report["members"].as_array().unwrap().len() >= 3);
+
     // A docket before the scope ignores `task=` and answers every row, which is why Tack never
-    // sends it without having seen a `scope`.
+    // sends it without having seen a `scope`. No capture of such a docket exists: the fake is the
+    // captures with `scope`, `_role` and `capabilities` taken out.
     let older = FakeDocket::start().await;
     older.before_task_scope();
     older.add_folder_pod("saas-notes");
@@ -4620,8 +4688,11 @@ async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_constructed
     )
     .await;
     assert_eq!(rows["rows"].as_array().map(Vec::len), Some(2));
+    assert!(rows["rows"][0].get("_role").is_none());
     let (_, listing) = ask(&older, "GET", "/pods/saas-notes/records", None).await;
     assert!(listing["records"][0].get("scope").is_none());
+    let (_, report) = ask(&older, "GET", "/pods/saas-notes", None).await;
+    assert!(report["members"][0].get("capabilities").is_none());
 }
 
 #[tokio::test]

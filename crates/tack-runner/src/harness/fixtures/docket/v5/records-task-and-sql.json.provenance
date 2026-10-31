@@ -1,9 +1,10 @@
-constructed
+captured
 route: GET /pods/<pod>/records/<set>
 status: 400
 tack-sends: no
-built-from: the `{"ok": false, "error": <sentence>}` of post-tasks-no-description.json
-docket: docket working tree on 2026-10-31, read and not run (uncommitted; API stays 6)
-source: ~/Sites/rack-cli/internal-docs/design/records-proposals-2026-10-31.md (a gitignored design note)
+note: task together with sql: refused
+command: curl -X GET http://127.0.0.1:<port>/pods/saas-notes/records/tack_proposals?task=task-capture-a&sql=SELECT%20*%20FROM%20tack_proposals (bearer token from docket's --token-file)
+docket: docket 0.3.0b1 (API 6), source checkout cdeabac3
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-31
-note: `?task=` together with `?sql=`. Tack never sends both. The status and the shape are the design note's; the sentence is made up. Recapture when docket commits.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

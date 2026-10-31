@@ -1,0 +1,42 @@
+{
+  "set": "tack_proposals",
+  "columns": [
+    "_id",
+    "_at",
+    "_task",
+    "_session",
+    "_step",
+    "_role",
+    "_updated_at",
+    "ref",
+    "title",
+    "description",
+    "type",
+    "role",
+    "team",
+    "parent",
+    "depends_on",
+    "acceptance"
+  ],
+  "rows": [
+    {
+      "_id": 4,
+      "_at": "2026-01-01T00:00:00Z",
+      "_task": "task-capture-b",
+      "_session": "session-0",
+      "_step": "capture",
+      "_role": "analyst",
+      "_updated_at": null,
+      "ref": "research",
+      "title": "Another task, same ref",
+      "description": null,
+      "type": null,
+      "role": null,
+      "team": null,
+      "parent": null,
+      "depends_on": null,
+      "acceptance": null
+    }
+  ],
+  "cut": 0
+}

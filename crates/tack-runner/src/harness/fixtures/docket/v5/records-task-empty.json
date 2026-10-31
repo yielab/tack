@@ -1,4 +1,4 @@
 {
   "ok": false,
-  "error": "task must not be empty"
+  "error": "task must name a task and cannot be combined with sql"
 }

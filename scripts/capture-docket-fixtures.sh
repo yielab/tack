@@ -19,7 +19,9 @@
 # then finds no model to ask, and a routine team in a plain folder with the records recipe applied
 # (a team with no codebase, its record sets and one row). That folder team also takes a task as Tack
 # sends it there and refuses, at claim, one with a `baseRef` (`failureKind` base_ref) and one with a
-# `prepare` (`prepare`). An approval that expires is not reachable (docket's deadline is hours): that
+# `prepare` (`prepare`). Last, it declares `tack_proposals` with `scope: task` on three teams, writes rows through
+# docket's own records port and reads them back by task (rows, the two 400s, `limit`, what each member reaches).
+# An approval that expires is not reachable (docket's deadline is hours): that
 # fixture stays constructed. It refuses to run when DOCKET_HOME is unset or is the operator's
 # ~/.docket, and it never reads that folder. The bearer token docket writes is read from its
 # file and is never printed or recorded; the script fails if it shows up in a capture.
@@ -515,6 +517,91 @@ wait_for saas-notes "$PREPARE_ID" failed
 rec task-failed-prepare-folder GET "/tasks/saas-notes/$PREPARE_ID" yes "a task with a prepare for a team in a folder, settled failed before any hop: failureKind prepare"; expect 200 task-prepare-folder
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = prepare ] || die "the folder task failed, but not on its prepare: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
+
+# ── Record sets that belong to a task, and what each member of a team reaches: no model ────────
+# A team that plans declares `tack_proposals` with `scope: task` (onboarding-lab/skill/references/
+# proposals.md): its `ref` is then unique within one task, and `?task=<id>` reads the rows of one
+# task. The set is declared on the folder team (`pod update` from a directory) and on the team with
+# a codebase, so one capture shows the members of both blueprints with what each reaches. A row is
+# written by an agent's tool, which no model is here to call, so the rows go in through docket's own
+# records port (the one its tools use), with a task and a role as their origin. What `add` answers for
+# a ref that is already there (`created: false`) is printed by that script and checked, not captured:
+# it is the answer of an agent's tool, not of a route.
+mkdir -p "$SCRATCH/plan-team/records"
+cat >"$SCRATCH/plan-team/records/tack_proposals.yaml" <<'RECORDS'
+kind: records
+name: tack_proposals
+description: Items that the team proposes to Tack, one row each.
+key: ref
+scope: task
+columns:
+  - {name: ref, type: string, required: true, description: "A short unique name of this row; other rows name it in parent and depends_on"}
+  - {name: title, type: string, required: true, description: "What the item is, in a few words"}
+  - {name: description, type: string, description: "What to do and why, as a full card"}
+  - {name: type, type: string, description: "The item type, when the project has it"}
+  - {name: role, type: string, description: "The project role that does it, by name"}
+  - {name: team, type: string, description: "The team that does it, by name"}
+  - {name: parent, type: string, description: "The ref of an earlier row this item is a sub-item of"}
+  - {name: depends_on, type: string, description: "The refs of the items that must finish first, separated by commas"}
+  - {name: acceptance, type: string, description: "What is expected, one sentence a line"}
+RECORDS
+for pair in "saas-notes:$SCRATCH/notes" "saas-dev:$SCRATCH/repo" "saas-lights:$SCRATCH/repo2"; do
+  guard
+  (cd "${pair#*:}" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod update "$SCRATCH/plan-team" --pod "${pair%%:*}" </dev/null >"$SCRATCH/pod-update-plan.log" 2>&1) \
+    || die "docket pod update failed for ${pair%%:*}; see $SCRATCH/pod-update-plan.log"
+done
+# A third team declares the set and then denies the `record` kind pod-wide: nobody there can propose.
+guard
+(cd "$SCRATCH/repo2" && "${DOCKET_ENV[@]}" "$DOCKET_BIN" pod set deniedTools record --pod saas-lights </dev/null >"$SCRATCH/pod-set-denied.log" 2>&1) \
+  || die "docket pod set deniedTools failed; see $SCRATCH/pod-set-denied.log"
+cat >"$SCRATCH/write-rows.py" <<'PY'
+import json, sys
+from docket.bootstrap import bind_adapters
+from docket.kernel.ports import records
+from docket.kernel.records_port import RecordOrigin
+
+pod, set_name, task, role, rows = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], json.loads(sys.argv[5])
+bind_adapters()
+store = records.open(pod)
+print(json.dumps(separators=(",", ":"), obj=[store.add(set_name, row, RecordOrigin(task=task, session="session-0", step="capture", role=role)).created for row in rows]))
+PY
+# The python of the docket that runs: the checkout's own environment when there is one.
+DOCKET_PY=${DOCKET_PYTHON:-}
+[ -n "$DOCKET_PY" ] || { [ -x "$SRC/.venv/bin/python" ] && DOCKET_PY=$SRC/.venv/bin/python; }
+[ -n "$DOCKET_PY" ] || DOCKET_PY=$(sed -n 's#^exec "\(.*\)" -m docket.*#\1#p' "$DOCKET_BIN" | head -1)
+[ -x "$DOCKET_PY" ] || die "no python for docket's records port; set DOCKET_PYTHON"
+add_rows() { # <pod> <set> <task> <role> <json rows>: prints the `created` of each
+  guard
+  "${DOCKET_ENV[@]}" "$DOCKET_PY" -I "$SCRATCH/write-rows.py" "$@" 2>"$SCRATCH/write-rows.log" || die "writing rows failed: $(cat "$SCRATCH/write-rows.log")"
+}
+TASK_A=task-capture-a
+TASK_B=task-capture-b
+PLAN_ROWS=$(jq -cn '[
+  {ref: "research", title: "Research the sign-up flow", description: "Read the flow and list what blocks it.", type: "epic", role: "analyst", acceptance: "The blockers are listed.\nEach has a cause."},
+  {ref: "copy", title: "Fix the sign-up copy", parent: "research", role: "writer"},
+  {ref: "form", title: "Fix the sign-up form", parent: "research", depends_on: "copy"}
+]')
+[ "$(add_rows saas-notes tack_proposals "$TASK_A" lead "$PLAN_ROWS")" = "[true,true,true]" ] || die "the task-scoped rows were not all created"
+# The same ref again, in the same task: the row stays, nothing new is written.
+[ "$(add_rows saas-notes tack_proposals "$TASK_A" lead '[{"ref":"research","title":"Changed"}]')" = "[false]" ] || die "a repeated ref in a task-scoped set was written again"
+# The same ref from another task: a task-scoped set keeps its own row for each task.
+[ "$(add_rows saas-notes tack_proposals "$TASK_B" analyst '[{"ref":"research","title":"Another task, same ref"}]')" = "[true]" ] || die "a task-scoped set refused the same ref from another task"
+# A pod-scoped set (`entries`, from the recipe) holds one row per ref across every task.
+[ "$(add_rows saas-notes entries "$TASK_A" lead '[{"ref":"story-2","title":"First"}]')" = "[true]" ] || die "the pod-scoped row was not created"
+[ "$(add_rows saas-notes entries "$TASK_B" lead '[{"ref":"story-2","title":"Same ref, other task"}]')" = "[false]" ] || die "a pod-scoped set took the same ref from another task"
+
+rec records-scoped GET /pods/saas-notes/records yes "the sets of a team that declares tack_proposals with scope task; every set carries scope, pod or task, and a client that sees it knows ?task= is supported"; expect 200 records-scoped
+rec records-rows-task GET "/pods/saas-notes/records/tack_proposals?task=$TASK_A&limit=50" yes "the rows one task wrote, in write order; _role is the role of the hop that wrote the row, and a column the row left empty is null"; expect 200 records-rows-task
+rec records-rows-task-other GET "/pods/saas-notes/records/tack_proposals?task=$TASK_B&limit=50" no "another task wrote a row with the same ref and has its own: a task-scoped set does not share"; expect 200 records-rows-task-other
+rec records-rows-task-limit GET "/pods/saas-notes/records/tack_proposals?task=$TASK_A&limit=2" no "limit with task: the first rows in write order are kept and cut counts the rest"; expect 200 records-rows-task-limit
+rec records-rows-pod-shared GET "/pods/saas-notes/records/entries?task=$TASK_B&limit=50" no "a pod-scoped set read by task: the task sees only the rows it wrote, and a ref taken by another task is not its row"; expect 200 records-rows-pod-shared
+rec records-task-unknown GET "/pods/saas-notes/records/tack_proposals?task=task-never-wrote&limit=50" no "a task that wrote nothing: no rows, not an error"; expect 200 records-task-unknown
+rec records-task-empty GET "/pods/saas-notes/records/tack_proposals?task=" no "task given empty: refused"; expect 400 records-task-empty
+rec records-task-and-sql GET "/pods/saas-notes/records/tack_proposals?task=$TASK_A&sql=SELECT%20*%20FROM%20tack_proposals" no "task together with sql: refused"; expect 400 records-task-and-sql
+rec records-rows-sql-columns GET '/pods/saas-notes/records/tack_proposals?limit=50&sql=SELECT%20*%20FROM%20tack_proposals' no "the same set read by statement: where _role sits among the columns"; expect 200 records-rows-sql-columns
+rec pod-capabilities GET /pods/saas-dev yes "a team with a codebase that declares tack_proposals: every member lists kinds, tools and records {write, query}; the lead writes no project file and proposes, the implementer writes files and has no record tool"; expect 200 pod-capabilities
+rec pod-capabilities-denied GET /pods/saas-lights yes "a team that declares tack_proposals and denies the record kind: no member lists a record tool and records.write is empty, though the set exists"; expect 200 pod-capabilities-denied
+rec pod-capabilities-folder GET /pods/saas-notes yes "a team in a folder that declares tack_proposals: the lead, reviewer, analyst and writer, each with what it reaches"; expect 200 pod-capabilities-folder
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

@@ -1,9 +1,10 @@
-constructed
+captured
 route: GET /pods/<pod>/records/<set>
 status: 200
 tack-sends: yes
-built-from: records-rows.json with `_role` (the role of the hop that wrote the row), as the answer of `?task=<id>` (the task's rows in write order, `_id` ascending)
-docket: docket working tree on 2026-10-31, read and not run (uncommitted; API stays 6)
-source: ~/Sites/rack-cli/internal-docs/design/records-proposals-2026-10-31.md (a gitignored design note)
+note: the rows one task wrote, in write order; _role is the role of the hop that wrote the row, and a column the row left empty is null
+command: curl -X GET http://127.0.0.1:<port>/pods/saas-notes/records/tack_proposals?task=task-capture-a&limit=50 (bearer token from docket's --token-file)
+docket: docket 0.3.0b1 (API 6), source checkout cdeabac3
+env: HOME and DOCKET_HOME (a throwaway folder), PATH, HTTP_PROXY/HTTPS_PROXY/ALL_PROXY (an unreachable loopback port); no model, no provider key
 date: 2026-10-31
-note: the shape is the one of `?sql=`; only `_role` is new. Recapture when docket commits.
+redacted: the scratch folder (as /scratch), timestamps (as 2026-01-01T00:00:00Z), 40-hex commit ids (as zeros), task ids (as an all-zero uuid), escalation ids (as esc-000000000000), approval and sweep-run ids (as an all-zero uuid), claimPid

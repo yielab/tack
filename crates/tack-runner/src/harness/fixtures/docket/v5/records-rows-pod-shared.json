@@ -1,0 +1,17 @@
+{
+  "set": "entries",
+  "columns": [
+    "_id",
+    "_at",
+    "_task",
+    "_session",
+    "_step",
+    "_role",
+    "_updated_at",
+    "ref",
+    "title",
+    "amount"
+  ],
+  "rows": [],
+  "cut": 0
+}

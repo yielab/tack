@@ -17,12 +17,14 @@
           "record"
         ],
         "tools": [
-          "read",
+          "consult",
           "glob",
           "grep",
+          "read",
+          "rec__query",
           "rec__tack_proposals__add",
           "rec__tack_proposals__update",
-          "rec__query"
+          "skill"
         ],
         "records": {
           "write": [
@@ -36,109 +38,33 @@
       "id": "saas-dev-implementer",
       "role": "implementer",
       "model": {
-        "value": "anthropic/claude-haiku-4-5",
+        "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer",
       "verifyCmd": "",
       "capabilities": {
         "kinds": [
+          "exec",
           "read",
-          "write",
-          "exec"
+          "record",
+          "write"
         ],
         "tools": [
-          "read",
-          "glob",
-          "grep",
-          "write",
+          "bash",
+          "consult",
           "edit",
-          "bash"
-        ],
-        "records": {
-          "write": [],
-          "query": false
-        }
-      }
-    },
-    {
-      "id": "saas-dev-reviewer",
-      "role": "reviewer",
-      "model": {
-        "value": "anthropic/claude-haiku-4-5",
-        "source": "policy"
-      },
-      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-reviewer",
-      "verifyCmd": "",
-      "capabilities": {
-        "kinds": [
-          "read"
-        ],
-        "tools": [
-          "read",
-          "glob",
-          "grep"
-        ],
-        "records": {
-          "write": [],
-          "query": false
-        }
-      }
-    },
-    {
-      "id": "saas-dev-analyst",
-      "role": "analyst",
-      "model": {
-        "value": "anthropic/claude-haiku-4-5",
-        "source": "policy"
-      },
-      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-analyst",
-      "verifyCmd": "",
-      "capabilities": {
-        "kinds": [
-          "read",
-          "record"
-        ],
-        "tools": [
-          "read",
           "glob",
           "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "rec__export",
+          "rec__query",
           "rec__tack_proposals__add",
           "rec__tack_proposals__update",
-          "rec__query"
-        ],
-        "records": {
-          "write": [
-            "tack_proposals"
-          ],
-          "query": true
-        }
-      }
-    },
-    {
-      "id": "saas-dev-writer",
-      "role": "writer",
-      "model": {
-        "value": "anthropic/claude-haiku-4-5",
-        "source": "policy"
-      },
-      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-writer",
-      "verifyCmd": "",
-      "capabilities": {
-        "kinds": [
-          "read",
-          "write",
-          "record"
-        ],
-        "tools": [
-          "read",
-          "glob",
-          "grep",
-          "write",
-          "edit",
-          "rec__tack_proposals__add",
-          "rec__tack_proposals__update",
-          "rec__query"
+          "skill",
+          "write"
         ],
         "records": {
           "write": [
@@ -262,12 +188,12 @@
   },
   "network": {
     "mode": "none",
-    "scope": "default"
+    "scope": "global"
   },
   "budgetUnpriced": [],
-  "configSource": "",
-  "configDigest": "",
-  "drift": "",
+  "configSource": "/scratch/plan-team",
+  "configDigest": "012329d1929178444ca5215a85d31f2055867fd95e3ff879446bc28467982a80",
+  "drift": "no",
   "profile": {
     "name": "attended",
     "violations": []
