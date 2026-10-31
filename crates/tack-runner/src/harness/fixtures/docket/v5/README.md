@@ -79,7 +79,10 @@ by the script); a constructed file is replaced by a capture when the script can 
 - A task posted with `task` is echoed back as `task`; docket's record has no `brief` key unless the
   caller sent one, and Tack no longer does.
 - `GET /pods/<pod>` carries no `codebase`: the list (`GET /pods`) does, `""` for a team that works
-  in a folder. The detail says it with `repoConfigDir`, `""` for a folder team.
+  in a folder. The detail says it with `repoConfigDir`, `""` for a folder team, and since docket's
+  `df17a145` both routes say it outright with `workspaceKind` (`codebase` or `workdir`). Since
+  `4bf26e50` they also carry `blueprint`, and the detail `pipeline.steps` (a step's `rework` is a
+  list of `{when, to, max}`; a parallel step carries its branches under `steps`).
 - `cut` on a set's rows is the count of rows the limit left out (`0` for none), not a flag.
 - A hop that cannot reach a model still carries `promptManifest`: docket writes it before it asks.
 - `GET /traces/<pod>` holds back the newest second: a read made right after a hop's last event

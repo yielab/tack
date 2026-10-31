@@ -1,5 +1,6 @@
 {
   "pod": "saas-dev",
+  "blueprint": "build",
   "members": [
     {
       "id": "saas-dev-lead",
@@ -113,7 +114,25 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "blueprint 'build'"
+    "source": "blueprint 'build'",
+    "steps": [
+      {
+        "id": "lead",
+        "kind": "agent",
+        "role": "lead",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "implementer",
+        "kind": "agent",
+        "role": "implementer",
+        "modelClass": "strong",
+        "gate": "mechanical",
+        "rework": []
+      }
+    ]
   },
   "network": {
     "mode": "none",
@@ -128,6 +147,7 @@
     "violations": []
   },
   "pipelineSource": "blueprint 'build'",
+  "workspaceKind": "codebase",
   "repoConfigDir": "/scratch/repo/.docket",
   "readOnly": [
     "/scratch/toolchain/node"

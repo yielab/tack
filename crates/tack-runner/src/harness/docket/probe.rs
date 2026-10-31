@@ -165,8 +165,9 @@ fn steps(raw: Vec<serde_json::Value>) -> Option<Vec<TeamStep>> {
                     "external" => Some(TeamStepCheck::External),
                     _ => None,
                 }),
-                sends_back_to: step.rework.as_ref().map(|rework| rework.to.clone()),
-                sends_back_max: step.rework.and_then(|rework| rework.max),
+                // The first route is the one shown; docket lists the verdict's own first.
+                sends_back_to: step.rework.first().map(|rework| rework.to.clone()),
+                sends_back_max: step.rework.first().and_then(|rework| rework.max),
             })
         })
         .collect::<Option<Vec<_>>>()

@@ -1769,9 +1769,11 @@ async fn a_task_to_a_folder_team_carries_no_base_ref_and_no_prepare() {
     assert_eq!(body["baseRef"], json!("docket/saas-dev/task-previous"));
     assert_eq!(body["prepare"], json!("npm ci"));
 
-    // A docket that sends no `repoConfigDir` keeps both too, folder team or not.
+    // A docket that sends neither `workspaceKind` nor `repoConfigDir` keeps both too, folder team
+    // or not.
     for fake in [pods_fake().await, folder_fake().await] {
         fake.without_records();
+        fake.without_workspace_kind();
         let (body, _) = body_posted(&fake).await;
         assert!(
             body.get("baseRef").is_some() && body.get("prepare").is_some(),
@@ -1813,6 +1815,38 @@ async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_base_ref_as_docke
     let id = created["task"].as_str().unwrap();
     let (_, record) = ask(&fake, "GET", &format!("/tasks/saas-dev/{id}"), None).await;
     assert_eq!(record["status"], json!("done"));
+}
+
+#[tokio::test]
+async fn workspace_kind_alone_says_a_team_works_in_a_folder() {
+    // No `repoConfigDir`, but `workspaceKind` says `workdir`: no base commit and no install.
+    let fake = folder_fake().await;
+    fake.without_records();
+    let (body, _) = body_posted(&fake).await;
+    assert!(
+        body.get("baseRef").is_none() && body.get("prepare").is_none(),
+        "{body}"
+    );
+}
+
+#[tokio::test]
+async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_prepare_as_docket_does() {
+    let fake = folder_fake().await;
+    let mut body = request_file("post-task-created");
+    body.as_object_mut().unwrap().remove("baseRef");
+    body["prepare"] = json!("npm ci");
+    let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(body)).await;
+    assert_eq!(status, 201, "{created}");
+    let id = created["task"].as_str().unwrap();
+    let (_, record) = ask(&fake, "GET", &format!("/tasks/saas-dev/{id}"), None).await;
+    assert_eq!(record["status"], json!("failed"));
+    assert_eq!(record["failureKind"], json!("prepare"));
+    assert_eq!(
+        record["reason"],
+        json!(
+            "pod 'saas-dev' works in a folder (workspaceKind workdir); prepare 'npm ci' applies only to a pod with a codebase"
+        )
+    );
 }
 
 #[tokio::test]
@@ -3902,7 +3936,7 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
 
 #[tokio::test]
 async fn the_fake_answers_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::as_captured().await;
+    let fake = FakeDocket::start().await;
     let mut seen: Vec<(&str, Value)> = Vec::new();
     let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
 
@@ -4232,7 +4266,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
 
 #[tokio::test]
 async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::as_captured().await;
+    let fake = FakeDocket::start().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set(
         "saas-notes",

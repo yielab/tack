@@ -159,13 +159,14 @@ fn request_keys() -> HashMap<String, KeySpec> {
             required.retain(|key| !optional.contains(key));
         }
     }
-    // A task to a team that works in a folder carries no `baseRef` (docket refuses one), and every
-    // capture so far is of a team in a repository.
-    if let Some(Some(required)) = routes
-        .get_mut("POST /tasks/<pod>")
-        .map(|spec| &mut spec.required)
-    {
-        required.remove("baseRef");
+    // A task to a team that works in a folder carries no `baseRef` and no `prepare` (docket refuses
+    // both), and every capture so far is of a team in a repository.
+    if let Some(spec) = routes.get_mut("POST /tasks/<pod>") {
+        if let Some(required) = &mut spec.required {
+            required.remove("baseRef");
+            required.remove("prepare");
+        }
+        spec.allowed.insert("prepare".to_owned());
     }
     routes
 }
@@ -404,16 +405,6 @@ impl FakeDocket {
             shared,
             token_file,
         }
-    }
-
-    /// The fake as the docket the captures were taken from: the captures predate `workspaceKind`,
-    /// `blueprint` and `pipeline.steps` (Phase 83's card G retakes them), so the tests that compare
-    /// the fake's keys with theirs start here.
-    pub async fn as_captured() -> Self {
-        let fake = Self::start().await;
-        fake.without_workspace_kind();
-        fake.without_shape_and_steps();
-        fake
     }
 
     pub fn token_file(&self) -> PathBuf {
@@ -802,7 +793,9 @@ fn pods(state: &World) -> Response {
             entry["name"] = json!(name);
             entry["codebase"] = json!(pod.codebase);
             entry["profile"] = json!(pod.profile);
-            if !state.without_workspace_kind {
+            if state.without_workspace_kind {
+                entry.as_object_mut().unwrap().remove("workspaceKind");
+            } else {
                 entry["workspaceKind"] = json!(workspace_kind(pod));
             }
             entry["queue"] = json!({
@@ -823,17 +816,27 @@ fn workspace_kind(pod: &Pod) -> &'static str {
     if pod.folder { "workdir" } else { "codebase" }
 }
 
-/// `pipeline.steps` of a report: every kind of step and of gate docket names.
+/// `pipeline.steps` of a report as docket sends them: every kind of step and of gate it names,
+/// a `rework` that is a list of routes, `role` and `modelClass` null where they do not apply and
+/// the branches of a parallel step under `steps`.
 fn pipeline_steps() -> Value {
     json!([
-        {"id": "plan", "kind": "role", "role": "lead"},
-        {"id": "build", "kind": "role", "role": "implementer", "gate": "mechanical"},
-        {"id": "review", "kind": "role", "role": "reviewer", "gate": "verdict",
-         "rework": {"to": "build", "max": 2}},
-        {"id": "confirm", "kind": "input", "gate": "approval"},
-        {"id": "settle", "kind": "wait"},
-        {"id": "checks", "kind": "parallel"},
-        {"id": "ship", "kind": "run", "gate": "external"}
+        {"id": "plan", "kind": "agent", "role": "lead", "modelClass": "cheap",
+         "gate": null, "rework": []},
+        {"id": "build", "kind": "agent", "role": "implementer", "modelClass": "strong",
+         "gate": "mechanical", "rework": []},
+        {"id": "review", "kind": "agent", "role": "reviewer", "modelClass": "strong",
+         "gate": "verdict", "rework": [{"when": ["request-changes"], "to": "build", "max": 2}]},
+        {"id": "confirm", "kind": "ask", "role": null, "modelClass": null,
+         "gate": "approval", "rework": []},
+        {"id": "settle", "kind": "wait", "role": null, "modelClass": null,
+         "gate": null, "rework": []},
+        {"id": "checks", "kind": "parallel", "role": null, "modelClass": null, "gate": null,
+         "rework": [], "steps": [
+            {"id": "lint", "kind": "command", "role": null, "modelClass": null,
+             "gate": null, "rework": []}]},
+        {"id": "ship", "kind": "command", "role": null, "modelClass": null,
+         "gate": "external", "rework": []}
     ])
 }
 
@@ -854,10 +857,16 @@ fn pod_report(state: &World, name: &str) -> Response {
     if state.without_records {
         report.as_object_mut().unwrap().remove("repoConfigDir");
     }
-    if !state.without_workspace_kind {
+    if state.without_workspace_kind {
+        report.as_object_mut().unwrap().remove("workspaceKind");
+    } else {
         report["workspaceKind"] = json!(workspace_kind(pod));
     }
-    if !state.without_shape_and_steps {
+    if state.without_shape_and_steps {
+        // A docket before `blueprint` and `pipeline.steps`: the captures hold them, so take them out.
+        report.as_object_mut().unwrap().remove("blueprint");
+        report["pipeline"].as_object_mut().unwrap().remove("steps");
+    } else {
         report["blueprint"] = json!(if pod.folder { "routine" } else { "build" });
         report["pipeline"]["steps"] = pipeline_steps();
     }
@@ -1183,17 +1192,24 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     let folder = team.folder || script.no_worktree;
     // docket claims a task posted with a `baseRef` to a team in a folder and settles it `failed`
     // before any hop: there is no repository to cut a worktree from.
-    if team.folder
-        && let Some(base_ref) = body["baseRef"].as_str().filter(|base| !base.is_empty())
-    {
-        script = Script {
-            status: "failed".to_owned(),
-            failure_kind: Some("base_ref".to_owned()),
-            reason: format!(
-                "pod '{pod}' works in a folder (workspaceKind workdir); baseRef '{base_ref}' applies only to a pod with a codebase"
-            ),
-            ..Script::default()
-        };
+    // A non-empty `prepare` is refused the same way, with `failureKind` `prepare`.
+    if team.folder {
+        let refused = [("baseRef", "base_ref"), ("prepare", "prepare")]
+            .into_iter()
+            .find_map(|(key, kind)| {
+                let value = body[key].as_str().filter(|value| !value.is_empty())?;
+                Some((key, kind, value.to_owned()))
+            });
+        if let Some((key, kind, value)) = refused {
+            script = Script {
+                status: "failed".to_owned(),
+                failure_kind: Some(kind.to_owned()),
+                reason: format!(
+                    "pod '{pod}' works in a folder (workspaceKind workdir); {key} '{value}' applies only to a pod with a codebase"
+                ),
+                ..Script::default()
+            };
+        }
     }
     let branch = format!("docket/{pod}/{id}");
     let mut base_commit = String::new();
@@ -1438,7 +1454,13 @@ fn task_record(task: &Task) -> Value {
         }
         "done" => "task-done",
         "blocked" if task.script.blocked_reason.is_some() => "task-blocked-input-expired",
-        "failed" if task.folder && task.script.failure_kind.as_deref() == Some("base_ref") => {
+        "failed"
+            if task.folder
+                && matches!(
+                    task.script.failure_kind.as_deref(),
+                    Some("base_ref" | "prepare")
+                ) =>
+        {
             "task-failed-base-ref-folder"
         }
         "failed" | "blocked" if task.escalation.is_some() => "task-failed-after-escalation",
