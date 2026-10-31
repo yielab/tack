@@ -1,10 +1,10 @@
 # Phase 82: the task goes to docket as fields, and a run says which prompts made it
 
-**Status: proposed 2026-10-29, widened 2026-10-30.** ADR 0030 (proposed) holds the decisions and
+**Status: BUILT 2026-10-30** (all six cards, merged on the Phase 79 branch, PR #66; proposed 2026-10-29, widened 2026-10-30). ADR 0030 (proposed) holds the decisions and
 the two JSON shapes of the prompt work; ADR 0031 (proposed) holds what docket's Phases 55 and 56 ask
 of Tack (a team that works in a folder, a wait, an action that leaves, a team's records, no shape
-named). This plan is the cards. docket's side is shipped (its Phases 52–55 closed, `develop` at
-`28c3cf65`; Phase 56 has P56-9, -14, -16, -17 and -21 left, and nothing here waits on them); Tack
+named). This plan is the cards. docket's side is shipped (its Phases 52–56 closed, `develop` at
+`15e19ea9` on 2026-10-30; the live suite and `--check` ran against it); Tack
 reads what it shipped and edits nothing in docket's or prill's repositories.
 
 Six cards, sized so that one Sonnet or Haiku agent finishes each in one sitting with the files it
