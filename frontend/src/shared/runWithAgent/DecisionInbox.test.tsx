@@ -115,7 +115,7 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
     await flush();
     await flush();
     expect(c.textContent).toContain('Could not load the questions');
-    expect(c.textContent).not.toContain('No decisions raised yet');
+    expect(c.textContent).not.toContain('The agent has asked nothing yet');
     ([...c.querySelectorAll('button')].find((b) => b.textContent === 'Try again') as HTMLButtonElement).click();
     await flush();
     await flush();
@@ -130,7 +130,7 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
     await flush();
     await flush();
 
-    expect(c.textContent).toContain('No decisions raised yet');
+    expect(c.textContent).toContain('The agent has asked nothing yet');
   });
 });
 
