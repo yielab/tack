@@ -6,7 +6,11 @@ import AgentsPage from './AgentsPage';
 import Layout from '../../app/Layout';
 import { flush } from '../../test/flush';
 
+// Every mounted page is disposed before the fetch mock goes, or its store's poll fires on the real `fetch`.
+const mounted: Array<() => void> = [];
+
 afterEach(() => {
+  for (const dispose of mounted.splice(0)) dispose();
   vi.restoreAllMocks();
   document.body.innerHTML = '';
 });
@@ -55,6 +59,7 @@ function mount() {
     ),
     container,
   );
+  mounted.push(dispose);
   return { container, dispose };
 }
 
