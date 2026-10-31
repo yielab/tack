@@ -1,0 +1,6 @@
+{
+  "description": "Capture only: a prepare sent to a team in a folder is refused at claim.",
+  "externalRef": "capture-item/attempt-11",
+  "idempotencyKey": "capture-attempt-11",
+  "prepare": "true"
+}

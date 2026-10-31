@@ -17,7 +17,10 @@
 # `failureKind: needs_human`. Three more need no model either: a pipeline whose only step is a wait
 # (its escalation), a task on the team's own pipeline whose first hop writes its prompt manifest and
 # then finds no model to ask, and a routine team in a plain folder with the records recipe applied
-# (a team with no codebase, its record sets and one row). It refuses to run when DOCKET_HOME is unset or is the operator's
+# (a team with no codebase, its record sets and one row). That folder team also takes a task as Tack
+# sends it there and refuses, at claim, one with a `baseRef` (`failureKind` base_ref) and one with a
+# `prepare` (`prepare`). An approval that expires is not reachable (docket's deadline is hours): that
+# fixture stays constructed. It refuses to run when DOCKET_HOME is unset or is the operator's
 # ~/.docket, and it never reads that folder. The bearer token docket writes is read from its
 # file and is never printed or recorded; the script fails if it shows up in a capture.
 #
@@ -476,6 +479,42 @@ db.execute("INSERT INTO entries (_at, _task, _session, _step, _updated_at, ref, 
 db.commit()
 PY
 rec records-rows GET '/pods/saas-notes/records/entries?limit=50&sql=SELECT%20*%20FROM%20entries' yes "one set's rows with the system columns docket fills; cut says how many rows the limit left out"; expect 200 records-rows
+
+# ── A task with a stated install command: `prepare`, no model ────────────────────────────────────
+# A team that has a worktree gets the install command Tack states as `prepare` (Tack sends it only
+# then, and an empty one to switch docket's detection off). It comes last among the tasks of saas-dev
+# so the events captured above stay the same; the unknown pipeline keeps the task from running a model.
+PREPARE_BODY=$(jq -cn '{description: "Capture only: a task with a stated install command.",
+  externalRef: "capture-item/attempt-8", idempotencyKey: "capture-attempt-8", baseRef: "main",
+  pipeline: "no-such-pipeline", prepare: "true"}')
+OPTIONAL_KEYS="pipeline prepare" rec post-task-prepare POST /tasks/saas-dev yes "a task for a team with a codebase that states its install command as prepare" --body "$PREPARE_BODY"; expect 201 post-task-prepare
+wait_for saas-dev "$(jq -r '.task' <<<"$LAST_BODY")" failed
+
+# ── Tasks to a team that works in a folder: what it takes and what it refuses, no model ─────────
+# A folder team has no repository to cut a worktree from. A task as Tack sends it there carries
+# neither `baseRef` nor `prepare`; the unknown pipeline keeps it from running a model. A task posted
+# with either is claimed and settles `failed` at once, before any hop, with `failureKind` `base_ref`
+# or `prepare`. Tack never sends those two, so the refusals are not requests its client makes.
+FOLDER_BODY=$(jq -cn '{description: "Capture only: a task for a team in a folder, with no baseRef and no prepare.",
+  externalRef: "capture-item/attempt-9", idempotencyKey: "capture-attempt-9",
+  pipeline: "no-such-pipeline"}')
+OPTIONAL_KEYS="baseRef prepare pipeline" rec post-task-folder POST /tasks/saas-notes yes "a task for a team that works in a folder, as Tack sends it: no baseRef and no prepare, since docket refuses both there" --body "$FOLDER_BODY"; expect 201 post-task-folder
+FOLDER_BASE_BODY=$(jq -cn '{description: "Capture only: a baseRef sent to a team in a folder is refused at claim.",
+  externalRef: "capture-item/attempt-10", idempotencyKey: "capture-attempt-10", baseRef: "main"}')
+rec post-task-folder-base-ref POST /tasks/saas-notes no "a task with a baseRef for a team that works in a folder: accepted, then refused at claim" --body "$FOLDER_BASE_BODY"; expect 201 post-task-folder-base-ref
+BASE_REF_ID=$(jq -r '.task' <<<"$LAST_BODY")
+wait_for saas-notes "$BASE_REF_ID" failed
+rec task-failed-base-ref-folder GET "/tasks/saas-notes/$BASE_REF_ID" yes "a task with a baseRef for a team in a folder, settled failed before any hop: failureKind base_ref, the sentence in reason, no worktree"; expect 200 task-base-ref-folder
+[ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = base_ref ] || die "the folder task failed, but not on its baseRef: $LAST_BODY"
+[ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
+FOLDER_PREPARE_BODY=$(jq -cn '{description: "Capture only: a prepare sent to a team in a folder is refused at claim.",
+  externalRef: "capture-item/attempt-11", idempotencyKey: "capture-attempt-11", prepare: "true"}')
+rec post-task-folder-prepare POST /tasks/saas-notes no "a task with a non-empty prepare for a team that works in a folder: accepted, then refused at claim" --body "$FOLDER_PREPARE_BODY"; expect 201 post-task-folder-prepare
+PREPARE_ID=$(jq -r '.task' <<<"$LAST_BODY")
+wait_for saas-notes "$PREPARE_ID" failed
+rec task-failed-prepare-folder GET "/tasks/saas-notes/$PREPARE_ID" yes "a task with a prepare for a team in a folder, settled failed before any hop: failureKind prepare"; expect 200 task-prepare-folder
+[ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = prepare ] || die "the folder task failed, but not on its prepare: $LAST_BODY"
+[ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
 
 # No capture may hold the token.
 if grep -rqF -- "$TOKEN" "$OUT"; then die "the bearer token is in a capture; nothing is kept"; fi

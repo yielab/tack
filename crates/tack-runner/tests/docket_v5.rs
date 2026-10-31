@@ -1803,10 +1803,18 @@ async fn a_task_to_a_folder_team_carries_no_base_ref_and_no_prepare() {
 #[tokio::test]
 async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_base_ref_as_docket_does() {
     let fake = folder_fake().await;
-    let mut body = request_file("post-task-created");
+    // The body of the capture, with the ref the answer names below.
+    let mut body = request_file("post-task-folder-base-ref");
+    assert_eq!(body["baseRef"], json!("main"), "the capture's own ref");
     body["baseRef"] = json!("0123abc");
     let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(body.clone())).await;
     assert_eq!(status, 201, "{created}");
+    same_shape(
+        &created,
+        &fake_docket::fixture("post-task-folder-base-ref"),
+        "created",
+    )
+    .expect("the fake accepts the task with the keys docket answers");
     let id = created["task"].as_str().unwrap();
     let (_, record) = ask(&fake, "GET", &format!("/tasks/saas-dev/{id}"), None).await;
     assert_eq!(record["status"], json!("failed"));
@@ -1817,6 +1825,13 @@ async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_base_ref_as_docke
             "pod 'saas-dev' works in a folder (workspaceKind workdir); baseRef '0123abc' applies only to a pod with a codebase"
         )
     );
+    // The sentence is docket's: the capture's, with this run's team and ref.
+    assert_eq!(
+        fake_docket::fixture("task-failed-base-ref-folder")["reason"],
+        json!(
+            "pod 'saas-notes' works in a folder (workspaceKind workdir); baseRef 'main' applies only to a pod with a codebase"
+        )
+    );
     assert!(record.get("worktree").is_none() && record["hops"] == json!([]));
     same_shape(
         &record,
@@ -1825,14 +1840,21 @@ async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_base_ref_as_docke
     )
     .expect("the fake answers with the keys of the fixture");
 
-    // Without a `baseRef` the same team takes the task.
-    body.as_object_mut().unwrap().remove("baseRef");
-    body["idempotencyKey"] = json!("again");
-    let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(body)).await;
+    // The task as Tack sends it to a folder team, with no `baseRef`, is taken.
+    let taken = request_file("post-task-folder");
+    assert!(taken.get("baseRef").is_none() && taken.get("prepare").is_none());
+    let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(taken)).await;
     assert_eq!(status, 201, "{created}");
     let id = created["task"].as_str().unwrap();
     let (_, record) = ask(&fake, "GET", &format!("/tasks/saas-dev/{id}"), None).await;
     assert_eq!(record["status"], json!("done"));
+
+    // A team with a repository takes a stated install command.
+    let repository = pods_fake().await;
+    let stated = request_file("post-task-prepare");
+    assert_eq!(stated["prepare"], json!("true"));
+    let (status, created) = ask(&repository, "POST", "/tasks/saas-dev", Some(stated)).await;
+    assert_eq!(status, 201, "{created}");
 }
 
 #[tokio::test]
@@ -1850,8 +1872,7 @@ async fn workspace_kind_alone_says_a_team_works_in_a_folder() {
 #[tokio::test]
 async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_prepare_as_docket_does() {
     let fake = folder_fake().await;
-    let mut body = request_file("post-task-created");
-    body.as_object_mut().unwrap().remove("baseRef");
+    let mut body = request_file("post-task-folder-prepare");
     body["prepare"] = json!("npm ci");
     let (status, created) = ask(&fake, "POST", "/tasks/saas-dev", Some(body)).await;
     assert_eq!(status, 201, "{created}");
@@ -1865,6 +1886,18 @@ async fn the_fake_fails_a_task_to_a_folder_team_that_carries_a_prepare_as_docket
             "pod 'saas-dev' works in a folder (workspaceKind workdir); prepare 'npm ci' applies only to a pod with a codebase"
         )
     );
+    assert_eq!(
+        fake_docket::fixture("task-failed-prepare-folder")["reason"],
+        json!(
+            "pod 'saas-notes' works in a folder (workspaceKind workdir); prepare 'true' applies only to a pod with a codebase"
+        )
+    );
+    same_shape(
+        &record,
+        &fake_docket::fixture("task-failed-prepare-folder"),
+        "record",
+    )
+    .expect("the fake answers with the keys of the fixture");
 }
 
 #[tokio::test]

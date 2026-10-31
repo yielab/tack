@@ -1,0 +1,8 @@
+{
+  "description": "Capture only: a task with a stated install command.",
+  "externalRef": "capture-item/attempt-8",
+  "idempotencyKey": "capture-attempt-8",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline",
+  "prepare": "true"
+}

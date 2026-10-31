@@ -1,8 +1,8 @@
 constructed
 route: GET /tasks/<pod>/<id>
 status: 200
-built-from: task-failed-base-ref-folder.json (constructed) with the reason and failureKind of a task whose approval nobody answered by its expiresAt
+built-from: task-failed-base-ref-folder.json (the constructed one this capture replaced, itself task-failed-pipeline.json with a folder's sentence) with the reason and failureKind of a task whose approval nobody answered by its expiresAt
 source: docket's report of its commit 4bf26e50 and of the 2026-10-31 run where Tack resolved an approval with deny after its own timeout: docket now fails an approval nobody answered by its own expiresAt with failureKind approval_expired and reason "approval expired: nobody answered by <expiresAt>"; a sent deny stays approval_denied
 docket: docket 0.2.0b6 (API 6), 4bf26e50 as reported, not read here and not run
 date: 2026-10-31
-note: not captured; failureKind is an open string, docket may add values. Card G recaptures it against the docket that has the change.
+note: stays constructed on purpose. The capture script spends no model and waits for nothing, and docket's own deadline for an approval is hours (the escalation of an enqueue a policy holds expires on its own clock), so no run of the script can reach an approval that expires. A live run that waits it out replaces this file. failureKind is an open string, docket may add values.
