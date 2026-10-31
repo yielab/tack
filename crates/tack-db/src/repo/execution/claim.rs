@@ -57,14 +57,14 @@ const BUILTIN_PROFILES: [(&str, &str, &str, &[&str], &str); 4] = [
         "Researcher",
         "Reads and searches; writes a report",
         &["Read", "Grep", "Glob", "WebFetch", "WebSearch"],
-        "Investigate the question. Do not modify project files. Write your findings as the result, with sources.",
+        "Investigate the question. Do not modify project files. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.",
     ),
     (
         "planner",
         "Planner",
         "Plans and designs; proposes subtasks you can accept",
         &["Read", "Grep", "Glob", "WebFetch"],
-        "Plan the work. Do not modify project files. Write `tack-plan.json` at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\"}]}`. Explain the plan as the result.",
+        "Plan the work. Do not modify project files. Write `tack-plan.json` at the workspace root: `{\"v\":\"1\",\"subtasks\":[{\"title\",\"description\",\"acceptance\":[\"…\"],\"depends_on\":[index…],\"estimate\":\"S|M|L\",\"type\":\"…\",\"role\":\"…\",\"team\":\"…\",\"parent\":index}]}` (`type`, `role`, `team` and `parent` are optional; `parent` is the index of an earlier entry this one belongs under). Explain the plan as the result.",
     ),
 ];
 

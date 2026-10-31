@@ -77,6 +77,7 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
             },
             harnesses,
             features: tack_protocol::execution::FeatureCapabilities {
+                proposals: None,
                 cancel: CapabilityValue {
                     support: CapabilitySupport::Advisory,
                     reason: None,

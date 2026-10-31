@@ -115,6 +115,16 @@ fn the_exit_status_alone_decides_the_verdict() {
 fn codex_declares_what_it_does_not_enforce() {
     let declared = CodexGrammar.capabilities();
     assert_eq!(declared.cancel.support, CapabilitySupport::Advisory);
+    let proposals = declared.proposals.expect("reports proposals");
+    assert_eq!(proposals.support, CapabilitySupport::Supported);
+    assert!(
+        proposals
+            .reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("tack-plan.json"),
+        "{proposals:?}"
+    );
     assert_eq!(declared.usage.support, CapabilitySupport::Advisory);
     assert_eq!(declared.decisions.support, CapabilitySupport::Supported);
     assert_eq!(

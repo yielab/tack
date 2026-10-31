@@ -3430,6 +3430,7 @@ fn report(
         },
         harnesses,
         features: FeatureCapabilities {
+            proposals: None,
             cancel: feature("advisory"),
             resume: feature("unsupported"),
             decisions: feature("supported"),

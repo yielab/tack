@@ -152,6 +152,7 @@ fn capabilities() -> FeatureCapabilities {
             CapabilitySupport::Supported,
             "the task record carries the tokens used, in total and by model",
         ),
+        proposals: None,
         additional: policy_capability(
             CapabilitySupport::Supported,
             "the profile's denied tools and the network flag become the task's restrictions, \

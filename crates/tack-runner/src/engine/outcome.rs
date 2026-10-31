@@ -857,6 +857,7 @@ where
                 model,
                 model_source: model_source.as_str().to_owned(),
                 capability_snapshot: domain::FeatureCapabilities {
+                    proposals: None,
                     cancel: unexercised(),
                     resume: unexercised(),
                     decisions: unexercised(),

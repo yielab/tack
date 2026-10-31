@@ -16,7 +16,11 @@
           "description": {"type": "string"},
           "acceptance": {"type": "array", "items": {"type": "string"}, "default": []},
           "depends_on": {"type": "array", "items": {"type": "integer", "minimum": 0}, "default": [], "description": "Indexes into subtasks."},
-          "estimate": {"enum": ["S", "M", "L"]}
+          "estimate": {"enum": ["S", "M", "L"]},
+          "type": {"type": "string", "description": "The item type the entry becomes, when the project has it; else the item's own."},
+          "role": {"type": "string", "description": "A project role, by name."},
+          "team": {"type": "string", "description": "A team, by name; the one profile that names it does the entry."},
+          "parent": {"type": "integer", "minimum": 0, "description": "Index of an earlier entry this one is a sub-item of."}
         }
       }
     }

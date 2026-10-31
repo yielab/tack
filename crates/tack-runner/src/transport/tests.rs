@@ -188,6 +188,7 @@ fn capabilities() -> RunnerCapabilities {
         },
         harnesses: Vec::new(),
         features: FeatureCapabilities {
+            proposals: None,
             cancel: capability("advisory"),
             resume: capability("unsupported"),
             decisions: capability("supported"),

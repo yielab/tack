@@ -9592,26 +9592,68 @@
               "type": "string"
             }
           },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "Indexes of entries in this list that block this one."
+          },
           "description": {
             "type": [
               "string",
               "null"
             ]
           },
+          "parent": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "The index of an earlier entry this one is a sub-item of; absent means a sub-item of the item.",
+            "minimum": 0
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A project role, by name."
+          },
+          "team": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A team, by name; the one profile that names it goes into the item's run settings."
+          },
           "title": {
             "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item type, when the project has it; else the parent item's."
           }
         }
       },
       "CreateSubtasksFromPlanRequest": {
         "type": "object",
         "required": [
-          "artifact_id",
           "subtasks"
         ],
         "properties": {
           "artifact_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The plan artifact the entries came from; absent means a file the person uploaded."
           },
           "subtasks": {
             "type": "array",
@@ -9648,6 +9690,27 @@
           },
           "title": {
             "type": "string"
+          },
+          "unknown_role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The role name the project does not have; the item has no role."
+          },
+          "unknown_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The type the project does not have; the item has its parent's type."
+          },
+          "unresolved_team": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The team that no profile, or more than one, names; the item's run settings name no profile."
           }
         }
       },

@@ -36,6 +36,11 @@ pub struct FeatureCapabilities {
     pub decisions: CapabilityValue,
     pub artifacts: CapabilityValue,
     pub usage: CapabilityValue,
+    /// Whether this harness's runs can propose items (a `plan` artifact in plan-v1), and why not.
+    /// Absent means the harness did not say: a reader shows it as unsupported with the reason
+    /// "this agent does not say".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposals: Option<CapabilityValue>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }
