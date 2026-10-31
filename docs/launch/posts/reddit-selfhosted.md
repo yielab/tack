@@ -32,7 +32,7 @@ than feature lists, so here are the actual numbers, not marketing copy:
 Install:
 
 ```bash
-TAG=v0.1.0-beta.10
+TAG=v0.2.0-beta.1
 curl --proto '=https' --tlsv1.2 -fsSL "https://github.com/yielab/tack/releases/download/$TAG/install.sh" | TACK_VERSION="$TAG" sh
 tack serve --with-runner
 ```

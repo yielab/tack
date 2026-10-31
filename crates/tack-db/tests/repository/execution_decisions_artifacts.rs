@@ -1,7 +1,7 @@
 //! Cancellation observations, and artifacts/decisions recorded against an
 //! attempt (including the lease-expiry and concurrent-terminal races).
 
-use crate::common::execution_fixture::{
+use crate::repository::execution_fixture::{
     Fixture, cancellation_input, completion_input, expect_cancelled, expect_replayed_cancellation,
     recovery_input,
 };
@@ -11,6 +11,7 @@ use tack_db::repo::execution::{
     CancellationObservation, CancellationObservationInput, Completion, CompletionResult,
     RecoveryObservation,
 };
+use tack_protocol::execution::{ExecutionState, FencingToken};
 
 const ATTEMPT_ENDED: &str = r#"{"kind":"system","subject_id":"attempt_ended"}"#;
 
@@ -55,12 +56,16 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
     ] {
         let fx = Fixture::new().await;
         let request = format!("request-{state}");
-        let fence = fx.ready_completion_attempt(&request, "attempt-e").await;
+        let fence = if matches!(route, "succeeded" | "failed") {
+            fx.ready_running_attempt(&request, "attempt-e").await
+        } else {
+            fx.ready_completion_attempt(&request, "attempt-e").await
+        };
         seed_decisions(&fx, "attempt-e").await;
         match route {
             "succeeded" | "failed" => {
                 let done = Completion {
-                    terminal_state: state,
+                    terminal_state: state.parse().unwrap(),
                     ..completion_input("attempt-e", fence, "done", None)
                 };
                 assert!(
@@ -123,9 +128,7 @@ async fn a_pending_decision_expires_when_its_attempt_ends_in_any_state() {
 #[tokio::test]
 async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
     let fx = Fixture::new().await;
-    let fence = fx
-        .ready_completion_attempt("request-old", "attempt-old")
-        .await;
+    let fence = fx.ready_running_attempt("request-old", "attempt-old").await;
     assert!(matches!(
         fx.complete(completion_input("attempt-old", fence, "done", None))
             .await,
@@ -139,14 +142,14 @@ async fn start_closes_the_pending_decisions_of_ended_attempts_only() {
 
     assert_eq!(
         fx.repo
-            .expire_decisions_of_ended_attempts(&fx.clock)
+            .expire_decisions_of_ended_attempts(fx.clock.now())
             .await
             .unwrap(),
         1
     );
     assert_eq!(
         fx.repo
-            .expire_decisions_of_ended_attempts(&fx.clock)
+            .expire_decisions_of_ended_attempts(fx.clock.now())
             .await
             .unwrap(),
         0
@@ -256,7 +259,7 @@ async fn cancellation_foreign_fence_is_stale_before_replay_lookup() {
     );
     fx.observe_cancellation(input.clone()).await;
     let foreign = CancellationObservationInput {
-        fencing_token: fence + 1,
+        fencing_token: FencingToken::new(fence.get() + 1),
         ..input
     };
     assert_eq!(
@@ -289,7 +292,7 @@ async fn cancellation_corrupt_replay_response_fails_closed() {
         .unwrap();
     assert!(
         fx.repo
-            .observe_cancellation(input, &fx.clock)
+            .observe_cancellation(input, fx.clock.now())
             .await
             .is_err()
     );
@@ -317,7 +320,7 @@ async fn cancellation_requires_exact_process_stopped_observation() {
     };
     assert!(
         fx.repo
-            .observe_cancellation(invalid, &fx.clock)
+            .observe_cancellation(invalid, fx.clock.now())
             .await
             .is_err()
     );
@@ -405,7 +408,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
     );
     assert!(
         fx.repo
-            .observe_cancellation(input, &fx.clock)
+            .observe_cancellation(input, fx.clock.now())
             .await
             .is_err()
     );
@@ -424,7 +427,7 @@ async fn cancellation_replay_insert_failure_rolls_back_terminal() {
 async fn completion_replay_insert_failure_rolls_back_terminal() {
     let fx = Fixture::new().await;
     let fence = fx
-        .ready_completion_attempt("request-completion-rollback", "attempt-completion-rollback")
+        .ready_running_attempt("request-completion-rollback", "attempt-completion-rollback")
         .await;
     sqlx::query("CREATE TRIGGER fail_completion_replay BEFORE INSERT ON execution_completion_replays BEGIN SELECT RAISE(ABORT, 'forced completion replay failure'); END")
         .execute(fx.repo.pool())
@@ -438,16 +441,16 @@ async fn completion_replay_insert_failure_rolls_back_terminal() {
     );
     let error = fx
         .repo
-        .complete_execution_result(completion, &fx.clock)
+        .complete_execution_result(completion, fx.clock.now())
         .await;
     assert!(error.is_err());
     assert_eq!(
         fx.attempt_state("attempt-completion-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(
         fx.request_state("request-completion-rollback").await,
-        "leased"
+        "running"
     );
     assert_eq!(fx.capacity().await, 0);
 }
@@ -468,7 +471,12 @@ async fn recovery_replay_insert_failure_rolls_back_lifecycle() {
         "recovery-rollback",
         RecoveryObservation::Ambiguous,
     );
-    assert!(fx.repo.recover_attempt(input, &fx.clock).await.is_err());
+    assert!(
+        fx.repo
+            .recover_attempt(input, fx.clock.now())
+            .await
+            .is_err()
+    );
     assert_eq!(
         fx.attempt_state("attempt-recovery-rollback").await,
         "leased"
@@ -498,7 +506,7 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
     assert_eq!(
         fx.observe_cancellation(ambiguous_input).await,
         CancellationObservation::Ambiguous {
-            state: "leased".into()
+            state: ExecutionState::Leased
         }
     );
     sqlx::query("UPDATE execution_attempts SET state = 'succeeded' WHERE id = 'attempt-cancellation-outcomes'")
@@ -514,7 +522,7 @@ async fn cancellation_on_terminal_or_missing_request_is_not_success() {
     assert_eq!(
         fx.observe_cancellation(terminal_input).await,
         CancellationObservation::AlreadyTerminal {
-            state: "succeeded".into()
+            state: ExecutionState::Succeeded
         }
     );
 }
@@ -742,4 +750,108 @@ async fn completion_from_waiting_decision_is_terminal_and_never_resumed() {
         fx.request_state("request-complete-waiting").await,
         "succeeded"
     );
+}
+
+/// The whole call of an action that leaves rides in the decision's metadata while it is pending,
+/// so a person can read it before approving. Settling or expiring the row, by an answer, by the
+/// rule that closes it or by the sweep of overdue ones, erases it in the same statement.
+#[tokio::test]
+async fn the_call_of_a_decision_is_erased_when_it_settles_by_any_road() {
+    use tack_db::repo::execution::{DecisionSettlement, NewDecision};
+
+    let call = "send_email to=ana@example.com\nHello Ana, your order shipped.";
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("call".to_owned(), serde_json::json!(call));
+    metadata.insert("outward".to_owned(), serde_json::json!(true));
+    metadata.insert("role".to_owned(), serde_json::json!("actor"));
+
+    let fx = Fixture::new().await;
+    let fence = fx
+        .ready_running_attempt("request-call", "attempt-call")
+        .await;
+    let now = fx.clock.now();
+    let attempt = tack_protocol::execution::AttemptId::new("attempt-call");
+    for decision_id in ["answered", "ruled", "overdue"] {
+        let row_id = format!("row-{decision_id}");
+        let created = fx
+            .repo
+            .create_execution_decision(
+                &tack_protocol::execution::RunnerId::new("runner-a"),
+                &attempt,
+                fence,
+                NewDecision {
+                    id: &row_id,
+                    decision_id,
+                    kind: "approval",
+                    prompt: "send: an email (cut)",
+                    options: &[],
+                    metadata: &metadata,
+                    expires_at: (decision_id == "overdue").then(|| now + Duration::minutes(5)),
+                    recommendation: None,
+                },
+                now,
+            )
+            .await
+            .unwrap();
+        assert!(created);
+    }
+    let stored = |id: &'static str| {
+        let pool = fx.repo.pool().clone();
+        async move {
+            sqlx::query_scalar::<_, String>(
+                "SELECT metadata FROM execution_decisions WHERE attempt_id='attempt-call' AND decision_id=?",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    for id in ["answered", "ruled", "overdue"] {
+        assert!(stored(id).await.contains("ana@example.com"), "{id}");
+    }
+
+    let by = r#"{"kind":"operator","subject_id":"ana"}"#.to_owned();
+    fx.repo
+        .settle_execution_decision(&attempt, "answered", now, |_| {
+            (
+                DecisionSettlement::Resolve {
+                    answer: r#"{"option_id":"approve_once"}"#.to_owned(),
+                    resolved_by: by.clone(),
+                },
+                (),
+            )
+        })
+        .await
+        .unwrap();
+    fx.repo
+        .settle_execution_decision(&attempt, "ruled", now, |_| {
+            (
+                DecisionSettlement::Expire {
+                    resolved_by: by.clone(),
+                },
+                (),
+            )
+        })
+        .await
+        .unwrap();
+    let swept = fx
+        .repo
+        .expire_overdue_execution_decisions(now + Duration::hours(1), &by)
+        .await
+        .unwrap();
+    assert_eq!(swept, 1);
+
+    for id in ["answered", "ruled", "overdue"] {
+        let kept = stored(id).await;
+        assert!(
+            !kept.contains("ana@example.com") && !kept.contains("Hello"),
+            "{id}: {kept}"
+        );
+        assert!(!kept.contains("call"), "{id}: {kept}");
+        assert!(
+            kept.contains("outward") && kept.contains("actor"),
+            "{id}: {kept}"
+        );
+    }
 }

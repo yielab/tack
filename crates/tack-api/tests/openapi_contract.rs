@@ -1,10 +1,10 @@
 //! OpenAPI contract tests: the committed `docs/openapi.json` must
 //! byte-for-byte equal the spec generated from the annotated handlers/DTOs
 //! (regenerate with `UPDATE_OPENAPI=1 cargo nextest run --workspace -E
-//! 'binary(openapi_contract)'`), and `GET /api/openapi.json` must return a
+//! 'binary_id(tack-api::it) & test(/^openapi_contract::/)'`), and `GET /api/openapi.json` must return a
 //! valid, non-empty document reachable without an API token.
 
-mod common;
+use crate::common;
 
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
@@ -42,7 +42,7 @@ fn openapi_spec_matches_committed_file() {
 
     let committed = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
-            "could not read {} ({e}).\nGenerate it with: UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'",
+            "could not read {} ({e}).\nGenerate it with: UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary_id(tack-api::it) & test(/^openapi_contract::/)'",
             path.display()
         )
     });
@@ -50,7 +50,7 @@ fn openapi_spec_matches_committed_file() {
     assert_eq!(
         committed, generated,
         "\n\ndocs/openapi.json is out of date with the API code.\n\
-         Regenerate it with:\n    UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)'\n"
+         Regenerate it with:\n    UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary_id(tack-api::it) & test(/^openapi_contract::/)'\n"
     );
 }
 

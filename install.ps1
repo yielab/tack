@@ -3,13 +3,13 @@
 # Fetch the installer from the release you are installing, not from a branch
 # that moves, and name that release:
 #
-#   $tag = 'v0.1.0-beta.10'
+#   $tag = 'v0.2.0-beta.1'
 #   $env:TACK_VERSION = $tag
 #   irm "https://github.com/yielab/tack/releases/download/$tag/install.ps1" | iex
 #
 # Options (environment variables):
 #   TACK_INSTALL_DIR   target directory (default: $env:LOCALAPPDATA\Programs\tack)
-#   TACK_VERSION       release tag to install, e.g. v0.1.0-beta.10 (default: newest)
+#   TACK_VERSION       release tag to install, e.g. v0.2.0-beta.1 (default: newest)
 #   TACK_SKIP_CHECKSUM set to 1 to skip the SHA256SUMS and signature checks
 #                      (only needed for v0.1.0-beta.6 and earlier, which
 #                      predate the file)

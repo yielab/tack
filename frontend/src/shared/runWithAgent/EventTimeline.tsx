@@ -1,8 +1,8 @@
 import { type Component, For, Show, createEffect, createResource, createSignal, on, onCleanup } from 'solid-js';
-import { Badge, EmptyState } from '../ui';
+import { Badge, EmptyState, Icons, LoadError } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
-import { inProject } from './attemptFormat';
+import { NEEDS_A_PERSON_TEXT, inProject } from './attemptFormat';
 
 export interface EventTimelineProps {
   requestId: string;
@@ -42,7 +42,7 @@ function describeEventPayload(payload: unknown): string {
 }
 
 /** Each runner event kind in words; an unknown kind shows as reported. */
-const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
+const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: boolean }> = {
   'attempt.terminal': { label: 'The run ended' },
   'attempt.cancelled': { label: 'Cancelled' },
   'attempt.verify_skipped': { label: 'Verification skipped' },
@@ -55,6 +55,17 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean }> = {
   'agent.model_turn': { label: 'A call to the model' },
   'agent.tool_call': { label: 'The agent ran a tool' },
   'agent.tool_refused': { label: 'A tool call was refused', failed: true },
+  'agent.hop_started': { label: 'A step began' },
+  'agent.hop_finished': { label: 'A step ended' },
+  'agent.untracked': { label: 'Files left out of the evidence' },
+  'agent.refused': { label: 'docket refused the task', failed: true },
+  'agent.answer_failed': { label: 'docket did not take the answer', failed: true },
+  'escalation.asked': { label: 'docket asked a person' },
+  'escalation.resolved': { label: 'A person answered' },
+  'escalation.expired': { label: 'Nobody answered before it expired' },
+  'escalation.waiting': { label: 'The team is waiting', clock: true },
+  'escalation.decided': { label: 'docket decided on its own' },
+  'escalation.unreadable': { label: 'docket asked for something Tack cannot put to a person', failed: true },
 };
 
 /** `attempt.terminal`: the agent's message and files are on the card above, so this
@@ -63,7 +74,7 @@ const TerminalBody: Component<{ payload: Record<string, unknown> }> = (props) =>
   const [raw, setRaw] = createSignal(false);
   const how = () => {
     const p = props.payload;
-    const text = typeof p.message === 'string' ? p.message : typeof p.code === 'string' ? p.code : null;
+    const text = typeof p.message === 'string' ? p.message : p.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : typeof p.code === 'string' ? p.code : null;
     return text ?? 'See what the agent did and said above.';
   };
   return (
@@ -92,6 +103,9 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
     </div>
     <div class="min-w-0 pb-3.5">
       <div class="flex flex-wrap items-center gap-1.5">
+        <Show when={known()?.clock}>
+          <Icons.IconClock size={14} style={{ color: 'var(--color-text-tertiary)' }} />
+        </Show>
         <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }} title={props.event.kind}>
           {known()?.label ?? props.event.kind}
         </span>
@@ -108,7 +122,7 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
         <TerminalBody payload={props.event.payload as Record<string, unknown>} />
       </Show>
     </div>
-    <div class="flex flex-col items-end text-[0.6875rem]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+    <div class="flex flex-col items-end text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
       <span>{relativeTimeFromIso(props.event.occurred_at)}</span>
     </div>
   </li>
@@ -152,9 +166,7 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
         </p>
       </Show>
       <Show when={events.state === 'errored'}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          Couldn't load events: {events.error instanceof Error ? events.error.message : 'unknown error'}
-        </p>
+        <LoadError what="the events" error={events.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={loaded()?.length === 0}>
         <EmptyState title="No events reported yet" />

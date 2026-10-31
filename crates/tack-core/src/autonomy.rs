@@ -1,4 +1,4 @@
-//! Merge policy (ADR 0079, decision 1) as a pure function: facts in, `Ok` or the
+//! Merge policy (ADR 0020, decision 1) as a pure function: facts in, `Ok` or the
 //! first failing condition out. No I/O, no clock, no GitHub.
 
 use std::fmt;
@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use globset::GlobBuilder;
 
-use crate::mrp::MergeDecision;
+use tack_protocol::mrp::MergeDecision;
 
 /// Merge authority a project or a domain grants. Declaration order is the
 /// order of authority, so `L3 < L4 < L5`.
@@ -428,11 +428,11 @@ mod tests {
             (
                 "auto, the run's team is not reported by its computer",
                 Facts {
-                    ceiling: Err("Team fab-dev is not reported yet by this computer".into()),
+                    ceiling: Err("Team saas-dev is not reported yet by this computer".into()),
                     ..base(Trigger::Auto)
                 },
                 Err(Hold::TeamNotReported(
-                    "Team fab-dev is not reported yet by this computer".into(),
+                    "Team saas-dev is not reported yet by this computer".into(),
                 )),
             ),
             (

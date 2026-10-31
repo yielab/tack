@@ -78,3 +78,13 @@ mutants.out*/
 
 # The local server writes its API token beside its database.
 api-token
+/decision-token
+
+# Real-project fixtures kept for local proofs (a person's own project file);
+# the versioned fixtures use a neutral name.
+/crates/*/tests/fixtures/local/
+
+# The onboarding lab: the real onboard-project skill (~/.claude/skills/onboard-project
+# links here), the live Tack + docket + prill suite and its fixtures. Local only; it
+# names the maintainer's real projects and spends model calls.
+/onboarding-lab/

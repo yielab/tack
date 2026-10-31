@@ -246,7 +246,7 @@ on and found. Set the missing section as described in
   api:         4 (needs docket 0.2.0-beta.6)
 ```
 
-and the runner posts no task to docket. The full sentence is "needs docket 0.2.0-beta.6 (API 5); this
+and the runner posts no task to docket. The full sentence is "needs docket 0.2.0-beta.6 (API 6); this
 docket answers API N".
 
 **Cause.** Tack sends each docket run to a team over docket's HTTP API, which it checks before every
@@ -295,7 +295,7 @@ a minute. All the keys are in [docket teams](runners.md#docket-teams).
 **What you see.** `tack runner doctor` prints a team as attended:
 
 ```text
-  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
+  team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
 In the project's **Settings → Automation → Ceiling**, the team is listed with "keeps its tasks at L3"
@@ -383,7 +383,7 @@ network), the board waits two minutes more and then asks a person. It never star
 itself, because it cannot tell whether the agent is still working on that computer.
 
 A run that the agent refused before it started is different: it ends **Failed** with the agent's own
-words, for example "docket did not accept the team fab-dev", and needs no one.
+words, for example "docket did not accept the team saas-dev", and needs no one.
 
 **What to do.** Decide what happens to the run:
 

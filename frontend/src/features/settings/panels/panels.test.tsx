@@ -9,7 +9,9 @@ import RolesPanel from './RolesPanel';
 import DataPanel from './DataPanel';
 import ProjectSettings from '../ProjectSettings';
 import AutomationPanel from './AutomationPanel';
+import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
+import { flush } from '../../../test/flush';
 
 const PROJECT = {
   id: 'p1',
@@ -49,13 +51,13 @@ const AUTONOMY = {
 };
 let autonomy: Record<string, unknown> = AUTONOMY;
 let roles: unknown[] = [];
+/** Endings of the URLs that answer 500 until the test clears the list. */
+let failing: string[] = [];
 const autonomyPuts = () =>
   fetchMock.mock.calls
     .filter((c) => (c[1] as RequestInit)?.method === 'PUT' && String(c[0]).endsWith('/api/projects/p1/autonomy'))
     .map((c) => JSON.parse((c[1] as RequestInit).body as string));
 const withInput = (c: HTMLElement, label: string) => c.querySelector<HTMLInputElement>(`[aria-label="${label}"]`)!;
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 let fetchMock: ReturnType<typeof vi.spyOn>;
 
 afterEach(() => {
@@ -66,8 +68,12 @@ afterEach(() => {
 beforeEach(() => {
   autonomy = structuredClone(AUTONOMY);
   roles = [];
+  failing = [];
   fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
+    if (failing.some((ending) => url.endsWith(ending))) {
+      return Promise.resolve(new Response(JSON.stringify({ error: 'The board is unreachable' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+    }
     if (url.endsWith('/api/projects/p1/autonomy')) {
       if (init?.method === 'PUT') autonomy = JSON.parse(String(init.body));
       return Promise.resolve(new Response(JSON.stringify(autonomy), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -83,7 +89,7 @@ beforeEach(() => {
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ runner_id: 'r1', name: 'Local', state: 'active', capability_snapshot: snapshot }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/agent-profiles')) {
-      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer', tool_policy: { docket: { team: 'fab-content' } } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [{ agent_profile_id: 'prof1', name: 'Implementer', tool_policy: { docket: { team: 'saas-content' } } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     }
     if (url.endsWith('/api/local-runner/check-folder')) {
       return Promise.resolve(new Response(JSON.stringify({ exists: true, is_dir: true, is_git: true, branch: 'main', remote_url: null, dirty_files: 3 }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
@@ -252,6 +258,22 @@ describe('Settings panels', () => {
     go('/?tab=nonsense');
     await flush();
     expect(active()).toBe('General');
+  });
+
+  it('automation_panel_keeps_buttons_out_of_its_folded_headings', async () => {
+    (PROJECT as { default_harness: string | null }).default_harness = 'claude-code';
+    const { container } = mount(() => <AutomationPanel />);
+    await flush();
+    await flush();
+    const summaries = Array.from(container.querySelectorAll('summary'));
+    expect(summaries.length).toBeGreaterThan(0);
+    for (const summary of summaries) {
+      expect(summary.querySelector('button, a, input, select'), summary.textContent ?? '').toBeNull();
+    }
+    const how = Array.from(container.querySelectorAll('details')).find((d) =>
+      d.querySelector('summary')?.textContent?.includes('How the agent works on it'),
+    )!;
+    expect(how.querySelector('p')?.textContent).toContain(HELP.howTheAgentWorks.text);
   });
 
   it('automation_panel_saves_each_field_on_change', async () => {
@@ -454,29 +476,68 @@ describe('Settings panels', () => {
     it('a_team_row_says_what_the_server_says_and_the_apply_button_says_what_is_missing', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
       // Attended with no violation listed: the server still caps it, so the row says a person is needed.
-      autonomy.teams = [{ name: 'fab-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const teams = rung(container, 'teams');
-      expect(teams.querySelector('[data-testid="team-row"]')!.textContent).toContain('fab-content · needs a person · this computer');
-      expect(teams.querySelector('#apply-teams-why')!.textContent).toContain(
-        "Tack cannot run this on the team's computer from the board yet. In the project's folder, run:",
-      );
+      expect(teams.querySelector('[data-testid="team-row"]')!.textContent).toContain('saas-content · needs a person · this computer');
+      const apply = btn(teams, "Apply the repository's teams");
+      expect(apply.disabled).toBe(true);
+      const why = teams.querySelector('#' + CSS.escape(apply.getAttribute('aria-describedby')!))!;
+      expect(why.textContent).toBe("Tack cannot run this on the team's computer from the board yet.");
+      // No command and no variable on the screen: a link to the Administrator Guide instead.
+      expect(teams.textContent).not.toMatch(/docket (init|setup)|TACK_/);
+    });
+
+    it('a_failed_load_says_so_with_a_retry_and_is_never_shown_as_empty', async () => {
+      failing = ['/api/projects/p1/autonomy', '/api/projects/p1/roles', '/api/agent-profiles'];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const alerts = Array.from(container.querySelectorAll('[data-testid="load-error"]')).map((a) => a.textContent);
+      expect(alerts.some((a) => a!.startsWith('Could not load the autonomy settings.'))).toBe(true);
+      expect(alerts.some((a) => a!.startsWith("Could not load this project's roles."))).toBe(true);
+      expect(alerts.some((a) => a!.startsWith('Could not load the agent profiles'))).toBe(true);
+      expect(rung(container, 'merge').textContent).toContain('The board is unreachable');
+      expect(container.textContent).not.toContain('not available yet');
+      expect(container.textContent).not.toContain('has no roles yet');
+
+      // The board comes back: Try again loads what was missing.
+      failing = [];
+      btn(rung(container, 'merge'), 'Try again').click();
+      await flush();
+      await flush();
+      expect(rung(container, 'merge').querySelector('[data-testid="load-error"]')).toBeNull();
+      expect(rung(container, 'merge').textContent).toContain('You merge every change yourself.');
+    });
+
+    it('the_no_role_row_says_the_state_of_the_default_profiles_team', async () => {
+      const mutable = PROJECT as { default_profile_id: string | null };
+      mutable.default_profile_id = 'prof1';
+      try {
+        autonomy.teams = [{ name: 'saas-content', profile: 'default', caps_at: 'L3', fix: 'run it lights-out' }];
+        const { container } = mount(() => <AutomationPanel />);
+        await flush();
+        await flush();
+        expect(rung(container, 'teams').querySelector('[data-testid="team-row-default"]')!.textContent).toContain('saas-content · needs a person · this computer');
+      } finally {
+        mutable.default_profile_id = null;
+      }
     });
 
     it('a_lights_out_team_row_says_lights_out', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
-      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null }];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
-      expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('fab-content · lights-out · this computer');
+      expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('saas-content · lights-out · this computer');
     });
 
     it('a_team_row_says_which_folders_its_sandbox_reads_and_what_to_do_when_there_are_none', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
-      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null, read_only: ['/home/x/.nvm/versions/node/v22.17.1', '/home/x/venv'] }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: ['/home/x/.nvm/versions/node/v22.17.1', '/home/x/venv'] }];
       const { container, dispose } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -485,25 +546,51 @@ describe('Settings panels', () => {
       dispose();
 
       // Nothing granted: the row says so, and what an operator does about a team that runs tests.
-      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null, read_only: [] }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: [] }];
       const none = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const text = rung(none.container, 'teams').querySelector('[data-testid="team-reads"]')!.textContent!;
       expect(text).toContain('reads only its own work');
-      expect(text).toContain('docket setup sandbox read add <folder>');
+      expect(text).toContain('needs its toolchain granted');
       none.dispose();
 
       // A docket that does not say adds no line, rather than claiming "nothing".
-      autonomy.teams = [{ name: 'fab-content', profile: 'lights-out', caps_at: null, fix: null, read_only: null }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: null }];
       const unknown = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       expect(rung(unknown.container, 'teams').querySelector('[data-testid="team-reads"]')).toBeNull();
     });
 
+    it('a_team_row_says_when_the_team_works_in_a_folder_and_what_records_it_keeps', async () => {
+      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
+      autonomy.teams = [{
+        name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder',
+        records: [
+          { name: 'leads', description: 'People found', rows: 2 },
+          { name: 'listings', description: 'Places looked at', rows: 1 },
+        ],
+      }];
+      const { container, dispose } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const row = rung(container, 'teams').querySelector('[data-testid="team-row"]')!;
+      expect(row.querySelector('[data-testid="team-works-in"]')!.textContent).toBe('Works in a folder, not in this repository.');
+      expect(row.querySelector('[data-testid="team-records"]')!.textContent).toBe('Keeps leads · 2 rows, listings · 1 row.');
+      dispose();
+
+      // A team in a repository, or one whose computer does not say, adds neither line.
+      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'repository', records: [] }];
+      const repo = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rung(repo.container, 'teams').querySelector('[data-testid="team-works-in"]')).toBeNull();
+      expect(rung(repo.container, 'teams').querySelector('[data-testid="team-records"]')).toBeNull();
+    });
+
     it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {
-      autonomy.teams = [{ name: 'fab-content', profile: 'Content', caps_at: null, fix: null }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: null, fix: null }];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
@@ -515,10 +602,10 @@ describe('Settings panels', () => {
 
     it('a_team_line_with_a_fix_renders_in_the_ceiling', async () => {
       autonomy.ceiling = 'L3';
-      autonomy.teams = [{ name: 'fab-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
+      autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
       autonomy.automatic_merge_blocked_by = [
-        'The team fab-content runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file',
-        'The project has no public key to check prill\'s signature against',
+        'The team saas-content runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file',
+        'The project has no public key to check the verifier\'s signature against',
       ];
       const { container } = mount(() => <AutomationPanel />);
       await flush();
@@ -530,7 +617,7 @@ describe('Settings panels', () => {
       expect(lines[0]).toContain('✗');
       expect(lines[0]).toContain('Turn on lights-out in the team file');
       expect(Array.from(ceiling.querySelectorAll('[data-testid="ceiling-blocker"]')).map((e) => e.textContent)).toEqual([
-        "✗ The project has no public key to check prill's signature against",
+        "✗ The project has no public key to check the verifier's signature against",
       ]);
     });
   });
@@ -546,7 +633,7 @@ describe('Settings panels', () => {
       expect(autonomyPuts().at(-1)).toMatchObject({ merge_on_done: true, verify_loop_max_attempts: 2 });
     });
 
-    it('the_autonomy_section_saves_each_field_and_fills_the_prill_example', async () => {
+    it('the_autonomy_section_saves_each_field_and_fills_the_example_stages', async () => {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       const cap = withInput(container, 'Times a rejected change goes back to the agent');
@@ -561,10 +648,10 @@ describe('Settings panels', () => {
       await flush();
       expect(autonomyPuts().at(-1).budgets).toMatchObject({ tokens_per_day: 5000 });
 
-      btn(container, "Fill prill's example").click();
+      btn(container, "Fill the example stages").click();
       await flush();
       expect(autonomyPuts().at(-1).verify_require).toEqual(['criteria', 'suite', 'anti_tautology', 'static_analysis']);
-      expect(withInput(container, 'Stages prill must run').value).toBe('criteria, suite, anti_tautology, static_analysis');
+      expect(withInput(container, 'Stages the verifier must run').value).toBe('criteria, suite, anti_tautology, static_analysis');
 
       const key = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Public key"]')!;
       key.value = 'PEM';

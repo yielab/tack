@@ -6,11 +6,11 @@
 //! machine's own secret store already carries is used as configured.
 //!
 //! Run: `TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace
-//! --run-ignored ignored-only -E 'binary(live)'`
+//! --run-ignored ignored-only -E 'binary_id(tack-runner::it) & test(/^live::/)'`
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AgentProfileSnapshot, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
     ExecutionState, HarnessKind as DomainHarnessKindType, PermissionPolicy, RepositorySnapshot,
     RunnerSelector,
@@ -39,7 +39,13 @@ fn discover(secrets: SecretStore, state: &std::path::Path) -> Result<ClaudeCodeA
         1024 * 1024,
         std::time::Duration::from_secs(600),
     );
-    ClaudeCodeAdapter::discover(ClaudeCodeGrammar, limits, state.join("staging"), secrets)
+    ClaudeCodeAdapter::discover(
+        ClaudeCodeGrammar,
+        limits,
+        state.join("staging"),
+        secrets,
+        &tack_runner::ProcessEnv::from_process(),
+    )
 }
 
 fn opted_in() -> bool {
@@ -77,15 +83,15 @@ fn spec_with(
     workspace_path: PathBuf,
 ) -> ExecutionSpec {
     let request = ExecutionRequestSnapshot {
-        request_id: tack_orch::execution::ExecutionRequestId::new("exec_live_test"),
-        item_id: tack_orch::execution::ItemId::new("item_live_test"),
-        idempotency_key: tack_orch::execution::IdempotencyKey::new("idem_live_test"),
+        request_id: tack_protocol::execution::ExecutionRequestId::new("exec_live_test"),
+        item_id: tack_protocol::execution::ItemId::new("item_live_test"),
+        idempotency_key: tack_protocol::execution::IdempotencyKey::new("idem_live_test"),
         created_by: serde_json::json!({"source": "operator", "subject_id": "live-test"}),
         created_at: chrono::Utc::now(),
         selector: RunnerSelector::ExactRunner {
-            runner_id: tack_orch::execution::RunnerId::new("runr_live_test"),
+            runner_id: tack_protocol::execution::RunnerId::new("runr_live_test"),
         },
-        agent_profile_id: tack_orch::execution::AgentProfileId::new("ap_live_test"),
+        agent_profile_id: tack_protocol::execution::AgentProfileId::new("ap_live_test"),
         resolved_agent_profile: AgentProfileSnapshot {
             name: "Live test profile".to_string(),
             instructions: "Print exactly: ok".to_string(),
@@ -111,16 +117,17 @@ fn spec_with(
         environment,
         metadata: serde_json::json!({}),
         brief: None,
+        task: None,
         verify: None,
         push_branch: None,
         additional: Default::default(),
     };
     let attempt = AttemptSnapshot {
-        attempt_id: tack_orch::execution::AttemptId::new("att_live_test"),
+        attempt_id: tack_protocol::execution::AttemptId::new("att_live_test"),
         request_id: request.request_id.clone(),
         attempt_number: 1,
-        runner_id: tack_orch::execution::RunnerId::new("runr_live_test"),
-        fencing_token: tack_orch::execution::FencingToken(1),
+        runner_id: tack_protocol::execution::RunnerId::new("runr_live_test"),
+        fencing_token: tack_protocol::execution::FencingToken(1),
         state: ExecutionState::Leased,
         workspace_id: None,
         base_revision: request.repository.base_revision.clone(),
@@ -169,7 +176,7 @@ fn git_init(workspace: &std::path::Path) {
 #[ignore = "opt-in: requires a real `claude` binary on PATH *and* \
             TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 (a real invocation is billed); run with \
             TACK_RUN_LIVE_CLAUDE_CODE_TEST=1 cargo nextest run --workspace \
-            --run-ignored ignored-only -E 'binary(live_claude_code)'"]
+            --run-ignored ignored-only -E 'binary_id(tack-runner::it) & test(/^live::claude_code::/)'"]
 async fn live_claude_code_records_version_and_a_real_artifact_when_opted_in() {
     if !opted_in() {
         eprintln!(

@@ -1,24 +1,24 @@
 {
-  "pod": "fab-lights",
+  "pod": "saas-lights",
   "members": [
     {
-      "id": "fab-lights-lead",
+      "id": "saas-lights-lead",
       "role": "lead",
       "model": {
         "value": "anthropic/claude-haiku-4-5",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/fab-lights-lead",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-lights-lead",
       "verifyCmd": ""
     },
     {
-      "id": "fab-lights-implementer",
+      "id": "saas-lights-implementer",
       "role": "implementer",
       "model": {
         "value": "anthropic/claude-sonnet-4-6",
         "source": "policy"
       },
-      "workspace": "/scratch/home/.docket/workspaces/projects/fab-lights-implementer",
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-lights-implementer",
       "verifyCmd": ""
     }
   ],
@@ -83,6 +83,10 @@
       "value": 3,
       "source": "default"
     },
+    "consultMode": {
+      "value": "park",
+      "source": "default"
+    },
     "network": {
       "value": "open",
       "source": "default"
@@ -94,6 +98,14 @@
     "readOnly": {
       "value": "none",
       "source": "set"
+    },
+    "prepare": {
+      "value": "",
+      "source": "default"
+    },
+    "protects": {
+      "value": "",
+      "source": "default"
     }
   },
   "approvalMode": {
@@ -101,7 +113,7 @@
     "source": "unset"
   },
   "pipeline": {
-    "source": "blueprint 'software'"
+    "source": "blueprint 'build'"
   },
   "network": {
     "mode": "none",
@@ -128,7 +140,7 @@
       }
     ]
   },
-  "pipelineSource": "blueprint 'software'",
+  "pipelineSource": "blueprint 'build'",
   "repoConfigDir": "/scratch/repo2/.docket",
   "readOnly": []
 }

@@ -16,14 +16,12 @@ use std::time::Duration;
 use serde_json::Value;
 use tack_test_support::poll_until_sync as poll_until;
 
-mod common;
-use common::free_port;
+use crate::common;
 
 struct ServerGuard {
     child: Child,
     base_url: String,
-    #[allow(dead_code)]
-    root: tempfile::TempDir,
+    _root: tempfile::TempDir,
 }
 
 impl Drop for ServerGuard {
@@ -41,28 +39,22 @@ impl Drop for ServerGuard {
 fn start_server_with_runner(shared_cwd: &Path, root: tempfile::TempDir) -> ServerGuard {
     let database_url = format!("sqlite:{}/tack.db?mode=rwc", root.path().display());
     let storage_dir = root.path().join("storage");
-    let port = free_port();
-    let base_url = format!("http://127.0.0.1:{port}");
-
-    let child = Command::new(env!("CARGO_BIN_EXE_tack"))
-        .arg("serve")
-        .arg("--with-runner")
-        .current_dir(shared_cwd)
-        .env("TACK_HOST", "127.0.0.1")
-        .env("TACK_PORT", port.to_string())
-        .env("TACK_API_TOKEN", common::API_TOKEN)
-        .env("TACK_DATABASE_URL", &database_url)
-        .env("TACK_STORAGE_DIR", &storage_dir)
-        .env_remove("TACK_RUNNER_STATE_DIR")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn tack serve --with-runner");
+    let served = common::spawn_serve(
+        Command::new(env!("CARGO_BIN_EXE_tack"))
+            .arg("serve")
+            .arg("--with-runner")
+            .current_dir(shared_cwd)
+            .env("TACK_API_TOKEN", common::API_TOKEN)
+            .env("TACK_DATABASE_URL", &database_url)
+            .env("TACK_STORAGE_DIR", &storage_dir)
+            .env_remove("TACK_RUNNER_STATE_DIR")
+            .stderr(Stdio::null()),
+    );
 
     let mut guard = ServerGuard {
-        child,
-        base_url,
-        root,
+        child: served.child,
+        base_url: served.base_url,
+        _root: root,
     };
     wait_for_ready(&guard.base_url, &mut guard.child);
     guard

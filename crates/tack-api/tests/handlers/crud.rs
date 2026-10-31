@@ -1418,8 +1418,11 @@ async fn import_single_issue(
     github_token: Option<&str>,
 ) -> (Router, Uuid, Value) {
     let config = AppConfig {
-        github_api_base: gh.uri(),
-        github_token: github_token.map(String::from),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            github_token: github_token.map(String::from),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1499,7 +1502,10 @@ async fn github_import_redirect_never_leaks_user_token() {
         .await;
 
     let config = AppConfig {
-        github_api_base: origin.uri(),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: origin.uri(),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1614,8 +1620,11 @@ async fn manual_github_link_closes_the_issue_on_done() {
         .await;
 
     let config = AppConfig {
-        github_api_base: gh.uri(),
-        github_token: Some("tok".into()),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            github_token: Some("tok".into()),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_config(config).await;
@@ -1666,7 +1675,7 @@ async fn push_uses_the_project_token_before_the_environment_token() {
         .mount(&gh)
         .await;
 
-    let control = Arc::new(crate::local_runner::FakeControl::default());
+    let control = Arc::new(crate::handlers::local_runner::FakeControl::default());
     control
         .set_secret("gh", "project-tok")
         .await
@@ -1674,8 +1683,11 @@ async fn push_uses_the_project_token_before_the_environment_token() {
     let control: Arc<dyn LocalRunnerControl> = control;
 
     let config = AppConfig {
-        github_api_base: gh.uri(),
-        github_token: Some("env-tok".into()),
+        loops: tack_app::loop_config::LoopConfig {
+            github_api_base: gh.uri(),
+            github_token: Some("env-tok".into()),
+            ..Default::default()
+        },
         ..AppConfig::default()
     };
     let (app, _) = common::test_app_with_local_runner(config, Some(control)).await;
@@ -1786,14 +1798,18 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh.uri(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh.uri(),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
         broadcast_tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let mut etags = std::collections::HashMap::new();
 
@@ -1809,9 +1825,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
         .mount(&gh)
         .await;
 
-    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
+    let summary = poll_once(&state, &mut etags).await.expect("poll_once");
     assert_eq!(summary.issues_updated, 1);
     let after_close = state.repo.get_item(item.id).await.unwrap().unwrap();
     assert_eq!(
@@ -1835,9 +1849,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
         .mount(&gh)
         .await;
 
-    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
+    let summary = poll_once(&state, &mut etags).await.expect("poll_once");
     assert_eq!(summary.issues_updated, 1);
     let after_reopen = state.repo.get_item(item.id).await.unwrap().unwrap();
     assert_eq!(
@@ -1882,9 +1894,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
         .mount(&gh)
         .await;
 
-    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
+    let summary = poll_once(&state, &mut etags).await.expect("poll_once");
     assert_eq!(
         summary.issues_updated, 0,
         "same category on both sides: no move"
@@ -1902,9 +1912,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
         .mount(&gh)
         .await;
 
-    let summary = tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
+    let summary = poll_once(&state, &mut etags).await.expect("poll_once");
     assert_eq!(summary.issues_updated, 0, "a 304 must do no write");
     let after_304 = state.repo.get_item(item.id).await.unwrap().unwrap();
     assert_eq!(after_304.status, in_progress);
@@ -1980,14 +1988,18 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh.uri(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh.uri(),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
         broadcast_tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = crate::common::with_default_host(crate::common::with_default_host(
         tack_api::router::build_router(state.clone()),
@@ -2097,20 +2109,22 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
     let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh.uri(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh.uri(),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
         broadcast_tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let mut etags = std::collections::HashMap::new();
 
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
+    poll_once(&state, &mut etags).await.expect("poll_once");
     let comments = state.repo.list_comments(item.id).await.unwrap();
     assert_eq!(
         comments.len(),
@@ -2128,9 +2142,7 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
         comments[1].content
     );
 
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
+    poll_once(&state, &mut etags).await.expect("poll_once");
     let comments_after_second_poll = state.repo.list_comments(item.id).await.unwrap();
     assert_eq!(
         comments_after_second_poll.len(),
@@ -2165,8 +2177,28 @@ async fn wait_for_gh_request(gh: &wiremock::MockServer, path: &str) -> bool {
     false
 }
 
+/// One pass of the inbound GitHub poll over `state`, the way `tack serve` runs it.
+async fn poll_once(
+    state: &tack_api::AppState,
+    etags: &mut std::collections::HashMap<String, String>,
+) -> Result<tack_app::github_sync::PollSummary, tack_app::AppError> {
+    tack_app::github_sync::tick(
+        &state.repo,
+        &tack_protocol::SystemClock,
+        &state.ports(),
+        &tack_app::github_sync::client().expect("client"),
+        etags,
+    )
+    .await
+}
+
 /// Seeds an item linked to `acme/widgets#42` and returns the poll's state.
 async fn pull_request_poll_state(gh_uri: String) -> tack_api::AppState {
+    pull_request_poll_state_and_item(gh_uri).await.0
+}
+
+/// [`pull_request_poll_state`] and the id of the item it seeds.
+async fn pull_request_poll_state_and_item(gh_uri: String) -> (tack_api::AppState, String) {
     let repo = tack_test_support::setup_test_db().await;
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let project = tack_test_support::make_project(&repo, workspace_id).await;
@@ -2196,8 +2228,7 @@ async fn pull_request_poll_state(gh_uri: String) -> tack_api::AppState {
     repo.set_github_link(item.id, "acme/widgets", 42)
         .await
         .expect("link");
-    tack_db::repo::pull_requests::insert(
-        repo.pool(),
+    repo.record_pull_request(
         "attempt-1",
         "acme/widgets",
         7,
@@ -2207,18 +2238,23 @@ async fn pull_request_poll_state(gh_uri: String) -> tack_api::AppState {
     .await
     .expect("store the pull request");
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
-    tack_api::AppState {
+    let state = tack_api::AppState {
         repo,
         config: AppConfig {
-            github_token: Some("tok".into()),
-            github_api_base: gh_uri,
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: Some("tok".into()),
+                github_api_base: gh_uri,
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
         broadcast_tx,
         webhook: None,
         local_runner: None,
-    }
+        tasks: Default::default(),
+    };
+    (state, item.id.to_string())
 }
 
 /// A poll that sees `pull_request.merged_at` marks the stored PR merged; a
@@ -2258,10 +2294,8 @@ async fn github_poll_marks_a_pull_request_merged_then_a_304_writes_nothing() {
         .mount(&gh)
         .await;
 
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
-    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+    poll_once(&state, &mut etags).await.expect("poll_once");
+    let stored = tack_db::queries::pull_requests::pull_request_of_attempt(&state.repo, "attempt-1")
         .await
         .unwrap()
         .unwrap();
@@ -2269,17 +2303,17 @@ async fn github_poll_marks_a_pull_request_merged_then_a_304_writes_nothing() {
     assert_eq!(stored.merged_at.as_deref(), Some("2026-02-02T00:00:00Z"));
     assert_eq!(stored.closed_at.as_deref(), Some("2026-02-02T00:00:00Z"));
 
-    sqlx::query("UPDATE pull_requests SET state = 'open'")
-        .execute(state.pool())
+    state
+        .repo
+        .observe_pull_request("acme/widgets", 7, "open", None, None)
         .await
         .unwrap();
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
-    let after_304 = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
-        .await
-        .unwrap()
-        .unwrap();
+    poll_once(&state, &mut etags).await.expect("poll_once");
+    let after_304 =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&state.repo, "attempt-1")
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(after_304.state, "open", "a 304 must write nothing");
 }
 
@@ -2291,16 +2325,17 @@ async fn github_poll_marks_a_reverted_pull_request() {
 
     let gh = MockServer::start().await;
     let state = pull_request_poll_state(gh.uri()).await;
-    tack_db::repo::pull_requests::observe(
-        state.pool(),
-        "acme/widgets",
-        7,
-        "merged",
-        Some("2026-02-02T00:00:00Z"),
-        Some("2026-02-02T00:00:00Z"),
-    )
-    .await
-    .unwrap();
+    state
+        .repo
+        .observe_pull_request(
+            "acme/widgets",
+            7,
+            "merged",
+            Some("2026-02-02T00:00:00Z"),
+            Some("2026-02-02T00:00:00Z"),
+        )
+        .await
+        .unwrap();
     Mock::given(method("GET"))
         .and(path("/repos/acme/widgets/issues"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
@@ -2315,10 +2350,8 @@ async fn github_poll_marks_a_reverted_pull_request() {
         .await;
 
     let mut etags = std::collections::HashMap::new();
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
-    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+    poll_once(&state, &mut etags).await.expect("poll_once");
+    let stored = tack_db::queries::pull_requests::pull_request_of_attempt(&state.repo, "attempt-1")
         .await
         .unwrap()
         .unwrap();
@@ -2377,16 +2410,17 @@ async fn mount_merged_pull_request(gh: &wiremock::MockServer, commits: &str) {
 async fn merge_seeded_pull_request(state: &tack_api::AppState) {
     let merged_at = (chrono::Utc::now() - chrono::Duration::hours(1))
         .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    tack_db::repo::pull_requests::observe(
-        state.pool(),
-        "acme/widgets",
-        7,
-        "merged",
-        Some(&merged_at),
-        Some(&merged_at),
-    )
-    .await
-    .unwrap();
+    state
+        .repo
+        .observe_pull_request(
+            "acme/widgets",
+            7,
+            "merged",
+            Some(&merged_at),
+            Some(&merged_at),
+        )
+        .await
+        .unwrap();
 }
 
 /// A default-branch commit saying `This reverts commit <merge_sha>` marks the
@@ -2404,10 +2438,8 @@ async fn github_poll_marks_a_pull_request_reverted_by_a_commit() {
     mount_merged_pull_request(&gh, &commits).await;
 
     let mut etags = std::collections::HashMap::new();
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
-    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+    poll_once(&state, &mut etags).await.expect("poll_once");
+    let stored = tack_db::queries::pull_requests::pull_request_of_attempt(&state.repo, "attempt-1")
         .await
         .unwrap()
         .unwrap();
@@ -2428,10 +2460,8 @@ async fn github_poll_records_red_ci_on_the_merge_commit() {
     mount_merged_pull_request(&gh, "[]").await;
 
     let mut etags = std::collections::HashMap::new();
-    tack_api::github_sync::poll_once(&state, &mut etags)
-        .await
-        .expect("poll_once");
-    let stored = tack_db::repo::pull_requests::get_for_attempt(state.pool(), "attempt-1")
+    poll_once(&state, &mut etags).await.expect("poll_once");
+    let stored = tack_db::queries::pull_requests::pull_request_of_attempt(&state.repo, "attempt-1")
         .await
         .unwrap()
         .unwrap();
@@ -2446,7 +2476,7 @@ async fn github_poll_records_red_ci_on_the_merge_commit() {
 async fn github_poll_records_a_revert_in_prills_store_once() {
     use std::os::unix::fs::PermissionsExt;
     let gh = wiremock::MockServer::start().await;
-    let mut state = pull_request_poll_state(gh.uri()).await;
+    let (mut state, item) = pull_request_poll_state_and_item(gh.uri()).await;
     let root = tempfile::tempdir().unwrap();
     let log = root.path().join("prill.log");
     std::fs::create_dir_all(root.path().join("bin")).unwrap();
@@ -2465,38 +2495,25 @@ async fn github_poll_records_a_revert_in_prills_store_once() {
     state.config.prill_program = script.display().to_string();
     // The pull request belongs to a real attempt that pushed a head commit.
     let head = "ad0eea1455de382abb4f7c41129d524a14ddcbf5";
-    let item: String = sqlx::query_scalar("SELECT id FROM items LIMIT 1")
-        .fetch_one(state.pool())
-        .await
-        .unwrap();
-    sqlx::query(
-        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
-         VALUES ('run', 'p', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+    let at = "2026-08-01T00:00:00Z";
+    tack_test_support::seed::agent_runner(&state.repo, "run", at).await;
+    tack_test_support::seed::execution_request(&state.repo, "R1", &item, "run", at).await;
+    tack_test_support::seed::execution_attempt(
+        &state.repo,
+        tack_test_support::seed::AttemptSeed {
+            id: "attempt-1",
+            request_id: "R1",
+            runner_id: "run",
+            state: tack_protocol::execution::ExecutionState::Leased,
+            at,
+            usage: None,
+            actual_execution: Some(
+                &json!({"git": {"pushed": true, "branch": "agent/x", "head_commit": head}})
+                    .to_string(),
+            ),
+        },
     )
-    .execute(state.pool())
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
-           request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
-           repository_snapshot, permission_policy, metadata, created_at, updated_at)
-         VALUES ('R1', ?, 's', 'R1', 'f', 'exact_runner', 'run', '{}', '{}', '{}', '{}',
-           '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
-    )
-    .bind(&item)
-    .execute(state.pool())
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
-           lease_issued_at, lease_expires_at, created_at, updated_at, actual_execution)
-         VALUES ('attempt-1', 'R1', 1, 'run', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z',
-           '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', ?)",
-    )
-    .bind(json!({"git": {"pushed": true, "branch": "agent/x", "head_commit": head}}).to_string())
-    .execute(state.pool())
-    .await
-    .unwrap();
+    .await;
     merge_seeded_pull_request(&state).await;
     let commits = std::fs::read_to_string(format!(
         "{}/tests/fixtures/github/commits-default-branch-with-revert.json",
@@ -2507,9 +2524,7 @@ async fn github_poll_records_a_revert_in_prills_store_once() {
 
     let mut etags = std::collections::HashMap::new();
     for _ in 0..2 {
-        tack_api::github_sync::poll_once(&state, &mut etags)
-            .await
-            .expect("poll_once");
+        poll_once(&state, &mut etags).await.expect("poll_once");
     }
     let logged = std::fs::read_to_string(&log).unwrap();
     let lines: Vec<&str> = logged.lines().collect();

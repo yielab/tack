@@ -1,5 +1,6 @@
 import { type Component, For, Show, createResource, createSignal, onMount } from 'solid-js';
-import { Badge, Button, EmptyState, Field } from '../ui';
+import { Badge, Button, EmptyState, Field, LoadError } from '../ui';
+import { HELP } from '../help/texts';
 import { toast } from '../ui/toast';
 import {
   decisionTokenStore,
@@ -48,8 +49,7 @@ async function resolveAndNotify(
   } catch (err) {
     if (isDecisionTokenRejected(err)) {
       toast.error(
-        'Rejected — either this deployment has not configured decision resolution ' +
-          '(TACK_EXECUTION_DECISION_TOKEN), or the token entered above is wrong.',
+        'Rejected — either this board has no decision token set up, or the token entered above is wrong.',
       );
     } else if (isDecisionExpired(err)) {
       toast.error('This decision already expired — it can no longer be resolved.');
@@ -84,6 +84,14 @@ const DecisionRow: Component<{
   const isExpired = () => props.decision.state === 'expired';
   const isResolved = () => props.decision.state === 'resolved';
   const hasOptions = () => props.decision.options.length > 0;
+  // An approval of an action that leaves the team (an email, a post, a write to a service) is
+  // marked by the runner, and carries the whole action while it is pending.
+  const metadata = () => (props.decision.metadata && typeof props.decision.metadata === 'object' ? (props.decision.metadata as Record<string, unknown>) : {});
+  const leaves = () => metadata().outward === true;
+  const call = () => {
+    const text = metadata().call;
+    return typeof text === 'string' && text.trim() !== '' ? text : null;
+  };
 
   onMount(() => {
     if (isPending() && !props.decision.viewed_at) props.onView(props.decision.decision_id);
@@ -132,14 +140,45 @@ const DecisionRow: Component<{
         <Show when={!isPending() && !isExpired() && !isResolved()}>
           <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
         </Show>
-        <span class="ml-auto text-[0.6875rem]" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {props.decision.decision_id}
         </span>
       </div>
 
+      <Show when={leaves()}>
+        <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
+          This action leaves the team
+        </h4>
+      </Show>
       <p class="text-sm font-semibold" style={{ color: isPending() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>
         {props.decision.prompt}
       </p>
+
+      {/* The action as it would be made, uncut. Tack keeps it only while this question is
+          open; it is erased when the question is answered or expires. */}
+      <Show when={isPending() && call()}>
+        <div class="space-y-1">
+          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Exactly what happens if you approve:
+          </p>
+          <pre
+            data-testid="decision-call"
+            tabindex="0"
+            aria-label="The action that would leave the team"
+            class="overflow-auto whitespace-pre-wrap break-words rounded-item p-3 text-xs"
+            style={{
+              'font-family': 'var(--font-mono)',
+              'line-height': '1.5',
+              // Twenty lines at a line height of 1.5 show at once; a longer action scrolls.
+              'max-height': '30em',
+              'background-color': 'var(--color-bg-panel)',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {call()}
+          </pre>
+        </div>
+      </Show>
 
       <Show when={isResolved()}>
         <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
@@ -172,7 +211,7 @@ const DecisionRow: Component<{
             }
           >
             <fieldset class="flex flex-col gap-2">
-              <legend class="mb-2 text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
+              <legend class="mb-2 text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
                 Choose an answer
               </legend>
               <For each={props.decision.options}>
@@ -185,7 +224,7 @@ const DecisionRow: Component<{
                   >
                     <span class="font-semibold">{opt.label}</span>
                     <Show when={opt.option_id === recommendedId()}>
-                      <span class="ml-2 text-[0.6875rem] font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
+                      <span class="ml-2 text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
                         Recommended
                       </span>
                     </Show>
@@ -287,17 +326,17 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   return (
     <div class="space-y-3">
       <div
-        class="flex flex-wrap items-end gap-2 rounded-[20px] px-4 py-3"
+        class="flex flex-wrap items-end gap-2 rounded-item px-4 py-3"
         style={{ 'background-color': 'var(--color-bg-panel)' }}
       >
         <Field
           label="Your decision token"
           type="password"
           autocomplete="off"
-          placeholder="TACK_EXECUTION_DECISION_TOKEN"
           value={tokenInput()}
           onInput={(e) => setTokenInput(e.currentTarget.value)}
-          hint="Find it in the decision-token file beside the board's database. Kept only for this browser session. Required to answer — never sent when just viewing."
+          hint="Ask your administrator for it. Kept only for this browser session."
+          help={HELP.decisionToken}
           class="min-w-56 flex-1"
         />
         <Button size="sm" variant="secondary" onClick={saveToken}>
@@ -311,9 +350,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         </p>
       </Show>
       <Show when={decisions.error}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          Couldn't load decisions: {decisions.error instanceof Error ? decisions.error.message : 'unknown error'}
-        </p>
+        <LoadError what="the questions" error={decisions.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={!decisions.loading && !decisions.error && (decisions() ?? []).length === 0}>
         <EmptyState title="No decisions raised yet" />

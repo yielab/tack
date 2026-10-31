@@ -1,0 +1,51 @@
+[package]
+name = "tack-app"
+autotests = false
+description = "Tack's use cases and background ticks: the rules of a run, over the store and a clock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# No axum and no SQL driver, on purpose: this crate is the application layer. HTTP types belong to
+# tack-api and SQL to tack-db; `scripts/check-crate-graph.sh` and `make deny` keep both out.
+[dependencies]
+tack-protocol = { path = "../tack-protocol" }
+tack-core = { path = "../tack-core" }
+tack-orch = { path = "../tack-orch" }
+tack-db = { path = "../tack-db" }
+tokio = { workspace = true }
+# The stop signal every background loop shares.
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+# The ticks that talk to GitHub and the backup store need an HTTP client.
+reqwest = { workspace = true }
+# The remote backup: S3-compatible object storage and the `.tar.zst` bundle.
+object_store = { workspace = true }
+futures = { workspace = true }
+tar = { workspace = true }
+zstd = { workspace = true }
+
+[dev-dependencies]
+tack-test-support = { path = "../tack-test-support" }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+wiremock = { workspace = true }
+
+[lints]
+workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

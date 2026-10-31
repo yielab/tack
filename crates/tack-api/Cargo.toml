@@ -1,5 +1,6 @@
 [package]
 name = "tack-api"
+autotests = false
 description = "HTTP API server for Tack"
 version.workspace = true
 edition.workspace = true
@@ -11,6 +12,7 @@ license.workspace = true
 embed-spa = ["dep:rust-embed"]
 
 [dependencies]
+tack-protocol = { path = "../tack-protocol", features = ["openapi"] }
 # Optional: embed frontend/dist/ into the binary at compile time
 rust-embed = { version = "8", optional = true }
 tack-core = { path = "../tack-core", features = ["openapi"] }
@@ -18,16 +20,19 @@ tack-db = { path = "../tack-db" }
 # The runner-v1 execution domain: scheduler/retention/observability task
 # spawn in execution_runtime.rs, and the request/attempt types the execution
 # and runner-protocol handlers build on.
-tack-orch = { path = "../tack-orch" }
+# The use cases the handlers call; `From<AppError> for ApiError` lives in error.rs.
+tack-app = { path = "../tack-app" }
 async-trait = { workspace = true }
 axum = { workspace = true }
 utoipa = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 tokio = { workspace = true }
-sqlx = { workspace = true }
+# `AppState::tasks`: the spawned use cases shutdown waits for.
+tokio-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_path_to_error = "0.1"
 serde-saphyr = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
@@ -40,9 +45,6 @@ toml = { workspace = true }
 futures = { workspace = true }
 validator = { workspace = true }
 reqwest = { workspace = true }
-object_store = { workspace = true }
-tar = { workspace = true }
-zstd = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
@@ -57,3 +59,9 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

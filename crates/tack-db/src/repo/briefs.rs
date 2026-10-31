@@ -1,4 +1,5 @@
-use chrono::{DateTime, Utc};
+use crate::{StoreError, decode};
+use chrono::Utc;
 use sqlx::Row;
 use tracing::instrument;
 use uuid::Uuid;
@@ -10,11 +11,9 @@ use tack_core::models::{ItemBrief, UpsertItemBrief};
 
 use super::Repository;
 
-fn decode_error(e: impl std::error::Error + Send + Sync + 'static) -> sqlx::Error {
-    sqlx::Error::Decode(Box::new(e))
-}
+const TABLE: &str = "item_briefs";
 
-fn brief_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBrief, sqlx::Error> {
+fn brief_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBrief, StoreError> {
     let item_id: String = row.get("item_id");
     let acceptance: String = row.get("acceptance");
     let constraints: String = row.get("constraints");
@@ -22,54 +21,42 @@ fn brief_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBrief, sqlx::Erro
     let created_at: String = row.get("created_at");
     let updated_at: String = row.get("updated_at");
     Ok(ItemBrief {
-        item_id: Uuid::parse_str(&item_id).map_err(decode_error)?,
-        acceptance: serde_json::from_str(&acceptance).map_err(decode_error)?,
-        constraints: serde_json::from_str(&constraints).map_err(decode_error)?,
+        item_id: decode::uuid(TABLE, "item_id", &item_id)?,
+        acceptance: decode::json(TABLE, "acceptance", &acceptance)?,
+        constraints: decode::json(TABLE, "constraints", &constraints)?,
         definition_of_done: row.get("definition_of_done"),
         risk: risk
-            .map(|r| serde_json::from_value(serde_json::Value::String(r)))
-            .transpose()
-            .map_err(decode_error)?,
-        created_at: created_at.parse::<DateTime<Utc>>().map_err(decode_error)?,
-        updated_at: updated_at.parse::<DateTime<Utc>>().map_err(decode_error)?,
+            .map(|r| decode::variant(TABLE, "risk", &r))
+            .transpose()?,
+        created_at: decode::instant(TABLE, "created_at", &created_at)?,
+        updated_at: decode::instant(TABLE, "updated_at", &updated_at)?,
     })
 }
 
-fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBriefVersion, sqlx::Error> {
+fn version_from_row(row: &sqlx::sqlite::SqliteRow) -> Result<ItemBriefVersion, StoreError> {
     let item_id: String = row.get("item_id");
     let acceptance: String = row.get("acceptance");
     let constraints: String = row.get("constraints");
     let risk: Option<String> = row.get("risk");
     let created_at: String = row.get("created_at");
     Ok(ItemBriefVersion {
-        item_id: Uuid::parse_str(&item_id).map_err(decode_error)?,
+        item_id: decode::uuid("item_brief_versions", "item_id", &item_id)?,
         version: row.get("version"),
-        acceptance: serde_json::from_str(&acceptance).map_err(decode_error)?,
-        constraints: serde_json::from_str(&constraints).map_err(decode_error)?,
+        acceptance: decode::json("item_brief_versions", "acceptance", &acceptance)?,
+        constraints: decode::json("item_brief_versions", "constraints", &constraints)?,
         definition_of_done: row.get("definition_of_done"),
         risk: risk
-            .map(|r| serde_json::from_value(serde_json::Value::String(r)))
-            .transpose()
-            .map_err(decode_error)?,
+            .map(|r| decode::variant("item_brief_versions", "risk", &r))
+            .transpose()?,
         brief_sha256: row.get("brief_sha256"),
-        created_at: parse_instant(&created_at)?,
-    })
-}
-
-/// A stored instant: RFC 3339 as this layer writes it, or SQLite's
-/// `datetime('now')` form as the 087 backfill and column default write it.
-fn parse_instant(text: &str) -> Result<DateTime<Utc>, sqlx::Error> {
-    text.parse::<DateTime<Utc>>().or_else(|_| {
-        chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S")
-            .map(|naive| naive.and_utc())
-            .map_err(decode_error)
+        created_at: decode::instant("item_brief_versions", "created_at", &created_at)?,
     })
 }
 
 impl Repository {
     /// The brief of one item, if it has one.
     #[instrument(skip(self))]
-    pub async fn get_item_brief(&self, item_id: Uuid) -> Result<Option<ItemBrief>, sqlx::Error> {
+    pub async fn get_item_brief(&self, item_id: Uuid) -> Result<Option<ItemBrief>, StoreError> {
         let row = sqlx::query(
             "SELECT item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at
              FROM item_briefs WHERE item_id = ?",
@@ -85,7 +72,7 @@ impl Repository {
     pub async fn list_item_briefs_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<ItemBrief>, sqlx::Error> {
+    ) -> Result<Vec<ItemBrief>, StoreError> {
         let rows = sqlx::query(
             "SELECT b.item_id, b.acceptance, b.constraints, b.definition_of_done, b.risk,
                     b.created_at, b.updated_at
@@ -107,16 +94,18 @@ impl Repository {
         &self,
         item_id: Uuid,
         input: UpsertItemBrief,
-    ) -> Result<ItemBrief, sqlx::Error> {
+    ) -> Result<ItemBrief, StoreError> {
         let now = Utc::now().to_rfc3339();
         let risk = input
             .risk
             .as_ref()
-            .map(|r| serde_json::to_value(r).map_err(decode_error))
+            .map(|r| serde_json::to_value(r).map_err(StoreError::unwritable))
             .transpose()?
             .and_then(|v| v.as_str().map(str::to_owned));
-        let acceptance = serde_json::to_string(&input.acceptance).map_err(decode_error)?;
-        let constraints = serde_json::to_string(&input.constraints).map_err(decode_error)?;
+        let acceptance =
+            serde_json::to_string(&input.acceptance).map_err(StoreError::unwritable)?;
+        let constraints =
+            serde_json::to_string(&input.constraints).map_err(StoreError::unwritable)?;
         let mut tx = self.pool().begin().await?;
         let stored = sqlx::query(
             "SELECT acceptance, constraints, definition_of_done, risk
@@ -135,7 +124,7 @@ impl Repository {
                 return self
                     .get_item_brief(item_id)
                     .await?
-                    .ok_or(sqlx::Error::RowNotFound);
+                    .ok_or(StoreError::not_found("item brief"));
             }
         }
         sqlx::query(
@@ -167,9 +156,10 @@ impl Repository {
         .await?;
         let brief = brief_from_row(&row)?;
         // `brief.json` as the runner stages it: the brief as a JSON value, pretty-printed.
-        let staged =
-            serde_json::to_vec_pretty(&serde_json::to_value(&brief).map_err(decode_error)?)
-                .map_err(decode_error)?;
+        let staged = serde_json::to_vec_pretty(
+            &serde_json::to_value(&brief).map_err(StoreError::unwritable)?,
+        )
+        .map_err(StoreError::unwritable)?;
         let brief_sha256: String = Sha256::digest(&staged)
             .iter()
             .map(|byte| format!("{byte:02x}"))
@@ -199,7 +189,7 @@ impl Repository {
     pub async fn list_item_brief_versions(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<ItemBriefVersion>, sqlx::Error> {
+    ) -> Result<Vec<ItemBriefVersion>, StoreError> {
         let rows = sqlx::query(
             "SELECT v.item_id, v.version, v.acceptance, v.constraints, v.definition_of_done, v.risk, v.brief_sha256, v.created_at FROM item_brief_versions v
              WHERE v.item_id = ? ORDER BY v.version ASC",
@@ -215,7 +205,7 @@ impl Repository {
     pub async fn list_item_brief_versions_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<ItemBriefVersion>, sqlx::Error> {
+    ) -> Result<Vec<ItemBriefVersion>, StoreError> {
         let rows = sqlx::query(
             "SELECT v.item_id, v.version, v.acceptance, v.constraints, v.definition_of_done, v.risk, v.brief_sha256, v.created_at FROM item_brief_versions v JOIN items i ON i.id = v.item_id
              WHERE i.project_id = ? ORDER BY v.item_id ASC, v.version ASC",
@@ -233,7 +223,7 @@ impl Repository {
         &self,
         item_id: Uuid,
         versions: &[ItemBriefVersion],
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         let mut tx = self.pool().begin().await?;
         sqlx::query("DELETE FROM item_brief_versions WHERE item_id = ?")
             .bind(item_id.to_string())
@@ -243,7 +233,7 @@ impl Repository {
             let risk = version
                 .risk
                 .as_ref()
-                .map(|r| serde_json::to_value(r).map_err(decode_error))
+                .map(|r| serde_json::to_value(r).map_err(StoreError::unwritable))
                 .transpose()?
                 .and_then(|v| v.as_str().map(str::to_owned));
             sqlx::query(
@@ -253,8 +243,8 @@ impl Repository {
             )
             .bind(item_id.to_string())
             .bind(version.version)
-            .bind(serde_json::to_string(&version.acceptance).map_err(decode_error)?)
-            .bind(serde_json::to_string(&version.constraints).map_err(decode_error)?)
+            .bind(serde_json::to_string(&version.acceptance).map_err(StoreError::unwritable)?)
+            .bind(serde_json::to_string(&version.constraints).map_err(StoreError::unwritable)?)
             .bind(&version.definition_of_done)
             .bind(risk)
             .bind(&version.brief_sha256)
@@ -262,12 +252,12 @@ impl Repository {
             .execute(&mut *tx)
             .await?;
         }
-        tx.commit().await
+        tx.commit().await.map_err(StoreError::from)
     }
 
     /// Delete an item's brief; `false` when it had none.
     #[instrument(skip(self))]
-    pub async fn delete_item_brief(&self, item_id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_item_brief(&self, item_id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM item_briefs WHERE item_id = ?")
             .bind(item_id.to_string())
             .execute(self.pool())

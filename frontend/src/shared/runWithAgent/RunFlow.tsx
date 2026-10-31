@@ -1,7 +1,7 @@
 import { type Accessor, type Component, For, Show, createResource, createSignal } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
-import { Button, Field, FieldShell, HelpHint, Select, Badge } from '../ui';
+import { Button, Field, FieldShell, HelpHint, Select, Badge, Switch } from '../ui';
 import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
@@ -10,7 +10,7 @@ import type { AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
 import { installLine } from './install';
-import { gateHarnessModelSelection } from './shared';
+import { LEVEL_NEEDS_DOCKET, gateHarnessModelSelection } from './shared';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
 
@@ -70,6 +70,8 @@ export interface RunFlowProps {
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
   profileTools: Accessor<string[]>;
   harnessLabel: Accessor<string>;
+  /** The run carries a level, which only a docket run takes: every other agent is shown disabled, with that reason. */
+  levelNeedsDocket?: boolean;
   /** The model as the summary line names it. */
   modelLabel: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
@@ -164,7 +166,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
       </Show>
 
-      <p data-testid="run-summary" class="rounded-[20px] px-4 py-3 text-sm" style={PILL}>
+      <p data-testid="run-summary" class="rounded-item px-4 py-3 text-sm" style={PILL}>
         <A href={automation()} class="font-semibold hover:underline" style={LINK}>{profileName()}</A>
         {' · '}
         <A href={automation()} class="hover:underline" style={LINK}>{props.modelLabel()}</A>
@@ -181,7 +183,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       </Show>
 
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
-        <p data-testid="no-tools" class="rounded-[20px] px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+        <p data-testid="no-tools" class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           {profileName()} gives {props.harnessLabel()} no tools, so it can only answer in text: it cannot read or change files.{' '}
           <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Advanced.
         </p>
@@ -189,13 +191,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <details>
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
-        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-[20px] px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
+        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
       </details>
 
       <Show
         when={props.profilesLoading() || props.profiles().length > 0}
         fallback={
-          <div class="flex flex-wrap items-center justify-between gap-3 rounded-[20px] px-4 py-3" style={PILL}>
+          <div class="flex flex-wrap items-center justify-between gap-3 rounded-item px-4 py-3" style={PILL}>
             <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>No agent profile exists yet.</p>
             <Button size="sm" variant="secondary" loading={props.creatingProfile()} onClick={props.createDefaultProfile}>
               Create default profile
@@ -242,19 +244,16 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <div class="space-y-2">
         <div class="flex items-center gap-2">
-        <label class="flex flex-1 cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
-          <input
-            type="checkbox"
-            role="switch"
-            name="approvals"
-            class="h-4 w-4"
-            style={{ 'accent-color': 'var(--color-primary-600)' }}
-            checked={props.form.approvals === 'ask'}
-            disabled={!props.decisionsAttested()}
-            onChange={(e) => { props.onApprovals(); props.setForm('approvals', e.currentTarget.checked ? 'ask' : 'auto'); }}
-          />
+        <Switch
+          name="approvals"
+          class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
+          style={PILL}
+          checked={props.form.approvals === 'ask'}
+          disabled={!props.decisionsAttested()}
+          onChange={(checked) => { props.onApprovals(); props.setForm('approvals', checked ? 'ask' : 'auto'); }}
+        >
           Ask before each action
-        </label>
+        </Switch>
         <HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />
         </div>
         <Show when={props.sandboxLine()}>
@@ -269,17 +268,14 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
         </Show>
         <div class="flex items-center gap-2">
-        <label class="flex flex-1 cursor-pointer items-center gap-2.5 rounded-full px-4 py-2.5 text-sm" style={PILL}>
-          <input
-            type="checkbox"
-            role="switch"
-            class="h-4 w-4"
-            style={{ 'accent-color': 'var(--color-primary-600)' }}
-            checked={props.form.allowNetwork}
-            onChange={(e) => { props.onNetwork(); props.setForm('allowNetwork', e.currentTarget.checked); }}
-          />
+        <Switch
+          class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
+          style={PILL}
+          checked={props.form.allowNetwork}
+          onChange={(checked) => { props.onNetwork(); props.setForm('allowNetwork', checked); }}
+        >
           Web tools
-        </label>
+        </Switch>
         <HelpHint label="Web tools" help={HELP.webTools} />
         </div>
       </div>
@@ -291,7 +287,11 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             label="Agent"
             value={props.form.harnessKind}
             onInput={(e) => props.setForm('harnessKind', e.currentTarget.value)}
-            options={props.harnessOptions().map((h) => ({ value: h.value, label: h.label }))}
+            options={props.harnessOptions().map((h) => {
+              const blocked = props.levelNeedsDocket && h.value !== 'docket';
+              return { value: h.value, label: blocked ? `${h.label} — ${LEVEL_NEEDS_DOCKET}` : h.label, disabled: blocked };
+            })}
+            hint={props.levelNeedsDocket ? LEVEL_NEEDS_DOCKET : undefined}
           />
           <ModelField
             agentLabel={props.harnessLabel()}
@@ -383,7 +383,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
       <Show when={props.errors().length > 0}>
         <ul
-          class="space-y-1 rounded-[20px] px-4 py-3 text-xs font-medium"
+          class="space-y-1 rounded-item px-4 py-3 text-xs font-medium"
           style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}
         >
           <For each={props.errors()}>{(msg) => <li>{msg}</li>}</For>

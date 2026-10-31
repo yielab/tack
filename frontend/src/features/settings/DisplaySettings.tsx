@@ -45,7 +45,7 @@ function ChoiceGroup<T extends string | number>(p: {
         {p.legend}
       </legend>
       <div
-        class="inline-flex flex-wrap gap-[3px] self-start rounded-[22px] p-[3px] text-[0.8125rem]"
+        class="inline-flex flex-wrap gap-[3px] self-start rounded-xl p-[3px] text-small"
         style={{ 'background-color': 'var(--color-bg-app)', opacity: p.disabled ? 0.6 : 1 }}
       >
         <For each={p.options}>
@@ -78,7 +78,7 @@ function ChoiceGroup<T extends string | number>(p: {
         </For>
       </div>
       <Show when={p.hint}>
-        <p id={hintId} class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p id={hintId} class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           {p.hint}
         </p>
       </Show>
@@ -108,7 +108,7 @@ const Toggle: Component<{
       <label for={p.id} class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
         {p.label}
       </label>
-      <p id={`${p.id}-hint`} class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p id={`${p.id}-hint`} class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         {p.hint}
       </p>
     </div>
@@ -130,7 +130,7 @@ const DisplaySettings: Component<{ cardClass: string; titleClass: string }> = (p
         Reset to defaults
       </Button>
     </div>
-    <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+    <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
       Adapt the interface to how you read it. Saved to this browser.
     </p>
 

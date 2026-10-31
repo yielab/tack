@@ -1,6 +1,6 @@
 # Crate Tour
 
-This chapter is for contributors who need to find the file that owns a behaviour. It walks through each Rust crate in the main workspace: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. The workspace has six product crates (`tack-core`, `tack-db`, `tack-orch`, `tack-api`, `tack-runner`, `tack-cli`) and `tack-test-support`, which holds test helpers. An eighth crate, `tack-desktop`, sits outside that workspace by design; its own section at the end of this chapter says why.
+This chapter is for contributors who need to find the file that owns a behaviour. It walks through each Rust crate in the main workspace: what it owns, what it deliberately does not own, the key files, and the patterns worth understanding. The workspace has nine crates: `tack-protocol` (the contract the server and the runner share), `tack-core` (pure domain logic), `tack-orch` (pure runs policy), `tack-db` (the store), `tack-app` (the use cases and the background ticks), `tack-api` (HTTP), `tack-runner`, `tack-cli`, and `tack-test-support`, which holds test helpers. A tenth, `tack-desktop`, sits outside that workspace by design; its own section at the end of this chapter says why. `scripts/check-crate-graph.sh --print` prints which crate may depend on which, `scripts/arch-facts.sh` prints that table with the current counts, and the check fails on any edge outside it.
 
 > The SolidJS web UI in `frontend/` is covered separately in
 > [Frontend & Design System](frontend.md) — structure, the design-token system,
@@ -15,11 +15,55 @@ This chapter is for contributors who need to find the file that owns a behaviour
 
 ---
 
+## `tack-protocol`
+
+**Lives in:** `crates/tack-protocol/src/`
+
+**Owns:** the runner-v1 contract, the one thing the server and `tack-runner` both build on: the execution types (`execution/`), the attempt lifecycle, capability negotiation, usage provenance, the merge-readiness pack (`mrp.rs`: the `mrp-v1` types, their validation and their pull-request rendering), the prepare step (`prepare.rs`) and the one `Clock` trait with `SystemClock` (`clock.rs`). `utoipa` is behind an `openapi` feature.
+
+**Does not own:** I/O of any kind, or a dependency on any other workspace crate. This is the trust boundary: what the board and a runner exchange is defined here and nowhere else, and `docs/contracts/runner-v1/` fixtures outrank any Rust or TypeScript type. `tests/runner_contract` byte-pins those fixtures.
+
+---
+
+### `execution/lifecycle.rs`
+
+`validate_transition(from, to, actor)` is the single authority for every legal
+execution-attempt state change. States: `queued | leased | preparing | running |
+waiting_decision | succeeded | failed | cancelled | lost | needs_operator`. Each
+transition is validated against **both** the state pair and which `TransitionActor`
+(`Scheduler`, `Operator`, `LeaseOwner`, `RecoveryService`) is allowed to request it —
+for example, only `RecoveryService` may move an attempt into `lost` or
+`needs_operator`; a lease owner reporting the same crash cannot self-authorize it. See
+the [Recovery Runbook](../admin-guide/recovery-runbook.md) for what drives those
+transitions operationally.
+
+### `execution/types.rs`
+
+Wire-shape-adjacent types shared by both the server and the runner:
+`AgentProfileSnapshot { name, instructions, tool_policy, timeout_seconds, budgets }`,
+`RepositorySnapshot { kind, remote, base_revision }`, `PermissionPolicy { tools,
+network }`, and `EnvironmentValue { value, secret_reference }` — the last one is why
+execution requests never store a raw secret: every environment entry is either a
+literal non-secret value or an opaque reference the runner resolves locally.
+
+### `usage_provenance.rs`
+
+Two independent pure concerns, neither performing I/O. `model_provenance`
+checks the request's resolved model (or "no model requested") against the attempt's
+actual, observed execution — visible as a mismatch, never silently reconciled.
+`build_usage_economics` keeps runner-observed wall-clock time cost structurally
+separate from the harness/vendor's own self-reported token or dollar usage, never
+summed into one opaque number. Every dollar-valued field in the runs crates is named
+`*_usd_estimated`, never `*_usd` alone, and absent usage is a `Measurement` with
+`source: NotMeasured`, never a fabricated `0`.
+
+---
+
 ## `tack-core`
 
 **Lives in:** `crates/tack-core/src/`
 
-**Owns:** domain models, workflow engine, vocabulary system, dependency DAG, typed error enum, the merge policy, the rules that choose a run's profile and the tasks to start, and the contracts Tack reads and writes as plain data: an item's brief (`brief.rs`: the types, their validation and a Markdown rendering for the harness), the merge-readiness pack (`mrp.rs`: the `mrp-v1` types and their pull-request rendering) and the project file (`outline.rs` and `outline/bundle.rs`).
+**Owns:** the planning and runs policy, as pure logic. Domain models, workflow engine, vocabulary system, dependency DAG, typed error enum, the merge policy, the rules that choose a run's profile and the tasks to start, and the contracts Tack reads and writes as plain data: an item's brief (`brief.rs`: the types, their validation and a Markdown rendering for the harness), and the project file (`outline.rs` and `outline/bundle.rs`).
 
 **Does not own:** anything that performs I/O. No `sqlx`, no `reqwest`, no file operations, no `tokio`. This is enforced by the `Cargo.toml` — the crate has no async runtime dependency at all.
 
@@ -131,7 +175,7 @@ The merge policy as one pure function. `Level` (`L3 < L4 < L5`), `Facts` (the tr
 
 ### `run_defaults.rs` and `auto_start.rs`
 
-`run_defaults::resolve` returns the profile a run gets when the caller names none, and where it came from (`Source`): the task's saved settings, its role, the project default, the built-in Implementer. `auto_start::pick` takes the waiting tasks (`Candidate`) and the project's `Limits` and returns the ones to start now and a `Skip` reason for each other. Both are tables of cases, tested without a database. The tick that feeds them is in `tack-api/src/auto_start.rs`.
+`run_defaults::resolve` returns the profile a run gets when the caller names none, and where it came from (`Source`): the task's saved settings, its role, the project default, the built-in Implementer. `auto_start::pick` takes the waiting tasks (`Candidate`) and the project's `Limits` and returns the ones to start now and a `Skip` reason for each other. Both are tables of cases, tested without a database. The tick that feeds them is `tack-app/src/auto_start.rs`.
 
 ---
 
@@ -151,9 +195,9 @@ The project file. `outline.rs` holds the serde types of every section (`Outline`
 
 **Lives in:** `crates/tack-db/src/`
 
-**Owns:** SQLite connection pool initialisation, migration runner, repository pattern over all entities.
+**Owns:** SQLite connection pool initialisation, the migration runner, every `sqlx` line in the server, and `StoreError`. Commands are `Repository` methods in `repo/`; read models are functions in `queries/`.
 
-**Does not own:** HTTP concerns, config loading, or business rule enforcement. The repository functions are thin: they translate between Rust structs and SQL rows.
+**Does not own:** HTTP concerns, config loading, or business rule enforcement. The repository functions are thin: they translate between Rust structs and SQL rows. It is the only crate allowed to name `sqlx`, and no `sqlx` type crosses its edge: every call returns `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }` or `Sql`), which `AppError` and `ApiError` both wrap. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables; `scripts/check-crate-graph.sh` and the bans in `deny.toml` keep `sqlx` and the raw pool in those two crates.
 
 ---
 
@@ -201,7 +245,7 @@ migrations are checked at every startup against the binary's own ordered list by
 rather than running silently. A small subset (037/038, a table
 copy/verify/swap rebuild predating Part III) additionally takes an automatic
 `VACUUM INTO` snapshot before its first attempt. See `docs/MIGRATION-GUIDE.md` for the
-operator-facing version of this and `docs/adr/0008-transactional-migration-rebuild-recovery.md`
+operator-facing version of this and `docs/adr/0001-transactional-migration-rebuild-recovery.md`
 for the design rationale.
 
 ---
@@ -216,7 +260,7 @@ pub struct Repository {
 }
 
 impl Repository {
-    pub async fn create_item(&self, ...) -> Result<Item, sqlx::Error> {
+    pub async fn create_item(&self, ...) -> Result<Item, StoreError> {
         items::create_item(self.pool(), ...).await
     }
     // ...
@@ -225,15 +269,17 @@ impl Repository {
 
 This design gives callers a single `repo` value to pass around while keeping each entity's SQL in its own file.
 
-**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`, `briefs.rs`, `pull_requests.rs`, `metrics.rs`, `github_links.rs`, `execution.rs`, `autonomy.rs`, `budgets.rs`, `rate_card.rs`):
+**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`, `briefs.rs`, `pull_requests.rs`, `metrics.rs`, `github_links.rs`, `execution/` (one file per concern: `enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`), `autonomy.rs`, `budgets.rs`, `rate_card.rs`):
 
 `rate_card.rs` holds the one SQL that prices usage: `spend_by_model` returns tokens per model, repository and team, and the Factory page and the dollar budget both call it.
 
-- Functions take `&SqlitePool` (or `&self` for the struct-based submodules) and return `Result<T, sqlx::Error>` or `Result<T, DependencyError>`.
+- Functions take `&SqlitePool` (or `&self` for the struct-based submodules) and return `Result<T, StoreError>` or `Result<T, DependencyError>`.
 - Queries use `sqlx::query` / `sqlx::query_as` with positional `?` parameters.
 - UUIDs are stored as `TEXT` — bound as `.bind(id.to_string())` and parsed back from the row.
 - JSON fields (`workflow`, `vocabulary`, `tags`) are serialised to/from strings with `serde_json`.
 - Timestamps are stored as RFC 3339 strings and parsed via `chrono::DateTime<Utc>`.
+
+**`queries/`** is the read side: one file per table (`items.rs`, `execution_requests.rs`, `execution_attempts.rs`, `agent_runners.rs`, `pull_requests.rs`, …), one `pub async fn` per question the rest of the program asks of it. Each takes the `Repository`, returns `Result<_, StoreError>` and answers with a row struct whose fields are the columns, under the columns' names. A test reads what a route wrote through these functions instead of writing SQL.
 
 **Notable function: `check_and_update_parent_status`** (in `items.rs`). After an item is moved to a `Done`-category status, the handler calls this function with the item's `parent_id`. It queries whether all sibling items are also in a done status, and if so, updates the parent. The `WorkflowConfig::should_complete_parent(all_siblings_done)` call in `tack-core` provides the decision logic — the repository only handles the data queries.
 
@@ -243,40 +289,11 @@ This design gives callers a single `repo` value to pass around while keeping eac
 
 **Lives in:** `crates/tack-orch/src/`
 
-**Owns:** the neutral runner-v1 **execution domain** (`execution/`): lifecycle
-validation, fencing/idempotency types, and the pure state-machine rules that both
-`tack-api`'s handlers and `tack-runner`'s protocol implementation must agree on, plus
-the scheduler, model-policy resolver, and the execution domain's own
-retention/observability/provenance background modules.
+**Owns:** the pure part of the runs domain that is not protocol: the runner scheduler (`scheduler/`) and the model-policy resolver (`model_policy/`), over plain values.
 
-**Does not own:** HTTP handling or SQL. Depends only on `tack-core` and `tack-db`; the
-dependency points inward deliberately — `tack-api` depends on this crate (to run the
-scheduler/retention/observability tasks and expose the execution routes), never the
-reverse. This boundary is load-bearing: it's what lets `tack-runner`'s tests exercise
-the same lifecycle rules as the server without linking Axum.
+**Does not own:** HTTP, SQL, a clock, or any I/O. It depends only on `tack-protocol` and `tack-core`, so a test of a scheduling or model decision builds its inputs by hand and needs no database. The code that reads the rows and writes the outcome is in `tack-app` (`scheduler_wiring`, `model_policy_wiring`).
 
 ---
-
-### `execution/lifecycle.rs`
-
-`validate_transition(from, to, actor)` is the single authority for every legal
-execution-attempt state change. States: `queued | leased | preparing | running |
-waiting_decision | succeeded | failed | cancelled | lost | needs_operator`. Each
-transition is validated against **both** the state pair and which `TransitionActor`
-(`Scheduler`, `Operator`, `LeaseOwner`, `RecoveryService`) is allowed to request it —
-for example, only `RecoveryService` may move an attempt into `lost` or
-`needs_operator`; a lease owner reporting the same crash cannot self-authorize it. See
-the [Recovery Runbook](../admin-guide/recovery-runbook.md) for what drives those
-transitions operationally.
-
-### `execution/types.rs`
-
-Wire-shape-adjacent types shared by both the server and (once wired) the runner:
-`AgentProfileSnapshot { name, instructions, tool_policy, timeout_seconds, budgets }`,
-`RepositorySnapshot { kind, remote, base_revision }`, `PermissionPolicy { tools,
-network }`, and `EnvironmentValue { value, secret_reference }` — the last one is why
-execution requests never store a raw secret: every environment entry is either a
-literal non-secret value or an opaque reference the runner resolves locally.
 
 ### `scheduler/`
 
@@ -288,11 +305,10 @@ which runner gets the work, or a typed reason none qualify. Two entry points:
 for several requests sharing one pool, ordered by priority then FIFO fairness. Both
 are pure and synchronous — no database, no network client — and neither grants the
 authoritative lease; only the repository's fenced claim
-(`docs/contracts/runner-v1/`) can do that. `wiring::choose_request_for_runner` is the
-live bridge: it loads real `agent_runners` / `agent_fleet_members` /
-`execution_requests` rows and calls into the pure core above, called ahead of the
-naive `ORDER BY created_at LIMIT 1` match in `tack-db`'s claim query. The only
-production caller is the `claim` handler in `tack-api`'s runner protocol. The same module fails a queued request no runner can take after `SchedulingPolicy.unclaimable_fail_after` (30 minutes by default) with the code `no_runner_can_claim`, and answers whether a project's daily budget is spent (`budget_reached`).
+(`docs/contracts/runner-v1/`) can do that. The live bridge is not in this crate: `tack-app`'s `scheduler_wiring::choose_request_for_runner` loads real `agent_runners` / `agent_fleet_members` /
+`execution_requests` rows through `tack-db` and calls into the pure core above, ahead of the
+naive `ORDER BY created_at LIMIT 1` match in the claim query. The only
+production caller is the `claim` use case. The same wiring fails a queued request no runner can take after `SchedulingPolicy.unclaimable_fail_after` (30 minutes by default) with the code `no_runner_can_claim`, and answers whether a project's daily budget is spent (`budget_reached`).
 
 ### `model_policy/`
 
@@ -300,15 +316,37 @@ Which model a run asks for: the request's own, otherwise the project's default m
 the run uses the project's default agent, otherwise none, which leaves the choice to the
 agent's own default. A model is one string in the agent's own spelling; Tack never
 checks it against a list, and the agent refuses one it does not know when the run starts.
-`wiring` is the `tack-db`-backed caller that reads the project's default.
+`tack-app`'s `model_policy_wiring` is the `tack-db`-backed caller that reads the project's default.
 
-### `execution_retention.rs` and `execution_observability.rs`
+---
 
-Two sibling background tasks — not submodules of `execution/`, which is deliberately
-I/O-free — because both are persistence-bearing work that runs on a timer. Retention
+## `tack-app`
+
+**Lives in:** `crates/tack-app/src/`
+
+**Owns:** what Tack does, written over the store and a clock and nothing else: the runs use cases (`runs/`), every background tick, the live wiring of the scheduler and the model policy, the embedded runner as the rest of Tack sees it (`local_runner/`) and `AppError`. It depends on `tack-protocol`, `tack-core`, `tack-orch` and `tack-db`.
+
+**Does not own:** HTTP types or SQL. It may name `reqwest` (its ticks talk to GitHub and the backup store); it never names `axum` or `sqlx`.
+
+---
+
+### `runs/`
+
+One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, `submit_artifacts`, `report_events` and the rest of the runner-v1 operations. A use case is `pub async fn <verb>(repo: &Repository, clock: &dyn Clock, <args>) -> Result<T, AppError>`: it takes plain values and holds the rule a handler used to hold (idempotency keys, fencing checks, `validate_transition`). A handler in `tack-api` extracts, calls the use case, maps the error and responds. A test of a rule calls the use case directly on `setup_test_db()`, with no router.
+
+### `AppError`
+
+`NotFound`, `Conflict`, `InvalidTransition`, `StaleLease` and `Refused(Refusal)` (a run that was not started, with its code and structured details) are raised by a use case where it checks the rule; `Store(StoreError)` and `Core(CoreError)` come from the layers below through `?`. `AppError::code()` is the `StableErrorCode` the failure carries on the wire, and `StableErrorCode::status()` is the HTTP status of every answer with that code: one table in `tack-protocol`. `tack-api` turns it into an `ApiError` and keeps the code.
+
+### Ticks
+
+Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) is a module with two functions. `tick()` is one pass, and tests call it with a fake clock so nothing sleeps. `run()` is the loop: wait, `tick()`, log a failed pass, repeat. `tack-cli/src/serve.rs` spawns each `run()`; the HTTP server starts none of them. The autonomy pass (`autonomy::tick`, which merges and demotes by `tack_core::autonomy::evaluate`, with the merge itself in `merge.rs`) runs after each GitHub poll.
+
+### `retention.rs` and `observability.rs`
+
+Two sibling background loops, each a `tick()` plus a `run()`. Retention
 sweeps stale terminal-attempt event rows out of `execution_events` on an injectable
-clock (`RetentionClock`, so tests never depend on wall time) with a cancellation
-signal raced against its inter-sweep sleep; there is no daily roll-up table for
+clock (so tests never depend on wall time), and `tack serve` spawns it only when the operator turned it on; there is no daily roll-up table for
 `execution_events` yet, so this purges rows outright rather than aggregating them,
 and says so rather than calling itself a "roll up". Observability computes a periodic,
 id-free snapshot of runner/queue/lease/
@@ -316,16 +354,17 @@ event counts and logs alerts from it — keyed only by the domain's two small, c
 state vocabularies (`agent_runners.state`, `execution_requests.state`), never by
 attempt/request/runner id, so the label set stays bounded regardless of fleet size.
 
-### `usage_provenance.rs`
+### `ports.rs`
 
-Two independent pure concerns, neither performing I/O. `compare_model_provenance`
-checks the request's resolved model (or "no model requested") against the attempt's
-actual, observed execution — visible as a mismatch, never silently reconciled.
-`build_usage_economics` keeps runner-observed wall-clock time cost structurally
-separate from the harness/vendor's own self-reported token or dollar usage, never
-summed into one opaque number. Every dollar-valued field in this crate is named
-`*_usd_estimated`, never `*_usd` alone, and absent usage is a `Measurement` with
-`source: NotMeasured`, never a fabricated `0`.
+Three small traits are how `tack-app` calls back into things that still live in `tack-api`: `Verifier` (prill's attestation check and the outcome of a pull request, failing with `VerifierError`), `Artifacts` (the bytes of a stored file) and `BoardEvents` (an item moved). `Ports` bundles them with `github_sync::GitHub`, which holds the GitHub API root and token and makes the GitHub calls, and with the embedded runner, which resolves secret references. `tack-api` builds a `Ports` over its `AppState` (`ports.rs` there). A port stays a trait only where its implementor names an HTTP type `tack-app` may not.
+
+### `scheduler_wiring.rs` and `model_policy_wiring.rs`
+
+The `tack-db`-backed callers of `tack-orch`: they read the rows, call the pure decision and write the outcome.
+
+### `local_runner/`
+
+The embedded runner, as the rest of Tack sees it: the `LocalRunnerControl` seam the routes call, the preference that says whether it should run, the folder checks and the test run the Settings screens ask of it, and the supervisor that keeps one runner process alive. This crate never depends on `tack-runner`; the few things only the binary that links the runner can answer come in through `RunnerHost`.
 
 ---
 
@@ -335,7 +374,7 @@ summed into one opaque number. Every dollar-valued field in this crate is named
 
 **Owns:** HTTP server startup, route registration, request/response handling, configuration, WebSocket management, error mapping.
 
-**Does not own:** SQL queries (those are in `tack-db`) or business rules (those are in `tack-core`). Handlers orchestrate calls to both.
+**Does not own:** SQL (that is in `tack-db`, which it names only because `AppState.repo` is the `Repository` and `ApiError` wraps `StoreError`) or the rules of a run (those are `tack-app` use cases and `tack-core` policy). A handler extracts, calls, maps the error and responds. It is the only crate allowed to name `axum`.
 
 This crate is a **library only** — it does not produce its own binary. The single
 `tack` binary (in `tack-cli`) calls `tack_api::serve()` to start the server.
@@ -344,17 +383,11 @@ This crate is a **library only** — it does not produce its own binary. The sin
 
 ### `server.rs`
 
-Exposes `pub async fn serve()`, the server entry point. It does these things in order:
+Exposes two functions the composing binary calls in order. `prepare(&mut config)` does what must happen before the database opens: initialises the `tracing` subscriber (plain text or JSON depending on config), runs the security preflight, ensures the API and decision tokens and applies any staged database restore (rename `.restore` file into place).
 
-1. Loads `AppConfig` (TOML file or environment variables).
-2. Initialises the `tracing` subscriber (plain text or JSON depending on config).
-3. Applies any staged database restore (rename `.restore` file into place).
-4. Calls `init_pool()` and `migrations::run_all()`.
-5. Ensures a default workspace row exists (creates one if the table is empty).
-6. Spawns the background tasks: the GitHub poll, the auto-start tick (`auto_start::run_auto_start_task`, every `TACK_AUTO_START_SECONDS`), and the execution retention and observability sweeps.
-7. Builds `AppState`, calls `build_router(state)`, and starts `axum::serve` with graceful shutdown on `CTRL+C`.
+`serve(state, ready_tx)` takes the finished `AppState`: it starts the execution sweep, builds the router, binds the listener, brings the embedded runner up when its preference says so and answers requests until graceful shutdown on `CTRL+C`. It opens no database and spawns none of the tick loops; that is `tack-cli`'s `serve.rs`.
 
-`tack-cli` builds a Tokio runtime and calls `serve()` when you run `tack` with no
+`tack-cli`'s `serve.rs` calls them when you run `tack` with no
 subcommand (or `tack serve`).
 
 ---
@@ -387,7 +420,7 @@ pub struct AppState {
 
 One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `resolve_profile`, `default_selector` and `create_as`, which a run started by the board itself goes through), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
 
-Outside `handlers/`, three modules do the board's own work: `auto_start.rs` (the tick that starts waiting tasks), `autonomy.rs` (the tick that merges and demotes, and `ceiling_of`) and `merge.rs` (gathering the facts for `tack_core::autonomy::evaluate`, and the merge itself).
+The board's own timed work (the auto-start tick, the autonomy tick that merges and demotes, the merge itself, the GitHub poll and the remote backup) is in `tack-app`; a handler that needs one of them calls it. What `tack-app` needs back from this crate is `ports.rs`, the implementation of `tack_app::ports` over `AppState`.
 
  A typical handler follows this shape:
 
@@ -424,20 +457,30 @@ The API token is never logged. The only place it appears in logs is a boolean "t
 
 ### `error.rs`
 
-`ApiError` is the unified error type for all handlers. It implements `IntoResponse` with this mapping:
+`ApiError` is the unified error type for all handlers. Every variant has a `code()`, a `StableErrorCode`, and the code decides the status (`StableErrorCode::status()`):
 
-| `ApiError` variant | HTTP status |
-|---|---|
-| `NotFound` | 404 |
-| `BadRequest` | 400 |
-| `Conflict` | 409 |
-| `SectionFailed` | 500, with a message that names the project-file section and says whether what came before stayed |
-| `Core(CoreError::*NotFound*)` | 404 |
-| `Core(CoreError::InvalidTransition \| WipLimitExceeded \| …)` | 400 |
-| `Database` | 500 |
-| `Internal` | 500 |
+| `ApiError` variant | Code | HTTP status |
+|---|---|---|
+| `NotFound` | `not_found` | 404 |
+| `BadRequest` | `invalid_request` | 400 |
+| `Unprocessable` | `unprocessable` | 422 |
+| `Forbidden` | `forbidden` | 403 |
+| `Conflict` | `conflict` | 409 |
+| `MisdirectedHost`, `CrossSiteRequest`, `UnsupportedMediaType` | `misdirected_host`, `cross_site_request`, `unsupported_media_type` | 421, 403, 415 |
+| `Coded { code: method_not_allowed }` | `method_not_allowed` (a path that exists for another method) | 405 |
+| `UnreadableArchive` | `unreadable_archive` (a restore whose archive or manifest cannot be read) | 422 |
+| `SectionFailed` | `section_failed`, with a message that names the project-file section and says whether what came before stayed | 500 |
+| `Coded { code, message, field }` | the one a use case raised (`invalid_transition`, `stale_lease`, a refused run's code, `precondition_failed`) | the code's |
+| `Core(CoreError::*NotFound*)` | `not_found` | 404 |
+| `Core(CoreError::…)` | one code per rule: `invalid_status_transition`, `wip_limit_exceeded`, `dependency_cycle`, `duplicate_dependency`, `invalid_vocabulary_key`, `empty_workflow`, `has_children`, `invalid_workflow`, `validation_failed` (`CoreError::code()`) | 400 |
+| `Store(StoreError::NotFound { entity })` | `not_found`, "`<entity>` not found" | 404 |
+| `Store(StoreError::Conflict)` | `conflict` | 409 |
+| `Store(StoreError::Corrupt { table, column })` | `internal_error`; logged with the table, the column and why the decode failed (never the value); the client sees "Internal server error" | 500 |
+| `Store(StoreError::Sql)`, `Internal` | `internal_error` | 500 |
 
-The response body is always `{ "error": { "status": <code>, "message": "<text>" } }`.
+The response body is always `{ "error": { "status", "code", "message", "retryable", "request_id", "details" } }`, on the `/api` routes and the runner-v1 routes alike (`details.field` names the field of the request the error blames, when one); the OpenAPI schema documents `code` as the `StableErrorCode` enum. A client matches `code`; `message` is plain words for people.
+
+A request an extractor cannot read gets that body too. Handlers take `tack_api::extract::{Json, Path, Query, RawBody, Multipart, Upgrade}` instead of axum's, which refuse with `ApiError` (`invalid_request`, `unsupported_media_type`, `payload_too_large`), and the router answers an unmatched path with `not_found` and a wrong method with `method_not_allowed`, so no answer of the API is plain text. Every request carries an id (`request_id.rs`): the `x-request-id` it sent when that is short and safe, one the board makes otherwise.
 
 ---
 
@@ -530,7 +573,13 @@ uses instead. docket is tested against an in-process fake in `tests/fake_docket/
 
 **Owns:** the single `tack` binary — both starting the server and the command-line client (parsing, human-readable output, HTTP calls to the API).
 
-**Does not own:** any `tack-core` or `tack-db` types directly. The client commands work entirely through the HTTP API — they serialise to JSON for requests and deserialise from `serde_json::Value` for responses (no strongly-typed response structs). This keeps the CLI decoupled from internal model changes that do not affect the API contract. (To *run* the server it depends on `tack-api` and calls `tack_api::serve()`.)
+**Does not own:** any `tack-core` or `tack-db` types in its client commands. They work entirely through the HTTP API — they serialise to JSON for requests and deserialise from `serde_json::Value` for responses (no strongly-typed response structs). This keeps the CLI decoupled from internal model changes that do not affect the API contract. The one exception is `serve.rs`, below.
+
+---
+
+### `serve.rs`
+
+The composition root of `tack serve`, and the only place in this crate that names `tack-db`. It loads the config, calls `tack_api::server::prepare`, opens the database, runs the migrations, builds the `Repository` and the `AppState`, starts one `tack_app::<module>::spawn(..)` per background loop into one `background::Loops`, hands the state to `tack_api::serve()` and stops the loops when it returns.
 
 ---
 
@@ -543,7 +592,7 @@ Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--ap
 - Project setup: `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`
 - Agent onboarding and the runner-fleet surface: `mcp` (MCP server over stdio), `execution` (create/list/cancel/reconcile execution requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (run `tack` as a systemd/launchd background service), `agent-profile` (instructions, tool policy, limits, fleet)
 
-Running `tack` with **no subcommand** — or `tack serve` — starts the server + web UI: `run_server()` builds a Tokio runtime and calls `tack_api::serve()`. This is the primary, UI-first entry point. Everything else is the CLI client.
+Running `tack` with **no subcommand** — or `tack serve` — starts the server + web UI: `run_server()` builds a Tokio runtime and starts the server (`serve.rs`). This is the primary, UI-first entry point. Everything else is the CLI client.
 
 Three cases (`serve`, `config`, and `completions`) are handled before the `TackClient` is constructed, since they do not need a live connection.
 
@@ -580,6 +629,16 @@ Error handling: the `extract()` helper parses the response body regardless of st
 4. Default: `http://127.0.0.1:3210`
 
 `config::save(base_url, token)` writes `~/.tackrc`. This is what `tack config --url <url>` does.
+
+---
+
+## `tack-test-support`
+
+**Lives in:** `crates/tack-test-support/src/`
+
+**Owns:** what the other crates' tests share: `setup_test_db()` (a migrated in-memory `Repository`), the `seed` module (one function per table, which plants the rows a test needs, including a `created_at` or a stored state, below the store's own commands), `ControllableClock` (a `Clock` a test sets and advances), `poll_until` and fixture loading. It depends on `tack-protocol`, `tack-core` and `tack-db`, and is the one crate that enables `tack-db`'s `raw-pool` feature.
+
+A test plants rows with `tack_test_support::seed` and reads them back with `tack_db::queries::`, so a test of a route or a use case never names SQL. Every crate may use it as a dev-dependency; `tack-api`'s `tests/common` keeps its own test-app helpers because they need the router.
 
 ---
 

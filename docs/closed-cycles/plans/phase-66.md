@@ -2,8 +2,8 @@
 
 **Status: closed 2026-10-05.** Every task is in `develop` and ships as `v0.1.0-beta.10`; R2 was
 moved out of this plan the same day — the landing page is the studio site's own work, not Tack's.
-The maintainer decided Wave 0 on 2026-10-03 (table below): ADR 0069,
-0070 and 0071 accepted, ADR 0072 accepted with the interface as a priority, ADR 0073 withdrawn
+The maintainer decided Wave 0 on 2026-10-03 (table below): ADR 0011,
+0012 and 0013 accepted, ADR 0014 accepted with the interface as a priority, ADR 0073 withdrawn
 as an ADR and kept as two tasks. Nothing is dispatched yet; Wave 1 has no gate left. Written against `develop` at
 `7718420`; every locator below was read on that commit and re-checked on 2026-10-02 (same
 HEAD). Re-run `rg -n` before trusting a line number.
@@ -17,7 +17,7 @@ being the hand-off; the docket chain follows docket's own delivery order (P35-2 
 merged in docket's `develop`, P35-5, P35-6 and P35-9 are not), so the contract flag and
 `cancel: Supported` no longer wait for `--recipe`; the one file two Wave-3 tasks both edited
 (`agent-runners.md`) has one writer per wave; and every brief is a section extracted from this
-file, never the file. ADR 0072 and 0073 were read against the tree; what the maintainer then decided
+file, never the file. ADR 0014 and 0073 were read against the tree; what the maintainer then decided
 about them is in Wave 0.
 
 What this phase builds, in one paragraph. Today an attempt ends with a log: the runner deletes
@@ -63,7 +63,7 @@ Two facts the brief did not list and the plan depends on:
   with the brief, server-side, so the CLI and MCP paths get it too.
 - **No harness may declare `cancel: Supported` today**, whatever it does:
   `PROCESS_GROUP_CANCEL_CEILING` is a crate-wide constant (`crates/tack-runner/src/harness/mod.rs:156`,
-  guard at `:290-306`). A3 makes the ceiling per-harness evidence, which ADR 0070 records.
+  guard at `:290-306`). A3 makes the ceiling per-harness evidence, which ADR 0012 records.
 
 Re-checked 2026-10-02, same `7718420`: the last migration is still `077`; `../assay` is still
 absent; docket moved — its `develop` (`f394be2`, 2026-09-29) has `docs/contracts/harness-v1.1/schema.json`
@@ -80,10 +80,10 @@ Phase 65's table stands in full. Rows this phase touches, and how:
 
 | Decided | Where | This phase |
 |---|---|---|
-| A run can pause and ask on every harness; each harness uses it when its CLI offers a stdio way; only stdio fits the seam | ADR 0068/0066 amendments | **Conforms.** A2 is docket's stdio way (`--answers stdin`). |
-| No plugin seam, no descriptors from a file, no grammar DSL, no remote docket, **no docket pods**, no new `TACK_*` variable for a harness, **no copied docket source or fixtures** | harness plan, "Refused, by name" | **Kept, with two clarifications in ADR 0070:** `--recipe` is one flag on one subprocess and Tack never names, provisions or polls a pod; every docket fixture under `fixtures/docket/contract-1.1/` is *captured* from the installed binary with a provenance file, never copied from `../rack-cli`. Nothing here adds a `TACK_*` variable: the verifier and push settings are `[verify]` and `[git]` tables in the runner's TOML. |
-| GitHub push is best-effort and fire-and-forget; Tack-initiated last write wins on the way out; inbound sync polls, no webhook receiver | `docs/GITHUB-SYNC.md`; phase-65 decision | **Kept and extended, ADR 0071:** opening a pull request is one more best-effort outbound call; its state arrives through the poll that already runs. |
-| DAG-ordered sprint dispatch is gone; one operator; unsigned desktop bundles; `tack.toml` never reads the runner gate; providers are modules | ADR 0068, 0059, 0062, 0058, 0063 | untouched (see Parked) |
+| A run can pause and ask on every harness; each harness uses it when its CLI offers a stdio way; only stdio fits the seam | ADR 0010/0008 amendments | **Conforms.** A2 is docket's stdio way (`--answers stdin`). |
+| No plugin seam, no descriptors from a file, no grammar DSL, no remote docket, **no docket pods**, no new `TACK_*` variable for a harness, **no copied docket source or fixtures** | harness plan, "Refused, by name" | **Kept, with two clarifications in ADR 0012:** `--recipe` is one flag on one subprocess and Tack never names, provisions or polls a pod; every docket fixture under `fixtures/docket/contract-1.1/` is *captured* from the installed binary with a provenance file, never copied from `../rack-cli`. Nothing here adds a `TACK_*` variable: the verifier and push settings are `[verify]` and `[git]` tables in the runner's TOML. |
+| GitHub push is best-effort and fire-and-forget; Tack-initiated last write wins on the way out; inbound sync polls, no webhook receiver | `docs/GITHUB-SYNC.md`; phase-65 decision | **Kept and extended, ADR 0013:** opening a pull request is one more best-effort outbound call; its state arrives through the poll that already runs. |
+| DAG-ordered sprint dispatch is gone; one operator; unsigned desktop bundles; `tack.toml` never reads the runner gate; providers are modules | ADR 0010, 0004, 0006, 0003, 0063 | untouched (see Parked) |
 
 Decisions this plan takes because no task can start without them. Each is one line to reverse:
 
@@ -137,7 +137,7 @@ Decisions this plan takes because no task can start without them. Each is one li
 - **Nothing is passed to docket as an interim.** A flag is used when the probe finds it and the
   full document or value can be written; otherwise the capability reads `Unsupported` with the
   reason. No partial policy, no stand-in.
-- **A deferred capability is shown disabled, never hidden (ADR 0072, decided 2026-10-03).**
+- **A deferred capability is shown disabled, never hidden (ADR 0014, decided 2026-10-03).**
   Every step of the flow — brief, approvals, verification, pushed branch, pull request — has
   its control in the "Run with agent" dialog from P1 on. A control whose integration has not
   landed, or that the selected runner does not attest, is rendered disabled with one line
@@ -147,10 +147,10 @@ Decisions this plan takes because no task can start without them. Each is one li
 
 | # | What | Decision |
 |---|---|---|
-| 0.1 | ADR 0069 — the brief is a first-class entity | **Accepted.** |
-| 0.2 | ADR 0070 — docket contract 1.1; cancel as per-harness evidence; `--recipe` is one flag | **Accepted**, with two amendments: docket versions are handled dynamically (below), and nothing is passed to docket as an interim — a feature is used when the docket under test has it, and not before. |
-| 0.3 | ADR 0071 — evidence, the MRP, the verifier boundary, the pushed branch and its pull request | **Accepted.** The runner may push a branch with the operator's own git credentials; off by default. |
-| 0.4 | ADR 0072 — the "Run with agent" flow | **Accepted, as a priority.** The interface and the clarity of the whole flow come first. A capability that is deferred is still shown in the form, visibly disabled, with the reason; it is never hidden. That includes a verification checkbox, disabled until the verifier integration is complete. Tasks P0, P1, P2. |
+| 0.1 | ADR 0011 — the brief is a first-class entity | **Accepted.** |
+| 0.2 | ADR 0012 — docket contract 1.1; cancel as per-harness evidence; `--recipe` is one flag | **Accepted**, with two amendments: docket versions are handled dynamically (below), and nothing is passed to docket as an interim — a feature is used when the docket under test has it, and not before. |
+| 0.3 | ADR 0013 — evidence, the MRP, the verifier boundary, the pushed branch and its pull request | **Accepted.** The runner may push a branch with the operator's own git credentials; off by default. |
+| 0.4 | ADR 0014 — the "Run with agent" flow | **Accepted, as a priority.** The interface and the clarity of the whole flow come first. A capability that is deferred is still shown in the form, visibly disabled, with the reason; it is never hidden. That includes a verification checkbox, disabled until the verifier integration is complete. Tasks P0, P1, P2. |
 | 0.5 | ADR 0073 — installation guidance | **Not an ADR; withdrawn as one.** The work stays: the pitch and the voice make the desktop app the default and say what `tack serve` is for (R1), and Tack gets its own landing page at `yielab.com/tack`, with the release download links, on the pattern of docket's at `yielab.com/docket` (R2). |
 | 0.6 | Which docket | **No install gate.** docket is in continuous development and is about to cut its next beta; Tack is built to be compatible with that version and the ones after it. Named from docket's own tree on 2026-10-03: tags run `v0.2.0-beta.1` → `.3`, `pyproject.toml` says `0.2.0-beta.3`, and Phases 34–35 sit under `[Unreleased]`, so the next is **`v0.2.0-beta.4`**. Tack never pins a docket version: it negotiates the contract and probes each flag (A1). |
 | 0.7 | docket's `--policy` | **No interim.** A4 writes a full `kind: policy` document in the shape docket already publishes (`../rack-cli/docs/contracts/config-v1/policy.schema.json`: `kind`, `name`, `then` required) once the docket under test accepts `--policy`; until then nothing is passed and the capability says so. |
@@ -393,7 +393,7 @@ description) lists the two ids; `git grep 'read back nowhere'` finds nothing; pr
 
 **Model:** Sonnet (the completion handler is hot; the core enum alone would be Haiku).
 
-### C1a — the brief: types, validation, rendering and the contract (ADR 0069)
+### C1a — the brief: types, validation, rendering and the contract (ADR 0011)
 
 **Files:** `crates/tack-core/src/models.rs` (`ItemBrief { item_id, acceptance:
 Vec<AcceptanceCriterion>, constraints: Vec<Constraint>, definition_of_done: Option<String>,
@@ -410,7 +410,7 @@ line per criterion with its `id`, `manual` criteria last under "needs a human");
 `README.md`, `example.json` (pinned by a test in `crates/tack-core/src/brief.rs` that
 round-trips the example), and `crates/tack-core/src/lib.rs` (`pub mod brief`).
 
-Why an entity and not custom fields is ADR 0069's question; the task does not re-argue it.
+Why an entity and not custom fields is ADR 0011's question; the task does not re-argue it.
 Nothing here touches the database or a handler: that is C1b.
 
 **Done when:** the example round-trips byte-for-byte after normalisation; a duplicate
@@ -422,7 +422,7 @@ example pin holds; `render_markdown(example)` is a stable snapshot with `manual`
 
 **Model:** Haiku. Every variant and limit is spelled above; one crate, three files, one fixture.
 
-### C1b — the brief: persistence, routes, export (ADR 0069)
+### C1b — the brief: persistence, routes, export (ADR 0011)
 
 **Files:** `crates/tack-db/src/repo/briefs.rs` (get, upsert, delete) and `repo.rs`;
 `crates/tack-api/src/handlers/briefs.rs` (`GET`/`PUT`/`DELETE /api/items/{id}/brief`, 404 when
@@ -452,7 +452,7 @@ produces it, who reads it, how Assay supersedes it), `fixtures/ready.json`,
 `summary_line`), `crates/tack-core/src/lib.rs`; `crates/tack-core/tests/mrp_contract.rs`
 (each fixture deserialises, re-serialises to the same canonical JSON, and its FNV pin holds).
 
-The pack, minimum fields (ADR 0071 §3 has the rationale):
+The pack, minimum fields (ADR 0013 §3 has the rationale):
 
 ```
 { v: "1", attempt_id, evidence_sha256, brief_sha256 | null,
@@ -478,7 +478,7 @@ pull-request body) and the one producer.
 
 **RED:** `mrp_contract.rs::every_fixture_round_trips` fails at the base (no module).
 
-**Model:** Haiku. The pack's fields are spelled above and in ADR 0071 §3; the agent types
+**Model:** Haiku. The pack's fields are spelled above and in ADR 0013 §3; the agent types
 them, it does not design them. `render_markdown` is one heading per section and one table
 row per criterion, snapshot-tested, so any wording choice is the snapshot's.
 
@@ -529,7 +529,7 @@ that changed shape; the three tests pass; `docs/openapi.json` shows the new fiel
 
 **Model:** Sonnet. Ceiling 100.
 
-### F1 — the verifier step in the runner (ADR 0071)
+### F1 — the verifier step in the runner (ADR 0013)
 
 **Files:** `crates/tack-runner/src/config.rs` (a `[verify]` table: `enabled: bool = false`,
 `program: String = "assay"`, `args: Vec<String> = ["verify"]`, `timeout_seconds: u64 = 1800`;
@@ -655,7 +655,7 @@ Chromium; pre-push.
 
 **Model:** Sonnet.
 
-### H1 — the runner pushes the branch (ADR 0071)
+### H1 — the runner pushes the branch (ADR 0013)
 
 **Files:** `crates/tack-runner/src/config.rs` (a `[git]` table: `push_branches: bool =
 false`, `branch_prefix: String = "tack/"`, `author: String = "Tack Runner <tack-runner@localhost>"`);
@@ -774,7 +774,7 @@ every card, the `null` as "not measured" and never `0`; typecheck and build pass
 
 **Model:** Haiku. One page from a typed response; the definitions are written.
 
-### A1 — docket is negotiated, and speaks contract 1.1 when it can (ADR 0070 decisions 1 and 4, amended 2026-10-03; revives U8)
+### A1 — docket is negotiated, and speaks contract 1.1 when it can (ADR 0012 decisions 1 and 4, amended 2026-10-03; revives U8)
 
 **Gate:** none. docket's P35-2 is merged in its `develop` (`7b42f86`); the docket under test is
 the scratch install (the Decided row). `../rack-cli/docs/contracts/harness-v1.1/schema.json`
@@ -789,7 +789,7 @@ contract, an unknown-option usage error for each flag; the measured commands and
 `fixtures/docket/README.md`; a probe that cannot be made reliable is a finding, not a guess);
 `crates/tack-runner/src/harness/docket.rs::invocation` (on contract 1.1: `--contract 1.1`, the
 task written to `run.scratch.join("task.md")` and passed as `--task-file <path>`, `prompt()`
-returning no bytes; on 1.0 the shape ADR 0066 measured, unchanged), `::capabilities` (every
+returning no bytes; on 1.0 the shape ADR 0008 measured, unchanged), `::capabilities` (every
 line derived from `DocketFeatures`; the `additional` note names the contract and the docket
 version found); `crates/tack-runner/src/harness/local_process.rs::prepare` (one line:
 `create_dir_all(&scratch)` before `invocation`, so a grammar may write there);
@@ -807,7 +807,7 @@ in the report); no docket version string appears in a comparison anywhere in `cr
 
 **Model:** Sonnet. Ceiling 150 (a measurement and a new module).
 
-### A3 — process events and `cancel: Supported` (ADR 0070 decisions 2 and 8)
+### A3 — process events and `cancel: Supported` (ADR 0012 decisions 2 and 8)
 
 **Gate:** A1; B1; docket's P35-3 (merged in its `develop`, `e7dc098`), present in the docket under test.
 Never concurrent with a wave that owns `engine.rs` (2, 3, 4): beside Wave 5, 6 or 7, or alone.
@@ -821,7 +821,7 @@ SIGTERM then SIGKILL to each tracked group; `ProcessResult`/`CancelOutcome` repo
 (the evidence `details` carry those counts); `crates/tack-runner/src/harness/mod.rs:156,290-306`
 (`PROCESS_GROUP_CANCEL_CEILING` is replaced by a descriptor fact: `HarnessDescriptor::reports_process_groups:
 bool` — the struct lives at `local_process.rs:69`; the guard accepts `cancel: Supported` only from a grammar whose descriptor says `true`
-— ADR 0070 §2); `crates/tack-runner/src/bootstrap.rs:160-198` (the doctor line); `docket.rs`
+— ADR 0012 §2); `crates/tack-runner/src/bootstrap.rs:160-198` (the doctor line); `docket.rs`
 (`signal` maps `process_started`/`process_exited`; the descriptor flag; `cancel: Supported`);
 `crates/tack-runner/src/harness/fixtures/fake_harness.sh` (a `spawn_detached` mode: `setsid
 sleep …` in its own session, then prints a `process_started` line the test grammar maps);
@@ -839,7 +839,7 @@ names the new evidence field; pre-push.
 
 **Model:** Sonnet. Ceiling 150 (the one task that edits three runner core files).
 
-### A2 — docket asks (ADR 0070 decision 5; revives U8)
+### A2 — docket asks (ADR 0012 decision 5; revives U8)
 
 **Gate:** A1; docket's P35-5 (its Wave 72, `TODO` on 2026-10-02) merged and in the docket under test.
 
@@ -862,7 +862,7 @@ because the runner reports it (`RunWithAgentModal.tsx:321` reads the attestation
 
 **Model:** Sonnet. Ceiling 100.
 
-### A4 — the caller's limits and policy go to docket, and its files come back (ADR 0070 decisions 6 and 7, amended 2026-10-03)
+### A4 — the caller's limits and policy go to docket, and its files come back (ADR 0012 decisions 6 and 7, amended 2026-10-03)
 
 **Gate:** A1; docket's P35-6 (its Wave 73) merged and in the docket under test. No part of
 this task lands before that: nothing is passed as an interim.
@@ -891,7 +891,7 @@ capability lines for both dockets; pre-push.
 
 **Model:** Sonnet. Ceiling 100.
 
-### A5 — the recipe is one flag (ADR 0070 decision 3), and the docket rows of the book
+### A5 — the recipe is one flag (ADR 0012 decision 3), and the docket rows of the book
 
 **Gate:** A4; docket's P35-9 (its Wave 74) merged and in the docket under test.
 
@@ -910,7 +910,7 @@ rewritten).
 
 **Model:** Haiku. One flag, two rows, and four paragraphs already written.
 
-### P0 — measure what each harness exposes as a tool list (ADR 0072)
+### P0 — measure what each harness exposes as a tool list (ADR 0014)
 
 **Gate:** none. No product code: a measurement, like Phase 65's M1–M3.
 
@@ -926,7 +926,7 @@ and P1's brief is cut to match.
 
 **Model:** Sonnet (it runs the real CLIs and reads what they say). Ceiling 60.
 
-### P1 — the whole flow in the "Run with agent" dialog; what is deferred is shown disabled (ADR 0072)
+### P1 — the whole flow in the "Run with agent" dialog; what is deferred is shown disabled (ADR 0014)
 
 **Gate:** P0. C3 comes after this task and fills the brief's slot.
 
@@ -963,7 +963,7 @@ fails at the base (the dialog has no verification control at all).
 
 **Model:** Sonnet. Ceiling 150 (a restructure of a 731-line component).
 
-### P2 — verification and branch push become live controls (ADR 0072; ADR 0071 decisions 4 and 5)
+### P2 — verification and branch push become live controls (ADR 0014; ADR 0013 decisions 4 and 5)
 
 **Gate:** P1, F1, H1. Owns `engine.rs` in Wave 5.
 
@@ -1050,8 +1050,8 @@ One line each, with the trigger that turns it into a task.
   MRPs marked `merge` is measured above the plan's threshold for one domain. Needs its own ADR;
   it reverses "human in every merge".
 - **Autonomous intake from signals.** Trigger: an ODD is promoted. It also re-opens
-  "DAG-ordered sprint dispatch is gone" (ADR 0068), so it is an ADR first.
-- **Multi-user (ADR 0059).** Trigger: a second approver is required by an ODD's policy. Out of
+  "DAG-ordered sprint dispatch is gone" (ADR 0010), so it is an ADR first.
+- **Multi-user (ADR 0004).** Trigger: a second approver is required by an ODD's policy. Out of
   this plan, as the business plan §8 says.
 - **Signed MRPs (in-toto).** `signature.kind = "none"` is valid in `mrp-v1`. Trigger: a pull
   request check consumes the signature, not a human.

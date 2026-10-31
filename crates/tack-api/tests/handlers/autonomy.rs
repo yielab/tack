@@ -4,7 +4,7 @@
 //! revert demotes its domain L4 to L3; one row each for the holds.
 
 use crate::common;
-use crate::mrp::{
+use crate::handlers::mrp::{
     BASE_REVISION, ClaimedAttempt, MRP_MEDIA_TYPE, READY, accept_and_start,
     completion_with_pushed_branch, headers_ref, operator_headers, request_and_claim, sha256_hex,
 };
@@ -13,9 +13,9 @@ use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::seed;
 use tower::ServiceExt;
-use uuid::Uuid;
 use wiremock::matchers::{body_json, method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -50,15 +50,8 @@ pub(crate) struct Board {
 }
 
 pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill: &str) -> Board {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'A2', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(&pool)
-        .await
-        .unwrap();
-    let repo = Repository::new(pool);
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -66,16 +59,20 @@ pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill
             api_token: Some(OPERATOR_TOKEN.into()),
             database_url: "sqlite::memory:".into(),
             storage_dir: storage.to_string_lossy().into_owned(),
-            github_token: github.map(|_| "gh-tok".into()),
-            github_api_base: github
-                .map_or_else(|| AppConfig::default().github_api_base, Into::into),
             prill_program: prill.into(),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: github.map(|_| "gh-tok".into()),
+                github_api_base: github
+                    .map_or_else(|| AppConfig::default().loops.github_api_base, Into::into),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = common::with_default_host(build_router(state.clone()));
     let project = repo
@@ -344,24 +341,39 @@ pub(crate) async fn merge_row(
     Option<String>,
     Option<String>,
 )> {
-    sqlx::query_as(
-        "SELECT trigger, domain, level, held_reason, merged_at, merge_sha FROM tack_merges WHERE attempt_id = ?",
-    )
-    .bind(attempt_id)
-    .fetch_optional(b.state.repo.pool())
-    .await
-    .unwrap()
+    tack_db::queries::autonomy::merge_of_attempt(&b.state.repo, attempt_id)
+        .await
+        .unwrap()
+        .map(|row| {
+            (
+                row.trigger,
+                row.domain,
+                row.level,
+                row.held_reason,
+                row.merged_at,
+                row.merge_sha,
+            )
+        })
 }
 
 pub(crate) async fn comments(b: &Board) -> String {
-    sqlx::query_scalar::<_, String>(
-        "SELECT content FROM comments WHERE item_id = ? AND author = 'system'",
-    )
-    .bind(&b.item_id)
-    .fetch_all(b.state.repo.pool())
-    .await
-    .unwrap()
-    .join("\n")
+    b.state
+        .repo
+        .list_comments(b.item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|comment| comment.author.as_deref() == Some("system"))
+        .map(|comment| comment.content)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// One pass of the automatic merge's turn, as the poll loop runs it.
+pub(crate) async fn tick(state: &AppState) {
+    tack_app::autonomy::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -387,16 +399,15 @@ async fn a_pack_held_for_ci_merges_on_the_next_tick_then_a_revert_demotes_its_do
     assert_eq!(got["verify_require"], json!(["criteria", "suite"]));
 
     let a = finished_attempt(&b, &setup).await;
-    let snapshot: String =
-        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id = ?")
-            .bind(&a.request_id)
-            .fetch_one(b.state.repo.pool())
+    let snapshot =
+        tack_db::queries::execution_requests::request_snapshot(&b.state.repo, &a.request_id)
             .await
+            .unwrap()
             .unwrap();
     let snapshot: Value = serde_json::from_str(&snapshot).unwrap();
     assert_eq!(snapshot["verify_require"], json!(["criteria", "suite"]));
 
-    tack_api::autonomy::tick(&b.state).await;
+    tick(&b.state).await;
     let row = merge_row(&b, &a.attempt_id).await.expect("a held row");
     assert_eq!(
         row.3.as_deref(),
@@ -405,7 +416,7 @@ async fn a_pack_held_for_ci_merges_on_the_next_tick_then_a_revert_demotes_its_do
     );
     assert!(row.4.is_none());
 
-    tack_api::autonomy::tick(&b.state).await;
+    tick(&b.state).await;
     let row = merge_row(&b, &a.attempt_id).await.unwrap();
     assert_eq!(row.0, "auto");
     assert_eq!(row.1.as_deref(), Some("core"));
@@ -415,19 +426,19 @@ async fn a_pack_held_for_ci_merges_on_the_next_tick_then_a_revert_demotes_its_do
         row.5.as_deref(),
         Some("e5bd3914e2e596debea16f433f57875b5b90bcd6")
     );
-    let keyid: Option<String> =
-        sqlx::query_scalar("SELECT attestation_keyid FROM tack_merges WHERE attempt_id = ?")
-            .bind(&a.attempt_id)
-            .fetch_one(b.state.repo.pool())
-            .await
-            .unwrap();
+    let keyid = tack_db::queries::autonomy::merge_of_attempt(&b.state.repo, &a.attempt_id)
+        .await
+        .unwrap()
+        .and_then(|row| row.attestation_keyid);
     assert_eq!(keyid.as_deref(), Some(KEY_ID));
 
     // G sees the revert; the next tick takes the domain one level down.
-    tack_db::repo::pull_requests::mark_reverted(b.state.repo.pool(), "acme/widgets", 7, Some(9))
+    b.state
+        .repo
+        .mark_pull_request_reverted("acme/widgets", 7, Some(9))
         .await
         .unwrap();
-    tack_api::autonomy::tick(&b.state).await;
+    tick(&b.state).await;
     let (_, got) = common::send(
         &b.app,
         "GET",
@@ -440,19 +451,17 @@ async fn a_pack_held_for_ci_merges_on_the_next_tick_then_a_revert_demotes_its_do
     assert_eq!(got["domains"][0]["merged"], 1, "{got}");
     assert_eq!(got["domains"][0]["undone"], 1, "{got}");
     assert!(got["automatic_merge_blocked_by"].is_array(), "{got}");
-    let demoted: Option<String> =
-        sqlx::query_scalar("SELECT demoted_at FROM tack_merges WHERE attempt_id = ?")
-            .bind(&a.attempt_id)
-            .fetch_one(b.state.repo.pool())
-            .await
-            .unwrap();
+    let demoted = tack_db::queries::autonomy::merge_of_attempt(&b.state.repo, &a.attempt_id)
+        .await
+        .unwrap()
+        .and_then(|row| row.demoted_at);
     assert!(demoted.is_some());
     let said = comments(&b).await;
     assert!(
         said.contains("core") && said.contains("L4") && said.contains("L3") && said.contains("#7"),
         "{said}"
     );
-    tack_api::autonomy::tick(&b.state).await; // a demotion is made once
+    tick(&b.state).await; // a demotion is made once
     assert_eq!(comments(&b).await, said);
 }
 
@@ -546,7 +555,7 @@ async fn holds_table() {
         let (status, put) = put_autonomy(&b, &setup).await;
         assert_eq!(status, StatusCode::OK, "{name}: {put}");
         let a = finished_attempt(&b, &setup).await;
-        tack_api::autonomy::tick(&b.state).await;
+        tick(&b.state).await;
         let row = merge_row(&b, &a.attempt_id).await;
         match expected {
             None => assert!(row.is_none(), "{name}: {row:?}"),
@@ -576,25 +585,16 @@ async fn a_finished_item_or_a_replaced_run_is_never_merged_by_itself() {
         let (status, put) = put_autonomy(&b, &setup).await;
         assert_eq!(status, StatusCode::OK, "{case}: {put}");
         let a = finished_attempt(&b, &setup).await;
-        let pool = b.state.repo.pool();
         match case {
             "item done" => {
-                sqlx::query(
-                    "UPDATE items SET completed_at = datetime('now') WHERE id = \
-                     (SELECT r.item_id FROM execution_attempts a \
-                      JOIN execution_requests r ON r.id = a.request_id WHERE a.id = ?)",
-                )
-                .bind(&a.attempt_id)
-                .execute(pool)
-                .await
-                .unwrap();
+                tack_test_support::seed::item_completed(&b.state.repo, &b.item_id).await;
             }
             _ => {
                 // A newer run of the same item makes this attempt a replaced one.
                 let _ = request_and_claim(&b.app, &b.item_id, "a2-newer", None).await;
             }
         }
-        tack_api::autonomy::tick(&b.state).await;
+        tick(&b.state).await;
         let row = merge_row(&b, &a.attempt_id).await;
         assert!(row.is_none(), "{case}: {row:?}");
     }
@@ -625,9 +625,9 @@ async fn the_ceiling_is_the_ceiling_of_the_team_that_ran_it() {
         ),
         (Some("writers"), 1, None),
         (
-            Some("fab-dev"),
+            Some("saas-dev"),
             0,
-            Some("Team fab-dev is not reported yet by this computer"),
+            Some("Team saas-dev is not reported yet by this computer"),
         ),
         (
             None,
@@ -644,32 +644,27 @@ async fn the_ceiling_is_the_ceiling_of_the_team_that_ran_it() {
         let (status, put) = put_autonomy(&b, &setup).await;
         assert_eq!(status, StatusCode::OK, "{put}");
         let a = finished_attempt(&b, &setup).await;
-        let pool = b.state.repo.pool();
-        let kind: String = sqlx::query_scalar(
-            "SELECT json_extract(request_snapshot, '$.requested_harness_kind') FROM execution_requests WHERE id = ?",
-        )
-        .bind(&a.request_id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+        let snapshot =
+            tack_db::queries::execution_requests::request_snapshot(&b.state.repo, &a.request_id)
+                .await
+                .unwrap()
+                .unwrap();
+        let kind = serde_json::from_str::<Value>(&snapshot).unwrap()["requested_harness_kind"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         if let Some(team) = team {
-            sqlx::query(
-                "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', ?) WHERE id = ?",
-            )
-            .bind(team)
-            .bind(&a.request_id)
-            .execute(pool)
-            .await
-            .unwrap();
+            tack_test_support::seed::execution_request_team(&b.state.repo, &a.request_id, team)
+                .await;
         }
-        sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = ?")
-            .bind(reviewers_snapshot(&kind))
-            .bind(&a.runner_id)
-            .execute(pool)
-            .await
-            .unwrap();
+        tack_test_support::seed::agent_runner_capabilities(
+            &b.state.repo,
+            &a.runner_id,
+            &reviewers_snapshot(&kind),
+        )
+        .await;
 
-        tack_api::autonomy::tick(&b.state).await;
+        tick(&b.state).await;
         let row = merge_row(&b, &a.attempt_id).await.expect("a row");
         let held = row.3.clone().unwrap_or_default();
         match expected {
@@ -706,22 +701,10 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     assert_eq!(before["ceiling"], "L3", "{before}");
     assert_eq!(before["teams"], json!([]), "{before}");
 
-    let pool = b.state.repo.pool();
-    for sql in [
-        "INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) VALUES ('p1', 'Reviewer', 'x', '{\"docket\":{\"team\":\"reviewers\"}}', '{}', 'now', 'now')",
-    ] {
-        sqlx::query(sql).execute(pool).await.unwrap();
-    }
-    sqlx::query("INSERT INTO roles (id, project_id, name, agent_profile_id) VALUES ('r1', ?, 'review', 'p1')")
-        .bind(&b.project_id)
-        .execute(pool)
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO agent_runners (id, name, credential_hash, capability_snapshot, protocol_version, created_at, updated_at) VALUES ('ru1', 'ru', 'h', ?, 1, 'now', 'now')")
-        .bind(reviewers_snapshot("docket"))
-        .execute(pool)
-        .await
-        .unwrap();
+    let repo = &b.state.repo;
+    seed::agent_profile_for_team(repo, "p1", "Reviewer", "reviewers").await;
+    seed::role_running(repo, "r1", &b.project_id, "review", "p1").await;
+    seed::agent_runner_reporting(repo, "ru1", &reviewers_snapshot("docket")).await;
 
     let got = get().await;
     let sentence = "The team reviewers runs attended: its tasks stay at L3. Fix: run it lights-out";
@@ -740,19 +723,25 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     assert_eq!(got["teams"][0]["fix"], "run it lights-out", "{got}");
 
     // A second role on a lights-out team is listed too, without a cap; a team no runner reports is "unknown".
-    sqlx::query("INSERT INTO agent_profiles (id, name, instructions, tool_policy, limits, created_at, updated_at) VALUES ('p2', 'Writer', 'x', '{\"docket\":{\"team\":\"writers\"}}', '{}', 'now', 'now'), ('p3', 'Ghost', 'x', '{\"docket\":{\"team\":\"ghosts\"}}', '{}', 'now', 'now')")
-        .execute(pool).await.unwrap();
-    sqlx::query("INSERT INTO roles (id, project_id, name, agent_profile_id) VALUES ('r2', ?, 'write', 'p2'), ('r3', ?, 'haunt', 'p3')")
-        .bind(&b.project_id).bind(&b.project_id).execute(pool).await.unwrap();
-    sqlx::query("UPDATE agent_runners SET capability_snapshot = ? WHERE id = 'ru1'")
-        .bind(json!({"harnesses": [{
+    seed::agent_profile_for_team(repo, "p2", "Writer", "writers").await;
+    seed::agent_profile_for_team(repo, "p3", "Ghost", "ghosts").await;
+    seed::role_running(repo, "r2", &b.project_id, "write", "p2").await;
+    seed::role_running(repo, "r3", &b.project_id, "haunt", "p3").await;
+    seed::agent_runner_capabilities(
+        repo,
+        "ru1",
+        &json!({"harnesses": [{
             "harness_kind": "docket", "installed_version": "0.2.0", "probe_error": null,
             "probed_at": "2026-08-06T11:59:55Z", "autonomy_ceiling": "L3",
             "teams": [
                 {"name": "reviewers", "profile": "default", "violations": [{"requirement": "r", "fix": "run it lights-out"}]},
-                {"name": "writers", "profile": "lights-out", "violations": [], "read_only": ["/opt/node-22"]}],
-        }]}).to_string())
-        .execute(pool).await.unwrap();
+                {"name": "writers", "profile": "lights-out", "violations": [], "read_only": ["/opt/node-22"],
+                 "works_in": "folder",
+                 "records": [{"name": "leads", "description": "People found", "rows": 2}]}],
+        }]})
+        .to_string(),
+    )
+    .await;
     let got = get().await;
     let lines: Vec<(String, Value, Value)> = got["teams"]
         .as_array()
@@ -787,6 +776,24 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
     assert_eq!(reads("writers"), json!(["/opt/node-22"]), "{got}");
     assert_eq!(reads("reviewers"), Value::Null, "{got}");
     assert_eq!(reads("ghosts"), Value::Null, "{got}");
+    // Where a team works and what it keeps travel the same way.
+    let of = |n: &str, key: &str| {
+        got["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == n)
+            .unwrap()[key]
+            .clone()
+    };
+    assert_eq!(of("writers", "works_in"), json!("folder"), "{got}");
+    assert_eq!(
+        of("writers", "records"),
+        json!([{"name": "leads", "description": "People found", "rows": 2}]),
+        "{got}"
+    );
+    assert_eq!(of("reviewers", "works_in"), Value::Null, "{got}");
+    assert_eq!(of("reviewers", "records"), Value::Null, "{got}");
     assert_eq!(line("writers").1, Value::Null, "{got}");
     assert_eq!(line("writers").2, Value::Null, "{got}");
     assert_eq!(line("ghosts").1, "L3", "{got}");
@@ -816,6 +823,46 @@ async fn the_settings_name_an_attended_team_and_put_answers_like_get() {
         "{put}"
     );
     assert_eq!(put["ceiling"], "L3", "{put}");
+}
+
+/// A task with no role runs with the project's default profile, so that profile's team is listed
+/// with its state and holds the ceiling, though no role points at it.
+#[tokio::test]
+async fn the_default_profiles_team_is_a_team_of_the_project_too() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let url = format!("/api/projects/{}/autonomy", b.project_id);
+    let repo = &b.state.repo;
+    seed::agent_runner_reporting(repo, "ru1", &reviewers_snapshot("docket")).await;
+    let teams = || async {
+        common::send(&b.app, "GET", &url, Value::Null, &operator_headers())
+            .await
+            .1
+    };
+    // No role and no default profile: no team.
+    assert_eq!(teams().await["teams"], json!([]));
+
+    // Only the default profile names a team: it is listed, attended, and caps the ceiling.
+    seed::agent_profile_for_team(repo, "p1", "Reviewer", "reviewers").await;
+    seed::project_default_profile(repo, &b.project_id, "p1").await;
+    let got = teams().await;
+    assert_eq!(got["teams"][0]["name"], "reviewers", "{got}");
+    assert_eq!(got["teams"][0]["profile"], "Reviewer", "{got}");
+    assert_eq!(got["teams"][0]["caps_at"], "L3", "{got}");
+    assert!(
+        got["automatic_merge_blocked_by"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line
+                == "The team reviewers runs attended: its tasks stay at L3. Fix: run it lights-out"),
+        "{got}"
+    );
+
+    // A role on the same profile does not list the team twice.
+    seed::role_running(repo, "r1", &b.project_id, "review", "p1").await;
+    assert_eq!(teams().await["teams"].as_array().unwrap().len(), 1);
 }
 
 // A project-level demotion to L3 switches auto-start off and the project says why.
@@ -853,22 +900,20 @@ async fn a_demotion_to_l3_switches_auto_start_off() {
     assert_eq!(status, StatusCode::OK);
 
     let a = finished_attempt(&b, &setup).await;
-    tack_api::autonomy::tick(&b.state).await;
-    tack_api::autonomy::tick(&b.state).await;
+    tick(&b.state).await;
+    tick(&b.state).await;
     assert_eq!(merge_row(&b, &a.attempt_id).await.unwrap().0, "auto");
     let (_, project) = common::send(&b.app, "GET", &uri, Value::Null, &operator_headers()).await;
     assert_eq!(project["auto_start_enabled"], true, "{project}");
 
     // The project had already dropped a level when this merge is reverted: L4 to L3.
-    sqlx::query("UPDATE projects SET autonomy_level = 'L4' WHERE id = ?")
-        .bind(&b.project_id)
-        .execute(b.state.repo.pool())
+    seed::project_autonomy_level(&b.state.repo, &b.project_id, "L4").await;
+    b.state
+        .repo
+        .mark_pull_request_reverted("acme/widgets", 7, Some(9))
         .await
         .unwrap();
-    tack_db::repo::pull_requests::mark_reverted(b.state.repo.pool(), "acme/widgets", 7, Some(9))
-        .await
-        .unwrap();
-    tack_api::autonomy::tick(&b.state).await;
+    tick(&b.state).await;
     let (_, project) = common::send(&b.app, "GET", &uri, Value::Null, &operator_headers()).await;
     let (_, got) = common::send(
         &b.app,
@@ -889,4 +934,146 @@ async fn a_demotion_to_l3_switches_auto_start_off() {
             .await
             .contains("Auto-start is off: the project dropped to L3")
     );
+}
+
+/// "Run again at L3" is offered on an attempt that ended asking for a person: enabled for a docket
+/// run that did not already run at L3, whatever the project's level or the team, and disabled,
+/// with its reason, otherwise; no other attempt carries it.
+#[tokio::test]
+async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_cannot() {
+    // (harness, project level, team, the level the run was created with, the button's reason, or
+    // none when it is enabled)
+    let cases = [
+        ("docket", "L3", Some("writers"), None, None),
+        ("docket", "L4", Some("reviewers"), None, None),
+        ("docket", "L5", Some("saas-dev"), None, None),
+        ("docket", "L4", Some("writers"), Some("L4"), None),
+        (
+            "docket",
+            "L4",
+            Some("writers"),
+            Some("L3"),
+            Some("already ran at L3"),
+        ),
+        (
+            "codex",
+            "L4",
+            None,
+            None,
+            Some("Only a run by a docket team can be run again"),
+        ),
+    ];
+    for (harness, level, team, asked, reason) in cases {
+        let root = tempfile::tempdir().unwrap();
+        let prill = fake_prill(root.path());
+        let b = board(root.path(), None, &prill).await;
+        let repo = &b.state.repo;
+        let a = request_and_claim(&b.app, &b.item_id, "rerun", None).await;
+        seed::project_autonomy_level(repo, &b.project_id, level).await;
+        seed::execution_request_harness(repo, &a.request_id, harness).await;
+        if let Some(team) = team {
+            seed::execution_request_team(repo, &a.request_id, team).await;
+        }
+        if let Some(asked) = asked {
+            seed::execution_request_autonomy(repo, &a.request_id, asked).await;
+        }
+        let needs_human =
+            r#"{"code":"needs_human","message":"docket needs a person to approve a tool call"}"#;
+        seed::execution_attempt_ended(repo, &a.attempt_id, ExecutionState::Failed, needs_human)
+            .await;
+
+        let (status, list) = common::send(
+            &b.app,
+            "GET",
+            &format!("/api/executions/{}/attempts", a.request_id),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{list}");
+        let button = &list["data"][0]["rerun_at_l3"];
+        assert_eq!(
+            button["enabled"],
+            reason.is_none(),
+            "{harness} {level} {team:?} {asked:?}: {list}"
+        );
+        match reason {
+            Some(words) => {
+                let said = button["reason"].as_str().unwrap_or_default();
+                assert!(said.contains(words), "{harness} {level} {team:?}: {said:?}");
+            }
+            None => assert!(button["reason"].is_null(), "{list}"),
+        }
+
+        // Another way of failing carries no button.
+        seed::execution_attempt_ended(
+            repo,
+            &a.attempt_id,
+            ExecutionState::Failed,
+            r#"{"code":"token_limit"}"#,
+        )
+        .await;
+        let (_, list) = common::send(
+            &b.app,
+            "GET",
+            &format!("/api/executions/{}/attempts", a.request_id),
+            Value::Null,
+            &operator_headers(),
+        )
+        .await;
+        assert!(list["data"][0].get("rerun_at_l3").is_none(), "{list}");
+    }
+}
+
+#[tokio::test]
+async fn a_docket_run_created_at_l3_keeps_that_level_and_any_other_run_is_refused_a_level() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let a = request_and_claim(&b.app, &b.item_id, "cap", None).await;
+    let profile =
+        tack_db::queries::execution_requests::request_snapshot(&b.state.repo, &a.request_id)
+            .await
+            .unwrap()
+            .map(|raw| serde_json::from_str::<Value>(&raw).unwrap()["agent_profile_id"].clone())
+            .unwrap();
+    // (harness, level, key, the field the refusal names, or none when the run is created)
+    for (harness, autonomy, key, refused) in [
+        ("docket", "L3", "again", None),
+        ("docket", "L9", "unknown", Some("autonomy")),
+        ("codex", "L3", "not-docket", Some("autonomy")),
+    ] {
+        let mut body = crate::handlers::mrp::execution_request_body(
+            &b.item_id,
+            key,
+            &a.runner_id,
+            profile.as_str().unwrap(),
+            None,
+        );
+        body["requested_harness_kind"] = json!(harness);
+        body["autonomy"] = json!(autonomy);
+        let (status, created) =
+            common::send(&b.app, "POST", "/api/executions", body, &operator_headers()).await;
+        if let Some(field) = refused {
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "{harness} {autonomy}: {created}"
+            );
+            assert_eq!(created["error"]["details"]["field"], field, "{created}");
+            continue;
+        }
+        assert_eq!(status, StatusCode::OK, "{created}");
+        let stored = tack_db::queries::execution_requests::request_snapshot(
+            &b.state.repo,
+            created["request_id"].as_str().unwrap(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored).unwrap()["autonomy"],
+            "L3"
+        );
+    }
 }

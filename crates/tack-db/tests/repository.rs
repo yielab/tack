@@ -8,8 +8,8 @@
 //! `execution_retention` and `event_artifact_retention`), and the
 //! concurrency-sensitive `version_concurrency` write path.
 
-mod common;
-
+#[path = "repository/corrupt_rows.rs"]
+mod corrupt_rows;
 #[path = "repository/counted_tokens.rs"]
 mod counted_tokens;
 #[path = "repository/event_artifact_retention.rs"]
@@ -24,6 +24,8 @@ mod execution_enqueue;
 mod execution_enrollment;
 #[path = "repository/execution_events.rs"]
 mod execution_events;
+#[path = "repository/execution_fixture.rs"]
+mod execution_fixture;
 #[path = "repository/execution_races.rs"]
 mod execution_races;
 #[path = "repository/execution_recovery_requeue.rs"]
@@ -36,5 +38,7 @@ mod execution_transitions_completion;
 mod integration;
 #[path = "repository/rate_card.rs"]
 mod rate_card;
+#[path = "repository/store_conventions.rs"]
+mod store_conventions;
 #[path = "repository/version_concurrency.rs"]
 mod version_concurrency;

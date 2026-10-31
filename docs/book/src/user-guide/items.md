@@ -144,7 +144,7 @@ Between the **Run with agent** button and the tabs, the drawer has an **Automati
 
 | The row says | What it means |
 |---|---|
-| "Starts by itself when it reaches To Do · Team fab-content · Merge L3" | The project starts tasks by itself from that status. The team and merge level are shown when they are known |
+| "Starts by itself when it reaches To Do · Team saas-content · Merge L3" | The project starts tasks by itself from that status. The team and merge level are shown when they are known |
 | "By hand: this project doesn't start tasks by itself" | Nothing starts it. Press **Run with agent** |
 | "By hand: the role Content has no profile" | The task's role has no profile and the project has no default. Choose one in [Teams](automation.md#teams) |
 
@@ -171,7 +171,8 @@ drawer and in the side column of the item's page, takes the colour and the butto
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
 On the tab, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest first, each with a dot in
-the colour of its state, and the latest is shown until you pick another. **Run again** starts a new
+the colour of its state, and the latest is shown until you pick another. The address names the run you picked (`?tab=execution&run=…` on the item's own page), so a run can be
+linked to and opened again. **Run again** starts a new
 run of the same task. A run that had several attempts has a second row of chips for them. The tab
 shows only the run you picked, in this order:
 
@@ -190,6 +191,16 @@ shows only the run you picked, in this order:
   ran (a shell command is shown as the command) and each call docket refused. Only the Claude Code
   log names its steps by tool; for any other agent **By tool** is disabled and says why, and the
   timeline is what there is.
+- **What each step ran** lists, for a run that went through a team's steps one after another, each step in
+  order: who did it (Lead, Implementer, Reviewer, or the name of a role your team gave), the model it used,
+  in words (a small model or a strong model), its verdict when it gave one, and the prompts it read. Each
+  prompt shows its name and version, and where it came from: shipped with docket, the team's own, this
+  repository's, or your settings. A step that read no prompt says so. Under each step, what the agent
+  assumed and what it asked are listed when it said any. **What the team recorded** shows the rows the team
+  wrote during the run, one small table for each kind of record; when a table was cut short, it says the
+  rest are kept by the team in docket. A team that works in a folder rather than a repository says so on
+  the Last run card: there is nothing to merge, and what it did is the last step's summary. A run from
+  before these sections existed shows the tab as it always did.
 - **Show questions & files** opens the questions the agent asked, the files from the run and, when a
   verifier ran, the merge-readiness pack. A question that is still waiting appears there, with the
   command it is about, why the agent's policy stopped it, the options, their risks and the agent's
@@ -218,7 +229,7 @@ Use this tab to record how an item relates to others in the same project. Two di
 - **Blocks** — this item must be done before the linked item can proceed.
 - **Blocked by** — the linked item must be done before this one can proceed.
 
-The tab lists current **Blocks** and **Blocked by** links. Click a linked item's title to open *its* drawer. Click the `×` to remove a link.
+The tab lists current **Blocks** and **Blocked by** links. Click a linked item's title to open *its* page, which is a link you can also open in a new tab. Click the `×` to remove a link.
 
 To add a dependency, pick a **direction**, choose the other **item** from the picker, and select **Add**.
 

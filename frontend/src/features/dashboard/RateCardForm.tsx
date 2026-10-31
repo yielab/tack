@@ -93,7 +93,7 @@ export default function RateCardForm(props: RateCardFormProps) {
   }
 
   return (
-    <section class="rounded-[28px] bg-panel px-5 py-[18px] flex flex-col gap-3">
+    <section class="rounded-card bg-panel px-5 py-[18px] flex flex-col gap-3">
       <div>
         <h2 class="text-lg text-content">Rate card</h2>
         <p class="text-xs text-content-muted">

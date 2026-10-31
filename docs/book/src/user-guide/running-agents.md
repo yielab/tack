@@ -267,13 +267,28 @@ the limit. A run stopped by its limit says "Stopped at its limit: 2 000 000 of 2
 **Run again with more**, which opens the Run dialog for the same task with the token limit already typed as
 twice the old one. Change it or press **Run**.
 
+A docket run that ended because the agent needed a person shows "Needs a person" and the agent's own
+sentence, and offers **Run again at L3**: the same task, run attended from the start, started only when you
+press it. The button is disabled, with its reason, when the run did not use docket or already ran at L3.
+A sentence beside it says what L3 means: you approve each step that needs it, and you merge every change
+yourself. The same sentence is in the dialog, where the other agents are disabled with "A level applies only
+to a docket run", because only docket takes a level. Where Tack merged a change by itself, the run says what
+its level, L4 or L5, allows: L4 merges by itself inside the domains you named, L5 anywhere in the repository once
+its checks pass. Whether the team may run attended or alone is docket's own decision, not the project's merge level; if docket
+refuses the level, the run fails with docket's sentence.
+
+From the moment a docket run stops to ask, and after one ended asking, the run shows the same state, **Needs a
+person**, in the same colour, and **Open the question** on the card and on the attempt goes to the question. A
+screen reader is told when a run changes state.
+
 Dollars are never a limit. Where Tack shows one, it is an estimate: "≈ $0.42 (estimated)".
 
 ### While a run works
 
 The run's **Timeline** (under **What the agent did** on the task's Execution tab) fills as the agent
 works: each call to the model with its tokens, each tool it ran (a shell command is shown as the command),
-and each call it was refused. It refreshes every couple of seconds until the run ends. Only docket reports
+and each call it was refused, and each question docket opened, who answered it, whether it expired and whether
+docket's own policy settled it. It refreshes every couple of seconds until the run ends. Only docket reports
 its steps while it works. With Claude Code, Codex and opencode the timeline holds the run's events (a
 question, a failure, the end) and the run's log has the rest once it ends.
 
@@ -301,6 +316,17 @@ shows its kind, so a tool permission reads differently from a choice the agent w
 can carry a short description, its risks and a rough cost in tokens. When the agent has a preferred answer,
 that option is preselected and marked **Recommended**, with the reason and the files it looked at beneath it.
 Nothing is applied until you press **Resolve**, and you can pick any option.
+
+Some of docket's steps are not questions at all. A step that waits until a set time shows on the timeline as
+*The team waits until 14:00. Nobody needs to answer.*; there is nothing to press, and the run's time limit
+does not run while the team waits.
+
+When the team is about to do something that leaves it, such as sending an email, posting somewhere or writing to
+another service, the question is titled **This action leaves the team** and shows exactly what would happen,
+whole and in a block of its own above the options. A long one scrolls. Read it before you answer. Tack keeps that
+text only while the question is open and erases it the moment you answer or the question expires, so it is not on
+the timeline, in the run's log or in an export afterwards. If docket does not show the action, Tack does not ask
+you to approve it blind; the timeline says to answer it in docket, where it is shown.
 
 <img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
 

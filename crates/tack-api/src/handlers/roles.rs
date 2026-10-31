@@ -1,5 +1,5 @@
-use axum::Json;
-use axum::extract::{Path, State};
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -66,6 +66,7 @@ pub async fn list_roles(
     ),
     responses(
         (status = 200, description = "Role assigned to item", body = serde_json::Value),
+        (status = 404, description = "The item or the role does not exist, or they belong to different projects", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 pub async fn assign_role(
@@ -121,11 +122,8 @@ pub async fn update_role(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     if let Some(Some(profile_id)) = &input.agent_profile_id {
-        let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_profiles WHERE id = ?)")
-                .bind(profile_id)
-                .fetch_one(state.repo.pool())
-                .await?;
+        let exists =
+            tack_db::queries::agent_profiles::profile_exists(&state.repo, profile_id).await?;
         if !exists {
             return Err(ApiError::BadRequest(format!(
                 "agent_profile_id {profile_id} names no agent profile"

@@ -16,16 +16,17 @@ use std::{
 };
 
 use async_trait::async_trait;
-use tack_orch::execution::{
-    AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ProtocolVersion,
-    RecoveryObservationRequest, RecoveryObservationResponse, RunnerId as DomainRunnerId,
+use tack_protocol::execution::{
+    AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
+    ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse,
+    RunnerId as DomainRunnerId,
 };
 use tack_runner::{
     EnrollmentCredential,
     client::{
         AttemptId, AttemptLease, AttemptState, CancelObservation, CancellationEvidence,
         CancellationReport, CancellationResponse, ClaimRequest, ClaimRequestId, ClaimResult,
-        ClaimedWork, CompletionReport, CompletionResponse, EnrollmentRequest, EnrollmentResponse,
+        ClaimedWork, CompletionRequest, CompletionResponse, EnrollmentRequest, EnrollmentResponse,
         FencingToken, HarnessAdapter, HarnessError, HarnessOutcome, HeartbeatRequest,
         HeartbeatResponse, LeaseResult, LocalRunHandle, OwnerOnlyJournal, ProtocolClientError,
         PullProtocol, RecoveryObservation, RunCycle, RunnerCredential, RunnerEngine, RunnerId,
@@ -34,11 +35,11 @@ use tack_runner::{
     },
 };
 
-mod common;
+use crate::common;
+use crate::fake_docket;
+use crate::usage_fixture;
 use common::temp_dir as temp_root;
-use common::usage;
-#[allow(dead_code)] // the fake serves more routes than these tests use
-mod fake_docket;
+use usage_fixture::usage;
 
 /// Resolves `git` to an absolute path instead of relying on `PATH`.
 ///
@@ -173,7 +174,7 @@ impl HarnessAdapter for RealProcessAdapter {
 struct FakeProtocol {
     work: Arc<Mutex<Option<ClaimedWork>>>,
     cancellation_requested: bool,
-    completions: Arc<Mutex<Vec<CompletionReport>>>,
+    completions: Arc<Mutex<Vec<CompletionRequest>>>,
 }
 
 impl FakeProtocol {
@@ -230,11 +231,11 @@ impl PullProtocol for FakeProtocol {
         Ok(HeartbeatResponse {
             protocol_version: ProtocolVersion::v1(),
             heartbeat_id: request.heartbeat_id,
-            accepted_at: Timestamp::new("2026-08-19T12:00:01Z"),
+            accepted_at: "2026-08-19T12:00:01Z".parse().expect("an RFC 3339 instant"),
             lease_results: vec![LeaseResult {
                 attempt_id: active.attempt_id,
                 fencing_token: active.fencing_token,
-                lease_expires_at: Timestamp::new("2026-08-19T12:01:00Z"),
+                lease_expires_at: "2026-08-19T12:01:00Z".parse().expect("an RFC 3339 instant"),
                 cancellation_requested: self.cancellation_requested,
             }],
         })
@@ -251,7 +252,7 @@ impl PullProtocol for FakeProtocol {
     async fn report_completion(
         &self,
         _session: &RunnerSession,
-        report: CompletionReport,
+        report: CompletionRequest,
     ) -> Result<CompletionResponse, ProtocolClientError> {
         self.completions
             .lock()
@@ -263,7 +264,7 @@ impl PullProtocol for FakeProtocol {
             completion_id: report.completion_id,
             state: report.terminal_state,
             replayed: false,
-            committed_at: Timestamp::new("2026-08-19T12:00:02Z"),
+            committed_at: "2026-08-19T12:00:02Z".parse().expect("an RFC 3339 instant"),
         })
     }
 
@@ -297,7 +298,7 @@ impl PullProtocol for FakeProtocol {
     }
 }
 
-fn actual_execution() -> tack_orch::execution::ActualExecution {
+fn actual_execution() -> tack_protocol::execution::ActualExecution {
     serde_json::from_str(
         r#"{
             "harness_kind":"fake", "harness_version":"1.0.0",
@@ -503,7 +504,7 @@ async fn without_a_provisioner_the_attempt_never_reaches_the_harness() {
         .expect("an attempt that cannot be provisioned ends failed, not as an engine error");
     assert!(matches!(cycle, RunCycle::Completed { .. }));
     let report = completions.lock().expect("completions")[0].clone();
-    assert_eq!(report.terminal_state, AttemptState::Failed);
+    assert_eq!(report.terminal_state, ExecutionState::Failed);
     assert!(
         report.terminal_reason["message"]
             .as_str()
@@ -779,7 +780,7 @@ impl tack_runner::client::AttemptDataProtocol for NoUploads {
     async fn submit_events(
         &self,
         _session: &RunnerSession,
-        _report: tack_runner::client::EventBatchReport,
+        _report: tack_runner::client::EventBatchRequest,
     ) -> Result<tack_runner::client::EventBatchResponse, ProtocolClientError> {
         Err(ProtocolClientError::Rejected)
     }
@@ -841,7 +842,7 @@ fn bare_clone(source: &Path, into: &Path, name: &str) -> PathBuf {
 async fn run_pushing_attempt(
     label: &str,
     reconfigure: bool,
-) -> (tempfile::TempDir, PathBuf, PathBuf, CompletionReport) {
+) -> (tempfile::TempDir, PathBuf, PathBuf, CompletionRequest) {
     let (source_dir, commit) = source_repository();
     let root_dir = temp_root(label);
     let remote = bare_clone(source_dir.path(), root_dir.path(), "remote.git");
@@ -889,7 +890,7 @@ async fn a_harness_that_rewrites_git_config_ends_repository_config_changed_and_p
         !markers.join("hook").exists() && !markers.join("fsmonitor").exists(),
         "git ran code the harness planted in the repository"
     );
-    assert_eq!(report.terminal_state, AttemptState::Failed);
+    assert_eq!(report.terminal_state, ExecutionState::Failed);
     assert_eq!(report.terminal_reason["code"], "repository_config_changed");
     assert!(
         report.terminal_reason["path"]
@@ -904,7 +905,7 @@ async fn a_harness_that_rewrites_git_config_ends_repository_config_changed_and_p
 #[tokio::test]
 async fn a_run_that_changes_no_git_config_still_pushes() {
     let (_root, remote, markers, report) = run_pushing_attempt("noconfig", false).await;
-    assert_eq!(report.terminal_state, AttemptState::Succeeded);
+    assert_eq!(report.terminal_state, ExecutionState::Succeeded);
     assert!(!markers.join("hook").exists());
     assert_eq!(remote_branches(&remote).lines().count(), 1);
 }
@@ -984,7 +985,7 @@ impl tack_runner::client::AttemptDataProtocol for RecordedUploads {
     async fn submit_events(
         &self,
         _session: &RunnerSession,
-        _report: tack_runner::client::EventBatchReport,
+        _report: tack_runner::client::EventBatchRequest,
     ) -> Result<tack_runner::client::EventBatchResponse, ProtocolClientError> {
         Err(ProtocolClientError::Rejected)
     }
@@ -1133,7 +1134,7 @@ struct Ran {
     remote: PathBuf,
     base: String,
     uploads: RecordedUploads,
-    report: CompletionReport,
+    report: CompletionRequest,
 }
 
 /// One pushing attempt against a bare remote whose `main` also holds
@@ -1224,7 +1225,7 @@ fn verifier(
 #[tokio::test]
 async fn a_branch_the_agent_names_like_the_base_does_not_move_the_evidence_base() {
     let ran = run_work("samename", Work::CommitOnMain, &[], true, |_| None).await;
-    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    assert_eq!(ran.report.terminal_state, ExecutionState::Succeeded);
     let branch = remote_branches(&ran.remote);
     assert_eq!(branch.lines().count(), 1, "the work is pushed");
     assert_eq!(
@@ -1256,7 +1257,7 @@ async fn a_tree_that_moves_after_verification_is_never_pushed() {
         Some(verifier(tack_runner::config::VerifyKind::Command, &program))
     })
     .await;
-    assert_eq!(ran.report.terminal_state, AttemptState::Failed);
+    assert_eq!(ran.report.terminal_state, ExecutionState::Failed);
     assert_eq!(
         ran.report.terminal_reason["code"],
         "tree_changed_after_verification"
@@ -1292,7 +1293,7 @@ async fn prill_reads_the_configuration_of_the_base_commit_not_the_agents() {
         },
     )
     .await;
-    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    assert_eq!(ran.report.terminal_state, ExecutionState::Succeeded);
     // prill reads `prill.yaml` at the commit the evidence names: that commit
     // must be the pinned base, whose file is the base's, not the agent's edit.
     let received: serde_json::Value = serde_json::from_slice(
@@ -1379,10 +1380,10 @@ fn tree_state(repository: &Path) -> Vec<String> {
 /// The frozen claim, as the board makes one for a docket team on a local repository.
 fn docket_work(attempt: &str, repository: &Path, revision: &str) -> ClaimedWork {
     let mut claimed = work(attempt, repository, revision);
-    claimed.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("docket");
+    claimed.request.requested_harness_kind = tack_protocol::execution::HarnessKind::new("docket");
     claimed.request.requested_model = None;
     claimed.request.resolved_agent_profile.tool_policy =
-        serde_json::json!({"docket": {"team": "fab-dev"}});
+        serde_json::json!({"docket": {"team": "saas-dev"}});
     claimed.request.permission_policy.network = false;
     claimed.request.metadata = serde_json::json!({"item": {"type": "feature", "trusted": true}});
     let additional = &mut claimed.request.repository.additional;
@@ -1403,7 +1404,7 @@ struct DocketRun {
     base: String,
     fake: fake_docket::FakeDocket,
     uploads: RecordedUploads,
-    report: CompletionReport,
+    report: CompletionRequest,
     state_before: Vec<String>,
     state_after: Vec<String>,
     prill_args: String,
@@ -1418,7 +1419,7 @@ async fn run_docket(label: &str, by_name: bool) -> DocketRun {
     let root = root_dir.path();
     let (repository, remote, base) = dirty_repository(root);
     let fake = fake_docket::FakeDocket::start().await;
-    fake.add_pod("fab-dev", "lights-out", &[]);
+    fake.add_pod("saas-dev", "lights-out", &[]);
     fake.set_repository(&repository);
     fake.script(fake_docket::Script {
         commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
@@ -1498,7 +1499,7 @@ async fn a_docket_run_makes_no_checkout_and_sends_the_base_commit() {
     let ran = run_docket("docket-nocheckout", true).await;
     assert_eq!(
         ran.report.terminal_state,
-        AttemptState::Succeeded,
+        ExecutionState::Succeeded,
         "{}",
         ran.report.terminal_reason
     );
@@ -1508,7 +1509,7 @@ async fn a_docket_run_makes_no_checkout_and_sends_the_base_commit() {
         "no directory is made for the attempt"
     );
     // The base was asked for as `main`; docket is told the commit it names.
-    let posted = ran.fake.requests_to("POST", "/tasks/fab-dev");
+    let posted = ran.fake.requests_to("POST", "/tasks/saas-dev");
     assert_eq!(posted[0].body["baseRef"], serde_json::json!(ran.base));
     assert_eq!(ran.report.actual_execution.base_revision, "main");
 }
@@ -1516,7 +1517,7 @@ async fn a_docket_run_makes_no_checkout_and_sends_the_base_commit() {
 #[tokio::test]
 async fn a_docket_run_leaves_a_dirty_working_tree_exactly_as_it_was() {
     let ran = run_docket("docket-dirty", false).await;
-    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    assert_eq!(ran.report.terminal_state, ExecutionState::Succeeded);
     assert_eq!(ran.state_before, ran.state_after);
     assert!(
         ran.state_after[2].contains("untracked.txt"),
@@ -1527,7 +1528,7 @@ async fn a_docket_run_leaves_a_dirty_working_tree_exactly_as_it_was() {
 #[tokio::test]
 async fn a_docket_runs_evidence_and_push_come_from_its_branch() {
     let ran = run_docket("docket-evidence", false).await;
-    assert_eq!(ran.report.terminal_state, AttemptState::Succeeded);
+    assert_eq!(ran.report.terminal_state, ExecutionState::Succeeded);
     let docket_branch = ran.report.terminal_reason["branch"]
         .as_str()
         .expect("branch");

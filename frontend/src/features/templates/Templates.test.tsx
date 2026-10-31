@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import Templates from './Templates';
+import { flush } from '../../test/flush';
 
 const TEMPLATE = {
   id: 't1',
@@ -25,8 +26,6 @@ const TEMPLATE = {
   created_at: '2026-10-17T00:00:00Z',
   updated_at: '2026-10-17T00:00:00Z',
 };
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 afterEach(() => {
   vi.restoreAllMocks();

@@ -1,9 +1,10 @@
+use crate::{StoreError, decode};
 use chrono::Utc;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::auto_start::DROPPED_TO_L3;
-use tack_core::models::{CreateProject, Project, ProjectType, UpdateProject};
+use tack_core::models::{CreateProject, Project, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
 
@@ -15,13 +16,13 @@ impl Repository {
         &self,
         workspace_id: Uuid,
         input: CreateProject,
-    ) -> Result<Project, sqlx::Error> {
+    ) -> Result<Project, StoreError> {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let vocabulary = vocabulary_for_type(&input.project_type);
         let workflow = workflow_for_type(&input.project_type);
-        let vocab_json = serde_json::to_string(&vocabulary).unwrap();
-        let workflow_json = serde_json::to_string(&workflow).unwrap();
+        let vocab_json = decode::to_json(&vocabulary)?;
+        let workflow_json = decode::to_json(&workflow)?;
         let project_type_str = input.project_type.to_string();
         let now_str = now.to_rfc3339();
         let code_origin = input.code_origin.unwrap_or_default();
@@ -83,7 +84,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, sqlx::Error> {
+    pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, StoreError> {
         let row = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
@@ -104,7 +105,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, sqlx::Error> {
+    pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, StoreError> {
         let rows = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, definition_of_done,
@@ -129,7 +130,7 @@ impl Repository {
         &self,
         id: Uuid,
         input: UpdateProject,
-    ) -> Result<Option<Project>, sqlx::Error> {
+    ) -> Result<Option<Project>, StoreError> {
         let now = Utc::now().to_rfc3339();
 
         if let Some(ref name) = input.name {
@@ -149,7 +150,7 @@ impl Repository {
                 .await?;
         }
         if let Some(ref vocab) = input.vocabulary {
-            let json = serde_json::to_string(vocab).unwrap();
+            let json = decode::to_json(vocab)?;
             sqlx::query("UPDATE projects SET vocabulary = ?, updated_at = ? WHERE id = ?")
                 .bind(&json)
                 .bind(&now)
@@ -158,7 +159,7 @@ impl Repository {
                 .await?;
         }
         if let Some(ref workflow) = input.workflow {
-            let json = serde_json::to_string(workflow).unwrap();
+            let json = decode::to_json(workflow)?;
             sqlx::query("UPDATE projects SET workflow = ?, updated_at = ? WHERE id = ?")
                 .bind(&json)
                 .bind(&now)
@@ -266,7 +267,7 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_project(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_project(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM projects WHERE id = ?")
             .bind(id.to_string())
             .execute(self.pool())
@@ -308,32 +309,25 @@ struct ProjectRow {
 }
 
 impl ProjectRow {
-    fn into_project(self) -> Result<Project, sqlx::Error> {
+    fn into_project(self) -> Result<Project, StoreError> {
+        const TABLE: &str = "projects";
         Ok(Project {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            workspace_id: Uuid::parse_str(&self.workspace_id).unwrap(),
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            workspace_id: decode::uuid(TABLE, "workspace_id", &self.workspace_id)?,
             name: self.name,
             description: self.description,
-            project_type: serde_json::from_str(&format!("\"{}\"", self.project_type))
-                .unwrap_or(ProjectType::Custom),
-            vocabulary: serde_json::from_str(&self.vocabulary).unwrap_or_default(),
-            workflow: serde_json::from_str(&self.workflow)
-                .unwrap_or_else(|_| tack_core::workflow::simple_workflow()),
+            project_type: decode::variant(TABLE, "project_type", &self.project_type)?,
+            vocabulary: decode::json(TABLE, "vocabulary", &self.vocabulary)?,
+            workflow: decode::json(TABLE, "workflow", &self.workflow)?,
             default_model: self.default_model,
             github_token_ref: self.github_token_ref,
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
             archived: self.archived != 0,
-            code_origin: serde_json::from_str(&format!("\"{}\"", self.code_origin))
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?,
+            code_origin: decode::variant(TABLE, "code_origin", &self.code_origin)?,
             repository: self.repository,
             default_branch: self.default_branch,
-            workspace_mode: serde_json::from_str(&format!("\"{}\"", self.workspace_mode))
-                .map_err(|error| sqlx::Error::Protocol(error.to_string()))?,
+            workspace_mode: decode::variant(TABLE, "workspace_mode", &self.workspace_mode)?,
             push_after_run: self.push_after_run != 0,
             default_harness: self.default_harness,
             default_profile_id: self.default_profile_id,
@@ -345,5 +339,45 @@ impl ProjectRow {
             prepare_command: self.prepare_command,
             auto_start_disabled_reason: self.auto_start_disabled_reason,
         })
+    }
+}
+
+impl Repository {
+    /// Turn the project's auto-start off. Whether it was on.
+    pub async fn disable_auto_start(&self, project_id: &str) -> Result<bool, crate::StoreError> {
+        let done = sqlx::query(
+            "UPDATE projects SET auto_start_enabled = 0 WHERE id = ? AND auto_start_enabled = 1",
+        )
+        .bind(project_id)
+        .execute(self.pool())
+        .await?;
+        Ok(done.rows_affected() > 0)
+    }
+}
+
+impl Repository {
+    /// The id of the board's first workspace, made (named "Default Workspace") when there is none.
+    pub async fn first_workspace_or_create(&self) -> Result<Uuid, crate::StoreError> {
+        let existing: Option<String> = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
+            .fetch_optional(self.pool())
+            .await?;
+        if let Some(id) = existing {
+            return decode::uuid("workspaces", "id", &id);
+        }
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        sqlx::query(
+            "INSERT INTO workspaces (id, name, description, default_vocabulary, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id.to_string())
+        .bind("Default Workspace")
+        .bind("Auto-created default workspace")
+        .bind("{}")
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(self.pool())
+        .await?;
+        Ok(id)
     }
 }

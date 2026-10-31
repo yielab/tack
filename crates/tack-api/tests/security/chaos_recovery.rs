@@ -4,14 +4,250 @@
 //! alone. The multi-runner/duplicated-credential races and revocation test
 //! live in `chaos_races.rs` — split out once this file passed 1000 lines.
 
-#[allow(clippy::duplicate_mod)]
 #[path = "chaos_common.rs"]
 mod chaos_common;
 
 use crate::common;
-use axum::http::StatusCode;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode};
 use chaos_common::*;
+use chrono::Utc;
 use serde_json::{Value, json};
+use tack_db::Repository;
+use tack_db::queries::{execution_artifacts, execution_attempts, execution_decisions};
+use tack_test_support::seed;
+use tower::ServiceExt;
+
+pub async fn put_content(
+    app: &axum::Router,
+    uri: &str,
+    body: Vec<u8>,
+    extra_headers: &[(&str, &str)],
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder().method("PUT").uri(uri);
+    for (name, value) in extra_headers {
+        builder = builder.header(*name, *value);
+    }
+    let response = app
+        .clone()
+        .oneshot(builder.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), 64 * 1_048_576)
+        .await
+        .unwrap();
+    let value: Value = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
+    };
+    (status, value)
+}
+
+pub struct RunningAttempt {
+    pub runner_id: String,
+    pub credential: String,
+    pub attempt_id: String,
+    pub fencing_token: i64,
+}
+
+/// Enrolls one runner, creates one exact-runner-selected request, claims,
+/// accepts and starts it — leaving the attempt `running`. Mirrors
+/// `wiring/artifact.rs::ready_running_attempt`.
+pub async fn ready_running_attempt(
+    app: &axum::Router,
+    item_id: &str,
+    label: &str,
+) -> RunningAttempt {
+    let agent_profile_id = agent_profile(app, label).await;
+    let runner = enroll_runner(app, &format!("G2 runner {label}")).await;
+    let _request_id = create_execution_request(
+        app,
+        item_id,
+        &format!("key-{label}"),
+        "exact_runner",
+        &runner.runner_id,
+        &agent_profile_id,
+    )
+    .await;
+    let (status, claimed) = common::claim_runner(
+        app,
+        &runner.runner_id,
+        &runner.credential,
+        &format!("claim-{label}"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{claimed}");
+    let attempt_id = claimed["lease"]["attempt_id"].as_str().unwrap().to_owned();
+    let fencing_token = claimed["lease"]["fencing_token"].as_i64().unwrap();
+
+    let (status, accepted) = common::send_large(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{attempt_id}/accept"),
+        json!({
+            "protocol_version": 1, "runner_id": runner.runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+            "workspace_id": "ws-1", "base_revision": BASE_REVISION,
+        }),
+        &[("authorization", &auth(&runner.credential))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{accepted}");
+
+    let (status, started) = common::send_large(
+        app,
+        "POST",
+        &format!("/api/runner/v1/attempts/{attempt_id}/start"),
+        json!({
+            "protocol_version": 1, "runner_id": runner.runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+            "workspace_id": "ws-1", "base_revision": BASE_REVISION, "process_id": "pid-1",
+        }),
+        &[("authorization", &auth(&runner.credential))],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+
+    RunningAttempt {
+        runner_id: runner.runner_id,
+        credential: runner.credential,
+        attempt_id,
+        fencing_token,
+    }
+}
+
+/// Minimal, test-local percent-encoder for a URI path segment — avoids
+/// pulling in an extra dependency just for this adversarial file. Encodes
+/// every byte that is not an unreserved URI character, which is sufficient
+/// (if wasteful) for the deliberately-malicious ids this file constructs.
+pub fn percent_encode_path_segment(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() * 3);
+    for byte in raw.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*byte as char)
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
+}
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
+}
+
+pub async fn walk_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&current).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if let Ok(meta) = entry.metadata().await
+                && meta.is_dir()
+            {
+                stack.push(path);
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn artifact_manifest_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    artifact_id: &str,
+    kind: &str,
+    name: &str,
+    size_bytes: u64,
+    sha256: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "artifacts": [{
+            "artifact_id": artifact_id, "kind": kind, "name": name, "media_type": "text/plain",
+            "size_bytes": size_bytes, "sha256": sha256, "content_disposition": "inline_upload", "metadata": {},
+        }],
+    })
+}
+
+pub async fn post_artifact_manifest(
+    app: &axum::Router,
+    attempt: &RunningAttempt,
+    artifact_id: &str,
+    kind: &str,
+    name: &str,
+    size_bytes: u64,
+    sha256: &str,
+) -> (StatusCode, Value) {
+    let body = artifact_manifest_body(
+        &attempt.runner_id,
+        &attempt.attempt_id,
+        attempt.fencing_token,
+        artifact_id,
+        kind,
+        name,
+        size_bytes,
+        sha256,
+    );
+    let uri = format!("/api/runner/v1/attempts/{}/artifacts", attempt.attempt_id);
+    common::send_large(
+        app,
+        "POST",
+        &uri,
+        body,
+        &[("authorization", &auth(&attempt.credential))],
+    )
+    .await
+}
+
+pub fn decision_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    decision_id: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "decision_id": decision_id, "kind": "tool_permission", "prompt": "Allow?",
+        "options": [{"option_id": "allow", "label": "Allow"}],
+        "expires_at": (Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(), "metadata": {},
+    })
+}
+
+pub fn recovery_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    recovery_key: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "recovery_key": recovery_key, "observation": "process_stopped",
+        "details": {"journal_state": "prepared", "process_observed": false},
+    })
+}
+
+pub fn cancellation_body(
+    runner_id: &str,
+    attempt_id: &str,
+    fencing_token: i64,
+    cancellation_request_id: &str,
+) -> Value {
+    json!({
+        "protocol_version": 1, "runner_id": runner_id, "attempt_id": attempt_id, "fencing_token": fencing_token,
+        "cancellation_request_id": cancellation_request_id, "observation": "process_stopped",
+        "observed_at": Utc::now().to_rfc3339(), "details": {"exit_code": 130, "signal": "SIGTERM"},
+    })
+}
 
 // =======================================================================
 // 1. Stale fence: every attempt-scoped mutation checked here rejects a
@@ -34,7 +270,7 @@ struct SupersededFence {
 /// pre-spawn recovery observation so the returned fence is guaranteed stale
 /// before any caller uses it.
 async fn setup_superseded_fence(app: &axum::Router) -> SupersededFence {
-    let item_id = create_project_and_item(app).await;
+    let item_id = common::create_project_and_item(app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(app, "stale-fence").await;
     let runner = enroll_runner(app, "Stale fence runner").await;
     let request_id = create_execution_request(
@@ -111,33 +347,24 @@ async fn assert_stale_rejected(app: &axum::Router, path: &str, body: Value, hdr:
     resp
 }
 
-async fn assert_no_heartbeat_recorded(pool: &sqlx::SqlitePool, attempt_id: &str) {
-    let last: Option<String> =
-        sqlx::query_scalar("SELECT last_heartbeat_at FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
+async fn assert_no_heartbeat_recorded(repo: &Repository, attempt_id: &str) {
+    let last = execution_attempts::last_heartbeat_at(repo, attempt_id)
+        .await
+        .unwrap();
     assert_eq!(last, None, "a stale-fenced heartbeat must not be recorded");
 }
 
-async fn assert_no_decision_row(pool: &sqlx::SqlitePool, attempt_id: &str) {
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_decisions WHERE attempt_id = ?")
-            .bind(attempt_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
+async fn assert_no_decision_row(repo: &Repository, attempt_id: &str) {
+    let count = execution_decisions::decision_count_of_attempt(repo, attempt_id)
+        .await
+        .unwrap();
     assert_eq!(count, 0, "a stale-fenced decision must not be recorded");
 }
 
-async fn assert_no_artifact_row(pool: &sqlx::SqlitePool, attempt_id: &str) {
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE attempt_id = ?")
-            .bind(attempt_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
+async fn assert_no_artifact_row(repo: &Repository, attempt_id: &str) {
+    let count = execution_artifacts::artifact_count_of_attempt(repo, attempt_id)
+        .await
+        .unwrap();
     assert_eq!(
         count, 0,
         "a stale-fenced artifact manifest must not be recorded"
@@ -148,7 +375,7 @@ async fn assert_no_artifact_row(pool: &sqlx::SqlitePool, attempt_id: &str) {
 async fn stale_fence_writes_nothing_across_every_mutation_route() {
     let storage_dir_guard = distinctive_temp_dir("stale-fence");
     let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
+    let (app, repo) = app_in_memory(storage_dir).await;
     let s = setup_superseded_fence(&app).await;
 
     let hb = heartbeat_body(
@@ -158,12 +385,12 @@ async fn stale_fence_writes_nothing_across_every_mutation_route() {
         json!([active_attempt_entry(&s.attempt_a, s.fence_a)]),
     );
     assert_stale_rejected(&app, "/api/runner/v1/heartbeat", hb, &s.hdr).await;
-    assert_no_heartbeat_recorded(&pool, &s.attempt_a).await;
+    assert_no_heartbeat_recorded(&repo, &s.attempt_a).await;
 
     let decision = decision_body(&s.runner_id, &s.attempt_a, s.fence_a, "dec-stale-1");
     let decisions_uri = format!("/api/runner/v1/attempts/{}/decisions", s.attempt_a);
     assert_stale_rejected(&app, &decisions_uri, decision, &s.hdr).await;
-    assert_no_decision_row(&pool, &s.attempt_a).await;
+    assert_no_decision_row(&repo, &s.attempt_a).await;
 
     let manifest = artifact_manifest_body(
         &s.runner_id,
@@ -177,7 +404,7 @@ async fn stale_fence_writes_nothing_across_every_mutation_route() {
     );
     let artifacts_uri = format!("/api/runner/v1/attempts/{}/artifacts", s.attempt_a);
     assert_stale_rejected(&app, &artifacts_uri, manifest, &s.hdr).await;
-    assert_no_artifact_row(&pool, &s.attempt_a).await;
+    assert_no_artifact_row(&repo, &s.attempt_a).await;
 
     // Cancellation observation and a second recovery observation on the
     // already-superseded fence are rejected too (recovery is not itself
@@ -203,13 +430,9 @@ async fn stale_fence_writes_nothing_across_every_mutation_route() {
 
     // None of the five rejected calls above minted a new fence: exactly the
     // two fences from setup (1 lost, 2 current) exist for this request.
-    let fences: i64 = sqlx::query_scalar(
-        "SELECT COUNT(DISTINCT fencing_token) FROM execution_attempts WHERE request_id = ?",
-    )
-    .bind(&s.request_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let fences = execution_attempts::fence_count_of_request(&repo, &s.request_id)
+        .await
+        .unwrap();
     assert_eq!(
         fences, 2,
         "fence 1 (lost) and fence 2 (current) — no extra fence was minted"
@@ -225,8 +448,8 @@ async fn stale_fence_writes_nothing_across_every_mutation_route() {
 async fn oversized_single_artifact_rejected_per_item_cap() {
     let storage_dir_guard = distinctive_temp_dir("oversized-artifact");
     let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let (app, repo) = app_in_memory(storage_dir).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, "oversized").await;
 
     // Declared size over `artifact_content_bytes_max` (50 MiB).
@@ -242,12 +465,9 @@ async fn oversized_single_artifact_rejected_per_item_cap() {
     .await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
     assert_eq!(body["error"]["code"], "payload_too_large");
-    let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE attempt_id = ?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let count = execution_artifacts::artifact_count_of_attempt(&repo, &attempt.attempt_id)
+        .await
+        .unwrap();
     assert_eq!(count, 0, "an oversized single artifact must write no row");
     let _ = tokio::fs::remove_dir_all(&storage_dir).await;
 }
@@ -262,8 +482,8 @@ async fn oversized_single_artifact_rejected_per_item_cap() {
 async fn cumulative_artifact_total_rejected_over_attempt_cap() {
     let storage_dir_guard = distinctive_temp_dir("cumulative-artifact");
     let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let (app, repo) = app_in_memory(storage_dir).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, "cumulative").await;
 
     for i in 0..10 {
@@ -296,22 +516,14 @@ async fn cumulative_artifact_total_rejected_over_attempt_cap() {
 
     // Exactly the ten accepted rows survive; the overflow artifact never
     // landed, and the running total is exactly what ten successes imply.
-    let rows: Vec<String> = sqlx::query_scalar(
-        "SELECT artifact_id FROM execution_artifacts WHERE attempt_id = ? ORDER BY artifact_id",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_all(&pool)
-    .await
-    .unwrap();
+    let rows = execution_artifacts::artifact_ids_of_attempt(&repo, &attempt.attempt_id)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 10, "{rows:?}");
     assert!(!rows.contains(&"art-cum-overflow".to_string()));
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(size_bytes),0) FROM execution_artifacts WHERE attempt_id = ?",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let total = execution_artifacts::declared_bytes_of_attempt(&repo, &attempt.attempt_id)
+        .await
+        .unwrap();
     assert_eq!(
         total, 520_000_000,
         "the rejected artifact must not have partially written its size"
@@ -331,8 +543,8 @@ async fn cumulative_artifact_total_rejected_over_attempt_cap() {
 async fn traversal_id_encodings_battery_never_escapes_storage_root() {
     let storage_dir_guard = distinctive_temp_dir("traversal");
     let storage_dir = storage_dir_guard.path();
-    let (app, _pool) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let (app, _repo) = app_in_memory(storage_dir).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, "traversal").await;
     let hdr = auth(&attempt.credential);
 
@@ -397,115 +609,6 @@ async fn traversal_id_encodings_battery_never_escapes_storage_root() {
 }
 
 // =======================================================================
-// 4. Delay/reorder/replay: an event batch whose `previous_checkpoint`
-//    disagrees with the attempt's actual current checkpoint (simulating a
-//    reordered/delayed delivery) is rejected as a conflict and writes
-//    nothing; the correctly-ordered batch, replayed byte-identically
-//    afterward (simulating a client retry after a lost response), is
-//    idempotent rather than duplicating rows.
-// =======================================================================
-
-/// Commits the legitimate first batch (`previous_checkpoint` null, since
-/// the attempt has no events yet, `checkpoint` "cp-1") and returns its body
-/// for a caller that wants to resend it.
-async fn commit_first_batch(app: &axum::Router, attempt: &RunningAttempt, hdr: &str) -> Value {
-    let body = events_body(
-        &attempt.runner_id,
-        &attempt.attempt_id,
-        attempt.fencing_token,
-        Value::Null,
-        "cp-1",
-        "evt-1",
-    );
-    let (status, ok) = post_events(app, attempt, hdr, body.clone()).await;
-    assert_eq!(status, StatusCode::OK, "{ok}");
-    body
-}
-
-/// A reordered/delayed delivery: a second batch that (incorrectly) also
-/// claims `previous_checkpoint` null, as if sent before the first one but
-/// arrived after (a network reorder) — must be rejected as a conflict, not
-/// silently applied on top of the wrong base.
-#[tokio::test]
-async fn reordered_event_batch_rejected_without_moving_checkpoint() {
-    let storage_dir_guard = distinctive_temp_dir("reorder");
-    let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
-    let attempt = ready_running_attempt(&app, &item_id, "reorder").await;
-    let hdr = auth(&attempt.credential);
-    commit_first_batch(&app, &attempt, &hdr).await;
-
-    let reordered = events_body(
-        &attempt.runner_id,
-        &attempt.attempt_id,
-        attempt.fencing_token,
-        Value::Null,
-        "cp-should-never-land",
-        "evt-reordered",
-    );
-    let (status, rejected) = post_events(&app, &attempt, &hdr, reordered).await;
-    assert_ne!(
-        status,
-        StatusCode::OK,
-        "a reordered batch must not silently apply: {rejected}"
-    );
-
-    let checkpoint: Option<String> =
-        sqlx::query_scalar("SELECT event_checkpoint FROM execution_attempts WHERE id = ?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert_eq!(
-        checkpoint,
-        Some("cp-1".to_string()),
-        "the reordered batch must not move the checkpoint"
-    );
-    let stray: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM execution_events WHERE attempt_id = ? AND event_id = 'evt-reordered'",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(stray, 0);
-    let _ = tokio::fs::remove_dir_all(&storage_dir).await;
-}
-
-/// The client resends the first batch byte-identically (as if its original
-/// response never arrived) — this must be an idempotent replay, not
-/// rejected and not duplicated. The handler's JSON response carries no
-/// top-level `replayed` flag on this exact-resend path, so the
-/// authoritative proof is the database row count, not the response shape.
-#[tokio::test]
-async fn identical_event_batch_replay_is_idempotent() {
-    let storage_dir_guard = distinctive_temp_dir("replay");
-    let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
-    let attempt = ready_running_attempt(&app, &item_id, "replay").await;
-    let hdr = auth(&attempt.credential);
-    let first_batch = commit_first_batch(&app, &attempt, &hdr).await;
-
-    let (status, replay) = post_events(&app, &attempt, &hdr, first_batch).await;
-    assert_eq!(status, StatusCode::OK, "{replay}");
-    assert_eq!(replay["committed_checkpoint"], "cp-1");
-    let event_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM execution_events WHERE attempt_id = ? AND event_id = 'evt-1'",
-    )
-    .bind(&attempt.attempt_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        event_count, 1,
-        "a replayed batch must not duplicate its events"
-    );
-    let _ = tokio::fs::remove_dir_all(&storage_dir).await;
-}
-
-// =======================================================================
 // 5. Corrupt database row: a hand-corrupted `request_snapshot` (malformed
 //    JSON, simulating on-disk bit rot or a partial write outside any
 //    transaction) degrades to a typed error on every read path that touches
@@ -515,8 +618,8 @@ async fn identical_event_batch_replay_is_idempotent() {
 async fn corrupted_snapshot_row_degrades_to_typed_error_not_panic() {
     let storage_dir_guard = distinctive_temp_dir("corrupt-row");
     let storage_dir = storage_dir_guard.path();
-    let (app, pool) = app_in_memory(storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let (app, repo) = app_in_memory(storage_dir).await;
+    let item_id = common::create_project_and_item(&app, "https://example.test/g2.git", &[]).await;
     let agent_profile_id = agent_profile(&app, "corrupt-row").await;
     let runner = enroll_runner(&app, "Corrupt-row runner").await;
     let request_id = create_execution_request(
@@ -533,13 +636,7 @@ async fn corrupted_snapshot_row_degrades_to_typed_error_not_panic() {
     // application transaction) — not something reachable through any HTTP
     // input validator, deliberately: this proves the *read* path degrades
     // safely, independent of whatever wrote the corruption.
-    sqlx::query(
-        "UPDATE execution_requests SET request_snapshot = 'not valid json {{{' WHERE id = ?",
-    )
-    .bind(&request_id)
-    .execute(&pool)
-    .await
-    .unwrap();
+    seed::execution_request_snapshot(&repo, &request_id, "not valid json {{{").await;
 
     // A claim against this request must not panic the process (which would
     // abort every in-flight request on this connection, not just this one)
@@ -563,11 +660,8 @@ async fn corrupted_snapshot_row_degrades_to_typed_error_not_panic() {
     assert_eq!(status, StatusCode::OK, "{health}");
 
     // No attempt was ever created against the corrupted request.
-    let attempt_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM execution_attempts WHERE request_id = ?")
-            .bind(&request_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let attempt_count = execution_attempts::attempt_count_of_request(&repo, &request_id)
+        .await
+        .unwrap();
     assert_eq!(attempt_count, 0);
 }

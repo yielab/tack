@@ -132,7 +132,7 @@ Items: the universal work unit (epics, tasks, bugs, …).
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Updated item; carries the ETag for the exact returned snapshot | `Item` |
+| 200 | Updated item; carries the ETag for the exact returned snapshot | `ItemCard` |
 | 400 | Invalid transition / validation error | `ErrorEnvelope` |
 | 404 | Item not found | `ErrorEnvelope` |
 | 412 | If-Match did not match the current item version — nothing was written | `ErrorEnvelope` |
@@ -238,7 +238,7 @@ Manually links an item to a GitHub issue so status and comments sync both ways �
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Item created | `Item` |
+| 200 | Item created | `ItemCard` |
 | 400 | Validation error | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
 
@@ -347,6 +347,7 @@ Roles / specialties and their assignment to items.
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Role assigned to item | — |
+| 404 | The item or the role does not exist, or they belong to different projects | `ErrorEnvelope` |
 
 #### `GET /api/projects/{project_id}/roles`
 
@@ -1199,6 +1200,7 @@ download a bundle and stage it for next restart.
 | 200 | Restore staged for next restart | — |
 | 404 | No remote backups found | `ErrorEnvelope` |
 | 409 | Not configured, or restore would lose newer work | `ErrorEnvelope` |
+| 422 | The archive or its manifest cannot be read (`unreadable_archive`) | `ErrorEnvelope` |
 
 #### `POST /api/backup/remote/verify`
 
@@ -1338,7 +1340,7 @@ Resolve a pending decision with an operator-supplied answer
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Decision resolved — either a fresh write or a byte-identical idempotent replay of one (`replayed` distinguishes the two). | `ResolveDecisionResponseSchema` |
+| 200 | Decision resolved — either a fresh write or a byte-identical idempotent replay of one (`replayed` distinguishes the two). | `ResolveDecisionResponse` |
 | 400 | invalid_request (missing/malformed answer, or answer.option_id is not one of this decision's own recorded options) | `RunnerV1ErrorEnvelope` |
 | 401 | unauthorized — no x-tack-principal; a runner bearer credential never satisfies this, by construction | `RunnerV1ErrorEnvelope` |
 | 403 | forbidden — x-tack-decision-token missing, unconfigured server-side, or mismatched (details.required_scope = "operator:decisions") | `RunnerV1ErrorEnvelope` |
@@ -1826,7 +1828,7 @@ Refresh reported capabilities and optionally rotate the runner's bearer credenti
 
 #### `GET /api/local-runner`
 
-the persisted preference, the live runtime
+the persisted preference, the live runtime state. Only mounted on a
 
 | Status | Meaning | Schema |
 |---|---|---|
@@ -1834,7 +1836,7 @@ the persisted preference, the live runtime
 
 #### `PUT /api/local-runner`
 
-save the preference and start/stop the embedded
+save the preference and start/stop the embedded runner to match,
 
 **Request body:** `UpdateLocalRunner`
 
@@ -1856,7 +1858,7 @@ what is at `path`; writes nothing.
 
 #### `POST /api/local-runner/init-folder`
 
-creates `path` and runs `git init`.
+creates `path` and runs `git init`. An existing
 
 **Request body:** `FolderPath`
 
@@ -1868,7 +1870,7 @@ creates `path` and runs `git init`.
 
 #### `POST /api/local-runner/test-run`
 
-runs the harness once on this machine
+runs the harness once on this machine from an empty
 
 **Request body:** `TestRun`
 

@@ -2,11 +2,14 @@
 //! the move to Done (`merge_on_done`), and MCP's mark (`X-Tack-Client: mcp`,
 //! `origin: "mcp"` on the run). The GitHub is a mock; prill is a fake script.
 
-use crate::autonomy::{
-    Board, Setup, board, comments, fake_prill, finished_attempt, fixture, merge_row, put_autonomy,
-};
 use crate::common;
-use crate::mrp::{BASE_REVISION, ClaimedAttempt, execution_request_body, operator_headers};
+use crate::handlers::autonomy::{
+    Board, Setup, board, comments, fake_prill, finished_attempt, fixture, merge_row, put_autonomy,
+    tick,
+};
+use crate::handlers::mrp::{
+    BASE_REVISION, ClaimedAttempt, execution_request_body, operator_headers,
+};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 use wiremock::matchers::{body_json, method, path, path_regex};
@@ -67,11 +70,7 @@ async fn finished(
     let b = board(root, Some(&gh.uri()), &fake_prill(root)).await;
     let (status, put) = put_autonomy(&b, &setup).await;
     assert_eq!(status, StatusCode::OK, "{put}");
-    sqlx::query("UPDATE projects SET merge_on_done = 1 WHERE id = ?")
-        .bind(&b.project_id)
-        .execute(b.state.repo.pool())
-        .await
-        .unwrap();
+    tack_test_support::seed::project_merge_on_done(&b.state.repo, &b.project_id).await;
     let a = finished_attempt(&b, &setup).await;
     (b, a)
 }
@@ -124,11 +123,9 @@ async fn move_to_done(b: &Board, client: Option<&str>) {
     assert_eq!(status, StatusCode::OK, "{body}");
     // The merge on Done runs in the background: wait for its row or its word.
     for _ in 0..100 {
-        let done: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM tack_merges WHERE trigger = 'done'")
-                .fetch_one(b.state.repo.pool())
-                .await
-                .unwrap();
+        let done = tack_db::queries::autonomy::merges_by_trigger(&b.state.repo, "done")
+            .await
+            .unwrap();
         if done > 0 || comments(b).await.contains("over MCP") {
             return;
         }
@@ -138,13 +135,7 @@ async fn move_to_done(b: &Board, client: Option<&str>) {
 }
 
 async fn mark_mcp(b: &Board, a: &ClaimedAttempt) {
-    sqlx::query(
-        "UPDATE execution_requests SET request_snapshot = json_set(request_snapshot, '$.origin', 'mcp') WHERE id = ?",
-    )
-    .bind(&a.request_id)
-    .execute(b.state.repo.pool())
-    .await
-    .unwrap();
+    tack_test_support::seed::execution_request_origin(&b.state.repo, &a.request_id, "mcp").await;
 }
 
 #[tokio::test]
@@ -294,7 +285,7 @@ async fn an_mcp_origin_run_is_refused_by_done_and_auto_and_accepted_by_the_butto
     let (b, a) = finished(root.path(), &gh, Setup::default()).await;
     mark_mcp(&b, &a).await;
 
-    tack_api::autonomy::tick(&b.state).await;
+    tick(&b.state).await;
     let row = merge_row(&b, &a.attempt_id).await.expect("a row");
     assert_eq!(row.0, "auto");
     assert!(row.3.unwrap_or_default().contains("came through MCP"));
@@ -315,12 +306,13 @@ async fn a_run_created_with_origin_mcp_keeps_it_in_the_snapshot() {
     let root = tempfile::tempdir().unwrap();
     let gh = github("check-runs-all-success.json", 200, 0).await;
     let (b, a) = finished(root.path(), &gh, l3()).await;
-    let profile: String =
-        sqlx::query_scalar("SELECT agent_profile_id FROM execution_requests WHERE id = ?")
-            .bind(&a.request_id)
-            .fetch_one(b.state.repo.pool())
-            .await
-            .unwrap();
+    let profile = tack_db::queries::execution_requests::agent_profile_of_request(
+        &b.state.repo,
+        &a.request_id,
+    )
+    .await
+    .unwrap()
+    .unwrap();
     for (key, origin, kept) in [
         ("o-mcp", Some("mcp"), true),
         ("o-other", Some("cli"), false),
@@ -332,13 +324,16 @@ async fn a_run_created_with_origin_mcp_keeps_it_in_the_snapshot() {
         let (status, created) =
             common::send(&b.app, "POST", "/api/executions", body, &operator_headers()).await;
         assert_eq!(status, StatusCode::OK, "{created}");
-        let origin: Option<String> = sqlx::query_scalar(
-            "SELECT json_extract(request_snapshot, '$.origin') FROM execution_requests WHERE id = ?",
+        let snapshot = tack_db::queries::execution_requests::request_snapshot(
+            &b.state.repo,
+            created["request_id"].as_str().unwrap(),
         )
-        .bind(created["request_id"].as_str().unwrap())
-        .fetch_one(b.state.repo.pool())
         .await
+        .unwrap()
         .unwrap();
+        let origin = serde_json::from_str::<Value>(&snapshot).unwrap()["origin"]
+            .as_str()
+            .map(str::to_owned);
         assert_eq!(origin.as_deref(), kept.then_some("mcp"), "{key}");
     }
 }

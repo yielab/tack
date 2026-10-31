@@ -9,7 +9,6 @@
 //! test: `tack_api::server::serve_inner` installs a process-global
 //! `tracing` subscriber once per process.
 
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -18,8 +17,7 @@ use std::time::Duration;
 use serde_json::Value;
 use tack_test_support::poll_until_sync as poll_until;
 
-mod common;
-use common::free_port;
+use crate::common;
 
 struct ServerGuard {
     child: Child,
@@ -36,70 +34,43 @@ impl Drop for ServerGuard {
 
 /// Starts `tack serve --with-runner` against `database_url`/`storage_dir`
 /// (both caller-owned, so a second boot in this test can point at the exact
-/// same `storage_dir` a first boot already wrote into) and continuously
-/// drains its stdout into `log_lines` on a background thread — draining as
-/// it is produced, not after the process exits, so a verbose boot can never
-/// fill the pipe buffer and deadlock the child on a blocked write.
+/// same `storage_dir` a first boot already wrote into); its stdout lines
+/// are kept in `log_lines` for the recovery assertion.
 fn start_server(database_url: &str, storage_dir: &Path) -> ServerGuard {
-    let port = free_port();
-    let base_url = format!("http://127.0.0.1:{port}");
-
-    let mut child = Command::new(env!("CARGO_BIN_EXE_tack"))
-        .arg("serve")
-        .arg("--with-runner")
-        .env("TACK_HOST", "127.0.0.1")
-        .env("TACK_PORT", port.to_string())
-        .env("TACK_API_TOKEN", common::API_TOKEN)
-        .env("TACK_DATABASE_URL", database_url)
-        .env("TACK_STORAGE_DIR", storage_dir)
-        .env_remove("TACK_RUNNER_STATE_DIR")
-        // This test's own claim is about the credential the embedded runner
-        // redeems, never about harness discovery — narrowing `PATH` to
-        // exclude `claude`/`codex` (wherever this machine's own shell finds
-        // them) keeps discovery a cheap, immediate "not found" instead of a
-        // real subprocess probe, which on a machine with both installed has
-        // been measured (`tack runner doctor`, this same binary) at up to
-        // ~24s on its own — irrelevant cost this test would otherwise pay
-        // twice, once per boot.
-        .env("PATH", "/usr/bin:/bin")
-        // `SecretStore::open` (`tack-runner/src/secrets.rs`) tries a real
-        // platform keychain (over D-Bus/secret-service on Linux) before
-        // falling back to the owner-only file backend, and on a machine
-        // with a live desktop session bus that first attempt can itself
-        // take tens of seconds — again irrelevant to this test's own claim.
-        // An invalid bus address makes the attempt fail immediately, the
-        // same trick this crate's own unit tests already rely on (see
-        // `local_runner.rs`'s `set_then_list_then_remove_a_secret_round_trips_
-        // with_a_recorded_set_at`).
-        .env("DBUS_SESSION_BUS_ADDRESS", "/dev/null")
-        // Narrowed to the `tack` binary's own target (`local_runner.rs` and
-        // `local_enrollment.rs` are modules of `main.rs`, not of the
-        // `tack_cli` library crate, so their tracing target is `tack`, not
-        // `tack_cli`): the default filter never enables it at all
-        // (`tack_api::server::init_tracing` only turns on
-        // `tack_api`/`tack_db`/`tack_core`/`tower_http`), and widening it
-        // would make the exact-count assertion below fragile against noise
-        // from targets this test does not care about.
-        .env("RUST_LOG", "tack=info")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn tack serve --with-runner");
-
-    let stdout = child.stdout.take().expect("piped stdout");
-    let log_lines = Arc::new(Mutex::new(Vec::new()));
-    let log_lines_writer = Arc::clone(&log_lines);
-    std::thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            log_lines_writer.lock().expect("log lines lock").push(line);
-        }
-    });
+    let served = common::spawn_serve(
+        Command::new(env!("CARGO_BIN_EXE_tack"))
+            .arg("serve")
+            .arg("--with-runner")
+            .env("TACK_API_TOKEN", common::API_TOKEN)
+            .env("TACK_DATABASE_URL", database_url)
+            .env("TACK_STORAGE_DIR", storage_dir)
+            .env_remove("TACK_RUNNER_STATE_DIR")
+            // This test's own claim is about the credential the embedded runner
+            // redeems, never about harness discovery — narrowing `PATH` to
+            // exclude `claude`/`codex` (wherever this machine's own shell finds
+            // them) keeps discovery a cheap, immediate "not found" instead of a
+            // real subprocess probe, which on a machine with both installed has
+            // been measured (`tack runner doctor`, this same binary) at up to
+            // ~24s on its own — irrelevant cost this test would otherwise pay
+            // twice, once per boot.
+            .env("PATH", "/usr/bin:/bin")
+            // `SecretStore::open` (`tack-runner/src/secrets.rs`) tries a real
+            // platform keychain (over D-Bus/secret-service on Linux) before
+            // falling back to the owner-only file backend, and on a machine
+            // with a live desktop session bus that first attempt can itself
+            // take tens of seconds — again irrelevant to this test's own claim.
+            // An invalid bus address makes the attempt fail immediately, the
+            // same trick this crate's own unit tests already rely on (see
+            // `local_runner.rs`'s `set_then_list_then_remove_a_secret_round_trips_
+            // with_a_recorded_set_at`).
+            .env("DBUS_SESSION_BUS_ADDRESS", "/dev/null")
+            .stderr(Stdio::null()),
+    );
 
     let mut guard = ServerGuard {
-        child,
-        base_url,
-        log_lines,
+        child: served.child,
+        base_url: served.base_url,
+        log_lines: served.log_lines,
     };
     wait_for_ready(&guard.base_url, &mut guard.child);
     guard

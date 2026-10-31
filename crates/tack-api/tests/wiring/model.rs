@@ -1,5 +1,5 @@
 //! Proves `create_execution`'s model resolution
-//! (`tack_orch::model_policy::wiring::resolve_request_model_policy`) and
+//! (`tack_app::model_policy_wiring::resolve_request_model_policy`) and
 //! `GET /api/executions/{id}/attempts`'s `model_provenance`/
 //! `usage_economics` fields work through the real production router
 //! (`tack_api::router::build_router`), not a handler-local harness. Every
@@ -12,24 +12,17 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
-use uuid::Uuid;
+use tack_db::{
+    Repository,
+    queries::{execution_attempts, execution_requests},
+};
 
 const OPERATOR_TOKEN: &str = "model-wiring-operator-token";
 const BASE_REVISION: &str = "f6b0123456789abcdef0123456789abcdef0123";
 
-async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'Model wiring', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("insert workspace");
-    let repo = Repository::new(pool.clone());
+async fn setup() -> (axum::Router, Repository, String, String) {
+    let repo = tack_test_support::setup_test_db().await;
+    let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -42,6 +35,7 @@ async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = crate::common::with_default_host(build_router(state));
 
@@ -84,7 +78,7 @@ async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
         )
         .await
         .expect("item");
-    (app, pool, item.id.to_string())
+    (app, repo, item.id.to_string(), project.id.to_string())
 }
 
 fn operator_headers() -> Vec<(&'static str, &'static str)> {
@@ -172,7 +166,6 @@ async fn create_agent_profile(app: &axum::Router, name: &str) -> String {
 
 /// `requested_model` is the field under test — `None` reproduces "client
 /// expressed no opinion", the case wired to the resolver.
-#[allow(clippy::too_many_arguments)]
 fn execution_request_body(
     item_id: &str,
     key: &str,
@@ -198,21 +191,18 @@ fn execution_request_body(
     })
 }
 
-async fn stored_requested_model(pool: &sqlx::SqlitePool, request_id: &str) -> Option<String> {
-    sqlx::query_scalar("SELECT requested_model FROM execution_requests WHERE id = ?")
-        .bind(request_id)
-        .fetch_one(pool)
+async fn stored_requested_model(repo: &Repository, request_id: &str) -> Option<String> {
+    execution_requests::requested_model_of_request(repo, request_id)
         .await
+        .unwrap()
         .expect("execution_requests row must exist")
 }
 
-async fn stored_requested_model_snapshot(pool: &sqlx::SqlitePool, request_id: &str) -> Value {
-    let snapshot: String =
-        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id = ?")
-            .bind(request_id)
-            .fetch_one(pool)
-            .await
-            .unwrap();
+async fn stored_requested_model_snapshot(repo: &Repository, request_id: &str) -> Value {
+    let snapshot = execution_requests::request_snapshot(repo, request_id)
+        .await
+        .unwrap()
+        .unwrap();
     serde_json::from_str(&snapshot).unwrap()
 }
 
@@ -233,14 +223,9 @@ struct ModelResolutionCase {
 /// Runs one [`ModelResolutionCase`] end to end and asserts its expectation —
 /// factored out of the table-driven test so each case reads as one call.
 async fn assert_model_resolution_case(i: usize, case: ModelResolutionCase) {
-    let (app, pool, item_id) = setup().await;
+    let (app, repo, item_id, project_id) = setup().await;
     if let Some((harness, model)) = case.project_default {
-        sqlx::query("UPDATE projects SET default_harness = ?, default_model = ?")
-            .bind(harness)
-            .bind(model)
-            .execute(&pool)
-            .await
-            .expect("set project default");
+        tack_test_support::seed::project_default_model(&repo, &project_id, harness, model).await;
     }
     let agent_profile_id = create_agent_profile(&app, "profile").await;
     let (runner_id, _auth) = enroll_runner(&app, "runner").await;
@@ -263,12 +248,12 @@ async fn assert_model_resolution_case(i: usize, case: ModelResolutionCase) {
     assert_eq!(status, StatusCode::OK, "{}: {created}", case.name);
     let request_id = created["request_id"].as_str().unwrap().to_owned();
 
-    let stored = stored_requested_model(&pool, &request_id).await;
+    let stored = stored_requested_model(&repo, &request_id).await;
     assert_eq!(stored.as_deref(), case.expected, "{}", case.name);
     // The idempotency-fingerprint snapshot must agree with the stored
     // column — no split-brain between the two. Absence persists as NULL,
     // never a placeholder string.
-    let snapshot = stored_requested_model_snapshot(&pool, &request_id).await;
+    let snapshot = stored_requested_model_snapshot(&repo, &request_id).await;
     assert_eq!(
         snapshot["requested_model"],
         json!(case.expected),
@@ -437,7 +422,6 @@ fn not_measured_usage() -> Value {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 fn completion_body(
     runner_id: &str,
     attempt_id: &str,
@@ -491,7 +475,7 @@ async fn get_attempts(app: &axum::Router, request_id: &str) -> Value {
 
 #[tokio::test]
 async fn attempt_summary_hides_provenance_and_costs_before_completion() {
-    let (app, _pool, item_id) = setup().await;
+    let (app, _repo, item_id, _project_id) = setup().await;
     let live = claim_accept_start(&app, &item_id, "provenance-in-flight", "opaque/model-f6b").await;
 
     let body = get_attempts(&app, &live.request_id).await;
@@ -536,7 +520,7 @@ struct ProvenanceCase {
 /// independently here — not trusted from the handler's own arithmetic —
 /// and cross-checked against the database.
 async fn assert_provenance_case(case: ProvenanceCase) {
-    let (app, pool, item_id) = setup().await;
+    let (app, repo, item_id, _project_id) = setup().await;
     let live = claim_accept_start(&app, &item_id, case.key, "opaque/model-f6b").await;
 
     let (status, completed) = complete_attempt(
@@ -582,12 +566,10 @@ async fn assert_provenance_case(case: ProvenanceCase) {
         "{}",
         case.name
     );
-    let (db_started, db_ended): (Option<String>, Option<String>) =
-        sqlx::query_as("SELECT started_at, ended_at FROM execution_attempts WHERE id = ?")
-            .bind(&live.attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let (db_started, db_ended) = execution_attempts::started_and_ended_at(&repo, &live.attempt_id)
+        .await
+        .unwrap()
+        .expect("attempt row");
     assert!(db_started.is_some() && db_ended.is_some(), "{}", case.name);
 }
 
@@ -634,7 +616,7 @@ async fn attempt_summary_reports_provenance_and_cost_after_completion() {
 /// succeed exactly like the first.
 #[tokio::test]
 async fn create_execution_succeeds_for_item_with_a_finished_attempt() {
-    let (app, _pool, item_id) = setup().await;
+    let (app, _repo, item_id, _project_id) = setup().await;
     let live = claim_accept_start(&app, &item_id, "repeat-first", "opaque/model-f6b").await;
 
     let (status, completed) = complete_attempt(

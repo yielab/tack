@@ -57,7 +57,7 @@
 | Claim (README first screen) | Evidence |
 |---|---|
 | "A self-hosted project board that dispatches its items to coding agents ... through runners that live where your code and credentials already are" | `crates/tack-runner/` owns credentials/workspace/harness subprocess per CLAUDE.md's crate map; pull-based protocol at `/api/runner/v1` (CLAUDE.md boundary rules) |
-| Diagram: board holds "leases · fencing · history"; runner holds "credentials stay here" | `crates/tack-api/src/handlers/runner_protocol.rs` — 16 fencing-token call sites (CLAUDE.md); `tack-runner` never exposes credentials to the API (ADR 0050/0058, cited in TODO.md §VI.0) |
+| Diagram: board holds "leases · fencing · history"; runner holds "credentials stay here" | `crates/tack-api/src/handlers/runner_protocol.rs` — 16 fencing-token call sites (CLAUDE.md); `tack-runner` never exposes credentials to the API (ADR 0002/0003, cited in TODO.md §VI.0) |
 | Diagram: one pull arrow, runner → board, "the board never calls out" | README's own (unchanged) Architecture section, line ~259: "runners pull work, Tack never calls back into developer machines" |
 | The §VI.0 statement (all three paragraphs, verbatim) | `TODO.md` §VI.0 — the design authority this card was told to copy verbatim, not re-derive |
 | "Durable by design": kill the runner mid-attempt → `needs_operator`, no blind duplicate, explicit operator requeue → succeeded | Read directly: `scripts/smoke.sh` step 9, lines 322–409 — SIGKILLs runner+harness (line ~373), asserts `needs_operator` (line ~382), asserts run/attempt counts unchanged before vs. after restart (line ~387), touches the release file and POSTs `/requeue` (line ~394), asserts a succeeded attempt follows (line ~398) |

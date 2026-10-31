@@ -1,0 +1,36 @@
+{
+  "id": "esc-000000000000",
+  "task": "task-00000000-0000-0000-0000-000000000000",
+  "pod": "saas-dev",
+  "step": "hold",
+  "role": "",
+  "kind": "wait",
+  "causedBy": "hold",
+  "prompt": "waiting until 2026-01-01T00:00:00Z at step 'hold'",
+  "options": [
+    {
+      "id": "resume",
+      "label": "Resume",
+      "description": "End the wait now and run the next step.",
+      "risks": [],
+      "estimatedTokens": null
+    }
+  ],
+  "recommendation": null,
+  "requestedSchema": null,
+  "askedAt": "2026-01-01T00:00:00Z",
+  "expiresAt": "2026-01-01T00:00:00Z",
+  "onExpiry": "block",
+  "policy": "machine",
+  "level": "L3",
+  "state": "pending",
+  "resolution": null,
+  "seq": 4,
+  "affordances": {
+    "options": [
+      "resume"
+    ],
+    "acceptsText": false,
+    "resolveUrl": "/escalations/esc-000000000000"
+  }
+}

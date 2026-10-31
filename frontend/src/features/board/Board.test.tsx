@@ -8,8 +8,7 @@ import { ProjectItemsProvider } from '../../shared/state/projectItemsContext';
 import ToastContainer from '../../shared/ui/ToastContainer';
 import Board, { ItemCard } from './Board';
 import type { Item } from '../../shared/types';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 function makeItem(p: Partial<Item> = {}): Item {

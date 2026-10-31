@@ -286,7 +286,7 @@ empty again — no orphan left by either script.
 
 - Tokens read before the first edit (cold start): followed the dispatch block's read list
   exactly — `README.md` header + VII-B3 block, the `TODO.md` folder table (§VII.0) and the
-  VII-B3 card body, ADR 0062 decision 5, `VII-B1.md` whole, `supervisor.rs` whole, the two
+  VII-B3 card body, ADR 0006 decision 5, `VII-B1.md` whole, `supervisor.rs` whole, the two
   named server-default ranges (`tack-api/src/config.rs:225-245`,
   `tack-runner/src/config.rs:1-70`), the two named version-source greps, and `cargo doc -p
   dirs --no-deps` for `data_dir`'s per-OS table. Roughly matched the block's ~18k + one

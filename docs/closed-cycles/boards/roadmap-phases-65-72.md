@@ -26,9 +26,9 @@ reverse.
 ## Phase 66 — close the Level 3 loop: evidence, briefs, escalation packs, merge-readiness
 
 **Status:** closed 2026-10-05; every task in the table below is built and merged, and ships as `v0.1.0-beta.10`. What is still open is listed under the table. **Plan:** [`docs/plans/phase-66.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-66.md).
-**ADRs:** 0069 (the brief is an entity on the item and travels), 0070 (docket contract 1.1,
-negotiated at boot; cancel becomes per-harness evidence), 0071 (evidence before deletion, the
-verifier boundary, the pushed branch and its pull request), 0072 (the "Run with agent" flow).
+**ADRs:** 0011 (the brief is an entity on the item and travels), 0012 (docket contract 1.1,
+negotiated at boot; cancel becomes per-harness evidence), 0013 (evidence before deletion, the
+verifier boundary, the pushed branch and its pull request), 0014 (the "Run with agent" flow).
 
 After this phase every attempt leaves a patch, both commits and a file list; an item can
 carry a typed brief that reaches the harness and an independent verifier; a question arrives
@@ -72,7 +72,7 @@ a pull request is opened for a pushed branch whose item is linked to a GitHub is
 
 **Status:** closed 2026-10-08; every task built and merged, and ships as `v0.1.0-beta.10`.
 **Plan:** [`docs/plans/phase-67.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-67.md).
-**ADR:** 0074 (amends 0069, 0071 and 0072).
+**ADR:** 0015 (amends 0011, 0013 and 0014).
 
 A manual run of the Phase 66 build produced fourteen findings; three lost or hid work. After this phase
 a project is created knowing where its code is, and the agent works on a new branch of that
@@ -101,7 +101,7 @@ and a help button into this book.
 as `v0.1.0-beta.10`. **Plan:** [`docs/plans/phase-68.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-68.md).
 
 Fourteen follow-ups, each found by the agent that built the task beside it, each finishing a
-decision ADR 0074 already takes. No new decision. The end-to-end test of the Agents page's
+decision ADR 0015 already takes. No new decision. The end-to-end test of the Agents page's
 test run found two bugs on the way (the test run picked an agent that needs a model, and the
 embedded runner reported its name instead of its id); both are fixed. What this phase left
 open is in its plan's Status section; the one that matters most is that a run no runner can
@@ -119,7 +119,7 @@ claim waits in Queued without saying why.
 ## The first live docket + prill run
 
 **Status:** done 2026-10-10 and 2026-10-11, to ship with Phases 67 and 68.
-**ADR:** 0075 (amends 0074 and 0071). **Proof:** `scripts/docket-prill-e2e.sh`.
+**ADR:** 0016 (amends 0015 and 0013). **Proof:** `scripts/docket-prill-e2e.sh`.
 
 The whole workflow, run through the UI with docket as the agent and prill as the verifier, both
 built from source, against a local model: a project, its runner, its settings, a bug, a
@@ -143,7 +143,7 @@ captured from the real binaries.
 
 **Status:** opened and closed 2026-10-12; all four rounds merged into `develop`. The GitHub settings of
 Wave 0 and the re-cut tag are the maintainer's.
-**ADR:** 0077 (accepted). **Plan:** [`docs/plans/phase-69.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-69.md).
+**ADR:** 0018 (accepted). **Plan:** [`docs/plans/phase-69.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-69.md).
 Ships as the re-cut `v0.1.0-beta.10`; the tag of 2026-10-12 was withdrawn the same day.
 
 A security audit on 2026-10-12 found no planted code and no leaked secret, and found four
@@ -186,7 +186,7 @@ a real enrolment, and the real-`bwrap` boundary test stops skipping in CI.
 ## Phase 71 — the agent brings its own model
 
 **Status:** opened and closed 2026-10-13; every round merged into `develop`.
-**ADR:** 0078. **Plan:** [`docs/plans/phase-71.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-71.md).
+**ADR:** 0019. **Plan:** [`docs/plans/phase-71.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-71.md).
 
 Tack stopped holding model keys, endpoints and catalogs: the gateway key, the "Through" control
 and the provider settings are gone. Each agent uses its own login and configuration; Tack asks it
@@ -206,7 +206,7 @@ own setup on harness contract 1.2 (docket `0.2.0-beta.5`).
 ## Phase 72 — merging from Tack, by hand or by policy
 
 **Status:** proposed 2026-10-13; the owner answered every open question the same day.
-**ADR:** 0079 (amends 0069, 0071 and 0075). **Plan:** [`docs/plans/phase-72.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-72.md).
+**ADR:** 0020 (amends 0011, 0013 and 0016). **Plan:** [`docs/plans/phase-72.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-72.md).
 
 A finished change can be merged from Tack in three ways: a **Merge** button on the task, a
 project option that merges when a person moves the task to Done, and, for a project that allows

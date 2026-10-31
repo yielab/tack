@@ -5,11 +5,11 @@
 //! nothing behind. `?dry_run=true` runs every check and reports what would be
 //! created without writing.
 
+use crate::extract::{Json, Path, Query, RawBody};
 use std::collections::HashMap;
+use tack_protocol::{Clock, SystemClock};
 
-use axum::Json;
-use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::State;
 use axum::http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use tracing::{info, instrument};
@@ -31,8 +31,8 @@ use tack_core::outline::{
     parse_due_date, parse_project_type,
 };
 use tack_core::vocabulary::vocabulary_for_type;
-use tack_db::repo::autonomy as store;
-use tack_db::repo::execution::SystemExecutionClock;
+use tack_db::StoreError;
+use tack_db::queries;
 
 use crate::error::{ApiError, ApiResult};
 use crate::handlers::export::structured_body;
@@ -142,8 +142,9 @@ fn read_csv(headers: &HeaderMap, body: &[u8]) -> ApiResult<Read> {
             "CSV must be sent as text/csv".into(),
         ));
     }
-    let text = std::str::from_utf8(body)
-        .map_err(|_| ApiError::BadRequest("CSV body is not valid UTF-8".into()))?;
+    let text = std::str::from_utf8(body).map_err(|failure| {
+        ApiError::BadRequest(format!("CSV body is not valid UTF-8: {failure}"))
+    })?;
     let csv = items_from_csv(text).map_err(refused)?;
     Ok(Read {
         outline: Outline {
@@ -171,7 +172,7 @@ pub async fn create_project_from_outline(
     State(state): State<AppState>,
     Query(query): Query<NewProjectOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_outline(&headers, &body)?;
     let project = new_project(&query, read.outline.project.clone().unwrap_or_default())?;
@@ -199,7 +200,7 @@ pub async fn add_outline_to_project(
     Path(project_id): Path<Uuid>,
     Query(query): Query<AddOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_outline(&headers, &body)?;
     into_existing_project(&state, project_id, read, ItemSource::Outline, query.dry_run).await
@@ -221,7 +222,7 @@ pub async fn create_project_from_csv(
     State(state): State<AppState>,
     Query(query): Query<NewProjectOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_csv(&headers, &body)?;
     let project = new_project(&query, Default::default())?;
@@ -252,7 +253,7 @@ pub async fn import_csv(
     Path(project_id): Path<Uuid>,
     Query(query): Query<AddOutlineQuery>,
     headers: HeaderMap,
-    body: Bytes,
+    RawBody(body): RawBody,
 ) -> ApiResult<Json<OutlineResult>> {
     let read = read_csv(&headers, &body)?;
     into_existing_project(
@@ -436,7 +437,7 @@ async fn into_existing_project(
         .collect();
     let profiles = state.repo.list_agent_profile_rows().await?;
     let fleets = state.repo.fleet_names().await?;
-    let level = store::get_settings(state.repo.pool(), &project_id.to_string())
+    let level = tack_db::queries::autonomy::project_settings(&state.repo, &project_id.to_string())
         .await?
         .map_or(Level::L3, |s| s.level);
     let board = Board {
@@ -518,6 +519,15 @@ fn parsed<T: serde::de::DeserializeOwned>(word: &str) -> ApiResult<T> {
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("\"{word}\": {e}")))
 }
 
+/// Names the section a failed store call belonged to; what the file wrote before it stays.
+fn at<E: Into<StoreError>>(section: &'static str) -> impl Fn(E) -> ApiError {
+    move |source| ApiError::SectionFailed {
+        section,
+        kept: true,
+        source: source.into(),
+    }
+}
+
 fn uuid_of(id: &str) -> ApiResult<Uuid> {
     Uuid::parse_str(id).map_err(|e| ApiError::Internal(anyhow::anyhow!("{id}: {e}")))
 }
@@ -530,13 +540,6 @@ async fn write_profiles(
     rows: &[Upsert<BundleProfile>],
 ) -> ApiResult<HashMap<String, String>> {
     let repo = &state.repo;
-    let at = |section: &'static str| {
-        move |source: sqlx::Error| ApiError::SectionFailed {
-            section,
-            kept: true,
-            source,
-        }
-    };
     let mut profile_ids: HashMap<String, String> = board
         .profiles
         .iter()
@@ -593,7 +596,7 @@ async fn write_profiles(
                 .or_else(|| old.and_then(|o| o.delivers.clone())),
             builtin: false,
         };
-        repo.write_agent_profile(&profile, &SystemExecutionClock)
+        repo.write_agent_profile(&profile, SystemClock.now())
             .await
             .map_err(at("profiles"))?;
         profile_ids.insert(profile.name.clone(), id);
@@ -609,13 +612,6 @@ async fn write_automation(
     profile_ids: &HashMap<String, String>,
 ) -> ApiResult<()> {
     let repo = &state.repo;
-    let at = |section: &'static str| {
-        move |source: sqlx::Error| ApiError::SectionFailed {
-            section,
-            kept: true,
-            source,
-        }
-    };
     let mut update = UpdateProject {
         repository: auto.repository.clone().map(Some),
         default_branch: auto.default_branch.clone().map(Some),
@@ -653,7 +649,7 @@ async fn write_automation(
 
     if let Some(asked) = &auto.autonomy {
         let id = project_id.to_string();
-        let mut settings = store::get_settings(repo.pool(), &id)
+        let mut settings = queries::autonomy::project_settings(repo, &id)
             .await
             .map_err(at("automation"))?
             .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
@@ -689,7 +685,7 @@ async fn write_automation(
         if let Some(merge) = asked.merge_on_done {
             settings.merge_on_done = merge;
         }
-        store::put_settings(repo.pool(), &id, &settings)
+        repo.put_autonomy_settings(&id, &settings)
             .await
             .map_err(at("automation"))?;
     }
@@ -710,13 +706,6 @@ async fn write(
 ) -> ApiResult<OutlineResult> {
     let repo = &state.repo;
     let project_id = project.id;
-    let at = |section: &'static str| {
-        move |source: sqlx::Error| ApiError::SectionFailed {
-            section,
-            kept: true,
-            source,
-        }
-    };
 
     if is_new {
         let mut vocabulary = vocabulary_for_type(&project.project_type);

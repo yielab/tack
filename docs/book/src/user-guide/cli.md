@@ -279,11 +279,11 @@ When docket is configured and answers, its block gains these lines before the si
 ```text
   api:         5
   daemon:      running on 127.0.0.1:7399
-  team fab-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
-  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
+  team saas-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
+  team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
-- **`api`** is the version of docket's HTTP interface. Tack needs docket 0.2.0-beta.6, which speaks version 5. Any other version reads `api: 4 (needs docket 0.2.0-beta.6)` and no run is sent to it.
+- **`api`** is the version of docket's HTTP interface. Tack needs docket 0.2.0-beta.6, which speaks version 6. An older version reads `api: 5 (needs docket 0.2.0-beta.6)` and no run is sent to it.
 - **`daemon`** says whether docket's background process answers. `not answering at … ` says where Tack looked.
 - **`team <name>`** appears once per team. `lights-out` means the team runs without a person. `attended` means it needs one, and the fix in brackets is the docket command that changes that. A team that is `attended` keeps its tasks at L3, however high the project's merge level; see [Merging from Tack](merging.md).
 

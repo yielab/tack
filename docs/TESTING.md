@@ -13,7 +13,7 @@ real agent account. `cargo nextest` is not part of cargo; install it once with
 `tack-desktop` is a workspace of its own:
 `cargo nextest run --manifest-path crates/tack-desktop/Cargo.toml`.
 
-Frontend: `cd frontend && npm test` (Vitest). Browser E2E: `make e2e`.
+Frontend: `cd frontend && npm test` (Vitest; shared test helpers — `flush`, `mountProjectView` for a project view over stubbed items — are in `frontend/src/test/`). Browser E2E: `make e2e`.
 
 A count appears in this guide only next to the command that produces it, and — like any
 load-bearing number quoted anywhere in this repository — gets re-measured before it is
@@ -26,7 +26,7 @@ everything passes.
 ```bash
 cargo nextest run --workspace                                   # everything — ~15 s to execute on a warm build
 cargo nextest run --workspace -E 'package(tack-db)'             # one crate
-cargo nextest run --workspace -E 'binary(runner_contract)'        # one test binary
+cargo nextest run --workspace -E 'test(/^runner_contract::/)'    # one file of a crate's tests
 cargo nextest run --workspace -E 'test(/fencing/)'              # tests whose name matches a regex
 cargo nextest run --workspace --no-capture -E 'test(<name>)'    # see println!/tracing output (runs serially)
 cargo nextest run --workspace --run-ignored ignored-only -E 'package(tack-db)'   # the perf test (50k items, p95 < 100 ms)
@@ -80,7 +80,7 @@ with a one-line reason instead of being exempted by scope.
 
 ## Where the tests live, and how each crate is tested
 
-A behaviour is tested once, at the lowest layer that can express it (ADR 0068 decisions 5
+A behaviour is tested once, at the lowest layer that can express it (ADR 0010 decisions 5
 and 6): pure unit tests in `tack-core`, repository tests against SQLite in `tack-db`, one
 HTTP test per route outcome in `tack-api`, contract tests for runner-v1 and the OpenAPI
 spec, fake-harness tests in the runner, Playwright for critical journeys. An invariant is
@@ -91,16 +91,21 @@ of another layer's test — is deleted once its real claim has a home elsewhere.
 
 | Crate | Where | Harness | What belongs here |
 |---|---|---|---|
-| `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above. The merge policy, the profile a run gets (`run_defaults`), which tasks start (`auto_start`), recurrence and the project file's `check` and `to_bundle` (`outline/bundle/tests.rs`, which reads the Fabulada fixture) are all table tests here |
-| `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races |
-| `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-orch/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/` | the runner-v1 execution domain: capability negotiation, request/attempt lifecycle, scheduling, model policy, usage provenance. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract/fixtures.rs` in the same change (the test asserts the number of fixtures; `grep -c` the table, or read the assertion, rather than quoting it) |
+| `tack-core` | `#[cfg(test)]` next to the code, or `<module>/tests.rs` past 150 lines | plain `#[test]`; the crate has no I/O | business rules — a rule that can be tested without a database is tested here, not above. The merge policy, the profile a run gets (`run_defaults`), which tasks start (`auto_start`), recurrence and the project file's `check` and `to_bundle` (`outline/bundle/tests.rs`, which reads the My SaaS fixture) are all table tests here |
+| `tack-db` | `crates/tack-db/tests/` | `common::setup_test_db()`: a fresh `sqlite::memory:` pool with every migration applied, per test | repository round-trips, migrations, FTS, cascades. **Locking claims need a file-backed DB** — the in-memory harness masks races. `tests/fixtures/tack-0.1.0-beta.9.sqlite` is a database written by that release (provenance in the README beside it): `migrations/upgrade_from_beta9.rs` migrates it to now and compares its schema with a fresh one |
+| `tack-protocol` | `#[cfg(test)]` (or `<module>/tests.rs`) and `crates/tack-protocol/tests/` | `runner_contract` byte-pins `docs/contracts/runner-v1/`; `mrp_contract` pins the merge-readiness pack | the runner-v1 contract: capability negotiation, request/attempt lifecycle, usage provenance, the pack. **`docs/contracts/runner-v1/` fixtures outrank any Rust/TS type** — a fixture edit updates the pin table in `tests/runner_contract/fixtures.rs` in the same change (the test asserts the number of fixtures; `grep -c` the table, or read the assertion, rather than quoting it) |
+| `tack-orch` | `#[cfg(test)]` (or `<module>/tests.rs`) | plain `#[test]`; the crate has no database and no clock | the scheduler and the model policy, as tables of cases over plain values |
+| `tack-app` | `crates/tack-app/tests/` (one file per use case; `scheduling/`, `ingestion/`) | `tack_test_support::setup_test_db()` and a `ControllableClock`; a fake `Host` for the ticks | a rule of a run: call the use case or a `tick()` directly on a real store and read the result with `tack_db::queries::` — no router, no sleeping. Plant rows with `tack_test_support::seed` |
 | `tack-api` | `crates/tack-api/tests/` | `common::test_app()`, `test_app_with_config()`, `test_app_with_file_db()`: a wired router over an in-memory DB, driven with `tower::ServiceExt::oneshot` — no port | status codes, response shapes, auth surfaces, wiring that proves a handler is reachable. The project file's routes are `tests/handlers/bundle.rs` (it builds its own app, since `test_app()` seeds no built-in profiles or templates) |
-| `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. docket is a daemon and not a process: its adapter is proved against `tests/fake_docket/`, an in-process fake of API 5 that answers each route from a file under `fixtures/docket/v5/` (a capture from a real docket, or an answer marked `constructed` because a model would have to run for docket to send it) and answers `400` to a request key no captured request has; `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway home with no model (rerun it when docket changes, and commit the diff), `tests/docket_v5.rs` fails when a route the client sends has no capture, and the daemon's supervision is proved against a shell script on a scratch path that serves `/health`; no real docket and no model is ever run by a test. Vendor output of the other harnesses is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
-| `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler E2E spawns a real `tack serve` on a bind-then-drop port, so `.config/nextest.toml` runs each of its tests with nothing alongside | request shaping, error surfacing, the end-to-end scheduler path |
+| `tack-runner` | mostly `#[cfg(test)]` (or `<module>/tests.rs`); `crates/tack-runner/tests/` | `src/harness/fixtures/fake_harness.sh`, captured vendor transcripts under `fixtures/<kind>/<version>/`, the crash matrix | credential handling, journal, subprocess boundary. **The harness lifecycle is proved once**, in `harness/local_process/tests.rs`, through a grammar that adds nothing: spawn, environment, secrets, redaction, probe, cancel and reconcile against `fixtures/fake_harness.sh`. A harness's own tests are pure — a request in, a command line out; a captured transcript in, a report out — and never spawn a process to re-prove the core. docket is a daemon and not a process: its adapter is proved against `tests/fake_docket/`, an in-process fake of API 6 that answers each route from a file under `fixtures/docket/v5/` (a capture from a real docket, or an answer marked `constructed` because a model would have to run for docket to send it) and answers `400` to a request key no captured request has; `scripts/capture-docket-fixtures.sh` records the captures from a docket started in a throwaway home with no model (rerun it when docket changes, and commit the diff), `tests/docket_v5.rs` fails when a route the client sends has no capture, and the daemon's supervision is proved against a shell script on a scratch path that serves `/health`; no real docket and no model is ever run by a test. Vendor output of the other harnesses is a file under `fixtures/<kind>/<version>/`, its provenance (captured or constructed) stated in that directory's README. A rule that binds requests goes in the core so it binds every harness; a policy a harness cannot enforce is declared in its `permission_policy` capability, never silently ignored. Shape and rules for docket and opencode: `docs/closed-cycles/plans/harnesses.md` (archived); what each harness can still gain is a task in `docs/plans/phase-65.md`. Live-harness tests are `#[ignore]` and billed |
+| `tack-cli` | `crates/tack-cli/tests/` | `wiremock` stubs the API; the scheduler and embedded-runner tests spawn a real `tack serve` on port 0 and read the port it logs (`common::spawn_serve`), so they share nothing and run alongside everything else | request shaping, error surfacing, the end-to-end scheduler path |
 
-Each `tests/*.rs` file is its own binary — its own crate, its own full link, seconds of CPU
-and tens of megabytes on disk per file. **Add a test to the existing file whose subject
-fits; do not add a file per feature.** (ADR 0064 groups the existing files by subject.)
+Each crate has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
+file under `tests/` as a module, so the dependency graph is linked once per crate, not once per
+file. A file is selected by its module, `-E 'test(/^<module>::/)'`. **Add a test to the existing
+module whose subject fits; a new subject is a new `mod` line in `tests/it.rs`.** Helpers shared by
+several modules (`common`, and in some crates `support` or `fake_docket`) are declared once in
+`it.rs` and reached as `crate::common`.
 
 ## Where a test lives, and how big it may be
 
@@ -110,7 +115,8 @@ crates/<crate>/
   src/<module>/tests.rs        that module's unit tests once they outgrow 150 lines
                                (`#[cfg(test)] mod tests;` — `use super::*` still works)
   tests/common/mod.rs          the crate's shared fixtures — the only place a helper lives
-  tests/<subject>.rs + dir     one binary per subject
+  tests/it.rs                  the crate's one test binary: a `mod` line per subject
+  tests/<subject>.rs + dir     one module per subject
   tests/contract/, tests/live/ byte-pinned fixtures; real binaries or billed runs, #[ignore]d
   tests/scratch_*.rs           gitignored: your local proof, never tracked
 crates/tack-test-support/      fixtures for the layers below the API
@@ -120,7 +126,7 @@ An integration test imports the crate (`use tack_api::handlers::decisions;`). It
 a source file in with `#[path]`: that compiles a second copy of the module into the test
 binary, the tests pass against the copy, and coverage counts nothing for the real one.
 
-Size rules are standard lints, not a custom ratchet (ADR 0068 decision 11): `cargo clippy
+Size rules are standard lints, not a custom ratchet (ADR 0010 decision 11): `cargo clippy
 --workspace --all-targets -- -D warnings` catches an oversized function against
 `clippy.toml`'s `too-many-lines-threshold` and a disallowed hand-built temp path; rustfmt
 carries formatting. Review carries the rest — a test file, a name, a preamble that has grown
@@ -162,13 +168,13 @@ full suite; the first also *rewrites* the artifact when asked, and CI fails when
 rewrite differs from what is committed:
 
 ```bash
-UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary(openapi_contract)' && git diff --exit-code docs/openapi.json
-cargo nextest run --workspace -E 'binary(runner_contract)'   # never regenerated: the fixtures are the authority
+UPDATE_OPENAPI=1 cargo nextest run --workspace -E 'binary_id(tack-api::it) & test(/^openapi_contract::/)' && git diff --exit-code docs/openapi.json
+cargo nextest run --workspace -E 'binary_id(tack-protocol::it) & test(/^runner_contract::/)'   # never regenerated: the fixtures are the authority
 ```
 
 Three more contracts under `docs/contracts/` are held the same way, each by tests that read
 its committed example: `brief-v1` (`crates/tack-core/src/brief/tests.rs`), `mrp-v1`
-(`crates/tack-core/tests/mrp_contract.rs`, with its four fixtures) and `evidence-v1`
+(`crates/tack-protocol/tests/mrp_contract.rs`, with its four fixtures) and `evidence-v1`
 (`crates/tack-runner/tests/evidence_contract.rs`, which also pins the example's bytes). Change
 the example first, then the type.
 
@@ -185,19 +191,19 @@ cargo nextest run -p tack-api --features embed-spa    # -p on purpose: a feature
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` (ADR 0068 decision 9) runs in three tiers, by trigger, in the same
+`.github/workflows/ci.yml` (ADR 0010 decision 9) runs in three tiers, by trigger, in the same
 file — no separate workflow per tier:
 
 | Tier | Trigger | Jobs |
 |---|---|---|
 | Pull request | every push (`main`, `develop`, `claude/**`) and every pull request | `rust`, `coverage`, `frontend`, `docs`, `deny`, `security`, `security-boundaries` |
-| Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (Chromium only) |
-| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (all three browsers) |
+| Merge | push to `develop` or `main` | adds `embed-spa`, `desktop`, `e2e` (`scripts/smoke.sh` in fake mode, then Chromium only) |
+| Schedule | weekly cron, or by hand (`workflow_dispatch` runs every job in every tier) | `msrv`, `mutants`, `e2e` (smoke, then all three browsers) |
 
 | Job | What it runs |
 |---|---|
 | `rust` | `scripts/check-comments.sh` → `cargo fmt --check` → `cargo clippy --workspace --all-targets -- -D warnings` → `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D rustdoc::broken_intra_doc_links"` → the OpenAPI regenerate-and-diff gate |
-| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 78.93`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (78.93%) is the workspace line total measured 2026-09-18 (75.81%, `cargo llvm-cov report --summary-only`) minus one point. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
+| `coverage` | **`cargo llvm-cov nextest --workspace --lcov --output-path lcov.info --fail-under-lines 78.93`** — the one run of the whole suite, instrumented; it replaces both the old `rust` job's plain test step and the five per-crate `coverage` builds. The floor (78.93%) is chosen as described under Coverage below. On a pull request, `diff-cover lcov.info --compare-branch=origin/<base> --fail-under=80` additionally requires 80% coverage of the lines the pull request itself changes; `lcov.info` is uploaded as an artifact either way |
 | `frontend` | schema drift, type-check, **Vitest with coverage thresholds** (70% lines/functions/statements, 60% branches — decision 7), token lint, build, entry-bundle budget |
 | `docs` | `mdbook build` + link check |
 | `deny`, `security` | licenses and duplicate versions; `cargo audit` + `npm audit` |
@@ -205,8 +211,8 @@ file — no separate workflow per tier:
 | `mutants` | `cargo-mutants` over `tack-core` and `tack-db`'s repository layer. Report-only: surviving mutants are listed in the job summary and the `mutants-*` artifacts, and never fail the build. Read it when deciding where the next test goes — a survivor is a line a test runs but would not miss |
 | `desktop` | fmt, clippy, `cargo test` in the `tack-desktop` workspace |
 | `embed-spa` | release build with the SPA embedded, binary-size budget |
-| `security-boundaries` | `cargo nextest run --workspace --profile ci --no-tests=fail -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'` — the boundary suites; see below |
-| `e2e` | Playwright, a11y scan, API contract — Chromium only on a merge, all three browsers on the schedule run |
+| `security-boundaries` | `cargo nextest run --workspace --profile ci --no-tests=fail -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'` — the boundary suites; see below |
+| `e2e` | `scripts/smoke.sh` in fake mode against the binaries the job built (a real `tack serve` and `tack-runner`, shim harnesses, no agent program installed: claim to requeue, restart recovery, `--with-runner`), then Playwright, a11y scan and API contract — Chromium only on a merge, all three browsers on the schedule run and on a manual dispatch |
 
 The suite runs exactly once per applicable trigger, in the `coverage` job's `cargo llvm-cov
 nextest` step. The `rust` job's last step *does* run one test a second time, deliberately:
@@ -222,12 +228,14 @@ updated by the repository owner (`gh api`) from the pull-request tier's job list
 
 ### Pre-push hook
 
-`git config core.hooksPath .githooks` activates it. It runs four things:
+`git config core.hooksPath .githooks` activates it. It runs five things:
 `cargo fmt --all --check` for the root workspace **and, separately, for
 `crates/tack-desktop`** (its own workspace, excluded from the root one — nothing else local
 sees that crate at all), `cargo clippy --workspace --all-targets -- -D warnings`, the four
 boundary suites below (seconds, once built), and the generated-files check (both lockfiles,
-`schema.gen.ts` and the book's `developer/api-reference.md`) — **not the
+`schema.gen.ts` and the book's `developer/api-reference.md`), and, when `frontend/node_modules`
+exists, `vitest run --changed` against what the push sends (each pushed ref against the commit
+the remote has, or against where a new branch left `develop`) — **not the
 rest of the test suite**, on purpose: a hook that takes a minute is a hook people bypass, and
 the suite is CI's job. The `schema.gen.ts` staleness check only
 runs when `frontend/node_modules` exists, so a checkout that has never run `npm install` gets
@@ -236,11 +244,11 @@ no local protection against schema drift there — CI's `frontend` job still cat
 
 ## The boundary suites are required
 
-Four test binaries are required checks. The CI job `security-boundaries` runs them on every
+Four test modules are required checks. The CI job `security-boundaries` runs them on every
 push and pull request, and the pre-push gate runs the same filterset after clippy:
 
 ```bash
-cargo nextest run --workspace -E 'binary(security) + binary(agent_boundaries) + binary(h3_checkout) + binary(crash_matrix)'
+cargo nextest run --workspace -E '(binary_id(tack-api::it) & test(/^security::/)) | (binary_id(tack-runner::it) & test(/^(agent_boundaries|h3_checkout|crash_matrix)::/))'
 ```
 
 - `security` (`crates/tack-api/tests/security.rs`, module `trust_boundary`) is the server's trust
@@ -260,10 +268,15 @@ the rule.
 make coverage   # CI's coverage floors locally: one instrumented workspace run + Vitest thresholds
 ```
 
-Floors `make coverage` and CI enforce: workspace line coverage ≥ 78.93 % (the total measured
-by the command in `ci.yml`'s `coverage` job, minus one point); frontend Vitest ≥ 70 %
+Floors `make coverage` and CI enforce: workspace line coverage ≥ 78.93 %; frontend Vitest ≥ 70 %
 lines/functions/statements and ≥ 60 % branches. On a pull request CI also requires 80 % of
 the changed lines to be covered (`diff-cover`).
+
+The workspace floor is one formula: the line total the `coverage` job itself measured on
+`develop` (summed `LH`/`LF` over its `coverage-lcov` artifact), minus one point. It is
+re-measured from that artifact at the gate that closes each round of work, never on a
+workstation, and moved only then, in `ci.yml` (which also records the figure last measured),
+the `Makefile` and here together.
 
 For an HTML report instead of the pass/fail gate:
 
@@ -428,17 +441,57 @@ Four more files in the directory are recorders, not tests — `screenshots.spec.
 README's and the book's images and GIFs, each through its own config and its own header recipe.
 The default config ignores them and CI never runs them.
 
-`docket-prill.spec.ts` is a live test, not a CI one: `scripts/docket-prill-e2e.sh` builds `tack`
-with the SPA embedded, runs docket (0.2.0-beta.6, API 5) and prill from their own source trees
-(`DOCKET_SRC`, `PRILL_SRC`), starts `docket start --dispatch` itself in a scratch `HOME` with an
-isolated `DOCKET_HOME` and two pods (`fab-code`, `fab-content`) over the fixture repository, and
-drives the whole workflow through the UI: a project, its runner enrolled on the Agents page, its
-settings, a code item and a content item added at once, a rejection with its rework, and a
-screenshot of the ladder, with a screenshot per step in `frontend/test-results/docket-prill/`. It
-checks what a person would: every run's steps reach the timeline before it ends, in order; prill's
-pack comes back for each run and is reviewed. The script dies before building when
-`GET /status.json` does not answer `apiVersion` 5 or later. Rerun it with `DOCKET_PRILL_SKIP_BUILD=1`
-when nothing in Tack changed; the script lists its knobs at the top.
+`docket-prill.spec.ts` is a live test, not a CI one, and it is not versioned: it lives in the
+git-ignored `onboarding-lab/e2e/` with `docket-prill-e2e.sh`. CI never runs it and never needs
+docket or prill; the three meet only here. The script builds `tack` with the SPA embedded, runs
+docket (API 6) and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`), and starts docket
+in a scratch `HOME` with an isolated `DOCKET_HOME`, three teams over the fixture repository (two
+attended, one lights-out with an approval step) and a prill key that signs every pack. It dies
+before building when `GET /escalations?since=0` does not answer 200. Fifteen serial tests drive
+the workflow through the UI, as a person would:
+
+- A project, its runner enrolled on the Agents page, and a code, a content and a plain item.
+- Each run goes to the team its role's profile names: docket holds one task for the attempt there
+  and none in another team, every step reaches the timeline in order, and the usage per model
+  equals docket's own, with cache reads out of the counted tokens and the limit.
+- The card reaches docket once, as fields: its record of the code and feature runs holds the
+  objective, the acceptance criteria and the done-when of the card, and the description holds the
+  profile's words and the card's text and none of them again. A run again carries the question the
+  person answered in the run before, so the team is not asked twice; a run before which nobody
+  answered (the level decided) carries none. Each hop docket ran carries the manifest of the prompts
+  that made it, and the Execution tab lists, for every step, those prompts.
+- A policy parks a task with no model: the card says "Needs a person", the question survives a
+  restart of the runner and of docket, and the answer is given on screen. Cancelling a parked
+  run closes its question.
+- Level 5 on a lights-out team meets the approval and ends needing a person; on an attended team
+  docket's 422 sentence is shown.
+- The pack of each run comes back signed, `prill attest verify` accepts the head commit and
+  refuses another, and prill's own records are read.
+
+Each step leaves a screenshot in `onboarding-lab/results/docket-prill/`, and the lab's README keeps
+the date and result of the last run. A test that needs a model (the lead hop of a lights-out
+team) can fail on the local model alone; read the log before blaming Tack. A failing `command`
+criterion becomes docket's gate and docket fails the run before prill sees it, so a verifier
+reject is provoked with an `absent` or `file` criterion. The Team select lists only teams some
+profile already names, so the first profile of a team is made over the API.
+
+`docket-prill-e2e.sh --check` needs no model and no container: it runs `scripts/capture-docket-fixtures.sh`
+against real docket, compares the keys of its answers with the fixtures under
+`crates/tack-runner/src/harness/fixtures/docket/`, compares `docs/contracts/mrp-v1/fixtures/prill/`
+with prill's own contract fixtures, and runs the `briefing_schema` test, which is `#[ignore]`d in
+CI because it needs `prill` on `PATH`; the same run runs the fake docket's tests against the
+captures, so a key docket sends that the fake does not, or the reverse, fails by name. It exits
+non-zero when any of them drifted. Rerun the
+script with `DOCKET_PRILL_SKIP_BUILD=1` when nothing in Tack changed; it lists its knobs at the top.
+At its end a run prints the commits and versions of docket and prill and how many of the hops docket
+ran carry a prompt manifest.
+
+The captures reach every answer docket gives without a model: its refusals, a held enqueue and the
+escalation it opens, a pipeline whose only step is a wait, a hop that starts and cannot reach a model
+(the manifest of its prompts is written before the model is asked), a team that works in a folder
+and the record sets it declares. What stays `constructed` needs a model's reply (a finished hop with
+the agent's assumptions and questions, usage) or an agent's call that leaves the machine; each says
+so in its provenance, and the live run is where a real one is read.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it

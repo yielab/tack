@@ -15,7 +15,7 @@ use tack_runner::client::{
     JournalState, OwnerOnlyJournal, RunnerId, Timestamp, WorkspaceId, WorkspaceJournal,
 };
 
-mod common;
+use crate::common;
 use common::temp_dir as temporary_root;
 
 /// A fresh temp-dir-backed journal for one test, plus the guard that deletes

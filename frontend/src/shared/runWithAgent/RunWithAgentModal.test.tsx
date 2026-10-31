@@ -6,7 +6,9 @@ import { ExecutionStoreProvider } from '../state/executionContext';
 import RunWithAgentModal from './RunWithAgentModal';
 import type { RunnerCapabilities } from '../execution';
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
+// The real timer, taken before any test fakes `setTimeout`, so a flush still waits for the event loop.
+const realSetTimeout = globalThis.setTimeout;
+const flush = () => new Promise((r) => realSetTimeout(r, 0));
 const disposers: Array<() => void> = [];
 
 const FLEET = { fleet_id: 'fleet-1', name: 'Primary Fleet', concurrency_limit: 5, default_policy: null };
@@ -97,6 +99,8 @@ function mockFetch(
     itemDelayMs?: number;
     /** The item's brief; absent answers 404, as an item with no brief does. */
     brief?: Record<string, unknown>;
+    /** While `down` is true the profiles list answers 500. */
+    profilesFailing?: { down: boolean };
   } = {},
 ): typeof fetch {
   const runners = opts.runners ?? [RUNNER];
@@ -113,6 +117,7 @@ function mockFetch(
       agentProfiles.push(created);
       return new Response(JSON.stringify({ protocol_version: 1, ...created }), { status: 200 });
     }
+    if (url.includes('/agent-profiles') && opts.profilesFailing?.down) return new Response(JSON.stringify({ error: { status: 500, message: 'boom' } }), { status: 500 });
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: agentProfiles }), { status: 200 });
     if (url.includes('/runners')) return new Response(JSON.stringify({ protocol_version: 1, data: runners }), { status: 200 });
     if (url.endsWith('/items/item-1/brief')) {
@@ -148,7 +153,7 @@ function mockFetch(
   }) as typeof fetch;
 }
 
-function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void }) {
+function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3' }) {
   const [open, setOpen] = createSignal(true);
   (Host as unknown as { lastSetOpen?: (v: boolean) => void }).lastSetOpen = setOpen;
   return (
@@ -168,6 +173,7 @@ function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (i
               projectId="project-1"
               onCreated={props.onCreated}
               capabilities={props.capabilities}
+              autonomy={props.autonomy}
             />
           )}
         />
@@ -177,7 +183,7 @@ function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (i
 }
 
 function mount(
-  props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void } = {},
+  props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3' } = {},
   fetchOpts: Parameters<typeof mockFetch>[0] = {},
 ) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch(fetchOpts));
@@ -232,6 +238,7 @@ const modelOptions = () => [...select('Model').options].map((o) => o.textContent
 afterEach(() => {
   teardown();
   document.body.innerHTML = '';
+  vi.useRealTimers();
   vi.restoreAllMocks();
   lastCreateBody = undefined;
   lastItemPatch = undefined;
@@ -239,6 +246,42 @@ afterEach(() => {
 });
 
 describe('RunWithAgentModal', () => {
+  it('a run carrying a level keeps to docket: the other agents are disabled with the reason, and the level is explained', async () => {
+    const base = runnerCapabilitySnapshot();
+    const both = runnerRow('runner-5', 'Both', runnerCapabilitySnapshot({
+      harnesses: [...base.harnesses, { ...base.harnesses[0], harness_kind: 'docket' }],
+    }));
+    mount({ autonomy: 'L3' }, { runners: [both], fleets: [], project: { ...PROJECT, default_harness: 'codex' } });
+    await flush();
+    await flush();
+    await flush();
+    const agent = select('Agent');
+    expect(agent.value).toBe('docket');
+    const options = [...agent.options];
+    expect(options.find((o) => o.value === 'codex')!.disabled).toBe(true);
+    expect(options.find((o) => o.value === 'codex')!.textContent).toContain('A level applies only to a docket run');
+    expect(options.find((o) => o.value === 'docket')!.disabled).toBe(false);
+    expect(document.querySelector('[data-testid="run-autonomy-note"]')!.textContent).toContain('you approve each step that needs it');
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ requested_harness_kind: 'docket', autonomy: 'L3' });
+  });
+
+  it('a failed list of profiles is said as one with Try again, not offered as no profile', async () => {
+    const profilesFailing = { down: true };
+    mount({}, { runners: [RUNNER], fleets: [], profilesFailing });
+    await flush();
+    await flush();
+    expect(document.body.textContent).toContain('Could not load the profiles');
+    expect(submitButton().disabled).toBe(true);
+    profilesFailing.down = false;
+    ([...document.querySelectorAll('button')].find((b) => b.textContent === 'Try again') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.body.textContent).not.toContain('Could not load the profiles');
+  });
+
   it('advanced_values_are_remembered_on_the_task', async () => {
     mount({}, { runners: [RUNNER], fleets: [] });
     await flush();
@@ -284,6 +327,8 @@ describe('RunWithAgentModal', () => {
   });
 
   it('prints_the_servers_limit_sentence_under_the_field_and_asks_again_when_the_field_or_the_agent_changes', async () => {
+    // The limit is sent after a pause; fake the clock so the test moves it instead of sleeping.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     const both = runnerRow('runner-4', 'Both', runnerCapabilitySnapshot({
       harnesses: [...runnerCapabilitySnapshot().harnesses, { ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'claude-code' }],
     }));
@@ -301,7 +346,7 @@ describe('RunWithAgentModal', () => {
     setField(field('Token limit'), '120000');
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex');
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex&tokens=120000');
     // The agent chosen goes up too.
@@ -311,7 +356,7 @@ describe('RunWithAgentModal', () => {
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&tokens=120000');
     // A cleared field says "no limit".
     setField(field('Token limit'), '');
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&no_limit=true');
     expect(limitUrls().every((u) => u.startsWith('/api/items/item-1/agent-context?profile_id=profile-1&harness='))).toBe(true);
@@ -319,6 +364,8 @@ describe('RunWithAgentModal', () => {
   });
 
   it('prints_no_limit_sentence_while_the_token_field_holds_an_invalid_value', async () => {
+    // The limit is sent after a pause; fake the clock so the test moves it instead of sleeping.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     mount({}, { runners: [RUNNER], fleets: [], limits: { budgets: { tokens: 300000 } } });
     await flush();
     await flush();
@@ -327,14 +374,14 @@ describe('RunWithAgentModal', () => {
     setField(field('Token limit'), '0');
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-limit"]')).toBeNull();
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-limit"]')).toBeNull();
     expect(document.body.textContent).toContain('Token limit must be a whole number above zero');
     // The server was never asked about a value it would refuse.
     expect(requestedUrls.slice(before).some((u) => u.includes('tokens=0'))).toBe(false);
     setField(field('Token limit'), '5000');
-    await new Promise((r) => setTimeout(r, 450));
+    await vi.advanceTimersByTimeAsync(450);
     await flush();
     expect(document.querySelector('[data-testid="run-dialog-limit"]')?.textContent).toContain('tokens=5000');
   });

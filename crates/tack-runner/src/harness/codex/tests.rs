@@ -5,7 +5,7 @@ use super::*;
 use crate::client::AttemptState;
 use crate::harness::HarnessAdapter;
 use crate::harness::test_support::{finished, harness_for, scratch, script, spec};
-use tack_orch::execution::Approvals;
+use tack_protocol::execution::Approvals;
 
 #[test]
 fn a_direct_request_passes_only_the_model() {
@@ -15,6 +15,7 @@ fn a_direct_request_passes_only_the_model() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
     assert_eq!(
@@ -44,6 +45,7 @@ fn a_request_naming_no_model_passes_no_model_flag() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     let args = CodexGrammar.invocation(&run).expect("invocation").args;
     assert!(!args.iter().any(|arg| arg == "--model"), "{args:?}");
@@ -53,6 +55,7 @@ fn a_request_naming_no_model_passes_no_model_flag() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     let id1_result = r#"{"id":1,"result":{}}"#;
     match CodexGrammar.signal(&run, id1_result) {
@@ -87,6 +90,7 @@ fn the_exit_status_alone_decides_the_verdict() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     for (exit, stdout, succeeded, code) in rows {
         let report = CodexGrammar.report(&run, &finished(exit, stdout));
@@ -145,6 +149,7 @@ fn the_permission_policy_maps_onto_the_sandbox_flag() {
             spec: &request,
             scratch: state.path(),
             program: None,
+            host: &crate::config::ProcessEnv::default(),
         };
         let args = CodexGrammar.invocation(&run).expect("invocation").args;
         assert_eq!(
@@ -181,6 +186,7 @@ fn usage_is_read_from_the_turn_completed_line() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     let rows = [
         (exec_tool_call, true, Some(57), Some(10), Some(0)),
@@ -235,6 +241,7 @@ fn an_ask_request_becomes_an_app_server_conversation() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     let invocation = CodexGrammar.invocation(&run).expect("invocation");
     assert_eq!(invocation.args, ["app-server"]);
@@ -424,6 +431,7 @@ fn the_app_server_stream_decides_the_verdict_and_usage() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
 
     let succeeded = CodexGrammar.report(&run, &finished(ProcessExit::Exited(0), turn));

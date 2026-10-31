@@ -2,7 +2,9 @@ import { Router } from '@solidjs/router';
 import Layout from './Layout';
 import { routes } from './routes';
 import { ExecutionStoreProvider } from '../shared/state/executionContext';
+import { RouteBoundary } from '../shared/ui';
 
+// `RouteBoundary` is the last stop for anything the shell itself throws; each route has its own.
 // `ExecutionStoreProvider` wraps the whole router so Board (under
 // `WorkLayout`), Sprints (also under `WorkLayout`), and `ItemDetailDrawer`
 // (mounted at the `Layout` root, a WorkLayout *sibling*) all share one
@@ -13,9 +15,11 @@ import { ExecutionStoreProvider } from '../shared/state/executionContext';
 // additive wrap instead of editing `Layout.tsx`'s body.
 function App() {
   return (
-    <ExecutionStoreProvider>
-      <Router root={Layout}>{routes}</Router>
-    </ExecutionStoreProvider>
+    <RouteBoundary>
+      <ExecutionStoreProvider>
+        <Router root={Layout}>{routes}</Router>
+      </ExecutionStoreProvider>
+    </RouteBoundary>
   );
 }
 

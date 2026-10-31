@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import EventTimeline from './EventTimeline';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 function mount(requestId = 'exec_1', attemptNumber = 1, live?: () => boolean, workspace?: string) {
@@ -161,7 +160,26 @@ describe('EventTimeline', () => {
     const c = mount();
     await flush();
     await flush();
-    expect(c.textContent).toContain("Couldn't load events");
+    expect(c.textContent).toContain('Could not load the events');
+    expect(c.querySelector('[data-testid="load-error"]')).not.toBeNull();
+  });
+
+  it('every kind the runner reports reads in words, and a failed answer takes the failure colour', async () => {
+    const kinds = [
+      'agent.hop_started', 'agent.hop_finished', 'agent.untracked', 'agent.refused', 'agent.answer_failed',
+      'escalation.asked', 'escalation.resolved', 'escalation.expired', 'escalation.waiting', 'escalation.decided', 'escalation.unreadable',
+    ];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(page(kinds.map((k, i) => step(i + 1, k, 'x'))));
+    const c = mount();
+    await flush();
+    await flush();
+    const titles = [...c.querySelectorAll('li span[title]')].map((e) => e.textContent);
+    expect(titles).toHaveLength(kinds.length);
+    for (const [i, kind] of kinds.entries()) expect(titles[i], kind).not.toBe(kind);
+    const dot = (kind: string) =>
+      (c.querySelector(`li:has(span[title="${kind}"]) [aria-hidden="true"] span`) as HTMLElement).style.backgroundColor;
+    expect(dot('agent.answer_failed')).toBe(dot('agent.refused'));
+    expect(dot('agent.answer_failed')).not.toBe(dot('escalation.asked'));
   });
 
   it('a payload without a text/message field falls back to compact JSON instead of throwing', async () => {

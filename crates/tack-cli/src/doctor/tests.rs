@@ -1,5 +1,5 @@
 use super::*;
-use tack_orch::execution::{HarnessKind, ModelListSource, ModelsReport, SignInReport};
+use tack_protocol::execution::{HarnessKind, ModelListSource, ModelsReport, SignInReport};
 
 fn fixed_timestamp() -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
@@ -65,18 +65,18 @@ fn classify_separates_present_probe_error_and_absent() {
 /// realistic shape without panicking.
 fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::DiscoveryReport {
     bootstrap::DiscoveryReport {
-        capabilities: tack_orch::execution::RunnerCapabilities {
+        capabilities: tack_protocol::execution::RunnerCapabilities {
             protocol_version: None,
             runner_version: "0.0.0-test".to_owned(),
             reported_at: fixed_timestamp(),
             labels: Default::default(),
-            concurrency: tack_orch::execution::Concurrency {
+            concurrency: tack_protocol::execution::Concurrency {
                 total: 1,
                 available: 1,
                 additional: Default::default(),
             },
             harnesses,
-            features: tack_orch::execution::FeatureCapabilities {
+            features: tack_protocol::execution::FeatureCapabilities {
                 cancel: CapabilityValue {
                     support: CapabilitySupport::Advisory,
                     reason: None,
@@ -104,7 +104,7 @@ fn sample_discovery_report(harnesses: Vec<HarnessCapability>) -> bootstrap::Disc
                 },
                 additional: Default::default(),
             },
-            limits: tack_orch::execution::CapabilityLimits {
+            limits: tack_protocol::execution::CapabilityLimits {
                 event_payload_bytes_max: 1,
                 artifact_content_bytes_max: 1,
                 additional: Default::default(),
@@ -271,33 +271,39 @@ fn readiness_lines_say_who_is_signed_in_and_which_models_exist() {
 /// one line per team with what keeps it from running lights-out.
 #[test]
 fn docket_lines_state_the_api_the_daemon_and_each_team() {
-    use tack_orch::execution::{TeamReport, TeamViolation};
+    use tack_protocol::execution::{TeamReport, TeamViolation};
     let mut docket = capability("docket", "", None);
     docket.set_api_version("5");
     docket.teams = Some(vec![
         TeamReport {
-            name: "fab-content".to_owned(),
+            name: "saas-content".to_owned(),
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
             read_only: Some(vec![
                 "/home/x/.nvm/versions/node/v22.17.1".to_owned(),
                 "/home/x/proj/node_modules".to_owned(),
             ]),
+            works_in: None,
+            records: None,
         },
         TeamReport {
-            name: "fab-research".to_owned(),
+            name: "saas-research".to_owned(),
             profile: "attended".to_owned(),
             violations: vec![TeamViolation {
                 requirement: "network none".to_owned(),
                 fix: "docket pod set network none".to_owned(),
             }],
             read_only: Some(Vec::new()),
+            works_in: None,
+            records: None,
         },
         TeamReport {
-            name: "fab-old".to_owned(),
+            name: "saas-old".to_owned(),
             profile: "attended".to_owned(),
             violations: Vec::new(),
             read_only: None,
+            works_in: None,
+            records: None,
         },
     ]);
     assert_eq!(
@@ -305,9 +311,9 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
         vec![
             "  api:         5",
             "  daemon:      running on 127.0.0.1:7399",
-            "  team fab-content: lights-out · reads /home/x/.nvm/versions/node/v22.17.1, /home/x/proj/node_modules",
-            "  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work",
-            "  team fab-old: attended · reads: not reported by this docket",
+            "  team saas-content: lights-out · reads /home/x/.nvm/versions/node/v22.17.1, /home/x/proj/node_modules",
+            "  team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work",
+            "  team saas-old: attended · reads: not reported by this docket",
         ]
     );
 

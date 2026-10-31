@@ -1,7 +1,8 @@
 constructed
 route: GET /tasks/<pod>/<id>
 status: 200
-built-from: task-failed-pipeline.json, with the hop and usage keys read off a record whose hop failed on a missing key (observed once, not kept) and docket's _hop_record in core/dispatch.py
-docket: 0.2.0b6 (API 5), source checkout a9f6f81c
-date: 2026-10-18
-note: not captured, because a task would have to run on a model (or a person would have to answer) for docket to send it; the keys are the ones docket's code writes, the values are made up.
+built-from: task-failed-pipeline.json (captured against this docket) with status done, no failureKind, one hop (the hop of the earlier task-done, its usage with the four keys docket writes) and the usage block docket writes when a task settles
+source: src/docket/tasks/domain/task.py TaskRecord and HopResult, src/docket/kernel/handoff.py HandoffArtifact (its retired key notes is gone, diff is there), src/docket/tasks/application/lifecycle.py _task_usage, src/docket/tasks/application/record.py _hop_usage, at 9954b4f8
+docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
+date: 2026-10-26
+note: not captured, because docket sends it only while a model runs or a person answers one; every key is one docket writes, the values are made up, or come from the capture or the recording it is built from. The keys of the retired shapes (approvalToken, pregrants, gateOverridePipelineIndex, claimId, source) are gone because the capture it is built from no longer has them.

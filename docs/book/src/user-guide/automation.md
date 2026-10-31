@@ -21,26 +21,27 @@ each until you open them: **Where the code is**, **How the agent works on it**, 
 3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
 4. **Ceiling.** See the most this project can reach, and what holds it down.
 
-The ladder as it looks, with every control that can be disabled shown with its reason:
+The ladder as it looks, with every control that can be disabled shown with its reason beside it:
 
 ```text
-1. Teams
+Teams
    Each role works with a profile. The profile names the team and the machine.
-   Content      [ Fabulada content writer v ]
-                fab-content · lights-out · this computer
-   Developer    [ Fabulada implementer v ]
-                fab-dev · needs a person · this computer
+   Content      [ My SaaS content writer v ]
+                saas-content · lights-out · this computer
+   Developer    [ My SaaS implementer v ]
+                saas-dev · needs a person · this computer
    No role      [ No profile v ]
    Manage profiles →      [ Apply the repository's teams ]   (disabled)
-   Tack cannot reach the team's machine from here yet. In the project's folder, run: docket init --name <team>
+                          Tack cannot run this on the team's computer from the board yet.
+                          How to set up a team there (a link to the Administrator Guide)
 
-2. Start
+Start
    [ ] Start a task by itself
    When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
    (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
     controls disabled)
 
-3. Merge
+Merge
    (o) L3 - You merge every change yourself.
    ( ) L4 - Tack merges changes that stay inside the domains below.   (disabled while L4 and L5 are off)
    ( ) L5 - Tack merges any change that passes its checks.            (disabled while L4 and L5 are off)
@@ -49,13 +50,13 @@ The ladder as it looks, with every control that can be disabled shown with its r
    Domains, Stages the verifier must run, Public key, Times a rejected change goes back to the agent,
    Daily limits
 
-4. Ceiling
+Ceiling
    This project can reach L3.
-   ✗ The team fab-dev keeps its tasks at L3. <what to change>
-   ✓ The team fab-content runs lights-out.
+   ✗ The team saas-dev keeps its tasks at L3. <what to change>
+   ✓ The team saas-content runs lights-out.
 ```
 
-The names above (Fabulada, fab-content) are only an example; yours come from your own profiles.
+The names above (My SaaS, saas-content) are only an example; yours come from your own profiles.
 
 > **Which tasks does this touch?** Only tasks with a role. A role is how Tack knows a task is meant for an
 > agent. Create roles under **Settings → Roles**, and give a task a role on its **Fields** tab.
@@ -97,14 +98,32 @@ Agents page does not offer them.
 for a person during a run, or breaks a rule of its profile. The line says which. An administrator checks
 this with `tack runner doctor`; see [Installing and Operating Runners](../admin-guide/runners.md).
 
+A team can also work in a **folder** instead of a repository: a team that writes a report, researches or
+keeps a list has no branch to give back. Its line says "Works in a folder, not in this repository." A task
+given to such a team ends **Succeeded** with what the team's last step said it did, and there is nothing to
+review, merge or open as a pull request, so the run never asks for a change. A team that does have a
+repository and ends with no work to read still fails, with "branch not applied". If the team keeps records
+(tables it fills as it works, such as leads or listings), its line also says what it keeps, as in "Keeps
+leads · 2 rows, listings · 1 row." The number is every row the set holds, whichever run wrote it; a run's own
+rows are the ones its result keeps.
+
 ### The Apply button
 
-**Apply the repository's teams** is always disabled today. Its reason line reads: "Tack cannot reach the
-team's machine from here yet. In the project's folder, run: `docket init --name <team>`". The board has no
-channel to the machine where the team lives, so you create the team there yourself. **Manage profiles** links
-to the profiles on the Agents page.
+**Apply the repository's teams** is always disabled today. Its reason reads: "Tack cannot run this on the
+team's computer from the board yet." The board has no channel to the machine where the team lives, so you
+create the team there yourself; the link beside the button, **How to set up a team there**, opens the
+[Administrator Guide](../admin-guide/runners.md#docket-teams). **Manage profiles** links to the profiles on
+the Agents page.
 
 A project with no roles says: "This project has no roles yet. Add them under Roles."
+
+### When something does not load
+
+A step that cannot read what it shows says so, in place of an empty answer: "Could not load the autonomy
+settings.", "Could not load this project's roles." or "Could not load the agent profiles", followed by the
+reason the board gave and a **Try again** button. It never reads "No roles yet" or "not available" because
+the board did not answer. The same holds for every other screen: one that cannot draw shows "This page could
+not be shown" with **Try again**, and the sidebar stays where it is.
 
 ---
 
@@ -229,7 +248,7 @@ Hover a badge for a one-sentence explanation.
 **The task's Automation row**, in the task drawer under the run button, says what happens to this task
 without you:
 
-- "Starts by itself when it reaches To Do · Team fab-content · Merge L3", when the project starts tasks by
+- "Starts by itself when it reaches To Do · Team saas-content · Merge L3", when the project starts tasks by
   itself;
 - "By hand: this project doesn't start tasks by itself", when it does not;
 - "By hand: the role Content has no profile", when a role of the task has no profile and the project has no

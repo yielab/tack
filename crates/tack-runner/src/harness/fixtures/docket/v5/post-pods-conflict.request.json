@@ -1,5 +1,4 @@
 {
-  "name": "fab-dev",
-  "location": "/scratch/repo",
-  "blueprint": "software"
+  "name": "saas-dev",
+  "location": "/scratch/repo"
 }

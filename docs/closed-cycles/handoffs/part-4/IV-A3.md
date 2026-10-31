@@ -53,7 +53,7 @@
     constructs a second `RunnerProtocolClient` — it is `tack_runner::bootstrap::run` given a
     plain `http://127.0.0.1:<port>/api/runner/v1` base URL, identical in shape to what
     `tack-runner --api-url` would be given for a remote server. No shortcut was taken here; ADR
-    0058's central constraint holds.
+    0003's central constraint holds.
 - Tests added and exact commands/results:
   - `crates/tack-cli/src/local_runner.rs`, `#[cfg(test)] mod tests` (5 new tests, all deterministic,
     no subprocess, no network):
@@ -69,7 +69,7 @@
       error names the embedded runner, and (b) `server_task.await` itself now returns a
       cancelled `JoinError` — i.e. the server task was actually aborted, not merely reported as
       wrong in a message. This is the automated proof of the "loud, not silent" failure mode ADR
-      0058 §Consequences requires.
+      0003 §Consequences requires.
     - `supervise_stops_the_runner_once_the_server_stops` — spawns a `server_task` that finishes
       immediately (simulating the server's own ctrl-c-triggered graceful stop) and a `runner_task`
       that blocks on `shutdown.requested()`, and asserts `supervise` returns `Ok(())` — proving
@@ -168,7 +168,7 @@
     19,495,576 bytes (18.59 MiB / 19.50 MB)
   - Delta: **+869,376 bytes (+0.83 MiB / +0.87 MB, +4.67%)**
   - For context, the standalone `tack-runner` binary built the same way on this branch is
-    4,732,160 bytes (4.51 MiB) — matching ADR 0058's own "4.5 MB at 0.1.0-beta.6" figure closely
+    4,732,160 bytes (4.51 MiB) — matching ADR 0003's own "4.5 MB at 0.1.0-beta.6" figure closely
     (this build is `0.1.0-beta.7`). The delta this card adds to `tack` (0.83 MiB) is well under a
     fifth of `tack-runner`'s own size, confirming the ADR's prediction that most of the runner's
     weight (tokio, reqwest, serde, `tack-orch`) was already linked into `tack` before this card.

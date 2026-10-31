@@ -269,7 +269,7 @@ for a push from a runner with `push_branches = false` changes nothing and the at
 
 ## docket (`[docket]`)
 
-docket runs as a daemon beside the runner and the runner talks to its operator API (version 5,
+docket runs as a daemon beside the runner and the runner talks to its operator API (version 6,
 docket 0.2.0-beta.6). Naming a `binary` or a `base_url` turns docket on for this runner; neither means no
 docket on this runner. A `docket` program on the `PATH` does not count.
 
@@ -329,6 +329,7 @@ settings.
 | Table | Effect |
 |---|---|
 | `[secrets] request_may_reference = ["gw"]` | The `store:` secret names a request's `secret_reference` may name. Empty (the default) means a request may reference none, and an `env:` reference is always refused. |
+| `[secrets] platform_store = "off"` | `"auto"` (the default) tries the OS credential store first and falls back to the owner-only file; `"off"` never asks it, for a machine with no session bus. |
 | `[environment] NAME = { value = "x" }` or `{ secret_reference = "env:VAR" }` | Variables every run gets. Resolved once at startup; a request cannot override one, and the `env:` scheme works here because the file is yours. A request may not set `HOME`, `PATH`, `GIT_*`, `SSH_*`, `LD_*`, `DYLD_*`, `PYTHON*`, `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, `BASH_ENV`, `ENV` or any `*_BASE_URL`. |
 
 ## Agent sandbox

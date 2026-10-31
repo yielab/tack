@@ -10,9 +10,9 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::Repository;
+use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
-use uuid::Uuid;
 
 const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
 pub(crate) const BASE_REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -29,17 +29,8 @@ async fn setup(
     String,
     tokio::sync::broadcast::Receiver<tack_api::handlers::websocket::BoardEvent>,
 ) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'E2 mrp review', '{}')",
-    )
-    .bind(workspace_id.to_string())
-    .execute(&pool)
-    .await
-    .expect("workspace");
-    let repo = Repository::new(pool);
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, events) = tokio::sync::broadcast::channel(16);
     let state = AppState {
         repo: repo.clone(),
@@ -47,15 +38,19 @@ async fn setup(
             api_token: Some(OPERATOR_TOKEN.into()),
             database_url: "sqlite::memory:".into(),
             storage_dir: storage_root.to_string_lossy().into_owned(),
-            github_token: github_base.map(|_| "gh-tok".into()),
-            github_api_base: github_base
-                .map_or_else(|| AppConfig::default().github_api_base, Into::into),
+            loops: tack_app::loop_config::LoopConfig {
+                github_token: github_base.map(|_| "gh-tok".into()),
+                github_api_base: github_base
+                    .map_or_else(|| AppConfig::default().loops.github_api_base, Into::into),
+                ..Default::default()
+            },
             ..AppConfig::default()
         },
         workspace_id,
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let app = crate::common::with_default_host(build_router(state));
     let project = repo
@@ -528,7 +523,7 @@ pub(crate) async fn fake_github(posts: u64) -> wiremock::MockServer {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let gh = MockServer::start().await;
-    let pack: tack_core::mrp::MergeReadinessPack = serde_json::from_str(READY).unwrap();
+    let pack: tack_protocol::mrp::MergeReadinessPack = serde_json::from_str(READY).unwrap();
     Mock::given(method("GET"))
         .and(path("/repos/acme/widgets"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch": "trunk"})))
@@ -541,7 +536,7 @@ pub(crate) async fn fake_github(posts: u64) -> wiremock::MockServer {
             "title": "Tack: attempt 1 for #3",
             "head": "tack/attempt-1",
             "base": "trunk",
-            "body": tack_core::mrp::render_markdown(&pack),
+            "body": tack_protocol::mrp::render_markdown(&pack),
         })))
         .respond_with(ResponseTemplate::new(201).set_body_json(
             json!({"number": 7, "html_url": "https://github.com/acme/widgets/pull/7"}),
@@ -598,9 +593,10 @@ async fn accepting_a_pushed_attempt_opens_one_pull_request_whose_body_is_the_ren
     let gh = fake_github(1).await;
     let root = tempfile::tempdir().unwrap();
     let (app, repo, attempt) = complete_with_pushed_branch(&gh, root.path()).await;
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap();
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap();
     assert!(stored.is_none(), "completion opened a pull request");
     assert!(gh.received_requests().await.unwrap().is_empty());
 
@@ -610,10 +606,11 @@ async fn accepting_a_pushed_attempt_opens_one_pull_request_whose_body_is_the_ren
         review["pull_request_url"],
         "https://github.com/acme/widgets/pull/7"
     );
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap()
-        .expect("the pull request was recorded");
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap()
+            .expect("the pull request was recorded");
     assert_eq!((stored.number, stored.state.as_str()), (7, "open"));
 
     let (status, _) = review_attempt(&app, &attempt, "accepted").await;
@@ -648,9 +645,10 @@ async fn accepting_the_pack_opens_the_pull_request_once() {
         review["pull_request_url"],
         "https://github.com/acme/widgets/pull/7"
     );
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap();
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap();
     assert!(stored.is_some());
     let (status, again) = review_attempt(&app, &attempt, "accepted").await;
     assert_eq!(status, StatusCode::OK, "{again}");
@@ -669,9 +667,10 @@ async fn rejecting_a_pushed_attempt_opens_no_pull_request() {
     let (status, review) = review_attempt(&app, &attempt, "rejected").await;
     assert_eq!(status, StatusCode::OK, "{review}");
     assert!(review.get("pull_request_url").is_none(), "{review}");
-    let stored = tack_db::repo::pull_requests::get_for_attempt(repo.pool(), &attempt.attempt_id)
-        .await
-        .unwrap();
+    let stored =
+        tack_db::queries::pull_requests::pull_request_of_attempt(&repo, &attempt.attempt_id)
+            .await
+            .unwrap();
     assert!(stored.is_none());
     assert!(gh.received_requests().await.unwrap().is_empty());
 }

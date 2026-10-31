@@ -63,6 +63,10 @@ Tack/
 │   ├── tack-desktop/         # Tauri desktop shell — its OWN workspace, not a member of
 │   │                         # the one below (Tauri needs GTK/WebKit; the server must not).
 │   │                         # Build with `make desktop`; `cargo --workspace` never sees it.
+│   ├── tack-protocol/        # The runner-v1 contract the server and the runner share:
+│   │   └── src/              # execution/ (types, lifecycle, capabilities), mrp.rs
+│   │                         # (merge-readiness pack, mrp-v1), prepare.rs,
+│   │                         # usage_provenance.rs, clock.rs. Depends on nothing here.
 │   ├── tack-core/            # Pure domain logic (no I/O, no DB)
 │   │   └── src/
 │   │       ├── lib.rs
@@ -71,45 +75,43 @@ Tack/
 │   │       ├── vocabulary.rs   # Term customization system
 │   │       ├── dependency.rs   # Dependency graph (DAG with cycle detection)
 │   │       ├── brief.rs        # Item brief: types, validation, Markdown (brief-v1)
-│   │       ├── mrp.rs          # Merge-readiness pack types and rendering (mrp-v1)
 │   │       └── error.rs        # Domain error types
-│   ├── tack-db/              # Database layer
+│   ├── tack-db/              # Database layer; the only crate that names sqlx
 │   │   ├── src/
 │   │   │   ├── lib.rs          # Pool initialization, WAL mode
-│   │   │   ├── migrations.rs   # 81 schema migrations (auto-run on startup; live count is
-│   │   │   │                  #   GET /api/health's migrations_applied)
+│   │   │   ├── error.rs        # StoreError (NotFound, Conflict, Sql)
+│   │   │   ├── migrations.rs   # Schema migrations (auto-run on startup; the live count is
+│   │   │   │                  #   GET /api/health's migrations_applied, and
+│   │   │   │                  #   scripts/arch-facts.sh prints it)
 │   │   │   ├── repo.rs         # Repository struct
-│   │   │   └── repo/           # One file per entity
-│   │   │       ├── projects.rs
-│   │   │       ├── items.rs
-│   │   │       ├── sprints.rs
-│   │   │       ├── roles.rs
-│   │   │       ├── comments.rs
-│   │   │       ├── dependencies.rs
-│   │   │       ├── attachments.rs
-│   │   │       ├── boards.rs
-│   │   │       ├── custom_fields.rs
-│   │   │       ├── briefs.rs
-│   │   │       ├── github_links.rs
-│   │   │       ├── pull_requests.rs
-│   │   │       ├── metrics.rs      # Factory metrics aggregates
-│   │   │       ├── execution.rs
-│   │   │       └── templates.rs
+│   │   │   ├── repo/           # Commands: one file or directory per aggregate
+│   │   │   │   ├── projects.rs, items.rs, sprints.rs, roles.rs, comments.rs
+│   │   │   │   ├── dependencies.rs, attachments.rs, boards.rs, custom_fields.rs
+│   │   │   │   ├── briefs.rs, github_links.rs, pull_requests.rs, templates.rs
+│   │   │   │   ├── metrics.rs      # Factory metrics aggregates
+│   │   │   │   └── execution/      # enqueue, claim, events, decisions, artifacts,
+│   │   │   │                       #   completion, recovery, review, admin
+│   │   │   └── queries/        # Read models: one file per table, one fn per question
 │   │   └── tests/
 │   │       ├── repository/         # CRUD, retention, concurrency
 │   │       ├── migrations/         # schema/upgrade tests
 │   │       └── perf_test.rs        # 50k-item perf test (#[ignore])
-│   ├── tack-orch/            # The neutral runner-v1 execution domain. Depends on
-│   │   │                     # core+db only — must never depend on tack-api
-│   │   │                     # (tack-api depends on this crate).
+│   ├── tack-orch/            # Pure runs policy: no database, no clock, no I/O
 │   │   └── src/
 │   │       ├── lib.rs
-│   │       ├── execution/                  # Transport-free runner-v1 protocol types
-│   │       ├── scheduler/                  # Pure runner-selection decision library
-│   │       ├── model_policy/               # Deterministic model-selection precedence
-│   │       ├── execution_retention.rs      # Cancellable stale/terminal-row sweep
-│   │       ├── execution_observability.rs  # Id-free fleet health snapshot + alerts
-│   │       └── usage_provenance.rs         # Requested-vs-actual model + usage economics
+│   │       ├── scheduler/                  # Runner selection over plain values
+│   │       └── model_policy/               # Deterministic model-selection precedence
+│   ├── tack-app/             # Application layer: names reqwest, never axum or sqlx
+│   │   ├── src/
+│   │   │   ├── runs/           # One use case per verb: claim, heartbeat, start_run, …
+│   │   │   ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
+│   │   │   │   retention.rs, observability.rs   # Ticks: tick() is one pass, run() the loop
+│   │   │   ├── autonomy.rs, merge.rs   # The merge ceiling and the merge itself
+│   │   │   ├── ports.rs        # Verifier, Artifacts, BoardEvents: what tack-app needs back from tack-api
+│   │   │   ├── scheduler_wiring.rs, model_policy_wiring.rs   # Live callers of tack-orch
+│   │   │   ├── local_runner/   # The embedded runner as the rest of Tack sees it
+│   │   │   └── error.rs        # AppError
+│   │   └── tests/              # One file per use case; scheduling/ and ingestion/
 │   ├── tack-api/             # Axum HTTP server + WebSocket
 │   │   ├── src/
 │   │   │   ├── main.rs         # Server entry point + staged restore
@@ -117,6 +119,7 @@ Tack/
 │   │   │   ├── router.rs       # All routes, AppState, middleware
 │   │   │   ├── config.rs       # TOML/env config
 │   │   │   ├── error.rs        # ApiError → HTTP status mapping
+│   │   │   ├── ports.rs        # tack_app::ports over AppState
 │   │   │   ├── debug.rs        # /api/health, /api/debug/*
 │   │   │   ├── middleware.rs   # Bearer token auth
 │   │   │   ├── webhook.rs      # Outbound webhook delivery
@@ -168,16 +171,18 @@ Tack/
 │   │       └── harness/         # local_process.rs (the shared lifecycle), process.rs, redact.rs,
 │   │                            # artifact.rs; one descriptor + grammar per harness: codex.rs, claude_code.rs,
 │   │                            # docket.rs, opencode.rs
-│   └── tack-cli/             # clap CLI (talks to API over HTTP, never opens the DB)
-│       └── src/
-│           ├── main.rs         # `Commands` enum + dispatch
-│           ├── client.rs       # HTTP client wrapper (reqwest)
-│           ├── config.rs       # ~/.tackrc reader
-│           ├── mcp.rs          # `tack mcp` — MCP server over stdio
-│           ├── service.rs      # `tack service` — systemd/launchd background service
-│           ├── execution.rs    # `tack execution`/`fleet`/`runner` client commands
-│           ├── doctor.rs       # `tack doctor` diagnostics
-│           └── vocab.rs        # Vocabulary-aware output
+│   ├── tack-cli/             # clap CLI (talks to API over HTTP, never opens the DB); its
+│   │   └── src/              # serve.rs is the composition root of `tack serve`
+│   │       ├── main.rs         # `Commands` enum + dispatch
+│   │       ├── serve.rs        # Builds the Repository, spawns the ticks
+│   │       ├── client.rs       # HTTP client wrapper (reqwest)
+│   │       ├── config.rs       # ~/.tackrc reader
+│   │       ├── mcp.rs          # `tack mcp` — MCP server over stdio
+│   │       ├── service.rs      # `tack service` — systemd/launchd background service
+│   │       ├── execution.rs    # `tack execution`/`fleet`/`runner` client commands
+│   │       ├── doctor.rs       # `tack doctor` diagnostics
+│   │       └── vocab.rs        # Vocabulary-aware output
+│   └── tack-test-support/    # setup_test_db(), seed (plant rows), ControllableClock, fixtures
 ├── frontend/
 │   ├── src/
 │   │   ├── app/                # Root App/Layout components and routes.tsx
@@ -194,30 +199,31 @@ Tack/
 
 ## Dependency Flow
 
-```text
-tack-core  (pure logic, no I/O)
-     ^
-     |
-tack-db    (depends on core, adds SQLite)
-     ^
-     |
-     +-------------------+
-     |                   |
-tack-orch (depends    tack-api   (depends on core + db + orch, adds HTTP;
-  on core + db only;      runs orch's scheduler/retention tasks and mounts
-  must never depend        its routes)
-  on tack-api)
+The allowed edges are the table `scripts/check-crate-graph.sh --print` ends with, and the
+script fails on any normal dependency it does not list (`scripts/arch-facts.sh` prints that
+table together with the current crate, route, migration and test counts):
 
-tack-cli     (depends on core only — talks to tack-api over HTTP, no DB)
-tack-runner  (its own binary; talks to tack-api's /api/runner/v1 over HTTP,
-             no DB — owns local credentials and the harness subprocess instead)
+```text
+tack-protocol     -> (none)
+tack-core         -> tack-protocol
+tack-orch         -> tack-protocol tack-core
+tack-db           -> tack-protocol tack-core
+tack-app          -> tack-protocol tack-core tack-orch tack-db
+tack-api          -> tack-protocol tack-core tack-db tack-app
+tack-runner       -> tack-protocol tack-core
+tack-cli          -> tack-api tack-app tack-runner tack-db tack-protocol tack-core
+tack-test-support -> tack-protocol tack-core tack-db
 ```
 
-**Rule:** `tack-core` must never import `tack-db` or any I/O crate.
-Keep business logic testable without a database. `tack-orch` depends inward on
-`tack-core`/`tack-db` only and must never depend on `tack-api` — `tack-api` depends
-on `tack-orch`, not the reverse. `tack-cli` and `tack-runner` must never import
-`tack-db` — all data access goes through the HTTP API.
+dev-dependencies are exempt: every crate may test with `tack-test-support`.
+
+**Rules:**
+- `tack-protocol`, `tack-core` and `tack-orch` do no I/O. Keep business logic testable without a database.
+- `sqlx` and `Repository::pool()` live in `tack-db` and `tack-test-support` only; everything else gets `StoreError`. `axum` lives in `tack-api` (and the runner's own server) only. The script's second check and the bans in `deny.toml` enforce both.
+- A rule of a run is a `tack-app` use case (`pub async fn <verb>(repo, clock, ..) -> Result<T, AppError>`); a handler extracts, calls, maps the error and responds. A background loop is a module with `tick()` (one pass, called by tests) and `spawn()` (adds the tick to the `background::Loops` that `tack-cli/src/serve.rs` owns and stops on shutdown); a use case a handler starts after answering goes on `AppState::tasks`, never a bare `tokio::spawn`.
+- What `tack-app` needs from things that still live in `tack-api` goes through the small traits in `tack_app::ports`.
+- `tack-runner` must never import `tack-db`. `tack-cli`'s client commands never open the database; only `serve.rs` builds the `Repository`.
+- Tests plant rows with `tack_test_support::seed` and read them with `tack_db::queries::`.
 
 ---
 

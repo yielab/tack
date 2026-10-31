@@ -1,8 +1,8 @@
 import { type Component, For, Show, createMemo, createResource, createSignal } from 'solid-js';
-import { Badge, Button, Modal } from '../ui';
+import { Badge, Button, LoadError, Modal } from '../ui';
 import { toast } from '../ui/toast';
 import { api } from '../api';
-import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
+import { artifactsApi, attemptsApi, readRunRecords, readRunSteps, type AttemptSummary } from '../execution';
 import type { RunLimit } from '../execution/api';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
@@ -34,7 +34,8 @@ import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import PlanPanel from './PlanPanel';
 import RunChips from './RunChips';
-import { AgentConcluded, AgentDid, SideSlot } from './AgentWork';
+import { needsAPerson } from './RerunAtL3';
+import { AgentConcluded, AgentDid, SideSlot, StepsRan, TeamRecords } from './AgentWork';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
@@ -64,18 +65,23 @@ async function copyText(text: string, what: string) {
 /** The pack panel, shown only when the attempt's artifacts include a
  *  merge-readiness pack (kind `mrp`). */
 const MrpSlot: Component<{ requestId: string; attemptNumber: number; merge?: AttemptSummary['merge'] }> = (props) => {
-  const [artifacts] = createResource(
+  const [artifacts, { refetch }] = createResource(
     () => `${props.requestId}:${props.attemptNumber}`,
-    () => artifactsApi.list(props.requestId, props.attemptNumber).catch(() => []),
+    () => artifactsApi.list(props.requestId, props.attemptNumber),
   );
   return (
-    <Show when={(artifacts() ?? []).some((a) => a.kind === 'mrp')}>
-      <section>
-        <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
-          Merge-readiness pack
-        </h4>
-        <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} merge={props.merge} />
-      </section>
+    <Show
+      when={!artifacts.error}
+      fallback={<LoadError what="the merge-readiness pack" error={artifacts.error} onRetry={() => void refetch()} />}
+    >
+      <Show when={(artifacts() ?? []).some((a) => a.kind === 'mrp')}>
+        <section>
+          <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
+            Merge-readiness pack
+          </h4>
+          <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} merge={props.merge} />
+        </section>
+      </Show>
     </Show>
   );
 };
@@ -85,15 +91,10 @@ const MrpSlot: Component<{ requestId: string; attemptNumber: number; merge?: Att
  *  worked, and (collapsed) the exact prompt it read. */
 const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspace: string | null }> = (props) => {
   const [opened, setOpened] = createSignal(false);
-  const [instructions] = createResource(
+  const [instructions, { refetch: refetchInstructions }] = createResource(
     () => (opened() ? props.requestId : undefined),
-    async (id) => {
-      try {
-        return (await request<{ instructions?: string | null }>(`/executions/${encodeURIComponent(id)}`)).instructions ?? null;
-      } catch {
-        return null;
-      }
-    },
+    async (id) =>
+      (await request<{ instructions?: string | null }>(`/executions/${encodeURIComponent(id)}`)).instructions ?? null,
   );
   const sandbox = () => SANDBOX_TEXT[props.attempt.sandbox as keyof typeof SANDBOX_TEXT] ?? null;
   const names = () => props.attempt.environment_names ?? [];
@@ -114,9 +115,12 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
       <details onToggle={(e) => setOpened(e.currentTarget.open)}>
         <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent read</summary>
         <Show when={instructions.loading}><p class="text-xs">Loading the prompt…</p></Show>
-        <Show when={instructions()}>
+        <Show when={instructions.error}>
+          <LoadError what="what the agent read" error={instructions.error} onRetry={() => void refetchInstructions()} />
+        </Show>
+        <Show when={!instructions.error && instructions()}>
           {(text) => (
-            <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-[20px] px-4 py-3 text-xs"
+            <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs"
               style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
           )}
         </Show>
@@ -161,14 +165,16 @@ const AttemptTools: Component<{
   const n = () => props.attempt.attempt_number;
   const terminal = () => isTerminalAttemptState(props.attempt.state);
   const reason = () => (props.attempt.terminal_reason ?? {}) as { workspace_kept_at?: unknown; result?: unknown };
-  const [artifacts] = createResource(
+  const [artifacts, { refetch: refetchArtifacts }] = createResource(
     () => (terminal() ? `${props.requestId}:${n()}` : undefined),
-    () => artifactsApi.list(props.requestId, n()).catch(() => []),
+    () => artifactsApi.list(props.requestId, n()),
   );
-  const patch = () => (artifacts() ?? []).find((a) => a.kind === 'patch');
-  const log = () => (artifacts() ?? []).find((a) => a.kind === 'log' || (a.name ?? '').endsWith('.log'));
-  const plan = () => (artifacts() ?? []).find((a) => a.kind === 'plan');
-  const evidence = () => (artifacts() ?? []).find((a) => a.kind === 'evidence');
+  // A failed list is said as one (below); the buttons it feeds are simply not offered meanwhile.
+  const listed = () => (artifacts.error ? [] : (artifacts() ?? []));
+  const patch = () => listed().find((a) => a.kind === 'patch');
+  const log = () => listed().find((a) => a.kind === 'log' || (a.name ?? '').endsWith('.log'));
+  const plan = () => listed().find((a) => a.kind === 'plan');
+  const evidence = () => listed().find((a) => a.kind === 'evidence');
   const [branch] = createResource(evidence, async (e) => {
     try {
       const parsed = JSON.parse(await (await artifactsApi.download(props.requestId, n(), e.artifact_id)).text()) as {
@@ -208,6 +214,8 @@ const AttemptTools: Component<{
         ? repository()
         : null;
   const result = () => (typeof reason().result === 'string' ? (reason().result as string) : null);
+  const runSteps = () => readRunSteps(props.attempt.terminal_reason);
+  const records = () => (readRunRecords(props.attempt.terminal_reason) ?? []).filter((set) => set.rows.length > 0);
   const [steps] = createResource(log, async (l) => {
     try {
       return parseRunLog(await (await artifactsApi.download(props.requestId, n(), l.artifact_id)).text());
@@ -248,6 +256,9 @@ const AttemptTools: Component<{
 
   return (
     <>
+      <Show when={terminal() && artifacts.error}>
+        <LoadError what="the files from this run" error={artifacts.error} onRetry={() => void refetchArtifacts()} />
+      </Show>
       <Show when={terminal()}>
         <div data-testid="attempt-tools" class="flex flex-wrap items-center gap-2">
           <Show when={patchHasChanges()}>
@@ -276,6 +287,12 @@ const AttemptTools: Component<{
         terminal={terminal()}
         workspace={folder()}
       />
+      <Show when={(runSteps() ?? []).length > 0}>
+        <StepsRan steps={runSteps()!} />
+      </Show>
+      <Show when={records().length > 0}>
+        <TeamRecords sets={records()} />
+      </Show>
       <Show when={terminal()}>
         <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
         <Show when={plan() && props.itemId}>
@@ -293,7 +310,7 @@ const AttemptTools: Component<{
         <div data-testid="attempt-side" class="space-y-4">
           <Show when={terminal()}>
             <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-            <details data-testid="attempt-usage-fold" class="rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+            <details data-testid="attempt-usage-fold" class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
               <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                 Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
               </summary>
@@ -336,6 +353,14 @@ const AttemptRow: Component<{
   onReviewed?: () => void;
 }> = (props) => {
   const [expanded, setExpanded] = createSignal(false);
+  // The agent stopped to ask a person, or ended because it needed one: the question is one press away.
+  const personNeeded = () => props.attempt.state === 'waiting_decision' || needsAPerson(props.attempt);
+  let questions: HTMLHeadingElement | undefined;
+  const openQuestion = () => {
+    setExpanded(true);
+    questions?.focus();
+    questions?.scrollIntoView?.({ block: 'center' });
+  };
   const stateInfo = () => describeExecutionState(props.attempt.state);
   const outcome = () => describeAttemptOutcome(props.attempt.state, props.attempt.terminal_reason);
   const harnessKind = () => (props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind ?? null;
@@ -360,13 +385,13 @@ const AttemptRow: Component<{
     window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
   };
   return (
-    <li data-testid="attempt" class="space-y-4 rounded-[20px] p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+    <li data-testid="attempt" class="space-y-4 rounded-item p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
       {/* The review banner sits above the run: the verdict, with its optional note, is asked
           for here and nowhere else on this tab. */}
       <Show when={needsVerdict(props.attempt)}>
         <section
           data-testid="review-banner"
-          class="space-y-2 rounded-[20px] px-4 py-3"
+          class="space-y-2 rounded-item px-4 py-3"
           style={{ 'background-color': review() ? 'var(--color-bg-panel)' : 'var(--color-warning-100)' }}
         >
           <Show when={!review()}>
@@ -422,7 +447,7 @@ const AttemptRow: Component<{
           <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
           started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
         </span>
-        <span class="ml-auto max-w-[14rem] truncate text-[0.6875rem]" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+        <span class="ml-auto max-w-[14rem] truncate text-micro" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
           {props.attempt.runner_id}
         </span>
       </div>
@@ -433,6 +458,11 @@ const AttemptRow: Component<{
             <strong>Why it stopped:</strong> {why()}
           </p>
         )}
+      </Show>
+      <Show when={personNeeded()}>
+        <Button size="sm" variant="secondary" onClick={openQuestion}>
+          Open the question
+        </Button>
       </Show>
       <Show when={outcome().badge?.detail}>
         {(detail) => (
@@ -471,7 +501,7 @@ const AttemptRow: Component<{
       <Show when={expanded()}>
         <div class="space-y-5 border-t pt-4" style={{ 'border-color': 'var(--color-border-light)' }}>
           <section>
-            <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
+            <h4 ref={questions} tabIndex={-1} class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
               Questions from the agent
             </h4>
             <DecisionInbox
@@ -531,7 +561,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   };
   const cost = () => formatApproxCost(usage().cost);
   return (
-    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-[20px] px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <Show
           when={usage().tokensIn !== null || usage().tokensOut !== null}
@@ -594,7 +624,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
         <For each={facts()}>{(fact) => <span>· {fact}</span>}</For>
       </div>
       <Show when={cost() !== NOT_MEASURED_TEXT}>
-        <p class="text-[0.6875rem]" style={{ color: 'var(--color-text-tertiary)' }}>
+        <p class="text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
           The cost is {harness()}'s own estimate at list price, not your bill.
         </p>
       </Show>

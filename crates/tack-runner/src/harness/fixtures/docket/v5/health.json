@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "apiVersion": "5",
+  "apiVersion": "6",
   "dispatch": {
     "on": true,
     "inflight": [],

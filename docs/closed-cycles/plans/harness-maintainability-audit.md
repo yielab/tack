@@ -5,7 +5,7 @@
 Measured 2026-09-11 on `develop` at `1b9b7e6` plus uncommitted docs. Every number below
 was produced by the script in [Appendix A](#appendix-a--the-measurement-script); re-run it
 before quoting any of them. This document exists because two more harnesses are proposed
-(docket, ADR 0066; opencode, ADR 0067) and the cost of adding one is currently set
+(docket, ADR 0008; opencode, ADR 0009) and the cost of adding one is currently set
 by the shape of the two that exist.
 
 **The finding in one sentence:** the harness adapters are not over-tested, they are
@@ -195,7 +195,7 @@ criteria, all measured by Appendix A and by `scripts/maintainability.py check`: 
 near-identical test pairs across adapters, each adapter under 400 lines of production
 code, no live test under `src/`, the crash matrix and `harness/tests.rs` green.
 
-The four-harness plan — docket (ADR 0066) and opencode (ADR 0067) as grammars on that
+The four-harness plan — docket (ADR 0008) and opencode (ADR 0009) as grammars on that
 core — is `docs/plans/harnesses.md`. It touches no `tack-runner` file until IX-M5 lands;
 the cost it expects per harness is the right-hand column of §3, which becomes a
 measurement only once the two existing adapters have been migrated.

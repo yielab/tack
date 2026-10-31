@@ -11,7 +11,7 @@ edits the Part VI board in `TODO.md` — the wave integrator updates the board a
 independent verification.
 
 The board is `TODO.md` → **Part VI**, §VI.0–§VI.6. The decision of record is
-`docs/adr/0061-provider-credentials-at-the-runner-boundary.md`, written by VI-A2 and
+`docs/adr/0005-provider-credentials-at-the-runner-boundary.md`, written by VI-A2 and
 accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0's statement.
 
 ## Waves, order, and the base to branch from
@@ -19,7 +19,7 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
 | Wave | Cards | Parallel? | Needs | Base SHA |
 |---|---|---|---|---|
 | 14 | VI-A1 · VI-A2 · VI-A3 | all three | nothing | `8152df7` — dispatched 2026-09-03 |
-| 15 | VI-B1 → VI-B2 → (VI-B3 ∥ VI-B4) → VI-B5 | **partly** — B3 and B4 ran in parallel and integrated 2026-09-05 at `03df038`; B5 is sequential and next | ADR 0061 accepted (2026-09-03, `VI-A2.md` amendments) | **B2 branches from the 2026-09-04 integration tip — pin it with `git rev-parse --short develop`, do not reuse a SHA from this row.** B1 was dispatched 2026-09-03 from `2958e9e`; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
+| 15 | VI-B1 → VI-B2 → (VI-B3 ∥ VI-B4) → VI-B5 | **partly** — B3 and B4 ran in parallel and integrated 2026-09-05 at `03df038`; B5 is sequential and next | ADR 0005 accepted (2026-09-03, `VI-A2.md` amendments) | **B2 branches from the 2026-09-04 integration tip — pin it with `git rev-parse --short develop`, do not reuse a SHA from this row.** B1 was dispatched 2026-09-03 from `2958e9e`; — the 2026-09-03 planning commit; branch from the `develop` tip. Decision 1 refined 2026-09-03 (keychain first, file fallback) — B1's block below already matches |
 | 16 | VI-C3 · VI-C4 first; then VI-C1; then VI-C2 | C3 ∥ C4 (may start during Wave 15); C1 after B2+B3; C2 after C3 | see each block | **C2, C3 and C4 integrated 2026-09-04.** C1 is the only one left and still needs B2 + B3; it branches from the Wave 15 integration SHA |
 | 17 | VI-D2 → VI-D1 | no | D2: C1, C2 and Part V's V-C2 landed; D1: everything | Wave 16 integration SHA |
 | 18 | VI-C41 · VI-C42 · VI-C43 | all three (two at a time under the load cap) | nothing — every earlier card is on `develop` | the `develop` tip at dispatch, pinned in each prompt; **dispatched 2026-09-07** |
@@ -37,7 +37,7 @@ accepted by the user before Wave 15 opens. The story every doc reuses is §VI.0'
    2026-09-03 the prompts named `2958e9e` while `develop` was already at `92a42cd`; every
    agent branched from `2958e9e` and ended up two docs-only commits behind. Harmless that
    time, a conflict the next time the gap contains code.
-3. For Wave 15 only: the user has accepted ADR 0061 (the acceptance is dated in
+3. For Wave 15 only: the user has accepted ADR 0005 (the acceptance is dated in
    `VI-A2.md`). Without it, B1–B3 encode a guess. **Done 2026-09-03.**
 5. Part VII (`docs/agent-handoffs/part-vii/README.md`) runs alongside this Part. VI-B1 and
    VII-A2 both add an arm to `crates/tack-cli/src/main.rs`: merge sequentially, build once
@@ -201,15 +201,15 @@ empty, and every example in your pages **executed** against a live
 exact failure — that is a finding for VI-D1 or a runtime card, not something to paper over
 with a constructed transcript.
 
-### VI-A2 — ADR 0061: provider credentials and model catalogs at the runner boundary
+### VI-A2 — ADR 0005: provider credentials and model catalogs at the runner boundary
 
 **Branch:** `agent/vi-a2-adr-0061`. **Owns:** the ADR, one bullet of `docs/CONFIG.md`.
 No code. **Prepares and stops** — the user accepts the ADR.
 
 **Read (≈ 12k):**
 - The board prelude (~7k) — the surface map and the statement are this card's inputs.
-- `docs/adr/0050-runner-control-plane.md` whole (99 l); `docs/adr/0058-standalone-single-binary-runner.md`
-  whole (103 l); `head -40 docs/adr/0060-docket-control-plane-disposition.md` for the house
+- `docs/adr/0002-runner-control-plane.md` whole (99 l); `docs/adr/0003-standalone-single-binary-runner.md`
+  whole (103 l); `head -40 docs/closed-cycles/adr/0060-docket-control-plane-disposition.md` for the house
   format (~3k together).
 - `docs/CONFIG.md` `sed -n '85,110p'` — the bullet you replace.
 - What exists on the runner side, by range: `sed -n '1,45p' crates/tack-orch/src/model_policy/wiring.rs`;
@@ -225,7 +225,7 @@ No code. **Prepares and stops** — the user accepts the ADR.
 **Do not read:** any adapter beyond the ranges above; the frontend; other handoffs.
 
 **Gate:** none to run. The deliverable is reviewed, not tested: every decision names its
-rejected options and their cost; 0050 and 0058 are cited by line for what is reaffirmed
+rejected options and their cost; 0002 and 0003 are cited by line for what is reaffirmed
 and what is bounded; the `docs/CONFIG.md` sentence is replaced; the handoff lists every
 sentence in `docs/` and `README.md` the ADR makes imprecise
 (`grep -rn "never becomes a model proxy\|no TACK_\* variable for a model provider\|never reads, stores, or forwards" docs/ README.md`).
@@ -415,7 +415,7 @@ Part IV mistake this directory's sibling README warns about applies here unchang
 
 **Read (≈ 16k):**
 - The board prelude (~7k) and the VI-B4 card.
-- ADR 0063 — the decision table (`sed -n '23,58p' docs/adr/0063-harness-credential-modes.md`)
+- ADR 0063 — the decision table (`sed -n '23,58p' docs/closed-cycles/adr/0063-harness-credential-modes.md`)
   and the amendment of 2026-09-05 at the bottom (`sed -n '/^## Amendment — 2026-09-05: accepted/,$p'`).
   Decisions 4 and 5 are the card; read no other ADR.
 - `crates/tack-runner/src/provider.rs` whole (399 l, ~5k) — the file you restructure. It is
@@ -457,7 +457,7 @@ contract.
 
 **Read (≈ 14k):**
 - The board prelude and the VI-B5 card; ADR 0063 decision 5 only
-  (`sed -n '23,58p' docs/adr/0063-harness-credential-modes.md`).
+  (`sed -n '23,58p' docs/closed-cycles/adr/0063-harness-credential-modes.md`).
 - `crates/tack-orch/src/execution/capabilities.rs` whole (~130 l) — `ModelCombination` and
   `HarnessCapability` are here, not in an `execution.rs`.
 - `crates/tack-orch/tests/runner_contract/domain.rs` and `fixtures.rs` — how a fixture is

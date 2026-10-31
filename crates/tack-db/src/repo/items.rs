@@ -1,14 +1,17 @@
+use crate::repo::execution::state;
+use crate::repo::{Parent, require_row};
+use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::{AssertSqlSafe, QueryBuilder, Sqlite, SqliteConnection};
-use tracing::{debug, instrument, warn};
+use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::CoreError;
 use tack_core::models::{
-    CreateItem, DependencyType, Item, ItemFilter, ItemSource, ItemType, Priority, UpdateItem,
+    CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, ItemType, UpdateItem,
 };
 use tack_core::outline::{PlannedParent, ResolvedOutline};
-use tack_core::workflow::{StatusCategory, WorkflowConfig};
+use tack_core::workflow::{StatusCategory, StatusGate};
 
 use super::Repository;
 use super::dependencies::insert_dependency;
@@ -16,7 +19,9 @@ use super::dependencies::insert_dependency;
 /// The `needs_review` column of an `items` row: the latest terminal attempt of
 /// the item's latest execution request left a non-empty patch or a kept
 /// workspace, and nobody has reviewed it yet.
-pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
+pub(crate) fn needs_review_sql() -> String {
+    state::expand(
+        "EXISTS (
     SELECT 1 FROM execution_attempts a
     LEFT JOIN attempt_reviews rv ON rv.attempt_id = a.id
     WHERE a.id = (
@@ -24,7 +29,7 @@ pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
         WHERE a2.request_id = (
             SELECT r.id FROM execution_requests r
             WHERE r.item_id = items.id ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1
-        ) AND a2.state IN ('succeeded','failed','cancelled')
+        ) AND a2.state IN ({terminal})
         ORDER BY a2.attempt_number DESC LIMIT 1
     )
     AND rv.attempt_id IS NULL
@@ -36,7 +41,9 @@ pub(crate) const NEEDS_REVIEW_SQL: &str = "EXISTS (
               AND json_extract(art.value, '$.size_bytes') > 0
         )
     )
-)";
+)",
+    )
+}
 
 /// The `merge_note` of an `items` row: why the item's latest merge was held,
 /// while it has not merged.
@@ -52,13 +59,74 @@ pub(crate) const TEAM_SQL: &str = "(SELECT json_extract(r.request_snapshot, '$.r
 /// attempt whose merge happened.
 pub(crate) const MERGED_BY_SQL: &str = "(SELECT t.trigger FROM tack_merges t JOIN execution_attempts a ON a.id = t.attempt_id JOIN execution_requests r ON r.id = a.request_id WHERE r.item_id = items.id AND t.merged_at IS NOT NULL ORDER BY a.created_at DESC, a.rowid DESC LIMIT 1)";
 
+/// The columns of an `items` row that make up an [`Item`], in one place: every item read selects
+/// exactly these and `ItemRow` is exactly these.
+const ITEM_COLUMNS: [&str; 24] = [
+    "id",
+    "project_id",
+    "parent_id",
+    "title",
+    "description",
+    "item_type",
+    "status",
+    "priority",
+    "estimate",
+    "estimate_unit",
+    "tags",
+    "sort_order",
+    "sprint_id",
+    "assignee",
+    "due_date",
+    "recurrence",
+    "recurrence_of",
+    "source",
+    "source_artifact_id",
+    "run_settings",
+    "started_at",
+    "completed_at",
+    "created_at",
+    "updated_at",
+];
+
+/// [`ITEM_COLUMNS`] as a select list, each column prefixed by `qualifier` (`""`, or a table
+/// alias with its dot).
+fn item_columns(qualifier: &str) -> String {
+    ITEM_COLUMNS
+        .iter()
+        .map(|column| format!("{qualifier}{column}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The select list of an [`ItemCard`]: the item's columns and the projections of its run history.
+fn card_columns() -> String {
+    let columns = item_columns("");
+    let needs_review = needs_review_sql();
+    format!(
+        "{columns}, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by"
+    )
+}
+
+/// The card of one item, on whatever connection the caller holds.
+async fn fetch_card(conn: &mut SqliteConnection, id: Uuid) -> Result<Option<ItemCard>, StoreError> {
+    let columns = card_columns();
+    sqlx::query_as::<_, ItemCardRow>(AssertSqlSafe(format!(
+        "SELECT {columns} FROM items WHERE id = ?"
+    )))
+    .bind(id.to_string())
+    .fetch_optional(conn)
+    .await?
+    .map(ItemCardRow::into_card)
+    .transpose()
+}
+
 /// Result of one complete item PATCH.  Unlike the older helpers this owns the
 /// WIP decision, field update, timestamps, and version increment in one
 /// transaction, so callers cannot accidentally compose partial mutations.
 #[derive(Debug)]
 pub enum AtomicItemUpdateOutcome {
     Updated {
-        item: Box<Item>,
+        item: Box<ItemCard>,
         version: i64,
         old_status: String,
     },
@@ -71,7 +139,7 @@ pub enum AtomicItemUpdateOutcome {
 /// transaction.  This is the only safe source for an item response plus ETag.
 #[derive(Debug)]
 pub struct ItemSnapshot {
-    pub item: Item,
+    pub item: ItemCard,
     pub version: i64,
 }
 
@@ -89,7 +157,7 @@ impl Repository {
         project_id: Uuid,
         initial_status: &str,
         input: CreateItem,
-    ) -> Result<Item, sqlx::Error> {
+    ) -> Result<Item, StoreError> {
         self.create_item_with_source(project_id, initial_status, input, ItemSource::Manual)
             .await
     }
@@ -98,7 +166,7 @@ impl Repository {
     /// import path (GitHub, Linear, JSON/YAML project import, CSV import)
     /// calls this directly with its own [`ItemSource`] variant instead of
     /// [`create_item`](Self::create_item), which is hardcoded to `Manual`.
-    /// `source` is written once, here, and nowhere else — `update_item` has
+    /// `source` is written once, here, and nowhere else — the item update has
     /// no code path that touches this column, which is what makes the trust
     /// marker sticky for the lifetime of the item.
     #[instrument(skip(self))]
@@ -108,7 +176,7 @@ impl Repository {
         initial_status: &str,
         input: CreateItem,
         source: ItemSource,
-    ) -> Result<Item, sqlx::Error> {
+    ) -> Result<Item, StoreError> {
         let mut conn = self.pool().acquire().await?;
         insert_item(&mut conn, project_id, initial_status, input, source).await
     }
@@ -124,7 +192,7 @@ impl Repository {
         project_id: Uuid,
         outline: ResolvedOutline,
         source: ItemSource,
-    ) -> Result<(Vec<Item>, usize), sqlx::Error> {
+    ) -> Result<(Vec<Item>, usize), StoreError> {
         let mut tx = self.pool().begin().await?;
         let mut created: Vec<Item> = Vec::with_capacity(outline.items.len());
         for planned in outline.items {
@@ -151,16 +219,16 @@ impl Repository {
     }
 
     #[instrument(skip(self))]
-    pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
-        let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
-             FROM items WHERE id = ?"
+    pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, StoreError> {
+        let columns = item_columns("");
+        sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT {columns} FROM items WHERE id = ?"
         )))
         .bind(id.to_string())
         .fetch_optional(self.pool())
-        .await?;
-
-        Ok(row.map(|r| r.into_item()))
+        .await?
+        .map(ItemRow::into_item)
+        .transpose()
     }
 
     /// The optimistic-concurrency counter an `ETag` is derived from
@@ -170,67 +238,29 @@ impl Repository {
     /// so a caller that needs the counter asks for it separately rather than
     /// widening the domain model for one internal reader.
     #[instrument(skip(self))]
-    pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, sqlx::Error> {
+    pub async fn get_item_version(&self, id: Uuid) -> Result<Option<i64>, StoreError> {
         sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
             .bind(id.to_string())
             .fetch_optional(self.pool())
             .await
+            .map_err(StoreError::from)
     }
 
     /// Read the body and ETag counter from one database snapshot.  Two plain
     /// reads can otherwise observe different writers and send a body whose
     /// ETag describes a later version.
     #[instrument(skip(self))]
-    pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, sqlx::Error> {
+    pub async fn get_item_snapshot(&self, id: Uuid) -> Result<Option<ItemSnapshot>, StoreError> {
         let mut tx = self.pool().begin().await?;
-        let row = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
-        )))
-        .bind(id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?;
+        let item = fetch_card(&mut tx, id).await?;
         let version = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
             .bind(id.to_string())
             .fetch_optional(&mut *tx)
             .await?;
         tx.commit().await?;
-        Ok(row.zip(version).map(|(row, version)| ItemSnapshot {
-            item: row.into_item(),
-            version,
-        }))
-    }
-
-    /// Atomic compare-and-swap on `items.version` — the guard that actually
-    /// decides an `If-Match` race, not the string comparison a caller does
-    /// first. A caller-side "read the version, compare to the header, then
-    /// write" sequence is a classic check-then-act race: two requests can
-    /// both read version 5, both see it matches, and both go on to write —
-    /// exactly the lost update optimistic concurrency exists to catch. This
-    /// method folds the compare and the write into one
-    /// `UPDATE ... WHERE version = ?` statement, so the race is decided by
-    /// SQLite's own writer serialization (only one connection holds the
-    /// write lock at a time) rather than by two Tokio tasks interleaving
-    /// `.await` points. Of two concurrent callers racing the same
-    /// `expected_version`, exactly one `UPDATE` can match the `WHERE`
-    /// clause; the loser's `rows_affected()` comes back 0 — not a torn read
-    /// of a version someone else already moved past — and the caller
-    /// reports 412 without ever touching the item's other fields.
-    #[instrument(skip(self))]
-    pub async fn claim_item_version(
-        &self,
-        id: Uuid,
-        expected_version: i64,
-    ) -> Result<bool, sqlx::Error> {
-        let now = Utc::now().to_rfc3339();
-        let result = sqlx::query(
-            "UPDATE items SET version = version + 1, updated_at = ? WHERE id = ? AND version = ?",
-        )
-        .bind(&now)
-        .bind(id.to_string())
-        .bind(expected_version)
-        .execute(self.pool())
-        .await?;
-        Ok(result.rows_affected() == 1)
+        Ok(item
+            .zip(version)
+            .map(|(item, version)| ItemSnapshot { item, version }))
     }
 
     #[instrument(skip(self))]
@@ -238,12 +268,11 @@ impl Repository {
         &self,
         project_id: Uuid,
         filter: &ItemFilter,
-    ) -> Result<Vec<Item>, sqlx::Error> {
+    ) -> Result<Vec<ItemCard>, StoreError> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
-        let mut query = format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by
-             FROM items{where_clause} ORDER BY sort_order ASC"
-        );
+        let columns = card_columns();
+        let mut query =
+            format!("SELECT {columns} FROM items{where_clause} ORDER BY sort_order ASC");
 
         let per_page = filter.effective_per_page() as i64;
         let page = filter.effective_page() as i64;
@@ -251,13 +280,13 @@ impl Repository {
         query.push_str(&format!(" LIMIT {per_page} OFFSET {offset}"));
 
         // Build the query dynamically
-        let mut q = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(query));
+        let mut q = sqlx::query_as::<_, ItemCardRow>(AssertSqlSafe(query));
         for bind in &binds {
             q = q.bind(bind);
         }
 
         let rows = q.fetch_all(self.pool()).await?;
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemCardRow::into_card).collect()
     }
 
     /// Total number of items matching `filter` (ignoring pagination). Used to
@@ -268,14 +297,14 @@ impl Repository {
         &self,
         project_id: Uuid,
         filter: &ItemFilter,
-    ) -> Result<i64, sqlx::Error> {
+    ) -> Result<i64, StoreError> {
         let (where_clause, binds) = item_filter_clause(project_id, filter);
         let query = format!("SELECT COUNT(*) FROM items{where_clause}");
         let mut q = sqlx::query_scalar::<_, i64>(AssertSqlSafe(query));
         for bind in &binds {
             q = q.bind(bind);
         }
-        q.fetch_one(self.pool()).await
+        q.fetch_one(self.pool()).await.map_err(StoreError::from)
     }
 
     /// Return all incomplete items whose `due_date` falls in `[from, to)`.
@@ -284,437 +313,49 @@ impl Repository {
         &self,
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<Item>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
+    ) -> Result<Vec<Item>, crate::StoreError> {
+        let columns = item_columns("");
+        let rows = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT {columns}
              FROM items
              WHERE due_date IS NOT NULL
                AND due_date >= ?
                AND due_date < ?
                AND completed_at IS NULL
-             ORDER BY due_date ASC",
-        )
+             ORDER BY due_date ASC"
+        )))
         .bind(from.to_rfc3339())
         .bind(to.to_rfc3339())
         .fetch_all(self.pool())
         .await?;
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
-    /// Every branch below bumps `version`, not just the
-    /// obvious one — a counter that only moves on the common path is worse
-    /// than none, because a caller would trust a stale `ETag` computed from
-    /// a version this method silently left behind. See
-    /// `crates/tack-db/tests/repository/version_concurrency.rs`'s
-    /// `version_increments_on_every_item_update`.
-    #[instrument(skip(self))]
-    pub async fn update_item(
-        &self,
-        id: Uuid,
-        input: UpdateItem,
-    ) -> Result<Option<Item>, sqlx::Error> {
-        let now = Utc::now().to_rfc3339();
-
-        if let Some(ref title) = input.title {
-            sqlx::query(
-                "UPDATE items SET title = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(title)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(description) = input.description {
-            sqlx::query(
-                "UPDATE items SET description = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(description)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(ref status) = input.status {
-            sqlx::query(
-                "UPDATE items SET status = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(status)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(ref priority) = input.priority {
-            sqlx::query(
-                "UPDATE items SET priority = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(priority.to_string())
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(ref item_type) = input.item_type {
-            sqlx::query(
-                "UPDATE items SET item_type = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(item_type.to_string())
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(estimate) = input.estimate {
-            sqlx::query(
-                "UPDATE items SET estimate = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(estimate)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(ref tags) = input.tags {
-            let tags_json = serde_json::to_string(tags).unwrap();
-            sqlx::query(
-                "UPDATE items SET tags = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(&tags_json)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(sort_order) = input.sort_order {
-            sqlx::query(
-                "UPDATE items SET sort_order = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(sort_order)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(assignee) = input.assignee {
-            sqlx::query(
-                "UPDATE items SET assignee = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(assignee)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        // Double-`Option` fields: outer `Some` means "the client addressed this
-        // field", inner `Option` carries the new value (`None` ⇒ clear to NULL).
-        if let Some(sprint_id) = input.sprint_id {
-            sqlx::query(
-                "UPDATE items SET sprint_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(sprint_id.map(|s| s.to_string()))
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(due_date) = input.due_date {
-            sqlx::query(
-                "UPDATE items SET due_date = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(due_date.map(|d| d.to_rfc3339()))
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(recurrence) = input.recurrence {
-            sqlx::query(
-                "UPDATE items SET recurrence = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(recurrence.map(|r| r.to_string()))
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-        if let Some(estimate_unit) = input.estimate_unit {
-            // `estimate_unit` is stored as a JSON string; `None` clears it to SQL NULL.
-            let value = estimate_unit.map(|u| serde_json::to_string(&u).unwrap());
-            sqlx::query(
-                "UPDATE items SET estimate_unit = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(value)
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-
-        if let Some(run_settings) = input.run_settings {
-            sqlx::query(
-                "UPDATE items SET run_settings = ?, updated_at = ?, version = version + 1 WHERE id = ?",
-            )
-            .bind(run_settings.and_then(|v| serde_json::to_string(&v).ok()))
-            .bind(&now)
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
-        }
-
-        // Maintain started_at / completed_at from the status category the handler
-        // resolved for the target status. Only runs when the status is changing.
-        if let Some(category) = input.status_category {
-            match category {
-                // Entering in-progress: stamp the first start, and (if we came
-                // back out of Done) clear the completion timestamp.
-                StatusCategory::InProgress => {
-                    sqlx::query(
-                        "UPDATE items SET started_at = COALESCE(started_at, ?), completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
-                    )
-                    .bind(&now)
-                    .bind(&now)
-                    .bind(id.to_string())
-                    .execute(self.pool())
-                    .await?;
-                }
-                // Entering Done: record completion (keep an earlier value if set).
-                StatusCategory::Done => {
-                    sqlx::query(
-                        "UPDATE items SET completed_at = COALESCE(completed_at, ?), updated_at = ?, version = version + 1 WHERE id = ?",
-                    )
-                    .bind(&now)
-                    .bind(&now)
-                    .bind(id.to_string())
-                    .execute(self.pool())
-                    .await?;
-                }
-                // Leaving Done back to a Todo column: drop the completion stamp.
-                StatusCategory::Todo => {
-                    sqlx::query(
-                        "UPDATE items SET completed_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?",
-                    )
-                    .bind(&now)
-                    .bind(id.to_string())
-                    .execute(self.pool())
-                    .await?;
-                }
-            }
-        }
-
-        self.get_item(id).await
-    }
-
-    /// Apply a browser/API PATCH as one all-or-nothing mutation.  The
-    /// `BEGIN IMMEDIATE` lock covers the WIP count and the conditional update;
-    /// the generated SQL changes every addressed column plus timestamps and
-    /// version exactly once.
-    #[instrument(skip(self, input, workflow))]
+    /// Apply an item update as one all-or-nothing mutation.  The `BEGIN IMMEDIATE` lock covers
+    /// the count of the target status and the conditional update, `gate` decides from that count
+    /// whether a status change is allowed, and the generated SQL changes every addressed column
+    /// plus timestamps and version exactly once — on every path, because a counter that moved
+    /// only on the common one would leave a caller's `ETag` stale.
+    #[instrument(skip(self, input, gate))]
     pub async fn update_item_atomically(
         &self,
         id: Uuid,
         input: UpdateItem,
-        workflow: &WorkflowConfig,
+        gate: &dyn StatusGate,
         expected_version: Option<i64>,
-    ) -> Result<AtomicItemUpdateOutcome, sqlx::Error> {
-        let now = Utc::now().to_rfc3339();
+    ) -> Result<AtomicItemUpdateOutcome, StoreError> {
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-
-        let current = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at FROM items WHERE id = ?",
-        )
-        .bind(id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?;
-        let Some(current) = current else {
-            tx.rollback().await?;
-            return Ok(AtomicItemUpdateOutcome::NotFound);
-        };
-        let current_version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
-            .bind(id.to_string())
-            .fetch_one(&mut *tx)
-            .await?;
-        if expected_version.is_some_and(|expected| expected != current_version) {
-            tx.rollback().await?;
-            return Ok(AtomicItemUpdateOutcome::PreconditionFailed);
-        }
-
-        let old_status = current.status.clone();
-        let addresses_a_field = input.title.is_some()
-            || input.description.is_some()
-            || input.item_type.is_some()
-            || input.status.is_some()
-            || input.priority.is_some()
-            || input.estimate.is_some()
-            || input.estimate_unit.is_some()
-            || input.tags.is_some()
-            || input.due_date.is_some()
-            || input.sprint_id.is_some()
-            || input.sort_order.is_some()
-            || input.assignee.is_some()
-            || input.recurrence.is_some()
-            || input.run_settings.is_some();
-        // Match the pre-A2 no-op PATCH behavior: without an addressed field
-        // there is no logical mutation and therefore no version to consume.
-        if !addresses_a_field {
-            let item = current.into_item();
+        let outcome = update_item_in(&mut tx, id, input, gate, expected_version).await?;
+        if matches!(outcome, AtomicItemUpdateOutcome::Updated { .. }) {
             tx.commit().await?;
-            return Ok(AtomicItemUpdateOutcome::Updated {
-                item: Box::new(item),
-                version: current_version,
-                old_status,
-            });
-        }
-        let status_category = if let Some(target) = input.status.as_deref() {
-            if let Err(error) = workflow.validate_transition(&old_status, target) {
-                tx.rollback().await?;
-                return Ok(AtomicItemUpdateOutcome::Rejected(error));
-            }
-            let count: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?",
-            )
-            .bind(&current.project_id)
-            .bind(target)
-            .fetch_one(&mut *tx)
-            .await?;
-            if let Err(error) = workflow.check_wip_limit(target, count as usize) {
-                tx.rollback().await?;
-                return Ok(AtomicItemUpdateOutcome::Rejected(error));
-            }
-            workflow
-                .statuses
-                .iter()
-                .find(|status| status.name == target)
-                .map(|status| status.category.clone())
         } else {
-            None
-        };
-
-        let mut query = QueryBuilder::<Sqlite>::new("UPDATE items SET ");
-        {
-            let mut fields = query.separated(", ");
-            if let Some(title) = input.title.as_deref() {
-                fields.push("title = ").push_bind_unseparated(title);
-            }
-            if let Some(description) = input.description.as_ref() {
-                fields
-                    .push("description = ")
-                    .push_bind_unseparated(description.as_deref());
-            }
-            if let Some(item_type) = input.item_type.as_ref() {
-                fields
-                    .push("item_type = ")
-                    .push_bind_unseparated(item_type.to_string());
-            }
-            if let Some(status) = input.status.as_deref() {
-                fields.push("status = ").push_bind_unseparated(status);
-            }
-            if let Some(priority) = input.priority.as_ref() {
-                fields
-                    .push("priority = ")
-                    .push_bind_unseparated(priority.to_string());
-            }
-            if let Some(estimate) = input.estimate {
-                fields.push("estimate = ").push_bind_unseparated(estimate);
-            }
-            if let Some(estimate_unit) = input.estimate_unit.as_ref() {
-                let value = estimate_unit
-                    .as_ref()
-                    .map(serde_json::to_string)
-                    .transpose()
-                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-                fields.push("estimate_unit = ").push_bind_unseparated(value);
-            }
-            if let Some(tags) = input.tags.as_ref() {
-                let value = serde_json::to_string(tags)
-                    .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-                fields.push("tags = ").push_bind_unseparated(value);
-            }
-            if let Some(due_date) = input.due_date.as_ref() {
-                fields
-                    .push("due_date = ")
-                    .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
-            }
-            if let Some(sprint_id) = input.sprint_id.as_ref() {
-                fields
-                    .push("sprint_id = ")
-                    .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
-            }
-            if let Some(sort_order) = input.sort_order {
-                fields
-                    .push("sort_order = ")
-                    .push_bind_unseparated(sort_order);
-            }
-            if let Some(assignee) = input.assignee.as_ref() {
-                fields
-                    .push("assignee = ")
-                    .push_bind_unseparated(assignee.as_deref());
-            }
-            if let Some(recurrence) = input.recurrence.as_ref() {
-                fields
-                    .push("recurrence = ")
-                    .push_bind_unseparated(recurrence.map(|r| r.to_string()));
-            }
-            if let Some(run_settings) = input.run_settings.as_ref() {
-                fields.push("run_settings = ").push_bind_unseparated(
-                    run_settings
-                        .as_ref()
-                        .and_then(|v| serde_json::to_string(v).ok()),
-                );
-            }
-            match status_category {
-                Some(StatusCategory::InProgress) => {
-                    fields
-                        .push("started_at = COALESCE(started_at, ")
-                        .push_bind_unseparated(&now)
-                        .push_unseparated(")");
-                    fields.push("completed_at = NULL");
-                }
-                Some(StatusCategory::Done) => {
-                    fields
-                        .push("completed_at = COALESCE(completed_at, ")
-                        .push_bind_unseparated(&now)
-                        .push_unseparated(")");
-                }
-                Some(StatusCategory::Todo) => {
-                    fields.push("completed_at = NULL");
-                }
-                None => {}
-            }
-            fields.push("updated_at = ").push_bind_unseparated(&now);
-            fields.push("version = version + 1");
-        }
-        query.push(" WHERE id = ").push_bind(id.to_string());
-        if let Some(expected_version) = expected_version {
-            query.push(" AND version = ").push_bind(expected_version);
-        }
-        let result = query.build().execute(&mut *tx).await?;
-        if result.rows_affected() != 1 {
             tx.rollback().await?;
-            return Ok(if expected_version.is_some() {
-                AtomicItemUpdateOutcome::PreconditionFailed
-            } else {
-                AtomicItemUpdateOutcome::NotFound
-            });
         }
-
-        let item = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at, {NEEDS_REVIEW_SQL} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by FROM items WHERE id = ?"
-        )))
-        .bind(id.to_string())
-        .fetch_one(&mut *tx)
-        .await?
-        .into_item();
-        tx.commit().await?;
-        Ok(AtomicItemUpdateOutcome::Updated {
-            item: Box::new(item),
-            version: current_version + 1,
-            old_status,
-        })
+        Ok(outcome)
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_item(&self, id: Uuid) -> Result<bool, sqlx::Error> {
+    pub async fn delete_item(&self, id: Uuid) -> Result<bool, StoreError> {
         let result = sqlx::query("DELETE FROM items WHERE id = ?")
             .bind(id.to_string())
             .execute(self.pool())
@@ -727,7 +368,7 @@ impl Repository {
         &self,
         project_id: Uuid,
         status: &str,
-    ) -> Result<i64, sqlx::Error> {
+    ) -> Result<i64, StoreError> {
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
                 .bind(project_id.to_string())
@@ -742,21 +383,22 @@ impl Repository {
         &self,
         project_id: Uuid,
         query: &str,
-    ) -> Result<Vec<Item>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.recurrence, i.recurrence_of, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
+    ) -> Result<Vec<Item>, StoreError> {
+        let columns = item_columns("i.");
+        let rows = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT {columns}
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              WHERE i.project_id = ? AND items_fts MATCH ?
              ORDER BY rank
              LIMIT 50"
-        )
+        )))
         .bind(project_id.to_string())
         .bind(query)
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     #[instrument(skip(self))]
@@ -764,35 +406,37 @@ impl Repository {
         &self,
         workspace_id: Uuid,
         query: &str,
-    ) -> Result<Vec<Item>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT i.id, i.project_id, i.parent_id, i.title, i.description, i.item_type, i.status, i.priority, i.estimate, i.estimate_unit, i.tags, i.sort_order, i.sprint_id, i.assignee, i.due_date, i.recurrence, i.recurrence_of, i.source, i.source_artifact_id, i.run_settings, i.started_at, i.completed_at, i.created_at, i.updated_at
+    ) -> Result<Vec<Item>, StoreError> {
+        let columns = item_columns("i.");
+        let rows = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT {columns}
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              JOIN projects p ON i.project_id = p.id
              WHERE p.workspace_id = ? AND items_fts MATCH ?
              ORDER BY rank
              LIMIT 100"
-        )
+        )))
         .bind(workspace_id.to_string())
         .bind(query)
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     #[instrument(skip(self))]
-    pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, sqlx::Error> {
-        let rows = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
+    pub async fn get_item_tree(&self, project_id: Uuid) -> Result<Vec<Item>, StoreError> {
+        let columns = item_columns("");
+        let rows = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
+            "SELECT {columns}
              FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
-        )
+        )))
         .bind(project_id.to_string())
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_item()).collect())
+        rows.into_iter().map(ItemRow::into_item).collect()
     }
 
     /// Returns true if every direct child of `parent_id` has exactly `done_status` as its status.
@@ -802,7 +446,7 @@ impl Repository {
         &self,
         parent_id: Uuid,
         done_status: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE parent_id = ?")
             .bind(parent_id.to_string())
             .fetch_one(self.pool())
@@ -828,24 +472,20 @@ impl Repository {
         &self,
         parent_id: Uuid,
         completed_status: &str,
-    ) -> Result<bool, sqlx::Error> {
+    ) -> Result<bool, StoreError> {
         // Get all children of this parent
-        let children = sqlx::query_as::<_, ItemRow>(
-            "SELECT id, project_id, parent_id, title, description, item_type, status, priority, estimate, estimate_unit, tags, sort_order, sprint_id, assignee, due_date, recurrence, recurrence_of, source, source_artifact_id, run_settings, started_at, completed_at, created_at, updated_at
-             FROM items WHERE parent_id = ?"
-        )
-        .bind(parent_id.to_string())
-        .fetch_all(self.pool())
-        .await?;
+        let children: Vec<String> =
+            sqlx::query_scalar("SELECT status FROM items WHERE parent_id = ?")
+                .bind(parent_id.to_string())
+                .fetch_all(self.pool())
+                .await?;
 
         if children.is_empty() {
             return Ok(false);
         }
 
         // Check if all children are completed
-        let all_completed = children
-            .iter()
-            .all(|child| child.status == completed_status);
+        let all_completed = children.iter().all(|status| status == completed_status);
 
         if all_completed {
             // Update parent status to completed
@@ -870,6 +510,7 @@ impl Repository {
 
 // ─── Row mapping ─────────────────────────────────────────────
 
+/// The columns of [`ITEM_COLUMNS`], as stored.
 #[derive(sqlx::FromRow)]
 struct ItemRow {
     id: String,
@@ -892,16 +533,6 @@ struct ItemRow {
     source: String,
     source_artifact_id: Option<String>,
     run_settings: Option<String>,
-    #[sqlx(default)]
-    needs_review: bool,
-    #[sqlx(default)]
-    merge_note: Option<String>,
-    #[sqlx(default)]
-    started_by: Option<String>,
-    #[sqlx(default)]
-    team: Option<String>,
-    #[sqlx(default)]
-    merged_by: Option<String>,
     started_at: Option<String>,
     completed_at: Option<String>,
     created_at: String,
@@ -909,72 +540,82 @@ struct ItemRow {
 }
 
 impl ItemRow {
-    fn into_item(self) -> Item {
-        Item {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            project_id: Uuid::parse_str(&self.project_id).unwrap(),
-            parent_id: self.parent_id.and_then(|s| Uuid::parse_str(&s).ok()),
+    fn into_item(self) -> Result<Item, StoreError> {
+        const TABLE: &str = "items";
+        Ok(Item {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            project_id: decode::uuid(TABLE, "project_id", &self.project_id)?,
+            parent_id: decode::optional_uuid(TABLE, "parent_id", self.parent_id.as_deref())?,
             title: self.title,
             description: self.description,
             item_type: parse_item_type(&self.item_type),
             status: self.status,
-            priority: parse_priority(&self.priority),
+            priority: decode::variant(TABLE, "priority", &self.priority)?,
             estimate: self.estimate,
-            estimate_unit: serde_json::from_str(&self.estimate_unit).unwrap_or_default(),
-            tags: serde_json::from_str(&self.tags).unwrap_or_default(),
+            // The column's default is the bare variant name, which is not JSON.
+            estimate_unit: decode::json(TABLE, "estimate_unit", &self.estimate_unit)
+                .or_else(|_| decode::variant(TABLE, "estimate_unit", &self.estimate_unit))?,
+            tags: decode::json(TABLE, "tags", &self.tags)?,
             sort_order: self.sort_order,
-            sprint_id: self.sprint_id.and_then(|s| Uuid::parse_str(&s).ok()),
+            sprint_id: decode::optional_uuid(TABLE, "sprint_id", self.sprint_id.as_deref())?,
             assignee: self.assignee,
-            due_date: self.due_date.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            recurrence: self.recurrence.and_then(|s| s.parse().ok()),
-            recurrence_of: self.recurrence_of.and_then(|s| Uuid::parse_str(&s).ok()),
+            due_date: decode::optional_instant(TABLE, "due_date", self.due_date.as_deref())?,
+            recurrence: self
+                .recurrence
+                .map(|text| {
+                    text.parse()
+                        .map_err(|()| StoreError::corrupt(TABLE, "recurrence", "not a recurrence"))
+                })
+                .transpose()?,
+            recurrence_of: decode::optional_uuid(
+                TABLE,
+                "recurrence_of",
+                self.recurrence_of.as_deref(),
+            )?,
             // `FromStr` for `ItemSource` is infallible (unrecognised text
             // degrades to `Unknown`, i.e. untrusted) — see its own doc
             // comment for why that's the safe direction.
             source: self.source.parse().unwrap_or_default(),
             source_artifact_id: self.source_artifact_id,
-            run_settings: self.run_settings.and_then(|s| {
-                serde_json::from_str(&s)
-                    .map_err(|error| {
-                        // The item id and where the serde error is, never its message:
-                        // serde quotes the offending value ("invalid type: string
-                        // \"ten\""), and the stored value stays out of the log.
-                        warn!(
-                            item_id = %self.id,
-                            kind = ?error.classify(),
-                            line = error.line(),
-                            column = error.column(),
-                            "stored run_settings no longer fit; reading as none"
-                        );
-                    })
-                    .ok()
-            }),
+            run_settings: decode::optional_json(
+                TABLE,
+                "run_settings",
+                self.run_settings.as_deref(),
+            )?,
+            started_at: decode::optional_instant(TABLE, "started_at", self.started_at.as_deref())?,
+            completed_at: decode::optional_instant(
+                TABLE,
+                "completed_at",
+                self.completed_at.as_deref(),
+            )?,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
+    }
+}
+
+/// An [`ItemRow`] and the projections [`card_columns`] adds to it.
+#[derive(sqlx::FromRow)]
+struct ItemCardRow {
+    #[sqlx(flatten)]
+    item: ItemRow,
+    needs_review: bool,
+    merge_note: Option<String>,
+    started_by: Option<String>,
+    team: Option<String>,
+    merged_by: Option<String>,
+}
+
+impl ItemCardRow {
+    fn into_card(self) -> Result<ItemCard, StoreError> {
+        Ok(ItemCard {
+            item: self.item.into_item()?,
             needs_review: self.needs_review,
             merge_note: self.merge_note,
             started_by: self.started_by,
             team: self.team,
             merged_by: self.merged_by,
-            started_at: self.started_at.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            completed_at: self.completed_at.and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(&s)
-                    .ok()
-                    .map(|d| d.with_timezone(&Utc))
-            }),
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&self.updated_at)
-                .map(|d| d.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-        }
+        })
     }
 }
 
@@ -987,17 +628,6 @@ fn parse_item_type(s: &str) -> ItemType {
         "bug" => ItemType::Bug,
         "requirement" => ItemType::Requirement,
         other => ItemType::Custom(other.to_string()),
-    }
-}
-
-fn parse_priority(s: &str) -> Priority {
-    match s {
-        "critical" => Priority::Critical,
-        "high" => Priority::High,
-        "medium" => Priority::Medium,
-        "low" => Priority::Low,
-        "none" => Priority::None,
-        _ => Priority::Medium,
     }
 }
 
@@ -1044,7 +674,14 @@ async fn insert_item(
     initial_status: &str,
     input: CreateItem,
     source: ItemSource,
-) -> Result<Item, sqlx::Error> {
+) -> Result<Item, StoreError> {
+    require_row(conn, Parent::Project, project_id).await?;
+    if let Some(parent_id) = input.parent_id {
+        require_row(conn, Parent::Item, parent_id).await?;
+    }
+    if let Some(sprint_id) = input.sprint_id {
+        require_row(conn, Parent::Sprint, sprint_id).await?;
+    }
     let id = Uuid::new_v4();
     let now = Utc::now();
     let now_str = now.to_rfc3339();
@@ -1052,10 +689,10 @@ async fn insert_item(
     let priority = input.priority.unwrap_or_default();
     let estimate_unit = input.estimate_unit.unwrap_or_default();
     let tags = input.tags.unwrap_or_default();
-    let tags_json = serde_json::to_string(&tags).unwrap();
+    let tags_json = decode::to_json(&tags)?;
     let item_type_str = item_type.to_string();
     let priority_str = priority.to_string();
-    let estimate_unit_str = serde_json::to_string(&estimate_unit).unwrap();
+    let estimate_unit_str = decode::to_json(&estimate_unit)?;
 
     // Get next sort order
     let max_sort: Option<i32> =
@@ -1121,58 +758,189 @@ async fn insert_item(
         source,
         source_artifact_id: input.source_artifact_id,
         run_settings: None,
-        needs_review: false,
-        merge_note: None,
-        started_by: None,
-        team: None,
-        merged_by: None,
         created_at: now,
         updated_at: now,
     })
 }
 
+impl Repository {
+    /// Point `item` at `parent` as its parent, touching nothing else of the row.
+    pub async fn set_item_parent(&self, item: Uuid, parent: Uuid) -> Result<(), crate::StoreError> {
+        sqlx::query("UPDATE items SET parent_id = ? WHERE id = ?")
+            .bind(parent.to_string())
+            .bind(item.to_string())
+            .execute(self.pool())
+            .await?;
+        Ok(())
+    }
+}
+
+/// The body of [`Repository::update_item_atomically`] over a transaction the caller opened with
+/// `BEGIN IMMEDIATE` and ends: it writes only when it answers `Updated`, so any other answer
+/// leaves nothing to undo, and a caller that has more to write in the same transaction (a
+/// completion moving the item) calls this and goes on.
+pub(crate) async fn update_item_in(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    id: Uuid,
+    input: UpdateItem,
+    gate: &dyn StatusGate,
+    expected_version: Option<i64>,
+) -> Result<AtomicItemUpdateOutcome, StoreError> {
+    let now = Utc::now().to_rfc3339();
+    let current: Option<(String, String, i64)> =
+        sqlx::query_as("SELECT project_id, status, version FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&mut **tx)
+            .await?;
+    let Some((project_id, old_status, current_version)) = current else {
+        return Ok(AtomicItemUpdateOutcome::NotFound);
+    };
+    if expected_version.is_some_and(|expected| expected != current_version) {
+        return Ok(AtomicItemUpdateOutcome::PreconditionFailed);
+    }
+
+    if let Some(Some(sprint_id)) = input.sprint_id {
+        require_row(tx, Parent::Sprint, sprint_id).await?;
+    }
+    // Without an addressed field there is no logical mutation and therefore no version to consume.
+    if input.is_empty() {
+        let item = fetch_card(tx, id).await?;
+        return Ok(match item {
+            Some(item) => AtomicItemUpdateOutcome::Updated {
+                item: Box::new(item),
+                version: current_version,
+                old_status,
+            },
+            None => AtomicItemUpdateOutcome::NotFound,
+        });
+    }
+    let status_category = if let Some(target) = input.status.as_deref() {
+        let occupied: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
+                .bind(&project_id)
+                .bind(target)
+                .fetch_one(&mut **tx)
+                .await?;
+        match gate.admit_move(&old_status, target, occupied as usize) {
+            Ok(category) => category,
+            Err(error) => return Ok(AtomicItemUpdateOutcome::Rejected(error)),
+        }
+    } else {
+        None
+    };
+
+    let mut query = QueryBuilder::<Sqlite>::new("UPDATE items SET ");
+    {
+        let mut fields = query.separated(", ");
+        if let Some(title) = input.title.as_deref() {
+            fields.push("title = ").push_bind_unseparated(title);
+        }
+        if let Some(description) = input.description.as_ref() {
+            fields
+                .push("description = ")
+                .push_bind_unseparated(description.as_deref());
+        }
+        if let Some(item_type) = input.item_type.as_ref() {
+            fields
+                .push("item_type = ")
+                .push_bind_unseparated(item_type.to_string());
+        }
+        if let Some(status) = input.status.as_deref() {
+            fields.push("status = ").push_bind_unseparated(status);
+        }
+        if let Some(priority) = input.priority.as_ref() {
+            fields
+                .push("priority = ")
+                .push_bind_unseparated(priority.to_string());
+        }
+        if let Some(estimate) = input.estimate {
+            fields.push("estimate = ").push_bind_unseparated(estimate);
+        }
+        if let Some(estimate_unit) = input.estimate_unit.as_ref() {
+            let value = estimate_unit.as_ref().map(decode::to_json).transpose()?;
+            fields.push("estimate_unit = ").push_bind_unseparated(value);
+        }
+        if let Some(tags) = input.tags.as_ref() {
+            let value = decode::to_json(tags)?;
+            fields.push("tags = ").push_bind_unseparated(value);
+        }
+        if let Some(due_date) = input.due_date.as_ref() {
+            fields
+                .push("due_date = ")
+                .push_bind_unseparated(due_date.as_ref().map(|date| date.to_rfc3339()));
+        }
+        if let Some(sprint_id) = input.sprint_id.as_ref() {
+            fields
+                .push("sprint_id = ")
+                .push_bind_unseparated(sprint_id.map(|sprint_id| sprint_id.to_string()));
+        }
+        if let Some(sort_order) = input.sort_order {
+            fields
+                .push("sort_order = ")
+                .push_bind_unseparated(sort_order);
+        }
+        if let Some(assignee) = input.assignee.as_ref() {
+            fields
+                .push("assignee = ")
+                .push_bind_unseparated(assignee.as_deref());
+        }
+        if let Some(recurrence) = input.recurrence.as_ref() {
+            fields
+                .push("recurrence = ")
+                .push_bind_unseparated(recurrence.map(|r| r.to_string()));
+        }
+        if let Some(run_settings) = input.run_settings.as_ref() {
+            let value = run_settings.as_ref().map(decode::to_json).transpose()?;
+            fields.push("run_settings = ").push_bind_unseparated(value);
+        }
+        match status_category {
+            Some(StatusCategory::InProgress) => {
+                fields
+                    .push("started_at = COALESCE(started_at, ")
+                    .push_bind_unseparated(&now)
+                    .push_unseparated(")");
+                fields.push("completed_at = NULL");
+            }
+            Some(StatusCategory::Done) => {
+                fields
+                    .push("completed_at = COALESCE(completed_at, ")
+                    .push_bind_unseparated(&now)
+                    .push_unseparated(")");
+            }
+            Some(StatusCategory::Todo) => {
+                fields.push("completed_at = NULL");
+            }
+            None => {}
+        }
+        fields.push("updated_at = ").push_bind_unseparated(&now);
+        fields.push("version = version + 1");
+    }
+    query.push(" WHERE id = ").push_bind(id.to_string());
+    if let Some(expected_version) = expected_version {
+        query.push(" AND version = ").push_bind(expected_version);
+    }
+    let result = query.build().execute(&mut **tx).await?;
+    if result.rows_affected() != 1 {
+        return Ok(if expected_version.is_some() {
+            AtomicItemUpdateOutcome::PreconditionFailed
+        } else {
+            AtomicItemUpdateOutcome::NotFound
+        });
+    }
+
+    let item = fetch_card(tx, id).await?.ok_or_else(|| {
+        StoreError::corrupt("items", "id", "the row vanished inside its own transaction")
+    })?;
+    Ok(AtomicItemUpdateOutcome::Updated {
+        item: Box::new(item),
+        version: current_version + 1,
+        old_status,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
-    use tracing::field::{Field, Visit};
-    use tracing::span::{Attributes, Id, Record};
-    use tracing::{Event, Level, Metadata, Subscriber};
-
     use super::*;
-
-    /// Records every event as `(level, rendered fields)`; just enough of a
-    /// subscriber to see what `into_item` logs, without a new dependency.
-    struct Capture(Arc<Mutex<Vec<(Level, String)>>>);
-
-    struct Render(String);
-
-    impl Visit for Render {
-        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-            self.0.push_str(&format!("{}={:?} ", field.name(), value));
-        }
-    }
-
-    impl Subscriber for Capture {
-        fn enabled(&self, _: &Metadata<'_>) -> bool {
-            true
-        }
-        fn new_span(&self, _: &Attributes<'_>) -> Id {
-            Id::from_u64(1)
-        }
-        fn record(&self, _: &Id, _: &Record<'_>) {}
-        fn record_follows_from(&self, _: &Id, _: &Id) {}
-        fn event(&self, event: &Event<'_>) {
-            let mut render = Render(String::new());
-            event.record(&mut render);
-            self.0
-                .lock()
-                .unwrap()
-                .push((*event.metadata().level(), render.0));
-        }
-        fn enter(&self, _: &Id) {}
-        fn exit(&self, _: &Id) {}
-    }
 
     fn row(run_settings: Option<&str>) -> ItemRow {
         ItemRow {
@@ -1185,7 +953,7 @@ mod tests {
             status: "todo".to_owned(),
             priority: "medium".to_owned(),
             estimate: None,
-            estimate_unit: "\"points\"".to_owned(),
+            estimate_unit: "\"story_points\"".to_owned(),
             tags: "[]".to_owned(),
             sort_order: 0,
             sprint_id: None,
@@ -1196,11 +964,6 @@ mod tests {
             source: "human".to_owned(),
             source_artifact_id: None,
             run_settings: run_settings.map(str::to_owned),
-            needs_review: false,
-            merge_note: None,
-            started_by: None,
-            team: None,
-            merged_by: None,
             started_at: None,
             completed_at: None,
             created_at: Utc::now().to_rfc3339(),
@@ -1209,22 +972,23 @@ mod tests {
     }
 
     #[test]
-    fn a_stored_run_setting_that_no_longer_fits_reads_none_and_warns_with_the_item_id() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let row = row(Some(r#"{"timeout_seconds": "ten"}"#));
-        let id = row.id.clone();
+    fn a_stored_run_setting_that_no_longer_fits_is_a_corrupt_row_naming_its_column() {
+        let error = row(Some(r#"{"timeout_seconds": "ten"}"#))
+            .into_item()
+            .unwrap_err();
 
-        let item = tracing::subscriber::with_default(Capture(events.clone()), || row.into_item());
-
-        assert!(item.run_settings.is_none());
-        let events = events.lock().unwrap();
-        let warns: Vec<_> = events.iter().filter(|(l, _)| *l == Level::WARN).collect();
-        assert_eq!(warns.len(), 1, "exactly one warn: {events:?}");
-        assert!(warns[0].1.contains(&id), "names the item: {}", warns[0].1);
+        let message = error.to_string();
+        assert!(message.contains("items"), "names the table: {message}");
         assert!(
-            !warns[0].1.contains("ten"),
-            "never the stored value: {}",
-            warns[0].1
+            message.contains("run_settings"),
+            "names the column: {message}"
         );
+    }
+
+    #[test]
+    fn a_row_with_run_settings_that_fit_reads_them() {
+        let item = row(Some(r#"{"timeout_seconds": 10}"#)).into_item().unwrap();
+
+        assert!(item.run_settings.is_some());
     }
 }

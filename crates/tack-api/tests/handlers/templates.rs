@@ -10,7 +10,7 @@ use axum::http::StatusCode;
 use serde_json::{Value, json};
 use tack_api::handlers::websocket::BoardEvent;
 use tack_api::{AppState, config::AppConfig, router::build_router};
-use tack_db::repo;
+use tack_db::{Repository, repo};
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -266,8 +266,8 @@ async fn delete_template_removes_a_user_created_template() {
 /// handler-note finding in the task report.
 #[tokio::test]
 async fn delete_template_on_builtin_template_reports_success_but_keeps_the_row() {
-    let (app, pool) = setup_with_builtins().await;
-    let builtin_id = builtin_template_id(&pool).await;
+    let (app, repo) = setup_with_builtins().await;
+    let builtin_id = builtin_template_id(&repo).await;
 
     let (status, _) = common::send(
         &app,
@@ -279,7 +279,7 @@ async fn delete_template_on_builtin_template_reports_success_but_keeps_the_row()
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
 
-    let still_there = repo::templates::get_template(&pool, builtin_id).await;
+    let still_there = repo::templates::get_template(&repo, builtin_id).await;
     assert!(
         still_there.is_ok(),
         "the builtin row must still exist even though the route reported success"
@@ -544,12 +544,12 @@ async fn save_project_as_template_unknown_project_is_404() {
 /// every one reports 500, not a hang or a panic.
 #[tokio::test]
 async fn db_failure_on_routes_without_a_precheck_is_500() {
-    let (app, pool) = setup_with_pool().await;
+    let (app, repo) = setup_with_pool().await;
     let template = create_template(&app, minimal_template_body("T")).await;
     let tid = template["id"].as_str().unwrap().to_owned();
     let pid = common::create_project(&app, "P", "software").await;
 
-    pool.close().await;
+    tack_test_support::seed::pool_closed(&repo).await;
 
     let cases = [
         ("GET", "/api/templates".to_string()),
@@ -571,10 +571,10 @@ async fn db_failure_on_routes_without_a_precheck_is_500() {
 /// A test app built the same way `common::test_app` is, with the pool handed
 /// back so a test can sever it mid-test (`common::test_app` doesn't expose
 /// it) — used to pin the database-failure branches above.
-async fn setup_with_pool() -> (Router, sqlx::SqlitePool) {
+async fn setup_with_pool() -> (Router, Repository) {
     let repo = tack_test_support::setup_test_db().await;
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
-    let pool = repo.pool().clone();
+    let handle = repo.clone();
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     let config = AppConfig {
@@ -588,8 +588,12 @@ async fn setup_with_pool() -> (Router, sqlx::SqlitePool) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
-    (crate::common::with_default_host(build_router(state)), pool)
+    (
+        crate::common::with_default_host(build_router(state)),
+        handle,
+    )
 }
 
 /// A test app whose database has no workspace row at all — `common::test_app`
@@ -613,6 +617,7 @@ async fn setup_without_workspace() -> Router {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     crate::common::with_default_host(build_router(state))
 }
@@ -626,13 +631,13 @@ async fn setup_without_workspace() -> Router {
 /// way to create a builtin template (`create_template` always inserts
 /// `is_builtin = 0`), so the one test that needs a real builtin row seeds it
 /// directly against the same in-memory pool the router runs on.
-async fn setup_with_builtins() -> (Router, sqlx::SqlitePool) {
+async fn setup_with_builtins() -> (Router, Repository) {
     let repo = tack_test_support::setup_test_db().await;
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
-    repo::templates::seed_builtin_templates(repo.pool())
+    repo::templates::seed_builtin_templates(&repo)
         .await
         .expect("seed builtin templates");
-    let pool = repo.pool().clone();
+    let handle = repo.clone();
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     let config = AppConfig {
@@ -646,14 +651,18 @@ async fn setup_with_builtins() -> (Router, sqlx::SqlitePool) {
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
-    (crate::common::with_default_host(build_router(state)), pool)
+    (
+        crate::common::with_default_host(build_router(state)),
+        handle,
+    )
 }
 
 /// Any one seeded builtin template's id — which one doesn't matter, the
 /// delete rule applies to all of them alike.
-async fn builtin_template_id(pool: &sqlx::SqlitePool) -> Uuid {
-    let templates = repo::templates::list_templates(pool, None)
+async fn builtin_template_id(repo: &Repository) -> Uuid {
+    let templates = repo::templates::list_templates(repo, None)
         .await
         .expect("list templates");
     templates
@@ -663,14 +672,14 @@ async fn builtin_template_id(pool: &sqlx::SqlitePool) -> Uuid {
         .id
 }
 
-// ─── The project file through templates (ADR 0081) ───────────────────────────
+// ─── The project file through templates (ADR 0022) ───────────────────────────
 
 /// A built-in template comes with its roles, and the reviewer profiles those
 /// roles name are made by name; a project saved as a template keeps its roles,
 /// profiles and automation.
 #[tokio::test]
 async fn templates_carry_roles_profiles_and_automation() {
-    let app = crate::bundle::app().await;
+    let app = crate::handlers::bundle::app().await;
     let (_, listed) = common::send(&app, "GET", "/api/templates", Value::Null, &[]).await;
     let web = listed
         .as_array()
@@ -716,8 +725,12 @@ async fn templates_carry_roles_profiles_and_automation() {
         );
     }
 
-    let (_, made) =
-        crate::bundle::import(&app, "/api/projects/outline", crate::bundle::FABULADA).await;
+    let (_, made) = crate::handlers::bundle::import(
+        &app,
+        "/api/projects/outline",
+        crate::handlers::bundle::MY_SAAS,
+    )
+    .await;
     let (status, saved) = common::send(
         &app,
         "POST",
@@ -725,7 +738,7 @@ async fn templates_carry_roles_profiles_and_automation() {
             "/api/projects/{}/save-as-template",
             made["project"]["id"].as_str().unwrap()
         ),
-        json!({"name": "Fabulada shape"}),
+        json!({"name": "My SaaS shape"}),
         &[],
     )
     .await;
@@ -734,6 +747,6 @@ async fn templates_carry_roles_profiles_and_automation() {
     assert_eq!(saved["profiles"].as_array().unwrap().len(), 6);
     assert_eq!(
         saved["automation"]["repository"],
-        "/home/ox/Sites/localtales"
+        "/home/person/Sites/my-saas"
     );
 }

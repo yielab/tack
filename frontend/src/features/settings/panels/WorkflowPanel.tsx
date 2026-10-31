@@ -89,14 +89,14 @@ const WorkflowPanel: Component = () => {
 
   return (
     <div class="flex max-w-[880px] flex-col gap-2.5">
-      <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+      <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         Define the columns and WIP limits for this project's board.
       </p>
 
       <div class="flex flex-col gap-2">
         <For each={rows()}>
           {(row, i) => (
-            <div class="flex flex-wrap items-center gap-2 rounded-[22px] bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
+            <div class="flex flex-wrap items-center gap-2 rounded-xl bg-panel px-2.5 py-1.5 sm:flex-nowrap sm:rounded-full">
               <input
                 type="text"
                 value={row.name}
@@ -110,7 +110,7 @@ const WorkflowPanel: Component = () => {
                 aria-label={`Status ${i() + 1}: category`}
                 value={row.category}
                 onChange={(e) => setField(row.id, 'category', e.currentTarget.value)}
-                class="min-h-8 w-[150px] rounded-full border px-3.5 py-1 text-[0.8125rem] focus:outline-none focus-visible:ring-2"
+                class="min-h-8 w-[150px] rounded-full border px-3.5 py-1 text-small focus:outline-none focus-visible:ring-2"
                 style={control}
               >
                 <option value="todo">To Do</option>
@@ -118,7 +118,7 @@ const WorkflowPanel: Component = () => {
                 <option value="done">Done</option>
               </select>
               <label
-                class="flex min-h-8 w-[96px] flex-shrink-0 items-center gap-1 rounded-full border px-3.5 text-[0.8125rem] focus-within:ring-2"
+                class="flex min-h-8 w-[96px] flex-shrink-0 items-center gap-1 rounded-full border px-3.5 text-small focus-within:ring-2"
                 style={control}
               >
                 <span class="whitespace-nowrap" style={{ color: 'var(--color-text-tertiary)' }}>WIP</span>
@@ -129,7 +129,7 @@ const WorkflowPanel: Component = () => {
                   aria-label={`Status ${i() + 1}: WIP limit`}
                   placeholder="∞"
                   onInput={(e) => setField(row.id, 'wip_limit', e.currentTarget.value)}
-                  class="w-full min-w-0 bg-transparent text-[0.8125rem] focus:outline-none"
+                  class="w-full min-w-0 bg-transparent text-small focus:outline-none"
                   style={{ color: 'var(--color-text-primary)' }}
                 />
               </label>
@@ -149,7 +149,7 @@ const WorkflowPanel: Component = () => {
 
       <button
         onClick={addStatus}
-        class="flex items-center justify-center gap-2 rounded-full border-2 border-dashed p-2 text-[0.8125rem] font-semibold transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
+        class="flex items-center justify-center gap-2 rounded-full border-2 border-dashed p-2 text-small font-semibold transition-colors hover:bg-hover focus:outline-none focus-visible:ring-2"
         style={{
           'border-color': 'var(--color-border-light)',
           color: 'var(--color-text-secondary)',

@@ -1,0 +1,28 @@
+{
+  "set": "entries",
+  "columns": [
+    "_id",
+    "_at",
+    "_task",
+    "_session",
+    "_step",
+    "_updated_at",
+    "ref",
+    "title",
+    "amount"
+  ],
+  "rows": [
+    {
+      "_id": 1,
+      "_at": "2026-01-01T00:00:00Z",
+      "_task": "task-00000000-0000-0000-0000-000000000000",
+      "_session": "session-0",
+      "_step": "capture",
+      "_updated_at": "2026-01-01T00:00:00Z",
+      "ref": "story-1",
+      "title": "A story",
+      "amount": 12.5
+    }
+  ],
+  "cut": 0
+}

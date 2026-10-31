@@ -18,6 +18,7 @@ fn config_precedence_is_defaults_file_environment_then_cli() {
             enrollment_credential: Some(EnrollmentCredential::new("environment-secret")),
             max_concurrent_attempts: None,
             invalid: None,
+            process: None,
         },
         command_line: ConfigOverrides {
             api_base_url: Some("https://cli.invalid".into()),
@@ -26,6 +27,7 @@ fn config_precedence_is_defaults_file_environment_then_cli() {
             enrollment_credential: Some(EnrollmentCredential::new("cli-secret")),
             max_concurrent_attempts: None,
             invalid: None,
+            process: None,
         },
     })
     .expect("configuration should load");
@@ -54,6 +56,39 @@ fn credentials_are_redacted_from_debug_and_missing_error() {
         .require_enrollment_credential()
         .expect_err("credential is absent");
     assert!(!missing.to_string().contains(secret));
+}
+
+#[test]
+fn a_saved_session_or_a_credential_lets_the_runner_start_and_neither_does_not() {
+    let directory = tempfile::tempdir().expect("state dir");
+    let mut config = RunnerConfig::defaults();
+    config.state_dir = directory.path().to_path_buf();
+
+    assert!(matches!(
+        config.require_session_or_enrollment_credential(),
+        Err(RunnerError::MissingEnrollmentCredential)
+    ));
+
+    config.enrollment_credential = Some(EnrollmentCredential::new("a-credential"));
+    config
+        .require_session_or_enrollment_credential()
+        .expect("a credential is enough");
+
+    config.enrollment_credential = None;
+    std::fs::write(
+        directory.path().join("session.json"),
+        r#"{"runner_id":"runr_1","runner_credential":"c","credential_expires_at":"2026-11-04T12:00:00Z"}"#,
+    )
+    .expect("session is written");
+    config
+        .require_session_or_enrollment_credential()
+        .expect("a saved session is enough");
+
+    std::fs::write(directory.path().join("session.json"), "{}").expect("session is damaged");
+    assert!(
+        config.require_session_or_enrollment_credential().is_err(),
+        "a session that cannot be read is no session"
+    );
 }
 
 #[test]
@@ -143,7 +178,7 @@ fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
             r#"
                 [verify]
                 enabled = true
-                sign_key = "/home/ox/.config/prill/prill.key"
+                sign_key = "/home/person/.config/prill/prill.key"
             "#,
         ),
         ..RunnerConfigSources::default()
@@ -151,7 +186,7 @@ fn the_verify_table_defaults_to_prill_and_accepts_both_kinds() {
     .expect("a [verify] table may name a signing key");
     assert_eq!(
         config.verify.sign_key.as_deref(),
-        Some("/home/ox/.config/prill/prill.key")
+        Some("/home/person/.config/prill/prill.key")
     );
 
     let config = RunnerConfig::from_sources(RunnerConfigSources {

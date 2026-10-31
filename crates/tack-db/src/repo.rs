@@ -1,5 +1,6 @@
 pub mod attachments;
 pub mod autonomy;
+pub mod backup;
 pub mod boards;
 pub mod briefs;
 pub mod budgets;
@@ -10,13 +11,16 @@ pub mod execution;
 pub mod github_links;
 pub mod items;
 pub mod metrics;
+pub mod prill_records;
 pub mod projects;
 pub mod pull_requests;
 pub mod rate_card;
 pub mod roles;
 pub mod sprints;
 pub mod templates;
+pub mod workspaces;
 
+use crate::StoreError;
 use sqlx::SqlitePool;
 use tack_core::models::*;
 use uuid::Uuid;
@@ -33,7 +37,32 @@ impl Repository {
         Self { pool }
     }
 
+    /// The project a write names must be there: `NotFound { entity: "project" }` when it is not,
+    /// so a write whose foreign key would point at nothing answers 404 and never the database's
+    /// constraint error as a 500.
+    pub(crate) async fn require_project(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut conn = self.pool.acquire().await?;
+        require_row(&mut conn, Parent::Project, id).await
+    }
+
+    /// The item a write names must be there: `NotFound { entity: "item" }` when it is not (see
+    /// [`Repository::require_project`]).
+    pub(crate) async fn require_item(&self, id: Uuid) -> Result<(), StoreError> {
+        let mut conn = self.pool.acquire().await?;
+        require_row(&mut conn, Parent::Item, id).await
+    }
+
+    /// The raw connection pool, for the seeds and assertions of `tack-test-support`.
+    /// Only that crate turns the `raw-pool` feature on; cargo unifies features across a
+    /// build, so the feature alone does not keep other crates out, and the real gate is
+    /// `scripts/check-crate-graph.sh` and the ban rules in `deny.toml`.
+    #[cfg(feature = "raw-pool")]
     pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
+    #[cfg(not(feature = "raw-pool"))]
+    pub(crate) fn pool(&self) -> &SqlitePool {
         &self.pool
     }
 
@@ -46,18 +75,18 @@ impl Repository {
         item_id: Uuid,
         repo: &str,
         issue_number: i64,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), StoreError> {
         github_links::set_link(self.pool(), item_id, repo, issue_number).await
     }
 
     pub async fn get_github_link(
         &self,
         item_id: Uuid,
-    ) -> Result<Option<(String, i64)>, sqlx::Error> {
+    ) -> Result<Option<(String, i64)>, StoreError> {
         github_links::get_link(self.pool(), item_id).await
     }
 
-    pub async fn remove_github_link(&self, item_id: Uuid) -> Result<(), sqlx::Error> {
+    pub async fn remove_github_link(&self, item_id: Uuid) -> Result<(), StoreError> {
         github_links::remove_link(self.pool(), item_id).await
     }
 
@@ -69,28 +98,28 @@ impl Repository {
         &self,
         project_id: Uuid,
         data: CreateBoard,
-    ) -> Result<Board, sqlx::Error> {
-        boards::create_board(self.pool(), project_id, data).await
+    ) -> Result<Board, StoreError> {
+        boards::create_board(self, project_id, data).await
     }
 
-    pub async fn get_board(&self, id: Uuid) -> Result<Board, sqlx::Error> {
-        boards::get_board(self.pool(), id).await
+    pub async fn get_board(&self, id: Uuid) -> Result<Board, StoreError> {
+        boards::get_board(self, id).await
     }
 
-    pub async fn get_default_board(&self, project_id: Uuid) -> Result<Option<Board>, sqlx::Error> {
-        boards::get_default_board(self.pool(), project_id).await
+    pub async fn get_default_board(&self, project_id: Uuid) -> Result<Option<Board>, StoreError> {
+        boards::get_default_board(self, project_id).await
     }
 
-    pub async fn list_boards(&self, project_id: Uuid) -> Result<Vec<Board>, sqlx::Error> {
-        boards::list_boards(self.pool(), project_id).await
+    pub async fn list_boards(&self, project_id: Uuid) -> Result<Vec<Board>, StoreError> {
+        boards::list_boards(self, project_id).await
     }
 
-    pub async fn update_board(&self, id: Uuid, data: UpdateBoard) -> Result<Board, sqlx::Error> {
-        boards::update_board(self.pool(), id, data).await
+    pub async fn update_board(&self, id: Uuid, data: UpdateBoard) -> Result<Board, StoreError> {
+        boards::update_board(self, id, data).await
     }
 
-    pub async fn delete_board(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        boards::delete_board(self.pool(), id).await
+    pub async fn delete_board(&self, id: Uuid) -> Result<(), StoreError> {
+        boards::delete_board(self, id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
@@ -100,23 +129,23 @@ impl Repository {
     pub async fn create_template(
         &self,
         data: CreateProjectTemplate,
-    ) -> Result<ProjectTemplate, sqlx::Error> {
-        templates::create_template(self.pool(), data).await
+    ) -> Result<ProjectTemplate, StoreError> {
+        templates::create_template(self, data).await
     }
 
-    pub async fn get_template(&self, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
-        templates::get_template(self.pool(), id).await
+    pub async fn get_template(&self, id: Uuid) -> Result<ProjectTemplate, StoreError> {
+        templates::get_template(self, id).await
     }
 
     pub async fn list_templates(
         &self,
         project_type: Option<ProjectType>,
-    ) -> Result<Vec<ProjectTemplate>, sqlx::Error> {
-        templates::list_templates(self.pool(), project_type).await
+    ) -> Result<Vec<ProjectTemplate>, StoreError> {
+        templates::list_templates(self, project_type).await
     }
 
-    pub async fn delete_template(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        templates::delete_template(self.pool(), id).await
+    pub async fn delete_template(&self, id: Uuid) -> Result<(), StoreError> {
+        templates::delete_template(self, id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
@@ -127,31 +156,31 @@ impl Repository {
         &self,
         project_id: Uuid,
         data: CreateCustomField,
-    ) -> Result<CustomFieldDefinition, sqlx::Error> {
-        custom_fields::create_field(self.pool(), project_id, data).await
+    ) -> Result<CustomFieldDefinition, StoreError> {
+        custom_fields::create_field(self, project_id, data).await
     }
 
-    pub async fn get_field(&self, id: Uuid) -> Result<CustomFieldDefinition, sqlx::Error> {
-        custom_fields::get_field(self.pool(), id).await
+    pub async fn get_field(&self, id: Uuid) -> Result<CustomFieldDefinition, StoreError> {
+        custom_fields::get_field(self, id).await
     }
 
     pub async fn list_fields_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<CustomFieldDefinition>, sqlx::Error> {
-        custom_fields::list_fields_for_project(self.pool(), project_id).await
+    ) -> Result<Vec<CustomFieldDefinition>, StoreError> {
+        custom_fields::list_fields_for_project(self, project_id).await
     }
 
     pub async fn update_field(
         &self,
         id: Uuid,
         data: UpdateCustomField,
-    ) -> Result<CustomFieldDefinition, sqlx::Error> {
-        custom_fields::update_field(self.pool(), id, data).await
+    ) -> Result<CustomFieldDefinition, StoreError> {
+        custom_fields::update_field(self, id, data).await
     }
 
-    pub async fn delete_field(&self, id: Uuid) -> Result<(), sqlx::Error> {
-        custom_fields::delete_field(self.pool(), id).await
+    pub async fn delete_field(&self, id: Uuid) -> Result<(), StoreError> {
+        custom_fields::delete_field(self, id).await
     }
 
     pub async fn set_field_value(
@@ -159,38 +188,38 @@ impl Repository {
         item_id: Uuid,
         field_id: Uuid,
         value: serde_json::Value,
-    ) -> Result<CustomFieldValue, sqlx::Error> {
-        custom_fields::set_field_value(self.pool(), item_id, field_id, value).await
+    ) -> Result<CustomFieldValue, StoreError> {
+        custom_fields::set_field_value(self, item_id, field_id, value).await
     }
 
     pub async fn get_field_value(
         &self,
         item_id: Uuid,
         field_id: Uuid,
-    ) -> Result<CustomFieldValue, sqlx::Error> {
-        custom_fields::get_field_value(self.pool(), item_id, field_id).await
+    ) -> Result<CustomFieldValue, StoreError> {
+        custom_fields::get_field_value(self, item_id, field_id).await
     }
 
     pub async fn get_all_field_values_for_item(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
-        custom_fields::get_all_field_values_for_item(self.pool(), item_id).await
+    ) -> Result<Vec<CustomFieldValue>, StoreError> {
+        custom_fields::get_all_field_values_for_item(self, item_id).await
     }
 
     pub async fn field_values_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<CustomFieldValue>, sqlx::Error> {
-        custom_fields::field_values_for_project(self.pool(), project_id).await
+    ) -> Result<Vec<CustomFieldValue>, StoreError> {
+        custom_fields::field_values_for_project(self, project_id).await
     }
 
     pub async fn delete_field_value(
         &self,
         item_id: Uuid,
         field_id: Uuid,
-    ) -> Result<(), sqlx::Error> {
-        custom_fields::delete_field_value(self.pool(), item_id, field_id).await
+    ) -> Result<(), StoreError> {
+        custom_fields::delete_field_value(self, item_id, field_id).await
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
@@ -204,24 +233,60 @@ impl Repository {
         mime_type: String,
         storage_path: String,
         size_bytes: u64,
-    ) -> Result<Attachment, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+    ) -> Result<Attachment, StoreError> {
+        let repo = attachments::AttachmentRepo::new(self);
         repo.create_attachment(item_id, filename, mime_type, storage_path, size_bytes)
             .await
     }
 
-    pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+    pub async fn get_attachment(&self, id: Uuid) -> Result<Option<Attachment>, StoreError> {
+        let repo = attachments::AttachmentRepo::new(self);
         repo.get_attachment(id).await
     }
 
-    pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+    pub async fn list_attachments(&self, item_id: Uuid) -> Result<Vec<Attachment>, StoreError> {
+        let repo = attachments::AttachmentRepo::new(self);
         repo.list_attachments(item_id).await
     }
 
-    pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, sqlx::Error> {
-        let repo = attachments::AttachmentRepo::new(self.pool());
+    pub async fn delete_attachment(&self, id: Uuid) -> Result<bool, StoreError> {
+        let repo = attachments::AttachmentRepo::new(self);
         repo.delete_attachment(id).await
     }
+}
+
+/// The rows a write can name as its parent.
+#[derive(Clone, Copy)]
+pub(crate) enum Parent {
+    Project,
+    Item,
+    Sprint,
+}
+
+/// A row a write names must be there: `NotFound { entity }` when it is not, on whatever
+/// connection the write holds (a pooled one, or a transaction's).
+pub(crate) async fn require_row(
+    conn: &mut sqlx::SqliteConnection,
+    parent: Parent,
+    id: Uuid,
+) -> Result<(), StoreError> {
+    let (query, entity) = match parent {
+        Parent::Project => (
+            sqlx::query_scalar("SELECT 1 FROM projects WHERE id = ?"),
+            "project",
+        ),
+        Parent::Item => (
+            sqlx::query_scalar("SELECT 1 FROM items WHERE id = ?"),
+            "item",
+        ),
+        Parent::Sprint => (
+            sqlx::query_scalar("SELECT 1 FROM sprints WHERE id = ?"),
+            "sprint",
+        ),
+    };
+    let found: Option<i64> = query
+        .bind(id.to_string())
+        .fetch_optional(&mut *conn)
+        .await?;
+    found.map(|_| ()).ok_or(StoreError::not_found(entity))
 }

@@ -10,13 +10,13 @@ import { FiUploadCloud, FiDownloadCloud, FiRefreshCw, FiCheckCircle } from 'soli
 import { api } from '../../shared/api';
 import type { CloudBackupConfigInput } from '../../shared/api/data';
 import { toast } from '../../shared/ui/toast';
-import { Button, Field, Badge } from '../../shared/ui';
+import { Button, Field, Badge, createConfirm } from '../../shared/ui';
 import { IconChevronDown, IconChevronRight } from '../../shared/ui/icons';
 import DisplaySettings from './DisplaySettings';
 
 // Setting card: a surface-filled container (no border — the fill contrast
 // against the page ground does the work) with a display-face title.
-const CARD = 'flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5';
+const CARD = 'flex flex-col gap-3 rounded-card bg-panel px-[22px] py-5';
 const CARD_TITLE = 'text-[1.3125rem] leading-tight';
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -56,11 +56,16 @@ const GlobalSettings: Component = () => {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const restoreFrom = async (file: File) => {
     if (
-      !confirm(
-        'Restoring REPLACES the entire database with this file. This cannot be undone. Continue?',
-      )
+      !(await ask({
+        title: 'Replace the database?',
+        message: 'Restoring REPLACES the entire database with this file. This cannot be undone.',
+        confirmLabel: 'Restore',
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -151,9 +156,12 @@ const GlobalSettings: Component = () => {
 
   const restoreFromCloud = async (key?: string) => {
     if (
-      !confirm(
-        'Restoring from the cloud REPLACES the entire database on the next restart. Continue?',
-      )
+      !(await ask({
+        title: 'Replace the database?',
+        message: 'Restoring from the cloud REPLACES the entire database on the next restart.',
+        confirmLabel: 'Restore',
+        danger: true,
+      }))
     ) {
       return;
     }
@@ -190,6 +198,7 @@ const GlobalSettings: Component = () => {
 
   return (
     <div class="flex max-w-[760px] flex-col gap-[22px] px-6 py-8 sm:px-12">
+      <ConfirmHost />
       <div class="flex items-end gap-3">
         <h1 class="text-[2.375rem] leading-none" style={{ color: 'var(--color-text-primary)' }}>
           Settings
@@ -210,7 +219,7 @@ const GlobalSettings: Component = () => {
         <h2 class={CARD_TITLE} style={{ color: 'var(--color-text-primary)' }}>
           Local Backup
         </h2>
-        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Download a full database backup file, or restore from a previous one.
         </p>
         <div class="flex flex-wrap gap-2.5">
@@ -249,13 +258,13 @@ const GlobalSettings: Component = () => {
             <Badge tone="success">Connected</Badge>
           </Show>
         </div>
-        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Sync your database to an external S3-compatible store (Cloudflare R2,
           Backblaze B2, AWS S3, MinIO). Enter the destination once, then back up
           or restore with one click.
         </p>
 
-        <div class="grid gap-x-3.5 gap-y-2.5 sm:grid-cols-2 [&_input]:font-mono [&_input]:text-[0.78125rem]">
+        <div class="grid gap-x-3.5 gap-y-2.5 sm:grid-cols-2 [&_input]:font-mono [&_input]:text-caption">
           <Field
             label="Endpoint URL"
             placeholder="https://<account>.r2.cloudflarestorage.com"
@@ -306,7 +315,7 @@ const GlobalSettings: Component = () => {
           />
         </div>
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-start gap-2">
           <Button onClick={() => void saveCloud()} loading={savingCloud()} disabled={savingCloud()}>
             Save settings
           </Button>
@@ -315,7 +324,8 @@ const GlobalSettings: Component = () => {
             onClick={() => void backupNow()}
             loading={cloudBackingUp()}
             disabled={!configured() || cloudBackingUp()}
-            title={configured() ? 'Sync the database to cloud storage now' : 'Configure cloud storage first'}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
+            title="Sync the database to cloud storage now"
           >
             <FiUploadCloud size={16} /> Back up now
           </Button>
@@ -324,6 +334,7 @@ const GlobalSettings: Component = () => {
             onClick={() => void restoreFromCloud()}
             loading={cloudRestoring()}
             disabled={!configured() || cloudRestoring()}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
             title="Restore the latest cloud backup (applied on next restart)"
           >
             <FiDownloadCloud size={16} /> Restore latest
@@ -333,30 +344,32 @@ const GlobalSettings: Component = () => {
             onClick={() => void verifyCloud()}
             loading={cloudVerifying()}
             disabled={!configured() || cloudVerifying()}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
             title="Download and validate the latest cloud backup without restoring it"
           >
             <FiCheckCircle size={16} /> Verify latest
           </Button>
-          <Show when={configured()}>
-            <Button
-              variant="secondary"
-              class="px-2.5!"
-              onClick={() => void refetchBackups()}
-              title="Refresh the list of cloud backups"
-            >
-              <FiRefreshCw size={16} />
-            </Button>
-          </Show>
+          <Button
+            variant="secondary"
+            class="px-2.5!"
+            onClick={() => void refetchBackups()}
+            disabled={!configured()}
+            reason={configured() ? undefined : 'Set up cloud backup first'}
+            aria-label="Refresh the list of cloud backups"
+            title="Refresh the list of cloud backups"
+          >
+            <FiRefreshCw size={16} />
+          </Button>
         </div>
 
         {/* Existing cloud backups */}
         <Show when={configured()}>
           <div
-            class="flex flex-col rounded-[22px] px-3.5 py-2.5"
+            class="flex flex-col rounded-xl px-3.5 py-2.5"
             style={{ 'background-color': 'var(--color-bg-app)' }}
           >
             <p
-              class="pb-1.5 pt-1 text-[0.65625rem] font-bold uppercase tracking-[.1em]"
+              class="pb-1.5 pt-1 text-micro font-bold uppercase tracking-[.1em]"
               style={{ color: 'var(--color-text-tertiary)' }}
             >
               Cloud backups
@@ -365,7 +378,7 @@ const GlobalSettings: Component = () => {
               when={(cloudBackups() ?? []).length > 0}
               fallback={
                 <p
-                  class="border-t py-2 text-[0.8125rem]"
+                  class="border-t py-2 text-small"
                   style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}
                 >
                   {cloudBackups.loading ? 'Loading…' : 'No cloud backups yet.'}
@@ -376,7 +389,7 @@ const GlobalSettings: Component = () => {
                 <For each={cloudBackups()}>
                   {(b) => (
                     <li
-                      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 text-[0.8125rem]"
+                      class="flex flex-wrap items-center gap-x-3 gap-y-1 border-t py-2 text-small"
                       style={{ 'border-color': 'var(--color-border-light)', color: 'var(--color-text-secondary)' }}
                     >
                       <span class="font-mono text-xs" style={{ color: 'var(--color-text-primary)' }}>
@@ -419,7 +432,7 @@ const GlobalSettings: Component = () => {
 
       {/* System (advanced) */}
       <section
-        class={showSystem() ? 'flex flex-col gap-3 rounded-[28px] px-[22px] py-3.5' : 'rounded-full px-[22px] py-3.5'}
+        class={showSystem() ? 'flex flex-col gap-3 rounded-card px-[22px] py-3.5' : 'rounded-full px-[22px] py-3.5'}
         style={{ 'background-color': 'var(--color-bg-panel)' }}
       >
         <button
@@ -435,7 +448,7 @@ const GlobalSettings: Component = () => {
           <span class="font-heading text-lg">System</span>
         </button>
         <Show when={showSystem()}>
-          <div class="space-y-3 pb-1.5 text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+          <div class="space-y-3 pb-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
             <Show when={health()}>
               {(h) => (
                 <div class="font-mono text-xs">
@@ -448,11 +461,11 @@ const GlobalSettings: Component = () => {
             <Show when={dbStats()}>
               {(s) => (
                 <div
-                  class="rounded-[22px] px-3.5 py-2.5"
+                  class="rounded-xl px-3.5 py-2.5"
                   style={{ 'background-color': 'var(--color-bg-app)' }}
                 >
                   <p
-                    class="pb-1.5 pt-1 text-[0.65625rem] font-bold uppercase tracking-[.1em]"
+                    class="pb-1.5 pt-1 text-micro font-bold uppercase tracking-[.1em]"
                     style={{ color: 'var(--color-text-tertiary)' }}
                   >
                     Table row counts

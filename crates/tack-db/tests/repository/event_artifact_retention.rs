@@ -5,6 +5,11 @@
 //! what belongs at the `tack-db` layer.
 
 use crate::common;
+use serde_json::json;
+use tack_protocol::execution::{
+    AttemptId, Checkpoint, ClaimRequestId, FencingToken, RunnerId, WorkspaceId,
+};
+use tack_test_support::kept;
 
 use std::sync::Mutex;
 
@@ -13,10 +18,11 @@ use tack_db::{
     Repository, init_pool, migrations,
     repo::execution::{
         ArtifactContentCommitResult, AttemptTransitionInput, AttemptTransitionPhase,
-        EventApplyResult, EventBatch, ExecutionClock, NewAgentProfile, NewArtifact, NewEvent,
-        NewExecutionRequest, NewRunner, RequestSelection,
+        EventApplyResult, EventBatch, NewAgentProfile, NewArtifact, NewEvent, NewExecutionRequest,
+        NewRunner, RequestSelection,
     },
 };
+use tack_protocol::Clock;
 
 struct FakeClock(Mutex<DateTime<Utc>>);
 
@@ -30,7 +36,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -61,7 +67,7 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -73,7 +79,7 @@ async fn ready_repo_on(repo: Repository) -> (Repository, String, FakeClock) {
             tool_policy: "{}",
             limits: "{}",
         },
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -135,17 +141,17 @@ async fn ready_running_attempt(
     clock: &FakeClock,
     request_id: &str,
     attempt_id: &str,
-) -> i64 {
-    repo.enqueue_execution(request(request_id, item_id, request_id), clock)
+) -> FencingToken {
+    repo.enqueue_execution(request(request_id, item_id, request_id), clock.now())
         .await
         .unwrap();
     let claim = repo
         .claim_execution_idempotent_with_snapshot(
-            "runner-f2",
-            attempt_id,
-            attempt_id,
+            &RunnerId::new("runner-f2"),
+            &ClaimRequestId::new(attempt_id),
+            &AttemptId::new(attempt_id),
             Duration::seconds(300),
-            clock,
+            clock.now(),
             RequestSelection::Naive,
         )
         .await
@@ -154,29 +160,29 @@ async fn ready_running_attempt(
     let fence = claim.lease.fencing_token;
     repo.transition_attempt_with_facts(
         AttemptTransitionInput {
-            runner_id: "runner-f2",
-            attempt_id,
+            runner_id: &RunnerId::new("runner-f2"),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             phase: AttemptTransitionPhase::Preparing,
-            workspace_id: "workspace-1",
+            workspace_id: &WorkspaceId::new("workspace-1"),
             base_revision: "abc123",
             process_id: None,
         },
-        clock,
+        clock.now(),
     )
     .await
     .unwrap();
     repo.transition_attempt_with_facts(
         AttemptTransitionInput {
-            runner_id: "runner-f2",
-            attempt_id,
+            runner_id: &RunnerId::new("runner-f2"),
+            attempt_id: &AttemptId::new(attempt_id),
             fencing_token: fence,
             phase: AttemptTransitionPhase::Running,
-            workspace_id: "workspace-1",
+            workspace_id: &WorkspaceId::new("workspace-1"),
             base_revision: "abc123",
             process_id: Some("pid-1"),
         },
-        clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -195,7 +201,7 @@ fn event<'a>(
         sequence,
         source: "runner",
         kind: "progress",
-        payload: r#"{"phase":"test"}"#,
+        payload: kept(json!({"phase": "test"})),
         occurred_at,
     }
 }
@@ -244,17 +250,17 @@ async fn set_content_reference(
     repo: &Repository,
     attempt_id: &str,
     artifact_id: &str,
-    fence: i64,
+    fence: FencingToken,
     blob: &str,
     clock: &FakeClock,
 ) -> ArtifactContentCommitResult {
     repo.set_execution_artifact_content_reference(
-        "runner-f2",
-        attempt_id,
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new(attempt_id),
         artifact_id,
         fence,
         blob,
-        clock,
+        clock.now(),
     )
     .await
     .unwrap()
@@ -300,76 +306,11 @@ async fn checkpoint_for(repo: &Repository, attempt_id: &str) -> Option<String> {
         .unwrap()
 }
 
-async fn append_batch(
-    repo: &Repository,
-    attempt_id: &str,
-    fence: i64,
-    previous_checkpoint: Option<&str>,
-    checkpoint: &str,
-    events: &[NewEvent<'_>],
-    clock: &FakeClock,
-) -> EventApplyResult {
-    repo.append_execution_events_result(
-        EventBatch {
-            runner_id: "runner-f2",
-            attempt_id,
-            fencing_token: fence,
-            previous_checkpoint,
-            checkpoint,
-        },
-        events,
-        clock,
-    )
-    .await
-    .unwrap()
-}
-
-async fn purge_events(repo: &Repository, cutoff: DateTime<Utc>, batch_size: i64) -> u64 {
-    repo.purge_execution_events_older_than(cutoff, batch_size)
-        .await
-        .unwrap()
-}
-
-/// Backdates `created_at` for the given `sequence` numbers on `attempt_id`'s
-/// events, so a retention cutoff can treat them as stale without advancing
-/// the shared clock (which would also expire the attempt's lease).
-async fn backdate_events(
-    repo: &Repository,
-    attempt_id: &str,
-    sequences: &[i64],
-    ts: DateTime<Utc>,
-) {
-    let list = sequences
-        .iter()
-        .map(i64::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    let sql = format!(
-        "UPDATE execution_events SET created_at = ? WHERE attempt_id = ? AND sequence IN ({list})"
-    );
-    sqlx::query(sqlx::AssertSqlSafe(sql))
-        .bind(ts.to_rfc3339())
-        .bind(attempt_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-}
-
-async fn remaining_event_ids(repo: &Repository, attempt_id: &str) -> Vec<String> {
-    sqlx::query_scalar(
-        "SELECT event_id FROM execution_events WHERE attempt_id = ? ORDER BY sequence",
-    )
-    .bind(attempt_id)
-    .fetch_all(repo.pool())
-    .await
-    .unwrap()
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn record_patch_artifact(
     repo: &Repository,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     sha256: &str,
@@ -377,9 +318,15 @@ async fn record_patch_artifact(
     clock: &FakeClock,
 ) -> bool {
     let artifact = patch_artifact(row_id, artifact_id, sha256, content_reference);
-    repo.record_execution_artifact("runner-f2", attempt_id, fence, artifact, clock)
-        .await
-        .unwrap()
+    repo.record_execution_artifact(
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new(attempt_id),
+        fence,
+        artifact,
+        clock.now(),
+    )
+    .await
+    .unwrap()
 }
 
 /// Lists artifacts expired as of `cutoff` and deletes them by row id.
@@ -456,14 +403,14 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
         let seeded = repo
             .append_execution_events_result(
                 EventBatch {
-                    runner_id: "runner-f2",
-                    attempt_id: case.attempt_id,
+                    runner_id: &RunnerId::new("runner-f2"),
+                    attempt_id: &AttemptId::new(case.attempt_id),
                     fencing_token: fence,
                     previous_checkpoint: None,
-                    checkpoint: "checkpoint-0001",
+                    checkpoint: &Checkpoint::new("checkpoint-0001"),
                 },
                 &[event("evt-row-1", "evt-1", 1, clock.now())],
-                &clock,
+                clock.now(),
             )
             .await
             .unwrap();
@@ -497,7 +444,7 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
                 event("evt-row-2", "evt-2", 2, clock.now()),
                 event("evt-row-3", "evt-3", 3, clock.now()),
             ],
-            Some("checkpoint-0001"),
+            Some(Checkpoint::new("checkpoint-0001")),
         )
     } else {
         (vec![event("evt-row-x", "evt-x", 1, clock.now())], None)
@@ -506,14 +453,14 @@ async fn run_checkpoint_failure_case(case: &CheckpointFailureCase) -> Checkpoint
     let result = repo
         .append_execution_events_result(
             EventBatch {
-                runner_id: "runner-f2",
-                attempt_id: case.attempt_id,
+                runner_id: &RunnerId::new("runner-f2"),
+                attempt_id: &AttemptId::new(case.attempt_id),
                 fencing_token: fence,
-                previous_checkpoint,
-                checkpoint: failing_checkpoint,
+                previous_checkpoint: previous_checkpoint.as_ref(),
+                checkpoint: &Checkpoint::new(failing_checkpoint),
             },
             &events,
-            &clock,
+            clock.now(),
         )
         .await;
     assert!(
@@ -603,11 +550,11 @@ async fn content_reference_is_committed_once_and_never_overwritten() {
     let sha = "0".repeat(64);
     let written = repo
         .record_execution_artifact(
-            "runner-f2",
-            aid,
+            &RunnerId::new("runner-f2"),
+            &AttemptId::new(aid),
             fence,
             patch_artifact("art-row-1", "art-1", &sha, None),
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -638,11 +585,11 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
     .await;
     let sha = "1".repeat(64);
     repo.record_execution_artifact(
-        "runner-f2",
-        "attempt-content-stale",
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new("attempt-content-stale"),
         fence,
         log_artifact("art-row-2", "art-2", &sha),
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -651,7 +598,7 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
         &repo,
         "attempt-content-stale",
         "art-2",
-        fence + 1, // wrong fence
+        FencingToken::new(fence.get() + 1), // wrong fence
         "attempt-content-stale-hex/blob-2",
         &clock,
     )
@@ -663,48 +610,8 @@ async fn content_reference_write_with_stale_fence_is_rejected() {
 }
 
 // ---------------------------------------------------------------------
-// Retention: `purge_execution_events_older_than` /
-// `list_execution_artifacts_older_than` / `delete_execution_artifacts_by_row_ids`.
+// Retention: `list_execution_artifacts_older_than` / `delete_execution_artifacts_by_row_ids`.
 // ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn event_retention_purges_rows_older_than_cutoff_in_batches() {
-    let (repo, item_id, clock) = ready_repo().await;
-    let aid = "attempt-retention-events";
-    let fence =
-        ready_running_attempt(&repo, &item_id, &clock, "request-retention-events", aid).await;
-    let old = [
-        event("evt-row-old-1", "evt-old-1", 1, clock.now()),
-        event("evt-row-old-2", "evt-old-2", 2, clock.now()),
-        event("evt-row-old-3", "evt-old-3", 3, clock.now()),
-    ];
-    let old_batch = append_batch(&repo, aid, fence, None, "cp1", &old, &clock).await;
-    assert!(matches!(old_batch, EventApplyResult::Applied(_)));
-    let fresh = [event("evt-row-fresh-1", "evt-fresh-1", 4, clock.now())];
-    let fresh_batch = append_batch(&repo, aid, fence, Some("cp1"), "cp2", &fresh, &clock).await;
-    assert!(matches!(fresh_batch, EventApplyResult::Applied(_)));
-
-    // Backdate the first batch's rows directly rather than advancing the
-    // shared clock 40 days (which would also expire the lease this test's
-    // *second* insert still needs to succeed through — retention age and
-    // lease liveness are deliberately independent concerns).
-    backdate_events(&repo, aid, &[1, 2, 3], clock.now() - Duration::days(40)).await;
-
-    // Cutoff: 30 days before "now", so the first batch (backdated to 40 days
-    // ago) is expired and the second (created just now) is not. Bounded
-    // batches of 2: 2 + 1 + 0 across three passes, converging to "caught up."
-    let cutoff = clock.now() - Duration::days(30);
-    for (pass, expected) in [2, 1, 0].into_iter().enumerate() {
-        assert_eq!(
-            purge_events(&repo, cutoff, 2).await,
-            expected,
-            "pass {pass}"
-        );
-    }
-
-    let remaining = remaining_event_ids(&repo, aid).await;
-    assert_eq!(remaining, vec!["evt-fresh-1".to_string()]);
-}
 
 #[tokio::test]
 async fn artifact_retention_lists_and_deletes_expired_rows() {
@@ -799,8 +706,8 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
 
     let sha = "4".repeat(64);
     repo.record_execution_artifact(
-        "runner-f2",
-        &attempt_id,
+        &RunnerId::new("runner-f2"),
+        &AttemptId::new(&attempt_id),
         fence,
         // No content yet — exactly the "manifest created, upload not
         // finished" state `sweep_artifacts` must treat as racy.
@@ -810,7 +717,7 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
             &sha,
             None,
         ),
-        &clock,
+        clock.now(),
     )
     .await
     .unwrap();
@@ -833,12 +740,12 @@ async fn run_guard_case(case: &GuardCase) -> GuardOutcome {
     if case.race_happens {
         let result = repo
             .set_execution_artifact_content_reference(
-                "runner-f2",
-                &attempt_id,
+                &RunnerId::new("runner-f2"),
+                &AttemptId::new(&attempt_id),
                 case.artifact_id,
                 fence,
                 &format!("{}-hex/real-upload.blob", case.artifact_id),
-                &clock,
+                clock.now(),
             )
             .await
             .unwrap();

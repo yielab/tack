@@ -1,5 +1,5 @@
-use axum::Json;
-use axum::extract::{Path, State};
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -40,10 +40,10 @@ pub async fn create_comment(
 /// comment onto its item's linked GitHub issue, and store the returned id
 /// so the inbound poll never mirrors it back in. No-op unless a token
 /// resolves (the item's project's own `github_token_ref`, else
-/// `TACK_GITHUB_TOKEN` — see `github_sync::github_token_for_project`) and the
+/// `TACK_GITHUB_TOKEN` — see `GitHub::token_for_project`) and the
 /// item has a `github_links` row. Only ever called for a comment created
 /// through this handler, so a comment mirrored in from GitHub (created
-/// directly via the db repo by `github_sync::poll_once`) is never a
+/// directly via the db repo by `github_sync::tick`) is never a
 /// candidate here.
 async fn maybe_sync_github(state: &AppState, item_id: Uuid, comment: &Comment) {
     let Ok(Some((repo, number))) = state.repo.get_github_link(item_id).await else {
@@ -52,16 +52,15 @@ async fn maybe_sync_github(state: &AppState, item_id: Uuid, comment: &Comment) {
     let Ok(Some(item)) = state.repo.get_item(item_id).await else {
         return;
     };
-    let Some(token) = crate::github_sync::github_token_for_project(state, item.project_id).await
-    else {
+    let Some(token) = state.github_token(item.project_id).await else {
         return;
     };
-    let base = state.config.github_api_base.clone();
+    let base = state.github().api_base;
     let body = comment.content.clone();
     let comment_id = comment.id;
     let db = state.repo.clone();
-    tokio::spawn(async move {
-        match crate::github_sync::push_issue_comment(&base, &token, &repo, number, &body).await {
+    state.tasks.spawn(async move {
+        match tack_app::github_sync::push_issue_comment(&base, &token, &repo, number, &body).await {
             Ok(github_id) => {
                 if let Err(error) = db.set_comment_github_id(comment_id, github_id).await {
                     tracing::warn!(comment_id = %comment_id, %error, "storing GitHub comment id failed");

@@ -1,0 +1,32 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: capture-needs-approval holds this enqueue for a person.",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "externalRef": "capture-item/attempt-3",
+  "idempotencyKey": "capture-attempt-3",
+  "baseRef": "main",
+  "pipeline": "no-such-pipeline",
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "unknown pipeline 'no-such-pipeline': pod 'saas-dev' has no pipelines/no-such-pipeline.yaml and no recipe of that name carries a pipeline.yaml",
+  "failureKind": "pipeline",
+  "pendingApprovalIndex": null,
+  "hops": [],
+  "costUsd": 0.0,
+  "worktree": {
+    "dir": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
+    "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",
+    "baseCommit": "0000000000000000000000000000000000000000",
+    "baseRef": "main",
+    "gitDir": "/scratch/repo/.git/worktrees/task-00000000-0000-0000-0000-000000000000",
+    "commonDir": "/scratch/repo/.git"
+  },
+  "escalations": [
+    "esc-000000000000"
+  ],
+  "tokenBudget": 100000
+}

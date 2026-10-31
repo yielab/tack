@@ -1,5 +1,5 @@
-use axum::Json;
-use axum::extract::{Path, State};
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -67,9 +67,9 @@ pub async fn list_dependencies(
 )]
 pub async fn delete_dependency(
     State(state): State<AppState>,
-    Path((_item_id, dep_id)): Path<(Uuid, Uuid)>,
+    Path((item_id, dep_id)): Path<(Uuid, Uuid)>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let deleted = state.repo.delete_dependency(dep_id).await?;
+    let deleted = state.repo.delete_dependency(item_id, dep_id).await?;
     if !deleted {
         return Err(ApiError::NotFound(format!("Dependency {dep_id} not found")));
     }

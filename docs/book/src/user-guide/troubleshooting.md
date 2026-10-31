@@ -88,7 +88,7 @@ Tack looks every 30 seconds by default, so the start can lag a little. An admini
 
 ## docket says it needs 0.2.0-beta.6
 
-**Cause.** Tack sends each docket run to a long-lived docket team over docket's HTTP interface, version 5, which needs docket 0.2.0-beta.6. Any other version is reported as "needs docket 0.2.0-beta.6" by `tack runner doctor`, and no run is sent to it.
+**Cause.** Tack sends each docket run to a long-lived docket team over docket's HTTP interface, version 6, which needs docket 0.2.0-beta.6. Any other version is reported as "needs docket 0.2.0-beta.6" by `tack runner doctor`, and no run is sent to it.
 
 **What to do.** Install docket 0.2.0-beta.6 on the computer that runs the agent, then check it with `tack runner doctor`: the docket block should show `api: 5`. The administrator's steps are in [Installing and Operating Runners](../admin-guide/runners.md).
 
@@ -100,7 +100,7 @@ Tack looks every 30 seconds by default, so the start can lag a little. An admini
 
 **Cause.** A docket team that needs a person during a run is called *attended*. Tack caps the automatic merge at what the team allows, so tasks run by an attended team stay at L3 however high the project's level. The **Merge** button is not held back; only the automatic merge is.
 
-**What to do.** Apply the fix the Ceiling rung shows, which is a docket command for that team. `tack runner doctor` prints the same fix beside the team's name: `team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work`. When the team reports `lights-out`, the ceiling lifts. The button that would apply a repository's teams for you is shown disabled, because the board has no way to reach the computer that runs the agent.
+**What to do.** Apply the fix the Ceiling rung shows, which is a docket command for that team. `tack runner doctor` prints the same fix beside the team's name: `team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work`. When the team reports `lights-out`, the ceiling lifts. The button that would apply a repository's teams for you is shown disabled, because the board has no way to reach the computer that runs the agent.
 
 ---
 

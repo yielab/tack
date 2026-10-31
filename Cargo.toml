@@ -1,11 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/tack-protocol",
     "crates/tack-core",
     "crates/tack-db",
     "crates/tack-api",
     "crates/tack-cli",
     "crates/tack-orch",
+    "crates/tack-app",
     "crates/tack-runner",
     "crates/tack-test-support",
 ]
@@ -17,7 +19,7 @@ members = [
 exclude = ["crates/tack-desktop"]
 
 [workspace.package]
-version = "0.1.0-beta.10"
+version = "0.2.0-beta.1"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT"
@@ -31,6 +33,8 @@ too_many_lines = "warn"
 [workspace.dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
+# CancellationToken (the stop signal of every background loop) and TaskTracker (spawned use cases)
+tokio-util = { version = "0.7", features = ["rt"] }
 
 # Web framework
 axum = { version = "0.8", features = ["ws", "multipart"] }
@@ -116,3 +120,8 @@ opt-level = 0
 # Line tables only: a backtrace still shows file:line, and full debuginfo is
 # ~85% of every test binary's size for nothing here that reads it.
 debug = "line-tables-only"
+
+# Dependencies carry no debug info at all: a backtrace still names their functions, and their
+# line tables were most of what the workspace's line tables cost on disk.
+[profile.dev.package."*"]
+debug = false

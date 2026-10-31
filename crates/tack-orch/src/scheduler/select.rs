@@ -13,7 +13,9 @@ use chrono::{DateTime, Duration, Utc};
 use super::types::{
     IneligibleReason, RunnerCandidate, RunnerState, SchedulingRequest, Selection, SelectionOutcome,
 };
-use crate::execution::{Approvals, CapabilitySupport, HarnessKind, RunnerId, RunnerSelector};
+use tack_protocol::execution::{
+    Approvals, CapabilitySupport, HarnessKind, RunnerId, RunnerSelector,
+};
 
 /// How long a lease that nobody renewed waits, after it expires, before the
 /// claim poll asks a person about the run: twice the lease duration, 60

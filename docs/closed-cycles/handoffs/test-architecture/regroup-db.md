@@ -1,4 +1,4 @@
-# ADR 0064 rollout step 4 — regroup tack-db's test binaries
+# ADR 0007 rollout step 4 — regroup tack-db's test binaries
 
 Mechanical regrouping only: no test body, assertion, test name, or `#[test]`/
 `#[tokio::test]` attribute changed. What moved is file layout, module
@@ -166,7 +166,7 @@ line at all for `list_items_p95_under_100ms_at_50k` — before or after this
 change (verified against the pre-change tree too, same command). The JSON
 form (`--message-format json`) does report it: `tack-db::perf_test` with 1
 testcase. This is the same "1,399 vs 1,392 + 6 skipped, unreconciled"
-discrepancy ADR 0064 already flags for `cargo test` vs `nextest`, not
+discrepancy ADR 0007 already flags for `cargo test` vs `nextest`, not
 something this regrouping introduced — the 199 baseline and the 199 result
 were produced by the identical command on both sides of the change, and the
 perf test's own dedicated run (last line above) proves it still executes.

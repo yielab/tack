@@ -21,6 +21,11 @@ all-features = true
 # advisory (warning), not a hard failure.
 multiple-versions = "warn"
 wildcards = "allow"
+EOF
+  if [ "${1:-}" = "main" ]; then
+    main_workspace_bans
+  fi
+  cat <<'EOF'
 
 [licenses]
 version = 2
@@ -46,6 +51,19 @@ allow = [
 EOF
 }
 
+# Only the main workspace: the desktop workspace has neither crate. A crate listed in `wrappers`
+# is the only kind allowed to depend on the banned one directly, so the SQL driver stays inside
+# the store (tack-db) and its test support, and the HTTP framework inside the HTTP layer
+# (tack-api; tack-runner takes it only as a dev-dependency, for the fake docket its tests talk to).
+main_workspace_bans() {
+  cat <<'EOF'
+deny = [
+  { crate = "sqlx", wrappers = ["tack-db", "tack-test-support"] },
+  { crate = "axum", wrappers = ["tack-api", "tack-runner"] },
+]
+EOF
+}
+
 # zbus 6.0.0 folded zvariant and zbus_names into itself, and RustSec marks the
 # standalone crates unmaintained. Both workspaces reach them only through the
 # Linux credential store (zbus-secret-service-keyring-store 1.0.1 ->
@@ -65,7 +83,7 @@ EOF
   zbus_ignores
   echo ']'
   echo
-  common_policy
+  common_policy main
 } > deny.toml
 
 # crates/tack-desktop pulls in Tauri's Linux WebView backend (wry), which

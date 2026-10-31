@@ -4,6 +4,7 @@ import { ProjectContext, type ProjectContextValue } from '../../shared/state/pro
 import FactoryMetrics from './FactoryMetrics';
 import type { components } from '../../shared/api/schema.gen';
 import type { Resource } from 'solid-js';
+import { flush } from '../../test/flush';
 
 // Mock useParams to provide the project ID
 vi.mock('@solidjs/router', () => ({
@@ -25,8 +26,6 @@ const projectValue: ProjectContextValue = {
   vocabulary: () => ({}),
   refetch: () => {},
 };
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
 
 function mount() {
   const container = document.createElement('div');
@@ -55,6 +54,14 @@ const FACTORY_METRICS_FIXTURE: FactoryMetrics = {
     numerator: 10,
     denominator: 100,
     value: 0.1,
+  },
+  attempts: 100,
+  decisions: 10,
+  decided_alone: 25,
+  decided_alone_rate: {
+    numerator: 25,
+    denominator: 100,
+    value: 0.25,
   },
   human_minutes_per_decision: {
     measured: 0,
@@ -170,6 +177,39 @@ describe('FactoryMetrics', () => {
     expect(container.textContent).toContain('attempts');
   });
 
+  it('shows what the agent decided alone beside the escalation rate, never inside it', async () => {
+    setupFetchMock(FACTORY_METRICS_FIXTURE);
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const card = (title: string) =>
+      [...container.querySelectorAll('h2')].find((h) => h.textContent === title)?.parentElement?.textContent ?? '';
+    // The person-answered figure keeps its own count: 10 decisions in 100 attempts.
+    expect(card('Escalation rate')).toContain('10.0%');
+    expect(card('Escalation rate')).toContain('10 decisions / 100 attempts');
+    expect(card('Escalation rate')).not.toContain('25');
+    // The policy-answered figure is a tile of its own: 25 attempts of 100.
+    expect(card('Decided alone')).toContain('25.0%');
+    expect(card('Decided alone')).toContain('25 attempts / 100 attempts');
+  });
+
+  it('says a decided-alone rate with nothing to count is not measured, never 0', async () => {
+    setupFetchMock({
+      ...FACTORY_METRICS_FIXTURE,
+      attempts: 0,
+      decided_alone: 0,
+      decided_alone_rate: { numerator: 0, denominator: 0, value: null, null_reason: 'denominator_zero' },
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+
+    const card = [...container.querySelectorAll('h2')].find((h) => h.textContent === 'Decided alone')?.parentElement?.textContent ?? '';
+    expect(card).toContain('Not measured');
+    expect(card).not.toContain('0.0%');
+  });
+
   it('counts read as words: one decision, one pack', async () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
@@ -250,28 +290,28 @@ describe('FactoryMetrics sources and cost', () => {
     ],
   } as unknown as FactoryMetrics['quality'];
 
-  it('without quality, one line says why and no prill block is shown', async () => {
+  it('without quality, one line says why and no verifier block is shown', async () => {
     setupFetchMock({
       ...FACTORY_METRICS_FIXTURE,
       quality: null,
-      quality_unavailable: 'prill is not configured on this board.',
+      quality_unavailable: 'The verifier is not configured on this board.',
     });
     const { container } = mount();
     await flush();
     await flush();
 
-    expect(container.textContent).toContain('prill is not configured on this board.');
-    expect(container.textContent).not.toContain('Quality (from prill');
+    expect(container.textContent).toContain('The verifier is not configured on this board.');
+    expect(container.textContent).not.toContain('Quality (from the verifier');
   });
 
-  it('with quality, each repository shows prill figures under the prill version', async () => {
+  it('with quality, each repository shows the figures of the verifier under its version', async () => {
     setupFetchMock({ ...FACTORY_METRICS_FIXTURE, quality: PRILL_QUALITY, cost_usd: 12.5, rate_card_as_of: '2026-10-01' });
     const { container } = mount();
     await flush();
     await flush();
 
     const text = container.textContent ?? '';
-    expect(text).toContain('Quality (from prill 0.4.2)');
+    expect(text).toContain('Quality (from the verifier, version 0.4.2)');
     expect(text).toContain('acme/app');
     expect(text).toContain('Escalation');
     expect(text).toContain('10.0%');

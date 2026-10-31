@@ -2,9 +2,10 @@ import { type Component, Show, createResource, createSignal } from 'solid-js';
 import { Badge, Button, Skeleton } from '../../shared/ui';
 import { toast } from '../../shared/ui/toast';
 import { isLocalRunnerUnavailable, localRunnerApi } from './api';
+import { BOOK } from '../../shared/help/routes';
 
 /**
- * One switch — *Agent execution on this machine* (ADR 0061 decision 6). No
+ * One switch — *Agent execution on this machine* (ADR 0005 decision 6). No
  * flag, no restart: `PUT /api/local-runner` starts or stops the embedded
  * runner immediately, and the choice survives the next `tack serve` because
  * the server persists it (`app_meta`) rather than only holding it in
@@ -38,7 +39,7 @@ const ExecutionToggle: Component = () => {
   };
 
   return (
-    <section class="flex flex-col gap-3 rounded-[28px] bg-panel px-[22px] py-5">
+    <section class="flex flex-col gap-3 rounded-card bg-panel px-[22px] py-5">
       <div class="flex items-center gap-2.5">
         <h2 class="text-[1.25rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Agent execution on this machine
@@ -51,11 +52,11 @@ const ExecutionToggle: Component = () => {
       </div>
 
       <Show when={status.loading}>
-        <Skeleton height="60px" class="rounded-[22px]" />
+        <Skeleton height="60px" class="rounded-xl" />
       </Show>
 
       <Show when={unavailable()}>
-        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Not available from this screen — this is a remote-runner deployment (this server
           isn't bound to its own loopback address, or this build has no embedded runner
           wired in), so it can never run one here for security reasons. Enroll a runner on
@@ -65,7 +66,7 @@ const ExecutionToggle: Component = () => {
       </Show>
 
       <Show when={loadFailed()}>
-        <div class="text-[0.8125rem]" style={{ color: 'var(--color-danger-600)' }}>
+        <div class="text-small" style={{ color: 'var(--color-danger-600)' }}>
           Couldn't load the current state.{' '}
           <button type="button" class="font-bold underline" onClick={() => void refetch()}>
             Retry
@@ -83,7 +84,7 @@ const ExecutionToggle: Component = () => {
           >
             {status()!.enabled ? 'Turn off' : 'Turn on'}
           </Button>
-          <span class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+          <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
               when={status()!.since}
               fallback={status()!.enabled ? 'Starting…' : 'Off since this server started.'}
@@ -93,19 +94,21 @@ const ExecutionToggle: Component = () => {
             </Show>
           </span>
         </div>
-        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }}>
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           Up to {status()!.max_concurrent_attempts}{' '}
           {status()!.max_concurrent_attempts === 1 ? 'run' : 'runs'} at a time on this computer
           {' · '}
           {status()!.active_attempts} running
         </p>
-        <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-secondary)' }} data-testid="runner-settings-file">
+        <p class="text-small" style={{ color: 'var(--color-text-secondary)' }} data-testid="runner-settings-file">
           <Show
             when={status()!.config_file}
             fallback={
               <>
-                No settings file: this computer runs no docket team and verifies nothing. Write{' '}
-                <code>~/.config/tack/runner.toml</code> and restart Tack.
+                No settings file: this computer runs no docket team and verifies nothing.{' '}
+                <a href={BOOK.runnerSettings} target="_blank" rel="noreferrer" class="underline">
+                  The Administrator Guide shows how to write one.
+                </a>
               </>
             }
           >

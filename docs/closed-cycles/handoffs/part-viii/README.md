@@ -9,8 +9,8 @@ Each card writes **exactly one**; corrections are dated amendments. No card edit
 in `TODO.md`; the wave integrator does, after independent verification.
 
 The board is `TODO.md` → **Part VIII**, §VIII.0–§VIII.6 (it sits **above** Part VII). The
-decisions of record are `docs/adr/0060-docket-control-plane-disposition.md` (accepted
-2026-08-31) and `docs/adr/0065-docket-pipeline-dispatch-trigger.md` (accepted 2026-09-08 —
+decisions of record are `docs/closed-cycles/adr/0060-docket-control-plane-disposition.md` (accepted
+2026-08-31) and `docs/closed-cycles/adr/0065-docket-pipeline-dispatch-trigger.md` (accepted 2026-09-08 —
 binding on VIII-A2 only).
 
 ## What this Part is, in one paragraph
@@ -107,7 +107,7 @@ Board: `TODO.md` §VIII.4 → VIII-C1. **Documentation only.** Owns the
 document its own grep finds repeating that claim.
 
 Read, in this order: the `orch_*_new` bullet in `.claude/scope-discipline.md`, the
-"Measurement" section of `docs/adr/0060-docket-control-plane-disposition.md` (it states the
+"Measurement" section of `docs/closed-cycles/adr/0060-docket-control-plane-disposition.md` (it states the
 opposite, and gives the command), then the 037/038 rebuild in `crates/tack-db/src/migrations.rs`.
 
 The one trap: this card is the measurement, not a predetermined edit. **If the

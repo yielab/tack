@@ -299,7 +299,7 @@ attest `model_passthrough` (by design — an unverified free-text model id is ex
   remote**, because no project-level repository default exists on this branch's base
   (VI-C3 delivered only the model tier — see "Known limitations"). Reason: sequencing/
   scope, same as VI-C3's own "no live model catalog" note on the "Choose a default model"
-  row — not a structural block, so not an ADR-0061 escalation, just a row that stays
+  row — not a structural block, so not an ADR-0005 escalation, just a row that stays
   partially open until a later card adds project-level repository storage.
 - **"Turn on agent execution"**: unchanged by this card — still a console step
   (`tack serve --with-runner`) on this branch's base; the modal's new "Agent execution is

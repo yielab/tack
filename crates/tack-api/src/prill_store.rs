@@ -9,13 +9,17 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Value, json};
+use tack_db::queries;
 use tokio::io::AsyncReadExt;
 
 use crate::handlers::runner_protocol::artifact_storage::ArtifactStorage;
-use crate::prill::{Scratch, Unavailable, run, write_private};
+use crate::prill::{Prill, Scratch, Unavailable, run, write_private};
 use crate::router::AppState;
 
-const MRP_MEDIA_TYPE: &str = "application/vnd.tack.mrp+json";
+/// The pack exactly as prill produced it. `prill record mrp` reads only this
+/// one; the pack Tack shows (`application/vnd.tack.mrp+json`) is a translation
+/// of it that prill does not accept.
+const PRILL_PACK_MEDIA_TYPE: &str = "application/vnd.prill.mrp+json";
 const ATTESTATION_MEDIA_TYPE: &str = "application/vnd.in-toto+json";
 const TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -39,26 +43,16 @@ pub fn store_path(storage_dir: &str, repo: &str) -> Option<PathBuf> {
 }
 
 async fn recorded(app: &AppState, attempt_id: &str, kind: &str) -> bool {
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM prill_records WHERE attempt_id = ? AND kind = ?",
-    )
-    .bind(attempt_id)
-    .bind(kind)
-    .fetch_one(app.pool())
-    .await
-    .unwrap_or(0)
-        > 0
+    queries::prill_records::is_recorded(&app.repo, attempt_id, kind)
+        .await
+        .unwrap_or(false)
 }
 
 async fn mark_recorded(app: &AppState, attempt_id: &str, kind: &str) {
-    let result = sqlx::query(
-        "INSERT OR IGNORE INTO prill_records (attempt_id, kind, recorded_at) VALUES (?, ?, ?)",
-    )
-    .bind(attempt_id)
-    .bind(kind)
-    .bind(chrono::Utc::now().to_rfc3339())
-    .execute(app.pool())
-    .await;
+    let result = app
+        .repo
+        .mark_prill_recorded(attempt_id, kind, &chrono::Utc::now().to_rfc3339())
+        .await;
     if let Err(error) = result {
         tracing::warn!(attempt_id, kind, %error, "prill record: could not mark it recorded");
     }
@@ -66,7 +60,7 @@ async fn mark_recorded(app: &AppState, attempt_id: &str, kind: &str) {
 
 /// Runs `prill args…`; true when prill took it. A failure is logged.
 async fn record(app: &AppState, attempt_id: &str, kind: &str, args: Vec<String>) -> bool {
-    match run(&app.prill_program().await, &args, TIMEOUT).await {
+    match run(&app.prill().await, &args, TIMEOUT).await {
         Ok(output) if output.status.success() => true,
         Ok(output) => {
             let said = String::from_utf8_lossy(&output.stderr);
@@ -82,28 +76,22 @@ async fn record(app: &AppState, attempt_id: &str, kind: &str, args: Vec<String>)
 
 /// The repository (`owner/repo`) of the GitHub issue an attempt's item is linked to.
 async fn repository_of(app: &AppState, attempt_id: &str) -> Option<String> {
-    let item: String = sqlx::query_scalar(
-        "SELECT r.item_id FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id WHERE a.id = ?",
-    )
-    .bind(attempt_id)
-    .fetch_optional(app.pool())
-    .await
-    .ok()??;
-    let (repo, _) = app.repo.get_github_link(item.parse().ok()?).await.ok()??;
+    let attempt = queries::execution_attempts::item_of_attempt(&app.repo, attempt_id)
+        .await
+        .ok()??;
+    let (repo, _) = app
+        .repo
+        .get_github_link(attempt.item_id.parse().ok()?)
+        .await
+        .ok()??;
     Some(repo)
 }
 
 async fn artifact_bytes(app: &AppState, attempt_id: &str, media_type: &str) -> Option<Vec<u8>> {
-    let reference: String = sqlx::query_scalar(
-        "SELECT content_reference FROM execution_artifacts \
-         WHERE attempt_id = ? AND media_type = ? AND content_reference IS NOT NULL \
-         ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(attempt_id)
-    .bind(media_type)
-    .fetch_optional(app.pool())
-    .await
-    .ok()??;
+    let reference =
+        queries::execution_artifacts::latest_content_reference(&app.repo, attempt_id, media_type)
+            .await
+            .ok()??;
     let storage = ArtifactStorage::new(format!("{}/execution-artifacts", app.config.storage_dir));
     let mut file = storage.open_for_read(&reference).await.ok()?;
     let mut bytes = Vec::new();
@@ -116,9 +104,10 @@ fn ensure_store_dir(db: &std::path::Path) -> bool {
         .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok())
 }
 
-/// Hands the attempt's pack (and its attestation, when it came with one) to
-/// `prill record mrp`, once. An attempt with no pack, or whose item is linked
-/// to no repository, has nothing to record.
+/// Hands the attempt's pack as prill produced it (and its attestation, when it
+/// came with one) to `prill record mrp`, once. An attempt that holds no such
+/// pack (its verifier was not prill), or whose item is linked to no
+/// repository, has nothing to record.
 pub async fn record_mrp(app: &AppState, attempt_id: &str) {
     if recorded(app, attempt_id, "mrp").await {
         return;
@@ -129,7 +118,7 @@ pub async fn record_mrp(app: &AppState, attempt_id: &str) {
     else {
         return;
     };
-    let Some(pack) = artifact_bytes(app, attempt_id, MRP_MEDIA_TYPE).await else {
+    let Some(pack) = artifact_bytes(app, attempt_id, PRILL_PACK_MEDIA_TYPE).await else {
         return;
     };
     let attestation = artifact_bytes(app, attempt_id, ATTESTATION_MEDIA_TYPE).await;
@@ -164,14 +153,7 @@ pub async fn record_mrp(app: &AppState, attempt_id: &str) {
 /// (a retry of [`record_mrp`]), then each outcome Tack has seen (merged,
 /// closed, reverted, red CI) that prill was not told yet.
 pub async fn observed(app: &AppState, repo: &str, number: i64) {
-    let Ok(Some(row)) = sqlx::query_as::<_, tack_db::repo::pull_requests::PullRequestRow>(
-        "SELECT * FROM pull_requests WHERE repo = ? AND number = ?",
-    )
-    .bind(repo)
-    .bind(number)
-    .fetch_optional(app.pool())
-    .await
-    else {
+    let Ok(Some(row)) = queries::pull_requests::pull_request(&app.repo, repo, number).await else {
         return;
     };
     record_mrp(app, &row.attempt_id).await;
@@ -241,12 +223,9 @@ pub async fn observed(app: &AppState, repo: &str, number: i64) {
 }
 
 async fn head_commit(app: &AppState, attempt_id: &str) -> Option<String> {
-    let raw: String =
-        sqlx::query_scalar("SELECT actual_execution FROM execution_attempts WHERE id = ?")
-            .bind(attempt_id)
-            .fetch_optional(app.pool())
-            .await
-            .ok()??;
+    let raw = queries::execution_attempts::actual_execution_of_attempt(&app.repo, attempt_id)
+        .await
+        .ok()??;
     serde_json::from_str::<Value>(&raw)
         .ok()?
         .pointer("/git/head_commit")?
@@ -255,8 +234,8 @@ async fn head_commit(app: &AppState, attempt_id: &str) -> Option<String> {
 }
 
 /// prill's version, from `prill --version` (`prill 0.1.0`).
-pub async fn version(program: &str) -> Result<String, String> {
-    match run(program, &["--version".to_owned()], TIMEOUT).await {
+pub async fn version(prill: &Prill) -> Result<String, String> {
+    match run(prill, &["--version".to_owned()], TIMEOUT).await {
         Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
             .split_whitespace()
             .last()
@@ -268,16 +247,19 @@ pub async fn version(program: &str) -> Result<String, String> {
 }
 
 /// `prill metrics --db <db> --json`, parsed.
-pub async fn metrics(program: &str, db: &std::path::Path) -> Result<Value, String> {
+pub async fn metrics(prill: &Prill, db: &std::path::Path) -> Result<Value, String> {
     let args = [
         "metrics".to_owned(),
         "--db".to_owned(),
         db.display().to_string(),
         "--json".to_owned(),
     ];
-    match run(program, &args, TIMEOUT).await {
-        Ok(output) if output.status.success() => serde_json::from_slice(&output.stdout)
-            .map_err(|_| "prill answered with something that is not JSON".to_owned()),
+    match run(prill, &args, TIMEOUT).await {
+        Ok(output) if output.status.success() => {
+            serde_json::from_slice(&output.stdout).map_err(|failure| {
+                format!("prill answered with something that is not JSON: {failure}")
+            })
+        }
         Ok(output) => Err(format!("prill metrics failed ({})", output.status)),
         Err(Unavailable) => Err(crate::prill::NOT_INSTALLED.to_owned()),
     }

@@ -1,39 +1,34 @@
-//! Proves the artifact/event retention sweep and the overdue-decision
-//! expiry sweep are wired into the real production `ExecutionRuntime`
-//! (`src/execution_runtime.rs`): both ride its own `start`/`stop` lifecycle,
-//! never a hand-rolled loop calling the sweep functions directly — a unit
-//! test can prove the sweep functions work in isolation, only this file
-//! proves the running server actually calls them.
+//! Proves the artifact retention sweep is wired into the real production
+//! `ExecutionRuntime` (`src/execution_runtime.rs`): it rides its own
+//! `start`/`stop` lifecycle, never a hand-rolled loop calling the sweep
+//! function directly — a unit test can prove the sweep function works in
+//! isolation, only this file proves the running server actually calls it.
 
 use std::future::Future;
 use std::time::Duration as StdDuration;
+use tack_protocol::Clock;
+use tack_protocol::SystemClock;
+use tack_protocol::execution::ExecutionState;
+use tack_protocol::execution::{AttemptId, ClaimRequestId, FencingToken, RunnerId};
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 
 use chrono::{Duration, Utc};
 use tack_api::execution_runtime::{ExecutionRuntime, ExecutionRuntimeConfig};
 use tack_api::handlers::runner_protocol::artifact_storage::ArtifactStorage;
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
-    Repository, init_pool, migrations,
+    Repository, queries,
     repo::execution::{
-        NewAgentProfile, NewArtifact, NewDecision, NewExecutionRequest, NewRunner,
-        RequestSelection, SystemExecutionClock,
+        NewAgentProfile, NewArtifact, NewExecutionRequest, NewRunner, RequestSelection,
     },
 };
-use uuid::Uuid;
 
 const RUNNER_ID: &str = "runner-wiring";
 const PROFILE_ID: &str = "profile-wiring";
 
 async fn setup() -> (Repository, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'W', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("workspace");
+    let repo = setup_test_db().await;
+    let workspace = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace,
@@ -84,7 +79,7 @@ async fn setup() -> (Repository, String) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("runner");
@@ -96,24 +91,11 @@ async fn setup() -> (Repository, String) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: "{}",
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
     (repo, item.id.to_string())
-}
-
-/// A single fixed instant, used both as the snapshot's own declared
-/// `created_at` field below and as the clock `enqueue_execution` is called
-/// with in `running_attempt` — `enqueue_execution` rejects a snapshot whose
-/// `created_at` does not match the clock's `now()` *exactly*, so this must
-/// not be two separate `Utc::now()` reads.
-struct FixedExecutionClock(chrono::DateTime<Utc>);
-
-impl tack_db::repo::execution::ExecutionClock for FixedExecutionClock {
-    fn now(&self) -> chrono::DateTime<Utc> {
-        self.0
-    }
 }
 
 fn new_request<'a>(
@@ -156,34 +138,30 @@ fn new_request<'a>(
 /// comfortably longer than any sweep-wait loop below) and bumps it straight
 /// to `running`; the resolve/expiry paths under test here don't gate on how
 /// an attempt got to `running`, only on its current state/lease.
-async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, i64) {
+async fn running_attempt(repo: &Repository, item_id: &str, tag: &str) -> (String, FencingToken) {
     let request_id = format!("req-{tag}");
     let now = Utc::now();
-    repo.enqueue_execution(
-        new_request(&request_id, item_id, &request_id, now),
-        &FixedExecutionClock(now),
-    )
-    .await
-    .expect("enqueue");
+    repo.enqueue_execution(new_request(&request_id, item_id, &request_id, now), now)
+        .await
+        .expect("enqueue");
     let attempt_id = format!("att-{tag}");
     let claim = repo
         .claim_execution_idempotent_with_snapshot(
-            RUNNER_ID,
-            &attempt_id,
-            &attempt_id,
+            &RunnerId::new(RUNNER_ID),
+            &ClaimRequestId::new(&attempt_id),
+            &AttemptId::new(&attempt_id),
             Duration::minutes(10),
-            &SystemExecutionClock,
+            SystemClock.now(),
             RequestSelection::Naive,
         )
         .await
         .expect("claim")
         .expect("work available");
-    sqlx::query("UPDATE execution_attempts SET state='running' WHERE id=?")
-        .bind(&attempt_id)
-        .execute(repo.pool())
-        .await
-        .expect("bump to running");
-    (claim.lease.attempt_id, claim.lease.fencing_token)
+    seed::execution_attempt_state(repo, &attempt_id, ExecutionState::Running).await;
+    (
+        claim.lease.attempt_id.into_inner(),
+        claim.lease.fencing_token,
+    )
 }
 
 /// Artifact storage root for one sweep-wiring test. The `TempDir` removes
@@ -211,7 +189,7 @@ async fn seed_real_artifact(
     storage: &ArtifactStorage,
     artifact_root: &std::path::Path,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     content: &[u8],
@@ -232,8 +210,8 @@ async fn seed_real_artifact(
         .expect("store real blob");
 
     repo.record_execution_artifact(
-        RUNNER_ID,
-        attempt_id,
+        &RunnerId::new(RUNNER_ID),
+        &AttemptId::new(attempt_id),
         fence,
         NewArtifact {
             id: row_id,
@@ -247,36 +225,25 @@ async fn seed_real_artifact(
             content_reference: Some(&stored.content_reference),
             metadata: "{}",
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("record artifact");
 
     if let Some(days) = backdate_days {
-        sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = ?")
-            .bind((Utc::now() - Duration::days(days)).to_rfc3339())
-            .bind(row_id)
-            .execute(repo.pool())
-            .await
-            .expect("backdate artifact");
+        seed::execution_artifact_created_at(
+            repo,
+            row_id,
+            &(Utc::now() - Duration::days(days)).to_rfc3339(),
+        )
+        .await;
     }
 
     artifact_root.join(&stored.content_reference)
 }
 
 async fn artifact_row_exists(repo: &Repository, row_id: &str) -> bool {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_artifacts WHERE id=?")
-        .bind(row_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    count > 0
-}
-
-async fn decision_state(repo: &Repository, decision_id: &str) -> String {
-    sqlx::query_scalar("SELECT state FROM execution_decisions WHERE decision_id=?")
-        .bind(decision_id)
-        .fetch_one(repo.pool())
+    queries::execution_artifacts::artifact_row_exists(repo, row_id)
         .await
         .unwrap()
 }
@@ -286,14 +253,14 @@ async fn decision_state(repo: &Repository, decision_id: &str) -> String {
 async fn seed_stale_manifest_only_artifact(
     repo: &Repository,
     attempt_id: &str,
-    fence: i64,
+    fence: FencingToken,
     row_id: &str,
     artifact_id: &str,
     days_ago: i64,
 ) {
     repo.record_execution_artifact(
-        RUNNER_ID,
-        attempt_id,
+        &RunnerId::new(RUNNER_ID),
+        &AttemptId::new(attempt_id),
         fence,
         NewArtifact {
             id: row_id,
@@ -307,16 +274,16 @@ async fn seed_stale_manifest_only_artifact(
             content_reference: None,
             metadata: "{}",
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("record manifest-only artifact");
-    sqlx::query("UPDATE execution_artifacts SET created_at = ? WHERE id = ?")
-        .bind((Utc::now() - Duration::days(days_ago)).to_rfc3339())
-        .bind(row_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    seed::execution_artifact_created_at(
+        repo,
+        row_id,
+        &(Utc::now() - Duration::days(days_ago)).to_rfc3339(),
+    )
+    .await;
 }
 
 /// Starts an `ExecutionRuntime` with retention on `storage_dir`, a 1-second
@@ -336,8 +303,6 @@ async fn start_retention_runtime(
                 retention_enable,
                 retention_days,
                 retention_interval_secs: 1,
-                health_enable: false,
-                health_interval_secs: 3600,
                 storage_dir,
             },
         )
@@ -385,7 +350,7 @@ where
 }
 
 // ---------------------------------------------------------------------
-// sweep_artifacts/sweep_events via the real ExecutionRuntime.
+// sweep_artifacts via the real ExecutionRuntime.
 // ---------------------------------------------------------------------
 
 /// Runs the artifact-retention scenario once for a given `retention_enable`
@@ -505,112 +470,4 @@ async fn retention_enabled_purges_a_manifest_only_artifact_row() {
 
     runtime.stop().await;
     let _ = tokio::fs::remove_dir_all(storage_root_dir.path()).await;
-}
-
-// ---------------------------------------------------------------------
-// expire_overdue_decisions via the real ExecutionRuntime.
-// ---------------------------------------------------------------------
-
-#[allow(clippy::too_many_arguments)]
-async fn create_decision(
-    repo: &Repository,
-    attempt_id: &str,
-    fence: i64,
-    row_id: &str,
-    decision_id: &str,
-    expires_at: chrono::DateTime<Utc>,
-) {
-    let written = repo
-        .create_execution_decision(
-            RUNNER_ID,
-            attempt_id,
-            fence,
-            NewDecision {
-                id: row_id,
-                decision_id,
-                kind: "tool_permission",
-                prompt: "Allow the harness to run a command?",
-                options: "[]",
-                metadata: "{}",
-                expires_at: Some(expires_at),
-                recommendation: None,
-            },
-            &SystemExecutionClock,
-        )
-        .await
-        .expect("create decision");
-    assert!(written);
-}
-
-/// Runs the decision-expiry scenario once for a given `retention_enable`
-/// setting (the periodic expiry sweep currently rides the same gate as
-/// artifact retention): an overdue decision expires only when the flag is
-/// on, while a not-yet-due one always stays pending either way.
-async fn assert_decision_expiry_gate(retention_enable: bool) {
-    let (repo, item_id) = setup().await;
-    let tag = format!("decisions-{retention_enable}");
-    let (attempt_id, fence) = running_attempt(&repo, &item_id, &tag).await;
-
-    let overdue_row = format!("row-overdue-{}", Uuid::new_v4());
-    create_decision(
-        &repo,
-        &attempt_id,
-        fence,
-        &overdue_row,
-        "dec-overdue",
-        Utc::now() - Duration::seconds(5),
-    )
-    .await;
-    let future_row = format!("row-future-{}", Uuid::new_v4());
-    create_decision(
-        &repo,
-        &attempt_id,
-        fence,
-        &future_row,
-        "dec-future",
-        Utc::now() + Duration::minutes(30),
-    )
-    .await;
-
-    let storage_root_dir = temp_storage_root(&tag);
-    let runtime = start_retention_runtime(
-        &repo,
-        storage_root_dir.path().to_string_lossy().into_owned(),
-        retention_enable,
-        90,
-    )
-    .await;
-
-    if retention_enable {
-        let expired =
-            wait_for(|| async { decision_state(&repo, "dec-overdue").await == "expired" }).await;
-        assert!(
-            expired,
-            "an overdue, unresolved decision must expire via the periodic sweep"
-        );
-    } else {
-        let stayed = stays_true_for(
-            || async { decision_state(&repo, "dec-overdue").await == "pending" },
-            10,
-        )
-        .await;
-        assert!(
-            stayed,
-            "with the sweep disabled, an overdue decision is left pending"
-        );
-    }
-    assert_eq!(
-        decision_state(&repo, "dec-future").await,
-        "pending",
-        "a not-yet-overdue decision must remain pending regardless of the sweep setting"
-    );
-
-    runtime.stop().await;
-    let _ = tokio::fs::remove_dir_all(storage_root_dir.path()).await;
-}
-
-#[tokio::test]
-async fn retention_enable_gates_overdue_decision_expiry() {
-    assert_decision_expiry_gate(true).await;
-    assert_decision_expiry_gate(false).await;
 }

@@ -2,21 +2,20 @@
 //!
 //! Holds **cloud backup** (S3-compatible configuration) — a value stored in
 //! `app_meta` overrides the `TACK_*` environment default. See
-//! [`effective_backup_config`].
+//! [`remote_backup::effective_config`](tack_app::remote_backup::effective_config).
 
+use crate::extract::Json;
 use axum::{
-    Json,
     extract::State,
-    http::StatusCode,
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tack_orch::execution::{ProtocolErrorEnvelope, StableErrorCode};
+use tack_app::remote_backup::{self, BackupConfig};
+use tack_protocol::execution::StableErrorCode;
 use tracing::instrument;
 use validator::Validate;
 
-use crate::config::AppConfig;
 use crate::error::ApiError;
 use crate::router::AppState;
 
@@ -43,74 +42,33 @@ pub struct BackupSettings {
     pub retention: Option<usize>,
 }
 
-async fn load(pool: &sqlx::SqlitePool) -> BackupSettings {
-    let raw: Option<String> = sqlx::query_scalar("SELECT value FROM app_meta WHERE key = ?")
-        .bind(BACKUP_KEY)
-        .fetch_optional(pool)
+async fn load(state: &AppState) -> BackupSettings {
+    tack_db::queries::app_meta::app_meta_value(&state.repo, BACKUP_KEY)
         .await
         .ok()
-        .flatten();
-    raw.and_then(|s| serde_json::from_str(&s).ok())
+        .flatten()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default()
 }
 
-async fn save(pool: &sqlx::SqlitePool, settings: &BackupSettings) -> Result<(), sqlx::Error> {
+async fn save(state: &AppState, settings: &BackupSettings) -> Result<(), ApiError> {
     let value = serde_json::to_string(settings).unwrap_or_else(|_| "{}".into());
-    sqlx::query(
-        "INSERT INTO app_meta (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-    )
-    .bind(BACKUP_KEY)
-    .bind(value)
-    .execute(pool)
-    .await?;
+    state.repo.set_app_meta(BACKUP_KEY, &value).await?;
     Ok(())
-}
-
-/// The backup config the server should actually use: the env/startup [`AppConfig`]
-/// with any UI-saved DB settings overlaid on top.
-pub async fn effective_backup_config(state: &AppState) -> AppConfig {
-    let mut cfg = state.config.clone();
-    let s = load(state.pool()).await;
-
-    let nonempty = |o: Option<String>| o.filter(|v| !v.trim().is_empty());
-
-    if let Some(v) = nonempty(s.endpoint) {
-        cfg.backup_endpoint = Some(v);
-    }
-    if let Some(v) = nonempty(s.bucket) {
-        cfg.backup_bucket = Some(v);
-    }
-    if let Some(v) = nonempty(s.region) {
-        cfg.backup_region = v;
-    }
-    if let Some(v) = nonempty(s.access_key) {
-        cfg.backup_access_key = Some(v);
-    }
-    if let Some(v) = nonempty(s.secret_key) {
-        cfg.backup_secret_key = Some(v);
-    }
-    if let Some(v) = nonempty(s.prefix) {
-        cfg.backup_prefix = v;
-    }
-    if let Some(rt) = s.retention {
-        cfg.backup_retention = rt;
-    }
-    cfg
 }
 
 /// Client-safe view of the effective config — the secret key is replaced by a
 /// boolean flag and never sent to the browser.
-fn public_view(cfg: &AppConfig) -> Value {
+fn public_view(cfg: &BackupConfig) -> Value {
     json!({
-        "configured": cfg.remote_backup_enabled(),
-        "endpoint": cfg.backup_endpoint,
-        "bucket": cfg.backup_bucket,
-        "region": cfg.backup_region,
-        "access_key": cfg.backup_access_key,
-        "secret_key_set": cfg.backup_secret_key.is_some(),
-        "prefix": cfg.backup_prefix,
-        "retention": cfg.backup_retention,
+        "configured": cfg.enabled(),
+        "endpoint": cfg.endpoint,
+        "bucket": cfg.bucket,
+        "region": cfg.region,
+        "access_key": cfg.access_key,
+        "secret_key_set": cfg.secret_key.is_some(),
+        "prefix": cfg.prefix,
+        "retention": cfg.retention,
     })
 }
 
@@ -125,7 +83,7 @@ fn public_view(cfg: &AppConfig) -> Value {
     ),
 )]
 pub async fn get_backup_settings(State(state): State<AppState>) -> Json<Value> {
-    let cfg = effective_backup_config(&state).await;
+    let cfg = remote_backup::effective_config(&state.repo, &state.config.backup_config()).await;
     Json(public_view(&cfg))
 }
 
@@ -182,20 +140,13 @@ pub async fn put_backup_settings(
     if let Some(url) = &endpoint
         && let Err(err) = crate::config::validate_outbound_url("endpoint", url)
     {
-        let envelope = ProtocolErrorEnvelope::new(
-            StableErrorCode::InvalidRequest,
-            err.to_string(),
-            "req_operator_settings",
-            json!({"field": "endpoint"}),
+        return Ok(
+            ApiError::field(StableErrorCode::InvalidRequest, "endpoint", err.to_string())
+                .into_response(),
         );
-        return Ok((
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::to_value(envelope).expect("envelope serializes")),
-        )
-            .into_response());
     }
 
-    let mut current = load(state.pool()).await;
+    let mut current = load(&state).await;
 
     let endpoint_changed = endpoint != current.endpoint;
     current.endpoint = endpoint;
@@ -215,9 +166,9 @@ pub async fn put_backup_settings(
     current.prefix = clean(input.prefix);
     current.retention = input.retention;
 
-    save(state.pool(), &current).await?;
+    save(&state, &current).await?;
 
-    let cfg = effective_backup_config(&state).await;
+    let cfg = remote_backup::effective_config(&state.repo, &state.config.backup_config()).await;
     let mut view = public_view(&cfg);
     if secret_cleared {
         view["secret_cleared"] = Value::Bool(true);

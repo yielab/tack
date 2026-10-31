@@ -271,10 +271,10 @@ team able to run without a person.
 ### Install docket and tell the runner
 
 Install docket 0.2.0-beta.6 from the [docket repository](https://github.com/yielab/docket). The
-runner speaks docket's HTTP API version 5, which that release provides, and any later version. It
-checks the version before every task. A version below 5 is reported as "needs docket 0.2.0-beta.6
-(API 5); this docket answers API N", and no task is sent to it. A docket on version 6 or later also
-installs the project's dependencies in its own copy, using the project's install setting.
+runner speaks docket's HTTP API version 6, which that release provides, and any later version. It
+checks the version before every task. A version below 6 is reported as "needs docket 0.2.0-beta.6
+(API 6); this docket answers API N", and no task is sent to it. docket installs the project's
+dependencies in its own copy, using the project's install setting.
 
 Tack's support for this API was written from docket's published specification and exercised against a
 stand-in for docket. Run `tack runner doctor` before you rely on it.
@@ -326,7 +326,7 @@ When the runner does start it:
 A profile names its team in its tool policy, as in this line from a project file:
 
 ```yaml
-tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: fab-dev } }
+tool_policy: { agent: docket, tools: { docket: ["*"] }, docket: { team: saas-dev } }
 ```
 
 The runner checks that docket reports that team and refuses the attempt, saying so,
@@ -351,8 +351,8 @@ docket
   ...
   api:         5
   daemon:      running on 127.0.0.1:7399
-  team fab-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
-  team fab-research: attended (fix: docket pod set network none) · reads nothing outside its work
+  team saas-content: lights-out · reads /home/me/.nvm/versions/node/v22.17.1
+  team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
 A team that can finish a task with nobody present is `lights-out`. Any other team is `attended`, and

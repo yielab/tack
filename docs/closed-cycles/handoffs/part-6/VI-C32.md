@@ -79,7 +79,7 @@ failure would push that user onto the file-fallback store *even though the keych
 have worked a moment later* — silently weaker credential storage for no real benefit, since
 `/api/health` already isn't waiting on it. The one case a fast failure would help — a bus
 that is activation-capable but whose secrets provider never completes registering at
-all — is also the case ADR 0061 already treats as "no platform store answered," just later
+all — is also the case ADR 0005 already treats as "no platform store answered," just later
 than ideal. That is a genuine gap (no timeout at all on the platform-store attempt, so a
 truly wedged D-Bus activation blocks the embedded runner from ever reaching `active`, with
 no diagnostic pointing at why) but it is not what broke CI, and bounding it is a real
@@ -272,7 +272,7 @@ the log pointing at why (see "Known limitations").
 
 - Tokens read before the first edit: the card skill, reporting/decision/scope-discipline
   docs, the card text, the handoff template, `VI-C23.md` (whole — it originated both waits
-  this card was asked to reconsider), ADR 0061 decision 1, all three test files in full,
+  this card was asked to reconsider), ADR 0005 decision 1, all three test files in full,
   `local_runner.rs` (`start_locked` and the surrounding `EmbeddedRunnerControl` area),
   `bootstrap.rs` (`build_runtime`), `secrets.rs` (`SecretStore::open`/`platform_store`),
   and — the load-bearing read — the actual CI failure logs

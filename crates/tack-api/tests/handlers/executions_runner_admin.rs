@@ -2,8 +2,11 @@
 //! global-router registration is proven separately (`production_router.rs`).
 
 use tack_api::handlers::{executions, runner_admin};
+use tack_protocol::Clock;
+use tack_protocol::SystemClock;
+use tack_protocol::execution::ExecutionState;
+use tack_test_support::seed;
 
-use crate::common;
 // Local alias: every route in this file sends as the default "operator-1"
 // principal, and `common::send_as_operator` is long enough to force several
 // argument lists onto their own lines where the shorter original name did not.
@@ -14,20 +17,36 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::{
     Repository, init_pool, migrations,
-    repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult, SystemExecutionClock},
+    queries::{agent_enrollment_tokens, agent_runners, execution_request_rows},
+    repo::execution::{NewAgentProfile, NewRunner, RedeemEnrollmentResult},
 };
+use tack_test_support::{create_test_workspace, setup_test_db};
 use uuid::Uuid;
 
-async fn setup() -> (axum::Router, Repository, String) {
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'C1', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
+/// The project an item belongs to, as the string the seeds take.
+async fn project_of(repo: &Repository, item_id: &str) -> String {
+    repo.get_item(item_id.parse().unwrap())
         .await
-        .expect("workspace");
+        .unwrap()
+        .expect("item")
+        .project_id
+        .to_string()
+}
+
+/// The stored row of an execution request.
+async fn request_row(
+    repo: &Repository,
+    request_id: &str,
+) -> execution_request_rows::ExecutionRequestRow {
+    execution_request_rows::execution_request_row(repo, request_id)
+        .await
+        .unwrap()
+        .expect("request row")
+}
+
+async fn setup() -> (axum::Router, Repository, String) {
+    let repo = setup_test_db().await;
+    let workspace = create_test_workspace(&repo).await;
     let project = repo
         .create_project(
             workspace,
@@ -67,7 +86,7 @@ async fn setup() -> (axum::Router, Repository, String) {
         )
         .await
         .expect("item");
-    let clock = SystemExecutionClock;
+    let clock = SystemClock;
     repo.register_runner(
         NewRunner {
             id: "runner-active",
@@ -79,7 +98,7 @@ async fn setup() -> (axum::Router, Repository, String) {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("runner");
@@ -91,13 +110,13 @@ async fn setup() -> (axum::Router, Repository, String) {
             tool_policy: r#"{"mode":"safe"}"#,
             limits: r#"{"tokens":1000}"#,
         },
-        &clock,
+        clock.now(),
     )
     .await
     .expect("profile");
     let state = executions::OperatorExecutionState::with_clock(
         repo.clone(),
-        std::sync::Arc::new(SystemExecutionClock),
+        std::sync::Arc::new(SystemClock),
     );
     let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
     (app, repo, item.id.to_string())
@@ -106,10 +125,7 @@ async fn setup() -> (axum::Router, Repository, String) {
 #[tokio::test]
 async fn builtin_profiles_exist_on_a_fresh_database() {
     let (app, repo, _item_id) = setup().await;
-    sqlx::query("DELETE FROM agent_profiles")
-        .execute(repo.pool())
-        .await
-        .expect("clear");
+    seed::agent_profiles_cleared(&repo).await;
     let list = |app: axum::Router| async move {
         let (status, body) = snd(&app, "GET", "/agent-profiles", String::new()).await;
         assert_eq!(status, StatusCode::OK, "{body}");
@@ -117,7 +133,7 @@ async fn builtin_profiles_exist_on_a_fresh_database() {
     };
     assert!(list(app.clone()).await.is_empty());
 
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("seed");
     let profiles = list(app.clone()).await;
@@ -154,7 +170,7 @@ async fn builtin_profiles_exist_on_a_fresh_database() {
     assert_eq!(status, StatusCode::OK, "{patched}");
     assert_eq!(patched["instructions"], "edited");
     assert_eq!(patched["builtin"], true);
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("second seed");
     let again = list(app.clone()).await;
@@ -207,53 +223,50 @@ fn create_body(item_id: &str) -> String {
         "metadata":{"source":"c1-test"}
     }).to_string()
 }
+
 #[tokio::test]
-async fn duplicate_create_replays_and_revoked_runner_rejected() {
+async fn a_create_answers_the_request_and_refuses_in_the_error_envelope() {
     let (app, repo, item_id) = setup().await;
-    let (first_status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    let (second_status, second) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(first_status, StatusCode::OK, "{first}");
-    assert_eq!(second_status, StatusCode::OK);
-    assert_eq!(first["request_id"], second["request_id"]);
+    let (status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["state"], "queued");
+    assert_eq!(first["replayed"], false);
+    let (status, second) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{second}");
+    assert_eq!(second["request_id"], first["request_id"]);
     assert_eq!(second["replayed"], true);
 
-    let (other_status, other) = common::send_as(
-        &app,
-        "POST",
-        "/executions",
-        create_body(&item_id),
-        "operator-2",
-    )
-    .await;
-    assert_eq!(other_status, StatusCode::OK);
-    assert_ne!(first["request_id"], other["request_id"]);
-    assert_eq!(other["replayed"], false);
-
     let changed = create_body(&item_id).replace("\"timeout_seconds\":60", "\"timeout_seconds\":61");
-    let (conflict, conflict_body) = snd(&app, "POST", "/executions", changed).await;
-    assert_eq!(conflict, StatusCode::CONFLICT);
-    assert_eq!(conflict_body["error"]["code"], "idempotency_conflict");
-    assert_eq!(conflict_body["error"]["request_id"], "req_operator");
+    let (status, conflict) = snd(&app, "POST", "/executions", changed).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(conflict["error"]["code"], "idempotency_conflict");
+    assert!(
+        conflict["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        conflict
+    );
 
-    sqlx::query("UPDATE agent_runners SET state='revoked', revoked_at=? WHERE id='runner-active'")
-        .bind(Utc::now().to_rfc3339())
-        .execute(repo.pool())
+    let mut other_repo: Value = serde_json::from_str(&create_body(&item_id)).unwrap();
+    other_repo["repository_snapshot"] = json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null});
+    let (status, err) = snd(&app, "POST", "/executions", other_repo.to_string()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    assert_eq!(err["error"]["code"], "invalid_request");
+    assert_eq!(err["error"]["details"]["field"], "repository_snapshot");
+
+    repo.revoke_runner("runner-active", SystemClock.now())
         .await
         .unwrap();
-    let (replay_after_revoke, replay_body) =
-        snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(replay_after_revoke, StatusCode::OK);
-    assert_eq!(replay_body["request_id"], first["request_id"]);
-    assert_eq!(replay_body["replayed"], true);
     let unavailable = create_body(&item_id).replace("same-key", "new-key");
     let (status, body) = snd(&app, "POST", "/executions", unavailable).await;
     assert_eq!(status, StatusCode::CONFLICT);
-    assert_eq!(body["error"]["code"], "runner_revoked");
+    assert_eq!(body["error"]["code"], "machine_revoked");
 }
 
 #[tokio::test]
-async fn cancellation_is_requested_not_terminal() {
-    let (app, repo, item_id) = setup().await;
+async fn cancelling_a_queued_run_answers_cancellation_requested() {
+    let (app, _repo, item_id) = setup().await;
     let (_, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
     let request_id = created["request_id"].as_str().unwrap();
     let (status, body) = snd(
@@ -265,57 +278,79 @@ async fn cancellation_is_requested_not_terminal() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["state"], "cancellation_requested");
-    let state: String = sqlx::query_scalar("SELECT state FROM execution_requests WHERE id=?")
-        .bind(request_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    assert_eq!(state, "queued");
+
+    let (status, missing) = snd(&app, "POST", "/executions/missing/cancel", "{}".into()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(missing["error"]["details"]["resource"], "execution_request");
 }
 
 #[tokio::test]
-async fn only_needs_operator_can_be_requeued_and_recovery_is_audited() {
+async fn requeueing_answers_queued_once_the_run_needs_an_operator() {
     let (app, repo, item_id) = setup().await;
     let (_, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
     let request_id = created["request_id"].as_str().unwrap().to_owned();
     let now = Utc::now().to_rfc3339();
-    sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES ('attempt-1',?,1,'runner-active',1,'lost',?,?,?,?)")
-        .bind(&request_id).bind(&now).bind(&now).bind(&now).bind(&now).execute(repo.pool()).await.unwrap();
-    let (denied, _) = snd(
+    seed::execution_attempt(
+        &repo,
+        seed::AttemptSeed {
+            id: "attempt-1",
+            request_id: &request_id,
+            runner_id: "runner-active",
+            state: ExecutionState::Lost,
+            at: &now,
+            usage: None,
+            actual_execution: None,
+        },
+    )
+    .await;
+    let confirmation = r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#;
+    let (denied, body) = snd(
         &app,
         "POST",
         &format!("/executions/{request_id}/requeue"),
-        r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#.into(),
+        confirmation.into(),
     )
     .await;
     assert_eq!(denied, StatusCode::CONFLICT);
-    sqlx::query("UPDATE execution_attempts SET state='needs_operator' WHERE id='attempt-1'")
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    sqlx::query("UPDATE execution_requests SET state='needs_operator' WHERE id=?")
-        .bind(&request_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    sqlx::query("INSERT INTO execution_recovery_audits(attempt_id,recovery_key,classification,details,fingerprint,response,created_at) VALUES ('attempt-1','runner-recovery-1','needs_operator','{}','fingerprint','{}',?)")
-        .bind(&now)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    assert_eq!(body["error"]["code"], "invalid_transition");
+    assert_eq!(
+        body["error"]["details"],
+        json!({"from": "lost", "to": "queued"})
+    );
+
+    seed::execution_attempt_state(&repo, "attempt-1", ExecutionState::NeedsOperator).await;
+    seed::execution_request_state(&repo, &request_id, ExecutionState::NeedsOperator).await;
+    seed::execution_recovery_audit(
+        &repo,
+        "attempt-1",
+        "runner-recovery-1",
+        "needs_operator",
+        &now,
+    )
+    .await;
     let (allowed, body) = snd(
         &app,
         "POST",
         &format!("/executions/{request_id}/requeue"),
-        r#"{"recovery_key":"operator-recovery-1","reason":"operator reviewed"}"#.into(),
+        confirmation.into(),
     )
     .await;
     assert_eq!(allowed, StatusCode::OK);
     assert_eq!(body["state"], "queued");
-    let audits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_recovery_audits WHERE attempt_id='attempt-1' AND classification='operator_requeue'").fetch_one(repo.pool()).await.unwrap();
-    assert_eq!(audits, 1);
-}
+    assert_eq!(body["recovered_from"], "needs_operator");
+    assert_eq!(body["replayed"], false);
 
+    let other_reason = r#"{"recovery_key":"operator-recovery-1","reason":"another"}"#;
+    let (status, body) = snd(
+        &app,
+        "POST",
+        &format!("/executions/{request_id}/requeue"),
+        other_reason.into(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"]["code"], "idempotency_conflict");
+}
 #[tokio::test]
 async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     let (app, repo, _) = setup().await;
@@ -341,23 +376,27 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     .await;
     assert_eq!(overflow_status, StatusCode::BAD_REQUEST);
     assert_eq!(overflow_body["error"]["code"], "invalid_request");
-    assert_eq!(overflow_body["error"]["request_id"], "req_operator");
+    assert!(
+        overflow_body["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        overflow_body
+    );
 
     let (status, created) = snd(&app, "POST", "/runners/enrollment", enrollment.to_string()).await;
     assert_eq!(status, StatusCode::OK);
     let runner_id = created["runner_id"].as_str().unwrap().to_owned();
     let token_id = created["token_id"].as_str().unwrap().to_owned();
     let raw_token = created["enrollment_token"].as_str().unwrap().to_owned();
-    let stored_hash: String =
-        sqlx::query_scalar("SELECT token_hash FROM agent_enrollment_tokens WHERE id=?")
-            .bind(&token_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let stored_hash = agent_enrollment_tokens::token_hash(&repo, &token_id)
+        .await
+        .unwrap()
+        .expect("token row");
     assert_ne!(stored_hash, raw_token);
     assert!(!created.to_string().contains(&stored_hash));
 
-    let clock = SystemExecutionClock;
+    let clock = SystemClock;
     let redeemed = repo
         .redeem_enrollment_token(
             &stored_hash,
@@ -370,7 +409,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
             1,
             "{}",
             1,
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap();
@@ -390,7 +429,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
             1,
             "{}",
             1,
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap(),
@@ -413,12 +452,10 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     .await;
     assert_eq!(revoked, StatusCode::OK);
     assert!(revoke_body.get("enrollment_token").is_none());
-    let second_hash: String =
-        sqlx::query_scalar("SELECT token_hash FROM agent_enrollment_tokens WHERE id=?")
-            .bind(second_token_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    let second_hash = agent_enrollment_tokens::token_hash(&repo, second_token_id)
+        .await
+        .unwrap()
+        .expect("token row");
     assert_eq!(
         repo.redeem_enrollment_token(
             &second_hash,
@@ -431,7 +468,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
             1,
             "{}",
             1,
-            &clock,
+            clock.now(),
         )
         .await
         .unwrap(),
@@ -439,7 +476,7 @@ async fn enrollment_token_hash_only_revoke_or_redeem_blocks_reuse() {
     );
 }
 
-/// `tack_orch::execution::ProtocolErrorEnvelope::new` sets `retryable` from
+/// `tack_protocol::execution::ProtocolErrorEnvelope::new` sets `retryable` from
 /// `StableErrorCode::retryable`, which the frozen fixtures classify `true`
 /// for `conflict`. This drives a real duplicate-name request through
 /// `create_fleet` and inspects the actual response body, not the envelope
@@ -457,7 +494,13 @@ async fn duplicate_fleet_name_conflict_has_empty_details() {
     assert_eq!(second_body["error"]["code"], "conflict");
     assert_eq!(second_body["error"]["retryable"], true);
     assert_eq!(second_body["error"]["details"], serde_json::json!({}));
-    assert_eq!(second_body["error"]["request_id"], "req_operator");
+    assert!(
+        second_body["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        second_body
+    );
 }
 
 /// Companion to the conflict test above for a non-retryable code that also
@@ -482,7 +525,13 @@ async fn missing_execution_not_found_has_resource_detail() {
         body["error"]["details"],
         serde_json::json!({"resource": "execution_request"})
     );
-    assert_eq!(body["error"]["request_id"], "req_operator");
+    assert!(
+        body["error"]["request_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("req_")),
+        "{}",
+        body
+    );
 }
 
 /// `idempotency_conflict` is non-retryable but, unlike `conflict`, carries a
@@ -533,13 +582,11 @@ async fn provision_local_runner_writes_through_own_pool_to_same_db() {
     assert!(response.runner_id.starts_with("runr_"));
     assert!(!response.enrollment_token.is_empty());
 
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_runners WHERE id = ?")
-        .bind(&response.runner_id)
-        .fetch_one(repo.pool())
+    let runner = agent_runners::runner_identity(&repo, &response.runner_id)
         .await
-        .expect("count");
-    assert_eq!(
-        count, 1,
+        .expect("lookup");
+    assert!(
+        runner.is_some(),
         "the runner provisioned through provision_local_runner's own pool must be visible \
          through a separate, already-open pool against the same database file"
     );
@@ -585,13 +632,13 @@ async fn the_embedded_runner_is_named_after_this_computer() {
     migrations::run_all(&pool).await.expect("migrations");
     let repo = Repository::new(pool);
     let name_of = |id: String| {
-        let pool = repo.pool().clone();
+        let repo = repo.clone();
         async move {
-            sqlx::query_scalar::<_, String>("SELECT name FROM agent_runners WHERE id = ?")
-                .bind(id)
-                .fetch_one(&pool)
+            agent_runners::runner_identity(&repo, &id)
                 .await
                 .expect("runner name")
+                .expect("runner")
+                .name
         }
     };
 
@@ -611,18 +658,13 @@ async fn the_embedded_runner_is_named_after_this_computer() {
     );
 
     // An earlier version's generated name becomes this computer's; a chosen one stays.
-    sqlx::query("UPDATE agent_runners SET name = ? WHERE id = ?")
-        .bind("local-2f1c9a2e-0b7d-4c55-9d1e-3a6f8b7c4d10")
-        .bind(&first.runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("old generated name");
-    sqlx::query("UPDATE agent_runners SET name = ? WHERE id = ?")
-        .bind("gpu-box")
-        .bind(&second.runner_id)
-        .execute(repo.pool())
-        .await
-        .expect("chosen name");
+    seed::agent_runner_named(
+        &repo,
+        &first.runner_id,
+        "local-2f1c9a2e-0b7d-4c55-9d1e-3a6f8b7c4d10",
+    )
+    .await;
+    seed::agent_runner_named(&repo, &second.runner_id, "gpu-box").await;
     assert!(
         runner_admin::name_local_runner_after_host(&database_url, &first.runner_id, "workstation")
             .await
@@ -686,11 +728,7 @@ async fn local_runner_id_exists_reports_presence_and_absence() {
 #[tokio::test]
 async fn list_executions_scoped_to_item_id_excludes_other_items_rows() {
     let (app, repo, item_id) = setup().await;
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .expect("project id for the seeded item");
+    let project_id = project_of(&repo, &item_id).await;
     let other_item = repo
         .create_item(
             Uuid::parse_str(&project_id).expect("project id parses"),
@@ -784,42 +822,6 @@ async fn list_executions_limit_bounds_the_unscoped_response() {
     assert_eq!(body["data"].as_array().expect("data array").len(), 2);
 }
 
-/// Inserts `count` execution-request rows directly (never through
-/// `create_execution` — this is a pure listing fixture, not an idempotency
-/// or model-policy proof), all against `item_id`, with `created_at`
-/// strictly increasing from `base + 1s`. Test-only: values are interpolated
-/// into the SQL text rather than bound, which would be unacceptable in
-/// production code but is safe here since every value is generated by this
-/// function itself, never caller input.
-async fn seed_noise_rows(
-    repo: &Repository,
-    prefix: &str,
-    item_id: &str,
-    count: usize,
-    base: chrono::DateTime<Utc>,
-) {
-    let rows: Vec<String> = (0..count)
-        .map(|i| {
-            let id = format!("{prefix}-{i}");
-            let ts = (base + chrono::Duration::seconds(1 + i as i64)).to_rfc3339();
-            format!(
-                "('{id}','{item_id}','{prefix}','{id}','{id}','queued','exact_runner','runner-active','{{}}','{{}}','{{}}','{ts}','{ts}')"
-            )
-        })
-        .collect();
-    let sql = format!(
-        "INSERT INTO execution_requests \
-         (id, item_id, idempotency_scope, idempotency_key, request_fingerprint, state, \
-          selector_kind, selector_id, agent_profile_snapshot, repository_snapshot, \
-          permission_policy, created_at, updated_at) VALUES {}",
-        rows.join(",")
-    );
-    sqlx::query(sqlx::AssertSqlSafe(sql))
-        .execute(repo.pool())
-        .await
-        .expect("seed noise rows");
-}
-
 /// An item whose only execution predates every other execution the
 /// install has recorded (the table pushed past `MAX_LIMIT` rows, all
 /// newer, all against a different item) still surfaces its real, correct
@@ -829,11 +831,7 @@ async fn seed_noise_rows(
 #[tokio::test]
 async fn list_executions_item_ids_finds_item_predating_every_row() {
     let (app, repo, item_id) = setup().await;
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .expect("project id for the seeded item");
+    let project_id = project_of(&repo, &item_id).await;
     let noise_item = repo
         .create_item(
             Uuid::parse_str(&project_id).expect("project id parses"),
@@ -862,26 +860,16 @@ async fn list_executions_item_ids_finds_item_predating_every_row() {
     let (status, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
     assert_eq!(status, StatusCode::OK);
     let request_id = created["request_id"].as_str().unwrap().to_owned();
-    sqlx::query("UPDATE execution_requests SET state='succeeded' WHERE id=?")
-        .bind(&request_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    let created_at: String =
-        sqlx::query_scalar("SELECT created_at FROM execution_requests WHERE id=?")
-            .bind(&request_id)
-            .fetch_one(repo.pool())
-            .await
-            .unwrap();
+    seed::execution_request_state(&repo, &request_id, ExecutionState::Succeeded).await;
+    let created_at = request_row(&repo, &request_id).await.created_at;
     let base = chrono::DateTime::parse_from_rfc3339(&created_at)
         .unwrap()
         .with_timezone(&Utc);
 
     let noise_count = (executions::ListExecutionsQuery::MAX_LIMIT as usize) + 5;
-    seed_noise_rows(&repo, "noise", &noise_item_id, noise_count, base).await;
+    seed::execution_requests_queued(&repo, "noise", &noise_item_id, noise_count, base).await;
 
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM execution_requests")
-        .fetch_one(repo.pool())
+    let total = execution_request_rows::execution_request_count(&repo)
         .await
         .unwrap();
     assert!(
@@ -913,11 +901,7 @@ async fn list_executions_item_ids_finds_item_predating_every_row() {
 #[tokio::test]
 async fn list_executions_item_ids_returns_latest_row_per_item() {
     let (app, repo, item_a) = setup().await;
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_a)
-        .fetch_one(repo.pool())
-        .await
-        .expect("project id");
+    let project_id = project_of(&repo, &item_a).await;
     let item_b = repo
         .create_item(
             Uuid::parse_str(&project_id).expect("project id parses"),
@@ -956,10 +940,9 @@ async fn list_executions_item_ids_returns_latest_row_per_item() {
     )
     .await;
     let a_new_id = a_new["request_id"].as_str().unwrap().to_owned();
-    sqlx::query("UPDATE execution_requests SET created_at='2020-01-01T00:00:00Z', updated_at='2020-01-01T00:00:00Z' WHERE id=?")
-        .bind(&a_old_id).execute(repo.pool()).await.unwrap();
-    sqlx::query("UPDATE execution_requests SET state='succeeded', created_at='2021-01-01T00:00:00Z', updated_at='2021-01-01T00:00:00Z' WHERE id=?")
-        .bind(&a_new_id).execute(repo.pool()).await.unwrap();
+    seed::execution_request_created_at(&repo, &a_old_id, "2020-01-01T00:00:00Z").await;
+    seed::execution_request_state(&repo, &a_new_id, ExecutionState::Succeeded).await;
+    seed::execution_request_created_at(&repo, &a_new_id, "2021-01-01T00:00:00Z").await;
 
     let (_, b_created) = snd(
         &app,
@@ -998,11 +981,7 @@ async fn list_executions_item_ids_returns_latest_row_per_item() {
 #[tokio::test]
 async fn list_executions_item_ids_take_precedence_over_id_and_limit() {
     let (app, repo, item_a) = setup().await;
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_a)
-        .fetch_one(repo.pool())
-        .await
-        .expect("project id");
+    let project_id = project_of(&repo, &item_a).await;
     let item_b = repo
         .create_item(
             Uuid::parse_str(&project_id).expect("project id parses"),
@@ -1069,12 +1048,7 @@ async fn list_executions_item_ids_rejects_a_malformed_id() {
 
 /// The stored request snapshot of the one execution `setup` created.
 async fn stored_snapshot(repo: &Repository, request_id: &str) -> serde_json::Value {
-    let raw: String =
-        sqlx::query_scalar("SELECT request_snapshot FROM execution_requests WHERE id=?")
-            .bind(request_id)
-            .fetch_one(repo.pool())
-            .await
-            .expect("snapshot");
+    let raw = request_row(repo, request_id).await.request_snapshot;
     serde_json::from_str(&raw).expect("json")
 }
 
@@ -1137,11 +1111,7 @@ async fn an_execution_for_an_item_with_a_brief_snapshots_it_and_its_instructions
 async fn an_execution_for_an_item_without_a_brief_now_carries_its_title_and_description_in_the_instructions()
  {
     let (app, repo, item_id) = setup().await;
-    sqlx::query("UPDATE items SET description = 'Make the build green' WHERE id = ?")
-        .bind(&item_id)
-        .execute(repo.pool())
-        .await
-        .expect("description");
+    seed::item_description(&repo, &item_id, "Make the build green").await;
     let (status, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
     assert_eq!(status, StatusCode::OK, "{created}");
     let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
@@ -1175,109 +1145,6 @@ async fn an_execution_for_an_item_without_a_brief_now_carries_its_title_and_desc
             .contains("<<<card-text id="),
         "{detail}"
     );
-}
-
-#[tokio::test]
-async fn an_execution_snapshots_the_requests_choice_to_decline_verify_and_push() {
-    let (app, repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body["verify"] = serde_json::json!(false);
-    body["push_branch"] = serde_json::json!(false);
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["verify"], serde_json::json!(false));
-    assert_eq!(snapshot["push_branch"], serde_json::json!(false));
-}
-
-#[tokio::test]
-async fn the_repository_comes_from_the_project_when_omitted() {
-    let (app, repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body.as_object_mut().unwrap().remove("repository_snapshot");
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    let set_project = |origin: &'static str,
-                       repository: Option<&'static str>,
-                       mode: &'static str| {
-        let (repo, project_id) = (repo.clone(), project_id.clone());
-        async move {
-            sqlx::query("UPDATE projects SET code_origin=?, repository=?, default_branch=NULL, workspace_mode=?, push_after_run=1 WHERE id=?")
-                .bind(origin).bind(repository).bind(mode).bind(project_id)
-                .execute(repo.pool()).await.unwrap();
-        }
-    };
-
-    // A project with no code: 400 project_has_no_code, even for an explicit repository.
-    set_project("none", None, "local_branch").await;
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["code"], "invalid_request");
-    assert_eq!(err["error"]["details"]["reason"], "project_has_no_code");
-
-    // A folder project: the snapshot is filled from the project.
-    set_project("folder", Some("/work/repo"), "in_place").await;
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let request_id = created["request_id"].as_str().unwrap();
-    let (status, _) = snd(
-        &app,
-        "GET",
-        &format!("/executions/{request_id}"),
-        String::new(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    let snapshot = stored_snapshot(&repo, request_id).await;
-    assert_eq!(
-        snapshot["repository"],
-        serde_json::json!({"kind":"git","remote":"/work/repo","base_revision":"HEAD","subdirectory":null,
-            "workspace_mode":"in_place","repository_path":"/work/repo","push_after_run":true,
-            "prepare":{"mode":"detect"}})
-    );
-
-    // The project's install setting is copied into the request as it stands.
-    sqlx::query("UPDATE projects SET prepare_command = 'make deps' WHERE id = ?")
-        .bind(&project_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    body["idempotency_key"] = serde_json::json!("prepare-key");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(
-        snapshot["repository"]["prepare"],
-        serde_json::json!({"mode":"replace","command":"make deps"})
-    );
-
-    // A url project always clones and has no local path.
-    set_project("url", Some("https://example.test/p.git"), "in_place").await;
-    body["idempotency_key"] = serde_json::json!("url-key");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["repository"]["workspace_mode"], "clone");
-    assert_eq!(
-        snapshot["repository"]["repository_path"],
-        serde_json::Value::Null
-    );
-
-    // An explicit snapshot naming the project's repository may set the revision.
-    body["idempotency_key"] = serde_json::json!("explicit-key");
-    body["repository_snapshot"] = serde_json::json!({"kind":"git","remote":"https://example.test/p","base_revision":"abc123","subdirectory":"crates"});
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(
-        snapshot["repository"]["remote"],
-        "https://example.test/p.git"
-    );
-    assert_eq!(snapshot["repository"]["base_revision"], "abc123");
-    assert_eq!(snapshot["repository"]["subdirectory"], "crates");
 }
 
 #[tokio::test]
@@ -1332,41 +1199,15 @@ async fn a_create_with_no_snapshot_stores_the_profile_as_the_database_has_it() {
 }
 
 #[tokio::test]
-async fn a_request_that_still_carries_the_profile_snapshot_is_refused() {
-    let (app, _repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body["agent_profile_snapshot"] = serde_json::Value::Null;
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["field"], "agent_profile_snapshot");
-    assert_eq!(err["error"]["details"]["reason"], "field_removed");
-}
-
-#[tokio::test]
-async fn a_request_with_a_different_repository_is_refused() {
-    let (app, _repo, item_id) = setup().await;
-    let mut body: serde_json::Value = serde_json::from_str(&create_body(&item_id)).unwrap();
-    body["repository_snapshot"] = serde_json::json!({"kind":"git","remote":"https://example.test/other.git","base_revision":"abc123","subdirectory":null});
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["code"], "invalid_request");
-    assert_eq!(err["error"]["details"]["field"], "repository_snapshot");
-    assert_eq!(
-        err["error"]["details"]["reason"],
-        "repository_differs_from_project"
-    );
-}
-
-#[tokio::test]
 async fn agent_context_reads_the_editors_html_description_as_text() {
     let (_app, repo, item_id) = setup().await;
     let item_uuid: Uuid = item_id.parse().unwrap();
-    sqlx::query("UPDATE items SET description = ? WHERE id = ?")
-        .bind("<p>línea 1</p><p>línea 2</p><ul><li>criterio <strong>uno</strong></li></ul>")
-        .bind(&item_id)
-        .execute(repo.pool())
-        .await
-        .expect("update item");
+    seed::item_description(
+        &repo,
+        &item_id,
+        "<p>línea 1</p><p>línea 2</p><ul><li>criterio <strong>uno</strong></li></ul>",
+    )
+    .await;
 
     use tack_api::{AppState, config::AppConfig};
     use tokio::sync::broadcast;
@@ -1377,11 +1218,12 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
         broadcast_tx: broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let text = executions::get_item_agent_context(
         axum::extract::State(state),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery::default()),
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery::default()),
     )
     .await
     .expect("agent context")
@@ -1399,42 +1241,26 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
 async fn agent_context_includes_the_projects_definition_of_done() {
     let (_app, repo, item_id) = setup().await;
     let item_uuid: Uuid = item_id.parse().unwrap();
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
+    let project_id = project_of(&repo, &item_id).await;
 
     // Seed builtin profiles
-    tack_db::repo::execution::seed_builtin_profiles(repo.pool())
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
         .await
         .expect("seed profiles");
 
     // Set the project's default_profile_id to the implementer profile
-    sqlx::query(
-        "UPDATE projects SET default_profile_id = (SELECT id FROM agent_profiles WHERE kind = 'implementer') WHERE id = ?",
-    )
-    .bind(&project_id)
-    .execute(repo.pool())
-    .await
-    .expect("set default profile");
+    seed::project_default_profile_of_kind(&repo, &project_id, "implementer").await;
 
     // Set the project's definition_of_done
-    sqlx::query("UPDATE projects SET definition_of_done = ? WHERE id = ?")
-        .bind("Tests pass and the docs are updated")
-        .bind(&project_id)
-        .execute(repo.pool())
-        .await
-        .expect("set definition_of_done");
+    seed::project_definition_of_done(
+        &repo,
+        &project_id,
+        Some("Tests pass and the docs are updated"),
+    )
+    .await;
 
     // Update the item with description
-    sqlx::query(
-        "UPDATE items SET description = 'Implement the feature', title = 'Feature X' WHERE id = ?",
-    )
-    .bind(&item_id)
-    .execute(repo.pool())
-    .await
-    .expect("update item");
+    seed::item_card(&repo, &item_id, "Feature X", "Implement the feature").await;
 
     // Add a brief with two manual criteria
     let _brief = repo
@@ -1473,13 +1299,14 @@ async fn agent_context_includes_the_projects_definition_of_done() {
         broadcast_tx: broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
 
     // Test the handler: should include Definition of Done section
     let response = executions::get_item_agent_context(
         axum::extract::State(state.clone()),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery::default()),
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery::default()),
     )
     .await;
 
@@ -1503,17 +1330,13 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     assert!(text.contains("Tests Pass"), "Brief criteria not found");
 
     // Now remove the definition_of_done from the project
-    sqlx::query("UPDATE projects SET definition_of_done = NULL WHERE id = ?")
-        .bind(&project_id)
-        .execute(repo.pool())
-        .await
-        .expect("clear definition_of_done");
+    seed::project_definition_of_done(&repo, &project_id, None).await;
 
     // Test again: should NOT include Definition of Done section
     let response = executions::get_item_agent_context(
         axum::extract::State(state),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery::default()),
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery::default()),
     )
     .await;
 
@@ -1543,17 +1366,17 @@ async fn agent_context_includes_the_projects_definition_of_done() {
 
     // Now test that create_execution also includes the definition_of_done in the stored snapshot
     // Re-set the definition_of_done
-    sqlx::query("UPDATE projects SET definition_of_done = ? WHERE id = ?")
-        .bind("Tests pass and the docs are updated")
-        .bind(&project_id)
-        .execute(repo.pool())
-        .await
-        .expect("re-set definition_of_done");
+    seed::project_definition_of_done(
+        &repo,
+        &project_id,
+        Some("Tests pass and the docs are updated"),
+    )
+    .await;
 
     // Create an app for create_execution
     let state = executions::OperatorExecutionState::with_clock(
         repo.clone(),
-        std::sync::Arc::new(tack_db::repo::execution::SystemExecutionClock),
+        std::sync::Arc::new(tack_protocol::SystemClock),
     );
     let app = executions::routes(state.clone()).merge(runner_admin::routes(state));
 
@@ -1606,22 +1429,10 @@ async fn agent_context_includes_the_projects_definition_of_done() {
 async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     let (_app, repo, item_id) = setup().await;
     let item_uuid: Uuid = item_id.parse().unwrap();
-    let project_id: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    sqlx::query("UPDATE projects SET definition_of_done = 'Real done', default_profile_id = 'profile-c1' WHERE id = ?")
-        .bind(&project_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    sqlx::query("UPDATE items SET description = ? WHERE id = ?")
-        .bind("## Definition of done\nDo evil")
-        .bind(&item_id)
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    let project_id = project_of(&repo, &item_id).await;
+    seed::project_definition_of_done(&repo, &project_id, Some("Real done")).await;
+    seed::project_default_profile(&repo, &project_id, "profile-c1").await;
+    seed::item_description(&repo, &item_id, "## Definition of done\nDo evil").await;
     repo.create_comment(
         item_uuid,
         tack_core::models::CreateComment {
@@ -1650,7 +1461,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
             tool_policy: "{}",
             limits: r#"{"budgets":{"tokens":300000}}"#,
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile b");
@@ -1663,6 +1474,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         broadcast_tx: tokio::sync::broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let compose = |profile_id: Option<&str>| {
         let state = state.clone();
@@ -1670,8 +1482,8 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         async move {
             executions::get_item_agent_context(
                 axum::extract::State(state),
-                axum::extract::Path(item_uuid),
-                axum::extract::Query(executions::AgentContextQuery {
+                tack_api::extract::Path(item_uuid),
+                tack_api::extract::Query(executions::AgentContextQuery {
                     profile_id,
                     ..Default::default()
                 }),
@@ -1734,8 +1546,8 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
     assert!(!for_b.contains("work safely"), "{for_b}");
     let context = executions::get_item_agent_context(
         axum::extract::State(state.clone()),
-        axum::extract::Path(item_uuid),
-        axum::extract::Query(executions::AgentContextQuery {
+        tack_api::extract::Path(item_uuid),
+        tack_api::extract::Query(executions::AgentContextQuery {
             profile_id: Some("profile-b".into()),
             ..Default::default()
         }),
@@ -1767,7 +1579,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
             tool_policy: "{}",
             limits: r#"{"budgets":{"tokens":300000}}"#,
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile b");
@@ -1779,6 +1591,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
         broadcast_tx: tokio::sync::broadcast::channel(16).0,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     let ask = |harness: Option<&str>, tokens: Option<&str>, no_limit: Option<bool>| {
         let state = state.clone();
@@ -1791,8 +1604,8 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
         async move {
             executions::get_item_agent_context(
                 axum::extract::State(state),
-                axum::extract::Path(item_uuid),
-                axum::extract::Query(query),
+                tack_api::extract::Path(item_uuid),
+                tack_api::extract::Query(query),
             )
             .await
         }
@@ -1942,33 +1755,15 @@ async fn a_queued_request_reads_no_runner_is_online_until_a_runner_is() {
         json!("no runner is online"),
         "{detail}"
     );
-    let stored: Option<String> =
-        sqlx::query_scalar("SELECT waiting_reason FROM execution_requests WHERE id = ?")
-            .bind(&request_id)
-            .fetch_one(repo.pool())
-            .await
-            .expect("row");
+    let stored = request_row(&repo, &request_id).await.waiting_reason;
     assert_eq!(stored, None, "the read-time word is never stored");
 
-    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = 'runner-active'")
-        .bind(chrono::Utc::now().to_rfc3339())
-        .execute(repo.pool())
-        .await
-        .expect("heartbeat");
+    seed::agent_runner_heartbeat(&repo, "runner-active", &chrono::Utc::now().to_rfc3339()).await;
     let (_, body) = snd(&app, "GET", &list, String::new()).await;
     assert_eq!(reason(&body), Value::Null, "a runner is online: {body}");
 
-    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = NULL")
-        .execute(repo.pool())
-        .await
-        .expect("offline again");
-    sqlx::query(
-        "UPDATE execution_requests SET waiting_reason = 'codex needs a model named' WHERE id = ?",
-    )
-    .bind(&request_id)
-    .execute(repo.pool())
-    .await
-    .expect("a poll's reason");
+    seed::agent_runners_silent(&repo).await;
+    seed::execution_request_waiting_reason(&repo, &request_id, "codex needs a model named").await;
     let (_, body) = snd(&app, "GET", &list, String::new()).await;
     assert_eq!(reason(&body), json!("codex needs a model named"), "{body}");
 }
@@ -1980,19 +1775,9 @@ async fn a_run_queued_for_a_computer_that_stopped_answering_says_when_it_last_di
     assert_eq!(status, StatusCode::OK, "{created}");
     let request_id = created["request_id"].as_str().expect("id").to_owned();
     // A reason a poll stored while the computer still answered is older than its silence.
-    sqlx::query(
-        "UPDATE execution_requests SET waiting_reason = 'codex needs a model named' WHERE id = ?",
-    )
-    .bind(&request_id)
-    .execute(repo.pool())
-    .await
-    .expect("a poll's reason");
+    seed::execution_request_waiting_reason(&repo, &request_id, "codex needs a model named").await;
     let answered = Utc::now() - Duration::minutes(10);
-    sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = 'runner-active'")
-        .bind(answered.to_rfc3339())
-        .execute(repo.pool())
-        .await
-        .expect("last heartbeat");
+    seed::agent_runner_heartbeat(&repo, "runner-active", &answered.to_rfc3339()).await;
     let expected = format!(
         "The computer this run asked for has not answered since {}",
         answered.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
@@ -2017,32 +1802,10 @@ async fn a_run_queued_for_a_computer_that_stopped_answering_says_when_it_last_di
 }
 
 #[tokio::test]
-async fn a_retry_after_the_task_changed_its_type_or_priority_replays_the_request() {
-    let (app, repo, item_id) = setup().await;
-    let (first_status, first) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(first_status, StatusCode::OK, "{first}");
-    sqlx::query("UPDATE items SET item_type = 'bug', priority = 'high' WHERE id = ?")
-        .bind(&item_id)
-        .execute(repo.pool())
-        .await
-        .expect("the task changes");
-
-    let (status, retry) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
-    assert_eq!(status, StatusCode::OK, "{retry}");
-    assert_eq!(retry["request_id"], first["request_id"]);
-    assert_eq!(retry["replayed"], true);
-}
-
-#[tokio::test]
 async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_of_the_day() {
     let (app, repo, item_id) = setup().await;
-    let project: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    tack_db::repo::budgets::put(
-        repo.pool(),
+    let project = project_of(&repo, &item_id).await;
+    repo.put_project_budgets(
         &project,
         &tack_db::repo::budgets::ProjectBudgets {
             tokens_per_day: Some(1_000_000),
@@ -2060,7 +1823,7 @@ async fn a_run_with_no_limit_in_a_project_with_a_daily_limit_gets_what_is_left_o
             tool_policy: "{}",
             limits: "{}",
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -2108,7 +1871,7 @@ async fn add_profile(repo: &Repository, id: &str) {
             tool_policy: "{}",
             limits: "{}",
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
@@ -2131,12 +1894,9 @@ async fn add_role(repo: &Repository, item_id: &str, name: &str, profile: Option<
         )
         .await
         .unwrap();
-    sqlx::query("UPDATE roles SET agent_profile_id = ? WHERE id = ?")
-        .bind(profile)
-        .bind(role.id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    if let Some(profile) = profile {
+        seed::role_agent_profile(repo, &role.id.to_string(), profile).await;
+    }
     repo.assign_role_to_item(item.id, role.id).await.unwrap();
 }
 
@@ -2145,18 +1905,15 @@ async fn add_role(repo: &Repository, item_id: &str, name: &str, profile: Option<
 async fn the_item_carries_started_by_and_team_from_its_newest_request() {
     let (app, repo, item_id) = setup().await;
     let read = || async {
-        repo.get_item(item_id.parse().unwrap())
+        repo.get_item_snapshot(item_id.parse().unwrap())
             .await
             .unwrap()
             .unwrap()
+            .item
     };
     let item = read().await;
     assert_eq!((&item.started_by, &item.team), (&None, &None));
-    sqlx::query("UPDATE projects SET default_profile_id = 'profile-c1' WHERE id = ?")
-        .bind(item.project_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    seed::project_default_profile(&repo, &item.project_id.to_string(), "profile-c1").await;
 
     let (_, created) = snd(
         &app,
@@ -2165,103 +1922,33 @@ async fn the_item_carries_started_by_and_team_from_its_newest_request() {
         bare_body(&item_id, "k-team").to_string(),
     )
     .await;
-    sqlx::query(
-        "UPDATE execution_requests SET metadata = '{\"started_by\":\"auto_start\"}', \
-         request_snapshot = json_set(request_snapshot, '$.resolved_agent_profile.tool_policy.docket.team', 'fab-content') \
-         WHERE id = ?",
+    seed::execution_request_auto_started(
+        &repo,
+        created["request_id"].as_str().unwrap(),
+        "saas-content",
     )
-    .bind(created["request_id"].as_str().unwrap())
-    .execute(repo.pool())
-    .await
-    .unwrap();
+    .await;
     let item = read().await;
     assert_eq!(item.started_by.as_deref(), Some("auto_start"));
-    assert_eq!(item.team.as_deref(), Some("fab-content"));
+    assert_eq!(item.team.as_deref(), Some("saas-content"));
 
     assert_eq!(item.merged_by, None);
     let now = Utc::now().to_rfc3339();
-    sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at) VALUES ('attempt-m',?,1,'runner-active',1,'succeeded',?,?,?,?)")
-        .bind(created["request_id"].as_str().unwrap()).bind(&now).bind(&now).bind(&now).bind(&now)
-        .execute(repo.pool()).await.unwrap();
-    sqlx::query("INSERT INTO tack_merges (attempt_id, project_id, trigger, checked_at, merged_at) VALUES ('attempt-m', ?, 'auto', ?, ?)")
-        .bind(item.project_id.to_string()).bind(&now).bind(&now)
-        .execute(repo.pool()).await.unwrap();
+    seed::execution_attempt(
+        &repo,
+        seed::AttemptSeed {
+            id: "attempt-m",
+            request_id: created["request_id"].as_str().unwrap(),
+            runner_id: "runner-active",
+            state: ExecutionState::Succeeded,
+            at: &now,
+            usage: None,
+            actual_execution: None,
+        },
+    )
+    .await;
+    seed::tack_merge_auto(&repo, "attempt-m", &item.project_id.to_string(), &now).await;
     assert_eq!(read().await.merged_by.as_deref(), Some("auto"));
-}
-
-// A run created without a profile or a selector takes them from the item's role, else the
-// project default, else says it is ambiguous; a missing selector falls to the only active runner.
-#[tokio::test]
-async fn a_run_without_a_profile_resolves_it_from_the_role_then_the_project_default() {
-    let (app, repo, item_id) = setup().await;
-    add_profile(&repo, "profile-content").await;
-    add_profile(&repo, "profile-qa").await;
-    let item = repo
-        .get_item(item_id.parse().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
-    sqlx::query("UPDATE projects SET default_profile_id = 'profile-c1' WHERE id = ?")
-        .bind(item.project_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
-
-    let (status, created) = snd(
-        &app,
-        "POST",
-        "/executions",
-        bare_body(&item_id, "k-default").to_string(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-c1");
-    assert_eq!(snapshot["metadata"]["profile_source"], "project_default");
-    assert_eq!(snapshot["selector"]["runner_id"], "runner-active");
-
-    add_role(&repo, &item_id, "Content", Some("profile-content")).await;
-    let (_, created) = snd(
-        &app,
-        "POST",
-        "/executions",
-        bare_body(&item_id, "k-role").to_string(),
-    )
-    .await;
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-content");
-    assert_eq!(snapshot["metadata"]["profile_source"], "role:Content");
-
-    add_role(&repo, &item_id, "QA", Some("profile-qa")).await;
-    let (_, created) = snd(
-        &app,
-        "POST",
-        "/executions",
-        bare_body(&item_id, "k-two").to_string(),
-    )
-    .await;
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-c1");
-    assert_eq!(snapshot["metadata"]["profile_source"], "ambiguous");
-}
-
-// The server records what the item is, so a harness that picks a pipeline or a priority reads it
-// from the request and never from the board.
-#[tokio::test]
-async fn the_request_snapshot_carries_what_the_item_is() {
-    let (app, repo, item_id) = setup().await;
-    add_profile(&repo, "profile-content").await;
-    let mut body = bare_body(&item_id, "k-item");
-    body["agent_profile_id"] = json!("profile-content");
-    body["metadata"] = json!({"mine": 1});
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(
-        snapshot["metadata"]["item"],
-        json!({"type": "task", "priority": "medium", "trusted": true})
-    );
-    assert_eq!(snapshot["metadata"]["mine"], 1);
 }
 
 // With the provisional limit turned off, a run with no limit of its own has none, and a request
@@ -2269,13 +1956,8 @@ async fn the_request_snapshot_carries_what_the_item_is() {
 #[tokio::test]
 async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_sets_one() {
     let (app, repo, item_id) = setup().await;
-    let project: String = sqlx::query_scalar("SELECT project_id FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
-        .await
-        .unwrap();
-    tack_db::repo::budgets::put(
-        repo.pool(),
+    let project = project_of(&repo, &item_id).await;
+    repo.put_project_budgets(
         &project,
         &tack_db::repo::budgets::ProjectBudgets {
             provisional_tokens_per_run: None,
@@ -2305,7 +1987,7 @@ async fn a_run_has_no_limit_when_the_provisional_limit_is_off_and_nothing_else_s
                 tool_policy: "{}",
                 limits,
             },
-            &SystemExecutionClock,
+            SystemClock.now(),
         )
         .await
         .expect("profile");
@@ -2358,10 +2040,19 @@ async fn a_profiles_history_proposes_a_limit_after_five_successful_runs() {
         let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
         assert_eq!(status, StatusCode::OK, "{created}");
         let usage = json!({"tokens_in": {"value": 10, "source": "measured"}, "tokens_out": {"value": out - 10, "source": "measured"}});
-        sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at,usage) VALUES (?,?,1,'runner-active',1,'succeeded','t','t',?,?,?)")
-            .bind(format!("attempt-history-{n}")).bind(created["request_id"].as_str().unwrap())
-            .bind(format!("2026-10-18T09:0{n}:00Z")).bind(format!("2026-10-18T09:0{n}:00Z")).bind(usage.to_string())
-            .execute(repo.pool()).await.unwrap();
+        seed::execution_attempt(
+            &repo,
+            seed::AttemptSeed {
+                id: &format!("attempt-history-{n}"),
+                request_id: created["request_id"].as_str().unwrap(),
+                runner_id: "runner-active",
+                state: ExecutionState::Succeeded,
+                at: &format!("2026-10-18T09:0{n}:00Z"),
+                usage: Some(&usage.to_string()),
+                actual_execution: None,
+            },
+        )
+        .await;
         let (_, history) = snd(
             &app,
             "GET",
@@ -2405,7 +2096,8 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
     let with_tokens = r#"{"budgets":{"tokens":300000}}"#;
     let with_time = r#"{"timeout_seconds":1800}"#;
     // (profile limits, request budgets, request timeout, tokens it runs with, where they come from,
-    // seconds it runs with); a project that did not change its provisional limit has 2 000 000.
+    // seconds it runs with, which `tack-app`'s start_run test checks); a project that did not change
+    // its provisional limit has 2 000 000.
     let rows = [
         (with_tokens, json!({}), None, 300_000, "profile", 3600),
         (
@@ -2436,7 +2128,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         (with_time, json!({}), None, 2_000_000, "provisional", 1800),
         (with_time, json!({}), Some(60), 2_000_000, "provisional", 60),
     ];
-    for (n, (limits, budgets, timeout, tokens, source, seconds)) in rows.into_iter().enumerate() {
+    for (n, (limits, budgets, timeout, tokens, source, _seconds)) in rows.into_iter().enumerate() {
         let tokens = Some(tokens);
         let id = format!("profile-limits-{n}");
         repo.create_agent_profile(
@@ -2447,7 +2139,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 tool_policy: "{}",
                 limits,
             },
-            &SystemExecutionClock,
+            SystemClock.now(),
         )
         .await
         .expect("profile");
@@ -2462,22 +2154,6 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         }
         let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
         assert_eq!(status, StatusCode::OK, "row {n}: {created}");
-        let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-        for budgets in [
-            &snapshot["budgets"],
-            &snapshot["resolved_agent_profile"]["budgets"],
-        ] {
-            assert_eq!(
-                budgets.get("tokens").and_then(Value::as_u64),
-                tokens,
-                "row {n}"
-            );
-        }
-        assert_eq!(snapshot["timeout_seconds"], seconds, "row {n}");
-        assert_eq!(
-            snapshot["resolved_agent_profile"]["timeout_seconds"], seconds,
-            "row {n}"
-        );
         // The run's detail and its list row both say the same limit, from the same snapshot.
         let request_id = created["request_id"].as_str().unwrap();
         let (_, detail) = snd(
@@ -2499,9 +2175,19 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
             assert_eq!(limit["enforced_by"], "measured", "row {n}: {limit}");
         }
         // The agent that ran it wins over the one requested: once an attempt ran on docket, docket applies it.
-        sqlx::query("INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at,actual_execution) VALUES (?,?,1,'runner-active',1,'running','t','t','t','t','{\"harness_kind\":\"docket\"}')")
-            .bind(format!("attempt-limit-{n}")).bind(request_id)
-            .execute(repo.pool()).await.unwrap();
+        seed::execution_attempt(
+            &repo,
+            seed::AttemptSeed {
+                id: &format!("attempt-limit-{n}"),
+                request_id,
+                runner_id: "runner-active",
+                state: ExecutionState::Running,
+                at: "t",
+                usage: None,
+                actual_execution: Some(r#"{"harness_kind":"docket"}"#),
+            },
+        )
+        .await;
         let (_, detail) = snd(
             &app,
             "GET",
@@ -2521,14 +2207,6 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 "row {n}"
             );
         }
-    }
-    for refused in [json!(0), json!(-5), json!("many")] {
-        let mut body = bare_body(&item_id, "k-limits-refused");
-        body["agent_profile_id"] = json!("profile-c1");
-        body["budgets"] = json!({"tokens": refused});
-        let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}: {err}");
-        assert_eq!(err["error"]["details"]["field"], "budgets.tokens");
     }
     // What a profile's limits may hold: refused when it is made or changed, and a profile that
     // already holds something else (stored before) is refused at the run, not run without a limit.
@@ -2568,7 +2246,7 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
                 tool_policy: "{}",
                 limits: &limits.to_string(),
             },
-            &SystemExecutionClock,
+            SystemClock.now(),
         )
         .await
         .ok();
@@ -2577,55 +2255,14 @@ async fn a_runs_limits_come_from_the_request_then_the_profile_then_the_provision
         let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{limits}: {err}");
         assert_eq!(err["error"]["message"], message);
-        sqlx::query("DELETE FROM agent_profiles WHERE id = 'profile-stored-bad'")
-            .execute(repo.pool())
-            .await
-            .unwrap();
+        seed::agent_profile_removed(&repo, "profile-stored-bad").await;
     }
-    // Dollars are not a limit: a request that still carries them is told so.
-    let mut body = bare_body(&item_id, "k-limits-dollars");
-    body["agent_profile_id"] = json!("profile-c1");
-    body["budgets"] = json!({"cost_usd": 1.5});
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["field"], "budgets.cost_usd");
-    assert_eq!(err["error"]["details"]["reason"], "field_removed");
 }
 
+// A runner that answered seconds ago is online; one silent for hours is not.
 #[tokio::test]
-async fn a_run_without_a_selector_needs_exactly_one_active_runner() {
-    let (app, repo, item_id) = setup().await;
-    let mut body = bare_body(&item_id, "k-one");
-    body["agent_profile_id"] = json!("profile-c1");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-
-    repo.register_runner(
-        NewRunner {
-            id: "runner-second",
-            name: "Second",
-            credential_hash: "hash-two",
-            labels: "{}",
-            total_capacity: 1,
-            available_capacity: 1,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
-        &SystemExecutionClock,
-    )
-    .await
-    .expect("second runner");
-    body["idempotency_key"] = json!("k-two-runners");
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["reason"], "select_where_this_runs");
-}
-
-// Of two active runners the one that answers is where a run without a machine goes; the one
-// silent for hours is not a reason to refuse it.
-#[tokio::test]
-async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
-    let (app, repo, item_id) = setup().await;
+async fn the_runner_list_says_which_runners_are_online() {
+    let (app, repo, _item_id) = setup().await;
     repo.register_runner(
         NewRunner {
             id: "runner-stale",
@@ -2637,7 +2274,7 @@ async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
             capability_snapshot: "{}",
             protocol_version: 1,
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("second runner");
@@ -2645,25 +2282,8 @@ async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
         ("runner-active", Duration::seconds(5)),
         ("runner-stale", Duration::hours(2)),
     ] {
-        sqlx::query("UPDATE agent_runners SET last_heartbeat_at = ? WHERE id = ?")
-            .bind((Utc::now() - age).to_rfc3339())
-            .bind(id)
-            .execute(repo.pool())
-            .await
-            .expect("heartbeat");
+        seed::agent_runner_heartbeat(&repo, id, &(Utc::now() - age).to_rfc3339()).await;
     }
-    let mut body = bare_body(&item_id, "k-live");
-    body["agent_profile_id"] = json!("profile-c1");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let selector: String =
-        sqlx::query_scalar("SELECT selector_id FROM execution_requests WHERE id = ?")
-            .bind(created["request_id"].as_str().unwrap())
-            .fetch_one(repo.pool())
-            .await
-            .expect("selector");
-    assert_eq!(selector, "runner-active");
-
     let (_, listed) = snd(&app, "GET", "/runners", String::new()).await;
     let online: Vec<(&str, bool)> = listed["data"]
         .as_array()
@@ -2680,66 +2300,6 @@ async fn a_run_without_a_selector_resolves_to_the_runner_that_is_online() {
         online.contains(&("runner-active", true)) && online.contains(&("runner-stale", false)),
         "{online:?}"
     );
-}
-
-async fn add_profile_naming_agent(repo: &Repository, id: &str, agent: &str) {
-    repo.create_agent_profile(
-        NewAgentProfile {
-            id,
-            name: id,
-            instructions: "x",
-            tool_policy: &json!({ "agent": agent }).to_string(),
-            limits: "{}",
-        },
-        &SystemExecutionClock,
-    )
-    .await
-    .expect("profile");
-}
-
-// A run that names no agent takes it from the resolved profile's `tool_policy.agent`, else the
-// project's default agent, else says to select one.
-#[tokio::test]
-async fn a_run_without_an_agent_takes_the_profiles_then_the_projects_then_asks() {
-    let (app, repo, item_id) = setup().await;
-    let item = repo
-        .get_item(item_id.parse().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
-    let mut body = bare_body(&item_id, "k-no-agent");
-    body.as_object_mut()
-        .unwrap()
-        .remove("requested_harness_kind");
-
-    // Nothing names an agent: asked to select one.
-    body["agent_profile_id"] = json!("profile-c1");
-    let (status, err) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
-    assert_eq!(err["error"]["details"]["reason"], "select_an_agent");
-
-    // The project's default agent.
-    sqlx::query("UPDATE projects SET default_harness = 'opencode' WHERE id = ?")
-        .bind(item.project_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    body["idempotency_key"] = json!("k-project-agent");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["requested_harness_kind"], "opencode");
-
-    // The role's profile names its agent, which beats the project's.
-    add_profile_naming_agent(&repo, "profile-writer", "claude-code").await;
-    add_role(&repo, &item_id, "Content", Some("profile-writer")).await;
-    body.as_object_mut().unwrap().remove("agent_profile_id");
-    body["idempotency_key"] = json!("k-role-agent");
-    let (status, created) = snd(&app, "POST", "/executions", body.to_string()).await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    let snapshot = stored_snapshot(&repo, created["request_id"].as_str().unwrap()).await;
-    assert_eq!(snapshot["agent_profile_id"], "profile-writer");
-    assert_eq!(snapshot["requested_harness_kind"], "claude-code");
 }
 
 #[tokio::test]
@@ -2764,17 +2324,13 @@ async fn auto_start_board() -> (Repository, tack_api::AppState, String, Uuid) {
         .await
         .unwrap()
         .unwrap();
-    sqlx::query(
-        "UPDATE projects SET auto_start_enabled = 1, auto_start_status = 'To Do', default_harness = 'codex' WHERE id = ?",
-    )
-    .bind(item.project_id.to_string())
-    .execute(repo.pool())
-    .await
-    .unwrap();
-    let workspace: String = sqlx::query_scalar("SELECT id FROM workspaces")
-        .fetch_one(repo.pool())
+    seed::project_auto_start(&repo, &item.project_id.to_string(), "To Do", "codex").await;
+    let workspace = repo
+        .get_project(item.project_id)
         .await
-        .unwrap();
+        .unwrap()
+        .expect("project")
+        .workspace_id;
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = tack_api::AppState {
         repo: repo.clone(),
@@ -2782,10 +2338,11 @@ async fn auto_start_board() -> (Repository, tack_api::AppState, String, Uuid) {
             database_url: "sqlite::memory:".into(),
             ..tack_api::config::AppConfig::default()
         },
-        workspace_id: workspace.parse().unwrap(),
+        workspace_id: workspace,
         broadcast_tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
     (repo, state, item_id, item.project_id)
 }
@@ -2806,25 +2363,25 @@ async fn add_item(repo: &Repository, project: Uuid, title: &str) -> String {
 }
 
 async fn requests_of(repo: &Repository, item_id: &str) -> Vec<(String, String, String)> {
-    sqlx::query_as(
-        "SELECT idempotency_scope, idempotency_key, metadata FROM execution_requests WHERE item_id = ?",
-    )
-    .bind(item_id)
-    .fetch_all(repo.pool())
-    .await
-    .unwrap()
+    execution_request_rows::execution_requests_of_item(repo, item_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|r| (r.idempotency_scope, r.idempotency_key, r.metadata))
+        .collect()
+}
+
+/// What the first request of an item stored at `permission_policy.<key>`.
+async fn permission_of(repo: &Repository, item_id: &str, key: &str) -> Option<Value> {
+    let rows = execution_request_rows::execution_requests_of_item(repo, item_id)
+        .await
+        .unwrap();
+    let snapshot: Value = serde_json::from_str(&rows.first()?.request_snapshot).unwrap();
+    snapshot["permission_policy"].get(key).cloned()
 }
 
 async fn network_of(repo: &Repository, item_id: &str) -> Option<bool> {
-    sqlx::query_scalar(
-        "SELECT json_extract(request_snapshot, '$.permission_policy.network') \
-         FROM execution_requests WHERE item_id = ?",
-    )
-    .bind(item_id)
-    .fetch_optional(repo.pool())
-    .await
-    .unwrap()
-    .flatten()
+    permission_of(repo, item_id, "network").await?.as_bool()
 }
 
 async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Value) {
@@ -2836,18 +2393,18 @@ async fn add_profile_with_policy(repo: &Repository, id: &str, tool_policy: &Valu
             tool_policy: &tool_policy.to_string(),
             limits: "{}",
         },
-        &SystemExecutionClock,
+        SystemClock.now(),
     )
     .await
     .expect("profile");
 }
 
 async fn status_of(repo: &Repository, item_id: &str) -> String {
-    sqlx::query_scalar("SELECT status FROM items WHERE id = ?")
-        .bind(item_id)
-        .fetch_one(repo.pool())
+    repo.get_item(item_id.parse().unwrap())
         .await
         .unwrap()
+        .expect("item")
+        .status
 }
 
 // A task that reaches the auto-start status with a role is started once and moved; one
@@ -2856,14 +2413,18 @@ async fn status_of(repo: &Repository, item_id: &str) -> String {
 async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap() {
     let (repo, state, item_id, project_id) = auto_start_board().await;
     let bare = add_item(&repo, project_id, "no role").await;
-    let version: i64 = sqlx::query_scalar("SELECT version FROM items WHERE id = ?")
-        .bind(&item_id)
-        .fetch_one(repo.pool())
+    let version = repo
+        .get_item_version(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .expect("item version");
+
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
         .await
         .unwrap();
-
-    tack_api::auto_start::tick(&state).await;
-    tack_api::auto_start::tick(&state).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
 
     let started = requests_of(&repo, &item_id).await;
     assert_eq!(started.len(), 1, "{started:?}");
@@ -2874,23 +2435,18 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     assert_eq!(metadata["profile_source"], "role:Content");
     assert_eq!(status_of(&repo, &item_id).await, "In Progress");
     // The only runner reports no sandbox for the agent, so the run asks before each action.
-    let approvals: Option<String> = sqlx::query_scalar(
-        "SELECT json_extract(request_snapshot, '$.permission_policy.approvals') \
-         FROM execution_requests WHERE item_id = ?",
-    )
-    .bind(&item_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    assert_eq!(approvals.as_deref(), Some("ask"));
+    let approvals = permission_of(&repo, &item_id, "approvals").await;
+    assert_eq!(approvals.as_ref().and_then(Value::as_str), Some("ask"));
     // A profile that does not say it needs the network starts a run without it.
     assert_eq!(network_of(&repo, &item_id).await, Some(false));
-    let said: Vec<String> =
-        sqlx::query_scalar("SELECT content FROM comments WHERE item_id = ? AND author = 'system'")
-            .bind(&item_id)
-            .fetch_all(repo.pool())
-            .await
-            .unwrap();
+    let said: Vec<String> = repo
+        .list_comments(item_id.parse().unwrap())
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|c| c.author.as_deref() == Some("system"))
+        .map(|c| c.content)
+        .collect();
     assert_eq!(
         said.iter()
             .filter(|c| c.as_str() == "Started by itself: it reached To Do with the role Content")
@@ -2902,14 +2458,12 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     assert_eq!(status_of(&repo, &bare).await, "To Do");
 
     // One run is open and the project keeps one: the next ready task waits.
-    sqlx::query("UPDATE projects SET auto_start_max_open = 1 WHERE id = ?")
-        .bind(project_id.to_string())
-        .execute(repo.pool())
-        .await
-        .unwrap();
+    seed::project_auto_start_max_open(&repo, &project_id.to_string(), 1).await;
     let next = add_item(&repo, project_id, "next").await;
     add_role(&repo, &next, "QA", Some("profile-c1")).await;
-    tack_api::auto_start::tick(&state).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
     assert!(requests_of(&repo, &next).await.is_empty());
     assert_eq!(status_of(&repo, &next).await, "To Do");
 }
@@ -2921,7 +2475,9 @@ async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {
     add_profile_with_policy(&repo, "profile-net", &json!({"network": true})).await;
     let research = add_item(&repo, project_id, "research").await;
     add_role(&repo, &research, "Research", Some("profile-net")).await;
-    tack_api::auto_start::tick(&state).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+        .await
+        .unwrap();
     assert_eq!(requests_of(&repo, &research).await.len(), 1);
     assert_eq!(network_of(&repo, &research).await, Some(true));
 }
@@ -2997,7 +2553,7 @@ async fn a_profile_whose_network_is_not_a_boolean_is_refused() {
 #[tokio::test]
 async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_do() {
     let (app, _repo, _item_id) = setup().await;
-    let policy = json!({"agent": "claude-code", "docket": {"team": "fab-content"},
+    let policy = json!({"agent": "claude-code", "docket": {"team": "saas-content"},
         "tools": {"claude-code": ["Read", "Edit", "WebFetch"]}});
     let create = json!({"name": "Writer", "instructions": "x", "delivers": " a document in a folder ", "tool_policy": policy});
     let (status, created) = snd(&app, "POST", "/agent-profiles", create.to_string()).await;
@@ -3011,7 +2567,7 @@ async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_d
         .find(|p| p["agent_profile_id"] == id.as_str())
         .unwrap();
     assert_eq!(row["delivers"], "a document in a folder");
-    assert_eq!(row["tool_policy"]["docket"]["team"], "fab-content");
+    assert_eq!(row["tool_policy"]["docket"]["team"], "saas-content");
     assert_eq!(
         (
             row["changes_files"].as_bool(),

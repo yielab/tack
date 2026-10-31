@@ -1,4 +1,4 @@
-//! Window and app lifecycle (ADR 0062 decision 3): closing the window hides
+//! Window and app lifecycle (ADR 0006 decision 3): closing the window hides
 //! it instead of quitting, *Open Tack* shows and focuses it again, and Quit
 //! is the only way to actually stop the app — warning first when an agent
 //! attempt is in flight.
@@ -16,7 +16,7 @@ use tauri_plugin_dialog::{
 const MAIN_WINDOW: &str = "main";
 
 /// Execution states that count as "in flight" are everything except the
-/// three terminal ones (`crates/tack-orch/src/execution_observability.rs`'s
+/// three terminal ones (`crates/tack-app/src/observability.rs`'s
 /// `known_request_states` is the closed vocabulary this reads from: queued,
 /// leased, preparing, running, waiting_decision, succeeded, failed,
 /// cancelled, lost, needs_operator). `lost` and `needs_operator` are not

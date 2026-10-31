@@ -2,74 +2,26 @@
 //! binary (in the `tack-cli` crate) can start the HTTP server in-process.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use tack_app::background::STOP_GRACE;
 use tokio::sync::oneshot;
+use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
-use uuid::Uuid;
 
 use crate::config::AppConfig;
-use crate::handlers::local_runner::{LocalRunnerControl, effective_local_runner_enabled};
-use crate::remote_backup;
 use crate::router::{AppState, build_router};
-use crate::webhook::WebhookClient;
-use tack_db::{Repository, init_pool, migrations, repo};
 
-/// Boot the Tack HTTP server: load config, run migrations, start background
-/// tasks, and serve until a shutdown signal is received. No embedded runner
-/// is ever wired in — `AppState::local_runner` is `None` and the routes in
-/// `handlers::local_runner` are absent regardless of bind address. Use
-/// [`serve_with_ready_and_local_runner`] to wire one in.
-pub async fn serve() -> anyhow::Result<()> {
-    serve_inner(None, None).await
-}
-
-/// Like [`serve`], but sends the real bound [`SocketAddr`] over `ready_tx`
-/// once the listener is open and accepting connections, before this
-/// function blocks on `axum::serve`. An in-process embedder can wait on the
-/// receiving end to learn the exact address instead of polling a guessed
-/// one — the only way to know it for certain when the configured port is
-/// `0` and the OS picks the real one.
-///
-/// If the receiver has already been dropped, the send is a no-op: the
-/// server still starts and runs normally, it just has nobody to tell.
-/// No embedded runner is wired in — see [`serve`]'s doc comment.
-pub async fn serve_with_ready(ready_tx: oneshot::Sender<SocketAddr>) -> anyhow::Result<()> {
-    serve_inner(Some(ready_tx), None).await
-}
-
-/// Like [`serve_with_ready`], additionally wiring `local_runner` into
-/// `AppState` so `handlers::local_runner`'s routes exist (still only on a
-/// loopback bind — `router::build_router`'s own gate). `local_runner`'s
-/// preference (`app_meta`, falling back to `AppConfig::local_runner_enable`
-/// — `--with-runner`/`TACK_LOCAL_RUNNER_ENABLE`) is checked once the
-/// listener is bound and, if on, started before this function blocks on
-/// `axum::serve` — the exact same [`LocalRunnerControl::start`] call
-/// `PUT /api/local-runner` makes later, so there is only ever one code path
-/// into the runtime, not a boot-time one and a UI-triggered one. A start
-/// failure at boot takes the whole process down (returned as an error)
-/// rather than leaving a server running with the preference on but nothing
-/// actually started; the caller of `PUT /api/local-runner` gets the same
-/// error back instead, since starting the server itself never failed.
-pub async fn serve_with_ready_and_local_runner(
-    ready_tx: oneshot::Sender<SocketAddr>,
-    local_runner: Arc<dyn LocalRunnerControl>,
-) -> anyhow::Result<()> {
-    serve_inner(Some(ready_tx), Some(local_runner)).await
-}
-
-async fn serve_inner(
-    ready_tx: Option<oneshot::Sender<SocketAddr>>,
-    local_runner: Option<Arc<dyn LocalRunnerControl>>,
-) -> anyhow::Result<()> {
-    let mut config = AppConfig::load();
-
-    init_tracing(&config);
+/// Everything that happens before the database opens: the tracing subscriber, the
+/// security preflight, the API and decision tokens, and a staged restore. The binary that
+/// composes the server calls this once with the configuration it loaded, then builds the
+/// store and the [`AppState`] and hands them to [`serve`].
+pub fn prepare(config: &mut AppConfig) -> anyhow::Result<()> {
+    init_tracing(config);
 
     // Reject unsafe exposure before opening a database or listener.
-    security_preflight(&config)?;
+    security_preflight(config)?;
     config.ensure_api_token()?;
     config.ensure_decision_token()?;
     if config.api_token.as_deref().is_none_or(str::is_empty) {
@@ -96,104 +48,33 @@ async fn serve_inner(
     info!("This build serves the API only; the web UI is in the release build or `npm run dev`.");
 
     // Apply any staged restore before opening the pool.
-    apply_staged_restore(&config);
+    apply_staged_restore(config);
+    Ok(())
+}
 
-    let pool = init_pool(&config.database_url).await?;
-    migrations::run_all(&pool).await?;
-    repo::templates::seed_builtin_templates(&pool).await?;
-    repo::execution::seed_builtin_profiles(&pool).await?;
+/// Serve `state` until a shutdown signal is received: start the background tasks, bind the
+/// listener, bring up the embedded runner named by `state.local_runner` (when it is on and
+/// the bind is loopback) and answer requests. Sends the real bound [`SocketAddr`] over
+/// `ready_tx` once the listener is open, before blocking on `axum::serve`; a dropped receiver
+/// is a no-op. When `state.local_runner` is `None` the routes in `handlers::local_runner` are
+/// absent regardless of bind address.
+///
+/// A start failure of the embedded runner on a loopback bind takes the whole server down
+/// rather than leaving one running with the preference on and nothing started.
+pub async fn serve(
+    state: AppState,
+    ready_tx: Option<oneshot::Sender<SocketAddr>>,
+) -> anyhow::Result<()> {
+    let config = state.config.clone();
+    let local_runner = state.local_runner.clone();
+    let tasks = state.tasks.clone();
 
-    let workspace_id = ensure_default_workspace(&pool).await?;
-    let repo = Repository::new(pool);
-
-    // A board from before a decision ended with its run left questions nobody can answer.
-    let closed = repo
-        .expire_decisions_of_ended_attempts(&repo::execution::SystemExecutionClock)
-        .await?;
-    if closed > 0 {
-        info!(
-            closed,
-            "closed the questions of runs that had already ended"
-        );
-    }
-
-    // WebSocket update fan-out; capacity 100 messages.
-    let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
-
-    let webhook = config.webhook_url.clone().map(|url| {
-        info!(url=%url, "Webhook delivery enabled");
-        WebhookClient::new(url, config.webhook_secret.clone())
-    });
-
-    let state = AppState {
-        repo,
-        config: config.clone(),
-        workspace_id,
-        broadcast_tx,
-        webhook,
-        local_runner: local_runner.clone(),
-    };
-
-    // Automatic remote backup on a configured interval, clamped to a 60s floor
-    // (`tokio::time::interval` panics on zero, and anything faster would hammer
-    // the object store). The interval is env-only (`TACK_BACKUP_INTERVAL_SECS`),
-    // but the destination can come from UI-saved settings too, so this spawns
-    // whenever an interval is set and re-checks the effective config each tick.
-    // Inbound GitHub poll: returns at once when polling is off or no token is set.
-    tokio::spawn(crate::run_github_poll_task(state.clone()));
-    // Tasks a project starts by itself; its own interval, since the poll above
-    // does not run without a token.
-    tokio::spawn(crate::auto_start::run_auto_start_task(state.clone()));
-
-    if let Some(interval_secs) = config.backup_interval_secs {
-        const MIN_BACKUP_INTERVAL_SECS: u64 = 60;
-        let interval_secs = if interval_secs < MIN_BACKUP_INTERVAL_SECS {
-            warn!(
-                requested = interval_secs,
-                clamped_to = MIN_BACKUP_INTERVAL_SECS,
-                "TACK_BACKUP_INTERVAL_SECS is below the 60s minimum; clamping"
-            );
-            MIN_BACKUP_INTERVAL_SECS
-        } else {
-            interval_secs
-        };
-        let bg_state = state.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
-            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-            interval.tick().await; // skip the first immediate tick
-            loop {
-                interval.tick().await;
-                run_scheduled_backup(&bg_state).await;
-            }
-        });
-        info!(interval_secs, "Remote backup scheduler enabled");
-    }
-
-    // Spawn background task: fire "item.due_soon" webhook for items due within the next hour
-    if state.webhook.is_some() {
-        let bg_state = state.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(3600));
-            interval.tick().await; // skip the first immediate tick
-            loop {
-                interval.tick().await;
-                check_due_soon(&bg_state).await;
-            }
-        });
-    }
-
-    // Start the execution-domain retention sweep (artifact/event + decision-
-    // expiry) and the health watch — cancellable background tasks gated by
-    // `TACK_EXECUTION_RETENTION_ENABLE`/`TACK_EXECUTION_HEALTH_ENABLE`. The
-    // artifact/event/decision sweep shares `retention_enable` with the
-    // replay/idempotency purge above it on purpose (see
-    // `spawn_artifact_and_decision_sweep`'s doc for why deletion must never
-    // be gated more loosely than that purge). Health defaults on (read-only:
-    // just a `warn!` on a stale lease/`needs_operator` request); retention
-    // defaults **off** (it deletes rows, an explicit operator opt-in). Not
-    // stored on `AppState`: `stop()` runs once below, after the HTTP server
-    // stops accepting requests.
+    // Start the execution-domain artifact sweep — a cancellable loop gated by
+    // `TACK_EXECUTION_RETENTION_ENABLE`, which shares that flag with the purge
+    // and decision expiry `tack-cli` starts (deletion is never gated more
+    // loosely than that purge). Retention defaults **off** (it deletes rows,
+    // an explicit operator opt-in). Not stored on `AppState`: `stop()` runs
+    // once below, after the HTTP server stops accepting requests.
     let execution_runtime = crate::execution_runtime::ExecutionRuntime::new();
     execution_runtime
         .start(state.repo.clone(), (&config).into())
@@ -211,14 +92,13 @@ async fn serve_inner(
 
     // Start server
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
-    info!(%addr, "Server listening");
-
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     // `bind` already puts the socket in listening state, so a connection to
     // `bound_addr` succeeds even before `axum::serve` starts its accept loop
     // (the kernel queues it) — the earliest correct place to signal ready.
     let bound_addr = listener.local_addr()?;
+    info!(addr = %bound_addr, "Server listening");
     if let Some(tx) = ready_tx {
         let _ = tx.send(bound_addr);
     }
@@ -237,7 +117,11 @@ async fn serve_inner(
     // posture of `--with-runner` itself.
     if let Some(control) = &local_runner
         && state_for_local_runner.config.binds_loopback()
-        && effective_local_runner_enabled(&state_for_local_runner).await
+        && tack_app::local_runner::effective_enabled(
+            &state_for_local_runner.repo,
+            state_for_local_runner.config.local_runner_enable,
+        )
+        .await
     {
         control.start().await?;
     }
@@ -253,22 +137,33 @@ async fn serve_inner(
         "\n  Tack v{} is running.\n  Open http://{}:{} in your browser.\n  Press Ctrl+C to stop.\n",
         env!("CARGO_PKG_VERSION"),
         display_host,
-        config.port
+        bound_addr.port()
     );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // Join the execution retention/health tasks before exiting — the HTTP
-    // server has already stopped accepting requests at this point, so this
-    // wait costs nothing observable and is what makes "shutdown joins task"
-    // true rather than aspirational (`execution_runtime.rs`'s `stop()`
-    // really does block until each live task's loop returns).
+    // The HTTP server has stopped accepting requests, so nothing adds to the use cases the
+    // handlers started in the background any more: let them finish (a merge cut off half way
+    // leaves the item without its branch merged), then stop the sweep loop and wait for it.
+    wait_for_tasks(&tasks, STOP_GRACE).await;
     execution_runtime.stop().await;
 
     info!("Server shut down gracefully");
     Ok(())
+}
+
+/// Closes `tasks` and waits up to `grace` for what it holds; what is left after that is
+/// dropped with the runtime.
+async fn wait_for_tasks(tasks: &TaskTracker, grace: Duration) {
+    tasks.close();
+    if tokio::time::timeout(grace, tasks.wait()).await.is_err() {
+        warn!(
+            still_running = tasks.len(),
+            "background use cases did not finish in time; dropping them"
+        );
+    }
 }
 
 /// Validate the security boundary before any network-facing resources start.
@@ -300,7 +195,7 @@ fn log_file_target(path: &str) -> Option<(std::path::PathBuf, std::ffi::OsString
 fn init_tracing(config: &AppConfig) {
     use tracing_subscriber::util::SubscriberInitExt;
 
-    // `try_init` rather than `init`: this process may call `serve_inner` more
+    // `try_init` rather than `init`: this process may call `serve` more
     // than once (multiple in-process servers under one test binary, e.g. under
     // `cargo llvm-cov`, which runs all tests as one process rather than
     // nextest's one-process-per-test). Only the first call can ever install
@@ -366,28 +261,6 @@ fn tracing_subscriber_for(config: &AppConfig) -> Box<dyn tracing::Subscriber + S
                         .with_writer(file_writer(t))
                 })),
         )
-    }
-}
-
-async fn ensure_default_workspace(pool: &sqlx::SqlitePool) -> anyhow::Result<Uuid> {
-    let existing: Option<String> = sqlx::query_scalar("SELECT id FROM workspaces LIMIT 1")
-        .fetch_optional(pool)
-        .await?;
-
-    if let Some(id_str) = existing {
-        Ok(Uuid::parse_str(&id_str)?)
-    } else {
-        let id = Uuid::new_v4();
-        let vocab = serde_json::to_string(&tack_core::vocabulary::default_vocabulary())?;
-        sqlx::query(
-            "INSERT INTO workspaces (id, name, description, default_vocabulary) VALUES (?, 'Default Workspace', 'Auto-created workspace', ?)"
-        )
-        .bind(id.to_string())
-        .bind(&vocab)
-        .execute(pool)
-        .await?;
-        info!(%id, "Created default workspace");
-        Ok(id)
     }
 }
 
@@ -552,67 +425,6 @@ async fn shutdown_signal() {
         .await
         .expect("Failed to install CTRL+C handler");
     warn!("Shutdown signal received");
-}
-
-/// Run a scheduled remote backup. Reads the *effective* config each tick so
-/// UI-saved settings (bucket/prefix/creds/retention) are honored, and runs
-/// the conflict-safe upload path — on a cross-device conflict it warns and
-/// skips rather than clobbering another device's newer work.
-async fn run_scheduled_backup(state: &AppState) {
-    let cfg = crate::handlers::settings::effective_backup_config(state).await;
-    if !cfg.remote_backup_enabled() {
-        // A UI-only config may not be set yet; nothing to do this tick.
-        tracing::debug!("Scheduled backup skipped: remote backup not configured");
-        return;
-    }
-
-    let store = match remote_backup::store_from_config(&cfg) {
-        Ok(store) => store,
-        Err(e) => {
-            warn!(error = %e, "Scheduled backup store init failed");
-            return;
-        }
-    };
-
-    // Scheduled backups never force: a conflict means another device is ahead,
-    // so we skip and let the user restore/resolve.
-    match remote_backup::perform_backup(state.pool(), &cfg, store.as_ref(), false).await {
-        Ok(manifest) => info!(key = %manifest.object_key, "Scheduled backup complete"),
-        Err(remote_backup::BackupError::GenerationConflict {
-            remote_generation, ..
-        }) => {
-            warn!(
-                remote_generation,
-                "Scheduled backup skipped: another device has newer work (restore to resolve)"
-            );
-        }
-        Err(e) => warn!(error = %e, "Scheduled backup failed"),
-    }
-}
-
-/// Query for items due within the next hour and fire `item.due_soon` webhooks.
-async fn check_due_soon(state: &AppState) {
-    let Some(wh) = &state.webhook else { return };
-
-    let now = Utc::now();
-    let window_end = now + chrono::Duration::hours(1);
-
-    match state.repo.list_items_due_soon(now, window_end).await {
-        Ok(items) => {
-            for item in items {
-                let payload = serde_json::json!({
-                    "event": "item.due_soon",
-                    "timestamp": now.to_rfc3339(),
-                    "project_id": item.project_id,
-                    "item": item,
-                });
-                wh.fire("item.due_soon", payload);
-            }
-        }
-        Err(e) => {
-            tracing::warn!(error=%e, "Failed to query due-soon items for webhook");
-        }
-    }
 }
 
 #[cfg(test)]

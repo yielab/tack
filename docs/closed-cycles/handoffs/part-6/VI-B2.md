@@ -112,7 +112,7 @@ rather than silently applied.
 - **The config section is a map, not a single field.** Mid-session direction: `RunnerConfig`
   carries `providers: BTreeMap<String, ProviderConfig>`, keyed by TOML table name
   (`vercel_ai_gateway`, underscore — distinct from the wire-level provider name
-  `vercel-ai-gateway`, hyphen, per ADR 0061 decision 4). The user-facing TOML is unchanged;
+  `vercel-ai-gateway`, hyphen, per ADR 0005 decision 4). The user-facing TOML is unchanged;
   this only changes the Rust shape, so a second provider entry is a config row, not a type
   change.
 - **The injection mechanism is named by wire shape, not by vendor.** Mid-session direction:
@@ -215,7 +215,7 @@ brief: each entry carries far more than an id — `context_window`, `max_tokens`
 `ModelCombination` (`crates/tack-orch/src/execution/capabilities.rs`) has nowhere to put
 any of it: `model_provider` + a bare `Vec<ModelId>`. This card projects ids only, which is
 in scope and sufficient for its own acceptance — the gap is recorded here for whoever picks
-up the contract change, per `docs/adr/0063-harness-credential-modes.md` (proposed, not
+up the contract change, per `docs/closed-cycles/adr/0063-harness-credential-modes.md` (proposed, not
 read or edited by this card):
 
 - **The shape needed**: per-model metadata attached to an entry inside `model_combinations`
@@ -421,7 +421,7 @@ correctly shaped, is all that exists.
 ## Context spent
 
 - Cold start: the card body (`TODO.md:1001-1053`), the ownership/escalation rules
-  (`TODO.md:667,674`), ADR 0061 whole, the Part VI dispatch header + VI-B2 block,
+  (`TODO.md:667,674`), ADR 0005 whole, the Part VI dispatch header + VI-B2 block,
   `TEMPLATE.md`, CLAUDE.md's rules-that-bite and comment-style sections, `config.rs` whole,
   `secrets.rs` whole, `bootstrap.rs` whole, `capabilities.rs` whole, the named ranges of
   `claude_code.rs`/`codex.rs`, `doctor.rs` whole, `docs/CONFIG.md` whole — heavier than the

@@ -3,8 +3,7 @@ import { render } from 'solid-js/web';
 import MergeButton from './MergeButton';
 import MergeNoteBadge from './MergeNoteBadge';
 import { toast } from '../ui/toast';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 const mountIn = (ui: () => unknown) => {
   const c = document.createElement('div');

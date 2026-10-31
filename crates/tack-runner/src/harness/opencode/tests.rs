@@ -31,6 +31,7 @@ fn read(stdout: &str, exit: ProcessExit) -> RunReport {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
     OpencodeGrammar.report(&run, &finished(exit, stdout))
 }
@@ -122,6 +123,7 @@ fn an_ask_request_becomes_an_acp_conversation() {
         spec: &request,
         scratch: state.path(),
         program: None,
+        host: &crate::config::ProcessEnv::default(),
     };
 
     let framed = OpencodeGrammar.prompt("do it".to_owned(), true);

@@ -177,7 +177,7 @@ the invoking shell.
 
 - Tokens read before the first edit (cold start): the dispatch block estimated ≈14k for
   the named read list; actual reading was somewhat larger because of an environment
-  issue below, but the *named* reads (board prelude, VII-A2 card, ADR 0062 decisions 5+8,
+  issue below, but the *named* reads (board prelude, VII-A2 card, ADR 0006 decisions 5+8,
   the `Commands`/`RunnerAction` shape, `doctor.rs` head, the loopback gate, the
   DEPLOYMENT-GUIDE excerpt, `cli.md` headers, `dirs::data_dir()`) matched the block's
   estimate closely once the environment issue was resolved.
@@ -205,7 +205,7 @@ the invoking shell.
   the correct worktree path. Flagging this for whoever prepares the next agent's
   worktree: don't assume a fresh worktree is checked out at the dispatch plan's stated
   base SHA — verify with `git log -1` before trusting relative-path reads.
-- Web pages fetched: none — decisions 5 and 8 of ADR 0062 and the `dirs` crate's own
+- Web pages fetched: none — decisions 5 and 8 of ADR 0006 and the `dirs` crate's own
   doc comment (read from its vendored source under `~/.cargo/registry/src/`, not
   docs.rs) covered everything needed; no `v2.tauri.app` or `docs.rs` fetch was required
   for this card.

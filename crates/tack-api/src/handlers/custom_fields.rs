@@ -1,8 +1,5 @@
-use axum::{
-    Json,
-    extract::{Path, State},
-    http::StatusCode,
-};
+use crate::extract::{Json, Path};
+use axum::{extract::State, http::StatusCode};
 use tack_core::models::*;
 use tack_db::repo;
 use tracing::instrument;
@@ -37,10 +34,13 @@ pub async fn create_field(
         .repo
         .get_project(project_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
-    repo::custom_fields::create_field(state.pool(), project_id, data)
+    repo::custom_fields::create_field(&state.repo, project_id, data)
         .await
         .map(Json)
         .map_err(|e| {
@@ -66,7 +66,7 @@ pub async fn list_fields(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
 ) -> Result<Json<Vec<CustomFieldDefinition>>, StatusCode> {
-    repo::custom_fields::list_fields_for_project(state.pool(), project_id)
+    repo::custom_fields::list_fields_for_project(&state.repo, project_id)
         .await
         .map(Json)
         .map_err(|e| {
@@ -93,13 +93,10 @@ pub async fn get_field(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CustomFieldDefinition>, StatusCode> {
-    repo::custom_fields::get_field(state.pool(), id)
+    repo::custom_fields::get_field(&state.repo, id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, field_id = %id, "Failed to get custom field");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// PATCH /api/custom-fields/:id - Update a custom field
@@ -122,7 +119,7 @@ pub async fn update_field(
     Path(id): Path<Uuid>,
     Json(data): Json<UpdateCustomField>,
 ) -> Result<Json<CustomFieldDefinition>, StatusCode> {
-    repo::custom_fields::update_field(state.pool(), id, data)
+    repo::custom_fields::update_field(&state.repo, id, data)
         .await
         .map(Json)
         .map_err(|e| {
@@ -148,7 +145,7 @@ pub async fn delete_field(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, StatusCode> {
-    repo::custom_fields::delete_field(state.pool(), id)
+    repo::custom_fields::delete_field(&state.repo, id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| {
@@ -186,20 +183,23 @@ pub async fn set_field_value(
         .repo
         .get_item(item_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "A store call failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
         .ok_or(StatusCode::NOT_FOUND)?;
 
     // Verify field exists and validate value against its type
-    let field = repo::custom_fields::get_field(state.pool(), field_id)
+    let field = repo::custom_fields::get_field(&state.repo, field_id)
         .await
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|failure| crate::error::status_of_store_failure(&failure))?;
 
     if let Err(msg) = field.validate_value(&data) {
         tracing::warn!(field_id = %field_id, error = %msg, "Custom field value validation failed");
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
 
-    repo::custom_fields::set_field_value(state.pool(), item_id, field_id, data)
+    repo::custom_fields::set_field_value(&state.repo, item_id, field_id, data)
         .await
         .map(Json)
         .map_err(|e| {
@@ -225,7 +225,7 @@ pub async fn get_all_field_values(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<Vec<CustomFieldValue>>, StatusCode> {
-    repo::custom_fields::get_all_field_values_for_item(state.pool(), item_id)
+    repo::custom_fields::get_all_field_values_for_item(&state.repo, item_id)
         .await
         .map(Json)
         .map_err(|e| {
@@ -253,13 +253,10 @@ pub async fn get_field_value(
     State(state): State<AppState>,
     Path((item_id, field_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<CustomFieldValue>, StatusCode> {
-    repo::custom_fields::get_field_value(state.pool(), item_id, field_id)
+    repo::custom_fields::get_field_value(&state.repo, item_id, field_id)
         .await
         .map(Json)
-        .map_err(|e| {
-            tracing::error!(error = %e, item_id = %item_id, field_id = %field_id, "Custom field value not found");
-            StatusCode::NOT_FOUND
-        })
+        .map_err(|e| crate::error::status_of_store_failure(&e))
 }
 
 /// DELETE /api/items/:item_id/custom-fields/:field_id - Delete a custom field value
@@ -280,7 +277,7 @@ pub async fn delete_field_value(
     State(state): State<AppState>,
     Path((item_id, field_id)): Path<(Uuid, Uuid)>,
 ) -> Result<StatusCode, StatusCode> {
-    repo::custom_fields::delete_field_value(state.pool(), item_id, field_id)
+    repo::custom_fields::delete_field_value(&state.repo, item_id, field_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| {

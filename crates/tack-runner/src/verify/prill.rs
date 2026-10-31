@@ -27,20 +27,22 @@
 //!    and message.
 //!
 //! prill's own `mrp.json` and `mrp.md` stay in `<evidence>/prill/`, beside
-//! the documents it was given, for a person who wants the untranslated pack;
-//! only the translated `mrp.json` is uploaded.
+//! the documents it was given. The pack as prill printed it is also uploaded,
+//! unchanged, as `mrp.prill.json` ([`ORIGINAL_FILE`]) next to the translated
+//! `mrp.json`: the board hands that one, never the translation, to
+//! `prill record mrp`.
 
 use std::{fs, path::Path, process::Stdio, time::Duration};
 
 use serde_json::{Value, json};
-use tack_core::mrp::{
+use tack_protocol::mrp::{
     Criterion, CriterionStatus, JudgeRubricEntry, JudgeSection, JudgeVerdict, MergeDecision,
     MergeReadinessPack, MutationSection, NextStep, ProducedBySection, RecommendationSection,
     RiskSection, RiskTier, SignatureSection, StageRun, UsageSection, VerifySection,
 };
 use tokio::process::Command;
 
-use super::{VerifyFailure, failure, spawn_verifier, stderr_prefix};
+use super::{VerifyFailure, failure, io_failure, json_failure, spawn_verifier, stderr_prefix};
 use crate::{
     client::workspace::Workspace,
     config::VerifyConfig,
@@ -63,6 +65,14 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(600);
 /// name it is staged under.
 pub(super) const ENVELOPE_FILE: &str = "mrp.intoto.json";
 
+/// The name prill's own pack is staged under, byte for byte as prill printed
+/// it, beside the translated `mrp.json`. prill's `record mrp` takes only this
+/// one: the translation is Tack's view of it, derived for display.
+pub(super) const ORIGINAL_FILE: &str = "mrp.prill.json";
+
+/// The media type of the staged pack as prill produced it.
+pub(super) const ORIGINAL_MEDIA_TYPE: &str = "application/vnd.prill.mrp+json";
+
 /// The name under `<evidence>` holding prill's documents and its own pack.
 const PRILL_DIR: &str = "prill";
 
@@ -74,11 +84,13 @@ pub(super) async fn run(
     workspace: &Workspace,
     evidence: &Path,
     output: &Path,
+    env: &crate::config::ProcessEnv,
+    trajectory_uri: Option<&str>,
 ) -> Result<(), VerifyFailure> {
     let evidence_bytes = fs::read(evidence.join("evidence.json"))
-        .map_err(|_| failure(None, "the staged evidence.json could not be read"))?;
+        .map_err(|error| io_failure(None, "the staged evidence.json could not be read", &error))?;
     let tack_evidence: AttemptEvidence = serde_json::from_slice(&evidence_bytes)
-        .map_err(|_| failure(None, "the staged evidence.json does not parse"))?;
+        .map_err(|error| json_failure(None, "the staged evidence.json does not parse", &error))?;
     if !tack_evidence.captured {
         return Err(failure(
             None,
@@ -93,8 +105,13 @@ pub(super) async fn run(
     }
 
     let out_dir = evidence.join(PRILL_DIR);
-    fs::create_dir_all(&out_dir)
-        .map_err(|_| failure(None, "prill's output directory could not be created"))?;
+    fs::create_dir_all(&out_dir).map_err(|error| {
+        io_failure(
+            None,
+            "prill's output directory could not be created",
+            &error,
+        )
+    })?;
 
     // The commit the capture made of the work is the one verified. Only a
     // workspace that was not captured by the runner (no such file) is
@@ -121,10 +138,17 @@ pub(super) async fn run(
         })?,
     };
 
+    // The run's steps, as the one artifact the engine staged and will upload: prill is told
+    // where the board serves it and the digest of exactly these bytes.
+    let trajectory = trajectory_uri.and_then(|uri| {
+        fs::read(evidence.join(crate::evidence::TRAJECTORY_FILE))
+            .ok()
+            .map(|bytes| (uri, sha256_hex(&bytes)))
+    });
     let evidence_document = out_dir.join("attempt-evidence.json");
     write_document(
         &evidence_document,
-        &attempt_evidence(&tack_evidence, &head_commit),
+        &attempt_evidence(&tack_evidence, &head_commit, trajectory),
     )?;
 
     let mut args = vec![
@@ -137,8 +161,9 @@ pub(super) async fn run(
     let brief_path = evidence.join("brief.json");
     let brief_sha256 = match fs::read(&brief_path) {
         Ok(bytes) => {
-            let brief: Value = serde_json::from_slice(&bytes)
-                .map_err(|_| failure(None, "the staged brief.json does not parse"))?;
+            let brief: Value = serde_json::from_slice(&bytes).map_err(|error| {
+                json_failure(None, "the staged brief.json does not parse", &error)
+            })?;
             let brief_document = out_dir.join("briefing.json");
             write_document(&brief_document, &briefing(&brief))?;
             args.extend(["--brief".to_owned(), brief_document.display().to_string()]);
@@ -159,7 +184,7 @@ pub(super) async fn run(
     // `prill.yaml` the agent edited is never the one it applies.
     args.extend(config.args.iter().cloned());
 
-    let result = spawn_verifier(config, limits, workspace, args).await?;
+    let result = spawn_verifier(config, limits, workspace, args, env).await?;
     let stderr = stderr_prefix(&result);
     let exit_code = match result.exit {
         ProcessExit::Exited(code @ (0 | 1)) => code,
@@ -209,10 +234,18 @@ pub(super) async fn run(
     } else {
         result.stdout.text.into_bytes()
     };
-    let prill_pack: Value = serde_json::from_slice(&printed).map_err(|_| {
-        failure(
+    let prill_pack: Value = serde_json::from_slice(&printed).map_err(|error| {
+        json_failure(
             Some(exit_code),
             format!("prill exited with a pack status but printed none: {stderr}"),
+            &error,
+        )
+    })?;
+    fs::write(evidence.join(ORIGINAL_FILE), &printed).map_err(|error| {
+        io_failure(
+            Some(exit_code),
+            "prill's own pack could not be written for the upload",
+            &error,
         )
     })?;
     let mut translated = pack(
@@ -222,35 +255,52 @@ pub(super) async fn run(
         brief_sha256,
     );
     if config.sign_key.is_some() {
-        let envelope = fs::read(out_dir.join(ENVELOPE_FILE)).map_err(|_| {
-            failure(
+        let envelope = fs::read(out_dir.join(ENVELOPE_FILE)).map_err(|error| {
+            io_failure(
                 Some(exit_code),
                 "prill was asked to sign but wrote no mrp.intoto.json",
+                &error,
             )
         })?;
         translated.signature = SignatureSection::InToto {
             statement_sha256: sha256_hex(&envelope),
         };
-        fs::write(evidence.join(ENVELOPE_FILE), envelope)
-            .map_err(|_| failure(Some(exit_code), "the attestation could not be written"))?;
+        fs::write(evidence.join(ENVELOPE_FILE), envelope).map_err(|error| {
+            io_failure(
+                Some(exit_code),
+                "the attestation could not be written",
+                &error,
+            )
+        })?;
     }
-    let mut bytes = serde_json::to_vec_pretty(&translated).map_err(|_| {
-        failure(
+    let mut bytes = serde_json::to_vec_pretty(&translated).map_err(|error| {
+        json_failure(
             Some(exit_code),
             "the translated pack could not be serialized",
+            &error,
         )
     })?;
     bytes.push(b'\n');
-    fs::write(output, bytes)
-        .map_err(|_| failure(Some(exit_code), "the translated pack could not be written"))
+    fs::write(output, bytes).map_err(|error| {
+        io_failure(
+            Some(exit_code),
+            "the translated pack could not be written",
+            &error,
+        )
+    })
 }
 
 fn write_document(path: &Path, document: &Value) -> Result<(), VerifyFailure> {
     let mut bytes = serde_json::to_vec_pretty(document)
-        .map_err(|_| failure(None, "a prill document could not be serialized"))?;
+        .map_err(|error| json_failure(None, "a prill document could not be serialized", &error))?;
     bytes.push(b'\n');
-    fs::write(path, bytes)
-        .map_err(|_| failure(None, format!("{} could not be written", path.display())))
+    fs::write(path, bytes).map_err(|error| {
+        io_failure(
+            None,
+            format!("{} could not be written", path.display()),
+            &error,
+        )
+    })
 }
 
 // ---------------------------------------------------------------------
@@ -277,7 +327,7 @@ pub(super) async fn snapshot(
         &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
     )
     .await
-    .map_err(|_| "HEAD is not a commit".to_owned())?;
+    .map_err(|reason| format!("HEAD is not a commit ({reason})"))?;
     let indexed = Some(index);
     git_output(git, workspace, indexed, &["read-tree", "HEAD"]).await?;
     let mut add = vec!["add", "-A", "--", "."];
@@ -337,12 +387,22 @@ async fn git_output(
     if let Some(index) = index {
         command.env("GIT_INDEX_FILE", index);
     }
-    let child = command
-        .spawn()
-        .map_err(|_| format!("git could not be started for `git {}`", args[0]))?;
+    let child = command.spawn().map_err(|error| {
+        format!(
+            "git could not be started for `git {}` ({})",
+            args[0],
+            error.kind()
+        )
+    })?;
     let output = match tokio::time::timeout(GIT_TIMEOUT, child.wait_with_output()).await {
         Ok(Ok(output)) => output,
-        Ok(Err(_)) => return Err(format!("`git {}` could not be supervised", args[0])),
+        Ok(Err(error)) => {
+            return Err(format!(
+                "`git {}` could not be supervised ({})",
+                args[0],
+                error.kind()
+            ));
+        }
         Err(_) => return Err(format!("`git {}` did not finish in time", args[0])),
     };
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -381,7 +441,11 @@ fn non_empty(value: &Value) -> Option<&str> {
 
 /// `evidence.json` (evidence-v1) as an `attempt-evidence/v0` document whose
 /// head is the snapshot commit.
-pub(super) fn attempt_evidence(tack: &AttemptEvidence, head_commit: &str) -> Value {
+pub(super) fn attempt_evidence(
+    tack: &AttemptEvidence,
+    head_commit: &str,
+    trajectory: Option<(&str, String)>,
+) -> Value {
     let usage = &tack.usage;
     let mut document = json!({
         "contract": "attempt-evidence/v0",
@@ -397,6 +461,21 @@ pub(super) fn attempt_evidence(tack: &AttemptEvidence, head_commit: &str) -> Val
     }
     if let Some(model) = non_empty(&usage["model"]) {
         document["generator"] = json!({ "model": model });
+    }
+    // The family of the model the last implementer step ran on, when the harness recorded the
+    // prompts of its steps. It is declared by the harness and never inferred from the model.
+    let steps = tack.terminal_reason["steps"].as_array();
+    if let Some(family) = steps
+        .into_iter()
+        .flatten()
+        .rev()
+        .filter(|step| step["role"] == "implementer")
+        .find_map(|step| non_empty(&step["family"]))
+    {
+        document["generator"]["family"] = json!(family);
+    }
+    if let Some((uri, sha256)) = trajectory {
+        document["trajectory"] = json!({ "uri": uri, "digest": format!("sha256:{sha256}") });
     }
     let tokens_in = measured(&usage["tokens_in"]).and_then(Value::as_u64);
     let tokens_out = measured(&usage["tokens_out"]).and_then(Value::as_u64);

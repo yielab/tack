@@ -1,5 +1,7 @@
+use super::Repository;
+use crate::{StoreError, decode};
 use serde_json::json;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::FromRow;
 use tack_core::models::*;
 use tack_core::outline::{BundleAutomation, BundleAutonomy, BundleProfile, BundleRole};
 use tack_core::workflow::WorkflowConfig;
@@ -24,12 +26,34 @@ struct TemplateRow {
     updated_at: String,
 }
 
+impl TemplateRow {
+    fn into_template(self) -> Result<ProjectTemplate, StoreError> {
+        const TABLE: &str = "project_templates";
+        Ok(ProjectTemplate {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            name: self.name,
+            description: self.description,
+            project_type: decode::variant(TABLE, "project_type", &self.project_type)?,
+            vocabulary: decode::json(TABLE, "vocabulary", &self.vocabulary)?,
+            workflow: decode::json(TABLE, "workflow", &self.workflow)?,
+            custom_fields: decode::json(TABLE, "custom_fields", &self.custom_fields)?,
+            default_boards: decode::json(TABLE, "default_boards", &self.default_boards)?,
+            roles: decode::json(TABLE, "roles", &self.roles)?,
+            profiles: decode::json(TABLE, "profiles", &self.profiles)?,
+            automation: decode::optional_json(TABLE, "automation", self.automation.as_deref())?,
+            is_builtin: self.is_builtin != 0,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+            updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
+        })
+    }
+}
+
 /// Create a new project template
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn create_template(
-    pool: &SqlitePool,
+    repo: &Repository,
     data: CreateProjectTemplate,
-) -> Result<ProjectTemplate, sqlx::Error> {
+) -> Result<ProjectTemplate, StoreError> {
     let id = Uuid::new_v4();
     let now = chrono::Utc::now();
 
@@ -73,67 +97,34 @@ pub async fn create_template(
     )
     .bind(now.to_rfc3339())
     .bind(now.to_rfc3339())
-    .execute(pool)
+    .execute(repo.pool())
     .await?;
 
-    get_template(pool, id).await
+    get_template(repo, id).await
 }
 
 /// Get a template by ID
-#[instrument(skip(pool))]
-pub async fn get_template(pool: &SqlitePool, id: Uuid) -> Result<ProjectTemplate, sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn get_template(repo: &Repository, id: Uuid) -> Result<ProjectTemplate, StoreError> {
     let row = sqlx::query_as::<_, TemplateRow>(
         "SELECT id, name, description, project_type, vocabulary, workflow, custom_fields, default_boards, roles, profiles, automation, is_builtin, created_at, updated_at
          FROM project_templates
          WHERE id = ?"
     )
     .bind(id.to_string())
-    .fetch_one(pool)
-    .await?;
+    .fetch_optional(repo.pool())
+    .await?
+    .ok_or(StoreError::not_found("project template"))?;
 
-    let vocabulary: serde_json::Value =
-        serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
-
-    let workflow: serde_json::Value =
-        serde_json::from_str(&row.workflow).unwrap_or(serde_json::json!({}));
-
-    let custom_fields: Vec<CustomFieldDefinition> =
-        serde_json::from_str(&row.custom_fields).unwrap_or_default();
-
-    let default_boards: Vec<BoardTemplate> =
-        serde_json::from_str(&row.default_boards).unwrap_or_default();
-
-    Ok(ProjectTemplate {
-        id: Uuid::parse_str(&row.id).unwrap(),
-        name: row.name,
-        description: row.description,
-        project_type: serde_json::from_value(serde_json::Value::String(row.project_type)).unwrap(),
-        vocabulary: serde_json::from_value(vocabulary).unwrap(),
-        workflow: serde_json::from_value(workflow).unwrap(),
-        custom_fields,
-        default_boards,
-        roles: serde_json::from_str(&row.roles).unwrap_or_default(),
-        profiles: serde_json::from_str(&row.profiles).unwrap_or_default(),
-        automation: row
-            .automation
-            .as_deref()
-            .and_then(|a| serde_json::from_str(a).ok()),
-        is_builtin: row.is_builtin != 0,
-        created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-            .unwrap()
-            .into(),
-        updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-            .unwrap()
-            .into(),
-    })
+    row.into_template()
 }
 
 /// List all templates, optionally filtered by project type
-#[instrument(skip(pool))]
+#[instrument(skip(repo))]
 pub async fn list_templates(
-    pool: &SqlitePool,
+    repo: &Repository,
     project_type: Option<ProjectType>,
-) -> Result<Vec<ProjectTemplate>, sqlx::Error> {
+) -> Result<Vec<ProjectTemplate>, StoreError> {
     let rows = if let Some(ptype) = project_type {
         let type_str = ptype.to_string();
 
@@ -144,7 +135,7 @@ pub async fn list_templates(
              ORDER BY is_builtin DESC, name ASC"
         )
         .bind(type_str)
-        .fetch_all(pool)
+        .fetch_all(repo.pool())
         .await?
     } else {
         sqlx::query_as::<_, TemplateRow>(
@@ -152,61 +143,19 @@ pub async fn list_templates(
              FROM project_templates
              ORDER BY is_builtin DESC, name ASC"
         )
-        .fetch_all(pool)
+        .fetch_all(repo.pool())
         .await?
     };
 
-    let templates: Vec<ProjectTemplate> = rows
-        .into_iter()
-        .map(|row| {
-            let vocabulary: serde_json::Value =
-                serde_json::from_str(&row.vocabulary).unwrap_or(serde_json::json!({}));
-
-            let workflow: serde_json::Value =
-                serde_json::from_str(&row.workflow).unwrap_or(serde_json::json!({}));
-
-            let custom_fields: Vec<CustomFieldDefinition> =
-                serde_json::from_str(&row.custom_fields).unwrap_or_default();
-
-            let default_boards: Vec<BoardTemplate> =
-                serde_json::from_str(&row.default_boards).unwrap_or_default();
-
-            ProjectTemplate {
-                id: Uuid::parse_str(&row.id).unwrap(),
-                name: row.name,
-                description: row.description,
-                project_type: serde_json::from_value(serde_json::Value::String(row.project_type))
-                    .unwrap(),
-                vocabulary: serde_json::from_value(vocabulary).unwrap(),
-                workflow: serde_json::from_value(workflow).unwrap(),
-                custom_fields,
-                default_boards,
-                roles: serde_json::from_str(&row.roles).unwrap_or_default(),
-                profiles: serde_json::from_str(&row.profiles).unwrap_or_default(),
-                automation: row
-                    .automation
-                    .as_deref()
-                    .and_then(|a| serde_json::from_str(a).ok()),
-                is_builtin: row.is_builtin != 0,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.created_at)
-                    .unwrap()
-                    .into(),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.updated_at)
-                    .unwrap()
-                    .into(),
-            }
-        })
-        .collect();
-
-    Ok(templates)
+    rows.into_iter().map(TemplateRow::into_template).collect()
 }
 
 /// Delete a template (only non-builtin templates can be deleted)
-#[instrument(skip(pool))]
-pub async fn delete_template(pool: &SqlitePool, id: Uuid) -> Result<(), sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn delete_template(repo: &Repository, id: Uuid) -> Result<(), StoreError> {
     sqlx::query("DELETE FROM project_templates WHERE id = ? AND is_builtin = 0")
         .bind(id.to_string())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
 
     Ok(())
@@ -352,8 +301,8 @@ fn builtin_choice(name: &str, options: &[&str]) -> CustomFieldDefinition {
 /// Safe to call on every startup — inserts are skipped by template name, so
 /// multiple built-ins can share a `ProjectType` (e.g. the construction
 /// verticals all reuse `ProjectType::Construction`).
-#[instrument(skip(pool))]
-pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+#[instrument(skip(repo))]
+pub async fn seed_builtin_templates(repo: &Repository) -> Result<(), StoreError> {
     use tack_core::{
         vocabulary::vocabulary_for_type,
         workflow::{
@@ -467,7 +416,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
             "Blank template — minimal workflow with no domain-specific vocabulary.",
             ProjectType::Custom,
         ),
-        // ── Templates that come with their roles and profiles (ADR 0081) ──
+        // ── Templates that come with their roles and profiles (ADR 0022) ──
         BuiltinSpec {
             name: "Web product with content",
             description: "A web product with content: roles for content, development, growth, security, legal and ops, each with a profile; the reviewers only read.",
@@ -585,7 +534,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
             "SELECT EXISTS(SELECT 1 FROM project_templates WHERE name = ? AND is_builtin = 1)",
         )
         .bind(spec.name)
-        .fetch_one(pool)
+        .fetch_one(repo.pool())
         .await?;
 
         if exists {
@@ -642,7 +591,7 @@ pub async fn seed_builtin_templates(pool: &SqlitePool) -> Result<(), sqlx::Error
         )
         .bind(now.to_rfc3339())
         .bind(now.to_rfc3339())
-        .execute(pool)
+        .execute(repo.pool())
         .await?;
 
         tracing::info!(

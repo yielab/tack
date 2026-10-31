@@ -6,8 +6,8 @@
 //! store and named as prill's. Dollars are Tack's estimate: tokens priced by the
 //! operator's rate card; a harness's own `cost_usd` is never read or summed.
 
-use axum::Json;
-use axum::extract::{Path, Query, State};
+use crate::extract::{Json, Path, Query};
+use axum::extract::State;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncReadExt;
@@ -144,6 +144,11 @@ pub struct FactoryMetrics {
     /// decisions ÷ attempts.
     pub escalation_rate: Ratio,
     pub human_minutes_per_decision: HumanMinutes,
+    /// Attempts with at least one escalation the agent's policy settled itself, and no
+    /// person was asked: a count apart from `decisions`, which only a person's answer makes.
+    pub decided_alone: i64,
+    /// decided_alone ÷ attempts.
+    pub decided_alone_rate: Ratio,
     pub human_minutes_per_mrp: HumanMinutes,
     pub verification_tax: VerificationTax,
     /// Packs produced in the window and not yet reviewed.
@@ -336,19 +341,14 @@ async fn prill_quality(
     state: &AppState,
     project: &str,
 ) -> Result<(String, Vec<(String, serde_json::Value)>), String> {
-    let program = &state.prill_program().await;
-    let version = crate::prill_store::version(program).await?;
-    let repos: Vec<String> = sqlx::query_scalar(
-        "SELECT DISTINCT p.repo FROM pull_requests p
-         JOIN execution_attempts a ON a.id = p.attempt_id
-         JOIN execution_requests r ON r.id = a.request_id
-         JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? ORDER BY p.repo",
-    )
-    .bind(project)
-    .fetch_all(state.pool())
-    .await
-    .map_err(|_| "the board could not list the project's repositories".to_owned())?;
+    let prill = &state.prill().await;
+    let version = crate::prill_store::version(prill).await?;
+    let repos = tack_db::queries::pull_requests::repos_of_project(&state.repo, project)
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not list the project's repositories");
+            "the board could not list the project's repositories".to_owned()
+        })?;
     let mut found = Vec::new();
     let mut failure = None;
     for repo in repos {
@@ -358,7 +358,7 @@ async fn prill_quality(
         if !db.is_file() {
             continue;
         }
-        match crate::prill_store::metrics(program, &db).await {
+        match crate::prill_store::metrics(prill, &db).await {
             Ok(metrics) => found.push((repo, metrics)),
             Err(reason) => failure = Some(reason),
         }
@@ -406,20 +406,20 @@ pub async fn factory_metrics(
     };
     let since = since.as_deref();
     let project = id.to_string();
-    let pool = state.repo.pool();
+    let repo = &state.repo;
 
-    let totals = rows::attempt_totals(pool, &project, since).await?;
-    let decision_waits = rows::decision_waits(pool, &project, since).await?;
-    let mrp_waits = rows::mrp_waits(pool, &project, since).await?;
-    let mrp = rows::mrp_totals(pool, &project, MRP_MEDIA_TYPE, since).await?;
-    let prs = rows::pull_request_totals(pool, &project, since).await?;
-    let starts = rows::runs_by_start(pool, &project, since).await?;
-    let triggers = rows::merges_by_trigger(pool, &project, since).await?;
-    let (lights_off, merged_items) = rows::lights_off(pool, &project, since).await?;
+    let totals = rows::attempt_totals(repo, &project, since).await?;
+    let decision_waits = rows::decision_waits(repo, &project, since).await?;
+    let mrp_waits = rows::mrp_waits(repo, &project, since).await?;
+    let mrp = rows::mrp_totals(repo, &project, MRP_MEDIA_TYPE, since).await?;
+    let prs = rows::pull_request_totals(repo, &project, since).await?;
+    let starts = rows::runs_by_start(repo, &project, since).await?;
+    let triggers = rows::merges_by_trigger(repo, &project, since).await?;
+    let (lights_off, merged_items) = rows::lights_off(repo, &project, since).await?;
 
     let storage = ArtifactStorage::new(format!("{}/execution-artifacts", state.config.storage_dir));
     let (mut verification_tokens, mut verification_packs, mut unmeasured_packs) = (0, 0, 0);
-    for reference in rows::mrp_pack_references(pool, &project, MRP_MEDIA_TYPE, since).await? {
+    for reference in rows::mrp_pack_references(repo, &project, MRP_MEDIA_TYPE, since).await? {
         match pack_tokens(&storage, reference.as_deref()).await {
             Some(tokens) => {
                 verification_tokens += tokens;
@@ -440,8 +440,8 @@ pub async fn factory_metrics(
             DENOMINATOR_ZERO
         };
 
-    let card = crate::rate_card::load(pool).await;
-    let spend = tack_db::repo::rate_card::spend_by_model(pool, &project, since).await?;
+    let card = crate::rate_card::load(&state.repo).await;
+    let spend = tack_db::repo::rate_card::spend_by_model(repo, &project, since).await?;
     let (mut cost, mut unpriced) = (0.0, 0);
     let mut repo_cost: std::collections::BTreeMap<String, f64> = std::collections::BTreeMap::new();
     if let Some(card) = &card {
@@ -535,6 +535,8 @@ pub async fn factory_metrics(
         decisions: totals.decisions,
         escalation_rate: ratio(totals.decisions, totals.attempts, DENOMINATOR_ZERO),
         human_minutes_per_decision: human_minutes(&decision_waits),
+        decided_alone: totals.decided_alone,
+        decided_alone_rate: ratio(totals.decided_alone, totals.attempts, DENOMINATOR_ZERO),
         human_minutes_per_mrp: human_minutes(&mrp_waits),
         verification_tax: VerificationTax {
             ratio: ratio(

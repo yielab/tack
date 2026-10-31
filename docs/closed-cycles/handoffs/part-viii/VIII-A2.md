@@ -138,7 +138,7 @@ See "Question I did not answer."
 - Tokens read before the first edit (cold start): `docs/agent-handoffs/part-viii/README.md`
   header + the VIII-A2 block; `TODO.md` §VIII.1, §VIII.2, and the VIII-A2 card body (via
   `grep -n` + `sed -n`, not the whole file); the full text of
-  `docs/adr/0065-docket-pipeline-dispatch-trigger.md`; `require_approval_token` and
+  `docs/closed-cycles/adr/0065-docket-pipeline-dispatch-trigger.md`; `require_approval_token` and
   `orch_routes` with their doc comments; `DocketAdapter::dispatch`'s trait doc and
   implementation; `dispatcher.rs`'s `dispatch_item`/`build_control_plane` for the
   project→link→control-plane resolution pattern; `handlers/orch.rs`'s

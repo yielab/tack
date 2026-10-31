@@ -1,8 +1,8 @@
 //! A project's autonomy settings: how far Tack may merge on its own, where, and
-//! under which checks (ADR 0079). Promotion is the PUT; demotion is the tick's.
+//! under which checks (ADR 0020). Promotion is the PUT; demotion is the tick's.
 
-use axum::Json;
-use axum::extract::{Path, State};
+use crate::extract::{Json, Path};
+use axum::extract::State;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
@@ -10,7 +10,8 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use tack_core::autonomy::{Domain, Level};
-use tack_db::repo::autonomy::{self as store, Settings};
+use tack_db::queries;
+use tack_db::repo::autonomy::Settings;
 use tack_db::repo::budgets::{self, ProjectBudgets};
 
 use crate::error::{ApiError, ApiResult};
@@ -122,6 +123,23 @@ pub struct TeamLine {
     /// computer reports the team or its harness does not say.
     #[serde(default)]
     pub read_only: Option<Vec<String>>,
+    /// `repository` or `folder`; `null` when no computer reports the team or its harness does not
+    /// say. A folder team's work stays in its folder: nothing is merged.
+    #[serde(default)]
+    pub works_in: Option<String>,
+    /// The record sets the team keeps and how many rows each holds; `null` when the harness does
+    /// not say.
+    #[serde(default)]
+    pub records: Option<Vec<TeamRecords>>,
+}
+
+/// One set of records a team keeps.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamRecords {
+    pub name: String,
+    pub description: String,
+    /// Rows in the set, whichever run wrote them.
+    pub rows: u64,
 }
 
 impl From<Settings> for AutonomySettings {
@@ -238,18 +256,18 @@ pub async fn get_autonomy(
     Ok(Json(current(&state, &id.to_string()).await?))
 }
 
-/// Every team the project's roles run: attended ones cap at L3 with the runner's fix,
+/// Every team the project's tasks run, by role or, with no role, by the project's default
+/// profile: attended ones cap at L3 with the runner's fix,
 /// lights-out ones carry neither, and one no runner reports is `unknown` and capped.
-async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
-    let pool = state.repo.pool();
-    let profiles = store::role_profile_teams(pool, project_id).await?;
+async fn project_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLine>> {
+    let profiles = queries::autonomy::project_profile_teams(&state.repo, project_id).await?;
     if profiles.iter().all(|(_, team)| team.is_none()) {
         return Ok(Vec::new());
     }
-    let reported: Vec<_> = store::active_runner_snapshots(pool)
+    let reported: Vec<_> = queries::autonomy::active_runner_snapshots(&state.repo)
         .await?
         .iter()
-        .flat_map(|snapshot| crate::autonomy::harnesses_of(snapshot))
+        .flat_map(|snapshot| tack_app::autonomy::harnesses_of(snapshot))
         .flat_map(|harness| harness.teams.unwrap_or_default())
         .collect();
     let mut lines = Vec::new();
@@ -259,7 +277,7 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
             continue;
         }
         let known = reported.iter().find(|t| t.name == team);
-        let attended = known.filter(|t| crate::autonomy::is_attended(t));
+        let attended = known.filter(|t| tack_app::autonomy::is_attended(t));
         let (profile, caps_at, fix) = match (known, attended) {
             (None, _) => (
                 "unknown".to_owned(),
@@ -282,6 +300,19 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
             caps_at,
             fix,
             read_only: known.and_then(|t| t.read_only.clone()),
+            works_in: known
+                .and_then(|t| t.works_in)
+                .and_then(|works_in| serde_json::to_value(works_in).ok())
+                .and_then(|value| value.as_str().map(str::to_owned)),
+            records: known.and_then(|t| t.records.as_ref()).map(|sets| {
+                sets.iter()
+                    .map(|set| TeamRecords {
+                        name: set.name.clone(),
+                        description: set.description.clone(),
+                        rows: set.rows,
+                    })
+                    .collect()
+            }),
         });
     }
     Ok(lines)
@@ -289,29 +320,32 @@ async fn role_teams(state: &AppState, project_id: &str) -> ApiResult<Vec<TeamLin
 
 /// The settings as they stand, with everything only the board can read.
 async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettings> {
-    let mut settings: AutonomySettings = store::get_settings(state.repo.pool(), project_id)
-        .await?
-        .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
-        .into();
-    let counts = store::domain_counts(state.repo.pool(), project_id).await?;
+    let mut settings: AutonomySettings =
+        queries::autonomy::project_settings(&state.repo, project_id)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("Project not found".into()))?
+            .into();
+    let counts = queries::autonomy::domain_counts(&state.repo, project_id).await?;
     for domain in &mut settings.domains {
         if let Some((merged, undone)) = counts.get(&domain.name) {
             (domain.merged, domain.undone) = (*merged, *undone);
         }
     }
     let mut blocked = Vec::new();
-    if state.config.github_poll_seconds == 0 || state.config.github_token.is_none() {
+    if state.config.loops.github_poll_seconds == 0 || state.config.loops.github_token.is_none() {
         blocked.push(
             "GitHub polling is off on this board, so Tack cannot read CI or merge".to_owned(),
         );
     }
-    if let Err(reason) = crate::prill_store::version(&state.prill_program().await).await {
+    if let Err(reason) = crate::prill_store::version(&state.prill().await).await {
         blocked.push(format!("{reason}, so a signed pack cannot be checked"));
     }
     if settings.attestation_public_key.is_none() {
-        blocked.push("The project has no public key to check prill's signature against".to_owned());
+        blocked.push(
+            "The project has no public key to check the verifier's signature against".to_owned(),
+        );
     }
-    let teams = role_teams(state, project_id).await?;
+    let teams = project_teams(state, project_id).await?;
     let reported_attended = |team: &TeamLine| team.profile != "unknown" && team.caps_at.is_some();
     for team in teams.iter().filter(|t| reported_attended(t)) {
         blocked.push(format!(
@@ -332,7 +366,7 @@ async fn current(state: &AppState, project_id: &str) -> ApiResult<AutonomySettin
     }
     settings.teams = teams;
     settings.automatic_merge_blocked_by = blocked;
-    if let Some(day) = budgets::day_room(state.repo.pool(), project_id, Utc::now()).await? {
+    if let Some(day) = queries::budgets::day_room(&state.repo, project_id, Utc::now()).await? {
         settings.day_counted = Some(day.counted);
         settings.day_reserved = Some(day.reserved);
         settings.day_room = Some(day.room);
@@ -361,7 +395,11 @@ pub async fn put_autonomy(
     Json(input): Json<AutonomySettings>,
 ) -> ApiResult<Json<AutonomySettings>> {
     let settings = settings_of(input)?;
-    if !store::put_settings(state.repo.pool(), &id.to_string(), &settings).await? {
+    if !state
+        .repo
+        .put_autonomy_settings(&id.to_string(), &settings)
+        .await?
+    {
         return Err(ApiError::NotFound("Project not found".into()));
     }
     Ok(Json(current(&state, &id.to_string()).await?))

@@ -20,19 +20,25 @@ pub struct Unavailable;
 /// Longest `attest verify` is given before the check fails.
 const ATTEST_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// What the board says when it cannot start prill; every caller reads it from here.
-pub const NOT_INSTALLED: &str = "prill is not installed on the board (give the runner a [verify] table naming prill in its settings file, or set TACK_PRILL_PROGRAM to its path)";
+pub use tack_app::ports::NOT_INSTALLED;
+use tack_app::ports::VerifierError;
 
-/// Runs `program args…` with a null stdin and `PATH` as its only variable.
+/// The prill the board runs: the program (a bare name is looked up on the search path) and the
+/// `PATH` it is given, which is the board's own, read once into `AppConfig::search_path`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prill {
+    pub program: String,
+    pub search_path: String,
+}
+
+/// Runs `prill args…` with a null stdin and `PATH` as its only variable.
 /// A program that cannot start, or does not finish within `timeout`, is
 /// [`Unavailable`]; a program that exits non-zero is still an `Output`.
-pub async fn run(program: &str, args: &[String], timeout: Duration) -> Result<Output, Unavailable> {
-    #[allow(clippy::disallowed_methods)]
-    let path = std::env::var("PATH").unwrap_or_default();
-    let child = Command::new(program)
+pub async fn run(prill: &Prill, args: &[String], timeout: Duration) -> Result<Output, Unavailable> {
+    let child = Command::new(&prill.program)
         .args(args)
         .env_clear()
-        .env("PATH", path)
+        .env("PATH", &prill.search_path)
         .stdin(Stdio::null())
         .kill_on_drop(true)
         .output();
@@ -49,20 +55,20 @@ pub async fn run(program: &str, args: &[String], timeout: Duration) -> Result<Ou
 /// else is `Err` with prill's reason, or a message saying prill is not
 /// installed. The caller turns it into the policy's `Check`.
 pub async fn attest_verify(
-    program: &str,
+    prill: &Prill,
     envelope: &[u8],
     public_key_pem: &str,
     commit: &str,
-) -> Result<String, String> {
+) -> Result<String, VerifierError> {
     let Some(scratch) = Scratch::new() else {
-        return Err("the board could not stage the attestation".to_owned());
+        return Err(VerifierError::CouldNotStage);
     };
     let key = scratch.0.join("prill.pub");
     let envelope_path = scratch.0.join("mrp.intoto.json");
     if write_private(&key, public_key_pem.as_bytes()).is_err()
         || write_private(&envelope_path, envelope).is_err()
     {
-        return Err("the board could not stage the attestation".to_owned());
+        return Err(VerifierError::CouldNotStage);
     }
     let args = [
         "attest".to_owned(),
@@ -73,7 +79,7 @@ pub async fn attest_verify(
         commit.to_owned(),
         envelope_path.display().to_string(),
     ];
-    match run(program, &args, ATTEST_TIMEOUT).await {
+    match run(prill, &args, ATTEST_TIMEOUT).await {
         Ok(output) if output.status.success() => {
             // `prill: attestation valid (keyid <id>, subject …)`
             let said = String::from_utf8_lossy(&output.stderr);
@@ -89,13 +95,13 @@ pub async fn attest_verify(
             let reason = line
                 .split_once("attestation invalid: ")
                 .map_or(line.trim_start_matches("prill: "), |(_, reason)| reason);
-            Err(if reason.is_empty() {
+            Err(VerifierError::Refused(if reason.is_empty() {
                 format!("prill refused the attestation ({})", output.status)
             } else {
                 reason.to_owned()
-            })
+            }))
         }
-        Err(Unavailable) => Err(NOT_INSTALLED.to_owned()),
+        Err(Unavailable) => Err(VerifierError::NotInstalled),
     }
 }
 
@@ -171,7 +177,10 @@ mod tests {
     #[tokio::test]
     async fn attest_verify_passes_fails_and_fails_when_prill_is_not_installed() {
         let dir = tempfile::tempdir().expect("dir");
-        let program = fake_prill(dir.path());
+        let program = Prill {
+            program: fake_prill(dir.path()),
+            search_path: "/usr/bin:/bin".to_owned(),
+        };
         let ok = attest_verify(&program, ENVELOPE.as_bytes(), KEY, HEAD).await;
         assert_eq!(
             ok,
@@ -194,9 +203,21 @@ mod tests {
         );
 
         let wrong = attest_verify(&program, ENVELOPE.as_bytes(), KEY, BASE).await;
-        assert_eq!(wrong, Err("subject_mismatch".to_owned()));
+        assert_eq!(
+            wrong,
+            Err(VerifierError::Refused("subject_mismatch".to_owned()))
+        );
 
-        let missing = attest_verify("tack-no-such-prill", ENVELOPE.as_bytes(), KEY, HEAD).await;
-        assert_eq!(missing, Err(NOT_INSTALLED.to_owned()));
+        let missing = attest_verify(
+            &Prill {
+                program: "tack-no-such-prill".to_owned(),
+                ..program.clone()
+            },
+            ENVELOPE.as_bytes(),
+            KEY,
+            HEAD,
+        )
+        .await;
+        assert_eq!(missing, Err(VerifierError::NotInstalled));
     }
 }

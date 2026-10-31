@@ -11,6 +11,7 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { priorityColor } from '../../shared/ui/PriorityDot';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import type { Sprint, Item } from '../../shared/types';
+import Card from '../../shared/ui/Card';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -204,7 +205,7 @@ export default function Sprints() {
           <h1 class="m-0 text-content" style={{ 'font-size': '2.125rem' }}>
             {t('sprint')} Planning
           </h1>
-          <p class="mt-0.5 text-[0.8125rem] text-content-muted">
+          <p class="mt-0.5 text-small text-content-muted">
             Drag items from the {t('backlog').toLowerCase()} into a {t('sprint').toLowerCase()}, or between {t('sprint').toLowerCase()}s.
           </p>
         </div>
@@ -215,7 +216,7 @@ export default function Sprints() {
       <div class="flex-1 min-h-0 flex gap-3.5 overflow-hidden">
         {/* ── Left: Backlog ─────────────────────────────────────────── */}
         <div
-          class="w-72 shrink-0 flex flex-col gap-2 p-3.5 rounded-[28px] overflow-hidden transition-colors"
+          class="w-72 shrink-0 flex flex-col gap-2 p-3.5 rounded-card overflow-hidden transition-colors"
           style={{
             'background-color': 'var(--color-accent2-soft)',
             outline: dragOverZone() === 'backlog'
@@ -266,26 +267,26 @@ export default function Sprints() {
             when={(activeSprints()?.length ?? 0) > 0}
             fallback={
               <div class="flex-1 flex items-center justify-center">
-                <div class="rounded-[28px] bg-panel px-8">
+                <Card class="px-8">
                   <EmptyState
                     icon={<IconSprint size={28} />}
                     title={`No active ${t('sprint').toLowerCase()}s yet`}
                     action={<Button variant="secondary" size="sm" onClick={openCreate}>Create your first {t('sprint')}</Button>}
                   />
-                </div>
+                </Card>
               </div>
             }
           >
             <div class="flex gap-3.5 h-full">
               <For each={activeSprints()}>
                 {(sprint) => {
-                  const stats = sprintStats(sprint.id);
+                  const stats = () => sprintStats(sprint.id);
                   const isOver = () => dragOverZone() === sprint.id;
                   const canAccept = sprint.status === 'planning' || sprint.status === 'active';
 
                   return (
-                    <div
-                      class="w-72 shrink-0 flex flex-col gap-2 p-3.5 rounded-[28px] bg-panel overflow-hidden transition-colors"
+                    <Card
+                      class="w-72 shrink-0 flex flex-col gap-2 p-3.5 overflow-hidden transition-colors"
                       style={{
                         outline: isOver() && canAccept
                           ? '2px dashed var(--color-primary-600)'
@@ -316,16 +317,16 @@ export default function Sprints() {
                         {/* Capacity row */}
                         <div class="flex items-center justify-between text-xs text-content">
                           <span>
-                            {stats.done}/{stats.total} items · {stats.donePts}/{stats.totalPts} pts
+                            {stats().done}/{stats().total} items · {stats().donePts}/{stats().totalPts} pts
                           </span>
-                          <span class="font-bold">{stats.pct}%</span>
+                          <span class="font-bold">{stats().pct}%</span>
                         </div>
                         <div class="h-1.5 rounded-full overflow-hidden bg-app">
                           <div
                             class="h-full rounded-full transition-all"
                             style={{
-                              width: `${stats.pct}%`,
-                              'background-color': stats.pct === 100
+                              width: `${stats().pct}%`,
+                              'background-color': stats().pct === 100
                                 ? 'var(--color-success-600)'
                                 : 'var(--color-primary-600)',
                             }}
@@ -379,7 +380,7 @@ export default function Sprints() {
                           </ForById>
                         </Show>
                       </div>
-                    </div>
+                    </Card>
                   );
                 }}
               </For>
@@ -459,7 +460,7 @@ function ItemCard(props: {
           style={{ 'background-color': priorityColor(props.item.priority) }}
           title={props.item.priority}
         />
-        <p class="flex-1 min-w-0 text-[0.8125rem] font-bold truncate text-content">
+        <p class="flex-1 min-w-0 text-small font-bold truncate text-content">
           {/* Keyboard entry: its click bubbles to the card's own handler. */}
           <button type="button" class="m-0 block min-h-6 max-w-full cursor-pointer truncate border-0 bg-transparent p-0 text-left" style={{ font: 'inherit', color: 'inherit' }}>
             {props.item.title}

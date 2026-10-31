@@ -84,7 +84,7 @@ pub struct CreateExecutionArgs<'a> {
     /// Omitted, the server uses the profile's agent, else the project's.
     pub requested_harness_kind: Option<&'a str>,
     pub requested_model: Option<&'a str>,
-    /// JSON object matching `tack_orch::execution::PermissionPolicy`:
+    /// JSON object matching `tack_protocol::execution::PermissionPolicy`:
     /// `{network: bool, tools: [string] (optional, default [])}`. Required
     /// — `network` has no default server-side, so `{}` cannot succeed.
     pub permission_policy: &'a str,
@@ -270,7 +270,7 @@ pub fn build_enroll_runner_body(args: &EnrollRunnerArgs<'_>) -> Result<Value, St
 /// detail view so `needs_operator` and `lost` never render as if they were
 /// just another quiet in-progress value — distinct, visible outcomes, not
 /// collapsed into one generic line. States come from
-/// the frozen `tack_orch::execution::ExecutionState` lifecycle; an unrecognized value is flagged rather
+/// the frozen `tack_protocol::execution::ExecutionState` lifecycle; an unrecognized value is flagged rather
 /// than silently printed bare, in case a newer server adds one this CLI
 /// doesn't know about yet. `execution get` prints additional guidance below
 /// this marker for `needs_operator`/`lost` — see `main.rs`'s

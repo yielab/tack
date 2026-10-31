@@ -7,6 +7,7 @@
   "maxTokens": 1000,
   "priority": "normal",
   "trusted": false,
+  "autonomy": "L3",
   "restrictions": {
     "network": "none",
     "deniedTools": [
@@ -17,13 +18,25 @@
     "command": "true",
     "timeoutS": 600
   },
-  "brief": {
+  "task": {
     "objective": "Capture only",
+    "doneWhen": "nothing is asked of it",
     "acceptance": [
       "nothing"
     ],
     "constraints": [
       "nothing"
+    ],
+    "paths": [
+      "README.md"
+    ],
+    "risk": "low",
+    "kind": "Feature",
+    "answers": [
+      {
+        "question": "Which client?",
+        "answer": "The HTTP one"
+      }
     ]
   }
 }

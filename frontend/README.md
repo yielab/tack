@@ -1,183 +1,81 @@
 # Tack Frontend
 
-Modern, responsive frontend for Tack built with SolidJS, TypeScript, and Tailwind CSS.
+The board's web UI, built with SolidJS, TypeScript and Tailwind CSS. The `tack` binary embeds the
+built app and serves it from the same origin as the API.
 
 ## Tech Stack
 
-- **Framework:** [SolidJS](https://www.solidjs.com/) - Fast, reactive UI framework
-- **Build Tool:** [Vite](https://vitejs.dev/) - Next-generation frontend tooling
-- **Language:** [TypeScript](https://www.typescriptlang.org/) - Type-safe JavaScript
-- **Styling:** [Tailwind CSS v4](https://tailwindcss.com/) - Utility-first CSS framework
-- **Routing:** [@solidjs/router](https://github.com/solidjs/solid-router) - Client-side routing
-- **Icons:** [solid-icons](https://github.com/x64Bits/solid-icons) - Icon library
-
-## Features
-
-### ✅ Implemented (Phase 4 - 25%)
-
-- **Responsive Layout**
-  - Mobile-first design
-  - Collapsible sidebar with hamburger menu
-  - Dark mode support (via Tailwind)
-
-- **Projects Page**
-  - Grid layout showing all projects
-  - Project cards with type badges
-  - Create new project button (UI only)
-
-- **Board View (Kanban)**
-  - Column-based layout
-  - Items grouped by status
-  - WIP limit indicators
-  - Priority and type badges
-
-- **List View** (Placeholder)
-- **Settings Page** (Placeholder)
-
-- **API Integration**
-  - Type-safe API client
-  - Resource-based data fetching
-  - Environment configuration
-
-### 🚧 In Progress
-
-- Drag-and-drop for Kanban board
-- Create/edit modals
-- WebSocket real-time updates
-- Complete List view
-- Project settings UI
+- **Framework:** [SolidJS](https://www.solidjs.com/)
+- **Build tool:** [Vite](https://vitejs.dev/)
+- **Language:** [TypeScript](https://www.typescriptlang.org/)
+- **Styling:** [Tailwind CSS v4](https://tailwindcss.com/), with the design tokens in `src/index.css`
+- **Routing:** [@solidjs/router](https://github.com/solidjs/solid-router)
+- **Icons:** [solid-icons](https://github.com/x64Bits/solid-icons)
+- **Tests:** [Vitest](https://vitest.dev/) for units, [Playwright](https://playwright.dev/) for end to end
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18+ and npm
-- Tack backend running (default: `http://localhost:3210`)
-
-### Installation
-
-```bash
-cd frontend
-npm install
-```
+- Node.js 22+ and npm
+- The Tack API running (default: `http://127.0.0.1:3210`); start it with `cargo run -p tack-cli -- serve`
 
 ### Development
 
 ```bash
+cd frontend
+npm install
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173`
+The dev server is at `http://localhost:5173` and proxies `/api` (REST and WebSocket) to the API,
+so the app runs same-origin and needs no CORS. `VITE_PROXY_TARGET` points the proxy at another API.
 
-### Build for Production
-
-```bash
-npm run build
-```
-
-The optimized build will be in the `dist/` directory.
-
-### Preview Production Build
+### Build
 
 ```bash
-npm run preview
+npm run build     # type-check, then bundle into dist/
+npm run preview   # serve the bundle locally
 ```
 
-## Configuration
+### Checks
 
-### Environment Variables
-
-Create a `.env` file in the frontend directory:
-
-```env
-VITE_API_URL=http://localhost:3210/api
+```bash
+npm run type-check
+npm test              # vitest
+npm run lint:tokens   # no raw Tailwind color literals; use the token utilities
+npm run test:e2e      # Playwright; starts its own API and Vite (see docs/TESTING.md)
 ```
-
-**Note:** For production, update this to your deployed backend URL.
 
 ## Project Structure
 
 ```
-frontend/
-├── src/
-│   ├── components/       # Reusable UI components
-│   │   ├── Layout.tsx    # Main layout wrapper
-│   │   └── Sidebar.tsx   # Navigation sidebar
-│   ├── pages/            # Page components (routes)
-│   │   ├── Projects.tsx  # Projects list
-│   │   ├── Board.tsx     # Kanban board view
-│   │   ├── List.tsx      # List view
-│   │   └── Settings.tsx  # Settings page
-│   ├── lib/              # Utilities and helpers
-│   │   └── api.ts        # API client
-│   ├── types/            # TypeScript type definitions
-│   │   └── api.ts        # API types matching backend
-│   ├── App.tsx           # Root component with routing
-│   ├── index.tsx         # App entry point
-│   └── index.css         # Global styles (Tailwind)
-├── public/               # Static assets
-├── .env                  # Environment variables
-├── package.json          # Dependencies
-├── tsconfig.json         # TypeScript configuration
-├── tailwind.config.js    # Tailwind configuration
-├── postcss.config.js     # PostCSS configuration
-└── vite.config.ts        # Vite configuration
+frontend/src/
+├── app/         # App shell, layouts and the route table (routes.tsx)
+├── features/    # One folder per screen: projects, board, list, table, calendar, timeline,
+│                #   sprints, dashboard, item-detail, templates, agents, settings
+├── shared/      # What features share: api/, ui/, state/, execution/, runWithAgent/, vocab/, ...
+├── test/        # Vitest setup
+└── index.css    # Tailwind and the design tokens
 ```
 
-## API Client Usage
+A feature may import from `shared/` and never from another feature; `src/architecture.test.ts`
+enforces it.
 
-The API client is located in `src/lib/api.ts` and provides type-safe methods for all backend endpoints:
+## API Client
 
-```typescript
-import { api } from '../lib/api';
-
-// List all projects
-const projects = await api.listProjects();
-
-// Get board state
-const board = await api.getBoard(projectId);
-
-// Create an item
-const newItem = await api.createItem(projectId, {
-  title: 'New task',
-  item_type: 'task',
-  priority: 'high',
-});
-
-// Update item
-await api.updateItem(itemId, {
-  status: 'in_progress',
-});
-
-// WebSocket connection
-const ws = api.createBoardSocket(projectId);
-ws.onmessage = (event) => {
-  const boardEvent = JSON.parse(event.data);
-  // Handle real-time updates
-};
-```
+`src/shared/api/` holds one module per area of the API (`projects.ts`, `items.ts`, `boards.ts`, ...)
+over the fetch wrapper in `client.ts`; `index.ts` re-exports them. `schema.gen.ts` is generated from
+`docs/openapi.json` (`npm run gen:api`, or `./scripts/regen-generated.sh` from the repo root) and is
+never edited by hand. The API base is `/api`; `VITE_API_URL` overrides it for a build.
 
 ## Routing
 
-Routes are defined in `App.tsx`:
+The route table is `src/app/routes.tsx`. The top-level pages are `/projects`, `/templates`,
+`/agents` and `/settings`; a project has `/projects/:id/overview`, `/factory` and `/settings`,
+an item has `/projects/:id/items/:itemId`, and the work lenses (`board`, `list`, `table`,
+`calendar`, `timeline`, `sprint`) sit under `/projects/:id/`.
 
-| Route | Component | Description |
-|-------|-----------|-------------|
-| `/` | Projects | Projects list page |
-| `/board` | Board | Kanban board view |
-| `/list` | List | List/table view |
-| `/settings` | Settings | Project settings |
+## More
 
-**Query Parameters:**
-- `/board?project={id}` - Load specific project board
-- `/list?project={id}` - Load specific project list
-
-## Development
-
-For the generated endpoint reference see [docs/book/src/developer/api-reference.md](../docs/book/src/developer/api-reference.md); for auth surfaces, WebSocket behavior and worked examples see [docs/API-REFERENCE.md](../docs/API-REFERENCE.md)
-
----
-
-**Current Status:** Phase 4 - 25% Complete
-
-**Next Milestone:** Drag-and-drop + Create/Edit modals → 50% Complete
+For the generated endpoint reference see [docs/book/src/developer/api-reference.md](../docs/book/src/developer/api-reference.md); for auth surfaces, WebSocket behavior and worked examples see [docs/API-REFERENCE.md](../docs/API-REFERENCE.md).

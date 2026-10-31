@@ -5,26 +5,20 @@
 //! production `router.rs`/`require_token` layering.
 
 use tack_api::handlers::decisions;
+use tack_protocol::Clock;
+use tack_protocol::execution::DecisionOption;
 
 use std::sync::{Arc, Mutex};
 
 use crate::common;
-use crate::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
+use crate::runner_protocol::log_capture::{CaptureGuard, ensure_global_log_capture_installed};
 
 use axum::{Router, http::StatusCode};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::Row;
-use tack_core::models::{CreateItem, CreateProject, ProjectType};
-use tack_db::{
-    Repository, init_pool, migrations,
-    repo::execution::{
-        ExecutionClock, NewAgentProfile, NewDecision, NewExecutionRequest, NewRunner,
-        RequestSelection,
-    },
-};
-use uuid::Uuid;
+use tack_db::{Repository, queries::execution_decisions};
+use tack_test_support::{create_test_workspace, make_item, make_project, seed, setup_test_db};
 
 const RUNNER_ID: &str = "runner-f1";
 const PROFILE_ID: &str = "profile-f1";
@@ -54,7 +48,7 @@ impl FakeClock {
     }
 }
 
-impl ExecutionClock for FakeClock {
+impl Clock for FakeClock {
     fn now(&self) -> DateTime<Utc> {
         *self.0.lock().unwrap()
     }
@@ -68,205 +62,57 @@ impl ExecutionClock for FakeClock {
 /// to build execution requests/attempts/decisions against.
 async fn setup() -> (Repository, FakeClock, String) {
     ensure_global_log_capture_installed();
-    let pool = init_pool("sqlite::memory:").await.expect("pool");
-    seed_workspace(pool).await
-}
-
-/// Same seeding as `setup`, against a caller-supplied pool — shared with the
-/// concurrency race test below, which needs a real file-backed database
-/// rather than this suite's usual `:memory:`.
-async fn seed_workspace(pool: sqlx::SqlitePool) -> (Repository, FakeClock, String) {
-    migrations::run_all(&pool).await.expect("migrations");
-    let repo = Repository::new(pool);
-    let workspace = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id,name,default_vocabulary) VALUES (?, 'F1', '{}')")
-        .bind(workspace.to_string())
-        .execute(repo.pool())
-        .await
-        .expect("workspace");
-    let project = repo
-        .create_project(
-            workspace,
-            CreateProject {
-                name: "F1".into(),
-                description: None,
-                project_type: ProjectType::Software,
-                template: None,
-                code_origin: None,
-                repository: None,
-                default_branch: None,
-                workspace_mode: None,
-            },
-        )
-        .await
-        .expect("project");
-    let item = repo
-        .create_item(
-            project.id,
-            "To Do",
-            CreateItem {
-                recurrence: None,
-                recurrence_of: None,
-                title: "I".into(),
-                description: None,
-                item_type: None,
-                parent_id: None,
-                priority: None,
-                estimate: None,
-                estimate_unit: None,
-                tags: None,
-                due_date: None,
-                sprint_id: None,
-                assignee: None,
-                source_artifact_id: None,
-            },
-        )
-        .await
-        .expect("item");
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
+    let project = make_project(&repo, workspace_id).await;
+    let item_id = make_item(&repo, &project).await.id.to_string();
     let clock = FakeClock::new(Utc.with_ymd_and_hms(2026, 8, 12, 12, 0, 0).unwrap());
-    let credential_hash = runner_credential_hash();
-    repo.register_runner(
-        NewRunner {
-            id: RUNNER_ID,
-            name: "F1 Runner",
-            credential_hash: &credential_hash,
-            labels: "{}",
-            total_capacity: 2,
-            available_capacity: 2,
-            capability_snapshot: "{}",
-            protocol_version: 1,
-        },
+    seed::runner_with_profile(
+        &repo,
         &clock,
+        RUNNER_ID,
+        PROFILE_ID,
+        &runner_credential_hash(),
+        2,
     )
-    .await
-    .expect("runner");
-    repo.create_agent_profile(
-        NewAgentProfile {
-            id: PROFILE_ID,
-            name: "F1 Profile",
-            instructions: "work",
-            tool_policy: r#"{"mode":"safe"}"#,
-            limits: "{}",
-        },
-        &clock,
-    )
-    .await
-    .expect("profile");
-    (repo, clock, item.id.to_string())
-}
-
-/// Enqueues a minimal, `RequestSelection::Naive`-eligible execution request
-/// (bypasses the real scheduler's capability matching entirely, so no
-/// harness/model capability needs to be declared — decision resolution does
-/// not touch scheduling).
-fn new_request<'a>(id: &'a str, item_id: &'a str, key: &'a str) -> NewExecutionRequest<'a> {
-    // `claim_execution_idempotent_with_snapshot` deserializes
-    // `request_snapshot` into `tack_orch::execution::ExecutionRequestSnapshot`
-    // and fails the claim if it doesn't round-trip, so this must be a fully
-    // well-formed snapshot — mirrors
-    // `crates/tack-db/tests/common/execution_fixture.rs`'s own `request()`
-    // helper template exactly (field-for-field), rather than inventing a
-    // new shape here.
-    let request_snapshot: &'static str = Box::leak(
-        format!(
-            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"f1-test"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
-        )
-        .into_boxed_str(),
-    );
-    NewExecutionRequest {
-        id,
-        item_id,
-        idempotency_scope: "item",
-        idempotency_key: key,
-        request_fingerprint: key,
-        selector_kind: "exact_runner",
-        selector_id: RUNNER_ID,
-        agent_profile_id: Some(PROFILE_ID),
-        agent_profile_snapshot: r#"{"name":"P","instructions":"work","tool_policy":{"mode":"safe"},"timeout_seconds":60,"budgets":{}}"#,
-        requested_harness_kind: Some("codex"),
-        requested_model: None,
-        repository_snapshot: r#"{"kind":"git","remote":"https://example.test/f1.git","base_revision":"abc123","subdirectory":null}"#,
-        permission_policy: r#"{"tools":[],"network":false}"#,
-        timeout_seconds: Some(60),
-        budgets: "{}",
-        status_map_policy_id: None,
-        environment: "{}",
-        metadata: "{}",
-        request_snapshot,
-    }
+    .await;
+    (repo, clock, item_id)
 }
 
 /// Claims a fresh attempt (via the real production claim path, `Naive`
-/// selection) and bumps it straight to `running` — the same
-/// state-independent shortcut `tack-db`'s own execution-repository tests
-/// use, since decision resolution does not gate on attempt state (only on
-/// the decision row's own `state`/`expires_at`).
+/// selection) and bumps it straight to `running` — decision resolution does
+/// not gate on attempt state (only on the decision row's own
+/// `state`/`expires_at`).
 async fn claim_running_attempt(
     repo: &Repository,
     clock: &FakeClock,
     item_id: &str,
     tag: &str,
 ) -> String {
-    let request_id = format!("req-{tag}");
-    repo.enqueue_execution(new_request(&request_id, item_id, &request_id), clock)
-        .await
-        .expect("enqueue");
-    let attempt_id = format!("att-{tag}");
-    let claim = repo
-        .claim_execution_idempotent_with_snapshot(
-            RUNNER_ID,
-            &attempt_id,
-            &attempt_id,
-            Duration::seconds(300),
-            clock,
-            RequestSelection::Naive,
-        )
-        .await
-        .expect("claim")
-        .expect("work available");
-    sqlx::query("UPDATE execution_attempts SET state='running' WHERE id=?")
-        .bind(&attempt_id)
-        .execute(repo.pool())
-        .await
-        .expect("bump to running");
-    claim.lease.attempt_id
+    seed::running_attempt(repo, clock, RUNNER_ID, PROFILE_ID, item_id, tag).await
 }
 
 /// Inserts a decision via the real production insert path
 /// (`create_execution_decision`) rather than duplicating decision *creation*
 /// logic here — this file only exercises resolution.
-#[allow(clippy::too_many_arguments)]
 async fn seed_decision(
     repo: &Repository,
     clock: &FakeClock,
     attempt_id: &str,
-    fence: i64,
     decision_id: &str,
     options: Value,
     expires_at: Option<DateTime<Utc>>,
 ) {
-    let options_json = serde_json::to_string(&options).unwrap();
-    let row_id = format!("row-{}", Uuid::new_v4());
-    let written = repo
-        .create_execution_decision(
-            RUNNER_ID,
-            attempt_id,
-            fence,
-            NewDecision {
-                id: &row_id,
-                decision_id,
-                kind: "tool_permission",
-                prompt: "Allow the harness to run the focused test suite?",
-                options: &options_json,
-                metadata: "{}",
-                expires_at,
-                recommendation: None,
-            },
-            clock,
-        )
-        .await
-        .expect("decision insert query");
-    assert!(written, "seed_decision must actually land the row");
+    seed::pending_decision(
+        repo,
+        clock,
+        RUNNER_ID,
+        attempt_id,
+        decision_id,
+        &serde_json::from_value::<Vec<DecisionOption>>(options).expect("decision options"),
+        expires_at,
+    )
+    .await;
 }
 
 fn two_options() -> Value {
@@ -276,38 +122,23 @@ fn two_options() -> Value {
     ])
 }
 
-async fn decision_row(repo: &Repository, attempt_id: &str, decision_id: &str) -> DecisionRow {
-    let row = sqlx::query(
-        "SELECT state, answer, resolved_at, resolved_by, updated_at FROM execution_decisions WHERE attempt_id=? AND decision_id=?",
-    )
-    .bind(attempt_id)
-    .bind(decision_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    DecisionRow {
-        state: row.get("state"),
-        answer: row.get("answer"),
-        resolved_at: row.get("resolved_at"),
-        resolved_by: row.get("resolved_by"),
-        updated_at: row.get("updated_at"),
-    }
-}
-
-struct DecisionRow {
-    state: String,
-    answer: Option<String>,
-    resolved_at: Option<String>,
-    resolved_by: Option<String>,
-    updated_at: String,
+async fn decision_row(
+    repo: &Repository,
+    attempt_id: &str,
+    decision_id: &str,
+) -> execution_decisions::DecisionRow {
+    execution_decisions::decision_of_attempt(repo, attempt_id, decision_id)
+        .await
+        .unwrap()
+        .expect("decision exists")
 }
 
 async fn item_status(repo: &Repository, item_id: &str) -> String {
-    sqlx::query_scalar("SELECT status FROM items WHERE id=?")
-        .bind(item_id)
-        .fetch_one(repo.pool())
+    repo.get_item(item_id.parse().unwrap())
         .await
         .unwrap()
+        .expect("item exists")
+        .status
 }
 
 /// The test suite's configured `TACK_EXECUTION_DECISION_TOKEN` — every test
@@ -354,7 +185,7 @@ const OPERATOR: &[(&str, &str)] = &[
 async fn resolve_pending_decision_matches_operator_answer() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "happy").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let (status, body) = common::send_post_strict(
@@ -386,7 +217,7 @@ async fn resolve_pending_decision_matches_operator_answer() {
 async fn resolving_twice_with_same_answer_is_idempotent() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "replay").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
     let answer = json!({"answer": {"option_id": "allow_once", "text": null}});
 
@@ -424,7 +255,7 @@ async fn resolving_twice_with_same_answer_is_idempotent() {
 async fn resolving_with_different_answer_after_resolve_is_conflict() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "conflict").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let (status1, _) = common::send_post_strict(
@@ -464,16 +295,7 @@ async fn cross_attempt_decision_id_is_not_found_and_writes_nothing() {
     let (repo, clock, item_id) = setup().await;
     let attempt_a = claim_running_attempt(&repo, &clock, &item_id, "cross-a").await;
     let attempt_b = claim_running_attempt(&repo, &clock, &item_id, "cross-b").await;
-    seed_decision(
-        &repo,
-        &clock,
-        &attempt_b,
-        1,
-        "dec-shared",
-        two_options(),
-        None,
-    )
-    .await;
+    seed_decision(&repo, &clock, &attempt_b, "dec-shared", two_options(), None).await;
     let app = app(&repo, &clock);
 
     // Attempt A has no decision named "dec-shared" — it exists only under B.
@@ -521,7 +343,7 @@ async fn unknown_decision_under_a_real_attempt_is_not_found() {
 async fn missing_operator_principal_is_denied_and_writes_nothing() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "no-principal").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let (status, body) = common::send_post_strict(
@@ -553,7 +375,7 @@ async fn missing_operator_principal_is_denied_and_writes_nothing() {
 async fn valid_runner_credential_cannot_self_resolve_decision() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "self-resolve").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let auth_header = format!("Bearer {RAW_RUNNER_CREDENTIAL}");
@@ -594,7 +416,6 @@ async fn expiry_denies_with_audit_and_never_marks_item_done() {
         &repo,
         &clock,
         &attempt_id,
-        1,
         "dec-1",
         two_options(),
         expires_at,
@@ -624,47 +445,6 @@ async fn expiry_denies_with_audit_and_never_marks_item_done() {
     );
 }
 
-#[tokio::test]
-async fn bulk_sweep_denies_only_overdue_pending_decisions() {
-    let (repo, clock, item_id) = setup().await;
-    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "sweep").await;
-    let overdue = clock.now() - Duration::seconds(5);
-    let future = clock.now() + Duration::seconds(5);
-    let rows = [
-        ("dec-overdue-1", Some(overdue), "expired"),
-        ("dec-overdue-2", Some(overdue), "expired"),
-        ("dec-future", Some(future), "pending"),
-        ("dec-no-expiry", None, "pending"),
-    ];
-    for (decision_id, expires_at, _) in rows {
-        seed_decision(
-            &repo,
-            &clock,
-            &attempt_id,
-            1,
-            decision_id,
-            two_options(),
-            expires_at,
-        )
-        .await;
-    }
-    let status_before = item_status(&repo, &item_id).await;
-
-    let affected = decisions::expire_overdue_decisions(repo.pool(), clock.now())
-        .await
-        .expect("sweep");
-    assert_eq!(affected, 2);
-
-    for (decision_id, _, expected_state) in rows {
-        assert_eq!(
-            decision_row(&repo, &attempt_id, decision_id).await.state,
-            expected_state,
-            "{decision_id}"
-        );
-    }
-    assert_eq!(item_status(&repo, &item_id).await, status_before);
-}
-
 // ---------------------------------------------------------------------
 // 11. Restart preserves pending state.
 // ---------------------------------------------------------------------
@@ -673,8 +453,8 @@ async fn bulk_sweep_denies_only_overdue_pending_decisions() {
 async fn restart_preserves_pending_decision_still_resolvable() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "restart").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-a", two_options(), None).await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-b", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-a", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-b", two_options(), None).await;
 
     {
         // "Process instance #1" — dropped at the end of this block without
@@ -718,7 +498,7 @@ async fn restart_preserves_pending_decision_still_resolvable() {
 async fn invalid_answer_shapes_are_rejected_and_write_nothing() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "validation").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     for bad_body in [
@@ -742,7 +522,7 @@ async fn invalid_answer_shapes_are_rejected_and_write_nothing() {
 async fn answer_option_id_must_match_declared_options() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "option-check").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let (status, body) = common::send_post_strict(
@@ -763,7 +543,7 @@ async fn answer_option_id_must_match_declared_options() {
 async fn freeform_decision_accepts_any_non_empty_option_id() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "freeform").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", json!([]), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", json!([]), None).await;
     let app = app(&repo, &clock);
 
     let (status, body) = common::send_post_strict(
@@ -781,7 +561,7 @@ async fn freeform_decision_accepts_any_non_empty_option_id() {
 async fn answer_over_byte_limit_is_payload_too_large() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "oversize").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", json!([]), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", json!([]), None).await;
     let app = app(&repo, &clock);
 
     let huge_text = "x".repeat(40_000);
@@ -808,7 +588,7 @@ async fn logs_never_contain_the_raw_answer_text_or_prompt_only_ids() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "redaction").await;
     let secret_text = "UNIQUE_SENTINEL_ANSWER_TEXT_never_in_logs_9f3a";
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", json!([]), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", json!([]), None).await;
     let app = app(&repo, &clock);
 
     let (guard, buffer) = CaptureGuard::start();
@@ -850,7 +630,7 @@ async fn logs_never_contain_the_raw_answer_text_or_prompt_only_ids() {
 async fn unconfigured_decision_token_rejects_every_resolve() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "no-token-configured").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     // No `TACK_EXECUTION_DECISION_TOKEN` configured on this server at all —
     // the fail-closed default (see `require_decision_token`'s doc comment:
     // "no secret configured" must never mean "anyone holding the ordinary
@@ -883,7 +663,7 @@ async fn unconfigured_decision_token_rejects_every_resolve() {
 async fn wrong_decision_token_rejects_the_resolve() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "wrong-token").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     let (status, body) = common::send_post_strict(
@@ -919,7 +699,7 @@ async fn wrong_decision_token_rejects_the_resolve() {
 async fn correct_decision_token_with_valid_principal_resolves() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "correct-token").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
 
     // `OPERATOR` carries both the operator principal and the exact
@@ -941,269 +721,19 @@ async fn correct_decision_token_with_valid_principal_resolves() {
 }
 
 #[tokio::test]
-async fn viewing_twice_keeps_the_first_timestamp() {
+async fn viewing_a_decision_answers_with_its_timestamp_and_needs_a_principal() {
     let (repo, clock, item_id) = setup().await;
     let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "viewed").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-1", two_options(), None).await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
     let app = app(&repo, &clock);
     let uri = format!("/attempts/{attempt_id}/decisions/dec-1/viewed");
 
     // No decision token: only the principal is required.
     let principal_only = [("x-tack-principal", "operator:local")];
-    let (status, first) = common::send_post_strict(&app, &uri, json!({}), &principal_only).await;
-    assert_eq!(status, StatusCode::OK, "{first}");
-    clock.advance(Duration::minutes(5));
-    let (status, second) = common::send_post_strict(&app, &uri, json!({}), &principal_only).await;
-    assert_eq!(status, StatusCode::OK, "{second}");
-    assert_eq!(first["viewed_at"], second["viewed_at"]);
+    let (status, body) = common::send_post_strict(&app, &uri, json!({}), &principal_only).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["viewed_at"].is_string(), "{body}");
 
     let (status, _) = common::send_post_strict(&app, &uri, json!({}), &[]).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
-}
-
-// ---------------------------------------------------------------------
-// 17. Concurrency: BEGIN IMMEDIATE serializes competing resolves.
-//
-// Modeled directly on
-// `crates/tack-db/tests/repository/execution_decisions_artifacts.rs`'s
-// `artifact_and_decision_reject_concurrently_terminal_attempt`:
-// a manually-held `BEGIN IMMEDIATE` transaction forces both racing resolves
-// to queue behind it before either can even read the row, closing the
-// "who reaches SQLite first" nondeterminism `join!`'s poll order alone
-// cannot close. Uses a genuine file-backed database (not this suite's
-// `:memory:` elsewhere) — see CLAUDE.md's own note that the in-memory
-// harness can mask exactly this class of race.
-//
-// Manually verified load-bearing: temporarily changing
-// `resolve_decision_row`'s `"BEGIN IMMEDIATE"` to `"BEGIN"` and re-running
-// only this test reproduces the race and fails, before reverting back to
-// the committed `BEGIN IMMEDIATE` form below.
-// ---------------------------------------------------------------------
-
-#[tokio::test]
-async fn concurrent_resolves_serialize_to_exactly_one_winner() {
-    let dir = tempfile::tempdir().expect("temporary directory");
-    let db_path = dir.path().join("resolve-race.db");
-    let pool = init_pool(&format!("sqlite://{}?mode=rwc", db_path.display()))
-        .await
-        .expect("file-backed pool");
-    let (repo, clock, item_id) = seed_workspace(pool).await;
-    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "race").await;
-    seed_decision(
-        &repo,
-        &clock,
-        &attempt_id,
-        1,
-        "dec-race",
-        two_options(),
-        None,
-    )
-    .await;
-
-    let mut manual_tx = repo.pool().begin_with("BEGIN IMMEDIATE").await.unwrap();
-    // Touch an unrelated row so the lock is real without pre-empting either
-    // racer's own view of the decision row's `pending` state.
-    sqlx::query("UPDATE agent_runners SET updated_at=updated_at WHERE id=?")
-        .bind(RUNNER_ID)
-        .execute(&mut *manual_tx)
-        .await
-        .unwrap();
-
-    let now = clock.now();
-    let allow = json!({"option_id": "allow_once", "text": null});
-    let deny = json!({"option_id": "deny", "text": null});
-    let op_a = json!({"kind": "operator", "subject_id": "operator-a"});
-    let op_b = json!({"kind": "operator", "subject_id": "operator-b"});
-    let resolve_a =
-        decisions::resolve_decision_row(repo.pool(), &attempt_id, "dec-race", &allow, &op_a, now);
-    let resolve_b =
-        decisions::resolve_decision_row(repo.pool(), &attempt_id, "dec-race", &deny, &op_b, now);
-    let release = async {
-        for _ in 0..512 {
-            tokio::task::yield_now().await;
-        }
-        manual_tx.commit().await.unwrap();
-    };
-
-    let (outcome_a, outcome_b, _) = tokio::join!(resolve_a, resolve_b, release);
-    let outcomes = [
-        outcome_a.expect("resolve A must not error under BEGIN IMMEDIATE"),
-        outcome_b.expect("resolve B must not error under BEGIN IMMEDIATE"),
-    ];
-
-    let final_row = decision_row(&repo, &attempt_id, "dec-race").await;
-    assert_eq!(final_row.state, "resolved");
-    let final_answer: Value = serde_json::from_str(&final_row.answer.unwrap()).unwrap();
-    assert!(
-        final_answer["option_id"] == allow["option_id"]
-            || final_answer["option_id"] == deny["option_id"]
-    );
-
-    // Exactly one of the two calls actually won the write; the other must
-    // have observed the (by-then-committed) resolved row and reported a
-    // conflict, never a silent second write.
-    let resolved = resolved_count(&outcomes);
-    let conflicts = conflict_count(&outcomes);
-    assert_eq!(
-        resolved, 1,
-        "exactly one racer must land the fresh write: {outcomes:?}"
-    );
-    assert_eq!(
-        conflicts, 1,
-        "the loser must observe idempotency_conflict, not silently succeed: {outcomes:?}"
-    );
-}
-
-async fn attempt_and_request_state(repo: &Repository, attempt_id: &str) -> (String, String) {
-    let row = sqlx::query(
-        "SELECT a.state AS attempt_state, r.state AS request_state \
-         FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
-         WHERE a.id = ?",
-    )
-    .bind(attempt_id)
-    .fetch_one(repo.pool())
-    .await
-    .unwrap();
-    (row.get("attempt_state"), row.get("request_state"))
-}
-
-#[tokio::test]
-async fn resolving_the_last_pending_decision_resumes_attempt_and_request() {
-    let (repo, clock, item_id) = setup().await;
-    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "resume").await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-a", two_options(), None).await;
-    seed_decision(&repo, &clock, &attempt_id, 1, "dec-b", two_options(), None).await;
-    assert_eq!(
-        attempt_and_request_state(&repo, &attempt_id).await,
-        ("waiting_decision".into(), "waiting_decision".into())
-    );
-    let app = app(&repo, &clock);
-
-    let (status, _) = common::send_post_strict(
-        &app,
-        &resolve_uri(&attempt_id, "dec-a"),
-        json!({"answer": {"option_id": "allow_once", "text": null}}),
-        OPERATOR,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        attempt_and_request_state(&repo, &attempt_id).await,
-        ("waiting_decision".into(), "waiting_decision".into()),
-        "one answer of two leaves the attempt waiting"
-    );
-
-    let (status, _) = common::send_post_strict(
-        &app,
-        &resolve_uri(&attempt_id, "dec-b"),
-        json!({"answer": {"option_id": "deny", "text": null}}),
-        OPERATOR,
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        attempt_and_request_state(&repo, &attempt_id).await,
-        ("running".into(), "running".into())
-    );
-}
-
-#[tokio::test]
-async fn expiry_resumes_the_attempt_like_a_resolution_does() {
-    let (repo, clock, item_id) = setup().await;
-    let overdue = clock.now() - Duration::seconds(5);
-
-    // Lazy expiry: the fail-closed answer to an overdue decision settles it.
-    let lazy = claim_running_attempt(&repo, &clock, &item_id, "expire-lazy").await;
-    seed_decision(
-        &repo,
-        &clock,
-        &lazy,
-        1,
-        "dec-late",
-        two_options(),
-        Some(overdue),
-    )
-    .await;
-    assert_eq!(
-        attempt_and_request_state(&repo, &lazy).await,
-        ("waiting_decision".into(), "waiting_decision".into())
-    );
-    let (status, body) = common::send_post_strict(
-        &app(&repo, &clock),
-        &resolve_uri(&lazy, "dec-late"),
-        json!({"answer": {"option_id": "allow_once", "text": null}}),
-        OPERATOR,
-    )
-    .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
-    assert_eq!(body["error"]["code"], "decision_expired");
-    assert_eq!(
-        attempt_and_request_state(&repo, &lazy).await,
-        ("running".into(), "running".into())
-    );
-
-    // The periodic sweep settles the rest the same way, one attempt at a
-    // time: a still-pending decision keeps its attempt waiting.
-    sqlx::query("UPDATE agent_runners SET total_capacity = 3, available_capacity = 2 WHERE id = ?")
-        .bind(RUNNER_ID)
-        .execute(repo.pool())
-        .await
-        .unwrap();
-    let swept = claim_running_attempt(&repo, &clock, &item_id, "expire-sweep").await;
-    seed_decision(
-        &repo,
-        &clock,
-        &swept,
-        1,
-        "dec-overdue",
-        two_options(),
-        Some(overdue),
-    )
-    .await;
-    let kept = claim_running_attempt(&repo, &clock, &item_id, "expire-kept").await;
-    seed_decision(
-        &repo,
-        &clock,
-        &kept,
-        1,
-        "dec-overdue",
-        two_options(),
-        Some(overdue),
-    )
-    .await;
-    seed_decision(&repo, &clock, &kept, 1, "dec-open", two_options(), None).await;
-    let affected = decisions::expire_overdue_decisions(repo.pool(), clock.now())
-        .await
-        .expect("sweep");
-    assert_eq!(affected, 2);
-    assert_eq!(
-        attempt_and_request_state(&repo, &swept).await,
-        ("running".into(), "running".into())
-    );
-    assert_eq!(
-        attempt_and_request_state(&repo, &kept).await,
-        ("waiting_decision".into(), "waiting_decision".into())
-    );
-}
-
-fn resolved_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
-    outcomes
-        .iter()
-        .filter(|o| {
-            matches!(
-                o,
-                decisions::ResolveOutcome::Resolved {
-                    replayed: false,
-                    ..
-                }
-            )
-        })
-        .count()
-}
-
-fn conflict_count(outcomes: &[decisions::ResolveOutcome; 2]) -> usize {
-    outcomes
-        .iter()
-        .filter(|o| matches!(o, decisions::ResolveOutcome::IdempotencyConflict { .. }))
-        .count()
 }

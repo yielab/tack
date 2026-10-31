@@ -3,7 +3,7 @@
 //!
 //! Covers:
 //!   - every creation path writes an explicit, correct `source`;
-//!   - `update_item` never mutates it once set (the "sticky" requirement —
+//!   - an item update never mutates it once set (the "sticky" requirement —
 //!     untrusted text must stay untrusted for the item's whole lifetime);
 //!   - an item that existed before this migration ran resolves to the
 //!     *safe* value (untrusted), never to `manual` by accident — the
@@ -90,7 +90,7 @@ async fn create_item_with_source_persists_and_only_manual_is_trusted() {
     }
 }
 
-// ─── Sticky: update_item never mutates source ──────────────────────────────
+// ─── Sticky: an item update never mutates source ──────────────────────────────
 
 async fn create_untrusted_item(
     repo: &Repository,
@@ -118,20 +118,18 @@ async fn update_item_never_changes_source() {
     let ws = create_test_workspace(&repo).await;
     let item = create_untrusted_item(&repo, ws, "Untrusted item").await;
 
-    let updated = repo
-        .update_item(
-            item.id,
-            UpdateItem {
-                title: Some("Edited title".into()),
-                description: Some(Some(
-                    "Edited description, possibly attacker-authored".into(),
-                )),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap()
-        .unwrap();
+    let updated = tack_test_support::update_item(
+        &repo,
+        item.id,
+        UpdateItem {
+            title: Some("Edited title".into()),
+            description: Some(Some(
+                "Edited description, possibly attacker-authored".into(),
+            )),
+            ..Default::default()
+        },
+    )
+    .await;
 
     assert_eq!(
         updated.source,

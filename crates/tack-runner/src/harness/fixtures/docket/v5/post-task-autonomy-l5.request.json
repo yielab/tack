@@ -1,0 +1,8 @@
+{
+  "description": "Capture only: an approval step at L5 asks nobody, so this task fails needs_human.",
+  "externalRef": "capture-item/attempt-4",
+  "idempotencyKey": "capture-attempt-4",
+  "baseRef": "main",
+  "pipeline": "capture-approval",
+  "autonomy": "L5"
+}

@@ -28,6 +28,8 @@
 // a richer UI has a stable type to code against once a read endpoint for
 // it lands, instead of a second reconciliation later.
 
+import type { components } from '../api/schema.gen';
+
 // ─── Lifecycle (docs/contracts/runner-v1/lifecycle-transitions.json;
 //     crates/tack-orch/src/execution/types.rs `ExecutionState`) ─────────────
 
@@ -265,19 +267,42 @@ export interface Usage {
  * `shared/api/client.ts` enhancement this file can't make without editing
  * that module.
  */
-export type StableErrorCode =
-  | 'invalid_request'
-  | 'unauthorized'
-  | 'forbidden'
-  | 'not_found'
-  | 'conflict'
-  | 'idempotency_conflict'
-  | 'invalid_transition'
-  | 'stale_lease'
-  | 'runner_revoked'
-  | 'decision_expired'
-  | 'artifact_checksum_mismatch'
-  | 'payload_too_large'
-  | 'rate_limited'
-  | 'unsupported_protocol'
-  | 'internal_error';
+export type StableErrorCode = components['schemas']['StableErrorCode'];
+
+// ─── What a settled docket run was made of (ADR 0030 "The two shapes"; ADR 0031
+//     decision 4). Read from the attempt's `terminal_reason` by `attempts.ts`. ─────
+
+/** One prompt a hop ran, as docket's prompt manifest records it. `scope` is where docket found it
+ *  (`shipped`, `operator`, `pod`, `repository`, `task`); `version` is `""` for the task's text. */
+export interface RunStepPrompt {
+  layer: string;
+  name: string;
+  version: string;
+  sha256: string;
+  scope: string;
+  tokens: number | null;
+}
+
+/** One hop of a docket task, in order. `prompts` is `[]` for a hop with no manifest. */
+export interface RunStep {
+  role: string | null;
+  model: string | null;
+  /** The model class the pipeline asked for (`cheap`, `strong`, …), as docket names it. */
+  class: string | null;
+  family: string | null;
+  verdict: string | null;
+  ok: boolean | null;
+  summary: string | null;
+  prompts: RunStepPrompt[];
+  assumptions: string[];
+  questions: string[];
+}
+
+/** One record set a team declared, with the rows this run wrote (at most 50). `cut` is set when the
+ *  set held more rows than were read. Rows are keyed by column name. */
+export interface RunRecordSet {
+  set: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  cut: boolean;
+}

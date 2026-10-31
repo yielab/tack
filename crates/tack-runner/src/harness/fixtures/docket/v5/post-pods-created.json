@@ -1,16 +1,16 @@
 {
   "ok": true,
   "created": true,
-  "project": "fab-dev",
-  "blueprint": "software",
+  "project": "saas-dev",
+  "blueprint": "build",
   "members": [
     {
-      "id": "fab-dev-lead",
+      "id": "saas-dev-lead",
       "role": "lead",
       "model": "anthropic/claude-haiku-4-5"
     },
     {
-      "id": "fab-dev-implementer",
+      "id": "saas-dev-implementer",
       "role": "implementer",
       "model": "anthropic/claude-sonnet-4-6"
     }

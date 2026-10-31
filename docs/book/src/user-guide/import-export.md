@@ -41,11 +41,11 @@ Every section is optional. A file with only `items` is an outline. The full list
 
 ### A small example
 
-This is a shortened version of the Fabulada example in the Developer Guide. It sets a workflow, one field, one agent profile for a docket team, one role, one sprint, some automation and three items.
+This is a shortened version of the My SaaS example in the Developer Guide. It sets a workflow, one field, one agent profile for a docket team, one role, one sprint, some automation and three items.
 
 ```yaml
 project:
-  name: Fabulada
+  name: My SaaS
   type: web
   description: Dialect-native bedtime stories, read aloud by families.
   vocabulary:
@@ -63,7 +63,7 @@ fields:
   - { name: Dialecto, type: select, required: true, options: [rioplatense, mexicano, colombiano, chileno, peninsular] }
 
 profiles:
-  - name: Fabulada content writer
+  - name: My SaaS content writer
     kind: custom
     instructions: >
       Write and edit stories, scripts and newsletter copy in the dialect the task names.
@@ -72,17 +72,17 @@ profiles:
       agent: docket
       tools: { docket: ["*"] }
       docket:
-        team: fab-content
+        team: saas-content
     limits: { budgets: { tokens: 300000 }, timeout_seconds: 1800 }
 
 roles:
-  - { name: Contenido, color: "#f59e0b", profile: Fabulada content writer }
+  - { name: Contenido, color: "#f59e0b", profile: My SaaS content writer }
 
 sprints:
   - { name: Semana 42, goal: Lanzar la colección rioplatense, start: 2026-10-12, end: 2026-10-18 }
 
 automation:
-  default_profile: Fabulada content writer
+  default_profile: My SaaS content writer
   on_finish_status: En revisión
   definition_of_done: >
     Content pieces carry their dialect and read aloud without a stumble.

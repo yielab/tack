@@ -1,4 +1,4 @@
-import { splitProps, type Component, type JSX } from 'solid-js';
+import { Show, createUniqueId, splitProps, type Component, type JSX } from 'solid-js';
 import clsx from 'clsx';
 
 export type ButtonVariant =
@@ -14,12 +14,14 @@ export interface ButtonProps
   variant?: ButtonVariant;
   size?: ButtonSize;
   loading?: boolean;
+  /** Why the button is disabled: shown beside it while it is, and tied to it with `aria-describedby`. */
+  reason?: string;
 }
 
 const SIZE: Record<ButtonSize, string> = {
   sm: 'px-3 py-[5px] text-xs',
   md: 'px-4 py-2 text-sm',
-  lg: 'px-5 py-2.5 text-[0.9375rem]',
+  lg: 'px-5 py-2.5 text-lead',
 };
 
 function variantStyle(variant: ButtonVariant): JSX.CSSProperties {
@@ -65,6 +67,7 @@ const Button: Component<ButtonProps> = (props) => {
     'variant',
     'size',
     'loading',
+    'reason',
     'class',
     'style',
     'disabled',
@@ -72,12 +75,17 @@ const Button: Component<ButtonProps> = (props) => {
   ]);
 
   const isDisabled = () => local.disabled || local.loading;
+  const reasonId = createUniqueId();
+  const reasonShown = () => !!local.reason && !!local.disabled;
+  const describedBy = () =>
+    [rest['aria-describedby'], reasonShown() ? reasonId : undefined].filter(Boolean).join(' ') || undefined;
 
-  return (
+  const button = (
     <button
       {...rest}
       disabled={isDisabled()}
       aria-busy={local.loading ? 'true' : undefined}
+      aria-describedby={describedBy()}
       class={clsx(
         'inline-flex items-center justify-center gap-1.5 rounded-full font-heading whitespace-nowrap transition-[filter,background-color]',
         'hover:brightness-[.94] active:brightness-[.88]',
@@ -100,6 +108,19 @@ const Button: Component<ButtonProps> = (props) => {
       )}
       {local.children}
     </button>
+  );
+
+  return (
+    <Show when={local.reason !== undefined} fallback={button}>
+      <span class="inline-flex flex-col items-start gap-1">
+        {button}
+        <Show when={reasonShown()}>
+          <span id={reasonId} class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            {local.reason}
+          </span>
+        </Show>
+      </span>
+    </Show>
   );
 };
 

@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { automationSentence } from './AutomationRow';
 
-const base = { startsAt: 'To Do', starts: true, team: 'fab-content', merge: 'L4', roleWithoutProfile: null, hasProfile: true };
+const base = { startsAt: 'To Do', starts: true, team: 'saas-content', merge: 'L4', roleWithoutProfile: null, hasProfile: true };
 
 describe('automationSentence', () => {
   it('says when it starts, which team and how far it merges', () => {
-    expect(automationSentence(base)).toBe('Starts by itself when it reaches To Do · Team fab-content · Merge L4');
+    expect(automationSentence(base)).toBe('Starts by itself when it reaches To Do · Team saas-content · Merge L4');
   });
   it('leaves out a team the profile does not name', () => {
     expect(automationSentence({ ...base, team: null })).toBe('Starts by itself when it reaches To Do · Merge L4');

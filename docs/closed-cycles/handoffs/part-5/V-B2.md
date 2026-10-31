@@ -2,7 +2,7 @@
 
 - Base SHA / branch / final SHA: base `81e66e51e8d6b704165a989cb2a2957bb28ebde5` on
   `agent/v-b2-docket-fate`; final SHA recorded in the commit that carries this file.
-- Files changed (must equal ownership list): `docs/adr/0060-docket-control-plane-disposition.md`
+- Files changed (must equal ownership list): `docs/closed-cycles/adr/0060-docket-control-plane-disposition.md`
   (new), `docs/agent-handoffs/part-v/V-B2.md` (new). No code, schema, or `docs/CONFIG.md`
   change — the ADR's decision is **keep**, and task 3 is explicit that gating code is only
   written when the decision is **gate**. `crates/tack-orch/src/adapters/**` and the frontend

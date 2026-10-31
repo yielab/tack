@@ -1,10 +1,11 @@
 # Plan: Phase 76 — the project file is kept in sync
 
-**Status: proposed 2026-10-18.** Serves ADR 0084
-(`docs/adr/0084-the-project-file-is-kept-in-sync-not-only-imported.md`). Written against `develop`
+**Status: future, not planned (postponed 2026-10-27); proposed 2026-10-18.** Written before Phases 79 to 81
+moved the code; re-read against the tree before opening it. Serves ADR 0025
+(`docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md`). Written against `develop`
 at `cebaef77`. Every path and line below was read that day; re-run `rg -n` before trusting a line
 number. Re-checked the same day against Phase 75's task D (`d72be6ce`): migration 092 is
-`092_drop_usd_per_day`, so this phase's two are 095 and 096 (Phase 77 took 093 and 094 on 2026-10-19); D also moved lines in
+`092_drop_usd_per_day`, so this phase takes the next two free numbers (Phase 77 took 093, 094 and 095); D also moved lines in
 `handlers/outline.rs` (`read_outline` now warns on an old file's `usd_per_day`, `write_automation`
 no longer writes it), `export.rs` and `templates.rs`. Nothing else in this plan changes.
 
@@ -37,7 +38,7 @@ is a named constant beside the code that reads it, never a config key.
 
 ## Decided — not re-opened by any task
 
-Every row of ADR 0084's table and its four defaults, plus:
+Every row of ADR 0025's table and its four defaults, plus:
 
 | Question | Decision |
 |---|---|
@@ -66,11 +67,11 @@ Every row of ADR 0084's table and its four defaults, plus:
 
 At most two agents building cargo at once (`feedback_agent_load_caps`); the frontend task runs
 beside them. Worktrees under `/var/tmp/tack-worktrees/p76-<id>` cut from `develop`,
-`CARGO_TARGET_DIR=/var/tmp/tack-agent-targets/<id>`.
+`CARGO_TARGET_DIR=$HOME/Sites/.cargo-targets/tack-agent/<id>`.
 
 | Round | Tasks | Needs |
 |---|---|---|
-| 0 | ADR 0084, this plan, the roadmap section (integrator) | the maintainer's approval |
+| 0 | ADR 0025, this plan, the roadmap section (integrator) | the maintainer's approval |
 | 1 | B (one transaction), M (the key and the comparison, pure) | — |
 | 2 | A (keys everywhere), S (the routes and the revisions) | B and M, and Phase 75's V (it edits the `create_profile` and `check` A edits); A and S touch `migrations.rs` on two separate lines each, and neither builds a `Board`: both read B's `board_of` |
 | 3 | C (CLI and MCP), F (the screens) | S's routes; F also reads A's `key` on the wire |
@@ -86,7 +87,7 @@ the task's section of this file plus these lines, and nothing else:
 
 ```
 Task <id> from docs/plans/phase-76.md. Read that section, its "The rule for every task" and "Decided" tables, and the files it lists, nothing wider.
-The ADR is docs/adr/0084-the-project-file-is-kept-in-sync-not-only-imported.md; its table and this plan's "Decided" table are the decision, do not re-open them.
+The ADR is docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Fix the fact in its owner and make the other callers read it; never add a second copy of a rule.
 Add only the tests the task names, RED first. Prefer a row in an existing table test over a new function.
@@ -172,7 +173,7 @@ uses). Nothing else; no I/O; no new dependency (`serde_json` and `sha2` are not 
 **Do:**
 
 - `key.rs`: `pub fn key_of(name: &str) -> String` and `pub fn is_key(text: &str) -> bool`, exactly
-  as "Decided" says. Doc comment: what the key is for (ADR 0084 §2) in two lines.
+  as "Decided" says. Doc comment: what the key is for (ADR 0025 §2) in two lines.
 - `sync.rs`, public surface and nothing more:
 
   ```rust
@@ -210,7 +211,7 @@ uses). Nothing else; no I/O; no new dependency (`serde_json` and `sha2` are not 
   `dev-team`; `"!!!"` → `unnamed`; 70 letters → 64; `is_key("Dev")` false, `is_key("dev-2")` true.
 - The per-field and per-entry rules of "Decided", each a row: `(base, board, file, prefer) →
   (verb, fields, conflicts, reason)`; include `base: None` rows.
-- Scenario one: Fabulada's fixture (`crates/tack-api/tests/fixtures/bundles/fabulada.yaml`, read
+- Scenario one: My SaaS's fixture (`crates/tack-api/tests/fixtures/bundles/my-saas.yaml`, read
   with `include_str!` as `bundle/tests.rs` line 5 does) as base and board; the file renames role
   `Contenido` to `Content` under the same key, drops a sprint, changes `automation.on_finish_status`;
   the board (a second copy) changed `roles[Contenido].color` and added a role `Ops`. Expect: one
@@ -271,7 +272,7 @@ through unchanged — read only to confirm), `crates/tack-api/tests/handlers/bun
   entry. `to_bundle` writes every row's key; `Parts.roles`/`sprints`/`fields` already carry models
   that now have it; profiles from `ProfileRow`.
 - `write` (`outline.rs`): `role_ids`, `sprint_ids`, `field_ids`, `profile_ids` keep being keyed by
-  **name** (items name their roles, sprints and fields by name — ADR 0081 §1), so nothing changes
+  **name** (items name their roles, sprints and fields by name — ADR 0022 §1), so nothing changes
   for items; the `Create*` DTOs get `key: Some(created_key)`.
 
 **Tests (RED first):**
@@ -305,7 +306,7 @@ a new `crates/tack-db/src/repo/config.rs` (+ `pub mod config;` in `repo.rs`),
 `crates/tack-api/src/handlers/export.rs` (`bundle_of`, the revision on export),
 `crates/tack-api/src/handlers/templates.rs` (`save_project_as_template` reads `bundle_of`),
 `crates/tack-api/src/handlers/outline.rs` (`read_outline` made `pub(crate)`; `board_of` is B's), a new `crates/tack-api/tests/handlers/config.rs`
-registered in `crates/tack-api/tests/handlers.rs`, a new `crates/tack-api/tests/fixtures/bundles/fabulada-config-v2.yaml`,
+registered in `crates/tack-api/tests/handlers.rs`, a new `crates/tack-api/tests/fixtures/bundles/my-saas-config-v2.yaml`,
 the generated files.
 
 **Do:**
@@ -336,8 +337,8 @@ the generated files.
 
 - `an_export_records_a_revision_once`: two `scope=config` exports in a row → one revision; a role
   created through `POST …/roles` then an export → two.
-- `a_plan_from_the_second_file_names_every_change_and_its_cost`: import `fabulada.yaml`, export
-  (the base), then plan `fabulada-config-v2.yaml` (the fixture: role `Contenido` renamed to
+- `a_plan_from_the_second_file_names_every_change_and_its_cost`: import `my-saas.yaml`, export
+  (the base), then plan `my-saas-config-v2.yaml` (the fixture: role `Contenido` renamed to
   `Content` under its key, field `Dialecto` removed, sprint `Semana 42` removed,
   `automation.on_finish_status` changed, one new role) after setting a `Dialecto` value on two
   items: the answer has the rename as an `update` with `fields = [name]`, two `deletions` with
@@ -465,12 +466,12 @@ transaction; cite `apply_migrations`), `CHANGELOG.md` (`[Unreleased]`: Added —
 file, keys, revisions, `tack config`, `sync_config`; Changed — an import writes in one transaction,
 an export of a project file records a revision; Removed — the "import again to finish" answer),
 `docs/book/src/roadmap.md` (Phase 76 delivered; the gaps: per-field conflicts, items by key, the
-workflow in the file), `CLAUDE.md` (the "What's next" line), ADR 0084's status. If Phase 75's Z
+workflow in the file), `CLAUDE.md` (the "What's next" line), ADR 0025's status. If Phase 75's Z
 is open at the same time, one pass writes both phases' changelog, roadmap and `CLAUDE.md` lines.
 
 **Do:** merge the branches in round order with one gate run per round; after round 3 copy the
 maintainer's database (`~/.local/share/tack/tack.db` or the path `tack serve` logs) to the
-scratchpad, start `tack serve` on the copy with `TACK_DATABASE_URL`, export Fabulada's
+scratchpad, start `tack serve` on the copy with `TACK_DATABASE_URL`, export My SaaS's
 configuration, change a role's name and drop a sprint in the file, plan, read the costs, apply,
 check the history and revert; write what was seen in this plan's "How it went" section. Never
 against the real database.

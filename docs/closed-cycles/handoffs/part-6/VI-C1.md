@@ -306,7 +306,7 @@ same way prose is — see this handoff's own "Design decisions" for the reasonin
   `frontend/src/features/settings/panels/AgentsPanel.tsx` (full) — the existing
   project-default-model editor (VI-C3's), read to avoid re-inventing its read/write shape
   and to confirm the "no way to unset" limitation the cross-test pollution bug above
-  depends on. `docs/adr/0061-provider-credentials-at-the-runner-boundary.md` (grepped for
+  depends on. `docs/adr/0005-provider-credentials-at-the-runner-boundary.md` (grepped for
   "route"/"embedded"/decision 6 only, not read whole) — looking for the embedded runner's
   naming convention before falling back to live measurement. `docs/contracts/runner-v1/
   completion.{request,response}.json` and its `README.md` — read while trying to find the

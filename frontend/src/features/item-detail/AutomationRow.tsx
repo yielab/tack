@@ -2,7 +2,7 @@ import { type Component, Show, createResource } from 'solid-js';
 import { api } from '../../shared/api';
 import { request } from '../../shared/api/client';
 import { agentProfilesApi } from '../../shared/execution';
-import { HelpHint } from '../../shared/ui';
+import { HelpHint, LoadError } from '../../shared/ui';
 import { HELP } from '../../shared/help/texts';
 import type { Item, Role } from '../../shared/types';
 
@@ -26,20 +26,20 @@ export function automationSentence(input: {
 
 /** The drawer's Automation row: what happens to this task without you. */
 const AutomationRow: Component<{ item: Item }> = (props) => {
-  const [data] = createResource(
+  const [resource, { refetch }] = createResource(
     () => props.item.id,
     async (id) => {
       const [project, detail, profiles, autonomy] = await Promise.all([
         api.projects.get(props.item.project_id),
         request<{ roles?: Role[] }>(`/items/${id}`),
         agentProfilesApi.list().then((r) => r.data.data ?? []),
-        api.autonomy.get(props.item.project_id).catch(() => null),
+        api.autonomy.get(props.item.project_id),
       ]);
       return { project, roles: detail.roles ?? [], profiles, autonomy };
     },
   );
   const sentence = () => {
-    const d = data();
+    const d = resource.error ? undefined : resource();
     if (!d?.project?.id) return null;
     const withProfile = d.roles.find((r) => r.agent_profile_id);
     const profileId = withProfile?.agent_profile_id ?? d.project.default_profile_id;
@@ -55,15 +55,20 @@ const AutomationRow: Component<{ item: Item }> = (props) => {
     });
   };
   return (
-    <Show when={sentence()}>
-      {(text) => (
-        <div data-testid="automation-row" class="flex items-center gap-2 px-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Automation</span>
-          <span>{text()}</span>
-          <HelpHint label="Automation" help={HELP.automationRow} />
-        </div>
-      )}
-    </Show>
+    <>
+      <Show when={resource.error}>
+        {(error) => <LoadError what="what happens to this task without you" error={error()} onRetry={() => void refetch()} />}
+      </Show>
+      <Show when={sentence()}>
+        {(text) => (
+          <div data-testid="automation-row" class="flex items-center gap-2 px-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Automation</span>
+            <span>{text()}</span>
+            <HelpHint label="Automation" help={HELP.automationRow} />
+          </div>
+        )}
+      </Show>
+    </>
   );
 };
 

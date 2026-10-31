@@ -1,8 +1,8 @@
 import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, onMount } from 'solid-js';
-import { Badge, Button } from '../ui';
+import { Badge, Button, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
-import { artifactsApi, attemptsApi, type AttemptSummary } from '../execution';
+import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
 import {
   NOT_MEASURED_TEXT,
   changedNoFile,
@@ -19,6 +19,7 @@ import {
 } from './attemptFormat';
 import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
+import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
 import RunWithAgentModal from './RunWithAgentModal';
 import { parseRunLog } from './runLog';
@@ -117,11 +118,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
   // What the agent said at the end: the opening of its report, or, for a run that changed
   // no file, the answer it delivered.
+  // A folder team's run says what its last step did instead, and has nothing to merge.
+  const folder = () => !!attempt() && isFolderRun(attempt()!.terminal_reason);
   const said = () => {
-    const result = (attempt()?.terminal_reason as { result?: unknown } | null)?.result;
+    const reason = attempt()?.terminal_reason;
+    const result = folder() ? folderRunSummary(reason) : (reason as { result?: unknown } | null | undefined)?.result;
     if (typeof result !== 'string' || result.trim() === '') return null;
     return excerpt(result, noChange() ? ANSWER_CHARS : EXCERPT_CHARS);
   };
+  // The questions the agent asked across its steps: one line that opens the tab.
+  const questionCount = () => (readRunSteps(attempt()?.terminal_reason) ?? []).reduce((n, step) => n + step.questions.length, 0);
   const whyStopped = () => {
     const a = attempt();
     return a ? describeAttemptOutcome(a.state, a.terminal_reason).whyStopped : null;
@@ -139,6 +145,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     if (u.models.length > 0) parts.push(u.models[0]);
     return parts.length > 0 ? parts.join(' · ') : null;
   };
+  // The agent stopped to ask a person, or ended because it needed one: one state, with the question one press away.
+  const asking = () => (attempt()?.state ?? latest()?.state) === 'waiting_decision';
+  const needsPerson = () => asking() || needsAPerson(attempt());
   const failedReason = () => (latest()?.state === 'failed' ? latest()?.waiting_reason || null : null);
   const waitingReason = () => (latest()?.state === 'queued' ? latest()?.waiting_reason || null : null);
 
@@ -177,14 +186,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const live = () => kind() === 'running' && attempt() !== undefined;
   const [events, { refetch }] = createResource(
     () => (live() ? { id: attempt()!.request_id, n: attempt()!.attempt_number } : undefined),
-    ({ id, n }) => attemptsApi.events(id, n).then((r) => r.data.data).catch(() => []),
+    ({ id, n }) => attemptsApi.events(id, n).then((r) => r.data.data),
   );
   createEffect(() => {
     if (!live()) return;
     const timer = setInterval(() => void refetch(), LIVE_RELOAD_MS);
     onCleanup(() => clearInterval(timer));
   });
-  const steps = () => lastSteps(events.latest ?? []);
+  // A failed reload keeps the steps already read and says so; it never empties them.
+  const eventsFailed = () => events.state === 'errored';
+  const steps = () => lastSteps(events.state === 'errored' ? [] : (events.latest ?? []));
 
   const [stopping, setStopping] = createSignal(false);
   const stop = async () => {
@@ -219,16 +230,25 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
         <div
           data-testid="latest-run"
           data-state={kind()}
-          class="min-w-0 space-y-2 rounded-[20px] p-4"
+          class="min-w-0 space-y-2 rounded-item p-4"
           style={{ 'background-color': background(), 'box-shadow': 'var(--shadow-sm)' }}
         >
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Last run</span>
-            <Badge tone={status().tone}>{status().label}</Badge>
+            <span role="status" aria-live="polite" class="inline-flex">
+              <Badge tone={status().tone}>{status().label}</Badge>
+            </span>
             <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
               {relativeTimeFromIso(attempt()?.ended_at ?? attempt()?.started_at ?? run().created_at)}
             </span>
           </div>
+
+          <Show when={attempts().status === 'error'}>
+            {(() => {
+              const a = attempts();
+              return a.status === 'error' ? <LoadError what="the run's attempts" error={a.error} onRetry={reload} /> : null;
+            })()}
+          </Show>
 
           <Show when={kind() === 'queued'}>
             <p data-testid="latest-run-waiting" class="text-sm" style={muted()}>
@@ -239,12 +259,16 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             </p>
           </Show>
 
+          <Show when={kind() === 'running' && eventsFailed()}>
+            <LoadError what="the agent's last steps" error={events.error} onRetry={() => void refetch()} />
+          </Show>
+
           <Show when={kind() === 'running'}>
             <Show
               when={steps().length > 0}
               fallback={
                 <p class="text-sm" style={muted()}>
-                  {(attempt()?.state ?? run().state) === 'waiting_decision'
+                  {asking()
                     ? 'The agent is waiting for your answer.'
                     : 'The agent is working on it.'}
                 </p>
@@ -262,7 +286,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               fallback={<p class="text-sm" style={muted()}>The run did not finish.</p>}
             >
               {(why) => (
-                <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: 'var(--color-danger-600)' }}>
+                <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: needsAPerson(attempt()) ? 'var(--color-text-primary)' : 'var(--color-danger-600)' }}>
                   {why()}
                 </p>
               )}
@@ -279,11 +303,14 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             <Show when={whyStopped()}>
               {(why) => <p data-testid="latest-run-why" class="text-sm" style={{ color: 'var(--color-danger-600)' }}>{why()}</p>}
             </Show>
+            <Show when={folder()}>
+              <p data-testid="latest-run-folder" class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This team works in a folder: nothing to merge</p>
+            </Show>
             <Show when={said()}>
               {(text) => (
                 <>
                   <Show when={noChange()}>
-                    <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>What it delivered</p>
+                    <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
                   </Show>
                   <p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>
                 </>
@@ -303,6 +330,13 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               </p>
             )}
           </Show>
+          <Show when={questionCount() > 0}>
+            <p data-testid="latest-run-questions" class="text-xs">
+              <button type="button" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => props.onOpen()}>
+                The agent asked {questionCount()} {questionCount() === 1 ? 'question' : 'questions'}
+              </button>
+            </p>
+          </Show>
           <Show when={latest()?.limit}>
             {(limit) => (
               <RunLimitNote
@@ -318,9 +352,19 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
             )}
           </Show>
 
+          <Show when={kind() === 'failed' && needsAPerson(attempt())}>
+            <RerunAtL3
+              attempt={attempt()!}
+              itemId={props.itemId}
+              itemTitle={props.itemTitle}
+              projectId={props.projectId}
+              onCreated={props.onCreated}
+            />
+          </Show>
+
           <div class="flex flex-wrap items-center gap-2 pt-1">
             <Show when={kind() === 'running'}>
-              {open('Follow live')}
+              {open(asking() ? 'Open the question' : 'Follow live')}
               <Button size="sm" variant="secondary" disabled={stopping() || stopRequested()} loading={stopping()} onClick={() => void stop()}>
                 {stopRequested() ? 'Stopping…' : 'Stop'}
               </Button>
@@ -361,7 +405,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               />
             </Show>
             <Show when={kind() === 'review' || kind() === 'merged' || kind() === 'done' || kind() === 'failed'}>
-              {open('See what it did')}
+              {open(needsPerson() ? 'Open the question' : 'See what it did')}
             </Show>
           </div>
 

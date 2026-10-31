@@ -12,9 +12,9 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
-use tack_db::{Repository, init_pool, migrations};
+use tack_db::{Repository, queries::execution_attempts};
+use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
-use uuid::Uuid;
 
 const BASE_REVISION: &str = "abc123def456abc123def456abc123def456abc";
 
@@ -36,20 +36,12 @@ fn distinctive_temp_root(label: &str) -> tempfile::TempDir {
 /// (pure-local mode), so every `/api/*` request below needs no
 /// `Authorization` header — this file is about the artifact-storage wiring,
 /// not the separate operator-auth gate.
-async fn real_app(storage_dir: &std::path::Path) -> (axum::Router, sqlx::SqlitePool) {
-    let pool = init_pool("sqlite::memory:").await.expect("in-memory pool");
-    migrations::run_all(&pool).await.expect("migrations");
-    let workspace_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO workspaces (id, name, default_vocabulary) VALUES (?, 'W', '{}')")
-        .bind(workspace_id.to_string())
-        .execute(&pool)
-        .await
-        .expect("insert workspace");
-
-    let repo = Repository::new(pool.clone());
+async fn real_app(storage_dir: &std::path::Path) -> (axum::Router, Repository) {
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
-        repo,
+        repo: repo.clone(),
         config: AppConfig {
             storage_dir: storage_dir.to_string_lossy().into_owned(),
             ..AppConfig::default()
@@ -58,8 +50,9 @@ async fn real_app(storage_dir: &std::path::Path) -> (axum::Router, sqlx::SqliteP
         broadcast_tx: tx,
         webhook: None,
         local_runner: None,
+        tasks: Default::default(),
     };
-    (crate::common::with_default_host(build_router(state)), pool)
+    (crate::common::with_default_host(build_router(state)), repo)
 }
 
 async fn put_content(
@@ -90,7 +83,7 @@ async fn put_content(
 }
 
 /// Real current wall-clock time, not a frozen fixture date — the production
-/// router hard-codes `SystemExecutionClock`, so a hand-picked past/future
+/// router hard-codes `SystemClock`, so a hand-picked past/future
 /// timestamp would drift out of the enrollment token's expiry window and
 /// the scheduler's liveness fallback.
 fn full_capabilities() -> Value {
@@ -109,30 +102,6 @@ fn full_capabilities() -> Value {
         "features": {},
         "limits": {"event_payload_bytes_max": 65536, "artifact_content_bytes_max": 52428800},
     })
-}
-
-async fn create_project_and_item(app: &axum::Router) -> String {
-    let (status, project) = common::send_large(
-        app,
-        "POST",
-        "/api/projects",
-        json!({"name": "Artifact wiring", "project_type": "software", "code_origin": "url", "repository": "https://example.test/wiring.git"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{project}");
-    let project_id = project["id"].as_str().unwrap().to_owned();
-
-    let (status, item) = common::send_large(
-        app,
-        "POST",
-        &format!("/api/projects/{project_id}/items"),
-        json!({"title": "Prove the artifact storage/download wiring end to end"}),
-        &[],
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{item}");
-    item["id"].as_str().unwrap().to_owned()
 }
 
 struct RunningAttempt {
@@ -309,8 +278,9 @@ async fn upload_artifact(label: &str) -> UploadedArtifact {
         "nothing must pre-seed the storage dir"
     );
 
-    let (app, pool) = real_app(&storage_dir).await;
-    let item_id = create_project_and_item(&app).await;
+    let (app, repo) = real_app(&storage_dir).await;
+    let item_id =
+        common::create_project_and_item(&app, "https://example.test/wiring.git", &[]).await;
     let attempt = ready_running_attempt(&app, &item_id, label).await;
 
     let content = b"diff --git a/x b/x\n+hello from wiring\n".to_vec();
@@ -359,18 +329,12 @@ async fn upload_artifact(label: &str) -> UploadedArtifact {
     assert_eq!(status, StatusCode::OK, "{uploaded}");
     assert_eq!(uploaded["state"], "content_verified");
 
-    let attempt_number: i64 =
-        sqlx::query_scalar("SELECT attempt_number FROM execution_attempts WHERE id=?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    let request_id: String =
-        sqlx::query_scalar("SELECT request_id FROM execution_attempts WHERE id=?")
-            .bind(&attempt.attempt_id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let attempt_number = execution_attempts::attempt_number(&repo, &attempt.attempt_id)
+        .await
+        .unwrap();
+    let request_id = execution_attempts::request_id_of_attempt(&repo, &attempt.attempt_id)
+        .await
+        .unwrap();
 
     UploadedArtifact {
         _root: root,
@@ -492,7 +456,7 @@ async fn uploaded_artifact_is_downloadable_through_the_real_router() {
 async fn download_of_an_unknown_artifact_returns_a_named_404() {
     let storage_root = distinctive_temp_root("unknown");
     let storage_dir = storage_root.path().join("storage");
-    let (app, _pool) = real_app(&storage_dir).await;
+    let (app, _repo) = real_app(&storage_dir).await;
 
     let response = app
         .clone()

@@ -119,7 +119,7 @@ files under `/tmp` were working copies only, not committed.)
 |---|---|---|---|
 | IX | 232 | 232 (untouched) | Already under 300; Part IX's board section itself was never touched, per the card's rule. |
 | VIII | 1,509 | 186 | Kept: done date, waves integrated, the one open card (VIII-C3, blocking nothing), ADR 0060/0065 pointer. Detail stays in VIII's own section (untouched, still in `TODO.md`). |
-| VII | 2,350 | 230 | Kept: done date + reopen/re-close note, ADR 0062, bundle status, the stranger-walk headline, the one spun-out defect (VI-C36). |
+| VII | 2,350 | 230 | Kept: done date + reopen/re-close note, ADR 0006, bundle status, the stranger-walk headline, the one spun-out defect (VI-C36). |
 | VI | 18,775 | 264 | The card's own example row (plan measured ~18,906; today's exact figure was 18,775 — re-measured, not re-quoted). Kept: done date, "nothing is open", the one still-true caveat (no in-app login anywhere, fake-harness shim, walks not re-run). |
 | V | 741 | 222 | Kept: done date, what remains (publishing, a human action), pointer to `docs/LAUNCH-CHECKLIST.md`. |
 | IV | 38 | 39 | Already short; added a trailing period only. |

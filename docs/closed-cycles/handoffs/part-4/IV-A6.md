@@ -36,7 +36,7 @@ directly and asserted empty. This is the direct-query proof the card asked for, 
 
 **Task 3 — step 12 (non-loopback refusal).** `TACK_HOST=0.0.0.0` plus `--with-runner`
 plus a real `TACK_API_TOKEN` (set specifically so the failure can only be the
-`--with-runner`-specific loopback guard, not the unrelated ADR-0059
+`--with-runner`-specific loopback guard, not the unrelated ADR-0004
 unauthenticated-non-loopback refusal, which never gets a chance to run anyway since
 `ensure_loopback` fires first — see `crates/tack-cli/src/local_runner.rs`). Asserts:
 non-zero exit, stderr contains "loopback", and — separately — that no TCP listener was
@@ -49,7 +49,7 @@ fails after the refusal).
   semantics read from `crates/tack-cli/src/local_runner.rs::with_runner_enabled`: `1`/
   `true` (case-insensitive) enable it, `--with-runner` is equivalent, off by default,
   read by the `tack` CLI binary rather than `AppConfig` (no `tack.toml` reader for it —
-  ADR 0058 says this is deliberate).
+  ADR 0003 says this is deliberate).
 - New "Embedded runner (`tack serve --with-runner`)" section (placed after the existing
   tables and their surrounding prose, before `## Debugging`) covering: the gate and its
   loopback rule; the state directory (`TACK_RUNNER_STATE_DIR`, default `.tack-runner`)
@@ -57,7 +57,7 @@ fails after the refusal).
   `0700`/`0600`, per `journal.rs`/`transport.rs`); a dedicated "provider credentials"
   subsection mirroring a real `tack runner doctor` run's own per-harness credential
   notes verbatim rather than re-deriving them, plus the OpenRouter/local-model-endpoint
-  and "Tack is never a model gateway" statement citing ADR 0050 and ADR 0058 by name;
+  and "Tack is never a model gateway" statement citing ADR 0002 and ADR 0003 by name;
   and the RUST_LOG log-visibility fix (below).
 - One more `RUST_LOG=...` line added to the existing `## Debugging` bash block for
   discoverability from where operators already look for logging recipes.

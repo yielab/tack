@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
-use tack_orch::execution::{
+use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, EnvironmentValue, ExecutionRequestSnapshot,
     RunnerId as DomainRunnerId,
 };
@@ -28,7 +28,7 @@ use tack_runner::{
     },
 };
 
-mod common;
+use crate::common;
 use common::temp_dir as root;
 
 static FAKE: HarnessDescriptor = HarnessDescriptor {
@@ -61,7 +61,7 @@ impl HarnessGrammar for MarkerGrammar {
         &FAKE
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         unreachable!("the capability table is not read by this test")
     }
 
@@ -98,7 +98,7 @@ fn spec(workspace: PathBuf, environment: &[(&str, EnvironmentValue)]) -> Executi
         serde_json::from_value(fixture["request"].clone()).expect("request snapshot");
     let mut attempt: AttemptSnapshot =
         serde_json::from_value(fixture["attempt"].clone()).expect("attempt snapshot");
-    request.requested_harness_kind = tack_orch::execution::HarnessKind::new(FAKE.kind);
+    request.requested_harness_kind = tack_protocol::execution::HarnessKind::new(FAKE.kind);
     request.repository.base_revision = "0123456789abcdef".into();
     request.environment = environment
         .iter()
@@ -168,6 +168,7 @@ fn fixture(request_may_reference: &[&str]) -> Fixture {
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         secrets,
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable")
     .with_environment(
@@ -303,14 +304,14 @@ impl HarnessGrammar for RunGrammar {
         &RUN_FAKE
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         let value = || {
             tack_runner::harness::local_process::capability(
-                tack_orch::execution::CapabilitySupport::Unsupported,
+                tack_protocol::execution::CapabilitySupport::Unsupported,
                 "not read by this test",
             )
         };
-        tack_orch::execution::FeatureCapabilities {
+        tack_protocol::execution::FeatureCapabilities {
             cancel: value(),
             resume: value(),
             decisions: value(),
@@ -345,11 +346,12 @@ async fn a_run_log_never_follows_a_workspace_symlink() {
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         dir.path().join("staging"),
         secrets,
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable");
     let mut spec = spec(workspace, &[]);
     spec.work.request.requested_harness_kind =
-        tack_orch::execution::HarnessKind::new("claude-code");
+        tack_protocol::execution::HarnessKind::new("claude-code");
 
     let handle = harness.start(&spec).await.expect("the run starts");
     let outcome = harness.wait(&handle).await.expect("the run finishes");
@@ -379,6 +381,7 @@ fn a_subdirectory_that_escapes_the_workspace_is_rejected_before_spawn() {
         spec: &spec,
         scratch: dir.path(),
         program: None,
+        host: &tack_runner::ProcessEnv::default(),
     };
     for (kind, result) in [
         ("codex", CodexGrammar.invocation(&run)),
@@ -401,7 +404,7 @@ impl HarnessGrammar for ModeGrammar {
         &RUN_FAKE
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         RunGrammar.capabilities()
     }
 
@@ -427,7 +430,7 @@ impl HarnessGrammar for ModeGrammar {
 fn claude_spec(workspace: PathBuf) -> ExecutionSpec {
     let mut spec = spec(workspace, &[]);
     spec.work.request.requested_harness_kind =
-        tack_orch::execution::HarnessKind::new("claude-code");
+        tack_protocol::execution::HarnessKind::new("claude-code");
     spec
 }
 
@@ -441,6 +444,7 @@ fn sandboxed_harness<G: HarnessGrammar>(
         ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
         state.join("staging"),
         SecretStore::file(state.join("secrets.json")),
+        &tack_runner::ProcessEnv::from_process(),
     )
     .expect("the fake harness script is locatable")
     .with_sandbox(sandbox)
@@ -556,7 +560,7 @@ async fn sandbox_wraps_the_spawn_in_bwrap_and_never_binds_the_state_dir() {
 
 #[tokio::test]
 async fn sandbox_hides_the_state_dir_from_a_real_bwrap_run() {
-    let (path, _) = tack_runner::harness::locate::snapshot();
+    let path = tack_runner::ProcessEnv::from_process().search_path();
     if sandbox::detect(path.as_deref(), None).kind != sandbox::SandboxKind::Bwrap {
         if std::env::var("TACK_REQUIRE_BWRAP").as_deref() == Ok("1") {
             panic!("bwrap required by TACK_REQUIRE_BWRAP but not on PATH");
@@ -629,11 +633,11 @@ impl HarnessGrammar for DescriptorGrammar {
         self.0
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         let mut capabilities = RunGrammar.capabilities();
         if self.1 {
             capabilities.decisions = tack_runner::harness::local_process::capability(
-                tack_orch::execution::CapabilitySupport::Supported,
+                tack_protocol::execution::CapabilitySupport::Supported,
                 "asks in this test",
             );
         }
@@ -699,6 +703,7 @@ async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
+            &tack_runner::ProcessEnv::from_process(),
         )
         .expect("the fake program is locatable")
         .with_probed_sandbox(machine.clone())
@@ -721,7 +726,7 @@ async fn a_harness_that_does_not_start_in_bwrap_runs_unsandboxed_with_the_reason
     let calls_before = std::fs::read_to_string(&log).expect("bwrap was probed");
     let mut spec = spec(workspace, &[]);
     spec.work.request.requested_harness_kind =
-        tack_orch::execution::HarnessKind::new("breaks-in-bwrap");
+        tack_protocol::execution::HarnessKind::new("breaks-in-bwrap");
     let handle = broken_harness.start(&spec).await.expect("the run starts");
     assert_eq!(
         broken_harness.sandbox(&handle).await.as_deref(),
@@ -770,6 +775,7 @@ async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
+            &tack_runner::ProcessEnv::from_process(),
         )
         .expect("the fake program is locatable")
         .with_probed_sandbox(machine.clone())
@@ -790,7 +796,8 @@ async fn an_agent_without_a_sandbox_that_cannot_ask_does_not_run() {
         "{reason}"
     );
     let mut spec = spec(workspace, &[]);
-    spec.work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("cannot-ask");
+    spec.work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new("cannot-ask");
     match silent.start(&spec).await {
         Err(HarnessError::Rejected { reason: refused }) => assert_eq!(refused, reason),
         other => panic!("expected a refusal before spawn, got {other:?}"),
@@ -815,7 +822,7 @@ impl HarnessGrammar for EchoGrammar {
         self.0
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         RunGrammar.capabilities()
     }
 
@@ -858,13 +865,16 @@ fn on_the_fake_harness(real: &HarnessDescriptor) -> &'static HarnessDescriptor {
     }))
 }
 
-/// Mutates process-wide variables: safe under `cargo nextest` (one process
-/// per test), never under a bare `cargo test`.
+/// The runner's own environment holds a model credential of every kind; none reaches an agent.
 #[tokio::test]
 async fn the_runner_passes_no_model_credential_of_its_own() {
-    for name in MODEL_CREDENTIAL_VARIABLES {
-        unsafe { std::env::set_var(name, "runner-own-model-credential") };
-    }
+    let env = tack_runner::ProcessEnv::from_pairs(
+        std::env::vars_os().chain(
+            MODEL_CREDENTIAL_VARIABLES
+                .iter()
+                .map(|name| ((*name).into(), "runner-own-model-credential".into())),
+        ),
+    );
     for real in DESCRIPTORS {
         let dir = root("no-model-credential");
         let workspace = dir.path().join("workspace");
@@ -874,11 +884,12 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             dir.path().join("staging"),
             SecretStore::file(dir.path().join("secrets.json")),
+            &env,
         )
         .expect("the fake harness script is locatable");
         let mut spec = spec(workspace.clone(), &[]);
         spec.work.request.requested_harness_kind =
-            tack_orch::execution::HarnessKind::new(real.kind);
+            tack_protocol::execution::HarnessKind::new(real.kind);
 
         let handle = harness.start(&spec).await.expect("the run starts");
         let outcome = harness.wait(&handle).await.expect("the run finishes");
@@ -901,6 +912,7 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
             spec: &spec,
             scratch: dir.path(),
             program: None,
+            host: &tack_runner::ProcessEnv::default(),
         };
         for (kind, invocation) in [
             ("codex", CodexGrammar.invocation(&run)),
@@ -913,9 +925,6 @@ async fn the_runner_passes_no_model_credential_of_its_own() {
             }
         }
     }
-    for name in MODEL_CREDENTIAL_VARIABLES {
-        unsafe { std::env::remove_var(name) };
-    }
 }
 
 /// opencode's `debug` commands, answered from the captured fixture with a
@@ -927,7 +936,7 @@ impl HarnessGrammar for LoginGrammar {
         self.0
     }
 
-    fn capabilities(&self) -> tack_orch::execution::FeatureCapabilities {
+    fn capabilities(&self) -> tack_protocol::execution::FeatureCapabilities {
         RunGrammar.capabilities()
     }
 
@@ -953,8 +962,6 @@ fn files_under(root: &std::path::Path) -> Vec<PathBuf> {
     found
 }
 
-/// Mutates process-wide variables: safe under `cargo nextest` (one process
-/// per test), never under a bare `cargo test`.
 #[tokio::test]
 async fn opencode_gets_its_login_and_providers_and_nothing_else() {
     const SEEDED_KEY: &str = "sk-seeded-key-7731";
@@ -991,13 +998,14 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
     )
     .expect("executable");
     let path = format!("{}:/usr/bin:/bin", bin.display());
-    unsafe {
-        std::env::set_var("PATH", &path);
-        std::env::set_var("HOME", &home);
-    }
+    let host = tack_runner::ProcessEnv::from_pairs([
+        ("PATH", path.as_str()),
+        ("HOME", home.to_str().unwrap()),
+    ]);
 
     let mut spec = spec(workspace.clone(), &[]);
-    spec.work.request.requested_harness_kind = tack_orch::execution::HarnessKind::new("opencode");
+    spec.work.request.requested_harness_kind =
+        tack_protocol::execution::HarnessKind::new("opencode");
     spec.work.request.permission_policy.network = true;
     spec.work.request.permission_policy.approvals = None;
     spec.work.request.requested_model = Some("llamacpp/chosen".to_owned());
@@ -1005,6 +1013,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         spec: &spec,
         scratch: dir.path(),
         program: Some(&opencode),
+        host: &host,
     };
     let invocation = OpencodeGrammar.invocation(&run).expect("an invocation");
     let injected: serde_json::Value =
@@ -1041,6 +1050,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
         spec: &spec,
         scratch: dir.path(),
         program: Some(&opencode),
+        host: &host,
     };
     match OpencodeGrammar.invocation(&run) {
         Err(HarnessError::Rejected { reason }) => {
@@ -1097,6 +1107,7 @@ async fn opencode_gets_its_login_and_providers_and_nothing_else() {
             ProcessLimits::new(1_000_000, 1_000_000, Duration::from_secs(60)),
             state.join("staging"),
             SecretStore::file(state.join("secrets.json")),
+            &tack_runner::ProcessEnv::from_process(),
         )
         .expect("the probe is locatable");
         let harness = if sandboxed {
@@ -1156,6 +1167,11 @@ async fn the_docket_daemon_gets_path_home_and_docket_home_only() {
         binary: Some(script),
         home: Some(dir.path().join("docket-home")),
         port: 1,
+        process: tack_runner::ProcessEnv::from_pairs([
+            ("PATH", "/usr/bin"),
+            ("HOME", "/home/someone"),
+            ("ANTHROPIC_API_KEY", "never-forwarded"),
+        ]),
         ..DocketConfig::default()
     };
     let explicit: std::collections::BTreeSet<String> = daemon::command(&config)

@@ -1,10 +1,11 @@
 import { type Component, For, Show, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Badge, Button, Field, Modal } from '../../../shared/ui';
+import { Badge, Button, Field, Modal, createConfirm } from '../../../shared/ui';
 import { toast } from '../../../shared/ui/toast';
 import { runnersApi, type EnrollRunnerResult } from '../../../shared/execution';
 import RunnerHealthCard, { type RunnerConnectionStatus } from './RunnerHealthCard';
 import { formatExpiresIn, parseOptionalJsonObject } from './format';
+import { BOOK } from '../../../shared/help/routes';
 
 /** One runner identity this browser session knows about — either just
  *  enrolled here, or manually revoked here after being enrolled elsewhere.
@@ -143,8 +144,10 @@ const EnrollmentPanel: Component = () => {
     }
   };
 
+  const [ask, ConfirmHost] = createConfirm();
+
   const revokeRunner = async (runner: SessionRunner) => {
-    if (!confirm(`Revoke runner "${runner.name}" (${runner.runnerId})? This cannot be undone.`)) return;
+    if (!(await ask({ title: `Revoke "${runner.name}"?`, message: 'This runner can no longer claim work. This cannot be undone.', confirmLabel: 'Revoke', danger: true }))) return;
     setBusy(runner.runnerId, true);
     try {
       await runnersApi.revokeRunner(runner.runnerId);
@@ -167,7 +170,7 @@ const EnrollmentPanel: Component = () => {
     e.preventDefault();
     const id = revokeTargetId().trim();
     if (!id) return;
-    if (!confirm(`Revoke runner "${id}"? This cannot be undone.`)) return;
+    if (!(await ask({ title: `Revoke runner "${id}"?`, message: 'This runner can no longer claim work. This cannot be undone.', confirmLabel: 'Revoke', danger: true }))) return;
     setRevokingManual(true);
     try {
       await runnersApi.revokeRunner(id);
@@ -204,9 +207,9 @@ const EnrollmentPanel: Component = () => {
 
   return (
     <div class="space-y-3.5">
-      <p class="text-[0.78125rem]" style={{ color: 'var(--color-text-secondary)' }}>
-        Enroll issues a one-time token a <code class="font-mono">tack-runner</code> process exchanges for a
-        durable credential. This page doesn't check back with the server, so it only shows runners
+      <ConfirmHost />
+      <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+        Enroll issues a one-time token a runner exchanges for a durable credential. This page doesn't check back with the server, so it only shows runners
         enrolled or revoked from this browser this session, not whether they actually connected — see the{' '}
         <A href="/agents" class="underline" style={{ color: 'var(--color-accent-ink)' }}>Agents</A> page for a live runner roster.
       </p>
@@ -214,7 +217,7 @@ const EnrollmentPanel: Component = () => {
       {/* Enroll form */}
       <form
         onSubmit={(e) => void submitEnroll(e)}
-        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-[28px] bg-panel px-5 py-[18px] sm:grid-cols-3"
+        class="grid items-start gap-x-3.5 gap-y-2.5 rounded-card bg-panel px-5 py-[18px] sm:grid-cols-3"
       >
         <h3 class="col-span-full text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Enroll a runner
@@ -265,7 +268,7 @@ const EnrollmentPanel: Component = () => {
         <Show
           when={sessionRunners().length > 0}
           fallback={
-            <p class="text-[0.8125rem]" style={{ color: 'var(--color-text-tertiary)' }}>
+            <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
               None yet — enroll a runner above, or revoke one by ID below.
             </p>
           }
@@ -308,7 +311,7 @@ const EnrollmentPanel: Component = () => {
       {/* Manual revoke by ID — the fallback for a runner not enrolled this session */}
       <form
         onSubmit={(e) => void submitManualRevoke(e)}
-        class="flex flex-col gap-2.5 rounded-[28px] bg-panel px-5 py-[18px]"
+        class="flex flex-col gap-2.5 rounded-card bg-panel px-5 py-[18px]"
       >
         <h3 class="text-[1rem] leading-tight" style={{ color: 'var(--color-text-primary)' }}>
           Revoke a runner by ID
@@ -366,8 +369,10 @@ const EnrollmentPanel: Component = () => {
                 </p>
               </div>
               <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                {formatExpiresIn(token().expires_at)} — set{' '}
-                <code class="font-mono">TACK_RUNNER_ENROLLMENT_TOKEN</code> on the runner before then.
+                {formatExpiresIn(token().expires_at)} — give it to the runner before then.{' '}
+                <a href={BOOK.enrolling} target="_blank" rel="noreferrer" class="underline">
+                  The Administrator Guide shows how.
+                </a>
               </p>
               <div class="flex gap-2">
                 <Button onClick={() => void copyToken()}>{copied() ? 'Copied' : 'Copy token'}</Button>

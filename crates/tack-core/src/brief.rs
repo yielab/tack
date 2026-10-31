@@ -57,7 +57,12 @@ pub fn validate(acceptance: &[AcceptanceCriterion]) -> Result<(), ValidationErro
 /// heading per section, one line per criterion led by its id, and the
 /// `manual` criteria last under "Needs a human".
 pub fn render_markdown(item: &Item, brief: &ItemBrief) -> String {
-    let mut out = format!("# {}\n", item.title);
+    render_titled(&item.title, brief)
+}
+
+/// [`render_markdown`] for a caller that has the title and not the item.
+pub fn render_titled(title: &str, brief: &ItemBrief) -> String {
+    let mut out = format!("# {title}\n");
     if let Some(risk) = &brief.risk {
         let risk = match risk {
             Risk::Low => "low",

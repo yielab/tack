@@ -1,0 +1,29 @@
+[package]
+name = "tack-protocol"
+autotests = false
+description = "The runner-v1 contract: what the board and a runner say to each other"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+openapi = ["dep:utoipa"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+utoipa = { workspace = true, optional = true }
+
+[lints]
+workspace = true
+
+# One integration-test binary: every file under tests/ is a module of tests/it.rs, so the
+# dependency graph is linked once instead of once per file.
+[[test]]
+name = "it"
+path = "tests/it.rs"

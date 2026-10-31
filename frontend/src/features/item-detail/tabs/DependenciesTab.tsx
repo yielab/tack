@@ -7,7 +7,7 @@ import {
   For,
   Show,
 } from 'solid-js';
-import { useSearchParams } from '@solidjs/router';
+import { A } from '@solidjs/router';
 import { api, ApiError } from '../../../shared/api';
 import { Button, Select, EmptyState, Icons } from '../../../shared/ui';
 import type { Item, Dependency, DependencyType } from '../../../shared/types';
@@ -40,10 +40,8 @@ export function classify(dep: Dependency, itemId: string): { dir: Direction | 'r
 }
 
 /** Dependencies tab: blocks / blocked-by lists, an item picker to add,
- * cycle-error surfaced inline, links open the target item's drawer. */
+ * cycle-error surfaced inline, links open the target item's own page. */
 const DependenciesTab: Component<DependenciesTabProps> = (props) => {
-  const [, setSearchParams] = useSearchParams();
-
   const deps = () => props.dependencies();
   const refetch = () => props.refetch();
   const [projectItems] = createResource(
@@ -100,21 +98,18 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
     await refetch();
   };
 
-  const openItem = (id: string) => setSearchParams({ item: id });
-
   const linkList = (links: Link[]) => (
     <ul class="space-y-2">
       <For each={links}>
         {(link) => (
-          <li class="flex items-center justify-between gap-2 rounded-[20px] py-2.5 pl-4 pr-2.5 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
-            <button
-              type="button"
+          <li class="flex items-center justify-between gap-2 rounded-item py-2.5 pl-4 pr-2.5 text-sm" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+            <A
+              href={`/projects/${props.item.project_id}/items/${link.otherId}`}
               class="min-w-0 text-left font-semibold hover:underline"
               style={{ color: 'var(--color-accent-ink)' }}
-              onClick={() => openItem(link.otherId)}
             >
               {titleOf(link.otherId)}
-            </button>
+            </A>
             <button
               type="button"
               aria-label="Remove dependency"
@@ -132,7 +127,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
 
   return (
     <div class="space-y-4">
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Blocks
         </h3>
@@ -141,7 +136,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Blocked by
         </h3>
@@ -150,7 +145,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
         </Show>
       </section>
 
-      <section class="space-y-3 rounded-[28px] p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+      <section class="space-y-3 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
         <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
           Add dependency
         </h3>
@@ -183,7 +178,7 @@ const DependenciesTab: Component<DependenciesTabProps> = (props) => {
           </div>
         </Show>
         <Show when={error()}>
-          <p class="rounded-[20px] px-4 py-2.5 text-sm font-medium" style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}>
+          <p class="rounded-item px-4 py-2.5 text-sm font-medium" style={{ 'background-color': 'var(--color-danger-100)', color: 'var(--color-danger-600)' }}>
             {error()}
           </p>
         </Show>

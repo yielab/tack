@@ -1,3 +1,4 @@
+use crate::{StoreError, decode};
 use chrono::Utc;
 use sqlx::SqliteConnection;
 use tracing::{debug, instrument};
@@ -16,6 +17,8 @@ impl Repository {
         source_item_id: Uuid,
         input: CreateDependency,
     ) -> Result<Dependency, DependencyError> {
+        self.require_item(source_item_id).await?;
+        self.require_item(input.target_item_id).await?;
         // Load existing dependency graph for cycle detection
         let edges = self
             .load_dependency_edges(source_item_id)
@@ -28,7 +31,12 @@ impl Repository {
             .validate_new_edge(source_item_id, input.target_item_id)
             .map_err(DependencyError::Core)?;
 
-        let mut conn = self.pool().acquire().await.map_err(DependencyError::Db)?;
+        let mut conn = self
+            .pool()
+            .acquire()
+            .await
+            .map_err(StoreError::from)
+            .map_err(DependencyError::Db)?;
         insert_dependency(
             &mut conn,
             source_item_id,
@@ -43,7 +51,7 @@ impl Repository {
     pub async fn list_dependencies_for_item(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<Dependency>, sqlx::Error> {
+    ) -> Result<Vec<Dependency>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
             "SELECT id, source_item_id, target_item_id, dependency_type, created_at
              FROM dependencies
@@ -55,15 +63,19 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+        rows.into_iter().map(DepRow::into_dependency).collect()
     }
 
     #[instrument(skip(self))]
-    pub async fn delete_dependency(&self, id: Uuid) -> Result<bool, sqlx::Error> {
-        let result = sqlx::query("DELETE FROM dependencies WHERE id = ?")
-            .bind(id.to_string())
-            .execute(self.pool())
-            .await?;
+    pub async fn delete_dependency(&self, item_id: Uuid, id: Uuid) -> Result<bool, StoreError> {
+        let result = sqlx::query(
+            "DELETE FROM dependencies WHERE id = ? AND (source_item_id = ? OR target_item_id = ?)",
+        )
+        .bind(id.to_string())
+        .bind(item_id.to_string())
+        .bind(item_id.to_string())
+        .execute(self.pool())
+        .await?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -71,7 +83,7 @@ impl Repository {
     pub async fn list_dependencies_for_project(
         &self,
         project_id: Uuid,
-    ) -> Result<Vec<Dependency>, sqlx::Error> {
+    ) -> Result<Vec<Dependency>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
             "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
              FROM dependencies d
@@ -83,7 +95,7 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+        rows.into_iter().map(DepRow::into_dependency).collect()
     }
 
     /// Every dependency row that touches **any** of `item_ids`, as either
@@ -98,7 +110,7 @@ impl Repository {
     pub async fn list_dependencies_for_items(
         &self,
         item_ids: &[Uuid],
-    ) -> Result<Vec<Dependency>, sqlx::Error> {
+    ) -> Result<Vec<Dependency>, StoreError> {
         if item_ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -117,14 +129,14 @@ impl Repository {
             q = q.bind(id.to_string());
         }
         let rows = q.fetch_all(self.pool()).await?;
-        Ok(rows.into_iter().map(|r| r.into_dependency()).collect())
+        rows.into_iter().map(DepRow::into_dependency).collect()
     }
 
     /// Load all dependency edges from the same project as the given item.
     async fn load_dependency_edges(
         &self,
         item_id: Uuid,
-    ) -> Result<Vec<DependencyEdge>, sqlx::Error> {
+    ) -> Result<Vec<DependencyEdge>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
             "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
              FROM dependencies d
@@ -136,22 +148,23 @@ impl Repository {
         .fetch_all(self.pool())
         .await?;
 
-        Ok(rows
-            .into_iter()
+        rows.into_iter()
             .filter(|r| r.dependency_type == "blocks" || r.dependency_type == "is_blocked_by")
-            .map(|r| DependencyEdge {
-                source: Uuid::parse_str(&r.source_item_id).unwrap(),
-                target: Uuid::parse_str(&r.target_item_id).unwrap(),
-                dep_type: parse_dep_type(&r.dependency_type),
+            .map(|r| {
+                Ok(DependencyEdge {
+                    source: decode::uuid("dependencies", "source_item_id", &r.source_item_id)?,
+                    target: decode::uuid("dependencies", "target_item_id", &r.target_item_id)?,
+                    dep_type: parse_dep_type(&r.dependency_type)?,
+                })
             })
-            .collect())
+            .collect()
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum DependencyError {
     #[error("Database error: {0}")]
-    Db(#[from] sqlx::Error),
+    Db(#[from] StoreError),
     #[error("Dependency validation error: {0}")]
     Core(#[from] CoreError),
 }
@@ -166,27 +179,20 @@ struct DepRow {
 }
 
 impl DepRow {
-    fn into_dependency(self) -> Dependency {
-        Dependency {
-            id: Uuid::parse_str(&self.id).unwrap(),
-            source_item_id: Uuid::parse_str(&self.source_item_id).unwrap(),
-            target_item_id: Uuid::parse_str(&self.target_item_id).unwrap(),
-            dependency_type: parse_dep_type(&self.dependency_type),
-            created_at: chrono::DateTime::parse_from_rfc3339(&self.created_at)
-                .map(|d| d.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
-        }
+    fn into_dependency(self) -> Result<Dependency, StoreError> {
+        const TABLE: &str = "dependencies";
+        Ok(Dependency {
+            id: decode::uuid(TABLE, "id", &self.id)?,
+            source_item_id: decode::uuid(TABLE, "source_item_id", &self.source_item_id)?,
+            target_item_id: decode::uuid(TABLE, "target_item_id", &self.target_item_id)?,
+            dependency_type: parse_dep_type(&self.dependency_type)?,
+            created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
+        })
     }
 }
 
-fn parse_dep_type(s: &str) -> DependencyType {
-    match s {
-        "blocks" => DependencyType::Blocks,
-        "is_blocked_by" => DependencyType::IsBlockedBy,
-        "relates_to" => DependencyType::RelatesTo,
-        "duplicates" => DependencyType::Duplicates,
-        _ => DependencyType::RelatesTo,
-    }
+fn parse_dep_type(s: &str) -> Result<DependencyType, StoreError> {
+    decode::variant("dependencies", "dependency_type", s)
 }
 
 /// The dependency `INSERT`, with no cycle check: callers that cannot have
@@ -197,7 +203,7 @@ pub(crate) async fn insert_dependency(
     source_item_id: Uuid,
     target_item_id: Uuid,
     dependency_type: &DependencyType,
-) -> Result<Dependency, sqlx::Error> {
+) -> Result<Dependency, StoreError> {
     let id = Uuid::new_v4();
     let now = Utc::now();
     let dep_type_str = dependency_type.to_string();

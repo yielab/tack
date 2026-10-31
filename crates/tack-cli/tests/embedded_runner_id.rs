@@ -13,8 +13,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use tack_test_support::poll_until_sync as poll_until;
 
-mod common;
-use common::free_port;
+use crate::common;
 
 struct ServerGuard {
     child: Child,
@@ -29,35 +28,31 @@ impl Drop for ServerGuard {
 }
 
 fn start_server_with_runner(root: &std::path::Path) -> ServerGuard {
-    let port = free_port();
     let home = root.join("home");
     std::fs::create_dir_all(&home).expect("scratch home");
-    let child = Command::new(env!("CARGO_BIN_EXE_tack"))
-        .arg("serve")
-        .arg("--with-runner")
-        .current_dir(root)
-        .env("HOME", &home)
-        .env("PATH", root.join("no-binaries"))
-        .env(
-            "DBUS_SESSION_BUS_ADDRESS",
-            "unix:path=/nonexistent/tack-no-keychain",
-        )
-        .env("TACK_HOST", "127.0.0.1")
-        .env("TACK_PORT", port.to_string())
-        .env("TACK_API_TOKEN", common::API_TOKEN)
-        .env(
-            "TACK_DATABASE_URL",
-            format!("sqlite:{}/tack.db?mode=rwc", root.display()),
-        )
-        .env("TACK_STORAGE_DIR", root.join("storage"))
-        .env_remove("TACK_RUNNER_STATE_DIR")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn tack serve --with-runner");
+    let served = common::spawn_serve(
+        Command::new(env!("CARGO_BIN_EXE_tack"))
+            .arg("serve")
+            .arg("--with-runner")
+            .current_dir(root)
+            .env("HOME", &home)
+            .env("PATH", root.join("no-binaries"))
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                "unix:path=/nonexistent/tack-no-keychain",
+            )
+            .env("TACK_API_TOKEN", common::API_TOKEN)
+            .env(
+                "TACK_DATABASE_URL",
+                format!("sqlite:{}/tack.db?mode=rwc", root.display()),
+            )
+            .env("TACK_STORAGE_DIR", root.join("storage"))
+            .env_remove("TACK_RUNNER_STATE_DIR")
+            .stderr(Stdio::null()),
+    );
     ServerGuard {
-        child,
-        base_url: format!("http://127.0.0.1:{port}"),
+        child: served.child,
+        base_url: served.base_url,
     }
 }
 
@@ -136,15 +131,21 @@ fn the_embedded_runner_resumes_while_another_row_holds_local_runner() {
             (body["state"] == "running").then_some(())
         })
         .expect("the embedded runner must be running");
-        // A runner that cannot resume stops a moment after it started.
-        std::thread::sleep(Duration::from_secs(2));
-        let body = client
-            .get(format!("{}/api/local-runner", server.base_url))
-            .send()
-            .expect("GET local-runner")
-            .json::<Value>()
-            .expect("json");
-        assert_eq!(body["state"], "running", "{body}");
+        // A runner that cannot resume stops a moment after it started: watch for that stop
+        // for as long as it takes to show, and fail the moment it does.
+        let stopped = poll_until(Duration::from_secs(2), || {
+            let body = client
+                .get(format!("{}/api/local-runner", server.base_url))
+                .send()
+                .ok()?
+                .json::<Value>()
+                .ok()?;
+            (body["state"] != "running").then_some(body)
+        });
+        assert!(
+            stopped.is_none(),
+            "the runner stopped after it started: {stopped:?}"
+        );
     };
 
     let first = start_server_with_runner(root.path());

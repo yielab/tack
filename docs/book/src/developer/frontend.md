@@ -17,8 +17,9 @@ frontend/src/
 │                 dashboard (Overview and Factory metrics), projects,
 │                 settings, templates, agents
 ├── shared/
-│   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs,
-│   │             CommandPalette, SearchBar, Sidebar, ToastContainer …) plus
+│   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs, Card,
+│   │             Switch, ConfirmDialog, CommandPalette, SearchBar, Sidebar,
+│   │             ToastContainer …) plus
 │   │             redesign primitives: Avatar/AvatarStack, TypeBadge,
 │   │             PriorityDot, WipChip, KbdHint, and the icon set (icons.tsx)
 │   ├── state/    Context stores + signals (project, items, theme, palette,
@@ -65,7 +66,10 @@ palette means adding one primitives block — nothing else changes.
 
 A Tailwind `@theme inline` block re-exposes the runtime tokens under utility names
 (`bg-surface`, `text-content`, `border-line`, `bg-brand-*`, …) for the places that
-use classes instead of inline styles.
+use classes instead of inline styles. A `@theme static` block holds the radius and
+text-size tokens (`rounded-card`, `rounded-item`, `text-micro`, `text-caption`,
+`text-small`, `text-lead`); `npm run lint:tokens` counts bracketed values such as
+`rounded-[28px]` against a ratchet, so use a token when one exists.
 
 ### Accessibility constraint
 
@@ -99,6 +103,9 @@ The shape language is over-rounded. Controls — buttons, inputs, tags, tab
 pills, banners — are pills (`--radius-pill`). Containers such as board columns
 and settings cards take `--radius-card` (28px) on the `--color-bg-panel` fill,
 and the items inside them take `--radius-item` (20px) back on the page ground.
+A panel is a `<Card>`, which carries that radius and fill; an on/off setting is a
+`<Switch>`; a question before something is removed is `createConfirm()` with its
+`<ConfirmHost />`, not `window.confirm`.
 
 ## Adding a UI component
 
@@ -110,6 +117,18 @@ and the items inside them take `--radius-item` (20px) back on the page ground.
 3. If it has pure logic (a colour map, a formatter), put that in a co-located
    `*.ts` and unit-test it (`shared/ui/primitives.test.ts` is the pattern).
 4. Consume it from a feature — never reach into another feature.
+
+## Failures and disabled controls
+
+A screen never turns a failed load into an empty state. Do not end a request with
+`.catch(() => [])` or `.catch(() => null)`: let the resource fail, and where it is read
+check `resource.error` before `resource()` (reading a failed resource throws), then show
+`<LoadError what="the roles" error={resource.error} onRetry={refetch} />` in place of
+the empty answer. Anything left to throw is caught by `RouteBoundary`: the app has one at its root and
+`app/routes.tsx` wraps every route in its own, so a screen that fails leaves the shell standing and offers
+"Try again". A control that cannot be used is shown disabled, never hidden; give `Button` a `reason`
+and the text appears beside it while it is disabled and is tied to it with `aria-describedby`. Screen text
+names no environment variable or command: it links to the Administrator Guide (`shared/help/routes.ts`).
 
 ## Design source
 

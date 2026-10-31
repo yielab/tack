@@ -57,7 +57,7 @@ export const HelpHint: Component<{ label?: string; help: FieldHelp }> = (props) 
         aria-expanded={open()}
         title={props.help.text}
         onClick={() => setOpen(!open())}
-        class="text-xs"
+        class="inline-flex min-h-6 min-w-6 items-center justify-center text-xs"
         style={{ color: 'var(--color-text-tertiary)', cursor: 'pointer' }}
       >
         (?)
@@ -85,6 +85,19 @@ export const HelpHint: Component<{ label?: string; help: FieldHelp }> = (props) 
   );
 };
 
+/** A help text shown in the page, for a place a `(?)` button cannot go: a button inside a `<summary>` is nested. */
+export const HelpNote: Component<{ help: FieldHelp }> = (props) => (
+  <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+    {props.help.text}
+    <Show when={props.help.href}>
+      {' '}
+      <a href={props.help.href} target="_blank" rel="noreferrer" class="underline">
+        More
+      </a>
+    </Show>
+  </p>
+);
+
 export interface FieldShellProps {
   help?: FieldHelp;
   label?: string;
@@ -95,6 +108,14 @@ export interface FieldShellProps {
   class?: string;
   children: JSX.Element;
 }
+
+/** The id of the error or hint line under the control `id`; the control points at it with `aria-describedby`. */
+export const noteId = (id: string, kind: 'error' | 'hint') => `${id}-${kind}`;
+
+/** What `aria-describedby` of a control says: its error, else its hint, after any id the caller gave. */
+export const describedBy = (id: string, note: { error?: string; hint?: string; given?: string }) =>
+  [note.given, note.error ? noteId(id, 'error') : note.hint ? noteId(id, 'hint') : undefined].filter(Boolean).join(' ') ||
+  undefined;
 
 /** Label + hint/error frame shared by every form control. */
 export const FieldShell: Component<FieldShellProps> = (props) => (
@@ -116,12 +137,12 @@ export const FieldShell: Component<FieldShellProps> = (props) => (
     </Show>
     {props.children}
     <Show when={props.error}>
-      <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+      <p id={props.for ? noteId(props.for, 'error') : undefined} class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
         {props.error}
       </p>
     </Show>
     <Show when={props.hint && !props.error}>
-      <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <p id={props.for ? noteId(props.for, 'hint') : undefined} class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
         {props.hint}
       </p>
     </Show>
@@ -164,6 +185,7 @@ const Field: Component<FieldProps> = (props) => {
         id={id}
         required={local.required}
         aria-invalid={local.error ? 'true' : undefined}
+        aria-describedby={describedBy(id, { error: local.error, hint: local.hint, given: rest['aria-describedby'] })}
         class={controlClass}
         style={{
           ...controlStyle,

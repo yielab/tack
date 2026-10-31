@@ -1,5 +1,5 @@
-use axum::Json;
-use axum::extract::{Multipart, Path, State};
+use crate::extract::{Json, Multipart, Path};
+use axum::extract::State;
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use std::io::{ErrorKind, Write};
@@ -29,8 +29,14 @@ fn contained_path(storage_dir: &std::path::Path, storage_path: &str) -> Result<P
     match std::fs::symlink_metadata(&candidate) {
         Ok(metadata) if metadata.file_type().is_symlink() => Err(refused()),
         Ok(_) => {
-            let root = std::fs::canonicalize(storage_dir).map_err(|_| refused())?;
-            let resolved = std::fs::canonicalize(&candidate).map_err(|_| refused())?;
+            let root = std::fs::canonicalize(storage_dir).map_err(|failure| {
+                tracing::warn!(error = %failure, "Attachment path could not be resolved");
+                refused()
+            })?;
+            let resolved = std::fs::canonicalize(&candidate).map_err(|failure| {
+                tracing::warn!(error = %failure, "Attachment path could not be resolved");
+                refused()
+            })?;
             if resolved.starts_with(&root) {
                 Ok(resolved)
             } else {
@@ -64,7 +70,7 @@ fn contained_path(storage_dir: &std::path::Path, storage_path: &str) -> Result<P
 pub async fn upload_attachment(
     State(state): State<AppState>,
     Path(item_id): Path<Uuid>,
-    mut multipart: Multipart,
+    Multipart(mut multipart): Multipart,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     info!(item_id = %item_id, "Uploading attachment");
 
@@ -167,7 +173,7 @@ pub async fn upload_attachment(
 
     // Create attachment record in database
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachment = attachment_repo
         .create_attachment(item_id, filename, content_type, relative_path, size_bytes)
@@ -207,7 +213,7 @@ pub async fn download_attachment(
 
     // Get attachment record
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachment = attachment_repo
         .get_attachment(attachment_id)
@@ -291,7 +297,7 @@ pub async fn list_attachments(
         .ok_or_else(|| ApiError::NotFound(format!("Item {} not found", item_id)))?;
 
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachments = attachment_repo.list_attachments(item_id).await?;
 
@@ -329,7 +335,7 @@ pub async fn delete_attachment(
 
     // Get attachment record
     use tack_db::repo::attachments::AttachmentRepo;
-    let attachment_repo = AttachmentRepo::new(state.repo.pool());
+    let attachment_repo = AttachmentRepo::new(&state.repo);
 
     let attachment = attachment_repo
         .get_attachment(attachment_id)

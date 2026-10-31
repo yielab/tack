@@ -45,7 +45,7 @@ execution request, upgrading is exactly one step:
      `<your-db-file>.before-063_drop_model_profiles.sqlite` — and it is the file that
      holds your `control_planes` and `orch_*` rows, whatever its name says. A retry
      never overwrites it. The rebuild design is in
-     `docs/adr/0008-transactional-migration-rebuild-recovery.md`. Once you are past
+     `docs/adr/0001-transactional-migration-rebuild-recovery.md`. Once you are past
      073 this step does nothing until a later release adds another such migration.
    - The rebuild migrations themselves run with `PRAGMA defer_foreign_keys=ON` inside
      their transaction, compare row counts and an explicit bidirectional column
@@ -140,5 +140,5 @@ list won't be a prefix match for the newer database's history).
   recovery (a crashed runner or harness process), a different concern from schema
   migration recovery.
 - `docs/CONFIG.md` — the authoritative table of every `TACK_*` variable.
-- `docs/adr/0008-transactional-migration-rebuild-recovery.md` — the design rationale
+- `docs/adr/0001-transactional-migration-rebuild-recovery.md` — the design rationale
   for the rebuild-migration snapshot/verify/swap mechanism.

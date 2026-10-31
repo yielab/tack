@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
+use tack_protocol::{Clock, SystemClock};
 
 use axum::extract::DefaultBodyLimit;
 use axum::handler::Handler;
@@ -7,17 +8,18 @@ use axum::http::{HeaderValue, Method, header};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Router, middleware};
 use tokio::sync::broadcast;
+use tokio_util::task::TaskTracker;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 use tack_db::Repository;
-use tack_db::repo::execution::{ExecutionClock, SystemExecutionClock};
+use tack_protocol::execution::StableErrorCode;
 
 use crate::config::AppConfig;
 use crate::debug;
-use crate::handlers::local_runner::LocalRunnerControl;
+use crate::error::ApiError;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
@@ -31,6 +33,7 @@ use crate::middleware::{
     set_session_cookie,
 };
 use crate::webhook::WebhookClient;
+use tack_app::local_runner::LocalRunnerControl;
 
 /// Shared application state passed to all handlers.
 #[derive(Clone)]
@@ -50,20 +53,23 @@ pub struct AppState {
     /// `local_runner_routes` treats that exactly like a non-loopback bind —
     /// the routes are absent, not present-and-refusing.
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
+    /// The use cases a handler starts in the background after answering (a merge, a GitHub
+    /// push, the pack going to prill). Shutdown closes it and waits for them, so none is cut
+    /// off half done.
+    pub tasks: TaskTracker,
 }
 
 impl AppState {
-    pub fn pool(&self) -> &sqlx::SqlitePool {
-        self.repo.pool()
-    }
-
     /// The prill the board runs: the one place that asks the embedded runner.
-    pub async fn prill_program(&self) -> String {
+    pub async fn prill(&self) -> crate::prill::Prill {
         let runner = match &self.local_runner {
             Some(control) => control.verify_program().await,
             None => None,
         };
-        self.config.prill_program_or(runner)
+        crate::prill::Prill {
+            program: self.config.prill_program_or(runner),
+            search_path: self.config.search_path.clone(),
+        }
     }
 }
 
@@ -80,7 +86,7 @@ fn content_security_policy(config: &AppConfig) -> HeaderValue {
     HeaderValue::from_str(&policy).expect("configured CSP must be a valid header value")
 }
 
-/// Embedded-runner control routes (ADR 0061 decisions 2 and 6) — turn the
+/// Embedded-runner control routes (ADR 0005 decisions 2 and 6) — turn the
 /// in-process runner on/off. Callers merge
 /// this only when both a [`LocalRunnerControl`] was actually wired into
 /// `AppState` and the server is bound to loopback
@@ -122,10 +128,10 @@ fn local_runner_routes() -> Router<AppState> {
 /// `"separately_scoped_operator_credential"` per `protocol.json`. Artifact
 /// download shares `runner_protocol_routes`'s storage root.
 fn operator_execution_routes(state: &AppState) -> Router<AppState> {
-    let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let operator_state = executions::OperatorExecutionState::with_clock(state.repo.clone(), clock)
         .with_app_state(state.clone());
-    let decision_clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let decision_clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let decision_state =
         decisions::DecisionOperatorState::with_clock(state.repo.clone(), decision_clock)
             .with_decision_token(state.config.execution_decision_token.clone());
@@ -167,12 +173,13 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
 /// limit is closest to the handler, so `outer`'s global layer never binds
 /// here. Artifact storage sits one level under `TACK_STORAGE_DIR`.
 fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
-    let clock: Arc<dyn ExecutionClock> = Arc::new(SystemExecutionClock);
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let runner_state = runner_protocol::RunnerProtocolState::new(state.repo.clone(), clock)
         .with_artifact_storage_root(format!("{}/execution-artifacts", state.config.storage_dir))
         .with_app_state(state.clone());
     runner_protocol::routes(runner_state, state.config.max_body_size_bytes)
         .with_state::<AppState>(())
+        .method_not_allowed_fallback(api_method_not_allowed)
         .fallback(api_not_found)
 }
 
@@ -183,8 +190,18 @@ fn runner_protocol_routes(state: &AppState) -> Router<AppState> {
 /// two must stay structurally distinct: an operator or runner client that
 /// mistypes a route must see this, never the SPA's `index.html` with a
 /// misleading `200`.
-async fn api_not_found() -> axum::http::StatusCode {
-    axum::http::StatusCode::NOT_FOUND
+async fn api_not_found() -> ApiError {
+    ApiError::NotFound("There is no such route.".into())
+}
+
+/// The 405 for a path that exists but not for the method the request used: the standard error
+/// body with its code, not axum's empty one.
+async fn api_method_not_allowed() -> ApiError {
+    ApiError::Coded {
+        code: StableErrorCode::MethodNotAllowed,
+        message: "This route does not accept that method.".into(),
+        field: None,
+    }
 }
 
 /// Build the full Axum router with all routes, middleware, and state.
@@ -231,7 +248,7 @@ pub fn build_router(state: AppState) -> Router {
     // processes on this host, so its control routes must not even be
     // *discoverable* unless both conditions hold — a control was actually
     // wired into this `AppState` (see `AppState::local_runner`'s doc
-    // comment) and the server is bound to loopback (ADR 0061 decision 6).
+    // comment) and the server is bound to loopback (ADR 0005 decision 6).
     // Checked here, not inside a middleware layer, so failing it means the
     // routes are never merged at all — a genuine 404, not a gate that still
     // had to route the request to refuse it. See `local_runner_routes`'s
@@ -466,6 +483,7 @@ pub fn build_router(state: AppState) -> Router {
         // was never a real route to authenticate against). `nest` below
         // carries this fallback along scoped to `/api`, which is what
         // keeps it out of reach of `outer`'s own SPA fallback. ─────────
+        .method_not_allowed_fallback(api_method_not_allowed)
         .fallback(api_not_found);
 
     let outer = Router::new()
@@ -530,6 +548,8 @@ pub fn build_router(state: AppState) -> Router {
         ))
         // ── CORS ─────────────────────────────────────────────────────────
         .layer(cors)
+        // ── Request id: one for every request, named by every error body ─
+        .layer(middleware::from_fn(crate::request_id::with_request_id))
         // ── Request tracing ──────────────────────────────────────────────
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<_>| {

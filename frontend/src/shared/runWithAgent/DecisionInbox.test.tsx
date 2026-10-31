@@ -3,8 +3,7 @@ import { render } from 'solid-js/web';
 import { toast } from '../ui/toast';
 import { decisionTokenStore, type DecisionRecord } from '../execution';
 import DecisionInbox, { type DecisionInboxProps } from './DecisionInbox';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
 const PENDING_WITH_OPTIONS: DecisionRecord = {
@@ -94,13 +93,35 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
     expect(c.textContent).toContain('Allow this agent to run');
   });
 
-  it('the token prompt names the decision-token file beside the board\'s database', async () => {
+  it('the token prompt names no variable and no file, and links to the Administrator Guide', async () => {
     mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
     const c = mount();
     await flush();
     await flush();
 
-    expect(c.textContent).toContain("the decision-token file beside the board's database");
+    expect(c.textContent).toContain('Ask your administrator for it');
+    expect(c.textContent).not.toMatch(/TACK_EXECUTION|decision-token file/);
+    (c.querySelector('button[aria-label="Help: Your decision token"]') as HTMLButtonElement).click();
+    expect(c.innerHTML).toContain('admin-guide/administration.html#authentication');
+    expect((c.querySelector('input[type="password"]') as HTMLInputElement).placeholder).toBe('');
+  });
+
+  it('a failed load says what could not load and Try again loads it', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { status: 500, message: 'boom' } }), { status: 500 }))
+      .mockResolvedValue(new Response(JSON.stringify({ protocol_version: 1, data: [PENDING_WITH_OPTIONS] }), { status: 200 }));
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('Could not load the questions');
+    expect(c.textContent).not.toContain('No decisions raised yet');
+    ([...c.querySelectorAll('button')].find((b) => b.textContent === 'Try again') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(c.textContent).toContain('Allow this agent to run');
+    expect(c.querySelector('[data-testid="load-error"]')).toBeNull();
   });
 
   it('an empty list renders a real empty state, not a silently blank panel', async () => {
@@ -276,7 +297,7 @@ describe('DecisionInbox — resolve outcomes are each named distinctly', () => {
     await flush();
     await flush();
 
-    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('not configured decision resolution'));
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining('no decision token set up'));
   });
 
   it('an expired decision (409 decision_expired) is named distinctly from an idempotency conflict (409 idempotency_conflict)', async () => {
@@ -378,5 +399,51 @@ describe('DecisionInbox — the consultation pack', () => {
 
     const viewedCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/viewed'));
     expect(viewedCalls.map((call) => String(call[0]))).toEqual(['/api/attempts/att_1/decisions/dec_pack/viewed']);
+  });
+  describe('an action that leaves the team', () => {
+    const CALL = Array.from({ length: 30 }, (_, i) => `line ${i + 1} to ana@example.com`).join('\n');
+    const LEAVING: DecisionRecord = {
+      ...PENDING_WITH_OPTIONS,
+      decision_id: 'dec_leaves',
+      kind: 'approval',
+      prompt: 'tool call send_email: ask before every send (cut)',
+      metadata: { outward: true, call: CALL },
+    };
+
+    it('is titled as one, and its whole call sits above the options in a block that scrolls', async () => {
+      mockFetch([LEAVING], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+
+      expect(c.textContent).toContain('This action leaves the team');
+      const block = c.querySelector('[data-testid="decision-call"]') as HTMLElement;
+      expect(block.textContent).toBe(CALL);
+      expect(block.style.fontFamily).toContain('mono');
+      expect(block.style.maxHeight).toBe('30em'); // twenty lines of 1.5
+      expect(block.style.overflow || block.className).toMatch(/overflow/);
+      const options = c.querySelector('fieldset') as HTMLElement;
+      expect(block.compareDocumentPosition(options) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('once answered is still titled as one but holds no call', async () => {
+      mockFetch([{ ...LEAVING, state: 'resolved', answer: { option_id: 'allow_once' }, metadata: { outward: true } }], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+
+      expect(c.textContent).toContain('This action leaves the team');
+      expect(c.querySelector('[data-testid="decision-call"]')).toBeNull();
+    });
+
+    it('an ordinary question has neither the title nor the block', async () => {
+      mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+
+      expect(c.textContent).not.toContain('leaves the team');
+      expect(c.querySelector('[data-testid="decision-call"]')).toBeNull();
+    });
   });
 });

@@ -36,8 +36,9 @@ use std::{
 use async_trait::async_trait;
 use tokio::process::Command;
 
-use super::{Workspace, WorkspaceError, WorktreeProvisioner};
+use super::{Workspace, WorkspaceError, WorktreeProvisioner, poisoned, unresolved_path};
 use crate::client::WorkspaceMode;
+use crate::error::IoKind;
 use crate::evidence::{FileChange, FileOp, GitEvidence, PATCH_CAP_BYTES, PublishedBranch};
 use crate::{
     client::RepositorySpec,
@@ -151,7 +152,7 @@ impl GitWorktreeProvisioner {
             match (error.kind(), directory.is_dir()) {
                 (std::io::ErrorKind::NotFound, true) => WorkspaceError::GitUnavailable,
                 (std::io::ErrorKind::NotFound, false) => WorkspaceError::UnsafePath,
-                _ => WorkspaceError::Io,
+                _ => WorkspaceError::from(error),
             }
         })?;
         // `kill_on_drop` turns the timeout into a real kill: dropping the
@@ -159,7 +160,7 @@ impl GitWorktreeProvisioner {
         // cannot outlive the attempt that spawned it.
         let output = match tokio::time::timeout(self.timeout, child.wait_with_output()).await {
             Ok(Ok(output)) => output,
-            Ok(Err(_)) => return Err(WorkspaceError::Io),
+            Ok(Err(failure)) => return Err(WorkspaceError::from(failure)),
             Err(_) => return Err(WorkspaceError::GitTimeout),
         };
         let result = GitOutput {
@@ -210,7 +211,7 @@ impl GitWorktreeProvisioner {
     ) -> Result<(), WorkspaceError> {
         self.remotes
             .lock()
-            .map_err(|_| WorkspaceError::Io)?
+            .map_err(poisoned)?
             .insert(workspace.attempt_id.as_str().to_owned(), remote.to_owned());
         Ok(())
     }
@@ -271,12 +272,12 @@ impl GitWorktreeProvisioner {
     /// because entries are removed by direct `read_dir` handle, never by a
     /// path assembled from untrusted input.
     fn purge_partial_checkout(path: &Path) -> Result<(), WorkspaceError> {
-        for entry in fs::read_dir(path).map_err(|_| WorkspaceError::Io)? {
-            let entry = entry.map_err(|_| WorkspaceError::Io)?;
+        for entry in fs::read_dir(path).map_err(WorkspaceError::from)? {
+            let entry = entry.map_err(WorkspaceError::from)?;
             if entry.file_name() == ATTEMPT_MARKER {
                 continue;
             }
-            let file_type = entry.file_type().map_err(|_| WorkspaceError::Io)?;
+            let file_type = entry.file_type().map_err(WorkspaceError::from)?;
             let outcome = if file_type.is_dir() {
                 fs::remove_dir_all(entry.path())
             } else {
@@ -284,7 +285,7 @@ impl GitWorktreeProvisioner {
                 // refused on it anyway, and neither call follows it.
                 fs::remove_file(entry.path())
             };
-            outcome.map_err(|_| WorkspaceError::Io)?;
+            outcome.map_err(WorkspaceError::from)?;
         }
         Ok(())
     }
@@ -450,11 +451,11 @@ impl GitWorktreeProvisioner {
             match self
                 .baselines
                 .lock()
-                .map_err(|_| WorkspaceError::Io)?
+                .map_err(poisoned)?
                 .get(workspace.attempt_id.as_str())
             {
                 Some(Baseline::Tree(tree)) => tree.clone(),
-                _ => return Err(WorkspaceError::Io),
+                _ => return Err(WorkspaceError::Io(IoKind(std::io::ErrorKind::NotFound))),
             }
         } else {
             base_commit.clone()
@@ -549,7 +550,7 @@ impl GitWorktreeProvisioner {
         diff.push("--");
         diff.extend(pathspec.iter().map(String::as_str));
         self.git_ok_indexed(path, &diff, &secrets, index).await?;
-        let mut patch = fs::read(&patch_file).map_err(|_| WorkspaceError::Io)?;
+        let mut patch = fs::read(&patch_file).map_err(WorkspaceError::from)?;
         let _ = fs::remove_file(&patch_file);
         let truncated = patch.len() > PATCH_CAP_BYTES;
         patch.truncate(PATCH_CAP_BYTES);
@@ -612,7 +613,7 @@ impl GitWorktreeProvisioner {
             .repository_path
             .as_deref()
             .ok_or(WorkspaceError::RepositoryUnreachable)?;
-        let metadata = fs::symlink_metadata(repo).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(repo).map_err(unresolved_path)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() || repo != workspace.path {
             return Err(WorkspaceError::UnsafePath);
         }
@@ -623,7 +624,7 @@ impl GitWorktreeProvisioner {
             .await?;
         self.bases
             .lock()
-            .map_err(|_| WorkspaceError::Io)?
+            .map_err(poisoned)?
             .insert(workspace.attempt_id.as_str().to_owned(), base);
         Ok(())
     }
@@ -641,7 +642,7 @@ impl GitWorktreeProvisioner {
             .repository_path
             .as_deref()
             .ok_or(WorkspaceError::RepositoryUnreachable)?;
-        let metadata = fs::symlink_metadata(folder).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(folder).map_err(unresolved_path)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() || folder != workspace.path {
             return Err(WorkspaceError::UnsafePath);
         }
@@ -662,11 +663,11 @@ impl GitWorktreeProvisioner {
             let _ = fs::remove_dir_all(&scratch);
             Baseline::Tree(tree?.stdout)
         } else {
-            Baseline::Listing(list_folder(folder, &[]).map_err(|_| WorkspaceError::Io)?)
+            Baseline::Listing(list_folder(folder, &[]).map_err(WorkspaceError::from)?)
         };
         self.baselines
             .lock()
-            .map_err(|_| WorkspaceError::Io)?
+            .map_err(poisoned)?
             .insert(workspace.attempt_id.as_str().to_owned(), baseline);
         Ok(())
     }
@@ -681,13 +682,13 @@ impl GitWorktreeProvisioner {
         let before = match self
             .baselines
             .lock()
-            .map_err(|_| WorkspaceError::Io)?
+            .map_err(poisoned)?
             .get(workspace.attempt_id.as_str())
         {
             Some(Baseline::Listing(listing)) => listing.clone(),
-            _ => return Err(WorkspaceError::Io),
+            _ => return Err(WorkspaceError::Io(IoKind(std::io::ErrorKind::NotFound))),
         };
-        let after = list_folder(&workspace.path, exclude).map_err(|_| WorkspaceError::Io)?;
+        let after = list_folder(&workspace.path, exclude).map_err(WorkspaceError::from)?;
         let mut files = Vec::new();
         let mut rows = Vec::new();
         for (path, now) in &after {
@@ -721,7 +722,10 @@ impl GitWorktreeProvisioner {
             files,
             patch: Vec::new(),
             truncated: false,
-            snapshot: Some(serde_json::to_vec(&rows).map_err(|_| WorkspaceError::Io)?),
+            snapshot: Some(serde_json::to_vec(&rows).map_err(|failure| {
+                tracing::error!(error = %failure, "a folder snapshot could not be serialized");
+                WorkspaceError::Io(IoKind(std::io::ErrorKind::InvalidData))
+            })?),
         })
     }
 
@@ -778,12 +782,11 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         // Independent of `WorkspaceManager`'s own guard on purpose: this impl
         // deletes files, so it re-proves for itself that the directory is a
         // real directory this runner stamped for this exact attempt.
-        let metadata = fs::symlink_metadata(path).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(path).map_err(unresolved_path)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
             return Err(WorkspaceError::UnsafePath);
         }
-        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER))
-            .map_err(|_| WorkspaceError::UnsafePath)?;
+        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER)).map_err(unresolved_path)?;
         if marker != workspace.attempt_id.as_str() {
             return Err(WorkspaceError::AttemptMismatch);
         }
@@ -814,8 +817,8 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                 // `worktree add` refuses a non-empty directory, and the attempt
                 // marker is the one thing in it: set it aside, put it back.
                 let marker_path = path.join(ATTEMPT_MARKER);
-                let marker = fs::read(&marker_path).map_err(|_| WorkspaceError::Io)?;
-                fs::remove_file(&marker_path).map_err(|_| WorkspaceError::Io)?;
+                let marker = fs::read(&marker_path).map_err(WorkspaceError::from)?;
+                fs::remove_file(&marker_path).map_err(WorkspaceError::from)?;
                 self.git_ok(repo, &["worktree", "prune"], &secrets).await?;
                 let target = path.to_string_lossy();
                 let added = self
@@ -825,7 +828,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
                         &secrets,
                     )
                     .await;
-                fs::write(&marker_path, marker).map_err(|_| WorkspaceError::Io)?;
+                fs::write(&marker_path, marker).map_err(WorkspaceError::from)?;
                 added?;
                 write_checkout_marker(&path.join(CHECKOUT_MARKER), &resolved)?;
                 return Ok(());
@@ -885,12 +888,11 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
 
     async fn provision_scratch(&self, workspace: &Workspace) -> Result<(), WorkspaceError> {
         let path = workspace.path.as_path();
-        let metadata = fs::symlink_metadata(path).map_err(|_| WorkspaceError::UnsafePath)?;
+        let metadata = fs::symlink_metadata(path).map_err(unresolved_path)?;
         if metadata.file_type().is_symlink() || !metadata.is_dir() {
             return Err(WorkspaceError::UnsafePath);
         }
-        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER))
-            .map_err(|_| WorkspaceError::UnsafePath)?;
+        let marker = fs::read_to_string(path.join(ATTEMPT_MARKER)).map_err(unresolved_path)?;
         if marker != workspace.attempt_id.as_str() {
             return Err(WorkspaceError::AttemptMismatch);
         }
@@ -1026,7 +1028,7 @@ impl WorktreeProvisioner for GitWorktreeProvisioner {
         let read = async {
             self.git_ok(repo, &patch_args, &secrets).await?;
             let listing = self.git_ok(repo, &names_args, &secrets).await?;
-            let patch = fs::read(&patch_file).map_err(|_| WorkspaceError::Io)?;
+            let patch = fs::read(&patch_file).map_err(WorkspaceError::from)?;
             Ok::<_, WorkspaceError>((patch, listing))
         }
         .await;
@@ -1306,7 +1308,7 @@ fn index_scratch(workspace: &Workspace) -> Result<PathBuf, WorkspaceError> {
             .collect::<String>()
     ));
     let _ = fs::remove_dir_all(&scratch);
-    fs::create_dir_all(&scratch).map_err(|_| WorkspaceError::Io)?;
+    fs::create_dir_all(&scratch).map_err(WorkspaceError::from)?;
     Ok(scratch)
 }
 
@@ -1439,14 +1441,14 @@ fn write_checkout_marker(path: &Path, commit: &str) -> Result<(), WorkspaceError
         .create(true)
         .truncate(true)
         .open(path)
-        .map_err(|_| WorkspaceError::Io)?;
+        .map_err(WorkspaceError::from)?;
     marker
         .write_all(commit.as_bytes())
-        .map_err(|_| WorkspaceError::Io)?;
+        .map_err(WorkspaceError::from)?;
     // Durable before it is trusted: an unsynced sentinel after a power loss
     // would claim a checkout that the filesystem never finished writing.
-    marker.sync_all().map_err(|_| WorkspaceError::Io)?;
-    super::owner_only(path).map_err(|_| WorkspaceError::Io)
+    marker.sync_all().map_err(WorkspaceError::from)?;
+    super::owner_only(path).map_err(WorkspaceError::from)
 }
 
 #[cfg(test)]

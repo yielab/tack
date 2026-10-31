@@ -14,6 +14,7 @@ use thiserror::Error;
 use super::{
     AttemptId, AttemptLease, Checkpoint, ClaimedWork, FencingToken, RunnerId, WorkspaceId,
 };
+use crate::error::IoKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +26,20 @@ pub enum JournalState {
     RecoveryObserved,
     Reported,
     Quarantined,
+}
+
+impl From<JournalState> for tack_protocol::execution::RecoveryJournalState {
+    fn from(state: JournalState) -> Self {
+        match state {
+            JournalState::Prepared => Self::Prepared,
+            JournalState::ProcessObservedRunning => Self::ProcessObservedRunning,
+            JournalState::CancellationRequested => Self::CancellationRequested,
+            JournalState::TerminalReportPending => Self::TerminalReportPending,
+            JournalState::RecoveryObserved => Self::RecoveryObserved,
+            JournalState::Reported => Self::Reported,
+            JournalState::Quarantined => Self::Quarantined,
+        }
+    }
 }
 
 impl JournalState {
@@ -160,8 +175,18 @@ pub enum JournalError {
     Serialization,
     #[error("runner journal is malformed")]
     Malformed,
-    #[error("runner journal operation failed")]
-    Io,
+    /// The journal's directory could not be created or made owner-only; the kind says how.
+    #[error("runner journal could not be initialized: {0}")]
+    Layout(IoKind),
+    /// A file operation failed; the kind says how and nothing else of it.
+    #[error("runner journal operation failed: {0}")]
+    Io(IoKind),
+}
+
+impl From<std::io::Error> for JournalError {
+    fn from(failure: std::io::Error) -> Self {
+        JournalError::Io(IoKind(failure.kind()))
+    }
 }
 
 /// Durable storage rooted in local runner state. File names are hex-encoded
@@ -196,7 +221,11 @@ impl OwnerOnlyJournal {
         if self.quarantine_path(&record.attempt_id).exists() {
             return Err(JournalError::AlreadyExists);
         }
-        let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
+        let bytes = toml::to_string(record).map_err(|error| {
+            // The serializer's messages are fixed texts; none of them carries a field's value.
+            tracing::warn!(%error, "runner journal record could not be serialized");
+            JournalError::Serialization
+        })?;
         atomic_create_private(&self.journal_path(&record.attempt_id), bytes.as_bytes())
     }
 
@@ -206,14 +235,18 @@ impl OwnerOnlyJournal {
             .fail_next_update
             .swap(false, std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(JournalError::Io);
+            return Err(JournalError::Io(IoKind(std::io::ErrorKind::Other)));
         }
         self.ensure_layout()?;
         let path = self.journal_path(&record.attempt_id);
         if !path.exists() {
             return Err(JournalError::Missing);
         }
-        let bytes = toml::to_string(record).map_err(|_| JournalError::Serialization)?;
+        let bytes = toml::to_string(record).map_err(|error| {
+            // The serializer's messages are fixed texts; none of them carries a field's value.
+            tracing::warn!(%error, "runner journal record could not be serialized");
+            JournalError::Serialization
+        })?;
         atomic_replace_private(&path, bytes.as_bytes())
     }
 
@@ -230,14 +263,14 @@ impl OwnerOnlyJournal {
     pub fn unresolved(&self) -> Result<Vec<AttemptJournal>, JournalError> {
         self.ensure_layout()?;
         let mut records = Vec::new();
-        for entry in fs::read_dir(self.journal_dir()).map_err(|_| JournalError::Io)? {
-            let entry = entry.map_err(|_| JournalError::Io)?;
+        for entry in fs::read_dir(self.journal_dir()).map_err(JournalError::from)? {
+            let entry = entry.map_err(JournalError::from)?;
             let path = entry.path();
             if path.extension().and_then(|value| value.to_str()) != Some("toml") {
                 continue;
             }
             if fs::symlink_metadata(&path)
-                .map_err(|_| JournalError::Io)?
+                .map_err(JournalError::from)?
                 .file_type()
                 .is_symlink()
             {
@@ -262,7 +295,7 @@ impl OwnerOnlyJournal {
         if destination.exists() {
             return Err(JournalError::AlreadyExists);
         }
-        fs::rename(&source, &destination).map_err(|_| JournalError::Io)?;
+        fs::rename(&source, &destination).map_err(JournalError::from)?;
         // `journal` and `quarantine` are sibling directories. Sync both so a
         // cross-directory rename survives a crash without silently losing the
         // last recoverable record.
@@ -275,11 +308,14 @@ impl OwnerOnlyJournal {
             if error.kind() == std::io::ErrorKind::NotFound {
                 JournalError::Missing
             } else {
-                JournalError::Io
+                JournalError::from(error)
             }
         })?;
-        let record: AttemptJournal =
-            toml::from_str(&contents).map_err(|_| JournalError::Malformed)?;
+        let record: AttemptJournal = toml::from_str(&contents).map_err(|error| {
+            // The parser's message quotes the offending line, so only the position is logged.
+            tracing::warn!(span = ?error.span(), "runner journal record is not valid TOML");
+            JournalError::Malformed
+        })?;
         let expected_name = format!("{}.toml", encode_id(record.attempt_id.as_str()));
         if path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str()) {
             return Err(JournalError::Malformed);
@@ -315,11 +351,11 @@ fn create_secure_directory(path: &Path) -> Result<(), JournalError> {
         }
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::create_dir(path).map_err(|_| JournalError::Initialization)?;
+            fs::create_dir(path).map_err(|error| JournalError::Layout(IoKind(error.kind())))?;
         }
-        Err(_) => return Err(JournalError::Initialization),
+        Err(error) => return Err(JournalError::Layout(IoKind(error.kind()))),
     }
-    make_owner_only(path).map_err(|_| JournalError::Initialization)
+    make_owner_only(path).map_err(|error| JournalError::Layout(IoKind(error.kind())))
 }
 
 fn encode_id(value: &str) -> String {
@@ -334,15 +370,18 @@ fn atomic_create_private(path: &Path, bytes: &[u8]) -> Result<(), JournalError> 
     let temporary = write_private_temporary(path, bytes)?;
     match fs::hard_link(&temporary, path) {
         Ok(()) => {
-            fs::remove_file(&temporary).map_err(|_| JournalError::Io)?;
-            sync_directory(path.parent().ok_or(JournalError::Io)?)
+            fs::remove_file(&temporary).map_err(JournalError::from)?;
+            sync_directory(
+                path.parent()
+                    .ok_or(JournalError::Io(IoKind(std::io::ErrorKind::InvalidInput)))?,
+            )
         }
         Err(error) => {
             let _ = fs::remove_file(&temporary);
             if error.kind() == std::io::ErrorKind::AlreadyExists {
                 Err(JournalError::AlreadyExists)
             } else {
-                Err(JournalError::Io)
+                Err(JournalError::from(error))
             }
         }
     }
@@ -350,21 +389,26 @@ fn atomic_create_private(path: &Path, bytes: &[u8]) -> Result<(), JournalError> 
 
 fn atomic_replace_private(path: &Path, bytes: &[u8]) -> Result<(), JournalError> {
     let temporary = write_private_temporary(path, bytes)?;
-    fs::rename(&temporary, path).map_err(|_| JournalError::Io)?;
-    make_owner_only(path).map_err(|_| JournalError::Io)?;
-    sync_directory(path.parent().ok_or(JournalError::Io)?)
+    fs::rename(&temporary, path).map_err(JournalError::from)?;
+    make_owner_only(path).map_err(JournalError::from)?;
+    sync_directory(
+        path.parent()
+            .ok_or(JournalError::Io(IoKind(std::io::ErrorKind::InvalidInput)))?,
+    )
 }
 
 fn write_private_temporary(path: &Path, bytes: &[u8]) -> Result<PathBuf, JournalError> {
-    let name = path.file_name().ok_or(JournalError::Io)?;
+    let name = path
+        .file_name()
+        .ok_or(JournalError::Io(IoKind(std::io::ErrorKind::InvalidInput)))?;
     let temporary = path.with_file_name(format!(
         ".{}.{}.tmp",
         name.to_string_lossy(),
         std::process::id()
     ));
     let mut file = open_private_new(&temporary)?;
-    file.write_all(bytes).map_err(|_| JournalError::Io)?;
-    file.sync_all().map_err(|_| JournalError::Io)?;
+    file.write_all(bytes).map_err(JournalError::from)?;
+    file.sync_all().map_err(JournalError::from)?;
     Ok(temporary)
 }
 
@@ -377,7 +421,7 @@ fn open_private_new(path: &Path) -> Result<File, JournalError> {
         .create_new(true)
         .mode(0o600)
         .open(path)
-        .map_err(|_| JournalError::Io)
+        .map_err(JournalError::from)
 }
 
 #[cfg(not(unix))]
@@ -386,15 +430,15 @@ fn open_private_new(path: &Path) -> Result<File, JournalError> {
         .write(true)
         .create_new(true)
         .open(path)
-        .map_err(|_| JournalError::Io)?;
-    make_owner_only(path).map_err(|_| JournalError::Io)?;
+        .map_err(JournalError::from)?;
+    make_owner_only(path).map_err(JournalError::from)?;
     Ok(file)
 }
 
 fn sync_directory(path: &Path) -> Result<(), JournalError> {
     File::open(path)
         .and_then(|directory| directory.sync_all())
-        .map_err(|_| JournalError::Io)
+        .map_err(JournalError::from)
 }
 
 #[cfg(unix)]

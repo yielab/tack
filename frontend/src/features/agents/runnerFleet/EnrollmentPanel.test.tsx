@@ -2,8 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { MemoryRouter, Route } from '@solidjs/router';
 import EnrollmentPanel from './EnrollmentPanel';
-
-const flush = () => new Promise((r) => setTimeout(r, 0));
+import { flush } from '../../../test/flush';
 
 function mount() {
   const container = document.createElement('div');
@@ -29,6 +28,13 @@ function fillField(labelText: string, value: string) {
   const input = document.getElementById(label.getAttribute('for')!) as HTMLInputElement;
   input.value = value;
   input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function confirmDialog(text: string) {
+  const btn = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(
+    (b) => b.textContent?.trim() === text,
+  )!;
+  btn.click();
 }
 
 function clickButton(text: string) {
@@ -175,7 +181,6 @@ describe('EnrollmentPanel — clipboard copy', () => {
 
 describe('EnrollmentPanel — revocation', () => {
   it('revokes a session-enrolled runner and marks it Unconfigured, removing the revoke action', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input);
       const method = (init as RequestInit | undefined)?.method ?? 'GET';
@@ -200,6 +205,8 @@ describe('EnrollmentPanel — revocation', () => {
 
     clickButton('Revoke runner');
     await flush();
+    confirmDialog('Revoke');
+    await flush();
 
     expect(document.body.textContent).toContain('Unconfigured');
     expect(
@@ -213,7 +220,6 @@ describe('EnrollmentPanel — revocation', () => {
   });
 
   it('revokes a runner by manually-entered ID, for one enrolled outside this session', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
       const url = String(input);
       const method = (init as RequestInit | undefined)?.method ?? 'GET';
@@ -235,6 +241,8 @@ describe('EnrollmentPanel — revocation', () => {
     )!;
     const submitBtn = revokeForm.querySelector('button[type="submit"]') as HTMLButtonElement;
     submitBtn.click();
+    await flush();
+    confirmDialog('Revoke');
     await flush();
 
     expect(document.body.textContent).toContain('runr_elsewhere');
