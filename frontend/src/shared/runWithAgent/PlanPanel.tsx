@@ -189,10 +189,7 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
           : [],
       );
       const body: CreateBody = fromFile() ? { subtasks } : { artifact_id: (props as { artifactId: string }).artifactId, subtasks };
-      const res = await request<CreateResponse>(`/items/${props.itemId}/subtasks-from-plan`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      const res: CreateResponse = await api.items.createSubtasksFromPlan(props.itemId, body);
       setCreated(res.created);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create the items.');
