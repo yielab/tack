@@ -1,13 +1,14 @@
 import { A, useParams, useLocation, useNavigate } from '@solidjs/router';
 import { createSignal, createEffect, onCleanup, Show, For, createResource, type Component, type JSX } from 'solid-js';
 import { api } from '../api';
+import { executionsApi, type ExecutionSummary } from '../execution';
 import { getLastLens } from '../state/lastView';
 import { openPalette } from '../state/commandPalette';
 import { isDarkActive, toggleTheme } from '../state/theme';
 import {
   BrandMark,
   IconSearch, IconList, IconSun, IconMoon,
-  IconChevronDown, type IconProps,
+  IconChevronDown, IconAgent, type IconProps,
 } from './icons';
 import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from './destinations';
 import KbdHint from './KbdHint';
@@ -22,10 +23,12 @@ const NavButton: Component<{
   label: string;
   end?: boolean;
   badge?: JSX.Element;
+  /** Overrides the place-based highlight: a link into the current page is never "where you are". */
+  active?: boolean;
   onClick?: () => void;
 }> = (p) => {
   const location = useLocation();
-  const active = () => (p.end ? location.pathname === p.href : location.pathname.startsWith(p.href));
+  const active = () => p.active ?? (p.end ? location.pathname === p.href : location.pathname.startsWith(p.href));
   return (
     <A
       href={p.href}
@@ -103,6 +106,33 @@ const Sidebar: Component = () => {
   });
   const [health] = createResource(() => api.system.health());
 
+  // Runs whose agent stopped to ask a person. The list is read again at the cadence of the
+  // execution store's own refresh, so the count follows the runs wherever the person is.
+  const location = useLocation();
+  const [recentRuns, { refetch: refetchRuns }] = createResource(() =>
+    executionsApi.list().then((r) => r.data.data).catch(() => []),
+  );
+  const runsTimer = setInterval(() => void refetchRuns(), 4000);
+  onCleanup(() => clearInterval(runsTimer));
+  const waitingRuns = () => {
+    const latestPerItem = new Map<string, ExecutionSummary>();
+    for (const run of recentRuns.latest ?? []) {
+      const seen = latestPerItem.get(run.item_id);
+      if (!seen || run.created_at > seen.created_at) latestPerItem.set(run.item_id, run);
+    }
+    return (recentRuns.latest ?? []).filter((run) => latestPerItem.get(run.item_id) === run && run.state === 'waiting_decision');
+  };
+  // The first one opens on its Execution tab, over whatever page this is.
+  const waitingHref = () => {
+    const first = waitingRuns()[0];
+    if (!first) return '';
+    const query = new URLSearchParams(location.search);
+    query.set('item', first.item_id);
+    query.set('tab', 'execution');
+    query.set('run', first.request_id);
+    return `${location.pathname}?${query.toString()}`;
+  };
+
   const handleProjectSwitch = (id: string) => {
     navigate(`/projects/${id}/${getLastLens()}`);
     close();
@@ -151,6 +181,26 @@ const Sidebar: Component = () => {
 
       {/* nav */}
       <nav aria-label="Main" style={{ flex: 1, 'overflow-y': 'auto', padding: '0 14px' }}>
+        <Show when={waitingRuns().length > 0}>
+          <NavButton
+            href={waitingHref()}
+            icon={IconAgent}
+            label="Waiting for you"
+            active={false}
+            onClick={close}
+            badge={
+              <span
+                data-testid="waiting-count"
+                style={{
+                  'min-width': '1.25rem', padding: '0 6px', 'border-radius': 'var(--radius-pill)', 'text-align': 'center',
+                  'font-size': '0.75rem', 'font-weight': 700, background: 'var(--color-primary-600)', color: 'var(--color-on-accent)',
+                }}
+              >
+                {waitingRuns().length}
+              </span>
+            }
+          />
+        </Show>
         <Show when={currentProjectId()}>
           <SectionLabel label="Project" />
 

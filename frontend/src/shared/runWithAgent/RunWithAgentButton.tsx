@@ -108,9 +108,12 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
   // Once the item has a run, the labelled trigger offers another one.
   const hasRun = () => store.requestsForItem(props.itemId).length > 0;
 
+  const asking = () => store.requestsForItem(props.itemId)[0]?.summary?.state === 'waiting_decision';
+
   const openExecutionTab = (e: MouseEvent) => {
     e.stopPropagation();
-    setSearchParams({ item: props.itemId, tab: 'execution' });
+    // A run that waits for an answer opens on that run, where its question is already open.
+    setSearchParams({ item: props.itemId, tab: 'execution', run: asking() ? store.requestsForItem(props.itemId)[0].summary!.request_id : undefined });
   };
 
   return (
@@ -120,7 +123,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
           <button
             type="button"
             aria-label={`Open the Execution tab for ${props.itemTitle}`}
-            title="Open the Execution tab"
+            title={asking() ? 'Open the question' : 'Open the Execution tab'}
             onClick={openExecutionTab}
             class="rounded-full focus:outline-none focus-visible:ring-2"
             style={{ ...chipStyle(state().tone, state().raw), border: 'none', cursor: 'pointer' }}

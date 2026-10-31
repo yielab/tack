@@ -162,6 +162,10 @@ drawer and in the side column of the item's page, takes the colour and the butto
 **Merge** shows whenever a run could be merged. When it cannot run it stays disabled and says why
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
+When an agent has stopped to ask you something, the sidebar shows **Waiting for you** with how many
+runs are asking. Press it to open the first one on its Execution tab, with the question open; the row
+is not there when nothing waits. A card on the board whose run is asking opens that run the same way.
+
 While a run is going, the item follows it: its status, who it is assigned to and the other details beside
 it change when the run does, with no reload, and stop being checked once the run has ended.
 
