@@ -10,7 +10,29 @@
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-lead",
-      "verifyCmd": ""
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "record"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__query",
+          "skill"
+        ],
+        "records": {
+          "write": [
+            "entries"
+          ],
+          "query": true
+        }
+      }
     },
     {
       "id": "saas-notes-reviewer",
@@ -20,7 +42,29 @@
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-reviewer",
-      "verifyCmd": ""
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "record"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__query",
+          "skill"
+        ],
+        "records": {
+          "write": [
+            "entries"
+          ],
+          "query": true
+        }
+      }
     },
     {
       "id": "saas-notes-analyst",
@@ -30,7 +74,37 @@
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-analyst",
-      "verifyCmd": ""
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "record",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__export",
+          "rec__query",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [
+            "entries"
+          ],
+          "query": true
+        }
+      }
     },
     {
       "id": "saas-notes-writer",
@@ -40,7 +114,33 @@
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-writer",
-      "verifyCmd": ""
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "record",
+          "write"
+        ],
+        "tools": [
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__export",
+          "rec__query",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [
+            "entries"
+          ],
+          "query": true
+        }
+      }
     }
   ],
   "settings": {
@@ -176,7 +276,7 @@
   },
   "budgetUnpriced": [],
   "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
-  "configDigest": "0790bbef5f4a0437c99afae99374bdae69e1675ec7ca5f7a6dbfd5f37b05f6d0",
+  "configDigest": "47a1b2a9254590b2a4072945c6749176cd70f3ca098dd54170ffd7e63c9022cc",
   "drift": "no",
   "profile": {
     "name": "attended",

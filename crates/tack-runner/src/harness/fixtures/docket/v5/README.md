@@ -3,7 +3,7 @@
 The files in this directory are **captures from a real docket**, plus the answers that are
 marked `constructed`. Captured from `docket 0.3.0b1` (operator API version `6`, with the
 escalation record, the task as fields, the prompt manifest, the two-level home, the four
-blueprints, `workspaceKind`, `blueprint` and `pipeline.steps`), source checkout `4bf26e50`, on 2026-10-31. The directory keeps the name `v5` from the
+blueprints, `workspaceKind`, `blueprint` and `pipeline.steps`), source checkout `cdeabac3`, on 2026-10-31. The directory keeps the name `v5` from the
 first capture; the answers say `apiVersion: "6"`.
 
 `scripts/capture-docket-fixtures.sh` makes them. It starts `docket start --dispatch` in a
@@ -81,8 +81,22 @@ by the script); a constructed file is replaced by a capture when the script can 
 - `GET /pods/<pod>` carries no `codebase`: the list (`GET /pods`) does, `""` for a team that works
   in a folder. The detail says it with `repoConfigDir`, `""` for a folder team, and since docket's
   `df17a145` both routes say it outright with `workspaceKind` (`codebase` or `workdir`). Since
-  `4bf26e50` they also carry `blueprint`, and the detail `pipeline.steps` (a step's `rework` is a
+  `4bf26e50` (and, since `cdeabac3`, the task scope below) they also carry `blueprint`, and the detail `pipeline.steps` (a step's `rework` is a
   list of `{when, to, max}`; a parallel step carries its branches under `steps`).
+- Since `cdeabac3` a record set carries `scope` (`pod` or `task`, always present, so its presence is how a
+  client learns `?task=` exists), every row `_role` (the role of the hop that wrote it, right after `_step`;
+  `null` for a row written by no hop) and `_updated_at` is `null` until the row is updated.
+  `GET /pods/<pod>/records/<set>?task=<id>` answers the rows that task wrote in write order, for a `pod` set
+  too (another task's row of the same ref is not there: `records-rows-pod-shared`), `[]` for a task that wrote
+  none, and `limit` counts the rest in `cut` (`records-rows-task-limit`). `task=` empty, and `task=` with `sql=`,
+  are the same `400` with the one sentence `task must name a task and cannot be combined with sql`. A repeated
+  `ref` is `created: false` (an agent tool's answer, not a route) within the task for a `task` set and across
+  the whole team for a `pod` set; the script checks both. Each member of `GET /pods/<pod>` lists
+  `capabilities`: `kinds` (`read`, `write`, `exec`, `record`), `tools` and `records` `{write, query}`. A role
+  that denies `write` still proposes (`record` is its own kind): the lead reads and proposes
+  (`pod-capabilities`), and every role of a team that declares `tack_proposals` can, the implementer too; a
+  team with no such set lists `records.write: []` (`pod-attended`), and `deniedTools: record` empties it again
+  (`pod-capabilities-denied`).
 - `cut` on a set's rows is the count of rows the limit left out (`0` for none), not a flag.
 - A hop that cannot reach a model still carries `promptManifest`: docket writes it before it asks.
 - `GET /traces/<pod>` holds back the newest second: a read made right after a hop's last event
@@ -181,28 +195,28 @@ the constructed consult's is one too, and `expiresAt` is `null` where docket set
 the `decided` record. `task-blocked-input-expired` is `constructed` from a capture and docket's
 `TaskRecord`; only the attempt code `not_answered` is Tack's own.
 
-## Records with a scope, `?task=` and what a member reaches: constructed, recaptured when docket commits
+## Records with a scope, `?task=` and what a member reaches: captured
 
-docket's work on records (`internal-docs/design/records-proposals-2026-10-31.md`, API stays `6`,
-every key additive) was uncommitted when Tack's side was built, so none of it is captured. Five
-files are `constructed` from that design note and the captures beside them, and the script does not
-make them: **recapture them (and replace these files with captures) when docket commits that work**,
-and check the sentences of the two `400` bodies, which the note does not give.
+docket committed this work as `cdeabac3` (API stays `6`, every key additive) and the script
+captures it: it declares `tack_proposals` with `scope: task` on three teams (a folder team, a team
+with a codebase, and one that then denies the `record` kind), writes rows through docket's own
+records port with a task and a role as their origin, and reads them back.
 
-- `records-scoped`: the listing with a `scope` (`pod` or `task`) on each set. Tack sends `?task=`
+- `records-scoped`: the listing, every set with a `scope` (`pod` or `task`). Tack sends `?task=`
   for a set only when its entry carries `scope`.
-- `records-rows-task`: the answer of `?task=<id>`, the task's rows in write order (`_id` ascending),
-  with `_role`, the role of the hop that wrote the row, beside `_task`, `_session` and `_step`.
+- `records-rows-task`, `-other`, `-limit`, `-pod-shared`, `records-task-unknown`: the answers of
+  `?task=<id>`, the task's rows in write order (`_id` ascending), with `_role` right after `_step`.
+  `records-rows-sql-columns` is the same set read by statement, to show where `_role` sits.
 - `records-task-empty` and `records-task-and-sql`: the `400` of an empty `task=` and of `task=` with
-  `sql=`. Tack sends neither.
-- `pod-capabilities`: the report of a team whose members carry `capabilities`
-  (`kinds`, `tools`, `records.write`, `records.query`; no `services`).
+  `sql=`, with the same sentence. Tack sends neither.
+- `pod-capabilities`, `-folder` and `-denied`: the reports of a team whose members carry
+  `capabilities` (`kinds`, `tools`, `records.write`, `records.query`; no `services`), when the
+  team declares the set, in a folder, and when it also denies `record`.
 
-The fake is a docket with all of this by default, and `before_task_scope()` makes it the docket of
-the captures: no `scope`, no `_role`, no `capabilities`, and `task=` ignored (every row of the set
-comes back), which is why a test of the older docket proves Tack never sends it. The two tests that
-compare the fake with the captures run on that variant, and a third compares the default with the
-five constructed files.
+The fake is the docket of these captures by default, and `before_task_scope()` makes it the docket
+before them: no `scope`, no `_role`, no `capabilities`, and `task=` ignored (every row of the set
+comes back), which is why a test of the older docket proves Tack never sends it. No capture of
+that docket exists; the variant is the captures with those keys taken out.
 
 ## Every fixture
 
@@ -227,7 +241,7 @@ five constructed files.
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
-| `pod-capabilities` | `GET /pods/<pod>` | 200 | constructed |
+| `pod-capabilities` | `GET /pods/<pod>` | 200 | captured |
 | `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |
@@ -260,11 +274,18 @@ five constructed files.
 | `post-tasks-task-bad-type` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-task-unknown-key` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-unknown-pod` | `POST /tasks/<pod>` | 404 | captured |
-| `records-rows-task` | `GET /pods/<pod>/records/<set>` | 200 | constructed |
+| `records-rows-task` | `GET /pods/<pod>/records/<set>` | 200 | captured |
 | `records-rows` | `GET /pods/<pod>/records/<set>` | 200 | captured |
-| `records-scoped` | `GET /pods/<pod>/records` | 200 | constructed |
-| `records-task-and-sql` | `GET /pods/<pod>/records/<set>` | 400 | constructed |
-| `records-task-empty` | `GET /pods/<pod>/records/<set>` | 400 | constructed |
+| `pod-capabilities-denied` | `GET /pods/<pod>` | 200 | captured |
+| `pod-capabilities-folder` | `GET /pods/<pod>` | 200 | captured |
+| `records-rows-pod-shared` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records-rows-sql-columns` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records-rows-task-limit` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records-rows-task-other` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records-task-unknown` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records-scoped` | `GET /pods/<pod>/records` | 200 | captured |
+| `records-task-and-sql` | `GET /pods/<pod>/records/<set>` | 400 | captured |
+| `records-task-empty` | `GET /pods/<pod>/records/<set>` | 400 | captured |
 | `records` | `GET /pods/<pod>/records` | 200 | captured |
 | `status-empty` | `GET /status.json` | 200 | captured |
 | `status` | `GET /status.json` | 200 | captured |

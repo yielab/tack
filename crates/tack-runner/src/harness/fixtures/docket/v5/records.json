@@ -4,6 +4,7 @@
       "name": "entries",
       "description": "One row per thing the pod has captured, found again by its ref.",
       "key": "ref",
+      "scope": "pod",
       "rows": 0,
       "columns": [
         {

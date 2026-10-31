@@ -1,0 +1,303 @@
+{
+  "pod": "saas-notes",
+  "blueprint": "routine",
+  "members": [
+    {
+      "id": "saas-notes-lead",
+      "role": "lead",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-lead",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "record"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__query",
+          "rec__tack_proposals__add",
+          "rec__tack_proposals__update",
+          "skill"
+        ],
+        "records": {
+          "write": [
+            "entries",
+            "tack_proposals"
+          ],
+          "query": true
+        }
+      }
+    },
+    {
+      "id": "saas-notes-reviewer",
+      "role": "reviewer",
+      "model": {
+        "value": "anthropic/claude-sonnet-4-6",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-reviewer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "record"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__query",
+          "rec__tack_proposals__add",
+          "rec__tack_proposals__update",
+          "skill"
+        ],
+        "records": {
+          "write": [
+            "entries",
+            "tack_proposals"
+          ],
+          "query": true
+        }
+      }
+    },
+    {
+      "id": "saas-notes-analyst",
+      "role": "analyst",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-analyst",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "record",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__export",
+          "rec__query",
+          "rec__tack_proposals__add",
+          "rec__tack_proposals__update",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [
+            "entries",
+            "tack_proposals"
+          ],
+          "query": true
+        }
+      }
+    },
+    {
+      "id": "saas-notes-writer",
+      "role": "writer",
+      "model": {
+        "value": "anthropic/claude-haiku-4-5",
+        "source": "policy"
+      },
+      "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-writer",
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read",
+          "record",
+          "write"
+        ],
+        "tools": [
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "read",
+          "rec__entries__add",
+          "rec__entries__update",
+          "rec__export",
+          "rec__query",
+          "rec__tack_proposals__add",
+          "rec__tack_proposals__update",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [
+            "entries",
+            "tack_proposals"
+          ],
+          "query": true
+        }
+      }
+    }
+  ],
+  "settings": {
+    "budgetUsd": {
+      "value": 15.0,
+      "source": "set"
+    },
+    "maxReworkCycles": {
+      "value": 1,
+      "source": "default"
+    },
+    "turnTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "verifyTimeoutS": {
+      "value": null,
+      "source": "default"
+    },
+    "approvalMode": {
+      "value": "wait",
+      "source": "default"
+    },
+    "approvalExpiryHours": {
+      "value": 24,
+      "source": "default"
+    },
+    "inputExpiryHours": {
+      "value": 72,
+      "source": "default"
+    },
+    "allowCommands": {
+      "value": "",
+      "source": "default"
+    },
+    "pipeline": {
+      "value": null,
+      "source": "default"
+    },
+    "schedule": {
+      "value": null,
+      "source": "default"
+    },
+    "projectInstructions": {
+      "value": "",
+      "source": "default"
+    },
+    "mcpServers": {
+      "value": null,
+      "source": "default"
+    },
+    "deniedTools": {
+      "value": "",
+      "source": "default"
+    },
+    "requireVerify": {
+      "value": false,
+      "source": "default"
+    },
+    "maxConsultationsPerTask": {
+      "value": 3,
+      "source": "default"
+    },
+    "consultMode": {
+      "value": "park",
+      "source": "default"
+    },
+    "network": {
+      "value": "open",
+      "source": "default"
+    },
+    "profile": {
+      "value": "attended",
+      "source": "default"
+    },
+    "readOnly": {
+      "value": "",
+      "source": "default"
+    },
+    "prepare": {
+      "value": "",
+      "source": "default"
+    },
+    "protects": {
+      "value": "",
+      "source": "default"
+    }
+  },
+  "approvalMode": {
+    "effective": "park",
+    "source": "unset"
+  },
+  "pipeline": {
+    "source": "blueprint 'routine'",
+    "steps": [
+      {
+        "id": "compile",
+        "kind": "agent",
+        "role": "analyst",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "draft",
+        "kind": "agent",
+        "role": "writer",
+        "modelClass": "cheap",
+        "gate": null,
+        "rework": []
+      },
+      {
+        "id": "review",
+        "kind": "agent",
+        "role": "reviewer",
+        "modelClass": "strong",
+        "gate": "verdict",
+        "rework": [
+          {
+            "when": [
+              "request-changes"
+            ],
+            "to": "draft",
+            "max": 1
+          }
+        ]
+      }
+    ]
+  },
+  "network": {
+    "mode": "none",
+    "scope": "global"
+  },
+  "budgetUnpriced": [],
+  "configSource": "/scratch/plan-team",
+  "configDigest": "012329d1929178444ca5215a85d31f2055867fd95e3ff879446bc28467982a80",
+  "drift": "no",
+  "profile": {
+    "name": "attended",
+    "violations": []
+  },
+  "pipelineSource": "blueprint 'routine'",
+  "workspaceKind": "workdir",
+  "repoConfigDir": "",
+  "readOnly": [
+    "/scratch/toolchain/node"
+  ]
+}

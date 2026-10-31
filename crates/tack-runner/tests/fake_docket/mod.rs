@@ -907,9 +907,24 @@ fn pod_report(state: &World, name: &str) -> Response {
             member["model"]["value"] = json!(model);
         }
     }
-    if !state.before_task_scope {
-        // What each role reaches, from the constructed answer's member of the same role.
-        let reach = fixture("pod-capabilities");
+    for member in report["members"].as_array_mut().into_iter().flatten() {
+        if state.before_task_scope {
+            // A docket before `capabilities`: the captures hold them, so take them out.
+            member.as_object_mut().unwrap().remove("capabilities");
+        }
+    }
+    let proposes = state.records.get(name).is_some_and(|sets| {
+        sets.iter()
+            .any(|set| set.name == "tack_proposals")
+    });
+    if proposes && !state.before_task_scope {
+        // What each role reaches once the team declares `tack_proposals`: the capture of a team of
+        // the same blueprint that does, member by member.
+        let reach = fixture(if pod.folder {
+            "pod-capabilities-folder"
+        } else {
+            "pod-capabilities"
+        });
         for member in report["members"].as_array_mut().into_iter().flatten() {
             if let Some(found) = reach["members"]
                 .as_array()
@@ -947,19 +962,16 @@ fn write_row(state: &mut World, pod: &str, set: &str, task: &str, row: Value) {
         return;
     }
     // The system columns of a captured row; the team's own are the set's.
-    let mut stored = fixture(if older {
-        "records-rows"
-    } else {
-        "records-rows-task"
-    })["rows"][0]
-        .clone();
+    let mut stored = fixture("records-rows-task")["rows"][0].clone();
     stored
         .as_object_mut()
         .expect("a row")
         .retain(|column, _| column.starts_with('_'));
     stored["_id"] = json!(set.rows.len() + 1);
     stored["_task"] = json!(task);
-    if !older {
+    if older {
+        stored.as_object_mut().unwrap().remove("_role");
+    } else {
         stored["_role"] = row.get("_role").cloned().unwrap_or(json!("lead"));
     }
     for column in &set.columns {
@@ -973,11 +985,7 @@ fn pod_records(state: &World, pod: &str) -> Response {
     if state.without_records || !state.pods.contains_key(pod) {
         return error(404, "not found");
     }
-    let template = fixture(if state.before_task_scope {
-        "records"
-    } else {
-        "records-scoped"
-    });
+    let template = fixture("records-scoped");
     let sets: Vec<Value> = state
         .records
         .get(pod)
@@ -988,7 +996,10 @@ fn pod_records(state: &World, pod: &str) -> Response {
             entry["name"] = json!(set.name);
             entry["description"] = json!(set.description);
             entry["key"] = json!(set.key);
-            if !state.before_task_scope {
+            if state.before_task_scope {
+                // A docket before the scope sends none.
+                entry.as_object_mut().unwrap().remove("scope");
+            } else {
                 entry["scope"] = json!(set.scope);
             }
             entry["rows"] = json!(set.rows.len());
@@ -1066,17 +1077,17 @@ fn record_rows(state: &World, pod: &str, set: &str, query: &str) -> Response {
     // docket counts the rows the limit left out.
     let cut = rows.len().saturating_sub(limit);
     rows.truncate(limit);
-    let mut answer = fixture(if state.before_task_scope {
-        "records-rows"
-    } else {
-        "records-rows-task"
-    });
+    let mut answer = fixture("records-rows-task");
     answer["set"] = json!(set);
     let mut columns: Vec<Value> = answer["columns"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|column| column.as_str().is_some_and(|name| name.starts_with('_')))
+        .filter(|column| {
+            column.as_str().is_some_and(|name| {
+                name.starts_with('_') && !(state.before_task_scope && name == "_role")
+            })
+        })
         .cloned()
         .collect();
     columns.extend(found.columns.iter().map(|column| json!(column)));

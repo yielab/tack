@@ -116,10 +116,9 @@ fails when a route the client sends has no capture, and the daemon's supervision
 against a shell script on a scratch path that serves `/health`. No test runs a real docket or a
 model. The fake has one variant of an older docket, `before_task_scope()`: no `scope` on a record
 set, no `_role` on a row, no `capabilities` on a member, and `?task=` ignored (every row comes
-back), so a test of it proves Tack reads such a docket by statement and never sends `task=`; the
-captures are compared with the fake in that variant, and the answers docket has not committed yet
-(`records-scoped`, `records-rows-task`, `pod-capabilities`, the two `400`s) are `constructed` and
-recaptured when it does (the fixtures README says which).
+back), so a test of it proves Tack reads such a docket by statement and never sends `task=`; no
+capture of that docket exists, and the captures (from docket's `cdeabac3`: `scope`, `_role`,
+`?task=`, `capabilities`) are compared with the fake as it is by default.
 
 Each crate has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
 file under `tests/` as a module, so the dependency graph is linked once per crate, not once per

@@ -10,7 +10,23 @@
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-lights-lead",
-      "verifyCmd": ""
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "read"
+        ],
+        "tools": [
+          "consult",
+          "glob",
+          "grep",
+          "read",
+          "skill"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        }
+      }
     },
     {
       "id": "saas-lights-implementer",
@@ -20,7 +36,30 @@
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-lights-implementer",
-      "verifyCmd": ""
+      "verifyCmd": "",
+      "capabilities": {
+        "kinds": [
+          "exec",
+          "read",
+          "write"
+        ],
+        "tools": [
+          "bash",
+          "consult",
+          "edit",
+          "glob",
+          "grep",
+          "process_output",
+          "process_stop",
+          "read",
+          "skill",
+          "write"
+        ],
+        "records": {
+          "write": [],
+          "query": false
+        }
+      }
     }
   ],
   "settings": {
