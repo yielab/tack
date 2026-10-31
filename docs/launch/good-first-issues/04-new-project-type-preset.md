@@ -25,7 +25,7 @@ adding an eleventh preset touches exactly two match arms plus one new function e
    (`construction_workflow()`, further down the same file, is a complete, readable
    example of the shape expected — a `WorkflowConfig` with `StatusDef` entries and WIP
    limits where they make sense) and wire it into `workflow_for_type()` (the dispatch
-   match at line 198).
+   match in the same file).
 4. Add a vocabulary map in `crates/tack-core/src/vocabulary.rs::vocabulary_for_type()`
    (the `Construction` arm is the existing example — a dozen or so term renames).
 5. There's already a test asserting new-domain mappings resolve correctly
@@ -38,10 +38,9 @@ A new `ProjectType` variant with its own workflow and vocabulary, a unit test pr
 `workflow_for_type`/`vocabulary_for_type` resolve it correctly, and (if you want the
 preset to be selectable from a project-creation template rather than only via the API)
 a matching entry wherever the frontend's project-type picker enumerates the existing
-ten — `frontend/src/features/projects/Projects.tsx` and
-`frontend/src/features/templates/TemplateCreator.tsx` are the two places that reference
-`project_type` today (`grep -rln 'project_type' frontend/src/features/` to confirm
-that's still current before you start — code moves).
+ten — `grep -rln 'project_type' frontend/src/features/` lists them (today
+`projects/CreateProjectModal.tsx`, `projects/Projects.tsx`, `templates/TemplateCreator.tsx`
+and `settings/panels/GeneralPanel.tsx`); code moves, so confirm before you start.
 
 ## Before you start
 

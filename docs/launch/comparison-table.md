@@ -3,7 +3,7 @@
 Every number here was checked against a live source — GitHub's API for
 stars/license/archived status, or this repository's own code for what Tack does and
 doesn't do (competitor facts checked 2026-09-06; Tack's own facts re-checked
-2026-09-19). Commands are inline so any of these can be re-checked in thirty seconds.
+2026-10-31). Commands are inline so any of these can be re-checked in thirty seconds.
 This is drafted material, not yet published anywhere.
 
 ## The two axes that matter
@@ -53,35 +53,35 @@ hypothetical one.
 A comparison that only lists wins reads as marketing and gets discounted. These are
 real, checked against the code, not softened:
 
-- **No accounts.** One optional shared Bearer token (`TACK_API_TOKEN`); no per-user
+- **No accounts.** One shared Bearer token (`TACK_API_TOKEN`, or an `api-token` file the
+  server generates beside the database on a loopback bind); no per-user
   identity, roles, or permissions. Every operator with the token can do everything.
   (ADR 0004 documents this as a deliberate posture for a single-operator tool, not an
   oversight — see `docs/adr/0004-single-operator-identity-posture.md`.)
-- **No outbound notifications.** Zero SMTP/email code anywhere in the tree —
-  `grep -rn 'smtp\|email' crates/` turns up only a custom-field *type* named `email`
-  and test fixtures setting `git config user.email`, nothing that sends mail. If you
+- **No email notifications.** Zero SMTP/email code anywhere in the tree —
+  `grep -rniE 'smtp|lettre' crates/` finds nothing, and the only `email` hits are a
+  custom-field *type* named `email` and test fixtures setting `git config user.email`.
+  The one outbound channel is a signed webhook (`TACK_WEBHOOK_URL`); otherwise, if you
   want to know an attempt finished, you have to look.
 - **English only.** The vocabulary system renames domain terms ("Sprint" → "Iteration")
   per project type; it has no language layer. There is no `i18n`/`locale` string in the
   frontend (`grep -rn 'i18n\|locale' frontend/src` finds only `localeCompare` calls
   used for deterministic sort order, not translation).
-- **One contributor.** `git shortlog -sn --all` shows one person (a second name in
-  that log, `structuralB`, resolves to the same GitHub account via its commit's own
-  noreply email — checked, not assumed).
+- **One contributor.** `git shortlog -sn --all` shows one person plus Dependabot (a
+  third name in that log, `structuralB`, resolves to the same GitHub account via its
+  commit's own noreply email — checked, not assumed).
 - **Zero users outside this repository's own testing.** 0 stars, 0 forks, 0 human-filed
   issues (`gh issue list --repo yielab/tack --state all` returns none; the GitHub API's
   "3 open issues" count is 3 open pull requests — two from Dependabot, one from the
   repo's own single contributor).
 - **No time tracking.** `estimate`/`estimate_unit` exist on an item; nothing records
   time actually spent — no `time_spent` field anywhere in the schema.
-- **Artifacts download, they don't diff.** An agent's generated files can be downloaded
-  one at a time; there's no in-UI viewer to see what changed.
 - **One active SQLite writer.** S3 backup is snapshot replication, not live
   multi-writer sync — this is a single-machine tool, not a distributed one.
 - **Not code-signed.** Release binaries need a right-click-Open on macOS or
   SmartScreen's "More info → Run anyway" on Windows.
-- **No native mobile app**, and the desktop app itself hasn't shipped a macOS build yet.
+- **No native mobile app.**
 
-None of these are secret — they're the same list in the README's "Known limitations"
-and this repository's own architecture decision records. Repeating them here is the
-point: the pitch is what's real, not what's aspirational.
+None of these are secret — they're in this repository's own architecture decision
+records and roadmap. Repeating them here is the point: the pitch is what's real, not
+what's aspirational.

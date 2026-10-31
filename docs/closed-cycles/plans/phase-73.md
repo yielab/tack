@@ -1,6 +1,6 @@
 # Plan: Phase 73 — every run goes to a team, and automation is one ladder
 
-**Status: opened 2026-10-14.** Serves ADR 0021
+**Status: built; in `develop` since 2026-10-17. Opened 2026-10-14.** Serves ADR 0021
 (`docs/adr/0021-every-run-goes-to-a-team-and-automation-is-one-ladder.md`). Written against
 `develop` at `6565415f` and docket at `e880bbfd` (ADR 0027 accepted, Phase 43 planned, API
 version 5 specified and not yet implemented). Re-run `rg -n` before trusting a line number.
@@ -82,7 +82,7 @@ branch from `develop` named `phase73/<id>`; the brief is the task's section of t
 these lines, and nothing else:
 
 ```
-Task <id> from docs/plans/phase-73.md. Read that section and the files it lists, nothing wider.
+Task <id> from docs/closed-cycles/plans/phase-73.md. Read that section and the files it lists, nothing wider.
 The ADR is docs/adr/0021-every-run-goes-to-a-team-and-automation-is-one-ladder.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Add only the tests the task names. Prefer a row in an existing table test over a new function.

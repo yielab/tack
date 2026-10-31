@@ -32,8 +32,8 @@ in the repo is a recording of that exact sequence, made from a downloaded releas
 binary running in two Docker containers, not a staged dev build.
 
 Current state, honestly: 0 users outside my own testing, one contributor (me), no
-accounts system (one shared bearer token), no notifications, English-only. MIT
-licensed, 1,505 Rust tests, `cargo nextest run --workspace` green. Feedback on the fencing/
+accounts system (one shared bearer token), no email notifications, English-only. MIT
+licensed, over 1,600 Rust tests, `cargo nextest run --workspace` green. Feedback on the fencing/
 lease design or the crate-boundary rules (`tack-core` has zero I/O; the orchestration
 crate is structurally barred from depending on the HTTP layer) is more useful to me
 right now than general reactions to the pitch.

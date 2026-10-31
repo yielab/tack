@@ -1,6 +1,6 @@
 # Plan: Phase 69 — the agent reaches only what you gave it
 
-**Status: opened 2026-10-12 by the maintainer after the security audit of the same day. Wave 0
+**Status: closed. The maintainer's remaining items were cancelled on 2026-10-27 (the roadmap's "Cancelled" list). Opened 2026-10-12 by the maintainer after the security audit of the same day. Wave 0
 (the maintainer's) is done except the GitHub settings; all four rounds closed 2026-10-12;
 the GitHub settings, the workstation items and the re-cut tag are the maintainer's — see Status.**
 Serves ADR 0018 (proposed): every task here executes one or more of its eighteen decisions, and

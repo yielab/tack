@@ -23,8 +23,8 @@ $ gh api graphql -f query='{ repository(owner:"yielab", name:"tack") {
 > Conductor, Sculptor, Emdash, or just plain Claude Code/Codex with no board at all —
 > what's the one thing that would have to be true for you to try this instead?
 >
-> To save you re-deriving it: the honest gap list is in the README's "Known
-> limitations" section — no accounts, no notifications, English-only, one contributor.
+> To save you re-deriving it, the honest gap list: no accounts, no email notifications,
+> English-only, no time tracking, one contributor.
 > If one of those is your blocker, say so; that's exactly the kind of thing that becomes
 > a `good first issue` instead of staying a silent reason not to try it.
 

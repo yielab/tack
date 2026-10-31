@@ -34,15 +34,15 @@ deferred transactions here deadlock under real concurrency, and that's caught by
 concurrency tests running against a file-backed DB rather than the shared in-memory
 harness (the in-memory one won't reproduce it).
 
-Numbers, measured `2026-10-26` (the release binary is the last measurement CI made), not aspirational:
+Numbers, measured on `develop` on `2026-10-31`, not aspirational:
 
 | | |
 | --- | --- |
-| Rust | 154,519 lines across the nine crates (`find crates -name '*.rs' \| xargs wc -l`) |
-| Tests | 1,505 Rust tests (`cargo nextest run --workspace`) and 772 frontend tests (`npx vitest run`, ~9 s) |
+| Rust | about 163,000 lines across the nine crates (`find crates -name '*.rs' -not -path 'crates/tack-desktop/*' \| xargs cat \| wc -l`) |
+| Tests | over 1,600 Rust tests (`cargo nextest run --workspace`) and over 800 frontend tests (`npx vitest run`) |
 | Migrations | 95, one `ALTER` per migration file — the runner has no transaction wrapping a whole migration, so a multi-statement migration failing halfway would brick the install; the fix was a rule, not a retry loop |
 | API surface | 97 documented paths, OpenAPI-generated, diffed against the handler set in CI (a drift gate, not just docs) |
-| Release binary | 18.4 MiB, `lto = true, opt-level = "z"`, measured in CI (`stat -c%s target/release/tack`) |
+| Release binary | under 25 MB, `lto = true, opt-level = "z"`; CI fails the build above that budget (`stat -c%s target/release/tack`) |
 
 Frontend is SolidJS, types generated from the OpenAPI spec rather than hand-kept in
 sync — `schema.gen.ts` is regenerated and diffed in CI so a Rust response-shape change

@@ -1,6 +1,6 @@
 # Phase 80: a run that waits on a person, and one record for every wait
 
-**Status: built 2026-10-26, on top of Phase 79; not yet in `develop`. docket closed its Phase 51 that day (next section), so cards A, C, D, F and G were all built, G folded into D, through the tasks R, RS1, RS2 and BS. B is deferred and E is cut. Proposed 2026-10-25 with one card ready.**
+**Status: built 2026-10-26, on top of Phase 79; merged into `develop` on 2026-10-31 (PR #66). docket closed its Phase 51 that day (next section), so cards A, C, D, F and G were all built, G folded into D, through the tasks R, RS1, RS2 and BS. B is deferred and E is cut. Proposed 2026-10-25 with one card ready.**
 
 ## What changed on 2026-10-26: docket closed its Phase 51
 

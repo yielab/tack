@@ -1,8 +1,8 @@
 # Phase 79: the crates say what depends on what, and the SQL lives in one place
 
-**Executes:** [ADR 0028](../adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md)
-(accepted 2026-10-26; proposed 2026-10-20, revised 2026-10-25). **Built 2026-10-26**; waits on the
-maintainer's merge into `develop`.
+**Executes:** [ADR 0028](../../adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md)
+(accepted 2026-10-26; proposed 2026-10-20, revised 2026-10-25). **Built 2026-10-26**; merged into
+`develop` with Phases 80 to 82 on 2026-10-31 (PR #66).
 
 **Done when:** `tack-runner` compiles without `sqlx` or `libsqlite3-sys` in its dependency tree;
 no file under `crates/tack-api/src`, `crates/tack-orch/src` or `crates/tack-app/src` names
@@ -11,7 +11,7 @@ no file under `crates/tack-api/src`, `crates/tack-orch/src` or `crates/tack-app/
 `.githooks/pre-push`; the full suite passes once, on the merged tree, with no test duplicated
 across old and new locations.
 
-**Status (2026-10-26):** built, every task of §5 committed; the full suite
+**Status:** built (2026-10-26), every task of §5 committed; the full suite
 (1 505 tests) and `.githooks/pre-push` pass on the merged tree. What the execution found is in §8.
 What the audit changed is in §7; the two companion guides in Spanish
 ([`phase-79-guia.md`](phase-79-guia.md), [`phase-79-desde-cero.md`](phase-79-desde-cero.md))

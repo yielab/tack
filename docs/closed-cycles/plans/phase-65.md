@@ -97,7 +97,7 @@ The brief is the task's section of this file plus these lines, and nothing else 
 reads `CLAUDE.md` on its own:
 
 ```
-Task <id> from docs/plans/phase-65.md. Read that section and the files it lists, nothing wider.
+Task <id> from docs/closed-cycles/plans/phase-65.md. Read that section and the files it lists, nothing wider.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Add only the tests the task names. Prefer a row in an existing table test over a new function.
 Do not add a type, trait, option, flag or helper the task does not name.
@@ -377,6 +377,8 @@ of the released product asks for it, and then through an ADR where a decision is
 - **Anything in the "Decided" table.**
 
 ## Status
+
+Closed. Wave 0's remaining items (0.3, 0.7, 0.8, 0.9) were cancelled on 2026-10-27; the roadmap's "Cancelled" list names them.
 
 | Task | State |
 |---|---|

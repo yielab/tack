@@ -1,6 +1,6 @@
 # Plan: Phase 74 — what the first real project found
 
-**Status: opened 2026-10-17.** Serves ADR 0023
+**Status: built; in `develop` since 2026-10-18. Opened 2026-10-17.** Serves ADR 0023
 (`docs/adr/0023-what-the-first-real-project-found.md`). Written against `develop` at `d99503dd`.
 Every path and line below was read that day; re-run `rg -n` before trusting a line number.
 
@@ -79,7 +79,7 @@ As Phase 73: one agent, one task, one branch from `develop` named `phase74/<id>`
 the task's section of this file plus these lines, and nothing else:
 
 ```
-Task <id> from docs/plans/phase-74.md. Read that section, its "The rule for every task" table, and the files it lists, nothing wider.
+Task <id> from docs/closed-cycles/plans/phase-74.md. Read that section, its "The rule for every task" table, and the files it lists, nothing wider.
 The ADR is docs/adr/0023-what-the-first-real-project-found.md; its table and this plan's "Decided" table are the decision, do not re-open them.
 Touch only the files the task lists. A change needed outside them is a finding: stop and report it.
 Fix the fact in its owner and make the other callers read it; never add a second copy of a rule.
