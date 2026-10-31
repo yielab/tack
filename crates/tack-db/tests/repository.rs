@@ -8,6 +8,8 @@
 //! `execution_retention` and `event_artifact_retention`), and the
 //! concurrency-sensitive `version_concurrency` write path.
 
+#[path = "repository/brief_write_lock.rs"]
+mod brief_write_lock;
 #[path = "repository/corrupt_rows.rs"]
 mod corrupt_rows;
 #[path = "repository/counted_tokens.rs"]
