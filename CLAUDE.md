@@ -16,20 +16,20 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 "Open" section first. In short, as of 2026-10-18:
 
 - **Released:** `v0.1.0-beta.9` (2026-09-21). The next release is `v0.2.0-beta.1` (Phases 66–82):
-  the version is bumped and the changelog section written on the Phases 79–82 branch (PR #66), and it
+  the version is bumped and the changelog section written in the Phases 79–82 merge (PR #66), and it
   is not tagged. `v0.1.0-beta.10` (tagged 2026-10-14) never had a release and is not re-cut, so the
   README's install commands install `v0.1.0-beta.9` until the maintainer publishes
   `v0.2.0-beta.1` (`docs/LAUNCH-CHECKLIST.md`).
-- **In `develop`, unreleased:** Phase 73 (`docs/plans/phase-73.md`, ADRs 0021 and 0022) — every
+- **In `develop`, unreleased:** Phase 73 (`docs/closed-cycles/plans/phase-73.md`, ADRs 0021 and 0022) — every
   docket run goes to a long-lived team over docket's HTTP API version 6, a role chooses the
   profile, a task can start by itself and repeat, the automatic merge stops at the team's
   ceiling, usage is kept per model, Settings → Automation is a ladder of four rungs, and a
   whole project goes in and out through one file (a template is that file without items).
-- **Opened 2026-10-17:** Phase 74 (`docs/plans/phase-74.md`, ADR 0023, accepted) — the twenty
+- **Opened 2026-10-17:** Phase 74 (`docs/closed-cycles/plans/phase-74.md`, ADR 0023, accepted) — the twenty
   Tack defects the My SaaS onboarding found, fixed where each fact is owned, ending with
   My SaaS's first runs through its teams as Phase 73's live proof. Tasks F, I, W, C, L and X are in
   `develop` (2026-10-18); My SaaS's runs on paid models wait on docket's context and token count.
-- **Opened 2026-10-18:** Phase 75 (`docs/plans/phase-75.md`, ADR 0024, accepted) — limits in
+- **Opened 2026-10-18:** Phase 75 (`docs/closed-cycles/plans/phase-75.md`, ADR 0024, accepted) — limits in
   tokens with no default and no dollars per day, cache reads never counted, every limit naming who
   applies it, and nothing sent to an agent twice. every round (A, G, B, D, E, V, L, CT, Z's screens) is in `develop`; left is
   Z's run of My SaaS, end to end through docket and prill.
@@ -39,7 +39,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
 - **Accepted 2026-10-19, from the My SaaS rerun:** ADR 0026 (built: the runner's default settings
   file, and a card with no check says so) and ADR 0027 (whoever makes the agent's copy installs its
   dependencies from the lockfile; Tack makes no copy of its own for a docket run; decision 5, a
-  limit per profile learnt from its runs). Phase 77 (`docs/plans/phase-77.md`) built tasks S, L, N
+  limit per profile learnt from its runs). Phase 77 (`docs/closed-cycles/plans/phase-77.md`) built tasks S, L, N
   and P in `develop` (2026-10-19); and K (docket API 6, `check_changed`): Phase 77 is built, its proof is My SaaS's code card through a team.
 - **Built 2026-10-19:** Phase 78 (the roadmap's own section, no plan file, no ADR) — every other
   open finding in one pass: the desktop app's first runs, the board audit, a page of its own for each
@@ -53,11 +53,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   defects, fixed in Phase 81's round 1. Since 2026-10-26 the suite lives in the
   git-ignored `onboarding-lab/e2e/` (`docket-prill-e2e.sh`), beside the `onboard-project` skill it exercises.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
-- **Built 2026-10-27 (unmerged):** Phase 81 (`docs/plans/phase-81.md`, no ADR) — what an audit of the tree
+- **Built 2026-10-27, in `develop` since 2026-10-31 (PR #66):** Phase 81 (`docs/closed-cycles/plans/phase-81.md`, no ADR) — what an audit of the tree
   with Phases 79 and 80 found, as cards for Sonnet and Haiku agents in three rounds. CI never needs
   docket or prill; the three meet only in the local, unversioned `onboarding-lab/`.
   A card runs only the tests of what it touched; the full suites run once per round.
-- **Proposed 2026-10-29:** Phase 82 (`docs/plans/phase-82.md`, ADR 0030, proposed) — docket closed its
+- **Built 2026-10-30, in `develop` (PR #66); ADRs 0030 and 0031 still proposed:** Phase 82 (`docs/closed-cycles/plans/phase-82.md`, ADR 0030, proposed) — docket closed its
   Phases 52–54 the same day (`task` fields on `POST /tasks/<pod>`, a `promptManifest` and `handoff`
   `assumptions`/`questions` on every hop, API still 6, all additive). Cards: A sends the item as
   `task` fields and the previous answers on a rerun; B reads each hop's prompts into one `steps` value and
