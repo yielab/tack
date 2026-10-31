@@ -416,6 +416,7 @@ fn an_answer_becomes_a_decision() {
         let answer = DecisionAnswer {
             option_id: option_id.map(str::to_owned),
             text: None,
+            unanswered: false,
         };
         let bytes = CodexGrammar.answer(&question, &answer);
         let actual: serde_json::Value = serde_json::from_slice(&bytes).expect("valid json");
@@ -512,6 +513,7 @@ exit 0"#
         let answer = DecisionAnswer {
             option_id: Some("accept".to_owned()),
             text: None,
+            unanswered: false,
         };
         let _ = answers_tx.send(answer).await;
     };

@@ -914,10 +914,12 @@ fn deny_option(question: &Question) -> DecisionAnswer {
         Some(option) => DecisionAnswer {
             option_id: Some(option.option_id.clone()),
             text: None,
+            unanswered: true,
         },
         None => DecisionAnswer {
             option_id: None,
             text: None,
+            unanswered: true,
         },
     }
 }

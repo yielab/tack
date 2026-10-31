@@ -265,6 +265,35 @@ async fn an_approval_that_expired_unanswered_ends_not_answered_with_its_question
 }
 
 #[tokio::test]
+async fn an_approval_docket_expired_ends_not_answered_with_its_text_after_the_question() {
+    let expired = "approval expired: nobody answered by 2026-10-31T10:00:00Z";
+    let with_question = ended(
+        "approval_expired",
+        expired,
+        Some(("Push the migration to production?", 25, false)),
+    )
+    .await;
+    assert_eq!(with_question["code"], json!("not_answered"));
+    let message = with_question["message"].as_str().expect("a message");
+    assert!(
+        message.starts_with("Nobody answered 'Push the migration to production?' (asked "),
+        "{message}"
+    );
+    assert!(
+        message.ends_with(&format!("25 minutes. docket said: {expired}")),
+        "{message}"
+    );
+    let without = ended("approval_expired", expired, None).await;
+    assert_eq!(without["code"], json!("not_answered"));
+    assert_eq!(
+        without["message"],
+        json!(format!(
+            "Nobody answered the question before it expired. docket said: {expired}"
+        ))
+    );
+}
+
+#[tokio::test]
 async fn an_approval_a_person_denied_ends_approval_denied() {
     let reason = ended(
         "approval_denied",

@@ -2361,6 +2361,7 @@ async fn a_denied_approval_posts_deny_with_the_reason() {
         .answer(DecisionAnswer {
             option_id: Some("deny".to_owned()),
             text: Some("not on this machine".to_owned()),
+            unanswered: false,
         })
         .await;
     let (outcome, _) = parked.end().await;
@@ -2369,6 +2370,60 @@ async fn a_denied_approval_posts_deny_with_the_reason() {
         answers_posted(&fake),
         [json!({"optionId": "deny", "actor": "tack",
                 "content": {"reason": "not on this machine"}})]
+    );
+}
+
+/// The answer the engine makes up when Tack's own deadline for a decision passes: the deny
+/// option, marked as one nobody gave.
+#[tokio::test]
+async fn a_decision_that_expired_in_tack_cancels_the_task_and_posts_no_deny() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::approval("tool call 'bash'"),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    parked.question().await;
+    parked
+        .answer(DecisionAnswer {
+            option_id: Some("deny".to_owned()),
+            text: None,
+            unanswered: true,
+        })
+        .await;
+    let (outcome, _) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("not_answered"));
+    let message = outcome.terminal_reason["message"].as_str().expect("text");
+    assert!(
+        message.starts_with("Nobody answered 'tool call 'bash'' (asked "),
+        "{message}"
+    );
+    assert!(answers_posted(&fake).is_empty(), "no deny was posted");
+    let task = fake.task_ids()[0].clone();
+    let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
+    assert_eq!(cancels.len(), 1);
+}
+
+#[tokio::test]
+async fn an_approval_docket_expired_ends_not_answered_with_its_own_reason() {
+    let fake = pods_fake().await;
+    let task = fake_docket::fixture("task-failed-approval-expired");
+    fake.script(Script {
+        status: task["status"].as_str().unwrap().to_owned(),
+        failure_kind: Some(task["failureKind"].as_str().unwrap().to_owned()),
+        reason: task["reason"].as_str().unwrap().to_owned(),
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("not_answered"));
+    let message = outcome.terminal_reason["message"].as_str().expect("text");
+    assert!(
+        message.ends_with("docket said: approval expired: nobody answered by 2026-01-01T00:05:00Z"),
+        "{message}"
     );
 }
 
@@ -2395,6 +2450,7 @@ fn granting(option: &str) -> DecisionAnswer {
     DecisionAnswer {
         option_id: Some(option.to_owned()),
         text: None,
+        unanswered: false,
     }
 }
 
@@ -2496,6 +2552,7 @@ async fn a_gate_and_a_changed_check_are_asked_and_answered_as_approvals() {
             DecisionAnswer {
                 option_id: Some("deny".to_owned()),
                 text: Some("read it first".to_owned()),
+                unanswered: false,
             },
         )
         .await;
@@ -2645,6 +2702,7 @@ fn choosing(option: &str, text: Option<&str>) -> DecisionAnswer {
     DecisionAnswer {
         option_id: Some(option.to_owned()),
         text: text.map(str::to_owned),
+        unanswered: false,
     }
 }
 

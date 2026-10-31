@@ -339,6 +339,7 @@ session. How to set it is in
 nobody answers in time expires, and an expired question is never treated as an Allow. The run then ends as
 *Nobody answered* with the question, when it was asked and how long the team waited; it does not read as a
 denial, because nobody denied anything. A run ends as *approval denied* only when a person refused the question.
+A question left past its time is cancelled, never answered "no" for you: the team stops without a refusal on its record.
 
 ---
 

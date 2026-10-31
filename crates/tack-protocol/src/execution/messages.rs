@@ -311,6 +311,11 @@ pub struct DecisionAnswer {
     pub option_id: Option<String>,
     #[serde(default)]
     pub text: Option<String>,
+    /// Set by the runner on the answer it makes up when nobody answered (the decision expired,
+    /// the attempt ran out of time, the decision could not be created). Never set for an answer a
+    /// person gave, never sent over the wire.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unanswered: bool,
 }
 
 /// One decision of a poll. `resolved_by` is whoever the board recorded (`kind`, `subject_id`);

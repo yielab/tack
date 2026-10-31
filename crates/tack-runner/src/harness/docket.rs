@@ -195,6 +195,33 @@ struct Live {
     wait: Option<WaitSide>,
 }
 
+/// What a run that stopped for a question nobody answered says: the question and when it was
+/// asked, and how long the team stood still; without the question, only that it expired.
+fn unanswered_text(
+    asked: Option<&(String, DateTime<Utc>, bool)>,
+    unanswered_until: Option<DateTime<Utc>>,
+) -> String {
+    let Some((question, at, _)) = asked else {
+        return super::not_answered(unanswered_until);
+    };
+    let (at, now) = (at.with_timezone(&Local), Utc::now().with_timezone(&Local));
+    let seconds = (now - at).num_seconds().max(0);
+    let (count, unit) = if seconds < 60 {
+        (seconds, "second")
+    } else {
+        ((seconds + 30) / 60, "minute")
+    };
+    format!(
+        "Nobody answered '{question}' (asked {}); the team stopped after {count} {unit}{}.",
+        at.format(if at.date_naive() == now.date_naive() {
+            "%H:%M"
+        } else {
+            "%Y-%m-%d %H:%M"
+        }),
+        if count == 1 { "" } else { "s" },
+    )
+}
+
 /// What a person's answer will be posted as: docket's escalation and what it takes.
 struct Pending {
     /// docket's id for the escalation, which is also the route its answer goes to.
@@ -1120,27 +1147,21 @@ impl DocketAdapter {
             _ if failure_kind == Some("approval_denied")
                 && !asked.is_some_and(|(_, _, answered)| *answered) =>
             {
-                let message = match asked {
-                    Some((question, at, _)) => {
-                        let (at, now) =
-                            (at.with_timezone(&Local), Utc::now().with_timezone(&Local));
-                        let seconds = (now - at).num_seconds().max(0);
-                        let (count, unit) = if seconds < 60 {
-                            (seconds, "second")
-                        } else {
-                            ((seconds + 30) / 60, "minute")
-                        };
-                        format!(
-                            "Nobody answered '{question}' (asked {}); the team stopped after {count} {unit}{}.",
-                            at.format(if at.date_naive() == now.date_naive() {
-                                "%H:%M"
-                            } else {
-                                "%Y-%m-%d %H:%M"
-                            }),
-                            if count == 1 { "" } else { "s" },
-                        )
-                    }
-                    None => super::not_answered(unanswered_until),
+                (
+                    AttemptState::Failed,
+                    json!({"code": "not_answered",
+                           "message": unanswered_text(asked, unanswered_until),
+                           "task": info.task}),
+                )
+            }
+            // docket's own deadline for the approval passed with nobody answering. Its reason
+            // ("approval expired: nobody answered by <time>") is kept after the question.
+            _ if failure_kind == Some("approval_expired") => {
+                let base = unanswered_text(asked, unanswered_until);
+                let message = if why.is_empty() {
+                    base
+                } else {
+                    format!("{}. docket said: {why}", base.trim_end_matches('.'))
                 };
                 (
                     AttemptState::Failed,
@@ -1727,6 +1748,28 @@ impl DocketAdapter {
                 () = tokio::time::sleep(POLL_INTERVAL) => {}
                 answer = side.answers.recv(), if pending.is_some() => {
                     if let (Some(answer), Some(ask)) = (answer, pending.take()) {
+                        if answer.unanswered {
+                            // Tack's own deadline passed, or the decision could not be kept:
+                            // nobody answered. docket must not read that as a refusal, so
+                            // nothing is posted; the task is cancelled instead.
+                            let _ = self
+                                .client
+                                .cancel_task(
+                                    &info.pod,
+                                    &info.task,
+                                    "nobody answered before the question expired",
+                                )
+                                .await;
+                            return Ok(self.outcome(
+                                info,
+                                AttemptState::Failed,
+                                json!({"code": "not_answered",
+                                       "message": unanswered_text(last_asked.as_ref(), ask.expires_at),
+                                       "task": info.task}),
+                                task.as_ref(),
+                                relay.served_model.take(),
+                            ));
+                        }
                         if let Some(problem) = self.deliver(&ask, &answer).await {
                             // The decision is resolved in Tack, so the run would wait on
                             // nothing: ask again while docket still holds the question.

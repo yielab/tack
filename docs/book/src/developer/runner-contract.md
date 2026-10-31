@@ -46,6 +46,8 @@ Every request carries a correlation id in the `x-request-id` header, which the r
 
 A decision's `kind` is a free string. Every harness that can pause sends `tool_permission`. docket sends `approval` for a gated tool call and `consult` for a question a step has parked on. The inbox renders any kind, and the answer returns on the same decision route, so a new kind needs no protocol change.
 
+When a decision expires or the attempt's time runs out, the runner answers the harness with the question's last option (its safe default) and sets `unanswered: true` on that `DecisionAnswer`; the flag is never on the wire and never set on an answer a person gave. An adapter for which that option would read as a person's refusal (docket) checks the flag and cancels the run instead of posting it.
+
 ## Capability matrix
 
 Every runner reports a **capability snapshot** at enrollment and refresh time: protocol version, concurrency, installed harness versions, and per-feature support for `cancel`, `resume`, `decisions`, `artifacts`, and `usage`, each as `unsupported | advisory | supported` with an optional reason (`docs/contracts/runner-v1/capabilities.json`). The scheduler and UI are required to read this snapshot rather than assume a feature works.
