@@ -33,8 +33,12 @@ and it is not a card.
 
 **[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
 as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is proposed;
-no card starts before it is accepted. Seven cards in four rounds:
+no card starts before it is accepted, except H and I, which fix a folder team (ADR 0031, accepted) and
+start now. Nine cards in five rounds:
 
+- **H** A task given to a team that works in a folder starts: the runner sends it no base commit and
+  no install, and the fake docket refuses one as docket does.
+- **I** Run with agent says where the team works, with no branch and no install line for a folder team.
 - **A** Tack reads the whole team from docket: members, models, where it works, how it decides,
   queue, and its steps and shape when docket reports them; the board lists every team.
 - **D** A run's findings become a proposal from any agent: the plan file gains type, role, team and
@@ -45,7 +49,7 @@ no card starts before it is accepted. Seven cards in four rounds:
   a role.
 - **E** The person chooses which proposed items to create, with their type, role, team and nesting.
 - **F** A run shows the team's steps as it goes.
-- **G** The local suite proves it against docket.
+- **G** The local suite proves it against docket, a folder team's run included.
 
 What is not a card is in "Cancelled" below.
 
