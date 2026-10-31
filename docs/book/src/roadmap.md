@@ -34,21 +34,24 @@ and it is not a card.
 **[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
 as it is, a task can go to a team, and what a run finds can become items.** ADR 0032 is proposed;
 no card starts before it is accepted, except H and I, which fix a folder team (ADR 0031, accepted) and
-start now. Nine cards in five rounds:
+start now. Every card speaks of teams, who does a task and proposals in terms no agent owns: each
+agent reports what it can, and a screen shows the rest disabled with the agent's reason. Ten cards
+in six rounds:
 
 - **H** A task given to a team that works in a folder starts: the runner sends it no base commit and
   no install, and the fake docket refuses one as docket does.
 - **I** Run with agent says where the team works, with no branch and no install line for a folder team.
-- **A** Tack reads the whole team from docket: members, models, where it works, how it decides,
-  queue, and its steps and shape when docket reports them; the board lists every team.
-- **D** A run's findings become a proposal from any agent: the plan file gains type, role, team and
-  parent; accepting keeps dependencies as blockers; a docket team proposes through a
-  `tack_proposals` record set.
-- **B** Agents → Teams: one card per team; a profile's Team field offers the teams docket reports.
-- **C** A task goes to a team from the new-item dialog and the item, and starts by itself without
-  a role.
-- **E** The person chooses which proposed items to create, with their type, role, team and nesting.
-- **F** A run shows the team's steps as it goes.
+- **A** One description of a team for any agent (members, models, steps, where it works, how it
+  decides, queue), filled by docket; the board lists every team any agent reports.
+- **D** One proposal format for any agent: the plan file gains type, role, team and parent;
+  accepting keeps dependencies as blockers; every agent says whether its runs can propose.
+- **B** Agents → Teams: one card per team, from what its agent reported; a profile with no team is
+  one agent.
+- **J** A docket team proposes items through a `tack_proposals` record set.
+- **C** A task says who does it, from the new-item dialog and the item, and starts by itself
+  without a role.
+- **E** The person chooses which proposed items to create, from a run or from a file they upload.
+- **F** A run shows the team's steps as it goes, when its agent reports them.
 - **G** The local suite proves it against docket, a folder team's run included.
 
 What is not a card is in "Cancelled" below.
