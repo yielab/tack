@@ -50,6 +50,8 @@ The numbered steps are what happens when a project has auto-start on and a task 
 
 Two roles on one task that name different profiles are `Ambiguous`: `resolve` returns the project default with that source (`ambiguous`), or falls to the Implementer when the project has none. `fleet_id` and `harness` come from the chosen profile's `fleet_id` column and its `tool_policy.agent`. The server resolves; the browser does not. `GET /api/items/{id}/agent-context` answers `profile_id` and `profile_source` so that the Run dialog can show "Chosen by the role X".
 
+A run keeps what it was made with: `GET /api/executions` (every shape) and `GET /api/executions/{id}` answer `agent_profile_id` and `requested_harness_kind` read from the request's own columns, so a screen finds the run's profile (and through it the team) and its agent from the run, not from the item's current setting. `agent_profile_id` is null once that profile is deleted; `requested_harness_kind` is null when the run left the agent to the computer.
+
 ## The docket adapter
 
 `crates/tack-runner/src/harness/docket.rs` holds `DocketAdapter`, which implements `HarnessAdapter` and `HarnessProbe` directly. docket is a daemon the runner talks to, so there is no stdout to parse and no `HarnessGrammar`. The submodules are `client.rs` (one method per route), `probe.rs` (version and teams), `task.rs` (the task body) and `daemon.rs` (supervision).

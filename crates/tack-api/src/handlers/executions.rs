@@ -251,6 +251,12 @@ pub struct ExecutionSummary {
     pub waiting_behind: Vec<WaitingBehind>,
     /// The run's token limit and who applies it.
     pub limit: RunLimit,
+    /// The profile the run was made with, so a screen finds the run's team and agent from the
+    /// run and not from the item's current setting; null when the profile has since been deleted.
+    pub agent_profile_id: Option<String>,
+    /// The agent the run asked for (`claude-code`, `codex`, `opencode`, `docket`); null when it
+    /// left the choice to the computer.
+    pub requested_harness_kind: Option<String>,
 }
 
 /// One run that holds a slot of a full computer a queued request waits for.
@@ -422,6 +428,10 @@ pub struct ExecutionDetailResponse {
     pub waiting_behind: Vec<WaitingBehind>,
     /// The run's token limit and who applies it.
     pub limit: RunLimit,
+    /// The profile the run was made with; null when the profile has since been deleted.
+    pub agent_profile_id: Option<String>,
+    /// The agent the run asked for; null when it left the choice to the computer.
+    pub requested_harness_kind: Option<String>,
 }
 
 /// One attempt as reported by `GET /api/executions/{id}/attempts` — every
@@ -934,6 +944,8 @@ pub async fn list_executions(
                 cancellation_requested_at: row.cancellation_requested_at,
                 created_at: row.created_at,
                 waiting_since: row.waiting_since,
+                agent_profile_id: row.agent_profile_id,
+                requested_harness_kind: row.requested_harness_kind,
             }
         })
         .collect();
@@ -1212,6 +1224,8 @@ pub async fn get_execution(
             now,
         ),
         waiting_since: row.waiting_since,
+        agent_profile_id: row.agent_profile_id,
+        requested_harness_kind: row.requested_harness_kind,
     }))
 }
 

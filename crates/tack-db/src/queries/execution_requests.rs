@@ -96,6 +96,10 @@ pub struct RequestDetailRow {
     pub waiting_since: Option<String>,
     pub selector_kind: String,
     pub selector_id: String,
+    /// The profile the run was made with; `None` once that profile is deleted.
+    pub agent_profile_id: Option<String>,
+    /// The agent the run asked for; `None` when it left the choice to the computer.
+    pub requested_harness_kind: Option<String>,
     pub instructions: Option<String>,
 }
 
@@ -105,7 +109,7 @@ pub async fn request_detail(
     request_id: &str,
 ) -> Result<Option<RequestDetailRow>, StoreError> {
     let row = sqlx::query(
-        "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?",
+        "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind, json_extract(request_snapshot, '$.resolved_agent_profile.instructions') AS instructions FROM execution_requests WHERE id = ?",
     )
     .bind(request_id)
     .fetch_optional(repo.pool())
@@ -125,6 +129,8 @@ pub async fn request_detail(
             waiting_since: row.get("waiting_since"),
             selector_kind: row.get("selector_kind"),
             selector_id: row.get("selector_id"),
+            agent_profile_id: row.get("agent_profile_id"),
+            requested_harness_kind: row.get("requested_harness_kind"),
             instructions: row.get("instructions"),
         })
     })
