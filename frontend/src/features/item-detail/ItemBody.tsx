@@ -2,6 +2,7 @@ import { type Component, type JSX, createMemo, Show } from 'solid-js';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
 import type { Item } from '../../shared/types';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
+import ProposeFromFile from './ProposeFromFile';
 import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
 import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
 import ItemHeader from './ItemHeader';
@@ -103,6 +104,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
         projectId={props.item.project_id}
         onCreated={() => props.onTabChange('execution')}
       />
+      <ProposeFromFile itemId={props.item.id} />
     </div>
   );
 

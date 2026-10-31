@@ -14,6 +14,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 ### Added
 
 - `GET /api/teams` lists every team any agent reports, once per name and agent, with the runner that reports it, the profiles that name it and what the agent said of it: members and their models, whether it runs to the end or asks a person, network, queue, where it works, records, a shape label and its steps. A name a profile uses that nobody reports is listed as not reported. docket fills the new fields from its pod reports; `blueprint` and `pipeline.steps` are read when docket sends them and left absent when it does not.
+- Propose items from a file: on an item, pick a `tack-plan.json` and the same list a run proposes opens, so you can tick, edit, give each item a type, role and who does it, and create the ones you choose. A file that does not fit names the entry and why. A run's proposal rows now show each item's type, role, who does it and what it waits on.
 
 ### Changed
 
