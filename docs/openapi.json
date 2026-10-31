@@ -10269,6 +10269,13 @@
           "limit"
         ],
         "properties": {
+          "agent_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile the run was made with; null when the profile has since been deleted."
+          },
           "cancellation_requested_at": {
             "type": [
               "string",
@@ -10299,6 +10306,13 @@
           },
           "request_id": {
             "type": "string"
+          },
+          "requested_harness_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent the run asked for; null when it left the choice to the computer."
           },
           "state": {
             "type": "string"
@@ -10358,6 +10372,13 @@
           "limit"
         ],
         "properties": {
+          "agent_profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile the run was made with, so a screen finds the run's team and agent from the\nrun and not from the item's current setting; null when the profile has since been deleted."
+          },
           "cancellation_requested_at": {
             "type": [
               "string",
@@ -10376,6 +10397,13 @@
           },
           "request_id": {
             "type": "string"
+          },
+          "requested_harness_kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent the run asked for (`claude-code`, `codex`, `opencode`, `docket`); null when it\nleft the choice to the computer."
           },
           "state": {
             "type": "string"

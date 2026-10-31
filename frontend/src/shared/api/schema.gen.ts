@@ -4058,6 +4058,8 @@ export interface components {
             source: string;
         };
         ExecutionDetailResponse: {
+            /** @description The profile the run was made with; null when the profile has since been deleted. */
+            agent_profile_id?: string | null;
             cancellation_requested_at?: string | null;
             created_at: string;
             /** @description The composed prompt the agent is given, as stored with the request; null when absent. */
@@ -4068,6 +4070,8 @@ export interface components {
             /** Format: int32 */
             protocol_version: number;
             request_id: string;
+            /** @description The agent the run asked for; null when it left the choice to the computer. */
+            requested_harness_kind?: string | null;
             state: string;
             /**
              * @description The runs that hold every slot of the computers this request may run on, when no poll has
@@ -4091,12 +4095,22 @@ export interface components {
          *     /api/executions/{id}/attempts`.
          */
         ExecutionSummary: {
+            /**
+             * @description The profile the run was made with, so a screen finds the run's team and agent from the
+             *     run and not from the item's current setting; null when the profile has since been deleted.
+             */
+            agent_profile_id?: string | null;
             cancellation_requested_at?: string | null;
             created_at: string;
             item_id: string;
             /** @description The run's token limit and who applies it. */
             limit: components["schemas"]["RunLimit"];
             request_id: string;
+            /**
+             * @description The agent the run asked for (`claude-code`, `codex`, `opencode`, `docket`); null when it
+             *     left the choice to the computer.
+             */
+            requested_harness_kind?: string | null;
             state: string;
             /**
              * @description The runs that hold every slot of the computers this request may run on, when no poll has

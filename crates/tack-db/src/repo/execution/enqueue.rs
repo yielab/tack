@@ -137,6 +137,10 @@ pub struct ExecutionListingRow {
     /// `exact_runner` or `fleet`, with the runner or fleet id in `selector_id`.
     pub selector_kind: String,
     pub selector_id: String,
+    /// The profile the run was made with; `None` once that profile is deleted.
+    pub agent_profile_id: Option<String>,
+    /// The agent the run asked for; `None` when it left the choice to the computer.
+    pub requested_harness_kind: Option<String>,
 }
 
 /// Reads one row of the listing's `SELECT`; a state no variant names is a corrupt row.
@@ -155,6 +159,8 @@ fn listing_row(row: sqlx::sqlite::SqliteRow) -> Result<ExecutionListingRow, Stor
         selector_kind: row.get("selector_kind"),
         selector_id: row.get("selector_id"),
         waiting_since: row.get("waiting_since"),
+        agent_profile_id: row.get("agent_profile_id"),
+        requested_harness_kind: row.get("requested_harness_kind"),
     })
 }
 
@@ -606,14 +612,14 @@ impl Repository {
     ) -> Result<Vec<ExecutionListingRow>, StoreError> {
         let rows = match item_id {
             Some(item_id) => {
-                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
+                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind FROM execution_requests WHERE item_id = ? ORDER BY created_at DESC LIMIT ?")
                     .bind(item_id)
                     .bind(limit)
                     .fetch_all(self.pool())
                     .await?
             }
             None => {
-                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM execution_requests ORDER BY created_at DESC LIMIT ?")
+                sqlx::query("SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind FROM execution_requests ORDER BY created_at DESC LIMIT ?")
                     .bind(limit)
                     .fetch_all(self.pool())
                     .await?
@@ -642,8 +648,8 @@ impl Repository {
         }
         let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let query = format!(
-            "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id FROM ( \
-                 SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, \
+            "SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind FROM ( \
+                 SELECT id, item_id, state, cancellation_requested_at, created_at, waiting_reason, waiting_since, selector_kind, selector_id, agent_profile_id, requested_harness_kind, \
                         ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY created_at DESC, id DESC) AS rn \
                  FROM execution_requests WHERE item_id IN ({placeholders}) \
              ) WHERE rn = 1"

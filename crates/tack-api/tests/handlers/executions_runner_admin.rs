@@ -1730,6 +1730,56 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
 /// no active runner has a fresh heartbeat; the word is decided at read time,
 /// never stored, and a reason a poll wrote always wins.
 #[tokio::test]
+async fn a_run_reports_its_profile_and_requested_agent_on_the_list_and_the_detail() {
+    let (app, _repo, item_id) = setup().await;
+    let (status, created) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let request_id = created["request_id"].as_str().expect("id").to_owned();
+
+    let (_, listed) = snd(
+        &app,
+        "GET",
+        &format!("/executions?item_id={item_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(
+        listed["data"][0]["agent_profile_id"], "profile-c1",
+        "{listed}"
+    );
+    assert_eq!(
+        listed["data"][0]["requested_harness_kind"], "codex",
+        "{listed}"
+    );
+
+    let (_, batch) = snd(
+        &app,
+        "GET",
+        &format!("/executions?item_ids={item_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(
+        batch["data"][0]["agent_profile_id"], "profile-c1",
+        "{batch}"
+    );
+    assert_eq!(
+        batch["data"][0]["requested_harness_kind"], "codex",
+        "{batch}"
+    );
+
+    let (_, detail) = snd(
+        &app,
+        "GET",
+        &format!("/executions/{request_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(detail["agent_profile_id"], "profile-c1", "{detail}");
+    assert_eq!(detail["requested_harness_kind"], "codex", "{detail}");
+}
+
+#[tokio::test]
 async fn a_queued_request_reads_no_runner_is_online_until_a_runner_is() {
     let (app, repo, item_id) = setup().await;
     let (status, _) = snd(&app, "POST", "/executions", create_body(&item_id)).await;
