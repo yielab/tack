@@ -1,0 +1,9 @@
+constructed
+route: GET /pods/<pod>/records
+status: 200
+tack-sends: yes
+built-from: records.json with `scope` on each entry (`pod` or `task`)
+docket: docket working tree on 2026-10-31, read and not run (uncommitted; API stays 6)
+source: ~/Sites/rack-cli/internal-docs/design/records-proposals-2026-10-31.md (a gitignored design note)
+date: 2026-10-31
+note: the presence of `scope` on a set's entry is what tells Tack that `?task=` is supported for it. Recapture when docket commits the scope work (scripts/capture-docket-fixtures.sh).

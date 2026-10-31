@@ -181,6 +181,29 @@ the constructed consult's is one too, and `expiresAt` is `null` where docket set
 the `decided` record. `task-blocked-input-expired` is `constructed` from a capture and docket's
 `TaskRecord`; only the attempt code `not_answered` is Tack's own.
 
+## Records with a scope, `?task=` and what a member reaches: constructed, recaptured when docket commits
+
+docket's work on records (`internal-docs/design/records-proposals-2026-10-31.md`, API stays `6`,
+every key additive) was uncommitted when Tack's side was built, so none of it is captured. Five
+files are `constructed` from that design note and the captures beside them, and the script does not
+make them: **recapture them (and replace these files with captures) when docket commits that work**,
+and check the sentences of the two `400` bodies, which the note does not give.
+
+- `records-scoped`: the listing with a `scope` (`pod` or `task`) on each set. Tack sends `?task=`
+  for a set only when its entry carries `scope`.
+- `records-rows-task`: the answer of `?task=<id>`, the task's rows in write order (`_id` ascending),
+  with `_role`, the role of the hop that wrote the row, beside `_task`, `_session` and `_step`.
+- `records-task-empty` and `records-task-and-sql`: the `400` of an empty `task=` and of `task=` with
+  `sql=`. Tack sends neither.
+- `pod-capabilities`: the report of a team whose members carry `capabilities`
+  (`kinds`, `tools`, `records.write`, `records.query`; no `services`).
+
+The fake is a docket with all of this by default, and `before_task_scope()` makes it the docket of
+the captures: no `scope`, no `_role`, no `capabilities`, and `task=` ignored (every row of the set
+comes back), which is why a test of the older docket proves Tack never sends it. The two tests that
+compare the fake with the captures run on that variant, and a third compares the default with the
+five constructed files.
+
 ## Every fixture
 
 | Fixture | Route | Status | Captured or constructed |
@@ -204,6 +227,7 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `health` | `GET /health` | 200 | captured |
 | `hop-finished-cached` | `GET /traces/<pod>` | 200 | constructed |
 | `pod-attended` | `GET /pods/<pod>` | 200 | captured |
+| `pod-capabilities` | `GET /pods/<pod>` | 200 | constructed |
 | `pod-folder` | `GET /pods/<pod>` | 200 | captured |
 | `pod-lights-out` | `GET /pods/<pod>` | 200 | captured |
 | `pod-unknown` | `GET /pods/<pod>` | 404 | captured |
@@ -236,7 +260,11 @@ the `decided` record. `task-blocked-input-expired` is `constructed` from a captu
 | `post-tasks-task-bad-type` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-task-unknown-key` | `POST /tasks/<pod>` | 400 | captured |
 | `post-tasks-unknown-pod` | `POST /tasks/<pod>` | 404 | captured |
+| `records-rows-task` | `GET /pods/<pod>/records/<set>` | 200 | constructed |
 | `records-rows` | `GET /pods/<pod>/records/<set>` | 200 | captured |
+| `records-scoped` | `GET /pods/<pod>/records` | 200 | constructed |
+| `records-task-and-sql` | `GET /pods/<pod>/records/<set>` | 400 | constructed |
+| `records-task-empty` | `GET /pods/<pod>/records/<set>` | 400 | constructed |
 | `records` | `GET /pods/<pod>/records` | 200 | captured |
 | `status-empty` | `GET /status.json` | 200 | captured |
 | `status` | `GET /status.json` | 200 | captured |

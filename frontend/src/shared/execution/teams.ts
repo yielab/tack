@@ -7,6 +7,7 @@ import { request } from '../api/client';
 export type TeamEntry = components['schemas']['TeamEntry'];
 export type TeamReport = components['schemas']['TeamReport'];
 export type TeamStep = components['schemas']['TeamStep'];
+export type TeamMember = components['schemas']['TeamMember'];
 export type TeamList = components['schemas']['TeamList'];
 
 export const teamsApi = {
@@ -67,3 +68,18 @@ export function networkText(network: NonNullable<TeamReport['network']>): string
 export function queueText(queue: { waiting: number; running: number }): string {
   return `${queue.waiting} waiting, ${queue.running} running`;
 }
+
+/** What a member can do, in plain words, for whatever the agent reported of it: nothing is said of a
+ *  fact it left out. "Reads only" and "Changes the project" are the two answers to the same question;
+ *  "Can propose items" is said only when true, since a member that cannot propose is the usual case. */
+export function memberReachText(member: TeamMember): string[] {
+  const words: string[] = [];
+  if (member.writes_project === true) words.push('Changes the project');
+  else if (member.writes_project === false) words.push('Reads only');
+  if (member.can_propose === true) words.push('Can propose items');
+  return words;
+}
+
+/** The one sentence a team whose proposals are kept for all its tasks together is owed. */
+export const SHARED_PROPOSALS_TEXT =
+  "This team's proposals are kept for all its tasks together: a name used in one task cannot be used again in another until the team's proposal list is recreated.";

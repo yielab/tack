@@ -1,0 +1,9 @@
+constructed
+route: GET /pods/<pod>
+status: 200
+tack-sends: yes
+built-from: pod-attended.json with five members (lead, implementer, reviewer, analyst, writer), each carrying `capabilities` {kinds, tools, records: {write, query}} and NO `services` key
+docket: docket working tree on 2026-10-31, read and not run (uncommitted; API stays 6)
+source: ~/Sites/rack-cli/internal-docs/design/records-proposals-2026-10-31.md (a gitignored design note)
+date: 2026-10-31
+note: the fake gives each of its members the `capabilities` of the member here with the same role. Recapture when docket commits.

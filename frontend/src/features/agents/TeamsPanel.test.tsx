@@ -23,7 +23,10 @@ const FULL_TEAM = {
     profile: 'saas',
     shape: 'build',
     works_in: 'repository',
-    members: [{ role: 'Lead', model: 'opus' }, { role: 'Reviewer', model: 'sonnet' }],
+    members: [
+      { role: 'Lead', model: 'opus', can_propose: true, writes_project: false },
+      { role: 'Reviewer', model: 'sonnet' },
+    ],
     decides: 'asks_a_person',
     violations: [{ requirement: 'A tool needs approval', fix: 'Allow it in the team settings' }],
     network: 'limited',
@@ -112,6 +115,45 @@ describe('TeamsPanel', () => {
     expect(steps[0].textContent).toContain('sent back to write up to 2 times');
     expect(steps[1].textContent).toContain('checked by a command');
     expect(team.querySelectorAll('[data-reported="no"]')).toHaveLength(0);
+  });
+
+  it('says in plain words what a member can do when the agent reported it, and nothing when it did not', async () => {
+    const team = {
+      ...FULL_TEAM,
+      report: {
+        ...FULL_TEAM.report,
+        members: [
+          { role: 'Lead', model: 'opus', can_propose: true, writes_project: false },
+          { role: 'Builder', model: 'sonnet', can_propose: false, writes_project: true },
+          { role: 'Reviewer', model: 'sonnet' },
+        ],
+      },
+    };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const members = row(card(c, 'saas-code'), 'members');
+    const line = (role: string) => members.querySelector(`[data-testid="team-member-${role}"]`)!.textContent;
+    expect(line('Lead')).toBe('Lead · opus · Reads only · Can propose items');
+    expect(line('Builder')).toBe('Builder · sonnet · Changes the project');
+    expect(line('Reviewer')).toBe('Reviewer · sonnet');
+    expect(members.textContent).not.toMatch(/kinds|rec__|record/i);
+  });
+
+  it('explains the limit of proposals kept for all tasks together, only for a team that reports it', async () => {
+    const shared = { ...FULL_TEAM, report: { ...FULL_TEAM.report, proposals_shared_across_tasks: true } };
+    const apart = { ...FULL_TEAM, name: 'apart', report: { ...FULL_TEAM.report, name: 'apart', proposals_shared_across_tasks: false } };
+    const unsaid = { ...FULL_TEAM, name: 'unsaid', report: { ...FULL_TEAM.report, name: 'unsaid' } };
+    mockApi([shared, apart, unsaid]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const note = card(c, 'saas-code').querySelector('[data-testid="team-proposals-shared"]')!;
+    expect(note.textContent).toContain('a name used in one task cannot be used again in another');
+    expect(note.textContent).toContain('recreated');
+    expect(card(c, 'apart').querySelector('[data-testid="team-proposals-shared"]')).toBeNull();
+    expect(card(c, 'unsaid').querySelector('[data-testid="team-proposals-shared"]')).toBeNull();
   });
 
   it('shows a disabled "Not reported by" line for each field the agent did not report', async () => {

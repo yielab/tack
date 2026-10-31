@@ -191,6 +191,12 @@ pub struct TeamReport {
     /// key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steps: Option<Vec<TeamStep>>,
+    /// Whether what the members propose is kept for every task of the team together (`true`: a
+    /// name used in one task cannot be used again in another until the team's list of proposals
+    /// is recreated) or for each task apart (`false`). Absent means the team keeps no list of
+    /// proposals or the harness did not say; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposals_shared_across_tasks: Option<bool>,
 }
 
 /// One member of a team.
@@ -202,6 +208,15 @@ pub struct TeamMember {
     /// The model the member runs on. Absent means the harness did not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Whether the member can propose items for a person to accept. Absent means the harness did
+    /// not say, which is not the same as `false`; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub can_propose: Option<bool>,
+    /// Whether the member can change the project's files or run commands in it (`false`: it only
+    /// reads). Absent means the harness did not say, which is not the same as `false`; no field
+    /// may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub writes_project: Option<bool>,
 }
 
 /// Whether a team runs to the end alone.

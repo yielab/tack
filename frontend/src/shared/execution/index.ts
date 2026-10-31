@@ -110,8 +110,8 @@ export type {
 } from './store';
 export { createExecutionStore } from './store';
 
-export type { TeamEntry, TeamReport, TeamStep } from './teams';
-export { teamsApi, teamChoices, stepText, networkText, queueText } from './teams';
+export type { TeamEntry, TeamMember, TeamReport, TeamStep } from './teams';
+export { teamsApi, teamChoices, stepText, networkText, queueText, memberReachText, SHARED_PROPOSALS_TEXT } from './teams';
 
 export type { AgentCapabilityId, AgentCapabilityLine } from './agents';
 export {

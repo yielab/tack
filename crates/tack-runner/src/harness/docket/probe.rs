@@ -13,7 +13,7 @@ use tack_protocol::execution::{
 
 use super::{
     client::Client,
-    wire::{PodList, PodReport, PodRow, PodStep, RecordList, StatusAnswer},
+    wire::{MemberReach, PodList, PodMember, PodReport, PodRow, PodStep, RecordList, StatusAnswer},
 };
 
 /// The oldest operator API version this harness speaks; a later one is accepted too. It is the
@@ -91,9 +91,10 @@ pub(super) async fn escalation_record(client: &Client, api: u32) -> Result<(), S
     }
 }
 
-/// The record sets a team declares, with how many rows each holds. `None` when docket has no such
-/// route (an older one answers `404`) or its answer cannot be read: that is not "no sets".
-async fn record_sets(client: &Client, name: &str) -> Option<Vec<TeamRecordSet>> {
+/// The record sets a team declares, with how many rows each holds, and whether the proposals are
+/// shared across its tasks. `None` when docket has no such route (an older one answers `404`) or
+/// its answer cannot be read: that is not "no sets".
+async fn record_sets(client: &Client, name: &str) -> Option<(Vec<TeamRecordSet>, Option<bool>)> {
     let reply = client
         .records(name)
         .await
@@ -103,7 +104,18 @@ async fn record_sets(client: &Client, name: &str) -> Option<Vec<TeamRecordSet>> 
         .read()
         .inspect_err(|why| tracing::warn!(why, "docket's record sets could not be read"))
         .ok()?;
-    Some(
+    // Said only when the listing carries the proposals' `scope`: a set kept per team is shared
+    // across tasks, one kept per task is not. An older docket sends no scope, and says nothing.
+    let shared = list
+        .records
+        .iter()
+        .find(|set| set.name == super::records::PROPOSALS)
+        .and_then(|set| match set.scope.as_deref() {
+            Some("pod") => Some(true),
+            Some("task") => Some(false),
+            _ => None,
+        });
+    Some((
         list.records
             .into_iter()
             .map(|set| TeamRecordSet {
@@ -112,7 +124,29 @@ async fn record_sets(client: &Client, name: &str) -> Option<Vec<TeamRecordSet>> 
                 rows: set.rows,
             })
             .collect(),
-    )
+        shared,
+    ))
+}
+
+/// What a member's role reaches, in Tack's words: whether it can propose items (its role writes
+/// the proposals' record set) and whether it can change the project (a tool of the `write` or
+/// `exec` kind). A member whose `capabilities` is absent or cannot be read says neither.
+fn member(member: PodMember) -> TeamMember {
+    let reach: Option<MemberReach> = member
+        .capabilities
+        .and_then(|raw| serde_json::from_value(raw).ok());
+    TeamMember {
+        role: member.role,
+        model: member.model.and_then(|model| model.value),
+        can_propose: reach
+            .as_ref()
+            .and_then(|reach| reach.records.as_ref()?.write.as_ref())
+            .map(|sets| sets.iter().any(|set| set == super::records::PROPOSALS)),
+        writes_project: reach
+            .as_ref()
+            .and_then(|reach| reach.kinds.as_ref())
+            .map(|kinds| kinds.iter().any(|kind| kind == "write" || kind == "exec")),
+    }
 }
 
 /// Where the team works: the explicit key when docket sends one, else what `repoConfigDir` says.
@@ -187,6 +221,10 @@ async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
     }
     let report: PodReport = reply.read()?;
     let works_in = works_in(row, &report);
+    let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
+        Some((sets, shared)) => (Some(sets), shared),
+        None => (None, None),
+    };
     let mut team = TeamReport {
         name: name.clone(),
         profile: report.profile.name,
@@ -202,16 +240,10 @@ async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
         // An older docket sends no key; that stays unknown rather than becoming "none".
         read_only: report.read_only,
         works_in,
-        records: record_sets(client, name).await,
-        members: report.members.map(|members| {
-            members
-                .into_iter()
-                .map(|member| TeamMember {
-                    role: member.role,
-                    model: member.model.and_then(|model| model.value),
-                })
-                .collect()
-        }),
+        records,
+        members: report
+            .members
+            .map(|members| members.into_iter().map(member).collect()),
         decides: None,
         network: report
             .network
@@ -230,6 +262,7 @@ async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
             .pipeline
             .and_then(|pipeline| pipeline.steps)
             .and_then(steps),
+        proposals_shared_across_tasks,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson

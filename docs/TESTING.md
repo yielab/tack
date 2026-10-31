@@ -114,7 +114,12 @@ run for docket to send it) and answers `400` to a request key no captured reques
 home with no model (rerun it when docket changes, and commit the diff). `tests/docket_v5.rs`
 fails when a route the client sends has no capture, and the daemon's supervision is proved
 against a shell script on a scratch path that serves `/health`. No test runs a real docket or a
-model.
+model. The fake has one variant of an older docket, `before_task_scope()`: no `scope` on a record
+set, no `_role` on a row, no `capabilities` on a member, and `?task=` ignored (every row comes
+back), so a test of it proves Tack reads such a docket by statement and never sends `task=`; the
+captures are compared with the fake in that variant, and the answers docket has not committed yet
+(`records-scoped`, `records-rows-task`, `pod-capabilities`, the two `400`s) are `constructed` and
+recaptured when it does (the fixtures README says which).
 
 Each crate has **one integration-test binary**, `it` (ADR 0029): `tests/it.rs` declares every
 file under `tests/` as a module, so the dependency graph is linked once per crate, not once per
