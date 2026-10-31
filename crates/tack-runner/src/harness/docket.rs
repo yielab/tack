@@ -1207,7 +1207,7 @@ impl HarnessProbe for DocketAdapter {
     }
 
     async fn probe(&self) -> HarnessCapability {
-        probe::probe(&self.client, capabilities().decisions).await
+        probe::probe(&self.client, capabilities()).await
     }
 
     fn declared_capabilities(&self) -> FeatureCapabilities {

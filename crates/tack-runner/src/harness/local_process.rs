@@ -1385,7 +1385,7 @@ where
             }
             _ => (requires_override == Some(true), None),
         };
-        HarnessCapability {
+        let mut report = HarnessCapability {
             harness_kind: DomainHarnessKind::new(descriptor.kind),
             installed_version,
             probe_error,
@@ -1406,7 +1406,10 @@ where
             autonomy_ceiling: None,
             teams: None,
             additional,
-        }
+        };
+        // The same call, once more: the board reads each agent's features from its own report.
+        report.set_features(&self.grammar.capabilities());
+        report
     }
 
     fn declared_capabilities(&self) -> FeatureCapabilities {

@@ -669,6 +669,15 @@ async fn a_probe_reports_a_version_or_says_why_it_cannot() {
     }
 }
 
+/// The board reads what each agent can do from its own report, not from the computer's.
+#[tokio::test]
+async fn a_probe_reports_the_agents_declared_features() {
+    let state = scratch("probe-features");
+    let probe = harness(state.path()).probe().await;
+    let declared = harness(state.path()).declared_capabilities();
+    assert_eq!(probe.features(), Some(declared));
+}
+
 #[tokio::test]
 async fn probe_reports_whether_a_model_is_required() {
     let state = scratch("probe-model-selection");
