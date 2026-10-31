@@ -4,15 +4,19 @@ import type { FolderCheck } from '../api/projects';
 export const NO_INSTALL = 'No install: this profile runs no commands';
 
 /**
- * One sentence for what a run installs before the agent starts. `check` is the folder check of the
- * project's local folder; without one the board cannot read the repository, so the runner decides.
+ * One sentence for what a run installs before the agent starts, or null when nothing is shown. `check`
+ * is the folder check of the project's local folder; without one the board cannot read the repository,
+ * so the runner decides.
  */
 export function installLine(
   prepareCommand: string | null | undefined,
   check: FolderCheck | null | undefined,
   /** The chosen profile's `runs_commands`: a profile that runs none installs nothing. */
   runsCommands?: boolean,
-): string {
+  /** The chosen profile's team works in a folder: it has no copy to install into, so no line is shown. */
+  worksInFolder?: boolean,
+): string | null {
+  if (worksInFolder) return null;
   if (runsCommands === false) return NO_INSTALL;
   if (prepareCommand === '') return 'Install turned off';
   if (prepareCommand) return `Replaced: ${prepareCommand}`;

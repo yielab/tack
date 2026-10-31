@@ -169,7 +169,9 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Web tools; and a collapsed Advanced section.">
 
 - **The summary line** says which profile runs the task, on which model, and where the agent works ("on a
-  new branch of your repo", "in the folder, directly"). Each part links to where you change it.
+  new branch of your repo", "in the folder, directly"). A profile whose team works in its own folder on this
+  computer says "in the team's own folder on this computer, not in this repository", and the dialog shows no
+  install line for it. Each part links to where you change it.
 - **Where the profile came from** appears under the summary: "Chosen by the role X", "Project default",
   "Saved on this task", "The built-in Implementer", or "More than one role has a profile, so the project
   default is used". To use another profile for this run, press another name in the **Profile** row.
