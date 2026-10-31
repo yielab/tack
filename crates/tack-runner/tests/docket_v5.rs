@@ -4631,7 +4631,10 @@ async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_captures() 
     )
     .await;
     assert_eq!(rows["rows"][0]["_role"], "lead");
-    assert_eq!((rows["rows"].as_array().map(Vec::len), &rows["cut"]), (Some(1), &json!(1)));
+    assert_eq!(
+        (rows["rows"].as_array().map(Vec::len), &rows["cut"]),
+        (Some(1), &json!(1))
+    );
     let (_, rows) = ask(
         &fake,
         "GET",

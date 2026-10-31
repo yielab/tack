@@ -913,10 +913,10 @@ fn pod_report(state: &World, name: &str) -> Response {
             member.as_object_mut().unwrap().remove("capabilities");
         }
     }
-    let proposes = state.records.get(name).is_some_and(|sets| {
-        sets.iter()
-            .any(|set| set.name == "tack_proposals")
-    });
+    let proposes = state
+        .records
+        .get(name)
+        .is_some_and(|sets| sets.iter().any(|set| set.name == "tack_proposals"));
     if proposes && !state.before_task_scope {
         // What each role reaches once the team declares `tack_proposals`: the capture of a team of
         // the same blueprint that does, member by member.
