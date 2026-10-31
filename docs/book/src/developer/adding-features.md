@@ -1,12 +1,12 @@
 # Adding Features
 
-This chapter is for contributors who add to Tack. It gives four recipes: a new entity, a new workflow preset, an extension of the workflow engine, and a new key in the project file. Each section includes a concrete example and explains the reasoning behind the step order. Before you start, read the layering rule in the [Architecture Overview](index.md) and the anti-patterns at the end of this page.
+This chapter is for contributors who add to Tack. It gives four recipes: a new entity, a new workflow preset, an extension of the workflow engine, and a new key in the project file. Each section includes a concrete example and explains the reasoning behind the step order. Before you start, read the layering rule in the [Architecture Overview](index.md) and the anti-patterns at the end of this page. The Milestone and `education_workflow` examples are illustrations; neither exists in the codebase.
 
 ---
 
 ## Adding a New Entity
 
-**Example: Milestone**
+**Example: Milestone** (illustrative; there is no milestone in the codebase)
 
 A Milestone is a date-anchored checkpoint associated with a project. It has a name, an optional description, a target date, and a status.
 
@@ -52,19 +52,18 @@ pub struct UpdateMilestone {
 ### Step 2: Add the migration in `tack-db`
 
 Open `crates/tack-db/src/migrations.rs`. Migration names are numbered sequentially and
-never reused — find the highest number already in `all_migrations()` (`grep -o
-'"[0-9]\{3\}_[a-zA-Z0-9_]*"' crates/tack-db/src/migrations.rs | sort -u | tail -1`) and
-pick the next one. As of this writing that's `091`, so the new migration is `092`. Find
-the `Vec` in `all_migrations()` and append:
+never reused. Find the highest number in `all_migrations()` (`grep -o
+'"[0-9]\{3\}_[a-zA-Z0-9_]*"' crates/tack-db/src/migrations.rs | sort -u | tail -1`) and use the next
+one, written `NNN` below. Append to the `Vec` in `all_migrations()`:
 
 ```rust
-ordinary("092_milestones", &MIGRATION_092[..]),
+ordinary("NNN_milestones", &MIGRATION_NNN[..]),
 ```
 
 Then add the constant near the end of the file:
 
 ```rust
-const MIGRATION_092: [&str; 2] = [
+const MIGRATION_NNN: [&str; 2] = [
     "CREATE TABLE IF NOT EXISTS milestones (
         id TEXT PRIMARY KEY NOT NULL,
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -79,143 +78,121 @@ const MIGRATION_092: [&str; 2] = [
 ];
 ```
 
-Migrations are append-only and run in order. Never edit an existing migration — if you need to change the schema, add a new one.
+Migrations are append-only and run in order. Never edit a shipped one: startup refuses a database whose applied history differs from the binary's list by name or checksum. To change the schema, add a new migration.
 
 ### Step 3: Create the repository module
 
-Create `crates/tack-db/src/repo/milestones.rs`. Follow the same pattern as other repository files: functions take `&SqlitePool`, bind parameters, run the query, and return the struct.
+Create `crates/tack-db/src/repo/milestones.rs`, declare it with `pub mod milestones;` in `repo.rs`, and write its commands as an `impl Repository` block. A method binds its parameters, runs the query, reads the row back through `decode`, and returns `StoreError`; no `sqlx` type may appear in a signature.
 
 ```rust
 use chrono::Utc;
 use uuid::Uuid;
-use sqlx::SqlitePool;
-use tack_core::models::{CreateMilestone, Milestone, UpdateMilestone};
 
-pub async fn create_milestone(
-    pool: &SqlitePool,
-    project_id: Uuid,
-    input: CreateMilestone,
-) -> Result<Milestone, sqlx::Error> {
-    let id = Uuid::new_v4();
-    let now = Utc::now();
-    sqlx::query(
-        "INSERT INTO milestones (id, project_id, name, description, target_date, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)"
-    )
-    .bind(id.to_string())
-    .bind(project_id.to_string())
-    .bind(&input.name)
-    .bind(&input.description)
-    .bind(input.target_date.map(|d| d.to_rfc3339()))
-    .bind(now.to_rfc3339())
-    .bind(now.to_rfc3339())
-    .execute(pool)
-    .await?;
+use tack_core::models::{CreateMilestone, Milestone};
 
-    Ok(Milestone {
-        id,
-        project_id,
-        name: input.name,
-        description: input.description,
-        target_date: input.target_date,
-        completed_at: None,
-        created_at: now,
-        updated_at: now,
-    })
+use super::Repository;
+use crate::StoreError;
+
+impl Repository {
+    pub async fn create_milestone(
+        &self,
+        project_id: Uuid,
+        input: CreateMilestone,
+    ) -> Result<Milestone, StoreError> {
+        let id = Uuid::new_v4();
+        let now = Utc::now();
+        sqlx::query(
+            "INSERT INTO milestones (id, project_id, name, description, target_date, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(id.to_string())
+        .bind(project_id.to_string())
+        .bind(&input.name)
+        .bind(&input.description)
+        .bind(input.target_date.map(|d| d.to_rfc3339()))
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(self.pool())
+        .await?;
+
+        Ok(Milestone {
+            id,
+            project_id,
+            name: input.name,
+            description: input.description,
+            target_date: input.target_date,
+            completed_at: None,
+            created_at: now,
+            updated_at: now,
+        })
+    }
+
+    // get, update and delete follow the same shape.
 }
-
-// add get_milestone, list_milestones, update_milestone, delete_milestone
 ```
 
-### Step 4: Register in `repo.rs`
+Reading a row back goes through a private row struct and `decode::uuid`, `decode::instant` and the other `decode` functions (see `repo/briefs.rs` for a small, complete example), so a stored value that cannot be read is `StoreError::Corrupt` rather than a panic. A question that only reads, such as a list for a screen, is a `pub async fn` in `crates/tack-db/src/queries/` instead. Its name states the question, and it returns a row struct under the columns' names.
 
-Open `crates/tack-db/src/repo.rs` and add:
+### Step 4: Put any rule in a use case
 
-```rust
-pub mod milestones;
-```
-
-Then add delegating methods to the `Repository` impl:
-
-```rust
-pub async fn create_milestone(
-    &self,
-    project_id: Uuid,
-    data: CreateMilestone,
-) -> Result<Milestone, sqlx::Error> {
-    milestones::create_milestone(self.pool(), project_id, data).await
-}
-
-pub async fn list_milestones(&self, project_id: Uuid) -> Result<Vec<Milestone>, sqlx::Error> {
-    milestones::list_milestones(self.pool(), project_id).await
-}
-
-// get, update, delete …
-```
-
-This pattern — thin delegating methods on `Repository` — keeps the struct as the single entry point callers interact with while keeping each entity's SQL isolated in its own file.
+A handler extracts, calls, maps the error and responds. If the entity has a rule beyond that (an idempotency key, a state check, two writes that must happen together), write it as a `tack-app` use case, `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, ..) -> Result<T, AppError>`, and have the handler call it. A plain create like this one calls the repository directly.
 
 ### Step 5: Create the handler
 
-Create `crates/tack-api/src/handlers/milestones.rs`:
+Create `crates/tack-api/src/handlers/milestones.rs` and declare it in `handlers.rs`. Take `Json`, `Path` and `Query` from `crate::extract`, not from axum, so a request that cannot be read gets the API's error body. Every handler carries a `#[utoipa::path]` attribute: it is what puts the route in `docs/openapi.json`.
 
 ```rust
-use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::Json,
-};
+use axum::extract::State;
+use axum::http::StatusCode;
 use uuid::Uuid;
 use validator::Validate;
 
-use tack_core::models::{CreateMilestone, Milestone, UpdateMilestone};
+use tack_core::models::{CreateMilestone, Milestone};
 
-use crate::{error::{ApiError, ApiResult}, router::AppState};
+use crate::error::{ApiError, ApiResult};
+use crate::extract::{Json, Path};
+use crate::router::AppState;
 
+#[utoipa::path(
+    post,
+    path = "/api/projects/{project_id}/milestones",
+    tag = "milestones",
+    params(("project_id" = Uuid, Path, description = "Project ID")),
+    request_body = CreateMilestone,
+    responses(
+        (status = 201, description = "The new milestone", body = Milestone),
+        (status = 404, description = "Project not found", body = crate::openapi::ErrorEnvelope),
+    ),
+)]
 pub async fn create_milestone(
     State(state): State<AppState>,
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateMilestone>,
 ) -> ApiResult<(StatusCode, Json<Milestone>)> {
     input.validate().map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    // Verify project exists
     state.repo.get_project(project_id).await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
     let milestone = state.repo.create_milestone(project_id, input).await?;
     Ok((StatusCode::CREATED, Json(milestone)))
 }
 
-pub async fn list_milestones(
-    State(state): State<AppState>,
-    Path(project_id): Path<Uuid>,
-) -> ApiResult<Json<Vec<Milestone>>> {
-    let milestones = state.repo.list_milestones(project_id).await?;
-    Ok(Json(milestones))
-}
-
-// get_milestone, update_milestone, delete_milestone …
+// list_milestones, get_milestone, update_milestone, delete_milestone ...
 ```
 
-### Step 6: Register routes in `router.rs`
+The model types need `#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]` so the spec can name them.
 
-Open `crates/tack-api/src/router.rs`. Add the import:
+### Step 6: Register the routes and the spec
+
+In `crates/tack-api/src/router.rs`, add the routes to the `/api` router builder:
 
 ```rust
-use crate::handlers::milestones;
+.route("/projects/{project_id}/milestones", post(milestones::create_milestone).get(milestones::list_milestones))
+.route("/milestones/{id}", get(milestones::get_milestone).patch(milestones::update_milestone).delete(milestones::delete_milestone))
 ```
 
-Then add the routes in the `api` router builder:
+In `crates/tack-api/src/openapi.rs`, add each handler to the `paths(...)` list of `ApiDoc` and each new type to `components(schemas(...))`. Then run `./scripts/regen-generated.sh`: it regenerates `docs/openapi.json`, `frontend/src/shared/api/schema.gen.ts`, the generated API reference page and the lockfiles, and the OpenAPI contract test fails until you do.
 
-```rust
-// ─── Milestones ───────────────────────────────────────────────────────────
-.route("/projects/{project_id}/milestones", post(milestones::create_milestone))
-.route("/projects/{project_id}/milestones", get(milestones::list_milestones))
-.route("/milestones/{id}", get(milestones::get_milestone))
-.route("/milestones/{id}", patch(milestones::update_milestone))
-.route("/milestones/{id}", delete(milestones::delete_milestone))
-```
-
-At this point the feature is complete. Run `cargo nextest run --workspace` to verify nothing is broken, then add repository tests under `crates/tack-db/tests/repository/` and handler tests under `crates/tack-api/tests/handlers/` — each crate's `tests/*.rs` files are modules of one test binary, `tests/it.rs`, so add to the module whose subject fits; a new subject is one more `mod` line there (see [Testing](testing.md)).
+At this point the feature is complete. Add repository tests under `crates/tack-db/tests/repository/` and handler tests under `crates/tack-api/tests/handlers/`. Each crate's `tests/*.rs` files are modules of one test binary, `tests/it.rs`, so add to the module whose subject fits; a new subject is one more `mod` line there (see [Testing](testing.md)).
 
 ---
 
@@ -330,6 +307,8 @@ pub fn workflow_for_type(project_type: &ProjectType) -> WorkflowConfig {
 }
 ```
 
+To let a project file choose the preset by name (`workflow.preset: education`), add an arm to `preset_workflow` in the same file, and list the name in the project file reference ([The Project File Format](project-file.md)).
+
 ### Step 5: Add a vocabulary preset
 
 Open `crates/tack-core/src/vocabulary.rs` and add a case to `vocabulary_for_type`:
@@ -357,21 +336,20 @@ Sometimes you need new logic in the workflow engine itself — for example, a ru
 
 ### Step 1: Add the function to `tack-core`
 
-Open `crates/tack-core/src/workflow.rs`. Add a pure function:
+Open `crates/tack-core/src/workflow.rs`. Add a pure function that takes its facts as parameters:
 
 ```rust
 impl WorkflowConfig {
-    /// Return an error if attempting to mark `item_id` done when it has
-    /// unresolved blocking dependencies.
+    /// Refuse to mark an item done while it has unresolved blocking dependencies.
     pub fn check_dependencies_resolved(
+        &self,
         item_id: Uuid,
-        blockers: &[(Uuid, DependencyType)],
+        unresolved_blockers: usize,
         target_status: &str,
     ) -> Result<(), CoreError> {
-        if self.is_done_status(target_status) && !blockers.is_empty() {
+        if self.is_done_status(target_status) && unresolved_blockers > 0 {
             return Err(CoreError::Validation(format!(
-                "Item {item_id} has {} unresolved blocker(s)",
-                blockers.len()
+                "Item {item_id} has {unresolved_blockers} unresolved blocker(s)"
             )));
         }
         Ok(())
@@ -379,35 +357,21 @@ impl WorkflowConfig {
 }
 ```
 
-Note that this function takes its inputs as parameters — it does not query the database. The caller (the handler) is responsible for loading the blocker list and passing it in.
+The function does not query the database. The caller loads the facts and passes them in.
 
 ### Step 2: Write unit tests
 
-Add tests in the `#[cfg(test)]` block in the same file. Test both the passing case (no blockers, or target not Done) and the failing case (blockers present, target is Done).
+Add tests in the `#[cfg(test)]` module of the same file (`workflow/tests.rs`). Test both the passing case (no blockers, or target not Done) and the failing case (blockers present, target is Done). These tests are cheap because there is no I/O to mock: you call the function with constructed data.
 
-Unit tests for workflow logic are intentionally cheap to write here because there is no I/O to mock — you just call the function with constructed data.
+### Step 3: Call it where the move is decided
 
-### Step 3: Update the handler
-
-Open `crates/tack-api/src/handlers/items.rs`. In `update_item`, after loading the project and before calling `repo.update_item`, add the new check:
-
-```rust
-if let Some(new_status) = &input.status {
-    let project = state.repo.get_project(item.project_id).await? ...;
-    project.workflow.validate_transition(&item.status, new_status)?;
-    project.workflow.check_wip_limit(new_status, current_count)?;
-
-    // New check: load blockers and verify they are resolved
-    let all_deps = state.repo.list_dependencies(item.id).await?;
-    let graph = DependencyGraph::from_edges(&all_deps);
-    let blockers = graph.blockers_of(item.id);
-    project.workflow.check_dependencies_resolved(item.id, &blockers, new_status)?;
-}
-```
+A status change is decided inside the store's transaction: `Repository::update_item_atomically` counts the items already in the target status and asks the workflow, through the `StatusGate` trait (`admit_move`, which runs `validate_transition` and `check_wip_limit`), whether the move is allowed. A rule that needs only what `StatusGate` already receives belongs in `admit_move`. A rule that needs another fact (here, the item's blockers) is checked by the caller before it writes: load the fact with a `Repository` method or a `queries/` function, call the new check, and return its error. Put that call in a `tack-app` use case when other callers (the CLI through the API, the MCP server, the auto-start tick) must obey the same rule; the handler in `tack-api/src/handlers/items.rs` then calls the use case.
 
 ### What not to change
 
-No migration is needed. The workflow engine is pure logic — it reads from a `WorkflowConfig` struct that is already stored as JSON. Adding a new method to `WorkflowConfig` does not require any database schema change.
+No migration is needed. The workflow engine is pure logic: it reads from a `WorkflowConfig` struct that is already stored as JSON. Adding a method to `WorkflowConfig` changes no schema.
+
+If the new logic needs new *configuration* (for example, a per-project flag to enable or disable dependency-blocking), add a field to `WorkflowConfig`, give it a serde default so stored rows that lack it still load, and add a project-file key if a person should be able to set it (next recipe).
 
 ---
 
@@ -458,12 +422,10 @@ The crate layering is the project's load-bearing constraint. Most review feedbac
 
 - **Don't put I/O in `tack-core`.** No file access, no HTTP calls, no `sqlx`, no `tokio` runtime needs. Core is pure, synchronous domain logic so it stays trivially testable. If a rule needs data, take it as a function parameter and let the handler load it (as in the dependency check above).
 - **Don't scatter validation across handlers.** Transition rules, WIP limits, cycle checks, and field validation belong in `tack-core`, called from the handler. Duplicating a rule inline in a handler means the CLI, API, and MCP server can disagree about what's valid.
-- **Don't reach past the repository layer.** Handlers call `Repository` methods; they never build SQL or touch the pool directly. New queries go in the matching `repo/<entity>.rs` module.
-- **Don't let `tack-cli` import `tack-db`.** The CLI is an HTTP client — all data access goes through the API so workflow rules are enforced server-side. The same applies to the MCP server.
-- **Don't edit an existing migration.** Migrations are append-only and idempotent. Changing a shipped migration corrupts databases that already applied it. Add a new numbered migration and wire it into `all_migrations()`.
+- **Don't reach past the repository layer.** Handlers call `Repository` methods; they never build SQL or touch the pool directly. New commands go in the matching `repo/` module and new reads in `queries/`.
+- **Don't let `tack-cli` import `tack-db`.** The CLI is an HTTP client — all data access goes through the API so workflow rules are enforced server-side. The same applies to the MCP server. The one exception is `serve.rs`, which builds the `Repository` the server runs on. `scripts/check-crate-graph.sh` fails on any other edge.
+- **Don't edit an existing migration.** Migrations are append-only. Changing a shipped migration corrupts databases that already applied it. Add a new numbered migration and wire it into `all_migrations()`.
 - **Don't hardcode colors in the frontend.** Components consume `--color-*` design tokens via inline `style`, never raw hex, so the theme/palette system keeps working. See [Frontend & Design System](frontend.md).
 - **Don't add an endpoint without a handler test.** Every new route gets at least a success-path and an error-path test in the module of `crates/tack-api/tests/handlers/` that matches the route's subject — see [Testing](testing.md).
 
 When a change feels like it needs to break one of these, that's usually a sign the logic belongs in a different layer — move it rather than bending the boundary.
-
-If the new logic requires new *configuration* (for example, a per-project flag to enable or disable dependency-blocking), then you would add a field to `WorkflowConfig`, update the struct, and add a migration to handle existing rows that do not have that field (SQLite will use the column default).

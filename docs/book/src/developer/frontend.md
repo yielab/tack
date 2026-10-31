@@ -130,12 +130,6 @@ the empty answer. Anything left to throw is caught by `RouteBoundary`: the app h
 and the text appears beside it while it is disabled and is tied to it with `aria-describedby`. Screen text
 names no environment variable or command: it links to the Administrator Guide (`shared/help/routes.ts`).
 
-## Design source
-
-The current visual language was imported from a Claude Design project
-(`Tack.dc.html`) and implemented onto the token system above. The design is a
-reference; the source of truth is `index.css` plus the `shared/ui` kit.
-
 ## Running it
 
 ```sh

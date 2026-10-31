@@ -4,7 +4,7 @@ This page is for contributors and integrators who want to know why Tack is built
 
 ## What an ADR is here
 
-An architecture decision record (ADR) is a short document in [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr) that asks the maintainer to decide something and keeps the answer. Each file is named `NNNN-slug.md` and numbered in the order it was written, from 0001 since the renumbering of 2026-10-26 (see the table at the end). Numbers are never reused. An ADR with nothing left to decide moves to [`docs/closed-cycles/adr/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/adr) and keeps its number, which is always above 0031.
+An architecture decision record (ADR) is a short document in [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr) that asks the maintainer to decide something and keeps the answer. Each file is named `NNNN-slug.md` and numbered in the order it was written, from 0001 (see the table at the end for the numbers used before 2026-10-26). Numbers are never reused. An ADR with nothing left to decide moves to [`docs/closed-cycles/adr/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/adr) and keeps its number.
 
 The recent records open the same way, so that the person who must approve one reads a single screen and no more:
 
@@ -62,29 +62,9 @@ The Status line in each file is the authority. The "Superseded by" column below 
 | 0002 | [Tack-owned scheduling and runner-owned execution](https://github.com/yielab/tack/blob/develop/docs/adr/0002-runner-control-plane.md) | Accepted | 0010, 0019 |
 | 0001 | [transactional migration rebuild recovery](https://github.com/yielab/tack/blob/develop/docs/adr/0001-transactional-migration-rebuild-recovery.md) | Accepted 2026-08-06 | — |
 
-### Regenerating the table
+### Adding a row
 
-The table is generated from the files, not written by hand. From the repository root, run the script below and paste its output over the table above. It reads each file's first heading, its Status line, and any sentence of the form "superseded by ADR NNNN".
-
-```python
-import pathlib, re
-BLOB = "https://github.com/yielab/tack/blob/develop/docs/adr/"
-rows = []
-for path in sorted(pathlib.Path("docs/adr").glob("[0-9]*.md"), reverse=True):
-    text = path.read_text()
-    title = re.search(r"^# (?:ADR \d+: )?(.*)$", text, re.M).group(1).strip()
-    status = re.search(r"^## Status\s+(.+?)$", text, re.M | re.S)
-    line = (status.group(1).strip().splitlines()[0] if status else
-            next(l for l in text.splitlines() if re.match(r"(- )?\**Status", l)))
-    word = re.search(r"accepted|withdrawn|proposed|rejected", line, re.I)
-    date = re.search(r"\d{4}-\d{2}-\d{2}", line)
-    status_cell = (word.group(0).capitalize() if word else "See file") + (f" {date.group(0)}" if date else "")
-    later = sorted({n for n in re.findall(r"[Ss]uperseded[^.\n]{0,40}?by ADR (\d{4})", text) if n != path.name[:4]})
-    rows.append(f"| {path.name[:4]} | [{title}]({BLOB}{path.name}) | {status_cell} | {', '.join(later) or '—'} |")
-print("| ADR | Title | Status | Superseded by |\n|---|---|---|---|\n" + "\n".join(rows))
-```
-
-Save it to a file and run it with `python3`, from the repository root.
+Add a row when an ADR is created. Take the title from the file's first heading and the status word and date from its Status line. Fill "Superseded by" from the dated note in the older file, which says whether the replacement is whole or partial.
 
 ## Reading order for newcomers
 

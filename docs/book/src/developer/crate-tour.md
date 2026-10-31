@@ -203,10 +203,7 @@ The project file. `outline.rs` holds the serde types of every section (`Outline`
 
 ### `lib.rs`
 
-`init_pool(database_url)` creates a `SqlitePool` using `SqlitePoolOptions` with a max of 5 connections, then immediately runs two `PRAGMA` statements:
-
-- `PRAGMA journal_mode=WAL` — enables Write-Ahead Logging for better concurrent read performance.
-- `PRAGMA foreign_keys=ON` — SQLite does not enforce foreign keys by default; this enables them.
+`init_pool(database_url)` creates a `SqlitePool` with a maximum of 5 connections. Foreign keys are switched on in the connect options, because SQLite enforces them per connection and a one-off `PRAGMA` would arm only the first. It then sets `PRAGMA journal_mode=WAL`, which is stored in the database file and so applies to every connection.
 
 ---
 
@@ -221,30 +218,19 @@ of SQL strings. Each entry is `(&str name, &[&str] statements)`. The runner:
 3. Executes each SQL statement in order.
 4. Records the migration name on success.
 
-Migrations are idempotent — running them on an existing database is safe. Notable migrations:
+Migrations are append-only: never edit a shipped one. Some that show the range of what they hold:
 
 - `004_items` — creates the `items` table with indexes on `project_id`, `status`, `priority`, `parent_id`, and `sprint_id`.
-- `010_fts` — creates the FTS5 virtual table `items_fts` and three triggers (`after_item_insert`, `after_item_update`, `after_item_delete`) that keep the FTS index in sync with the `items` table.
+- `010_fts` — creates the FTS5 virtual table `items_fts` and the triggers (`items_fts_insert`, `items_fts_update`, `items_fts_delete`) that keep the FTS index in sync with the `items` table.
 - `012_custom_fields` — `custom_field_definitions` and `custom_field_values` tables.
-- `016_perf_indexes` — additional composite indexes added after profiling.
-- `039`–`048` — the ten neutral runner-v1 execution-domain tables (execution
-  requests, attempts, events, decisions and artifacts; agent profiles; runner fleets
-  and their members; model profiles). `049`+ refine execution replay, recovery and
-  attempt-start facts.
-- `078`–`081` — item briefs, the decision pack columns (options' details and risks,
-  the recommendation, when a decision was first seen), merge-readiness pack reviews and
-  pull requests.
-- `088`–`091` — a role's profile and a profile's fleet, a task's recurrence, a project's
-  auto-start, and the roles, profiles and automation a template carries. See
-  [Runs, Teams and Automation](runs-and-teams.md#the-migrations).
+- `088`–`095` — roles, recurrence, auto-start, templates, budgets and profiles for the automatic runs. See [Runs, Teams and Automation](runs-and-teams.md#the-migrations).
 
 Each ordinary migration runs in its own transaction with the `_migrations` record
 inserted at commit; a failing statement rolls the whole migration back. Applied
 migrations are checked at every startup against the binary's own ordered list by name
 **and** a deterministic checksum — an edited or reordered history refuses to boot
-rather than running silently. A small subset (037/038, a table
-copy/verify/swap rebuild predating Part III) additionally takes an automatic
-`VACUUM INTO` snapshot before its first attempt. See `docs/MIGRATION-GUIDE.md` for the
+rather than running silently. A migration that cannot be re-run safely (the table rebuilds 037 and 038, and any migration that
+runs `DROP TABLE`) additionally takes an automatic `VACUUM INTO` snapshot before its first attempt. See `docs/MIGRATION-GUIDE.md` for the
 operator-facing version of this and `docs/adr/0001-transactional-migration-rebuild-recovery.md`
 for the design rationale.
 
@@ -252,34 +238,18 @@ for the design rationale.
 
 ### `repo.rs` and `repo/`
 
-`repo.rs` declares the `Repository` struct, which holds a `SqlitePool`, and re-exports a method for each database operation by delegating to the appropriate submodule:
+`repo.rs` declares the `Repository` struct, which holds a `SqlitePool`, and the submodules of `repo/` each add an `impl Repository` block with the commands of one aggregate: `attachments`, `autonomy`, `backup`, `boards`, `briefs`, `budgets`, `comments`, `custom_fields`, `dependencies`, `execution/` (one file per concern: `enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`), `github_links`, `items`, `metrics`, `prill_records`, `projects`, `pull_requests`, `rate_card`, `roles`, `sprints`, `templates` and `workspaces`. A caller holds one `Repository` and calls `repo.create_item(..)`; each entity's SQL stays in its own file.
 
-```rust
-pub struct Repository {
-    pool: SqlitePool,
-}
+`rate_card.rs` holds the one SQL that prices usage: `spend_by_model` returns tokens per model, repository and team, and the Factory page and the token budget both call it.
 
-impl Repository {
-    pub async fn create_item(&self, ...) -> Result<Item, StoreError> {
-        items::create_item(self.pool(), ...).await
-    }
-    // ...
-}
-```
-
-This design gives callers a single `repo` value to pass around while keeping each entity's SQL in its own file.
-
-**Per-entity submodules** (`items.rs`, `projects.rs`, `sprints.rs`, `roles.rs`, `comments.rs`, `dependencies.rs`, `attachments.rs`, `boards.rs`, `templates.rs`, `custom_fields.rs`, `briefs.rs`, `pull_requests.rs`, `metrics.rs`, `github_links.rs`, `execution/` (one file per concern: `enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`), `autonomy.rs`, `budgets.rs`, `rate_card.rs`):
-
-`rate_card.rs` holds the one SQL that prices usage: `spend_by_model` returns tokens per model, repository and team, and the Factory page and the dollar budget both call it.
-
-- Functions take `&SqlitePool` (or `&self` for the struct-based submodules) and return `Result<T, StoreError>` or `Result<T, DependencyError>`.
+- Methods return `Result<T, StoreError>` (or `Result<T, DependencyError>` for the dependency graph).
 - Queries use `sqlx::query` / `sqlx::query_as` with positional `?` parameters.
-- UUIDs are stored as `TEXT` — bound as `.bind(id.to_string())` and parsed back from the row.
-- JSON fields (`workflow`, `vocabulary`, `tags`) are serialised to/from strings with `serde_json`.
+- A value read back from a row is decoded through `decode.rs` (`decode::uuid`, `json`, `instant`, `variant`), which returns `StoreError::Corrupt` rather than panicking or defaulting.
+- UUIDs are stored as `TEXT` and bound as `.bind(id.to_string())`.
+- JSON fields (`workflow`, `vocabulary`, `tags`) are serialised to and from strings with `serde_json`.
 - Timestamps are stored as RFC 3339 strings and parsed via `chrono::DateTime<Utc>`.
 
-**`queries/`** is the read side: one file per table (`items.rs`, `execution_requests.rs`, `execution_attempts.rs`, `agent_runners.rs`, `pull_requests.rs`, …), one `pub async fn` per question the rest of the program asks of it. Each takes the `Repository`, returns `Result<_, StoreError>` and answers with a row struct whose fields are the columns, under the columns' names. A test reads what a route wrote through these functions instead of writing SQL.
+**`queries/`** is the read side: one file per table (`items.rs`, `execution_requests.rs`, `execution_attempts.rs`, `agent_runners.rs`, `pull_requests.rs`, `autonomy.rs`, …), one `pub async fn` per question the rest of the program asks of it. Each takes the `Repository`, returns `Result<_, StoreError>` and answers with a row struct whose fields are the columns, under the columns' names. A test reads what a route wrote through these functions instead of writing SQL.
 
 **Notable function: `check_and_update_parent_status`** (in `items.rs`). After an item is moved to a `Done`-category status, the handler calls this function with the item's `parent_id`. It queries whether all sibling items are also in a done status, and if so, updates the parent. The `WorkflowConfig::should_complete_parent(all_siblings_done)` call in `tack-core` provides the decision logic — the repository only handles the data queries.
 
@@ -332,7 +302,7 @@ checks it against a list, and the agent refuses one it does not know when the ru
 
 ### `runs/`
 
-One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, `submit_artifacts`, `report_events` and the rest of the runner-v1 operations. A use case is `pub async fn <verb>(repo: &Repository, clock: &dyn Clock, <args>) -> Result<T, AppError>`: it takes plain values and holds the rule a handler used to hold (idempotency keys, fencing checks, `validate_transition`). A handler in `tack-api` extracts, calls the use case, maps the error and responds. A test of a rule calls the use case directly on `setup_test_db()`, with no router.
+One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, `submit_artifacts`, `report_events` and the rest of the runner-v1 operations. A use case is `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, <args>) -> Result<T, AppError>`: the caller reads the clock once at the edge, and the use case takes plain values and holds the rule a handler used to hold (idempotency keys, fencing checks, `validate_transition`). A handler in `tack-api` extracts, calls the use case, maps the error and responds. A test of a rule calls the use case directly on `setup_test_db()`, with no router.
 
 ### `AppError`
 
@@ -340,19 +310,11 @@ One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, 
 
 ### Ticks
 
-Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) is a module with two functions. `tick()` is one pass, and tests call it with a fake clock so nothing sleeps. `run()` is the loop: wait, `tick()`, log a failed pass, repeat. `tack-cli/src/serve.rs` spawns each `run()`; the HTTP server starts none of them. The autonomy pass (`autonomy::tick`, which merges and demotes by `tack_core::autonomy::evaluate`, with the merge itself in `merge.rs`) runs after each GitHub poll.
+Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) is a module with two functions. `tick()` is one pass, and tests call it with a fake clock so nothing sleeps. `spawn()` hands that pass to `background::Loops`, the one helper that runs a named tick on an interval, stops on a shared cancellation token and logs a panic with the loop's name. `tack-cli/src/serve.rs` owns the `Loops`, calls each module's `spawn` and stops them all when the server returns. The HTTP server starts only the artifact sweep. The autonomy pass (`autonomy::tick`, which merges and demotes by `tack_core::autonomy::evaluate`, with the merge itself in `merge.rs`) runs after each GitHub poll.
 
 ### `retention.rs` and `observability.rs`
 
-Two sibling background loops, each a `tick()` plus a `run()`. Retention
-sweeps stale terminal-attempt event rows out of `execution_events` on an injectable
-clock (so tests never depend on wall time), and `tack serve` spawns it only when the operator turned it on; there is no daily roll-up table for
-`execution_events` yet, so this purges rows outright rather than aggregating them,
-and says so rather than calling itself a "roll up". Observability computes a periodic,
-id-free snapshot of runner/queue/lease/
-event counts and logs alerts from it — keyed only by the domain's two small, closed
-state vocabularies (`agent_runners.state`, `execution_requests.state`), never by
-attempt/request/runner id, so the label set stays bounded regardless of fleet size.
+Two sibling background loops, each a `tick()` plus a `spawn()`. Retention purges stale terminal-attempt event rows from `execution_events` outright (there is no roll-up table) on an injectable clock, so tests never depend on wall time; `tack serve` spawns it only when the operator turned it on. Observability computes a periodic, id-free snapshot of runner, queue, lease and event counts and logs alerts from it. It is keyed only by the domain's two small, closed state vocabularies (`agent_runners.state`, `execution_requests.state`), never by attempt, request or runner id, so the label set stays bounded regardless of fleet size.
 
 ### `ports.rs`
 
@@ -402,6 +364,9 @@ pub struct AppState {
     pub config: AppConfig,
     pub workspace_id: Uuid,
     pub broadcast_tx: broadcast::Sender<BoardEvent>,
+    pub webhook: Option<WebhookClient>,                       // None when TACK_WEBHOOK_URL is unset
+    pub local_runner: Option<Arc<dyn LocalRunnerControl>>,    // the embedded runner's seam
+    pub tasks: TaskTracker,                                   // work started after answering
 }
 ```
 
@@ -418,7 +383,7 @@ pub struct AppState {
 
 ### `handlers/`
 
-One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `resolve_profile`, `default_selector` and `create_as`, which a run started by the board itself goes through), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
+One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `create_as`, which a run started by the board itself goes through, and a `resolve_profile` that calls the one in `tack-app`'s `runs/start_run.rs`, beside `default_selector`), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
 
 The board's own timed work (the auto-start tick, the autonomy tick that merges and demotes, the merge itself, the GitHub poll and the remote backup) is in `tack-app`; a handler that needs one of them calls it. What `tack-app` needs back from this crate is `ports.rs`, the implementation of `tack_app::ports` over `AppState`.
 
@@ -449,7 +414,7 @@ Any handler that mutates data calls this after a successful write.
 
 ### `config.rs`
 
-`AppConfig::load()` tries to read `tack.toml` from the current directory. If that fails, it reads environment variables (`TACK_HOST`, `TACK_PORT`, `TACK_DATABASE_URL`, etc.) over a `Default::default()` base. There is no `figment` or other config framework — the logic is a straightforward chain of `if let Ok(v) = std::env::var(...)` assignments.
+`AppConfig::load()` reads `tack.toml` from the current directory, or starts from `Default::default()` when the file is missing or does not parse, and then lets environment variables (`TACK_HOST`, `TACK_PORT`, `TACK_DATABASE_URL`, etc.) override each field. There is no `figment` or other config framework — the logic is a chain of `if let Ok(v) = std::env::var(...)` assignments. Every variable is in [`docs/CONFIG.md`](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md).
 
 The API token is never logged. The only place it appears in logs is a boolean "token configured: true/false" in the startup message.
 
@@ -551,7 +516,7 @@ output is read, what it supports, and optionally how it drives a conversation so
 plus a line in `harness::DESCRIPTORS` and one in `harness::discover`. The harness
 vocabulary itself stays open (`HarnessKind::Other(String)`). Every runner event takes the attempt's next sequence, counted in the journal (`events_submitted`), because the server keeps one event per sequence.
 
-**docket is not a CLI harness.** It is a daemon the runner talks to over HTTP, so `docket.rs` implements the two engine-facing traits directly, with no grammar: `DocketAdapter`, helped by `docket/client.rs` (one method per route), `docket/probe.rs` (API version and teams), `docket/task.rs` (the task body) and `docket/daemon.rs` (supervising `docket start --dispatch`). It is registered by `harness::discover` only when `[docket]` names a binary or a `base_url`. [Runs, Teams and Automation](runs-and-teams.md#the-docket-adapter) has every call.
+**docket is not a CLI harness.** It is a daemon the runner talks to over HTTP, so `docket.rs` implements the two engine-facing traits directly, with no grammar: `DocketAdapter`, helped by `docket/client.rs` (one method per route), `docket/probe.rs` (API version and teams), `docket/task.rs` (the task body), `docket/steps.rs` and `docket/records.rs` (what each hop was made of, and the rows a team wrote) and `docket/daemon.rs` (supervising `docket start --dispatch`). It is registered by `harness::discover` only when `[docket]` names a binary or a `base_url`. [Runs, Teams and Automation](runs-and-teams.md#the-docket-adapter) has every call.
 
 The two engine-facing traits are
 `HarnessAdapter` (per-attempt lifecycle: `validate`/`start`/`cancel`/`wait`/
@@ -585,7 +550,7 @@ The composition root of `tack serve`, and the only place in this crate that name
 
 ### `main.rs`
 
-Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and an **optional** `Commands` enum. Run `tack --help` for the authoritative, current list; as of this writing it is:
+Uses `clap`'s derive API. The top-level `Cli` struct has two global flags (`--api-url`, `--token`) and an **optional** `Commands` enum; the command bodies are in `cmd/`. Run `tack --help` for the authoritative list. The groups are:
 
 - Board basics: `serve`, `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `sprint`, `config`, `completions`
 - Backup/restore: `backup`, `backups`, `restore`
@@ -606,14 +571,7 @@ The `add` and `list` commands fetch the project's vocabulary via `vocab::fetch()
 
 `TackClient` wraps `reqwest::blocking::Client`. All methods prepend `/api` to the supplied path and attach the `Authorization: Bearer <token>` header when a token is configured.
 
-Public methods:
-
-- `get(path)` → `serde_json::Value`
-- `post(path, body)` → `serde_json::Value`
-- `patch(path, body)` → `serde_json::Value`
-- `delete(path)` → `()`
-- `get_bytes(path)` → `Vec<u8>` — used for backup download
-- `post_bytes(path, data)` → `serde_json::Value` — used for restore upload
+The methods are one per verb and body kind: `get`, `post`, `patch`, `delete`, `put_json`, `put_empty` and `delete_json` answer a `serde_json::Value` (`delete` answers `()`); `get_bytes` and `post_bytes` carry the backup download and the restore upload; `post_text` sends a raw text body; and `get_with_etag` and `patch_if_match` read an item's `ETag` and send it back as `If-Match`, which is how `update_item` and `move_item` avoid overwriting a concurrent change.
 
 Error handling: the `extract()` helper parses the response body regardless of status code, then returns the body on success or extracts the `error.message` field and surfaces it as an `anyhow::Error` on failure.
 
@@ -621,12 +579,13 @@ Error handling: the `extract()` helper parses the response body regardless of st
 
 ### `config.rs`
 
-`Config::load(base_url_override, token_override)` applies a precedence chain:
+`Config::load(base_url_override, token_override)` applies a precedence chain (`load_with` does the same over an environment the caller already read, in a `ClientEnvironment`):
 
 1. CLI flag value (passed as `Option<String>`)
 2. Environment variable (`TACK_API_URL`, `TACK_API_TOKEN`)
 3. `~/.tackrc` — a TOML file with `base_url` and optional `token` fields
-4. Default: `http://127.0.0.1:3210`
+4. For the token, the `api-token` file of a server running on this machine
+5. Default URL: `http://127.0.0.1:3210`
 
 `config::save(base_url, token)` writes `~/.tackrc`. This is what `tack config --url <url>` does.
 

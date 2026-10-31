@@ -1,16 +1,15 @@
 # Architecture & Implementation Notes
 
-Crate responsibilities, design patterns, and implementation details of record.
-This file is the authority for design patterns, implementation notes, and
-troubleshooting — CLAUDE.md keeps only the condensed map. It is for contributors; the
-book's [Developer Guide](book/src/developer/index.md) is the narrative version, and its
+Crate responsibilities and the implementation rules that hold across them. This file is the
+authority on crate boundaries; CLAUDE.md keeps only the condensed map. It is for contributors. The
+book's [Developer Guide](book/src/developer/index.md) is the narrative version: its
+[Crate Tour](book/src/developer/crate-tour.md) walks each source file, and
 [Runs, Teams and Automation](book/src/developer/runs-and-teams.md) and
-[Project File Format](book/src/developer/project-file.md) pages cover the two newest
-subsystems in depth. The mdBook's
-[Crate Tour](book/src/developer/crate-tour.md) is a separate, deeper per-file
-walkthrough (code snippets, one section per source file) rather than a copy of
-this page; when the two disagree on a fact rather than depth, this file wins
-and the tour should be corrected to match.
+[The Project File Format](book/src/developer/project-file.md) cover those two subsystems in depth.
+When this file and the tour disagree on a fact, this file wins and the tour should be corrected.
+It does not list routes, tests or recipes: the routes are in the generated
+[API reference](book/src/developer/api-reference.md), the test layout is in [TESTING.md](TESTING.md),
+and the recipes for new code are in [Adding Features](book/src/developer/adding-features.md).
 
 **Project structure:**
 ```
@@ -43,19 +42,18 @@ crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar; 
 frontend/
 ├── src/
 │   ├── app/         Root App/Layout components and routes.tsx
-│   ├── features/    One directory per feature (board, list, sprints, fleet,
-│   │                agents, provisioning, economics, settings, …)
-│   ├── shared/      Cross-feature code: api/ (generated client + schema),
-│   │                realtime/, orch/, execution/, ui/, state/, vocab/, keyboard/
+│   ├── features/    One directory per surface (board, list, table, calendar, timeline,
+│   │                sprints, item-detail, dashboard, projects, settings, templates, agents)
+│   ├── shared/      Cross-feature code: api/ (generated client + schema), realtime/,
+│   │                runWithAgent/, execution/, agents/, ui/, state/, vocab/, keyboard/,
+│   │                help/, types/
 │   └── test/        Vitest setup
 ├── e2e/             Playwright specs
 ├── public/          Static assets
 └── package.json     Frontend dependencies (SolidJS, Vite, Tailwind v4)
 
-docs/                Documentation
-├── API-REFERENCE.md Complete API documentation
-├── TESTING.md       Testing guide
-└── *.md            Various guides
+docs/                Documentation: this file, CONFIG.md, MCP.md, TESTING.md, the guides,
+                     adr/ (decisions), contracts/ (language-neutral fixtures), book/ (mdBook)
 ```
 
 ## Crate Boundaries & Responsibilities
@@ -91,7 +89,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 
 **tack-db** (the only crate that names `sqlx`; depends on `tack-protocol` and `tack-core`):
 - SQLite via `sqlx` (async), behind `StoreError` (`NotFound { entity }`, `Conflict`, `Corrupt { table, column }`, `Sql`): no `sqlx` type crosses the crate's edge. A stored value that cannot be decoded is `Corrupt`, never a panic and never a default (`decode.rs` is the one place that reads ids, instants, enums and JSON back)
-- Migrations (`migrations.rs`; `scripts/arch-facts.sh` prints how many, and the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items
+- Migrations (`migrations.rs`; `scripts/arch-facts.sh` prints how many, and the live count is `GET /api/health`'s `migrations_applied`) with FTS5 full-text search on items. They are transactional, append-only, and checked at every startup by name and checksum; a migration that cannot be re-run safely (a table rebuild or a table drop) takes a `VACUUM INTO` snapshot first. See [MIGRATION-GUIDE.md](MIGRATION-GUIDE.md)
 - **Commands are `Repository` methods**, one directory or file per aggregate under `repo/` (`items.rs`, `projects.rs`, `execution/`, …). **Read models are functions in `queries/`**, one file per table, one `pub async fn` per question the rest of the program asks of it, each taking the `Repository` and returning a row struct under the columns' names
 - An item is two types. `Item` is the aggregate: the columns of the `items` row, listed once (`ITEM_COLUMNS` in `repo/items.rs`) and read back through `ItemRow`. `ItemCard` (`tack-core`) is the `Item` plus what the run history says about it (`needs_review`, `merge_note`, `started_by`, `team`, `merged_by`), derived by subqueries on read and never written; `list_items`, `get_item_snapshot` and an update's answer return cards, every other read returns the `Item`. An item update is `update_item_atomically`, the only one: the store counts the target status inside its `BEGIN IMMEDIATE` transaction and asks the workflow (`tack-core`'s `StatusGate`) whether the move is allowed, so the workflow and WIP rules live in `tack-core` and the store holds none
 - A state read from a row is converted to its typed enum at this crate's edge
@@ -131,7 +129,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - **Capabilities are honest or the adapter is rejected.** `AdapterRegistry::register_probe` refuses any probe claiming `Supported` cancellation unless its harness announces the process groups its tools start, because every other harness's shell tool spawns its subprocess in a new session outside the runner's process group — verified with `ps` against real `claude`. docket stops its work over its own cancel route, so cancellation is `Supported` there and `Advisory` everywhere else; the scheduler must read the capability snapshot, never assume
 - After a succeeded (or cancelled) attempt and before the workspace is deleted, the engine captures the attempt's change as evidence for every harness (`evidence.rs`), then, when the operator turned them on in the runner's TOML config, runs a verifier over it that writes a merge-readiness pack (`verify.rs`, `[verify]`) and pushes the work as a branch (`git.rs`, `[git]`). A failure of either is an event on the attempt, never a change to its outcome
 - Runner events carry the attempt's next sequence, counted in the journal (`events_submitted`), since the server keeps one event per `(attempt, sequence)`; a harness's steps are batched as events every two seconds and flushed when the run ends
-- docket's API version is probed at the first use and must be `5`; any other version is reported as "needs docket 0.2.0-beta.6" and no task is posted
+- docket's API version is probed at the first use and must be a number, 6 or later (`MIN_API_VERSION` in `harness/docket/probe.rs`); anything else is reported as "needs docket 0.2.0-beta.6" and no task is posted
 - Live harness tests are opt-in (`#[ignore]` + a PATH check) and never required in CI; the shared fake binary at `harness/fixtures/fake_harness.sh` is the always-runnable path, driven by `TACK_FAKE_HARNESS_MODE`. docket is tested against an in-process fake of its API (`tests/fake_docket/`); no test runs a real docket
 
 **tack-cli** (the single `tack` binary):
@@ -152,239 +150,42 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - Toast notifications
 - Skeleton loading screens
 
-## Key Design Patterns
+## Implementation rules
 
-**Universal Item Model**: All work units (epics, features, tasks, bugs, etc.) share the same `Item` struct. The `item_type` field and project vocabulary determine how they're labeled and displayed.
+**`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that
+reads then writes deadlocks under concurrency: two callers both upgrade from reader to writer and
+SQLite returns `SQLITE_LOCKED`. The sites in `repo/execution/` hit this (`grep -rn 'BEGIN IMMEDIATE'
+crates/tack-db/src`). Write-first methods are fine as they are. The shared in-memory test harness
+can mask these races, so prove a new concurrency test load-bearing against a file-backed database
+by reverting the fix and watching it fail.
 
-**Workflow Engine**: Each project has a `WorkflowConfig` defining:
-- Status columns (name, category, WIP limit, order)
-- Optional explicit transitions (e.g., construction workflow enforces linear progression)
-- Presets: `scrum_workflow()`, `kanban_workflow()`, `simple_workflow()`, `construction_workflow()`
+**Parent status follows its children.** When an item moves to a `Done`-category status, the
+handler calls `propagate_parent_completion` (`tack-api/src/handlers/items.rs`), which calls
+`Repository::check_and_update_parent_status`: if every sibling is done, the parent moves to done
+too. The check does not repeat for the grandparent. It is best-effort: a failure there never fails the
+move that triggered it.
 
-**Vocabulary Mapping**: Projects store a `VocabularyMap` to rename terms:
-```rust
-{
-  "task": "Work Order",
-  "sprint": "Phase",
-  "epic": "Building"
-}
-```
+**Search and tags.** Tags are JSON arrays in SQLite. The `items_fts` FTS5 table indexes titles,
+descriptions and tags, and triggers keep it in step with `items`.
 
-**Dependency Graph**: DAG-based system prevents cycles. Uses adjacency lists for both forward (`edges`) and reverse (`reverse_edges`) lookups. Validates new edges before insertion.
+**Attachments.** Uploads are multipart to `/api/items/{id}/attachments`, at most 50 MB (the global
+`TACK_MAX_BODY_SIZE` limit does not apply to that route). Files live under `TACK_STORAGE_DIR`, in
+a directory per item, under a generated unique name; the row keeps the original name, MIME type
+and size.
 
-**Project Types**: Each `ProjectType` (software, construction, personal, etc.) auto-selects default workflow and vocabulary. Users can fully customize after creation.
-
-## Database Schema Highlights
-
-- **Migrations** are tracked in the `_migrations` table — `scripts/arch-facts.sh` prints how many, and `GET /api/health`'s `migrations_applied` is the live count (039–048 added the ten neutral execution tables; 049–061 refine execution replay, recovery and attempt-start facts; 062 adds project-level default-model selection; 063 drops the unused `model_profiles` table; 064–073 drop the legacy Docket control-plane's ten tables, `control_planes` last since every other one referenced it; 075–077 add GitHub link sync state, mirrored comment ids and a project's GitHub token reference; 078–081 add item briefs, the decision pack columns, merge-readiness pack reviews and pull requests; 088 adds a role's profile and a profile's fleet; 089 a task's recurrence; 090 a project's auto-start; 091 the roles, profiles and automation a template carries; 092 drops dollars per day)
-- Migrations are transactional with ordered-prefix and checksum enforcement; 037/038's copy/verify/swap rebuild and 064–073's table drops each run behind an automatic pre-upgrade `VACUUM INTO` snapshot
-- **`BEGIN IMMEDIATE` is mandatory for read-then-write transactions.** A deferred transaction that reads then writes deadlocks under concurrency — two callers both upgrade from reader to writer and SQLite returns `SQLITE_LOCKED`. The sites in `repo/execution/` hit this (`grep -rn 'BEGIN IMMEDIATE' crates/tack-db/src`); each was stress-tested before and after the fix. Write-first methods are fine as-is and were deliberately left deferred. Note the shared in-memory test harness can _mask_ these races — prove any new concurrency test load-bearing against a file-backed DB by reverting the fix and watching it fail
-- **FTS5 virtual table** (`items_fts`) for full-text search across titles, descriptions, tags
-- **Triggers** maintain FTS index on INSERT/UPDATE/DELETE
-- **Foreign keys** enforce referential integrity (e.g., items → projects, items → sprints)
-- **Indexes** on common queries: project_id, status, priority, parent_id
-- **Attachments table** with file metadata (filename, mime_type, storage_path, size)
-
-## API Endpoint Structure
-
-All routes follow RESTful conventions:
-
-- `/api/projects` — CRUD for projects (5 endpoints)
-- `/api/projects/{id}/boards` — Multiple boards per project (CRUD + view)
-  - `GET /api/projects/{id}/boards/live` — **WebSocket** for real-time updates
-- `/api/projects/{id}/export` — Export to JSON/YAML/CSV (1 endpoint)
-- `/api/projects/import` — Import from JSON or YAML (1 endpoint)
-- `/api/projects/outline`, `/api/projects/{id}/outline`, `/api/projects/import-csv`, `/api/projects/{id}/import-csv` — A project (with its fields, profiles, roles, sprints and automation) and its items, or items for a project, from a project file or a CSV (4 endpoints). `GET /api/projects/{id}/export?scope=bundle` writes the same file back
-- `/api/templates`, `/api/projects/from-template/{id}`, `/api/projects/{project_id}/save-as-template` — templates, which are project files without items
-- `/api/projects/{id}/autonomy` (GET/PUT) — a project's merge level, domains and budgets, and, read-only, its ceiling and the teams that cap it
-- `/api/items/{id}/agent-context` — what the agent will read, and which profile a run would get and why
-- `/api/projects/{id}/items` — Items scoped to project (3 endpoints)
-- `/api/items/{id}` — Individual item operations (3 endpoints with WebSocket broadcasting)
-- `/api/items/{id}/dependencies` — Dependency management (3 endpoints)
-- `/api/items/{id}/attachments` — File attachments (2 endpoints)
-- `/api/attachments/{id}` — Download/delete attachments (2 endpoints)
-- `/api/projects/{id}/sprints` — Sprint management (4 endpoints)
-- `/api/projects/{id}/roles` — Role/specialty management (5 endpoints)
-- `/api/items/{id}/comments` — Comments on items (2 endpoints)
-- `/api/projects/{id}/search` — Full-text search within project (1 endpoint)
-- `/api/search` — **Global search** across all projects (1 endpoint)
-- `/api/projects/{id}/import-github` — GitHub Issues import (1 endpoint; `owner/repo` or full URL, optional PAT, label filter, PR-skipping, cursor pagination). Imported items are linked in the `github_links` table; with `TACK_GITHUB_TOKEN` set, status and comments flow out to the issue on every change and back in on a poll (`TACK_GITHUB_POLL_SECONDS`). `PUT`/`DELETE /api/items/{id}/github-link` links or unlinks any other item by hand. See `docs/GITHUB-SYNC.md`
-- `/api/projects/{id}/import-linear` — Linear import (1 endpoint; Linear API key, optional team/project filter, label filter, priority mapping, cursor pagination)
-- `/api/backup`, `/api/restore` — Local DB backup download / staged restore (2 endpoints)
-- `/api/backup/remote` (POST/GET), `/api/backup/remote/restore` — Cloud (S3-compatible) backup, list, and staged restore (3 endpoints)
-- `/api/settings/backup` (GET/PUT) — Read/update the UI-editable cloud-backup config; secret key is write-only (returned as a `secret_key_set` boolean)
-- `/api/executions`, `/api/runner-fleets`, `/api/runners/*`, `/api/agent-profiles` — **Operator** execution surface (create/list/get/cancel/requeue, fleet and profile management, runner enrollment and revocation). Under operator auth. Raw enrollment tokens are returned exactly once at issue time and only their SHA-256 hash is stored
-- `/api/items/{id}/brief` (GET/PUT/DELETE) — an item's brief: acceptance criteria, constraints, definition of done, risk (3 endpoints). It travels in project export and import and is rendered into the instructions a harness receives
-- `/api/executions/{request_id}/attempts/{n}/mrp` (GET), `.../mrp/viewed` and `.../mrp/review` — an attempt's merge-readiness pack, the mark that a person opened it, and the human verdict (the first verdict wins)
-- `/api/projects/{id}/metrics/factory` — the project's factory metrics: every ratio with the counts behind it, and a reason when it cannot be measured; optional `since`
-- `/api/runner/v1/*` — **Runner protocol**, the paths under a separate credential: `enroll`, `refresh`, `claim`, `heartbeat`, and per-attempt `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT — the content upload), `completion`, `cancellation-observation`, `recovery-observation`. Every attempt-scoped mutation validates runner identity + attempt id + current fencing token; a stale fence returns the stable `stale_lease` error and writes nothing
-
-Query parameters support filtering, pagination, and search.
-
-## Important Implementation Details
-
-### Workflow Validation
-
-When updating an item's status:
-1. Check if both statuses exist in project workflow
-2. If explicit transitions defined, validate the move is allowed
-3. Check WIP limit for target column (before adding)
-4. Update `started_at` when moving to in-progress category
-5. Update `completed_at` when moving to done category
-6. **Auto-propagate parent status** if item has a parent and all siblings are complete
-
-**Example:** Construction projects have strict transitions (Permit → Procurement → Build → Inspect → Handover). Jumping from Permit to Handover is rejected.
-
-### Auto-Status Propagation
-
-When a child item is moved to a "done" status, the system automatically checks if all siblings are also complete. If so, the parent item is automatically updated to "done" as well. This cascades up the hierarchy.
-
-**Implementation:**
-- Repository method: `check_and_update_parent_status(parent_id, completed_status)`
-- Triggered in `update_item` handler after status change
-- Only activates when moving to a status with `StatusCategory::Done`
-- Errors are silently ignored (best-effort feature)
-
-**Example workflow:**
-1. Epic "User Auth" has 3 child tasks
-2. Complete task 1 → no parent update (still 2 incomplete)
-3. Complete task 2 → no parent update (still 1 incomplete)
-4. Complete task 3 → **parent epic auto-completes** ✓
-
-### Dependency Cycle Detection
-
-Before creating a dependency:
-1. Check for self-reference (`source == target`)
-2. Build adjacency graph from existing dependencies
-3. Run DFS from target to see if it can reach source
-4. Reject if cycle detected
-
-The graph is reconstructed on each validation. For large dependency sets, consider caching.
-
-### Sprint Status Lifecycle
-
-Sprints have four states:
-- `Planning` → `Active` → `Review` → `Closed`
-
-Items can only be assigned to active or planning sprints (enforced in handlers).
-
-### Tags & Search
-
-- Tags are stored as JSON arrays in SQLite
-- FTS5 index includes tags, titles, descriptions
-- Search via `/api/projects/{id}/search?q=term` uses FTS5 `MATCH`
-
-### File Attachments
-
-- Upload via multipart/form-data to `/api/items/{id}/attachments`
-- Max file size: 50MB (configurable in handler)
-- Files stored in `TACK_STORAGE_DIR` organized by item ID
-- Unique filenames prevent collisions (UUID-based)
-- Download includes proper Content-Type and Content-Disposition headers
-- Metadata stored in database: filename, mime_type, storage_path, size_bytes
-
-### Export/Import
-
-- **JSON Export**: Complete project snapshot — project, items, sprints, dependencies, metadata
-  - `GET /api/projects/{id}/export?format=json`
-- **YAML Export**: The same snapshot, serialized as YAML. YAML is a JSON superset, so both formats decode into the same intermediate value on import
-  - `GET /api/projects/{id}/export?format=yaml`
-- **CSV Export**: Simplified item list for spreadsheet import
-  - `GET /api/projects/{id}/export?format=csv`
-  - Includes: id, title, description, type, status, priority, assignee, estimate, due_date, tags, parent_id, created_at — the columns the CSV import reads, so an export re-imports with its hierarchy
-- **Project file**: `GET /api/projects/{id}/export?scope=bundle&format=yaml|json` writes the whole project as the file that `POST /api/projects/outline` and `POST /api/projects/{id}/outline` read back (see [The Project File Format](book/src/developer/project-file.md)). It is deterministic, carries no ids or dates, and never deletes on import
-- **Import**: `POST /api/projects/import` (`handlers/export.rs::import_project`) accepts the same JSON-or-YAML snapshot shape produced by export, dispatched on `Content-Type`. Creates a new project, imports sprints then items (two passes — create, then wire up `parent_id`) then dependencies, preserves each item's original `source` trust marker, and restores the source project's workflow and vocabulary. If any step fails, the created project is deleted and the error is returned — nothing is left half-imported.
-
-### WebSocket Real-Time Updates
-
-- **Endpoint**: `GET /api/projects/{id}/boards/live` (WebSocket upgrade)
-- **Purpose**: Real-time board state updates for live collaboration
-- **Implementation**:
-  - Uses Tokio broadcast channel (100 message capacity)
-  - AppState contains `broadcast_tx: broadcast::Sender<BoardEvent>`
-  - Each WebSocket connection subscribes to the broadcast channel
-  - Events are filtered by project_id before sending to client
-- **Event Types**:
-  - `ItemCreated` - New item added to board
-  - `ItemUpdated` - Item status/details changed
-  - `ItemDeleted` - Item removed
-  - `BoardConfigUpdated` - WIP limits or columns changed
-  - `SprintUpdated` - Sprint status changed
-  - `Ping` - Keepalive (sent to all)
-- **Usage**: Frontend connects via WebSocket, receives JSON events, updates UI reactively
-- **Broadcasting**: Other handlers call `websocket::broadcast_event()` to notify all subscribers
-
-### Testing Strategy
-
-- **Unit tests** in `tack-core` for business logic (workflow, dependencies, vocabulary)
-- **Integration tests** in `tack-db` for repository operations (require SQLite)
-- **Use-case tests** in `tack-app` call a use case or a `tick()` directly on `setup_test_db()` and a fake clock, with no router and no sleeping
-- **Pure policy tests** in `tack-orch` (scheduler, model policy) and the runner-v1 contract pins in `tack-protocol` need no database
-- **Seeding and reading**: a test plants rows with `tack_test_support::seed` and reads them with `tack_db::queries::`, so a test that checks a route's answer never names SQL
-- **Handler tests** in `tack-api` use in-memory databases
-- **docket** is proved against `crates/tack-runner/tests/fake_docket/`, an in-process fake of its HTTP API
-- **Frontend unit tests** in `frontend/src/**/*.test.tsx` (Vitest + jsdom)
-- **End-to-end tests** in `frontend/e2e/` (Playwright): cross-browser smoke, user
-  journeys, axe accessibility scans, and API wire-contract checks. Test setup
-  talks to the API directly; the browser exercises the SPA via the proxy.
-- **Security**: `cargo audit` + `npm audit` in CI; justified advisory exceptions
-  in `.cargo/audit.toml`. **Performance**: k6 baseline in `tests/load/`.
-- **Integration gates** in `crates/tack-api/tests/handlers/production_router.rs` — drive the real
-  `build_router`,
-  because one area's own green tests are not evidence that the integrated system works.
-
-**A test that asserts a status code has usually not proved the claim.** The recurring failure
-in this codebase has been tests that pass while proving something weaker than their name says:
-a 413 asserted without checking the DB was unwritten; a concurrency test that caught `Err(_)`
-and retried sequentially, so it silently stopped being concurrent; a capability reported
-`Supported` with no implementation behind it. When adding a test for a "writes nothing" or
-"rejects before X" claim, assert the absence directly — row counts, an untouched checkpoint,
-empty bookkeeping — and prove the test is load-bearing by reverting the fix and watching it
-fail.
-
-Use `assert!(matches!(..))` for enum matching in tests. When changing an API
-response shape, update both the Rust handler and the matching mock in the
-frontend unit/E2E tests (e.g. the `GET /items/{id}` detail envelope).
-
-
-## Common Patterns When Adding Features
-
-### Adding a New Entity
-
-1. Define model in `tack-core/src/models.rs`
-2. Add migration in `tack-db/src/migrations.rs`
-3. Create repository module in `tack-db/src/repo/` (commands) and, for reads, a file in `tack-db/src/queries/`
-4. Put any rule that is more than extract-and-respond in a `tack-app` use case; add the handler in `tack-api/src/handlers/`
-5. Register routes in `tack-api/src/router.rs`
-6. Add DTOs for create/update operations
-
-### Extending Workflow Logic
-
-1. Add logic to `tack-core/src/workflow.rs`
-2. Write unit tests in the same file
-3. Update handlers to call new validation/logic
-4. No database changes needed (workflow is JSON in DB)
-
-### Adding a New Project Type
-
-1. Add variant to `ProjectType` enum in `models.rs`
-2. Create workflow preset in `workflow.rs` (e.g., `education_workflow()`)
-3. Create vocabulary preset in `vocabulary.rs`
-4. Update `workflow_for_type()` match statement
+**Real-time updates.** `AppState.broadcast_tx` is one Tokio broadcast channel (capacity 100)
+shared by every project. A handler that changes a board calls `broadcast_event`; each WebSocket
+connection on `/api/projects/{id}/boards/live` forwards only the events of its own project. Events
+are not stored. The walkthrough is in the [Architecture Overview](book/src/developer/index.md#5-how-real-time-updates-work)
+and the wire format in [API-REFERENCE.md](API-REFERENCE.md#websocket-events).
 
 ## Troubleshooting
 
-**Migration errors on startup:**
-- Check `_migrations` table: `SELECT * FROM _migrations`
-- Manually delete failed migration record if needed
-- Restart server to retry
+**Migration errors on startup:** the server refuses to start when the applied history differs from
+the binary's list by name or checksum. See [MIGRATION-GUIDE.md](MIGRATION-GUIDE.md).
 
-**Database locked errors:**
-- SQLite only supports one writer at a time
-- Check if another process has the DB open
-- Use `?mode=rwc` in connection string (already default)
+**Database locked errors:** SQLite allows one writer at a time. Check whether another process has
+the database open.
 
-**FTS5 not found:**
-- SQLite must be compiled with FTS5 support
-- Check with: `sqlite3 tack.db "PRAGMA compile_options;"`
-
+**FTS5 not found:** SQLite must be compiled with FTS5. Check with
+`sqlite3 tack.db "PRAGMA compile_options;"`.

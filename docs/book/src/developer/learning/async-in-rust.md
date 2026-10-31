@@ -189,7 +189,7 @@ Every handler is `async fn`. The `#[instrument(skip(state))]` macro from `tracin
 let item = state
     .repo
     .get_item(id)
-    .await?;   // await the future; ? propagates sqlx::Error → ApiError
+    .await?;   // await the future; ? propagates StoreError → ApiError
 ```
 
 **Chained async operations with `?`:**

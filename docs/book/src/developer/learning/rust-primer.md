@@ -168,12 +168,12 @@ You will see `match` throughout Tack's error handling and workflow code.
 **The `?` operator — short-circuit error propagation:**
 
 ```rust
-pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, sqlx::Error> {
+pub async fn get_item(&self, id: Uuid) -> Result<Option<Item>, StoreError> {
     let row = sqlx::query_as::<_, ItemRow>(/* ... */)
         .fetch_optional(self.pool())
-        .await?;  // <-- the ? here
+        .await?;  // <-- the ? here: sqlx::Error becomes StoreError::Sql
 
-    Ok(row.map(|r| r.into_item()))
+    row.map(ItemRow::into_item).transpose()
 }
 ```
 
@@ -283,12 +283,12 @@ pub enum CoreError {
 
 The `#[error("...")]` attribute generates the `Display` implementation — the string you see in logs and API responses. The `{0}`, `{from}`, `{column}` are interpolated from the enum variant's fields.
 
-The `ApiError` type in `tack-api` wraps `CoreError` and implements `IntoResponse` to map each variant to the correct HTTP status code:
+Each `CoreError` variant names a stable error code, and the code decides the HTTP status. The `ApiError` type in `tack-api` wraps `CoreError` and implements `IntoResponse`:
 
 ```rust
-CoreError::ItemNotFound(_) => (StatusCode::NOT_FOUND, err.to_string()),
-CoreError::InvalidTransition { .. } => (StatusCode::BAD_REQUEST, err.to_string()),
-CoreError::WipLimitExceeded { .. }  => (StatusCode::BAD_REQUEST, err.to_string()),
+CoreError::ItemNotFound(_)           => StableErrorCode::NotFound,                 // 404
+CoreError::InvalidTransition { .. }  => StableErrorCode::InvalidStatusTransition,  // 400
+CoreError::WipLimitExceeded { .. }   => StableErrorCode::WipLimitExceeded,         // 400
 ```
 
 This is exhaustive — if a new `CoreError` variant is added without handling it here, the code will not compile. That is the point.
@@ -297,10 +297,10 @@ The `?` operator chains these cleanly:
 
 ```rust
 pub async fn update_item(/* ... */) -> ApiResult<Json<serde_json::Value>> {
-    let project = state.repo.get_project(project_id).await?;  // sqlx::Error → ApiError
+    let project = state.repo.get_project(project_id).await?;  // StoreError → ApiError
     project.workflow.validate_transition(&old_status, &new_status)?;  // CoreError → ApiError
     // ...
 }
 ```
 
-Each `?` uses the `From` trait conversions defined on `ApiError` to automatically convert from `sqlx::Error` or `CoreError` into `ApiError`, then return early. The net effect: error paths are explicit in the type signature and boilerplate-free in the body.
+Each `?` uses the `From` trait conversions defined on `ApiError` to automatically convert from `StoreError` or `CoreError` into `ApiError`, then return early. The net effect: error paths are explicit in the type signature and boilerplate-free in the body.
