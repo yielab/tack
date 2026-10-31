@@ -205,8 +205,9 @@ fn task_fields(task: &TaskDocument, request: &ExecutionRequestSnapshot) -> Value
 }
 
 /// The body of `POST /tasks/<pod>` for one attempt. `base_ref` is the branch
-/// or commit the task starts from. `autonomy` is the level a person asked this run for, sent as
-/// it is; docket decides when there is none.
+/// or commit the task starts from, and `None` for a team that works in a folder: docket refuses
+/// a `baseRef` or a `prepare` it has no worktree for, so such a task carries neither. `autonomy`
+/// is the level a person asked this run for, sent as it is; docket decides when there is none.
 ///
 /// The card goes once, as `task` fields, and `description` holds only the profile's instructions
 /// and the card's fenced text. No `brief` is sent: docket's "Task brief" (`pod-dispatch.spec.md`)
@@ -217,7 +218,7 @@ pub(super) fn body(
     request: &ExecutionRequestSnapshot,
     attempt_id: &str,
     attempt_number: u32,
-    base_ref: &str,
+    base_ref: Option<&str>,
     autonomy: Option<AutonomyLevel>,
 ) -> Value {
     let docket = request.resolved_agent_profile.tool_policy.get("docket");
@@ -241,7 +242,9 @@ pub(super) fn body(
         )),
     );
     body.insert("idempotencyKey".into(), json!(attempt_id));
-    body.insert("baseRef".into(), json!(base_ref));
+    if let Some(base_ref) = base_ref {
+        body.insert("baseRef".into(), json!(base_ref));
+    }
 
     if let Some(gate) = request
         .brief
@@ -267,6 +270,7 @@ pub(super) fn body(
     }
     // Detecting is docket's own default, so only a stated command or "off" is sent.
     match &request.repository.prepare {
+        _ if base_ref.is_none() => {}
         Some(PrepareSetting::Replace { command }) => {
             body.insert("prepare".into(), json!(command));
         }

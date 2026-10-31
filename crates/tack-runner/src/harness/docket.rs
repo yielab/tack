@@ -1203,17 +1203,25 @@ impl HarnessAdapter for DocketAdapter {
             }
         }
 
-        let base_ref = match request.metadata.get("rework_base").and_then(Value::as_str) {
-            Some(branch) if !branch.is_empty() => branch.to_owned(),
-            _ => Self::base_commit(spec).await,
-        };
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
+        // A team in a folder has no commit to start from and no install to make: docket refuses
+        // the task that names either, so neither the base nor the rework branch is worked out.
         let in_repository = self.has_repository(&pod).await;
+        let base_ref = if in_repository {
+            Some(
+                match request.metadata.get("rework_base").and_then(Value::as_str) {
+                    Some(branch) if !branch.is_empty() => branch.to_owned(),
+                    _ => Self::base_commit(spec).await,
+                },
+            )
+        } else {
+            None
+        };
         let body = task::body(
             request,
             &attempt_id,
             spec.work.lease.attempt_number,
-            &base_ref,
+            base_ref.as_deref(),
             request.autonomy(),
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {

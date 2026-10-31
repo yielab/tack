@@ -11,7 +11,11 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ## [Unreleased]
 
+### Fixed
+
 - The Run with agent dialog says when a profile's team works in its own folder on this computer, not in the repository, and no longer shows a branch or an install line for that team.
+- A task given to a team that works in a folder starts instead of failing in two seconds: Tack no longer
+  sends the base commit or the install step to a team that has no repository.
 
 ---
 

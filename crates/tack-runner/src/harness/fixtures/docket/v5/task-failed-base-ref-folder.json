@@ -1,0 +1,54 @@
+{
+  "id": "task-00000000-0000-0000-0000-000000000000",
+  "description": "Capture only: this task is refused at claim, no agent runs.",
+  "priority": "normal",
+  "created": "2026-01-01T00:00:00Z",
+  "channel": "http",
+  "task": {
+    "objective": "Capture only",
+    "doneWhen": "nothing is asked of it",
+    "acceptance": [
+      "nothing"
+    ],
+    "constraints": [
+      "nothing"
+    ],
+    "risk": "low",
+    "answers": [
+      {
+        "question": "Which client?",
+        "answer": "The HTTP one"
+      }
+    ],
+    "kind": "Feature",
+    "paths": [
+      "README.md"
+    ]
+  },
+  "externalRef": "capture-item/attempt-1",
+  "idempotencyKey": "capture-attempt-1",
+  "baseRef": "main",
+  "pipeline": "default",
+  "gate": {
+    "command": "true",
+    "timeoutS": 600
+  },
+  "maxTokens": 1000,
+  "restrictions": {
+    "deniedTools": [
+      "bash"
+    ],
+    "network": "none"
+  },
+  "autonomy": "L3",
+  "status": "failed",
+  "startedAt": "2026-01-01T00:00:00Z",
+  "completedAt": "2026-01-01T00:00:00Z",
+  "claimedAt": "2026-01-01T00:00:00Z",
+  "reason": "pod 'saas-dev' works in a folder (workspaceKind workdir); baseRef 'main' applies only to a pod with a codebase",
+  "failureKind": "base_ref",
+  "pendingApprovalIndex": null,
+  "hops": [],
+  "costUsd": 0.0,
+  "tokenBudget": 1000
+}

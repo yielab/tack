@@ -11,7 +11,7 @@ here waits on docket or on the verifier. It widens Phase 82 (ADR 0030) by three 
 
 | # | Decision | What changes for whoever uses Tack |
 |---|---|---|
-| 1 | **A team may work in a folder.** A team whose docket pod has no repository (`codebase` is `""` on `GET /pods/<p>`) is reported as working in a folder. A run sent to it expects no change to the repository: when docket says the task is `done` and the record has no worktree, the attempt succeeds with what the last step handed off as its result, and nothing is merged, proposed or captured as a commit. A team that has a repository and ends with no worktree still fails as today | Settings → Automation → Teams says which teams work in a folder. An item given to one ends Succeeded with what the team did, instead of failing with "branch not applied" |
+| 1 | **A team may work in a folder.** A team whose docket pod has no repository (`repoConfigDir` is `""` on `GET /pods/<p>`) is reported as working in a folder. A run sent to it expects no change to the repository: when docket says the task is `done` and the record has no worktree, the attempt succeeds with what the last step handed off as its result, and nothing is merged, proposed or captured as a commit. A team that has a repository and ends with no worktree still fails as today | Settings → Automation → Teams says which teams work in a folder. An item given to one ends Succeeded with what the team did, instead of failing with "branch not applied" |
 | 2 | **A wait is not a question.** A pending escalation of kind `wait` is shown as the team waiting until its time, with nobody asked; it never becomes a decision in Tack, never says "answer it in docket", and the run's time limit does not run while it waits (it already does not while docket waits). A wait that ran out with no route ends the attempt with that sentence | The timeline says "The team waits until 14:00. Nobody needs to answer." The run is not cut by its time limit while it waits |
 | 3 | **An action that leaves is approved by seeing it.** For an approval docket marks `outward` (a `send` call: an email, a post, a write to a service), Tack reads the one escalation (`GET /escalations/<id>`) and shows its `call` above the options, titled as an action that leaves the team. The call is kept only in the pending decision and erased from it when the decision is answered or expires, in the same write; no event, log, export, evidence or verifier pack carries it. If docket does not return the call, Tack does not ask the question and says to answer it in docket, where the call is shown | The person sees exactly what will be sent before approving it, and Tack keeps no copy afterwards |
 | 4 | **A run shows the records it wrote, and a team its record sets.** When a docket task settles, Tack reads, for each record set the team declares, the rows whose `_task` is that task (at most 50 per set, read-only, through `GET /pods/<p>/records/<set>?sql=`) and keeps them in the run's result beside `steps`. The team's row lists its record sets with their row counts. Every other row stays in docket | The Execution tab shows what the team recorded in that run (a lead, a listing, a line of a register); the team's row says what it keeps |
@@ -34,8 +34,9 @@ closes, Tack can no longer create a team.
 
 Every locator is docket's; Tack reads them and edits none.
 
-- `GET /pods/<p>` and `GET /pods` carry `codebase`, `""` for a pod with no repository
-  (`hops/application/report.py`, `pod_summary`, `pod_detail`). A workdir pod's task record has no
+- `GET /pods` carries `codebase` on each row and `GET /pods/<p>` carries `repoConfigDir`, each `""`
+  for a pod with no repository (`hops/application/report.py`, `pod_summary`, `pod_detail`); the
+  detail has no `codebase`. A workdir pod's task record has no
   `worktree`.
 - Escalation kind `wait` (`operator-loop.spec.md` area 11 item 2; `operator-api.spec.md` "Wait"):
   `policy` `machine`, the one option `resume`, `expiresAt` the due time; the task is

@@ -101,7 +101,9 @@ this with `tack runner doctor`; see [Installing and Operating Runners](../admin-
 A team can also work in a **folder** instead of a repository: a team that writes a report, researches or
 keeps a list has no branch to give back. Its line says "Works in a folder, not in this repository." A task
 given to such a team ends **Succeeded** with what the team's last step said it did, and there is nothing to
-review, merge or open as a pull request, so the run never asks for a change. A team that does have a
+review, merge or open as a pull request, so the run never asks for a change. The run starts from the
+folder as it is: Tack names no base commit and no install step, because there is no repository to cut a branch
+from. A team that does have a
 repository and ends with no work to read still fails, with "branch not applied". If the team keeps records
 (tables it fills as it works, such as leads or listings), its line also says what it keeps, as in "Keeps
 leads · 2 rows, listings · 1 row." The number is every row the set holds, whichever run wrote it; a run's own
