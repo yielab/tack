@@ -5,6 +5,7 @@ import { toast } from '../ui/toast';
 import type { RunRecordSet, RunStep, RunStepPrompt } from '../execution';
 import { inProject } from './attemptFormat';
 import EventTimeline from './EventTimeline';
+import { plainLine } from './plainWords';
 import { groupByTool, type RunLog, type ToolGroup } from './runLog';
 
 /** The report is clipped to this many lines until "Read full report". */
@@ -286,7 +287,12 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
       <div class="space-y-1">
         <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h5>
         <ul class="list-disc space-y-0.5 pl-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          <For each={items}>{(item) => <li class="break-words">{item}</li>}</For>
+          <For each={items}>
+            {(item) => {
+              const said = plainLine(item);
+              return <li class="break-words" title={said.raw}>{said.text}</li>;
+            }}
+          </For>
         </ul>
       </div>
     </Show>
@@ -302,7 +308,10 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
           {(m) => <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{m()}</span>}
         </Show>
         <Show when={step().verdict}>
-          {(v) => <Badge tone="neutral">Verdict: {v()}</Badge>}
+          {(v) => {
+            const said = plainLine(v());
+            return <span title={said.raw}><Badge tone="neutral">Verdict: {said.text}</Badge></span>;
+          }}
         </Show>
       </div>
       {list('The agent assumed', step().assumptions)}

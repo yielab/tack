@@ -28,6 +28,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- A step's verdict, what the agent assumed and asked, and why a run stopped read as plain sentences where they were verifier codes (a check that only a person can make, a file the task needs, the team's level ceiling, an approval nobody is asked for); the raw line is the tooltip.
 - A run's checks name their true source ("from the item's Done when" or "from the agent's checks"), and the Run dialog counts each apart: "2 Done when · 2 agent checks", where it counted all four as Done when.
 - In Orchestration, a member is drawn under its team and a line with no open task appears only when you point at or focus a box; a team that no role of the project reaches is dashed too, with the fix. Compare and the team card read who can propose from the same field of the team's report, and a Flow lane says what the ring and the dot on a member mean.
 - The item drawer is wider, with smaller side padding on a narrow screen, so its panels are not cut at the right edge, and a tab bar that does not fit shows a chevron button at each edge that has more tabs.
