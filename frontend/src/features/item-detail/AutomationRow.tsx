@@ -100,7 +100,7 @@ export function useAutomation(item: () => Item) {
       hasProfile: !!profileId,
       who: !whoShownAbove && profile && from ? `${profile.name} (${from})` : null,
       noPlace: profile && d.runners ? noPlaceToRun(d.runners, profile.fleet_id) : null,
-      waiting: waiting(),
+      waiting: whoShownAbove ? null : waiting(),
     });
   };
   return { resource, refetch, chosen, sentence, waiting, item };
