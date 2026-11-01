@@ -374,7 +374,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
 
     await expect(drawer.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
     await drawer.getByLabel('Reason').fill('Every criterion passed.');
-    await drawer.locator('form').getByRole('button', { name: 'Accept' }).click();
+    await drawer.getByRole('button', { name: 'Accept', exact: true }).click();
     await expect(drawer.getByTestId('mrp-review')).toContainText('Accepted');
     await expect(drawer.getByTestId('mrp-review')).toContainText('Every criterion passed.');
   });

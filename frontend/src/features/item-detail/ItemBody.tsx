@@ -154,7 +154,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
             </Show>
             <Show when={props.tab === 'execution'}>
               {propose}
-              <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} layout={props.layout} runId={props.run} onRunChange={props.onRunChange} />
+              <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} layout={props.layout} runId={props.run} onRunChange={props.onRunChange} nowShown />
             </Show>
             <Show when={props.tab === 'dependencies'}>
               <DependenciesTab

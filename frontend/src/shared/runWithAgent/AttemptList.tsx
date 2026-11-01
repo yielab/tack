@@ -62,6 +62,9 @@ export interface AttemptListProps {
    *  column. `drawer` (the default): one column, in that same order. */
   layout?: 'drawer' | 'page';
   sideTarget?: HTMLElement;
+  /** The item's Now panel is on screen and shows this very run: what it already says (the state in
+   *  words, the token meter) is not said again here. */
+  nowShown?: boolean;
 }
 
 async function copyText(text: string, what: string) {
@@ -184,7 +187,10 @@ const AttemptRow: Component<{
   agentKind?: string | null;
   runAgain?: (variant: 'primary' | 'secondary') => JSX.Element;
   onReviewed?: () => void;
+  nowShown?: boolean;
 }> = (props) => {
+  // Now speaks for the run's newest attempt only.
+  const dupe = () => !!props.nowShown && props.latest;
   const n = () => props.attempt.attempt_number;
   const terminal = () => isTerminalAttemptState(props.attempt.state);
   const asking = () => props.attempt.state === 'waiting_decision';
@@ -367,7 +373,7 @@ const AttemptRow: Component<{
   };
 
   return (
-    <li data-testid="attempt" class="min-w-0 space-y-4 rounded-item p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+    <li data-testid="attempt" class="min-w-0 space-y-4">
       <section data-testid="run-verdict" aria-label="Verdict" class="min-w-0 space-y-3">
         <div class="flex flex-wrap items-center gap-2">
           {/* A run with one attempt shows its status in the run's own heading. */}
@@ -426,7 +432,7 @@ const AttemptRow: Component<{
         <Show when={terminal()}>
           <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
-              when={props.limit?.tokens != null && counted() !== null}
+              when={props.limit?.tokens != null && counted() !== null && !dupe()}
               fallback={<span data-testid="verdict-tokens">{tokensText()}</span>}
             >
               <div class="min-w-0" style={{ flex: '1 1 8rem' }}>
@@ -463,7 +469,7 @@ const AttemptRow: Component<{
           </div>
         </Show>
 
-        <Show when={!terminal()}>
+        <Show when={!terminal() && !(dupe() && asking())}>
           <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             {asking()
               ? 'The agent is waiting for your answer — see Needs you below.'
@@ -522,7 +528,7 @@ const AttemptRow: Component<{
       </Show>
 
       <Show when={asking()}>
-        <RunSection id="needs" title="Needs you" summary="The agent is waiting for your answer." headingRef={(el) => (needsHeading = el)}>
+        <RunSection id="needs" title="Needs you" summary={dupe() ? undefined : 'The agent is waiting for your answer.'} headingRef={(el) => (needsHeading = el)}>
           <DecisionInbox
             requestId={props.requestId}
             attemptNumber={props.attempt.attempt_number}
@@ -648,7 +654,7 @@ const AttemptRow: Component<{
           <RunSection id="technical" title="Technical" fold>
             <Show when={terminal()}>
               <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-              <details data-testid="attempt-usage-fold" class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+              <details data-testid="attempt-usage-fold" class="min-w-0 border-t pt-3" style={{ 'border-color': 'var(--color-border-light)' }}>
                 <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                   Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
                 </summary>
@@ -721,7 +727,7 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   };
   const cost = () => formatApproxCost(usage().cost);
   return (
-    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2">
       <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <Show
           when={usage().tokensIn !== null || usage().tokensOut !== null}
@@ -844,6 +850,7 @@ const AttemptList: Component<AttemptListProps> = (props) => {
                   agentKind={props.agentKind}
                   runAgain={props.runAgain}
                   onReviewed={props.onReviewed}
+                  nowShown={props.nowShown}
                 />
               )}
             </Show>

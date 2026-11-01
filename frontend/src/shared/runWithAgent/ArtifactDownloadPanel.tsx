@@ -146,7 +146,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
           class="min-w-0 px-3 py-2 text-left text-sm font-semibold"
           style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'break-word', 'word-break': 'normal' }}
         >
-          {truncateMiddle(props.artifact.name, 32, 12)}
+          {truncateMiddle(props.artifact.name ?? '', 32, 12)}
           <Show when={!props.artifact.content_verified}>
             <span class="ml-2 align-middle"><Badge tone="warning">Not verified yet</Badge></span>
           </Show>
