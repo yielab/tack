@@ -288,7 +288,6 @@ test('hero gif', async ({ page }) => {
   await expect(page.getByText(/^Finished/).first()).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(1200);
 
-  await page.getByRole('button', { name: 'Show questions & files' }).first().click();
   await page.waitForTimeout(1500);
   const filesHeading = page.getByText('Files from this run', { exact: true }).first();
   await expect(filesHeading).toBeVisible();

@@ -66,7 +66,7 @@ async function fillExactRunnerTarget(
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
   // Profiles are pills; the project's default is preselected, so click this test's own.
-  await modal.getByRole('button', { name: agentProfileName, exact: true }).click();
+  await modal.getByRole('radio', { name: agentProfileName, exact: true }).check();
 }
 
 test('healthy exact-runner selection is claimed, and the UI reflects it without a reload (realtime)', async ({
