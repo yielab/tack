@@ -178,6 +178,7 @@ Tack/
 │   │       ├── client.rs       # HTTP client wrapper (reqwest)
 │   │       ├── config.rs       # ~/.tackrc reader
 │   │       ├── mcp.rs          # `tack mcp` — MCP server over stdio
+│   │       ├── mcp/            # one `Tool` table entry per MCP tool, by domain (see docs/MCP.md)
 │   │       ├── service.rs      # `tack service` — systemd/launchd background service
 │   │       ├── execution.rs    # `tack execution`/`fleet`/`runner` client commands
 │   │       ├── doctor.rs       # `tack doctor` diagnostics

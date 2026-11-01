@@ -284,6 +284,7 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── config.rs    ~/.tackrc reader/writer
 │   │       ├── doctor.rs    `tack runner doctor`, including docket's teams
 │   │       ├── mcp.rs       `tack mcp` — the stdio MCP server
+│   │       ├── mcp/         its tools, one table entry each, by domain
 │   │       ├── service.rs   `tack service` — systemd/launchd unit management
 │   │       └── vocab.rs     Fetch and cache project vocabulary
 │   │
