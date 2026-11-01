@@ -189,3 +189,17 @@ describe('ArtifactDownloadPanel — keyboard accessibility', () => {
     expect(document.activeElement).toBe(buttons[0]);
   });
 });
+
+describe('ArtifactDownloadPanel — a name keeps its words', () => {
+  it('breaks a name at separators only, and shortens a very long one in the middle with the whole name on hover', () => {
+    const long = `${'a'.repeat(40)}-trajectory.json`;
+    listed = [VERIFIED, { ...VERIFIED, artifact_id: 'art_3', name: long }];
+    const c = mount();
+    const heads = [...c.querySelectorAll<HTMLElement>('th[scope="row"]')];
+    expect(heads[0].textContent).toBe('patch.diff');
+    expect(heads[0].style.overflowWrap).toBe('break-word');
+    expect(heads[1].title).toBe(long);
+    expect(heads[1].textContent).toContain('…');
+    expect(heads[1].textContent!.endsWith('ctory.json')).toBe(true);
+  });
+});
