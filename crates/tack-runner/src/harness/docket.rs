@@ -1446,9 +1446,24 @@ impl HarnessAdapter for DocketAdapter {
             Ok(reply) if reply.status == 200 => match reply.read::<TaskView>() {
                 Ok(view) if terminal(&view.status) => RecoveryObservation::ProcessStopped,
                 Ok(_) => RecoveryObservation::ProcessRunning,
-                Err(_) => RecoveryObservation::Ambiguous,
+                Err(why) => {
+                    tracing::warn!(%why, pod, task, "docket's task could not be read; recovery cannot tell if it runs");
+                    RecoveryObservation::Ambiguous
+                }
             },
-            _ => RecoveryObservation::Ambiguous,
+            Ok(reply) => {
+                tracing::warn!(
+                    status = reply.status,
+                    pod,
+                    task,
+                    "docket answered recovery's task read with a status other than 200"
+                );
+                RecoveryObservation::Ambiguous
+            }
+            Err(why) => {
+                tracing::warn!(%why, pod, task, "docket could not be reached for recovery's task read");
+                RecoveryObservation::Ambiguous
+            }
         })
     }
 
