@@ -24,12 +24,12 @@ interface LayoutProps {
 }
 
 const VIEW_LABELS: Record<string, string> = {
-  board: 'Board', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
+  board: 'Board', orchestration: 'Orchestration', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
   overview: 'Overview', factory: 'Factory metrics', settings: 'Settings',
 };
 
 // Views whose document-title label comes from the project vocabulary.
-const VOCAB_VIEW_KEYS: Record<string, string> = { sprint: 'sprint' };
+const VOCAB_VIEW_KEYS: Record<string, string> = { sprint: 'sprint', orchestration: 'orchestration' };
 
 /** Inner layout — needs router context, so lives inside ProjectProvider. */
 const LayoutInner: Component<LayoutProps> = (props) => {
