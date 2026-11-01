@@ -41,6 +41,7 @@
     "network": "none"
   },
   "autonomy": "L3",
+  "rev": 4,
   "status": "failed",
   "startedAt": "2026-01-01T00:00:00Z",
   "completedAt": "2026-01-01T00:00:00Z",

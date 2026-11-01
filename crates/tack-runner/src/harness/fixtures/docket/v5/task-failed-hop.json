@@ -13,6 +13,7 @@
   "externalRef": "capture-item/attempt-6",
   "idempotencyKey": "capture-attempt-6",
   "baseRef": "main",
+  "rev": 32,
   "status": "failed",
   "startedAt": "2026-01-01T00:00:00Z",
   "completedAt": "2026-01-01T00:00:00Z",

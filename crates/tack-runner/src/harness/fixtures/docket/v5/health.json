@@ -1,6 +1,13 @@
 {
   "status": "ok",
   "apiVersion": "6",
+  "features": [
+    "taskCurrent",
+    "taskCursor",
+    "podMemory",
+    "readScope",
+    "conversation"
+  ],
   "dispatch": {
     "on": true,
     "inflight": [],

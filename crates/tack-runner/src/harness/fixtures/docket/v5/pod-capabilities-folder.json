@@ -307,7 +307,7 @@
     "anthropic/claude-sonnet-5-5"
   ],
   "configSource": "/scratch/plan-team",
-  "configDigest": "07079a315ea16af872a263d313e104f08452b9907cf438a88cb259d4f7da050d",
+  "configDigest": "bb8efd749b86d5f0537403c02b540e775103391d6d635f9d14d34681bdd4a937",
   "drift": "no",
   "profile": {
     "name": "attended",
