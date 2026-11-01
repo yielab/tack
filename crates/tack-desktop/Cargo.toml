@@ -36,9 +36,9 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-feature
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 thiserror = "2"
-dirs = "6"
+dirs = "7"
 semver = "1"
-getrandom = "0.3"
+getrandom = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
