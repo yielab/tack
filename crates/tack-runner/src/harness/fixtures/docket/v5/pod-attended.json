@@ -6,7 +6,7 @@
       "id": "saas-dev-lead",
       "role": "lead",
       "model": {
-        "value": "anthropic/claude-haiku-4-5",
+        "value": "anthropic/claude-haiku-5-5",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-lead",
@@ -25,14 +25,18 @@
         "records": {
           "write": [],
           "query": false
-        }
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
       }
     },
     {
       "id": "saas-dev-implementer",
       "role": "implementer",
       "model": {
-        "value": "anthropic/claude-sonnet-4-6",
+        "value": "anthropic/claude-sonnet-5-5",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer",
@@ -58,7 +62,11 @@
         "records": {
           "write": [],
           "query": false
-        }
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
       }
     }
   ],

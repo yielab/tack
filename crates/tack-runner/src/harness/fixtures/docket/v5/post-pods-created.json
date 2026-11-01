@@ -7,12 +7,12 @@
     {
       "id": "saas-dev-lead",
       "role": "lead",
-      "model": "anthropic/claude-haiku-4-5"
+      "model": "anthropic/claude-haiku-5-5"
     },
     {
       "id": "saas-dev-implementer",
       "role": "implementer",
-      "model": "anthropic/claude-sonnet-4-6"
+      "model": "anthropic/claude-sonnet-5-5"
     }
   ]
 }
