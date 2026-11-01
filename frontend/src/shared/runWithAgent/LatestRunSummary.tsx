@@ -5,12 +5,10 @@ import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
 import type { WaitingBehind } from '../execution/api';
 import {
-  NOT_MEASURED_TEXT,
   changedNoFile,
   countPatchFiles,
   describeAttemptOutcome,
   describeAttemptStatus,
-  formatApproxCost,
   formatCountedTokens,
   formatWallClock,
   isTerminalAttemptState,
@@ -182,8 +180,6 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     const parts: string[] = [];
     const tokens = formatCountedTokens(u);
     if (tokens !== null) parts.push(tokens);
-    const cost = formatApproxCost(u.cost);
-    if (cost !== NOT_MEASURED_TEXT) parts.push(cost);
     if (u.modelCalls !== null) parts.push(`${u.modelCalls} model ${u.modelCalls === 1 ? 'call' : 'calls'}`);
     if (u.models.length > 0) parts.push(u.models[0]);
     return parts.length > 0 ? parts.join(' · ') : null;

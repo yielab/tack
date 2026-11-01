@@ -11,7 +11,6 @@ import {
   describeAttemptOutcome,
   describeAttemptStatus,
   describeModelProvenance,
-  formatApproxCost,
   formatTokenCount,
   formatWallClock,
   harnessName,
@@ -700,13 +699,12 @@ const Unmeasured: Component = () => (
   </span>
 );
 
-/** What a finished attempt used, tokens first: they are what the harness
- *  measured; the dollar figure is its estimate, shown as approximate. The
+/** What a finished attempt used, in tokens: they are what the harness
+ *  measured. No dollar figure is shown (limits and reports are in tokens). The
  *  model provenance sits beside the model, and only when it says something
  *  the model name doesn't. */
 const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   const usage = () => readAttemptUsage(props.attempt);
-  const harness = () => harnessName((props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind);
   const provenance = () => describeModelProvenance(props.attempt.model_provenance);
   // Nothing named a model, so there is none to show.
   const modelUnknown = () => !props.attempt.model_provenance?.served;
@@ -726,7 +724,6 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
     if (u.wallClockMs !== null) out.push(formatWallClock(u.wallClockMs, true));
     return out;
   };
-  const cost = () => formatApproxCost(usage().cost);
   return (
     <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2">
       <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
@@ -759,14 +756,6 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
             </Show>
           </span>
         </Show>
-        <Show
-          when={cost() !== NOT_MEASURED_TEXT}
-          fallback={<span data-testid="usage-cost" class="text-sm" title={`${harness()} did not report a cost`} style={{ color: 'var(--color-text-secondary)' }}>Cost: <Unmeasured /></span>}
-        >
-          <span data-testid="usage-cost" class="text-sm font-semibold" title={`${harness()}'s own estimate at list price — your bill may differ`} style={{ color: 'var(--color-text-primary)' }}>
-            {cost()}
-          </span>
-        </Show>
       </div>
       <Show when={cacheLine()}>
         {(line) => <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
@@ -790,11 +779,6 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
         </Show>
         <For each={facts()}>{(fact) => <span>· {fact}</span>}</For>
       </div>
-      <Show when={cost() !== NOT_MEASURED_TEXT}>
-        <p class="text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
-          The cost is {harness()}'s own estimate at list price, not your bill.
-        </p>
-      </Show>
     </section>
   );
 };

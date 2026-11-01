@@ -1,4 +1,5 @@
-import { type Component, type JSX, For, Show } from 'solid-js';
+import { type Component, type JSX, For, Show, createSignal } from 'solid-js';
+import { getAlwaysPriority, setAlwaysPriority } from '../../shared/runWithAgent/cardRun';
 import { Button } from '../../shared/ui';
 import { currentTheme, setTheme, type Theme } from '../../shared/state/theme';
 import { currentPalette, setPalette, PALETTE_SWATCHES } from '../../shared/state/palette';
@@ -115,6 +116,23 @@ const Toggle: Component<{
   </div>
 );
 
+/** The board's choice to print every card's priority, kept under the key the board has always used. */
+const AlwaysPriority: Component = () => {
+  const [on, setOn] = createSignal(getAlwaysPriority());
+  return (
+    <Toggle
+      id="always-priority"
+      label="Always show priority on cards"
+      hint="The board's cards show a priority only when it is not the project's default. Turn this on to show it on every card."
+      checked={on()}
+      onChange={(next) => {
+        setOn(next);
+        setAlwaysPriority(next);
+      }}
+    />
+  );
+};
+
 /**
  * Settings → Display & accessibility: how the interface looks and reads for
  * this person — theme, palette, text size, zoom, typeface and motion. Saved
@@ -206,6 +224,8 @@ const DisplaySettings: Component<{ cardClass: string; titleClass: string }> = (p
         checked={currentDisplay().motion === 'reduce' || systemReducesMotion()}
         onChange={(on) => setDisplay({ motion: on ? 'reduce' : 'system' })}
       />
+
+      <AlwaysPriority />
     </div>
   </section>
 );
