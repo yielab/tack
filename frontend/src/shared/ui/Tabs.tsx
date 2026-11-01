@@ -1,3 +1,4 @@
+import { IconChevronRight } from './icons';
 import { For, Show, createEffect, createSignal, createUniqueId, onCleanup, onMount, type Component, type JSX } from 'solid-js';
 
 export interface TabItem {
@@ -53,6 +54,30 @@ const Tabs: Component<TabsProps> = (props) => {
     const id = props.active;
     list?.querySelector<HTMLElement>(`[id="${tabId(id)}"]`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   });
+  // The small chevron buttons at the edges say, in the open, that there are more tabs and move the list.
+  // The arrow keys already move between tabs, so the buttons are for the pointer: out of the tab order and
+  // out of the accessibility tree, the same as the fade.
+  const scrollBy = (dir: 1 | -1) => list?.scrollBy?.({ left: dir * Math.max(80, (list?.clientWidth ?? 0) * 0.6), behavior: 'smooth' });
+  const edgeButton = (dir: 1 | -1) => (
+    <button
+      type="button"
+      tabindex="-1"
+      aria-hidden="true"
+      data-testid={dir === 1 ? 'tabs-scroll-end' : 'tabs-scroll-start'}
+      onClick={() => scrollBy(dir)}
+      class="absolute bottom-px top-0 flex w-6 items-center justify-center rounded-full"
+      style={{
+        [dir === 1 ? 'right' : 'left']: '0',
+        'background-color': 'var(--color-bg-app)',
+        color: 'var(--color-text-secondary)',
+        border: 'none',
+        cursor: 'pointer',
+        transform: dir === 1 ? undefined : 'scaleX(-1)',
+      }}
+    >
+      <IconChevronRight size={14} />
+    </button>
+  );
   const fade = () => {
     const { start, end } = more();
     if (!start && !end) return undefined;
@@ -71,6 +96,7 @@ const Tabs: Component<TabsProps> = (props) => {
 
   return (
     <div class={props.class}>
+      <div class="relative">
       <div
         role="tablist"
         ref={list}
@@ -121,7 +147,10 @@ const Tabs: Component<TabsProps> = (props) => {
           }}
         </For>
       </div>
-      <div role="tabpanel" id={panelId(props.active)} aria-labelledby={tabId(props.active)} class="pt-4">
+      <Show when={more().start}>{edgeButton(-1)}</Show>
+      <Show when={more().end}>{edgeButton(1)}</Show>
+      </div>
+      <div role="tabpanel" id={panelId(props.active)} aria-labelledby={tabId(props.active)} class="min-w-0 max-w-full pt-4">
         {props.children}
       </div>
     </div>

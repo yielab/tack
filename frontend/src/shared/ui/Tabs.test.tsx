@@ -45,6 +45,28 @@ describe('Tabs', () => {
     expect(list.getAttribute('data-fade')).toBe('start');
   });
 
+  it('puts a chevron button at each edge that has more tabs, which scrolls the list and is not a tab stop', async () => {
+    const list = mount();
+    const wrap = list.parentElement!;
+    expect(wrap.querySelector('[data-testid="tabs-scroll-end"]')).toBeNull();
+    size(list, 100, 300);
+    list.dispatchEvent(new Event('scroll'));
+    await flush();
+    expect(wrap.querySelector('[data-testid="tabs-scroll-start"]')).toBeNull();
+    const end = wrap.querySelector<HTMLButtonElement>('[data-testid="tabs-scroll-end"]')!;
+    expect(end.tabIndex).toBe(-1);
+    expect(end.getAttribute('aria-hidden')).toBe('true');
+    let by: ScrollToOptions | undefined;
+    list.scrollBy = ((o: ScrollToOptions) => { by = o; }) as typeof list.scrollBy;
+    end.click();
+    expect(by?.left).toBeGreaterThan(0);
+    list.scrollLeft = 50;
+    list.dispatchEvent(new Event('scroll'));
+    await flush();
+    wrap.querySelector<HTMLButtonElement>('[data-testid="tabs-scroll-start"]')!.click();
+    expect(by?.left).toBeLessThan(0);
+  });
+
   it('keeps the arrow keys moving between tabs, and the fade is not a tab stop', () => {
     const picked: string[] = [];
     const list = mount('one', (id) => picked.push(id));
