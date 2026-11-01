@@ -62,21 +62,58 @@ badges and shows the run's state in its own column.
 The badges that start with Started, Team and Merged are explained in
 [Automating a Project](automation.md#what-tack-shows-when-it-acts).
 
-### When a run proposes items
+<a id="when-a-run-proposes-items"></a>
 
-A run with the **Planner** profile changes no project files and can end with a list of items it proposes. The
-Planner and the Researcher write one file only, the plan file `tack-plan.json`. A run of either that also
-changes any other file ends **Failed** with the reason "This run was meant only to write a plan, but it also
-changed:" and the names of the files, so a change nobody asked for is never accepted by default; the changes
-are still there to look at. The
-attempt shows **The Planner proposes N items**, with one row per item and a line that counts them: items,
-sub-items and dependencies. An item that belongs under another is nested beneath it, and it is unticked when
-its parent is unticked. Each row has a checkbox, and its title, description and acceptance criteria can be
-edited. Its **Type** and **Role** can be changed, and **Who does it** names the team that will do the item
-once it is created. **Waits on** lists the titles of the items it must wait for, each with a × to remove it,
-and a menu to add another. **Select all** and **Select none** tick every item at once. Nothing is created
-until you press the button, which says how many it will create (**Create 3 items**), so no agent writes to
-your board on its own.
+### When an agent proposes changes
+
+An agent does not edit your board on its own. What it wants to change, it proposes as a **change set**: a
+list of changes with the reason it gives, where it came from (a run, a thread or a call to a tool) and who
+proposed it, by the name of its credential. A change can be a new item, who does an item, its priority, a
+move to another status, a dependency, a comment or a due date. How many of them apply by themselves is
+your choice, under [Agents on the board](#how-far-an-agent-may-go).
+
+#### One panel for every change set
+
+Every change set opens in the same panel, whoever proposed it. New items are a tree, with one row per item
+and a line that counts them: items, sub-items and dependencies. An item that belongs under another is nested
+beneath it, and it is unticked when its parent is unticked. Every other change is a line in a list under the
+tree, with the item it is about named by its title. Each row has a checkbox, and each can be edited:
+
+- An item's title, description and acceptance criteria, its **Type** and **Role**, and **Who does it**, which
+  names the team that will do it once it exists. **Waits on** lists the titles of the items it must wait for,
+  each with a × to remove it, and a menu to add another.
+- A change of who does an item, its role and team; a priority; the status to move to; the text of a
+  comment; a due date. A dependency has nothing to edit: untick it to leave it out.
+
+**Select all** and **Select none** tick every change that still waits. Then choose:
+
+- **Apply 3 changes** applies the ticked ones, with your edits. **Apply all** applies everything that waits.
+- **Reject…** asks why and turns down what still waits. The proposer can read the reason.
+- **Save edits** keeps your edits without applying, to come back to them.
+
+A change set applies as one: if the board cannot take it, nothing is applied, and the panel lists every
+reason, one line each ("operation 2: the status Ready is full"). Fix what the reasons name, or untick the
+changes that cause them, and apply again. After it applies, the panel says what it could not fill: a role or
+a type the project does not have, or a team that no single profile names. Such an item is created without
+that part. A change set that applied only in part says **Partly applied**, and the rest still waits.
+
+#### Where they wait for you
+
+Change sets that wait appear in **Waiting for you** in the sidebar, under **Changes to apply**, and in its
+count. **Review the changes** opens the project's **Change sets** page, which lists them by status:
+waiting for you, applied, turned down, or all. A decided change set folds into one line. When agents may
+only read in a project, and nothing is waiting, the **Change sets** entry in the sidebar is greyed out and
+says why.
+
+#### A run that proposes items
+
+A run with the **Planner** profile changes no project files and can end with a list of items it proposes.
+The Planner and the Researcher write one file only, the plan file `tack-plan.json`. A run of either that
+also changes any other file ends **Failed** with the reason "This run was meant only to write a plan, but it
+also changed:" and the names of the files, so a change nobody asked for is never accepted by default; the
+changes are still there to look at. The attempt shows **The Planner proposes N items**, in the panel
+described above, and nothing is created until you press the button, which says how many it will create
+(**Create 3 items**).
 
 To propose items from a file, open the item and choose **Propose items from a file** in its **⋯** menu.
 Choose a `tack-plan.json`, or drop it on the section. Tack checks it and names the first entry that does not
@@ -85,6 +122,21 @@ fit, and why. A file that fits opens the same list.
 After you create the items, they appear as links. Under them, Tack says what it could not fill: a role or a
 type the project does not have, or a team that no single profile names. Such an item is created without that
 part.
+
+#### How far an agent may go
+
+In **Settings → Automation**, the **Agents** section has the rung **Agents on the board**. It has four
+levels, and the one in use says **Set here**:
+
+| Level | What an agent may do |
+|---|---|
+| **Read** | Read the board and talk. It changes nothing, and proposes nothing. |
+| **Propose** | Every change waits for you to apply it. This is the level a project starts at. |
+| **Act** | Everything but new items applies by itself: who does an item, priority, moves, dependencies, comments and due dates. New items wait for you. |
+| **Create** | New items apply by themselves too, up to two limits you set: how many in one change set, and how many in a day (UTC). Both are 0 until you set them, so Create is off by default and behaves like Act until you raise them. |
+
+The stricter of the rung and the agent's own credential wins: a credential that may only propose never goes
+beyond Propose, whatever the rung says. See [Agent credentials](../admin-guide/administration.md#agent-credentials).
 
 ### Merging a reviewed run
 

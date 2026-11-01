@@ -1,7 +1,7 @@
 import type { Component } from 'solid-js';
 import {
   IconBoard, IconOrchestration, IconList, IconCalendar, IconTimeline, IconSprint,
-  IconOverview, IconProjects, IconTemplates, IconAgent, IconSettings, type IconProps,
+  IconOverview, IconChangeSet, IconProjects, IconTemplates, IconAgent, IconSettings, type IconProps,
 } from './icons';
 
 export type DestinationIcon = Component<IconProps>;
@@ -29,6 +29,7 @@ export const PROJECT_DESTINATIONS: Destination[] = [
   { id: 'calendar', label: () => 'Calendar', icon: IconCalendar, path: (p) => `/projects/${p}/calendar` },
   { id: 'timeline', label: () => 'Timeline', icon: IconTimeline, path: (p) => `/projects/${p}/timeline` },
   { id: 'sprint', label: (t) => t('sprint'), icon: IconSprint, path: (p) => `/projects/${p}/sprint` },
+  { id: 'change-sets', label: () => 'Change sets', icon: IconChangeSet, path: (p) => `/projects/${p}/change-sets` },
   { id: 'overview', label: () => 'Overview', icon: IconOverview, path: (p) => `/projects/${p}/overview` },
   { id: 'factory', label: () => 'Factory metrics', icon: IconOverview, path: (p) => `/projects/${p}/factory` },
   { id: 'project-settings', label: () => 'Project settings', icon: IconSettings, path: (p) => `/projects/${p}/settings` },
