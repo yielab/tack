@@ -56,6 +56,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A run's checks and next steps are said in plain words ("A person checks it · from the Done when list", "A criterion needs a person to check it") with the verifier's raw kind, note and codes under **How we know**; a check that needs a person uses the run-state hand at text size instead of a speck; and the Steps track no longer repeats the model and verdict that **What each step ran** gives.
 - The Execution tab no longer says a run twice when the item's Now panel is above it: the newest run leaves out its state banner, waiting or failure reason, token limit and meter (Now has them), and the run, its attempt and its Usage fold are a heading and a hairline instead of a card inside a card.
 - A board card whose run is ready for review offers **Review and merge** (it opens the Execution tab) instead of the play button, and the item's Now panel no longer offers **Run again** while the run is queued, running or waiting for an answer.
 - **Ready for review** is violet in every palette; in the harbor palette it used the coral accent, the same red as Failed and the Bug chip.

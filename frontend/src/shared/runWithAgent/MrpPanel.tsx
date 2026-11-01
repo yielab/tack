@@ -1,5 +1,5 @@
 import { type Component, For, Show, createEffect, createMemo, createResource, createSignal, type JSX } from 'solid-js';
-import { Badge, Button, Field } from '../ui';
+import { Badge, Button, Field, RunState } from '../ui';
 import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
 import type { AcceptanceCriterion } from '../api/briefs';
@@ -87,6 +87,16 @@ export function checksSummary(items: CheckItem[]): string {
     .filter(Boolean)
     .join(' · ');
 }
+
+/** The verifier's next-step codes in words (a code it does not know is shown as it came), and its severities. */
+const CODE_WORDS: Record<string, string> = {
+  criterion_manual: 'A criterion needs a person to check it.',
+  criterion_failed: 'A criterion failed.',
+  test_failed: 'A test failed.',
+  coverage_below_threshold: 'Coverage is below the threshold.',
+  stage_degraded: 'A verifier stage ran in a reduced way.',
+};
+const SEVERITY_WORDS: Record<string, string> = { error: 'Problem', warning: 'Warning', review: 'Needs a look' };
 
 const RISK_TONE = { low: 'success', medium: 'warning', high: 'danger' } as const;
 
@@ -236,35 +246,70 @@ export const MrpVerdict: Component<{ pack: MrpPack }> = (props) => (
   </div>
 );
 
-/** One check: the glyph, what it checks, and where it comes from and what backs it as the quieter line. */
+/** What each kind of check does, in words; a kind this build does not know is shown as it came. */
+const KIND_WORDS: Record<string, string> = {
+  command: 'Runs a command',
+  test: 'Runs the tests',
+  metric: 'Measures a number',
+  file: 'Checks a file exists',
+  absent: 'Checks a file is absent',
+  manual: 'A person checks it',
+};
+const SOURCE_WORDS: Record<CheckItem['source'], string> = {
+  'Done when': 'from the Done when list',
+  Verifier: 'from the verifier',
+};
+/** The verifier's own notes that are codes, in words. Any other note is already a sentence. */
+const NOTE_WORDS: Record<string, string> = {
+  needs_human: 'waits for a person to decide',
+};
+
+/** One check: the glyph, what it checks, and where it comes from as the quieter line, in words;
+ *  the raw kind, source, note and evidence are one closed "How we know" away. */
 const CheckRow: Component<{ item: CheckItem }> = (props) => {
   const mark = () => CHECK_MARK[props.item.status];
+  const note = () => (props.item.note ? (NOTE_WORDS[props.item.note] ?? props.item.note) : null);
   return (
     <li
       data-testid={props.item.fromPack ? 'mrp-criterion' : 'done-when-check'}
       data-status={props.item.status}
       class="flex min-w-0 items-start gap-2.5"
     >
-      <span
-        role="img"
-        aria-label={mark().label}
-        title={mark().label}
-        class="w-4 flex-none text-center text-base font-bold leading-snug"
-        style={{ color: mark().color }}
+      <Show
+        when={props.item.status === 'manual'}
+        fallback={
+          <span
+            role="img"
+            aria-label={mark().label}
+            title={mark().label}
+            class="w-4 flex-none text-center text-base font-bold leading-snug"
+            style={{ color: mark().color }}
+          >
+            {mark().glyph}
+          </span>
+        }
       >
-        {mark().glyph}
-      </span>
+        {/* The run-state glyph at text size: the half-circle was a speck next to the tick. */}
+        <span class="flex-none pt-0.5">
+          <RunState state="needs" docket="Needs a person" size="dot" />
+        </span>
+      </Show>
       <div class="min-w-0 flex-1 text-sm" style={{ 'overflow-wrap': 'anywhere' }}>
         <p style={{ color: 'var(--color-text-primary)' }}>{props.item.title}</p>
         <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-          {props.item.kind} · {props.item.source}
-          <Show when={props.item.note}>{(note) => <> · {note()}</>}</Show>
+          {KIND_WORDS[props.item.kind] ?? props.item.kind} · {SOURCE_WORDS[props.item.source]}
+          <Show when={note()}>{(text) => <> · {text()}</>}</Show>
         </p>
-        <Show when={props.item.evidence}>
-          {(ref) => (
-            <p class="text-xs" style={{ ...mono, color: 'var(--color-text-tertiary)' }}>Evidence: {ref()}</p>
-          )}
-        </Show>
+        <details class="text-xs">
+          <summary class="cursor-pointer" style={{ color: 'var(--color-text-tertiary)' }}>How we know</summary>
+          <p style={{ ...mono, color: 'var(--color-text-tertiary)' }}>
+            {props.item.kind} · {props.item.source}
+            <Show when={props.item.note}>{(raw) => <> · {raw()}</>}</Show>
+          </p>
+          <Show when={props.item.evidence}>
+            {(ref) => <p style={{ ...mono, color: 'var(--color-text-tertiary)' }}>Evidence: {ref()}</p>}
+          </Show>
+        </details>
       </div>
     </li>
   );
@@ -312,10 +357,17 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                 <ul class="space-y-1 text-xs" style={{ color: 'var(--color-text-primary)' }}>
                   <For each={pack().next_steps}>
                     {(s) => (
-                      <li data-testid="mrp-next-step">
-                        <Badge tone={s.severity === 'error' ? 'danger' : s.severity === 'warning' ? 'warning' : 'neutral'}>{s.severity}</Badge>{' '}
-                        <span>{s.message ?? s.code}</span>
-                        <Show when={s.path}>
+                      <li data-testid="mrp-next-step" title={`${s.severity}: ${s.code}${s.path ? ` — ${s.path}` : ''}`}>
+                        <Badge tone={s.severity === 'error' ? 'danger' : s.severity === 'warning' ? 'warning' : 'neutral'}>
+                          {SEVERITY_WORDS[s.severity] ?? s.severity}
+                        </Badge>{' '}
+                        <span>{s.message ?? CODE_WORDS[s.code] ?? s.code}</span>
+                        {/* These two codes carry an id in `path`, not a file: the stage is said in words, the
+                            criterion's id stays in the tooltip. */}
+                        <Show when={s.path && s.code === 'stage_degraded'}>
+                          <span> ({s.path!.replace(/_/g, ' ')})</span>
+                        </Show>
+                        <Show when={s.path && s.code !== 'stage_degraded' && s.code !== 'criterion_manual'}>
                           <span style={mono}> {s.path}{s.line != null ? `:${s.line}` : ''}</span>
                         </Show>
                         <Show when={s.command}>

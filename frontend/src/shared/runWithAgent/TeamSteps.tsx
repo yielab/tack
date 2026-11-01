@@ -20,6 +20,9 @@ export interface TeamStepsProps {
   ended?: boolean;
   /** The hops the run made, once it has ended: each step shows the model and verdict of its role's last hop. */
   hops?: readonly RunStep[];
+  /** The hops are listed in full right below (what each step ran): this line is the track alone, so a
+   *  step does not repeat its model and verdict. */
+  track?: boolean;
 }
 
 const KIND_WORDS: Record<TeamStepReport['kind'], string | null> = {
@@ -134,7 +137,13 @@ const TeamStepsLine: Component<TeamStepsProps> = (props) => {
           >
             <ol data-testid="run-hops" aria-label="The steps the run made" class="flex flex-wrap gap-x-3 gap-y-3">
               <For each={props.hops}>
-                {(hop, i) => <TrackNode name={roleWords(hop.role, i() + 1)} lines={hopFacts(hop)} />}
+                {(hop, i) => (
+                  <TrackNode
+                    name={roleWords(hop.role, i() + 1)}
+                    state={props.track && props.ended ? 'done' : undefined}
+                    lines={props.track ? [] : hopFacts(hop)}
+                  />
+                )}
               </For>
             </ol>
           </Show>
@@ -152,7 +161,7 @@ const TeamStepsLine: Component<TeamStepsProps> = (props) => {
                     name={step.name}
                     state={step.state}
                     stopped={step.state === 'running' && props.ended}
-                    lines={[...(words().length > 0 ? [words().join(' · ')] : []), ...hopFacts(hop())]}
+                    lines={[...(words().length > 0 ? [words().join(' · ')] : []), ...(props.track ? [] : hopFacts(hop()))]}
                   />
                 );
               }}
@@ -176,6 +185,7 @@ export const AttemptTeamSteps: Component<{
   profileId?: string | null;
   agentKind?: string | null;
   hops?: readonly RunStep[];
+  track?: boolean;
 }> = (props) => {
   const [events, { refetch }] = createResource(
     () => `${props.requestId}:${props.attemptNumber}:${props.live}`,
@@ -193,6 +203,7 @@ export const AttemptTeamSteps: Component<{
       events={events.state === 'errored' ? [] : (events.latest ?? [])}
       ended={!props.live}
       hops={props.hops}
+      track={props.track}
     />
   );
 };
