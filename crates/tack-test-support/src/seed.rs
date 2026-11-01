@@ -173,6 +173,16 @@ pub async fn item_description(repo: &Repository, item_id: &str, description: &st
         .expect("seed items description");
 }
 
+/// Stamps an item as last changed at `at` (RFC 3339).
+pub async fn item_updated_at(repo: &Repository, item_id: &str, at: &str) {
+    sqlx::query("UPDATE items SET updated_at = ? WHERE id = ?")
+        .bind(at)
+        .bind(item_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed items updated_at");
+}
+
 /// Sets an item's title and description.
 pub async fn item_card(repo: &Repository, item_id: &str, title: &str, description: &str) {
     sqlx::query("UPDATE items SET description = ?, title = ? WHERE id = ?")

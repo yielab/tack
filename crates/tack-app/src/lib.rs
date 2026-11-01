@@ -33,6 +33,7 @@ pub mod auto_start;
 pub mod autonomy;
 pub mod background;
 pub mod change_sets;
+pub mod digest;
 pub mod due_soon;
 mod error;
 pub mod github_sync;

@@ -1,0 +1,341 @@
+{
+  "since": "2026-10-20T00:00:00Z",
+  "as_of": "2026-10-30T12:00:00Z",
+  "projects": {
+    "total": 2,
+    "rows": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "My SaaS",
+        "items_total": 24,
+        "items_by_status": {
+          "total": 5,
+          "rows": [
+            {
+              "status": "Backlog",
+              "count": 6,
+              "done": false
+            },
+            {
+              "status": "In Progress",
+              "count": 3,
+              "done": false
+            },
+            {
+              "status": "In Review",
+              "count": 1,
+              "done": false
+            },
+            {
+              "status": "Done",
+              "count": 12,
+              "done": true
+            },
+            {
+              "status": "Archived",
+              "count": 2,
+              "done": false
+            }
+          ],
+          "more": 0
+        },
+        "waiting_on_person": {
+          "total": 2,
+          "rows": [
+            {
+              "item": {
+                "id": "00000000-0000-0000-0000-00000000000d",
+                "title": "Add billing webhooks"
+              },
+              "kind": "decision",
+              "since": "2026-10-28T15:00:00Z"
+            },
+            {
+              "item": {
+                "id": "00000000-0000-0000-0000-00000000000e",
+                "title": "Review the billing page"
+              },
+              "kind": "review",
+              "since": "2026-10-30T08:00:00Z"
+            }
+          ],
+          "more": 0
+        },
+        "blocked": {
+          "items": 4,
+          "chains": {
+            "total": 2,
+            "rows": [
+              {
+                "blocker": {
+                  "id": "00000000-0000-0000-0000-00000000000a",
+                  "title": "Design the sign-up flow"
+                },
+                "status": "Backlog",
+                "blocks": 3,
+                "depth": 2
+              },
+              {
+                "blocker": {
+                  "id": "00000000-0000-0000-0000-00000000000f",
+                  "title": "Write the launch post"
+                },
+                "status": "Backlog",
+                "blocks": 1,
+                "depth": 1
+              }
+            ],
+            "more": 0
+          }
+        },
+        "unclaimed": {
+          "auto_start": true,
+          "by_reason": [
+            {
+              "code": "blocked",
+              "count": 1
+            },
+            {
+              "code": "no_profile",
+              "count": 2
+            }
+          ],
+          "tasks": {
+            "total": 3,
+            "rows": [
+              {
+                "item": {
+                  "id": "00000000-0000-0000-0000-000000000010",
+                  "title": "Fix the invoice rounding"
+                },
+                "code": "no_profile",
+                "why": "No one is chosen to do it"
+              },
+              {
+                "item": {
+                  "id": "00000000-0000-0000-0000-00000000000b",
+                  "title": "Build the sign-up form"
+                },
+                "code": "blocked",
+                "why": "Blocked by 1 unfinished task"
+              },
+              {
+                "item": {
+                  "id": "00000000-0000-0000-0000-00000000000f",
+                  "title": "Write the launch post"
+                },
+                "code": "no_profile",
+                "why": "No one is chosen to do it"
+              }
+            ],
+            "more": 0
+          }
+        },
+        "stale": {
+          "total": 2,
+          "rows": [
+            {
+              "item": {
+                "id": "00000000-0000-0000-0000-00000000000b",
+                "title": "Build the sign-up form"
+              },
+              "status": "In Progress",
+              "last_change": "2026-10-03T09:00:00Z"
+            },
+            {
+              "item": {
+                "id": "00000000-0000-0000-0000-00000000000d",
+                "title": "Add billing webhooks"
+              },
+              "status": "In Progress",
+              "last_change": "2026-10-10T09:00:00Z"
+            }
+          ],
+          "more": 0
+        },
+        "failed_runs": {
+          "total": 1,
+          "rows": [
+            {
+              "run": "run-new",
+              "item": {
+                "id": "00000000-0000-0000-0000-00000000000c",
+                "title": "Send the welcome email"
+              },
+              "failed_at": "2026-10-29T18:00:00Z",
+              "reason": null
+            }
+          ],
+          "more": 0
+        },
+        "tokens": {
+          "used_since": 1200000,
+          "used_today": 300000,
+          "reserved_today": 100000,
+          "limit_per_day": 1000000,
+          "left_today": 600000,
+          "per_run_limit": 2000000
+        },
+        "change_sets": {
+          "total": 2,
+          "rows": [
+            {
+              "id": "00000000-0000-0000-0000-0000000000c8",
+              "principal": "agent:planner",
+              "reason": "Add the launch checklist",
+              "operations": 2,
+              "since": "2026-10-27T10:00:00Z"
+            },
+            {
+              "id": "00000000-0000-0000-0000-0000000000c9",
+              "principal": "agent:planner",
+              "reason": "Split the billing work",
+              "operations": 4,
+              "since": "2026-10-29T10:00:00Z"
+            }
+          ],
+          "more": 0
+        }
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "name": "My SaaS docs",
+        "items_total": 2,
+        "items_by_status": {
+          "total": 1,
+          "rows": [
+            {
+              "status": "Backlog",
+              "count": 2,
+              "done": false
+            }
+          ],
+          "more": 0
+        },
+        "waiting_on_person": {
+          "total": 0,
+          "rows": [],
+          "more": 0
+        },
+        "blocked": {
+          "items": 0,
+          "chains": {
+            "total": 0,
+            "rows": [],
+            "more": 0
+          }
+        },
+        "unclaimed": {
+          "auto_start": false,
+          "by_reason": [],
+          "tasks": {
+            "total": 0,
+            "rows": [],
+            "more": 0
+          }
+        },
+        "stale": {
+          "total": 0,
+          "rows": [],
+          "more": 0
+        },
+        "failed_runs": {
+          "total": 0,
+          "rows": [],
+          "more": 0
+        },
+        "tokens": {
+          "used_since": 0,
+          "used_today": 0,
+          "reserved_today": 0,
+          "limit_per_day": null,
+          "left_today": null,
+          "per_run_limit": null
+        },
+        "change_sets": {
+          "total": 0,
+          "rows": [],
+          "more": 0
+        }
+      }
+    ],
+    "more": 0
+  },
+  "teams": {
+    "total": 2,
+    "rows": [
+      {
+        "team": "builders",
+        "harness": "docket",
+        "running": 1,
+        "waiting": 1,
+        "blocked": 0,
+        "queued": 1,
+        "tasks": {
+          "total": 3,
+          "rows": [
+            {
+              "task": "billing-webhooks",
+              "state": "running",
+              "waits_on": null,
+              "project": "00000000-0000-0000-0000-000000000001",
+              "item": {
+                "id": "00000000-0000-0000-0000-00000000000d",
+                "title": "Add billing webhooks"
+              },
+              "step": {
+                "name": "implement",
+                "role": "lead",
+                "since": "2026-10-30T09:00:00Z"
+              },
+              "changed_at": "2026-10-30T09:00:00Z"
+            },
+            {
+              "task": "invoice-rounding",
+              "state": "waiting",
+              "waits_on": "answer",
+              "project": null,
+              "item": null,
+              "step": null,
+              "changed_at": "2026-10-30T10:00:00Z"
+            },
+            {
+              "task": "sign-up-form",
+              "state": "queued",
+              "waits_on": null,
+              "project": null,
+              "item": null,
+              "step": null,
+              "changed_at": null
+            }
+          ],
+          "more": 0
+        }
+      },
+      {
+        "team": "writers",
+        "harness": "docket",
+        "running": 0,
+        "waiting": 0,
+        "blocked": 0,
+        "queued": 1,
+        "tasks": {
+          "total": 1,
+          "rows": [
+            {
+              "task": "draft-launch-post",
+              "state": "queued",
+              "waits_on": null,
+              "project": null,
+              "item": null,
+              "step": null,
+              "changed_at": null
+            }
+          ],
+          "more": 0
+        }
+      }
+    ],
+    "more": 0
+  }
+}
