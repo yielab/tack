@@ -14,6 +14,7 @@ use tack_core::outline::{PlannedParent, ResolvedOutline};
 use tack_core::workflow::{StatusCategory, StatusGate};
 
 use super::Repository;
+use super::agent_credentials::writer_name;
 use super::dependencies::insert_dependency;
 
 /// The `needs_review` column of an `items` row: the latest terminal attempt of
@@ -102,8 +103,10 @@ fn item_columns(qualifier: &str) -> String {
 fn card_columns() -> String {
     let columns = item_columns("");
     let needs_review = needs_review_sql();
+    let created_by = writer_name!("items.created_by");
+    let updated_by = writer_name!("items.updated_by");
     format!(
-        "{columns}, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by"
+        "{columns}, {needs_review} AS needs_review, {MERGE_NOTE_SQL} AS merge_note, {STARTED_BY_SQL} AS started_by, {TEAM_SQL} AS team, {MERGED_BY_SQL} AS merged_by, {created_by} AS created_by, {updated_by} AS updated_by"
     )
 }
 
@@ -211,6 +214,7 @@ impl Repository {
                 created[blocker].id,
                 created[blocked].id,
                 &DependencyType::Blocks,
+                None,
             )
             .await?;
         }
@@ -352,6 +356,39 @@ impl Repository {
             tx.rollback().await?;
         }
         Ok(outcome)
+    }
+
+    /// Records who wrote an item through the API: `writer` is a principal label. A create sets
+    /// `created_by` and `updated_by`, a change sets `updated_by`. Answers the names a card shows
+    /// (`created_by`, `updated_by`).
+    #[instrument(skip(self))]
+    pub async fn record_item_writer(
+        &self,
+        id: Uuid,
+        writer: &str,
+        created: bool,
+    ) -> Result<(Option<String>, Option<String>), StoreError> {
+        let sql = if created {
+            "UPDATE items SET created_by = ?1, updated_by = ?1 WHERE id = ?2"
+        } else {
+            "UPDATE items SET updated_by = ?1 WHERE id = ?2"
+        };
+        sqlx::query(sql)
+            .bind(writer)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
+        let names = sqlx::query_as::<_, (Option<String>, Option<String>)>(concat!(
+            "SELECT ",
+            writer_name!("created_by"),
+            ", ",
+            writer_name!("updated_by"),
+            " FROM items WHERE id = ?"
+        ))
+        .bind(id.to_string())
+        .fetch_one(self.pool())
+        .await?;
+        Ok(names)
     }
 
     #[instrument(skip(self))]
@@ -604,6 +641,8 @@ struct ItemCardRow {
     started_by: Option<String>,
     team: Option<String>,
     merged_by: Option<String>,
+    created_by: Option<String>,
+    updated_by: Option<String>,
 }
 
 impl ItemCardRow {
@@ -615,6 +654,8 @@ impl ItemCardRow {
             started_by: self.started_by,
             team: self.team,
             merged_by: self.merged_by,
+            created_by: self.created_by,
+            updated_by: self.updated_by,
         })
     }
 }

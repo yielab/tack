@@ -6,6 +6,7 @@ mod decisions;
 mod logs;
 mod support;
 
+mod agent_credential;
 mod background;
 mod cancel_run;
 mod claim;

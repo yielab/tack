@@ -263,6 +263,7 @@ impl From<tack_app::AppError> for ApiError {
         match error {
             error @ AppError::NotFound => ApiError::NotFound(error.to_string()),
             AppError::Conflict(message) => ApiError::Conflict(message),
+            AppError::Invalid(message) => ApiError::BadRequest(message),
             AppError::Store(error) => ApiError::Store(error),
             AppError::Core(error) => ApiError::Core(error),
             error @ (AppError::InvalidTransition { .. }

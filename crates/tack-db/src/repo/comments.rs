@@ -14,19 +14,33 @@ impl Repository {
         item_id: Uuid,
         input: CreateComment,
     ) -> Result<Comment, StoreError> {
+        self.create_comment_by(item_id, input, None).await
+    }
+
+    /// [`Repository::create_comment`] recording the principal that wrote it (a label), which
+    /// the caller has already put its own `author` for: an agent's comment carries the
+    /// credential's name there.
+    #[instrument(skip(self))]
+    pub async fn create_comment_by(
+        &self,
+        item_id: Uuid,
+        input: CreateComment,
+        principal: Option<&str>,
+    ) -> Result<Comment, StoreError> {
         self.require_item(item_id).await?;
         let id = Uuid::new_v4();
         let now = Utc::now();
         let now_str = now.to_rfc3339();
 
         sqlx::query(
-            "INSERT INTO comments (id, item_id, author, content, comment_type, created_at, updated_at)
-             VALUES (?, ?, ?, ?, 'comment', ?, ?)"
+            "INSERT INTO comments (id, item_id, author, content, comment_type, principal, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'comment', ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(item_id.to_string())
         .bind(&input.author)
         .bind(&input.content)
+        .bind(principal)
         .bind(&now_str)
         .bind(&now_str)
         .execute(self.pool())
@@ -40,6 +54,7 @@ impl Repository {
             author: input.author,
             content: input.content,
             comment_type: CommentType::Comment,
+            principal: principal.map(str::to_owned),
             created_at: now,
             updated_at: now,
         })
@@ -48,7 +63,7 @@ impl Repository {
     #[instrument(skip(self))]
     pub async fn list_comments(&self, item_id: Uuid) -> Result<Vec<Comment>, StoreError> {
         let rows = sqlx::query_as::<_, CommentRow>(
-            "SELECT id, item_id, author, content, comment_type, created_at, updated_at
+            "SELECT id, item_id, author, content, comment_type, principal, created_at, updated_at
              FROM comments WHERE item_id = ? ORDER BY created_at ASC",
         )
         .bind(item_id.to_string())
@@ -95,6 +110,7 @@ impl Repository {
             author: Some("system".into()),
             content,
             comment_type,
+            principal: None,
             created_at: now,
             updated_at: now,
         })
@@ -140,6 +156,7 @@ struct CommentRow {
     author: Option<String>,
     content: String,
     comment_type: String,
+    principal: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -158,6 +175,7 @@ impl CommentRow {
                 "system" => CommentType::System,
                 _ => CommentType::Comment,
             },
+            principal: self.principal,
             created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
             updated_at: decode::instant(TABLE, "updated_at", &self.updated_at)?,
         })

@@ -2,9 +2,10 @@ use axum::{
     extract::{Request, State},
     http::{HeaderName, HeaderValue, StatusCode, header},
     middleware::Next,
-    response::Response,
+    response::{IntoResponse, Response},
 };
 use sha2::{Digest, Sha256};
+use tack_core::principal::Principal;
 
 use crate::error::ApiError;
 use crate::router::AppState;
@@ -258,55 +259,90 @@ pub async fn refuse_cross_site(
     Ok(next.run(req).await)
 }
 
-/// Middleware: if a token is configured, require a matching
-/// `Authorization: Bearer <token>` header or `tack_session` cookie on every
-/// request except `/api/health`.
+/// Middleware: puts the caller's [`Principal`] in the request's extensions on every route, and
+/// refuses a caller that is none.
 ///
-/// Uses a constant-time comparison to prevent timing-oracle attacks. This is
-/// the only credential a request can hold — there is no per-user account to
-/// authenticate as instead — a deliberate single-operator scope recorded in
-/// `docs/adr/0004-single-operator-identity-posture.md`, not an omission.
+/// Three callers exist. A route that needs no one (`/api/health`, the schema) is Tack itself with
+/// no scope. A `Bearer tack_agent_...` credential that is active is an agent with the scopes it
+/// was issued, and may reach only the routes `agent_access` lists. Anything else is the operator:
+/// when a token is configured it must match the `Authorization: Bearer <token>` header or the
+/// `tack_session` cookie, compared in constant time; when none is configured (loopback only, or
+/// the explicit opt-out of ADR 0004) every caller is the operator. The operator holds every
+/// scope and is never asked about one, so Tack's own token behaves as it always did.
 pub async fn require_token(
     State(state): State<AppState>,
-    req: Request,
+    mut req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
-    let path = req.uri().path();
-    if is_public_route(path) {
-        return Ok(next.run(req).await);
+) -> Response {
+    let path = req.uri().path().to_string();
+    if is_public_route(&path) {
+        req.extensions_mut().insert(Principal::system());
+        return next.run(req).await;
     }
 
-    if is_board_websocket_route(path) {
+    if is_board_websocket_route(&path) {
         return if board_websocket_is_authorized(&req, &state) {
-            Ok(next.run(req).await)
+            req.extensions_mut()
+                .insert(operator_principal(&state.config));
+            next.run(req).await
         } else {
-            Err(StatusCode::UNAUTHORIZED)
+            StatusCode::UNAUTHORIZED.into_response()
         };
     }
 
-    let Some(ref expected) = state.config.api_token else {
-        // No token configured. A loopback bind always has one
-        // (`AppConfig::ensure_api_token` creates it), and a non-loopback bind
-        // without one is refused at startup by `AppConfig::validate_security`,
-        // so this branch is reached only when the operator bound a
-        // non-loopback address with TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1
-        // and accepted an open API.
-        return Ok(next.run(req).await);
-    };
-
-    let provided = req
+    let bearer = req
         .headers()
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_string);
 
-    match provided {
-        Some(tok) if constant_time_eq(tok.as_bytes(), expected.as_bytes()) => {
-            Ok(next.run(req).await)
+    // An agent credential, whether or not a token is configured.
+    if let Some(secret) = bearer
+        .as_deref()
+        .filter(|secret| secret.starts_with(tack_app::runs::agent_credential::SECRET_PREFIX))
+    {
+        let credential = match tack_app::runs::agent_credential::authenticate(
+            &state.repo,
+            chrono::Utc::now(),
+            secret,
+        )
+        .await
+        {
+            Ok(Some(credential)) => credential,
+            Ok(None) => return StatusCode::UNAUTHORIZED.into_response(),
+            Err(error) => return ApiError::from(error).into_response(),
+        };
+        let principal = credential.principal();
+        if let Err(refusal) =
+            crate::agent_access::authorize(&state, &principal, req.method(), &path).await
+        {
+            return refusal.into_response();
         }
-        _ if session_cookie_matches(&req, expected) => Ok(next.run(req).await),
-        _ => Err(StatusCode::UNAUTHORIZED),
+        req.extensions_mut().insert(principal);
+        return next.run(req).await;
     }
+
+    let allowed = match state.config.api_token {
+        // No token configured. A loopback bind always has one
+        // (`AppConfig::ensure_api_token` creates it), and a non-loopback bind
+        // without one is refused at startup by `AppConfig::validate_security`,
+        // so this is reached only when the operator bound a non-loopback address
+        // with TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1 and accepted an open API.
+        None => true,
+        Some(ref expected) => {
+            bearer
+                .as_deref()
+                .is_some_and(|tok| constant_time_eq(tok.as_bytes(), expected.as_bytes()))
+                || session_cookie_matches(&req, expected)
+        }
+    };
+    if !allowed {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    req.extensions_mut()
+        .insert(operator_principal(&state.config));
+    next.run(req).await
 }
 
 /// Header the operator execution/fleet handlers
@@ -316,44 +352,37 @@ pub async fn require_token(
 /// replace below, which is what makes that true.
 pub const OPERATOR_PRINCIPAL_HEADER: &str = "x-tack-principal";
 
-/// Derives the operator principal from the request's already-authenticated
-/// context rather than anything the client sent. Tack's operator-auth model
-/// (`docs/contracts/runner-v1/protocol.json`'s `operator_session_or_api_token`)
-/// is a single shared bearer token, not per-user sessions, so every request
-/// that clears `require_token` with the same configured token is
-/// structurally the same principal; a stable, non-secret identifier derived
-/// from the configured secret (or a fixed local identifier when no token is
-/// configured, i.e. `require_token` itself allows every caller through) is
-/// therefore both correct today and forward-compatible if the operator-auth
-/// model later grows real per-caller sessions — the injection point does not
-/// change, only what this function returns.
-fn operator_principal_value(config: &crate::config::AppConfig) -> String {
+/// The operator, derived from the configured secret rather than anything the client sent: a
+/// stable, non-secret label of the token (or `local` when none is configured and every caller is
+/// equally trusted). Tack's operator-auth model
+/// (`docs/contracts/runner-v1/protocol.json`'s `operator_session_or_api_token`) is one shared bearer
+/// token, so every request that clears [`require_token`] with it is the same principal
+/// (ADR 0004); an agent credential is the other kind of caller (ADR 0034).
+pub fn operator_principal(config: &crate::config::AppConfig) -> Principal {
     match config.api_token.as_deref() {
         Some(token) if !token.is_empty() => {
             let digest = Sha256::digest(token.as_bytes());
-            format!("operator:token:{}", hex::encode(&digest[..8]))
+            Principal::operator(format!("token:{}", hex::encode(&digest[..8])))
         }
-        _ => "operator:local".to_string(),
+        _ => Principal::operator("local"),
     }
 }
 
-/// Strips any client-supplied [`OPERATOR_PRINCIPAL_HEADER`] and replaces it
-/// with the server-derived value. Layered directly on the operator
-/// execution/fleet sub-router in `router.rs`, *inside* the `require_token`
-/// gate, so it only ever runs for a request that already cleared operator
-/// authentication (or ran in unauthenticated local-only mode, where every
-/// caller is equally trusted). A request arriving here with its own
-/// `x-tack-principal` set is not an error — it is simply overwritten, so a
-/// client cannot read or collide with another principal's idempotency scope
-/// by guessing or copying a header value.
-pub async fn inject_operator_principal(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let principal = operator_principal_value(&state.config);
-    let value = HeaderValue::from_str(&principal)
-        .expect("operator principal is hex/ASCII and always a valid header value");
+/// Strips any client-supplied [`OPERATOR_PRINCIPAL_HEADER`] and replaces it with the label of the
+/// principal [`require_token`] resolved. Layered directly on the operator execution/fleet
+/// sub-router in `router.rs`, *inside* the `require_token` gate, so it only ever runs for a
+/// request that already cleared authentication (an agent only reaches routes `agent_access`
+/// lists, none of which is here). A request arriving with its own `x-tack-principal` set is not
+/// an error — it is simply overwritten, so a client cannot read or collide with another
+/// principal's idempotency scope by guessing or copying a header value.
+pub async fn inject_operator_principal(mut req: Request, next: Next) -> Response {
+    let label = req
+        .extensions()
+        .get::<Principal>()
+        .map(Principal::label)
+        .unwrap_or_else(|| "system:tack".to_string());
+    let value = HeaderValue::from_str(&label)
+        .expect("a principal label is ASCII and always a valid header value");
     req.headers_mut()
         .insert(HeaderName::from_static(OPERATOR_PRINCIPAL_HEADER), value);
     next.run(req).await
@@ -398,7 +427,7 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 mod tests {
     use super::{
         constant_time_eq, decode_base64url, is_board_websocket_route, is_public_route,
-        operator_principal_value,
+        operator_principal,
     };
     use crate::config::AppConfig;
 
@@ -505,8 +534,8 @@ mod tests {
     #[test]
     fn operator_principal_is_stable_and_never_the_raw_token() {
         let no_token = AppConfig::default();
-        let first = operator_principal_value(&no_token);
-        let second = operator_principal_value(&no_token);
+        let first = operator_principal(&no_token).label();
+        let second = operator_principal(&no_token).label();
         assert_eq!(first, second);
         assert_eq!(first, "operator:local");
 
@@ -514,15 +543,23 @@ mod tests {
             api_token: Some("super-secret-value".into()),
             ..AppConfig::default()
         };
-        let derived = operator_principal_value(&with_token);
+        let derived = operator_principal(&with_token).label();
         assert_ne!(derived, "operator:local");
+        assert!(derived.starts_with("operator:token:"));
         assert!(!derived.contains("super-secret-value"));
-        assert_eq!(derived, operator_principal_value(&with_token));
+        assert_eq!(derived, operator_principal(&with_token).label());
 
         let different_token = AppConfig {
             api_token: Some("another-secret".into()),
             ..AppConfig::default()
         };
-        assert_ne!(derived, operator_principal_value(&different_token));
+        assert_ne!(derived, operator_principal(&different_token).label());
+    }
+
+    #[test]
+    fn the_operator_holds_every_scope() {
+        let operator = operator_principal(&AppConfig::default());
+        assert!(operator.is_operator());
+        assert!(operator.may_everywhere(tack_core::principal::Capability::Act));
     }
 }

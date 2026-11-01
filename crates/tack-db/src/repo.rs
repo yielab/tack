@@ -1,3 +1,4 @@
+pub mod agent_credentials;
 pub mod attachments;
 pub mod autonomy;
 pub mod backup;
