@@ -56,6 +56,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- **Ready for review** is violet in every palette; in the harbor palette it used the coral accent, the same red as Failed and the Bug chip.
 - On the board, the first counter of the run strip is now called **Your turn** (runs that need you plus runs ready for review) so it no longer reads as a synonym of **Needs you**; the sidebar's **Waiting for you** count uses the same amber as **Needs you** and has its own icon; and a column's run bar sits under its name, so a long column name is no longer cut.
 - A run waiting for your verdict asks for it once, at the top of the run: when the run has a pack, one required reason is saved with the verdict and with the checks (before, a yellow box said the note was optional while the Checks section asked for a required reason).
 - Cancelling a docket run reads docket's answer to the cancel: a `409` with `code: "not_cancellable"` (the run refused to stop) leaves the run for an operator, and any other `409` still means the task had already ended. Docket now cancels a task it has accepted but no run has claimed, which used to answer `409` and send the run to the operator.
