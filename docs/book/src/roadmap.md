@@ -41,6 +41,15 @@ always accepts. The local suite proves it against docket: with Claude Haiku 5.5 
 (2026-10-31, docket `cdeabac3`, 31 416 tokens counted against the limits); on the local model 19 pass and the
 fifteenth fails, because its lead step repeats itself; nothing in it is a card.
 
+**[Phase 84](https://github.com/yielab/tack/blob/develop/docs/plans/phase-84.md) — the screen says
+what needs you first, and a project shows its teams at work.** Accepted 2026-11-01 (ADR 0033), from an
+audit of the live suite's screenshots; no card started. One run-state language on every screen; the
+item, the run, the run dialog, Automation and Agents ordered by what to do now, with the rest one fold
+away; a run that starts can move its item; the Table view removed and its sorting, filter and in-place
+editing moved to the List; and a new work view, Orchestration, with one lane per team showing the team's
+own steps, what waits on a person and what no team will take (Flow), and who does what from roles to
+members (Map). Cards A, B, C, E, D, F, G, H, I, J, K, T, N, S, O1, O2 and M, in nine rounds.
+
 What is not a card is in "Cancelled" below.
 
 ## Future, not planned

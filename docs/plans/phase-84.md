@@ -1,7 +1,8 @@
 # Phase 84: the screen says what needs you first, and the rest is one click away
 
-**Status: PROPOSED 2026-11-01.** No ADR yet; the three decisions below go into one when the plan is
-accepted. Front end only, except card N, which exists only if decision 1 is taken.
+**Status: ACCEPTED 2026-11-01; ADR 0033 holds the decisions.** Widened the same day: the Table view
+is removed (its abilities move to the List) and a new work view, Orchestration, shows the teams at
+work. Front end, except cards N and S.
 
 ## The ask, in one screen
 
@@ -35,22 +36,97 @@ before raw, and graphics where a sentence was doing a diagram's job (a ladder, a
 checklist, a meter, a tree). Nothing technical is deleted; it moves behind "Details" or "How we know".
 Deferred controls stay visible and disabled with their reason (Phase 67's rule).
 
-**What you decide:** the three questions in "Decisions", then "continúa".
+## Decisions (ADR 0033, accepted 2026-11-01)
 
-## Decisions
+1. **Starting a run can move the item:** "When a run starts" beside "When a run finishes"; new projects
+   start with the workflow's first in-progress status, existing ones keep "Do not move". Card N.
+2. **A card shows priority only when it is not the project's default**; the List and the item always
+   show it; "Always show priority on cards" restores today's card. Card E.
+3. **"Propose items from a file" moves** to the item's "⋯" menu and a drop zone on the Execution tab.
+   Cards C and I.
+4. **The Table view is removed; the List does what it did.** Card T.
+5. **A new work view, Orchestration**, in two modes, Flow and Map. Cards S, O1 and O2.
 
-1. **Does starting a run move the item?** Today only "When a run finishes" can move an item; nothing
-   moves it on start, which is why In Progress reads 0 while three runs work. Proposed: a sibling setting
-   "When a run starts" (same control, same "Do not move" option), set to the workflow's in-progress
-   status for **new** projects and left at "Do not move" for existing ones. Card N. If declined, card E's
-   run-state summary on the board is the only fix, and N is dropped.
-2. **Priority on a card when it is the default.** Every card in both projects reads "Medium" because
-   nobody set it. Proposed: a card shows priority only when it is not the project's default; the List,
-   Table and item page always show it. A display preference ("Always show priority") restores today's
-   card. No field is removed.
-3. **Where "Propose items from a file" lives.** Today it is a raw file input above the properties of
-   every item. Proposed: an item's "⋯" menu and a drop zone on the Execution tab's proposals section,
-   both opening the same accept panel (card I). The file still works the same way.
+## The work views, audited
+
+| View | What it answers | What the screenshots show | Verdict |
+|---|---|---|---|
+| Board | Where each item is in the person's workflow | Columns lie while runs work; the run state is one pill among five | **Keep**, card E; decision 1 makes the column true |
+| List | The hierarchy: epics, tasks, sub-items | Clear, but cannot sort or filter, so the guide sends people to the Table; run state missing except "Needs your review" | **Keep and absorb the Table**, card T |
+| Table | Sort, filter, edit a cell, choose columns, row height | Same rows and badges as the List in a denser grid; nothing it shows the List lacks | **Remove**, card T moves its five abilities to the List |
+| Calendar | Items by due date | Agent tasks carry no due dates; in both projects it is empty | **Keep unchanged**: it serves people who plan by dates and costs nothing when empty |
+| Timeline | Items by start and due date, blockers | Same: no dates on agent work | **Keep unchanged** |
+| Sprint | Time boxes (renamed per vocabulary) | Not used by either project | **Keep unchanged** |
+| *(new)* Orchestration | Which team is doing what, at which step, what waits on a person, what nobody will take, and why each task goes where it goes | None of it can be seen today without opening runs one by one and three settings pages | **Add**, cards S, O1, O2 |
+
+Overview and Factory metrics are project pages, not work views; card K adds the run row to Overview.
+
+## The Orchestration view: what a board cannot say
+
+A board answers "where is this item in my workflow". Work done by teams of agents raises nine questions
+it cannot answer, each seen in the screenshots:
+
+1. **Who is working on it.** On the board it is a "Team: saas-code" pill; the actor is the main fact.
+2. **Where inside the team's process it is.** One "In Progress" hides lead → implementer → a command
+   check → a reviewer that can send it back twice → a person. Each team has its own steps.
+3. **Loops.** A reviewer sends work back; a run is retried; a run is rerun at L3. A column has no loops.
+4. **Capacity and queues.** "Keep at most 3 runs open", "Up to 1 run at a time on this computer", each
+   team's waiting and running counts, and "waiting behind X" are in four different places.
+5. **Where people are the bottleneck.** Questions, approvals and reviews per team.
+6. **How the teams differ.** Works in the repository or in a folder; delivers a branch, a report or a
+   plan; stops for a person or runs to the end; network; which members only read.
+7. **Routing.** Role → profile → team → members, and the tasks no team will take (no role, a role with
+   no profile, a team no profile names): the onboarding's most common failure.
+8. **Lineage.** A research run proposes items that become another team's work.
+9. **Spend.** Tokens per team against its limit.
+
+**Flow** (the default mode) answers 1–5, 8 and 9 as they happen:
+
+- A summary row: Needs you · Running · Queued · Nobody will take it, and capacity ("2 of 3 runs open in
+  this project · this computer runs 1 at a time"). Each counter filters the lanes.
+- **One lane per team** that has a profile in this project, plus one per single agent used (a single
+  agent is a lane with one station). Lanes that need a person come first, then running, then idle ones
+  collapsed to their header.
+- **The lane header**: the team's name, the shape label it reported, icons for where it works (branch
+  or folder), whether it stops for a person, its network, the project's merge rung for it (L3 attended,
+  lights-out); its members as a row of role avatars (a ring when the member changes the project, a dot
+  when it can propose items, its model on hover); a queue meter (running and waiting); tokens counted
+  today as a meter against the daily limit.
+- **The lane's stations** are, left to right: **Up next** (tasks routed to this team that are not
+  running, in the order auto-start would take them, each marked "starts by itself at To Do" or "by
+  hand", a queued one with its reason), **the team's own steps** as reported (a parallel step stacked; the
+  check between two stations drawn as a small glyph: command, reviewer, person, external), then **Needs
+  you** and **Done today** (a count that unfolds). A team that reports no steps has one station,
+  "Working", and says the agent reports no steps.
+- **A task is a token**: type icon, title, the parent's title as a second line, `RunState` dot, time in
+  the step, and ↺ 1/2 when it was sent back. A sent-back token draws a short arc back to the station that
+  sent it. A token that waits on another team's task carries `after: <title> · <team>`, and hovering it
+  highlights the blocker in its lane. A run that proposed items carries "→ 3 proposed"; the items it
+  created carry `from: <title>`.
+- **Nobody will take it**: a lane at the top, in the warning tone, only when non-empty: each task with the
+  reason (no role, the role has no profile, the profile's team is not reported) and the Who does it
+  picker inline.
+- **Teams not used here**: one collapsed row, each team disabled with "Make a profile for it" (Phase 67's
+  rule).
+- **Acting**: a token opens the item drawer on its Execution tab; a lane header opens the team's card (card
+  H's); dragging a token between two lanes' Up next changes its Who does it, after a confirmation, and
+  only to a lane that can take it (a token in flight does not move).
+- **Live**: the view follows the realtime stream; a token moves to its next station with a short
+  transition (none under `prefers-reduced-motion`), and a polite live region says "Collect the notes:
+  review, saas-notes".
+
+**Map** answers 6 and 7, the structure behind Flow:
+
+- A left-to-right diagram in four columns, **Roles → Profiles → Teams → Members**, plus where each team
+  runs (this computer or another). A link's width is the number of open tasks routed that way. The
+  project's default profile is marked; a role with no profile and a team no profile names are drawn
+  dashed, with the fix as a link (Settings → Automation → Teams; Agents → profiles). Clicking any node
+  filters Flow to what passes through it. The map is a view; editing stays where it is today.
+- **Compare**: under the diagram, the teams as columns and, as rows, works in, delivers, decides,
+  network, members and which change the project, steps and their checks, can propose, merge rung, token
+  limit per run and tokens today. A value a team did not report reads "not reported".
+
+Both modes use only `TeamReport`, profiles, roles, items and runs; no harness is named (ADR 0032).
 
 ## The rules every screen follows
 
@@ -81,8 +157,11 @@ Deferred controls stay visible and disabled with their reason (Phase 67's rule).
 | 1 | **C ∥ E** | same |
 | 2 | **D ∥ F** | same |
 | 3 | **G ∥ H** | same |
-| 4 | **I ∥ J**, then **K**, (**N** if decision 1) | same; `cargo nextest` only if N |
-| 5 | **M** | the live suite once, screenshots retaken |
+| 4 | **I ∥ J** | same |
+| 5 | **K ∥ T** | same |
+| 6 | **N ∥ S** | both suites, `cargo nextest run --workspace` once |
+| 7 | **O1**, then **O2** | `npx vitest run` |
+| 8 | **M** | the live suite once, screenshots retaken |
 
 | Id | Card | Model | Owns | Waits on |
 |---|---|---|---|---|
@@ -96,8 +175,12 @@ Deferred controls stay visible and disabled with their reason (Phase 67's rule).
 | H | Agents: a matrix of what each can do, a team drawn as a team | Sonnet | `features/agents/` (`AgentsPage.tsx`, `AgentCapabilities.tsx`, `TeamsPanel.tsx`, `steps/`, `runnerFleet/` cards only) | A |
 | I | The accept panel is a tree | Haiku | `shared/runWithAgent/PlanPanel.tsx`, `features/item-detail/ProposeFromFile.tsx` (drop zone) | C, D |
 | J | One inbox for everything that waits on a person | Sonnet | `shared/runWithAgent/DecisionInbox.tsx`, `shared/ui/Sidebar.tsx`, the top bar's indicator in `app/Layout.tsx` | A, D |
-| K | List and Overview know about runs | Haiku | `features/list/List.tsx`, `features/dashboard/Dashboard.tsx`, `computeStats.ts` | A, E |
-| N | When a run starts, the item can move (decision 1) | Sonnet | `on_start_status` beside `on_finish_status` (migration, `tack-db` project repo, `tack-api` project handler, where the run starts in `tack-app`), `AutomationPanel.tsx`'s "When a run starts" fold, regenerated API files | G |
+| K | Overview knows about runs | Haiku | `features/dashboard/Dashboard.tsx`, `computeStats.ts` | A |
+| T | The Table goes, the List sorts, filters and edits | Sonnet | `features/list/List.tsx`, `features/table/` (deleted, its pure helpers and tests moved to `features/list/`), `app/routes.tsx`, `shared/ui/WorkTabs.tsx`, `shared/state/lastView.ts`, `shared/ui/destinations.ts`, `app/Layout.tsx`, the user guide's `views.md`, `command-palette.md` and the badge lines that name the Table | A, E |
+| N | When a run starts, the item can move | Sonnet | `on_start_status` beside `on_finish_status` (migration, `tack-db` project repo, `tack-api` project handler, where the run starts in `tack-app`), `AutomationPanel.tsx`'s "When a run starts" fold, regenerated API files | G |
+| S | One call returns a project's runs and the step each is in | Sonnet | `tack-api` `handlers/executions.rs` (`project_id` on `GET /api/executions`, `latest_hop` on `ExecutionSummary`), the `tack-db` query behind it, regenerated API files, `shared/execution/api.ts` | — |
+| O1 | Orchestration: Flow | Sonnet | a new `features/orchestration/` (`Orchestration.tsx`, `Flow.tsx`, `Lane.tsx`, `Token.tsx`, `flow.ts` pure), `app/routes.tsx`, `WorkTabs.tsx`, `lastView.ts`, `destinations.ts`, `Layout.tsx` (one entry each), the vocabulary key, a new user-guide section in `views.md` | A, E, H, J, T, S |
+| O2 | Orchestration: Map and Compare | Sonnet | `features/orchestration/` (`Map.tsx`, `Compare.tsx`, `map.ts` pure), the user guide's Map paragraph | O1 |
 | M | The screenshots show it | Sonnet | `onboarding-lab/e2e/` capture steps (git-ignored), the user guide's screenshots it names | all |
 
 ## How every card runs
@@ -119,7 +202,7 @@ requested", "no changes recorded") and renders icon + label, in three sizes: `do
 label as `aria-label` and tooltip), `chip` (today's pill), `banner` (a full-width row with the second
 line). Tokens per state: `--run-<state>-ink`, `-soft`, `-line`, each pair at AA on its own soft
 background, measured in a test the way `--color-warning-600` already is. `RunChips.tsx` renders through
-it. No other file changes in this card; C, D, E, J and K adopt it.
+it. No other file changes in this card; C, D, E, J, K, T and O1 adopt it.
 
 ### B. The drawer never scrolls sideways, a title wraps, a description renders
 
@@ -248,17 +331,57 @@ three groups: questions to answer, runs ready for review, runs that failed since
 row: `RunState` dot, item title, project, age, and the primary action inline. The top bar gets the same
 count as a badge. The decision token is asked here once per session, not per run.
 
-### K. List and Overview know about runs
+### K. Overview knows about runs
 
-The List gets a run-state column (`RunState` dot + label) and a filter on it; the Overview gets one row
-of tiles from data the board already loads: runs this week by outcome (a stacked bar), items that need
-you, and tokens counted per team. Factory metrics is linked from that row, not merged into it.
+The Overview gets one row of tiles from data the board already loads: runs this week by outcome (a
+stacked bar), items that need you, and tokens counted per team. Factory metrics is linked from that
+row, not merged into it.
 
-### N. When a run starts, the item can move (decision 1 only)
+### T. The Table goes, the List sorts, filters and edits
+
+The List keeps its hierarchy and gains what only the Table had: a header row whose columns sort
+(Critical → None for priority, as `Table.tsx`'s helper does) with the hierarchy kept inside each parent;
+**Filter…** over title, assignee and status; a click on title, status, priority, assignee or due date
+edits it in place; **Columns** and **Compact / Comfortable**, remembered in this browser (the Table's
+stored choices are read once and moved). It also gets the run-state column (`RunState`) and a filter
+on it. `/projects/:id/table` redirects to `/list`; a remembered "table" view opens the List; the Table
+leaves the tabs, the command palette and the layout's titles. The guide's Table section is removed and
+its abilities written into the List's.
+
+### N. When a run starts, the item can move
 
 `on_start_status` beside `on_finish_status`: a nullable column, the same validation, applied where a run
 moves to Running. New projects get the workflow's first in-progress status; existing rows stay null.
 Settings shows it as "When a run starts" next to "When a run finishes".
+
+### S. One call returns a project's runs and the step each is in
+
+`GET /api/executions?project_id=<id>` returns every open run of the project (queued, running, waiting
+on a person) and those that ended in the last 24 hours, one row per run. `ExecutionSummary` gains
+`latest_hop`: the role, the kind (started or finished), the verdict and the cycle of the attempt's
+latest hop event, or null when the agent reports none; the front end matches it to the team's steps
+with `teamSteps.ts` as the Execution tab already does. Counted tokens of the current attempt come with
+it. A test per state; the fake runner's hop events cover the docket shape, a single agent's run returns
+null.
+
+### O1. Orchestration: Flow
+
+The work view `orchestration` (label from the vocabulary, "Orchestration" by default), placed after
+the Board. It renders Flow as described in "The Orchestration view" above, from `GET /api/teams`,
+the project's profiles and roles, the items, and card S's call, refreshed by the realtime stream. The
+routing of an item to a team is the one `WhoDoesIt.tsx` already resolves (its own Who does it, else its
+role's profile, else the project's default); `flow.ts` holds it and the placement of a token at a
+station as pure functions with their tests. A project where no run ever started shows the tab
+disabled, with "No agent has worked in this project yet" and a link to Agents. Lane headers reuse card
+H's team pieces; tokens use `RunState`; the summary row shares card E's filter state.
+
+### O2. Orchestration: Map and Compare
+
+A Flow / Map switch in the view's header. Map draws the four columns as SVG with links whose width is
+the open tasks routed that way, laid out by a pure `map.ts` (columns fixed, rows ordered to minimise
+crossings by the barycentre of their neighbours), keyboard-navigable node by node, with a text list
+of the same routes as its accessible equivalent. Compare is a table under it. Clicking a node or a
+column header switches to Flow filtered to it.
 
 ### M. The screenshots show it
 
@@ -270,6 +393,11 @@ the rounds' merged tree, and the guide screenshots that show those screens are r
 
 - **A new colour palette or typeface.** The token architecture and the brand stay; this plan changes
   weight and order. A darker surface for the drawer is in scope only where rule 5 needs it.
-- **A run-state swimlane board.** Card E's strip and filters give the same answer without a second
-  layout to keep.
-- **Removing any control, setting or fact.** Every one stays; what moves is listed in its card.
+- **A run-state swimlane on the Board.** The Board's columns are the person's workflow; a team's steps
+  differ per team, so Orchestration carries them.
+- **Removing any control, setting or fact**, except the Table view (decision 4), whose abilities move
+  to the List.
+- **A history of runs over time per team** (a Gantt of attempts). Factory metrics already gives
+  throughput; it is reconsidered once Flow is in use.
+- **Repeating tasks on the Calendar.** A routine team's repeats would fit there, but neither project
+  uses them yet.

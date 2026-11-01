@@ -30,6 +30,7 @@ The Status line in each file is the authority. The "Superseded by" column below 
 
 | ADR | Title | Status | Superseded by |
 |---|---|---|---|
+| 0033 | [the screen says what needs you first, and a project shows its teams at work](https://github.com/yielab/tack/blob/develop/docs/adr/0033-the-screen-says-what-needs-you-first-and-a-project-shows-its-teams-at-work.md) | Accepted 2026-11-01 | — |
 | 0032 | [a team is shown as it is, a task can go to a team, and what a run finds can become items](https://github.com/yielab/tack/blob/develop/docs/adr/0032-a-team-is-shown-as-it-is-a-task-can-go-to-a-team-and-what-a-run-finds-can-become-items.md) | Accepted 2026-10-31 | — |
 | 0031 | [a docket team may work outside the repository, and what leaves is seen before it leaves](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md) | Accepted 2026-10-31 | — |
 | 0030 | [the task goes to docket as fields, and a run says which prompts made it](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md) | Accepted 2026-10-31 | — |
