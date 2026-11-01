@@ -74,12 +74,14 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   accepts. Planner and Researcher can write the plan file and a run that changes anything else fails. The
   live suite (20 tests, git-ignored `onboarding-lab/e2e/`) runs against docket `cdeabac3`: 15 fails on the
   local model's looping lead step, the rest pass; with Claude Haiku 5.5 all 20 pass in one run.
-- **Accepted 2026-11-01, no card started:** Phase 84 (`docs/plans/phase-84.md`, ADR 0033) — from an audit of
+- **Built 2026-11-01, in `develop`:** Phase 84 (`docs/plans/phase-84.md`, ADR 0033) — from an audit of
   the live suite's screenshots: one run-state language, every screen ordered by what needs a person first, a run
   that starts can move its item, the Table view removed (the List sorts, filters and edits in place), and a new
   work view, Orchestration: Flow (a lane per team with its own steps) and Map (roles → profiles → teams →
   members). Front end except N (`on_start_status`) and S (`GET /api/executions?project_id=` with `latest_hop`).
-- **Accepted 2026-11-01, no card started:** Phase 85 (`docs/plans/phase-85.md`, ADR 0034) — a manager is a profile
+  The live suite passes its 20 tests against docket `9cdd6253` on the local model; two Opus audits of its screenshots
+  drove a polish pass and a review pass; the second audit's list of fixes is what is left.
+- **Accepted 2026-11-01, cards P, M, A, C built in `develop`:** Phase 85 (`docs/plans/phase-85.md`, ADR 0034) — a manager is a profile
   that works through the board, with no "manager" type in the code: every caller a principal (agent credentials
   with scopes, amends ADR 0004), change sets as an agent's only write path with an "Agents on the board" rung,
   team activity (incl. work the board did not start), a computed digest, threads where each message is a turn
