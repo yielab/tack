@@ -61,6 +61,9 @@ export type { WipChipProps } from './WipChip';
 export { default as KbdHint } from './KbdHint';
 export type { KbdHintProps } from './KbdHint';
 
+export { default as RunState } from './RunState';
+export type { RunStateProps, RunStateName, RunStateSize, DocketRunWord } from './RunState';
+
 export * as Icons from './icons';
 export { BrandMark } from './icons';
 export type { IconProps } from './icons';
