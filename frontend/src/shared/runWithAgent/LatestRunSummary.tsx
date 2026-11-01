@@ -82,7 +82,7 @@ const excerpt = (text: string, max: number) => {
 
 /** The item's Now panel: its latest run as one card whose state and actions follow the run (its
  *  last steps and Stop while it runs; the opening of its report and Accept / Reject… when it wants
- *  a verdict; why it failed; that it merged; why it still waits), with one filled button for what
+ *  a verdict, with Accept / Reject… only when there is no pack to review; why it failed; that it merged; why it still waits), with one filled button for what
  *  to do next. An item with no run shows Run with agent instead. */
 const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const store = useExecutionStore();
@@ -249,6 +249,24 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     else if (d?.files) parts.push(`${d.files} ${d.files === 1 ? 'file' : 'files'} changed`);
     return parts.length > 0 ? parts.join(' · ') : null;
   };
+
+  // Whether the run left a merge-readiness pack: with one, the verdict is given on the Execution tab, where
+  // the pack and its reason are reviewed together, so this panel offers no Accept or Reject of its own.
+  const [hasPack] = createResource(
+    () => {
+      const a = attempt();
+      return a && kind() === 'review' ? { id: a.request_id, n: a.attempt_number } : undefined;
+    },
+    async ({ id, n }) => {
+      try {
+        return (await artifactsApi.list(id, n)).some((x) => x.kind === 'mrp');
+      } catch {
+        return false;
+      }
+    },
+  );
+  // Known to have no pack: only then are Accept and Reject… shown here.
+  const inlineReview = () => !hasPack.loading && hasPack() === false;
 
   // While it runs: its last steps, reloaded every few seconds.
   const live = () => kind() === 'running' && attempt() !== undefined;
@@ -542,7 +560,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                   />
                 </Show>
               </Show>
-              <Show when={!props.reviewInTab && attempt() && (kind() === 'review' || (kind() === 'done' && !!review()))}>
+              <Show when={!props.reviewInTab && attempt() && ((kind() === 'review' && inlineReview()) || (kind() === 'done' && !!review()))}>
                 <ReviewActions
                   requestId={attempt()!.request_id}
                   attemptNumber={attempt()!.attempt_number}
