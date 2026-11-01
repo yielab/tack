@@ -93,6 +93,35 @@ and each task that changes station, in a polite announcement such as "Collect th
 With motion reduced, in Tack's display settings or by the system's, a task simply appears at its new
 station instead of sliding to it.
 
+**Flow and Map.** A switch beside the title chooses between **Flow**, which is everything above, and
+**Map**. Flow is what you see first, and Tack remembers in this browser which of the two you left on.
+
+**The Map.** Where Flow shows work as it happens, the Map shows the structure behind it: how a task finds
+its team. Four columns read from left to right, **Roles**, **Profiles**, **Teams** and **Members**. A
+line joins a role to its profile, a profile to the team (or single agent) that runs it, and a team to the
+members it reported, and a line is as wide as the number of open tasks routed along it, so the busy
+routes stand out and a route nothing uses is a hairline. Under each team's name the Map says where it
+runs, on this computer or on another. The project's default profile is marked, and a task that names no
+role and no profile of its own goes to it. A role with no profile and a team no profile names are drawn
+with a dashed edge, say so in words, and carry the fix as a link: **Settings → Automation → Teams** to
+give the role a profile, **Agents → profiles** to make one for the team. The Map is a view; nothing is
+edited on it.
+
+Press a box, or a column's title, to go to Flow narrowed to what passes through it: the lanes that role,
+profile, team or member can reach, and the tasks nobody will take because of it. A line above the lanes
+says what Flow is narrowed to, and **Show everything** takes it off. With the keyboard, Tab enters the
+Map at one stop; the arrow keys move between boxes (up and down along a column, left and right to a
+box it is joined to), and Enter opens the box in Flow. The same routes are written out as sentences, one
+for each line, under **Routes as text**, together with what is dashed and what is the default.
+
+**Compare.** Under the Map, a table sets the teams side by side, one column each, with these rows: where
+the team works, what it delivers, whether it runs to the end or stops for a person, its network, its
+members, which of them change the project, its steps and what checks each, which can propose items, how
+its changes are merged here, the token limit for one run and the tokens counted today. A fact a team did
+not report reads **not reported**, never a guess; hover it, or read on, for why. What a team delivers
+and the limit for a run come from the profiles that name the team, and a run's limit falls back to the
+project's provisional one when the profile sets none.
+
 ---
 
 ## List
