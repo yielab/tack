@@ -13,6 +13,8 @@ const MoveMenu: Component<{
   /** The statuses to offer: every column but the card's own. */
   statuses: string[];
   onMove: (status: string) => void;
+  /** The card's short id, shown at the top of the menu: the card itself keeps it for its hover. */
+  itemRef?: string;
 }> = (props) => {
   const menuId = createUniqueId();
   const [open, setOpen] = createSignal(false);
@@ -121,6 +123,18 @@ const MoveMenu: Component<{
               'border-radius': '14px', 'box-shadow': 'var(--shadow-lg)',
             }}
           >
+            <Show when={props.itemRef}>
+              <div
+                role="none"
+                data-testid="card-short-id"
+                style={{
+                  padding: '4px 12px 6px', 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem',
+                  color: 'var(--color-text-secondary)',
+                }}
+              >
+                {props.itemRef}
+              </div>
+            </Show>
             <For each={props.statuses}>
               {(status) => (
                 <button

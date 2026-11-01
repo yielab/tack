@@ -33,16 +33,16 @@ uncommitted when there were any. A failed run leads with why it failed.
 
 ### What you see on the board
 
-After a run, the task's card on the board carries these badges. List and table carry the review, merge and
+After a run, the task's card on the board carries these marks. List and table carry the review, merge and
 automation badges; the state chip is on the board only.
 
 | Badge | Meaning |
 |---|---|
-| A state chip on the card header (Queued, Starting, Running, Needs a person, Finished, Failed, Cancelled) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs a person, it opens that run with its question open |
-| **Needs your review** | The latest run left changes and nobody has accepted or rejected them |
+| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Done, Failed, Cancelled) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
+| **Ready for review** | The latest run left changes and nobody has accepted or rejected them |
 | **Waiting for CI to merge**, **Not merged: …** | Tack tried to merge the change and could not. Press the badge for the reason and what to do |
 | **Started by itself** | The project started the run, not a person |
-| **Team: name** | The team the run's profile named |
+| The team's name, with its initials | The team the run's profile named |
 | **Merged by itself** | Tack merged the change automatically |
 | **Repeats** | The task is set to repeat when closed |
 

@@ -2,6 +2,8 @@ import { createMemo, createUniqueId, For, Show, createSignal, createEffect, onMo
 import MergeNoteBadge from '../../shared/runWithAgent/MergeNoteBadge';
 import AutomationBadge from '../../shared/ui/AutomationBadge';
 import { useParams, useSearchParams } from '@solidjs/router';
+import type { ExecutionSummary } from '../../shared/execution';
+import { useExecutionStore } from '../../shared/state/executionContext';
 import { api } from '../../shared/api';
 import { deriveBoard } from '../../shared/api/boards';
 import type { BoardColumn, Item, BoardState, Priority } from '../../shared/types';
@@ -14,13 +16,18 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, Badge, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, Badge, RunState, Switch, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
 import { ForById } from '../../shared/ui/ForById';
 import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
+import AgentStrip, { RunMiniBar } from './AgentStrip';
+import {
+  cardRun, countRuns, getAlwaysPriority, passesFilters, setAlwaysPriority, showsPriority,
+  type CardRun, type RunFilter,
+} from './boardRuns';
 
 /** Short, human id for the card header (real ids are UUIDs). */
 function shortId(id: string): string {
@@ -34,9 +41,21 @@ export const ItemCard: Component<{
   statuses: string[];
   onEdit: (item: Item) => void;
   onMove: (itemId: string, status: string) => void;
+  /** The item's newest run, if any. */
+  run?: CardRun;
+  /** The card sits in a column no work has started in: a live run there still marks the card. */
+  notStarted?: boolean;
+  /** Show the priority even when it is the project's default. */
+  alwaysPriority?: boolean;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isHovered, setIsHovered] = createSignal(false);
+  const [, setSearchParams] = useSearchParams();
+  const store = useExecutionStore();
+
+  // The card holds its item's run state in the shared store whether or not it
+  // offers a run: the button that used to register the item is hidden on a live run.
+  onMount(() => onCleanup(store.watchItem(props.item.id)));
 
   const handleDragStart = (e: DragEvent) => {
     setIsDragging(true);
@@ -55,17 +74,33 @@ export const ItemCard: Component<{
 
   const raised = () => isHovered() && !isDragging();
 
+  // A run that needs a person or failed marks the card; so does a live run in a
+  // column nothing has started in, so a board of running work does not read as idle.
+  const rail = () => {
+    const run = props.run;
+    if (!run) return undefined;
+    return run.state === 'needs' || run.state === 'failed' || (run.live && props.notStarted) ? run.state : undefined;
+  };
+
+  // Clicking the run state opens the Execution tab, or the run's question when it asks one.
+  const openExecutionTab = (e: MouseEvent) => {
+    e.stopPropagation();
+    setSearchParams({ item: props.item.id, tab: 'execution', run: props.run?.asking ? props.run.requestId : undefined });
+  };
+
   return (
     <div
       draggable={true}
       data-item-id={props.item.id}
       class="group"
+      title={`Item ${shortId(props.item.id)}`}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
+        position: 'relative',
         background: 'var(--color-bg-app)',
         border: raised() ? '2px solid var(--color-primary-600)' : '2px solid transparent',
         'border-radius': 'var(--radius-item)',
@@ -80,67 +115,110 @@ export const ItemCard: Component<{
         opacity: isDragging() ? 0.4 : 1,
       }}
     >
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '7px' }}>
-        <TypeBadge type={props.item.item_type} label={props.typeLabel} />
-        <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>
-          {shortId(props.item.id)}
-        </span>
-        <div style={{ 'margin-left': 'auto', display: 'flex', 'align-items': 'center', gap: '5px' }}>
+      <Show when={rail()}>
+        {(state) => (
+          <span
+            aria-hidden="true"
+            data-testid="card-rail"
+            data-state={state()}
+            style={{
+              position: 'absolute', left: 0, top: '10px', bottom: '10px', width: '3px',
+              'border-radius': '0 3px 3px 0', background: `var(--run-${state()}-ink)`,
+            }}
+          />
+        )}
+      </Show>
+      <div style={{ display: 'flex', 'align-items': 'flex-start', gap: '7px' }}>
+        <h4 style={{
+          flex: 1, 'min-width': 0,
+          'font-family': 'var(--font-body)', 'font-size': '0.9375rem', 'font-weight': 700, 'font-synthesis': 'auto',
+          'letter-spacing': 'normal', margin: 0, 'line-height': 1.3, 'text-wrap': 'pretty', color: 'var(--color-text-primary)',
+        }}>
+          {/* The keyboard's way in: Enter or Space clicks this button, and the
+              click bubbles to the card's own handler. A real button rather than
+              role="button" on the card, which holds the agent button. */}
+          <button
+            type="button"
+            style={{
+              background: 'none', border: 0, padding: 0, margin: 0, font: 'inherit', color: 'inherit',
+              'text-align': 'left', cursor: 'pointer', 'border-radius': '6px', 'overflow-wrap': 'anywhere',
+            }}
+          >
+            {props.item.title}
+          </button>
+        </h4>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '5px', 'flex-shrink': 0 }}>
           <MoveMenu
             statuses={props.statuses.filter((status) => status !== props.item.status)}
             onMove={(status) => props.onMove(props.item.id, status)}
+            itemRef={shortId(props.item.id)}
           />
-          <RunWithAgentButton
-            itemId={props.item.id}
-            itemTitle={props.item.title}
-            projectId={props.item.project_id}
-            showStateChip
-            compact
-          />
+          <Show when={!props.run?.live}>
+            <RunWithAgentButton
+              itemId={props.item.id}
+              itemTitle={props.item.title}
+              projectId={props.item.project_id}
+              compact
+            />
+          </Show>
         </div>
       </div>
-      <h4 style={{
-        'font-family': 'var(--font-body)', 'font-size': '0.875rem', 'font-weight': 700, 'font-synthesis': 'auto',
-        'letter-spacing': 'normal', margin: 0, 'line-height': 1.3, 'text-wrap': 'pretty', color: 'var(--color-text-primary)',
-      }}>
-        {/* The keyboard's way in: Enter or Space clicks this button, and the
-            click bubbles to the card's own handler. A real button rather than
-            role="button" on the card, which holds the agent button. */}
-        <button
-          type="button"
-          style={{
-            background: 'none', border: 0, padding: 0, margin: 0, font: 'inherit', color: 'inherit',
-            'text-align': 'left', cursor: 'pointer', 'border-radius': '6px', 'overflow-wrap': 'anywhere',
-          }}
-        >
-          {props.item.title}
-        </button>
-      </h4>
-      <Show when={props.item.needs_review}>
-        <div><Badge tone="warning">Needs your review</Badge></div>
-      </Show>
+      <div
+        data-testid="card-meta"
+        style={{ display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '6px 8px', 'font-size': '0.75rem' }}
+      >
+        <Show when={props.run}>
+          {(run) => (
+            <button
+              type="button"
+              title={run().asking ? 'Open the question' : 'Open the Execution tab'}
+              onClick={openExecutionTab}
+              class="rounded-pill focus:outline-none focus-visible:ring-2"
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+            >
+              <RunState state={run().state} docket={run().docket} />
+              <span class="sr-only">{` — open the Execution tab for ${props.item.title}`}</span>
+            </button>
+          )}
+        </Show>
+        <Show when={props.item.team}>
+          {(team) => (
+            <span
+              data-testid="badge-team"
+              title={`Team: ${team()}`}
+              style={{ display: 'inline-flex', 'align-items': 'center', gap: '5px', 'min-width': 0, color: 'var(--color-text-secondary)' }}
+            >
+              <span aria-hidden="true" style={{ display: 'inline-flex' }}><Avatar name={team()} size="sm" /></span>
+              <span style={{ 'overflow-wrap': 'anywhere' }}>{team()}</span>
+            </span>
+          )}
+        </Show>
+        <Show when={showsPriority(props.item.priority, props.alwaysPriority === true)}>
+          <PriorityDot priority={props.item.priority as Priority} showLabel />
+        </Show>
+        <TypeBadge type={props.item.item_type} label={props.typeLabel} />
+      </div>
       <Show when={props.item.recurrence}>
         <div><Badge>Repeats</Badge></div>
       </Show>
       <MergeNoteBadge note={props.item.merge_note} />
-      <AutomationBadge startedBy={props.item.started_by} team={props.item.team} mergedBy={props.item.merged_by} />
-      <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '0.75rem' }}>
-        <Show when={props.item.priority !== 'none'}>
-          <PriorityDot priority={props.item.priority as Priority} showLabel />
-        </Show>
-        <div style={{ flex: 1 }} />
-        <Show when={estimate()}>
-          <span style={{
-            'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', 'font-weight': 500, color: 'var(--color-text-secondary)',
-            background: 'var(--color-bg-panel)', padding: '2px 7px', 'border-radius': 'var(--radius-pill)',
-          }}>
-            {estimate()}
-          </span>
-        </Show>
-        <Show when={props.item.assignee}>
-          <Avatar name={props.item.assignee!} size="sm" />
-        </Show>
-      </div>
+      <AutomationBadge startedBy={props.item.started_by} mergedBy={props.item.merged_by} />
+      <Show when={estimate() || props.item.assignee}>
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '6px', 'font-size': '0.75rem' }}>
+          <div style={{ flex: 1 }} />
+          <Show when={estimate()}>
+            <span style={{
+              'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', 'font-weight': 500, color: 'var(--color-text-secondary)',
+              background: 'var(--color-bg-panel)', padding: '2px 7px', 'border-radius': 'var(--radius-pill)',
+            }}>
+              {estimate()}
+            </span>
+          </Show>
+          <Show when={props.item.assignee}>
+            <Avatar name={props.item.assignee!} size="sm" />
+          </Show>
+        </div>
+      </Show>
     </div>
   );
 };
@@ -154,9 +232,20 @@ const BoardColumnView: Component<{
   onMoveItem: (itemId: string, newStatus: string) => void;
   onAddItem: (status: string) => void;
   onEditItem: (item: Item) => void;
+  /** Whether work has started in this column: false for a "to do" status. */
+  started: boolean;
+  runOf: (item: Item) => CardRun | undefined;
+  filters: ReadonlySet<RunFilter>;
+  onToggleFilter: (filter: RunFilter) => void;
+  alwaysPriority: boolean;
 }> = (props) => {
   const [isDragOver, setIsDragOver] = createSignal(false);
   const headingId = createUniqueId();
+
+  const runCounts = createMemo(() => countRuns(props.column.items.map(props.runOf)));
+  // A filter narrows what the column shows, never what it holds: the count and
+  // the WIP chip keep speaking of every card in it.
+  const shown = createMemo(() => props.column.items.filter((item) => passesFilters(props.runOf(item), props.filters)));
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -193,8 +282,9 @@ const BoardColumnView: Component<{
           {props.column.status}
         </h3>
         <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
-          {props.column.items.length}
+          {shown().length === props.column.items.length ? props.column.items.length : `${shown().length} of ${props.column.items.length}`}
         </span>
+        <RunMiniBar counts={runCounts()} active={props.filters} onToggle={props.onToggleFilter} />
         <Show when={props.column.wip_limit != null}>
           <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
         </Show>
@@ -237,7 +327,7 @@ const BoardColumnView: Component<{
           transition: 'background-color .12s',
         }}
       >
-        <ForById each={props.column.items}>
+        <ForById each={shown()}>
           {(item) => (
             <ItemCard
               item={item()}
@@ -245,9 +335,19 @@ const BoardColumnView: Component<{
               statuses={props.statuses}
               onEdit={props.onEditItem}
               onMove={props.onMoveItem}
+              run={props.runOf(item())}
+              notStarted={!props.started}
+              alwaysPriority={props.alwaysPriority}
             />
           )}
         </ForById>
+        <Show when={props.column.items.length > 0 && shown().length === 0}>
+          <div style={{
+            padding: '12px', 'text-align': 'center', 'font-size': '0.75rem', color: 'var(--color-text-tertiary)',
+          }}>
+            No cards here match the run filter
+          </div>
+        </Show>
         <Show when={props.column.items.length === 0}>
           <div style={{
             'min-height': '70px', display: 'grid', 'place-items': 'center',
@@ -297,6 +397,29 @@ const Board: Component = () => {
   const vocab = useVocab();
   const { items, loading, refetch } = useProjectItems();
   const [, setSearchParams] = useSearchParams();
+  const executions = useExecutionStore();
+
+  // Each item's newest run, read once from the store the cards already watch.
+  const newestRuns = createMemo(() => {
+    const newest = new Map<string, ExecutionSummary>();
+    for (const record of executions.requests().values()) {
+      const summary = record.summary;
+      if (!summary) continue;
+      const prior = newest.get(summary.item_id);
+      if (!prior || summary.created_at > prior.created_at) newest.set(summary.item_id, summary);
+    }
+    return newest;
+  });
+  const runOf = (item: Item): CardRun | undefined => cardRun(newestRuns().get(item.id), item.needs_review === true);
+
+  const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
+  const toggleRunFilter = (filter: RunFilter) =>
+    setRunFilters((prior) => {
+      const next = new Set(prior);
+      if (!next.delete(filter)) next.add(filter);
+      return next;
+    });
+  const [alwaysPriority, setAlwaysPriorityShown] = createSignal(getAlwaysPriority());
 
   const boardStateFromServer = createMemo((): BoardState | null => {
     const proj = project();
@@ -342,6 +465,9 @@ const Board: Component = () => {
     return [...set];
   });
   const itemCount = () => (currentBoard()?.columns ?? []).reduce((n, c) => n + c.items.length, 0);
+  const boardRunCounts = createMemo(() =>
+    countRuns((currentBoard()?.columns ?? []).flatMap((column) => column.items.map(runOf))),
+  );
 
   // Real-time board updates via the reconnecting socket.
   const [sock, setSock] = createSignal<BoardSocket>();
@@ -477,10 +603,21 @@ const Board: Component = () => {
           <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>
         <div style={{ flex: 1 }} />
+        <div role="group" aria-label="Card display">
+          <Switch
+            checked={alwaysPriority()}
+            onChange={(on) => { setAlwaysPriorityShown(on); setAlwaysPriority(on); }}
+            style={{ 'font-size': '0.75rem', color: 'var(--color-text-secondary)' }}
+          >
+            Always show priority on cards
+          </Switch>
+        </div>
         <Show when={assignees().length > 0}>
           <AvatarStack names={assignees()} max={5} />
         </Show>
       </div>
+
+      <AgentStrip counts={boardRunCounts()} active={runFilters()} onToggle={toggleRunFilter} />
 
       <FirstRunBanner hasItems={itemCount() > 0} />
 
@@ -518,6 +655,11 @@ const Board: Component = () => {
                   onMoveItem={handleMoveItem}
                   onAddItem={handleAddItem}
                   onEditItem={handleEditItem}
+                  started={categoryOf(entry().id) !== 'todo'}
+                  runOf={runOf}
+                  filters={runFilters()}
+                  onToggleFilter={toggleRunFilter}
+                  alwaysPriority={alwaysPriority()}
                 />
               )}
             </ForById>
