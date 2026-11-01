@@ -309,7 +309,8 @@ describe('AttemptList', () => {
     await flush();
     const activity = c.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement;
     expect(activity.open).toBe(false);
-    expect(activity.textContent).toContain('Questions from the agent');
+    // An agent that asked nothing gets one grey line, not a heading over nothing.
+    expect(activity.textContent).not.toContain('Questions from the agent');
     expect(activity.querySelector('[data-testid="asked-nothing"]')!.textContent).toBe('The agent has asked nothing yet');
     expect(c.querySelector('[data-section="files"]')!.textContent).toContain('No artifacts yet');
   });
@@ -821,7 +822,7 @@ describe('AttemptList', () => {
       for (const id of ['agent-concluded', 'attempt-tools', 'agent-did', 'run-steps', 'agent-got', 'attempt-usage-fold', 'attempt-ids', 'mrp-signature', 'review-banner']) {
         expect(c.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
       }
-      expect(c.querySelector('[data-testid="run-activity"]')!.textContent).toContain('Questions from the agent');
+      expect(c.querySelector('[data-testid="run-activity"]')!.querySelector('[data-testid="asked-nothing"]')).not.toBeNull();
       // The raw level is the last, folded.
       expect((c.querySelector('[data-section="technical"]') as HTMLDetailsElement).open).toBe(false);
     });

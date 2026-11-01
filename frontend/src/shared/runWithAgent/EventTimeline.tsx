@@ -1,5 +1,5 @@
 import { type Component, For, Show, createEffect, createResource, createSignal, on, onCleanup } from 'solid-js';
-import { Badge, EmptyState, Icons, LoadError } from '../ui';
+import { Badge, Icons, LoadError } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
 import { NEEDS_A_PERSON_TEXT, inProject } from './attemptFormat';
@@ -169,7 +169,7 @@ const EventTimeline: Component<EventTimelineProps> = (props) => {
         <LoadError what="the events" error={events.error} onRetry={() => void refetch()} />
       </Show>
       <Show when={loaded()?.length === 0}>
-        <EmptyState title="No events reported yet" />
+        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No events reported yet</p>
       </Show>
       <Show when={(loaded()?.length ?? 0) > 0}>
         <ul>
