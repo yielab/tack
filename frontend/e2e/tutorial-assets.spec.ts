@@ -424,7 +424,7 @@ test.describe.serial('tutorial screenshots', () => {
     await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
     await page.waitForTimeout(500);
     await expect(dialog.locator('details', { hasText: 'Advanced for this run' })).toHaveAttribute('open', '');
-    await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
+    await expect(dialog.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled();
     await dialog.screenshot({
       path: path.join(OUT_DIR, '11-run-with-agent.png'),
     });
@@ -432,7 +432,7 @@ test.describe.serial('tutorial screenshots', () => {
     test.skip(process.env.TUTORIAL_STOP_BEFORE_RUN === '1', 'TUTORIAL_STOP_BEFORE_RUN=1: stopped before Run');
 
     // ── Submit — from here on everything is a real, billed attempt ────────
-    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Start run', exact: true }).click();
     await page.waitForTimeout(1200);
     await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -614,7 +614,7 @@ test.describe('workflow gif', () => {
     await dialog.getByText('Advanced for this run').click();
     await dialog.getByLabel('Agent', { exact: true }).selectOption('claude-code');
     await page.waitForTimeout(1200);
-    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Start run', exact: true }).click();
     await expect(dialog).toBeHidden();
     const chip = page.getByRole('button', { name: `Open the Execution tab for ${GIF_ITEM}` });
     await expect(chip).toBeVisible({ timeout: 30_000 });
