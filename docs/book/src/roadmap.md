@@ -50,6 +50,15 @@ editing moved to the List; and a new work view, Orchestration, with one lane per
 own steps, what waits on a person and what no team will take (Flow), and who does what from roles to
 members (Map). Cards A, B, C, E, D, F, G, H, I, J, K, T, N, S, O1, O2 and M, in nine rounds.
 
+**[Phase 85](https://github.com/yielab/tack/blob/develop/docs/plans/phase-85.md) — a manager works
+through the board.** Proposed 2026-11-01 (ADR 0034); waits on acceptance and on Phase 84's cards S, I
+and J. A profile becomes a manager by being given general parts, none of them called "manager": a
+credential with scopes (every caller a principal), change sets as an agent's only way to change the
+board with one more rung saying how far it may go, a team's activity including the work the board did
+not start, a computed digest, a thread where each message is a turn, and triggers on events. It
+delegates by saying who does a task, so auto-start and the ladder bound its work as anyone's. Cards P,
+M, E, C, A, D, U, W, T, TU, R and G, in six rounds; six asks of docket, none blocking.
+
 What is not a card is in "Cancelled" below.
 
 ## Future, not planned
