@@ -128,3 +128,27 @@ that machine already has an equivalent or greater level of access to it.
 - The runner-v1 protocol, its credentials, and everything in
   `docs/contracts/runner-v1/` are unaffected — that boundary was already, correctly,
   never routed through `require_token` (ADR 0002).
+
+## Note, 2026-11-01: an agent can hold a credential (ADR 0034)
+
+Single-operator stands. Tack still has no users, sessions or accounts, and `assignee` is still a
+label. What changes is that a request now carries a **principal**, and there are two kinds a person
+can hand out authority to: the operator, who holds the one token and every scope, and an **agent**,
+who holds a credential issued in Settings.
+
+An agent credential is not what the "Per-user API tokens" alternative above rejected. That option
+issued N tokens that all resolved to the same undifferentiated principal, which is authentication
+theater. A credential resolves to a different principal with different authority: it names the
+projects it reaches and the things it may do there (`read`, `propose`, `act`, `converse`), it is
+stored hashed, it expires after 90 days, it rotates and it is revoked, and every write it makes
+records it (an agent's comment is signed with the credential's name and ignores any author the
+agent sent). It identifies a key, handed to software, and not a person: nothing is added that tells
+two people apart, and the operator's token behaves exactly as before. Resolving a decision still
+needs the decision token, which no agent credential is or holds.
+
+`require_token` now resolves the principal for every route (the operator's token to the operator, a
+`tack_agent_...` secret to its agent) and a route an agent's scopes do not cover answers `403`
+naming the scope it lacks. `operator_principal_value` is replaced by the resolver; the
+`x-tack-principal` header the execution routes read still carries `operator:token:<hash>` or
+`operator:local` for the operator, and is still overwritten by the server on every request.
+

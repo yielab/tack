@@ -1,5 +1,7 @@
 use crate::extract::{Json, Path};
+use axum::Extension;
 use axum::extract::State;
+use tack_core::principal::Principal;
 use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
@@ -25,13 +27,22 @@ use crate::router::AppState;
 )]
 pub async fn create_comment(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(item_id): Path<Uuid>,
-    Json(input): Json<CreateComment>,
+    Json(mut input): Json<CreateComment>,
 ) -> ApiResult<Json<serde_json::Value>> {
     input
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-    let comment = state.repo.create_comment(item_id, input).await?;
+    // An agent signs with its credential's name and cannot sign as anyone else: the `author`
+    // it sent is dropped. The operator keeps writing under the name it typed.
+    if let Some(name) = crate::agent_access::signature(&state, &principal).await? {
+        input.author = Some(name);
+    }
+    let comment = state
+        .repo
+        .create_comment_by(item_id, input, Some(&principal.label()))
+        .await?;
     maybe_sync_github(&state, item_id, &comment).await;
     Ok(Json(serde_json::to_value(comment).unwrap()))
 }

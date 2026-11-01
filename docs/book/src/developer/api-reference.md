@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (98 paths, 136 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (101 paths, 140 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -396,6 +396,58 @@ Roles / specialties and their assignment to items.
 | 200 | Role updated | `Role` |
 | 400 | Validation error or unknown agent profile | `ErrorEnvelope` |
 | 404 | Role not found | `ErrorEnvelope` |
+
+---
+
+## Agent Credentials
+
+Keys the operator hands to agents: each holds scopes (projects times what it may do), is stored hashed, expires after 90 days and is revoked here.
+
+#### `GET /api/agent-credentials`
+
+credentials
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every credential, the newest first; never a secret | `AgentCredential`[] |
+
+#### `POST /api/agent-credentials`
+
+credentials
+
+**Request body:** `IssueCredential`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Issued; the secret is in this answer only | `IssuedCredential` |
+| 400 | The name or a scope is refused | `ErrorEnvelope` |
+| 409 | Another credential not revoked has that name | `ErrorEnvelope` |
+
+#### `POST /api/agent-credentials/{id}/revoke`
+
+credentials/{id}/revoke
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Credential ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Revoked for good | `AgentCredential` |
+| 404 | No such credential | `ErrorEnvelope` |
+
+#### `POST /api/agent-credentials/{id}/rotate`
+
+credentials/{id}/rotate
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Credential ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | A new secret, valid ninety days; the old one stops working | `IssuedCredential` |
+| 404 | No such credential, or it was revoked | `ErrorEnvelope` |
 
 ---
 

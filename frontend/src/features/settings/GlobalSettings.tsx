@@ -13,6 +13,7 @@ import { toast } from '../../shared/ui/toast';
 import { Button, Field, Badge, createConfirm } from '../../shared/ui';
 import { IconChevronDown, IconChevronRight } from '../../shared/ui/icons';
 import DisplaySettings from './DisplaySettings';
+import CredentialsSettings from './CredentialsSettings';
 
 // Setting card: a surface-filled container (no border — the fill contrast
 // against the page ground does the work) with a display-face title.
@@ -429,6 +430,8 @@ const GlobalSettings: Component = () => {
           than your running version is rejected.
         </p>
       </section>
+
+      <CredentialsSettings />
 
       {/* System (advanced) */}
       <section

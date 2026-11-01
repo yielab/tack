@@ -254,6 +254,13 @@ pub struct ItemCard {
     /// How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged.
     #[serde(default)]
     pub merged_by: Option<String>,
+    /// Who created the item through the API: `operator`, or the name of the agent credential.
+    /// `None` for an item made before callers were recorded, or by Tack itself.
+    #[serde(default)]
+    pub created_by: Option<String>,
+    /// Who last changed the item through the API, in the same words as `created_by`.
+    #[serde(default)]
+    pub updated_by: Option<String>,
 }
 
 impl From<Item> for ItemCard {
@@ -266,6 +273,8 @@ impl From<Item> for ItemCard {
             started_by: None,
             team: None,
             merged_by: None,
+            created_by: None,
+            updated_by: None,
         }
     }
 }
@@ -480,6 +489,10 @@ pub struct Dependency {
     pub source_item_id: Uuid,
     pub target_item_id: Uuid,
     pub dependency_type: DependencyType,
+    /// Who made the link: `operator`, or the name of the agent credential; `None` when it was not
+    /// recorded.
+    #[serde(default)]
+    pub created_by: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -536,6 +549,10 @@ pub struct Comment {
     pub author: Option<String>,
     pub content: String,
     pub comment_type: CommentType,
+    /// The principal that wrote it (`operator:...`, `agent:<credential id>`); `None` for a comment
+    /// written before callers were recorded, or by Tack itself.
+    #[serde(default)]
+    pub principal: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
