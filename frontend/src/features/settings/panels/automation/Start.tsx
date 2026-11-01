@@ -2,7 +2,7 @@ import { type Accessor, type Component, For, Show } from 'solid-js';
 import { HelpHint, Switch } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { Project, UpdateProject, Role } from '../../../../shared/types';
-import { Heading, Note, SECTION, inputClass, inputStyle } from './parts';
+import { Block, Heading, Note, inputClass, inputStyle } from './parts';
 
 interface Props {
   project: Accessor<Project | undefined>;
@@ -13,7 +13,7 @@ interface Props {
 
 export const NO_PROFILE_REASON = 'Choose a profile for at least one role in Teams';
 
-/** Rung 2: a task starts by itself when it reaches a status. */
+/** A task starts by itself when it reaches a status. */
 const Start: Component<Props> = (props) => {
   const hasProfile = () => props.roles().some((r) => !!r.agent_profile_id) || !!props.project()?.default_profile_id;
   const status = () =>
@@ -21,7 +21,7 @@ const Start: Component<Props> = (props) => {
     (props.statuses().find((s) => s.category === 'todo') ?? props.statuses()[0])?.name ?? '';
 
   return (
-    <div class={SECTION} id="automation-start" data-testid="rung-start">
+    <Block id="automation-start" testid="rung-start">
       <div class="flex items-center gap-2">
         <Heading>Start</Heading>
         <HelpHint label="Start" help={HELP.ladderStart} />
@@ -74,7 +74,7 @@ const Start: Component<Props> = (props) => {
       <Show when={props.project()?.auto_start_disabled_reason}>
         {(why) => <Note testid="start-disabled-reason">{why()}</Note>}
       </Show>
-    </div>
+    </Block>
   );
 };
 

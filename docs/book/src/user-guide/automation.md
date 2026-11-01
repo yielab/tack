@@ -12,34 +12,50 @@ Everything lives in **Settings → Automation**, a tab of the project's settings
 highest place that can own it: the computer (the Agents page), the project (this tab) or the task (the
 run dialog). The dialog shows project values read-only, with a link to change them.
 
-The tab has two parts. First come four short sections about the project's other settings, folded to one line
-each until you open them: **Where the code is**, **How the agent works on it**, **When a run finishes** and
-**Agent**. Below them is the **ladder**, four steps that you climb in order, each handing more work to Tack:
+The tab has two parts. At the top is the **ladder**, one picture of how far Tack may go on its own: the
+levels L3, L4 and L5 side by side, the one this project is set to filled in, the most it can reach marked
+**Ceiling**, and, under it, what holds the levels above back, each with a link to the fix. Below it are four
+sections in the order you set them up, with an index beside them that stays in view on a wide screen:
 
-1. **Teams.** Choose a profile for each role, so a task knows who works on it.
-2. **Start.** Let a task start a run by itself when it reaches a status.
+1. **Who.** The default agent and its model and profile, the profile each role works with, and where the
+   code is and how the agent works on it.
+2. **When.** Let a task start a run by itself when it reaches a status, and say what happens to the task
+   when a run finishes.
 3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
-4. **Ceiling.** See the most this project can reach, and what holds it down.
+4. **Limits.** How many tokens a day, how many automatic merges a day and how many waiting items the
+   project allows, and the limit for a run whose profile sets none.
 
-The ladder as it looks, with every control that can be disabled shown with its reason beside it:
+The tab as it looks, with every control that can be disabled shown with its reason beside it:
 
 ```text
-Teams
-   Each role works with a profile. The profile names the team and the machine.
-   Content      [ My SaaS content writer v ]
-                saas-content · lights-out · this computer
-   Developer    [ My SaaS implementer v ]
-                saas-dev · needs a person · this computer
-   No role      [ No profile v ]
-   Manage profiles →      [ Apply the repository's teams ]   (disabled)
-                          Tack cannot run this on the team's computer from the board yet.
-                          How to set up a team there (a link to the Administrator Guide)
+Autonomy ladder
+   [ L3 You merge: Set here, Ceiling ]  [ L4 Inside the domains: Held off by 3 ]  [ L5 Anything that passes: Held off by 3 ]
+   This project can reach L3.
+   ✗ The team saas-dev keeps its tasks at L3. <what to change>     Run saas-dev lights-out
+   ✗ GitHub polling is off on this board, so Tack cannot read CI or merge     Turn on GitHub polling
+   ✗ The project has no public key to check the verifier's signature against     Add the public key
 
-Start
-   [ ] Start a task by itself
-   When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
-   (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
-    controls disabled)
+Who
+   Agent, Model, Default profile (folded)
+   Teams
+      Each role works with a profile. The profile names the team and the machine.
+      Content      [ My SaaS content writer v ]
+                   saas-content · lights-out · this computer
+      Developer    [ My SaaS implementer v ]
+                   saas-dev · needs a person · this computer
+      No role      [ No profile v ]
+      Manage profiles →      [ Apply the repository's teams ]   (disabled)
+                             Tack cannot run this on the team's computer from the board yet.
+                             How to set up a team there (a link to the Administrator Guide)
+   Where the code is, How the agent works on it (folded)
+
+When
+   Start
+      [ ] Start a task by itself
+      When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
+      (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
+       controls disabled)
+   When a run finishes (folded)
 
 Merge
    (o) L3 - You merge every change yourself.
@@ -47,13 +63,11 @@ Merge
    ( ) L5 - Tack merges any change that passes its checks.            (disabled while L4 and L5 are off)
    L4 and L5 are off: <the reasons>
    [ ] Merge when moved to Done
-   Domains, Stages the verifier must run, Public key, Times a rejected change goes back to the agent,
-   Daily limits
+   Domains, Stages the verifier must run, Public key, Times a rejected change goes back to the agent
 
-Ceiling
-   This project can reach L3.
-   ✗ The team saas-dev keeps its tasks at L3. <what to change>
-   ✓ The team saas-content runs lights-out.
+Limits
+   Daily limits: Tokens per day, Automatic merges per day, Items waiting at once
+   Provisional tokens per run (the default is 2 000 000 tokens, with where it comes from)
 ```
 
 The names above (My SaaS, saas-content) are only an example; yours come from your own profiles.
@@ -65,7 +79,7 @@ The names above (My SaaS, saas-content) are only an example; yours come from you
 
 ## Teams
 
-The first step answers "who works on a task?". Each role works with a **profile**: the instructions, the
+The Teams block of **Who** answers "who works on a task?". Each role works with a **profile**: the instructions, the
 tools and, optionally, the agent, the team and the fleet of machines that run it. You pick a profile for each
 role in a dropdown. **No role** is the project's default profile, used by a task whose roles name none. Under
 each choice a line says what you chose: the team, whether it runs **lights-out** or **needs a person**, and the
@@ -169,7 +183,7 @@ not be shown" with **Try again**, and the sidebar stays where it is.
 
 ## Start
 
-The second step lets a task start by itself. It is off until you turn it on. It needs a profile to run with,
+The Start block of **When** lets a task start by itself. It is off until you turn it on. It needs a profile to run with,
 so until a role or the project has one, the three controls are disabled and the section says "Choose a profile
 for at least one role in Teams".
 
@@ -234,8 +248,8 @@ or "from the role Content". The Run with agent dialog always needs a profile, so
 
 ## Merge
 
-The third step is how much of the merge Tack decides. It has the **Merge** button, **Merge when moved to
-Done**, and the automatic merge at L4 and L5, with their domains, required checks, key and daily limits.
+The **Merge** section is how much of the merge Tack decides. It has the **Merge** button, **Merge when moved to
+Done**, and the automatic merge at L4 and L5, with their domains, required checks and key.
 All of it is on [Merging from Tack](merging.md). L4 and L5 are shown disabled, with the reasons in "L4 and
 L5 are off: …", until what an automatic merge needs is in place.
 
@@ -243,20 +257,25 @@ L5 are off: …", until what an automatic merge needs is in place.
 
 ## Ceiling
 
-The fourth step shows the most this project can reach, and what holds it down. It reads "This project can
-reach L5." until something lowers it.
+The ladder at the top of the tab shows the most this project can reach, and what holds it down. It reads
+"This project can reach L5." until something lowers it. The level the project is set to is filled in, the
+ceiling is marked on its level, and each level above the one you set says whether it is **Available** or
+**Held off by** a number of things. A screen reader gets the same sentences as the lines below the picture.
 
 A team that needs a person during a run keeps its tasks at **L3**, however high the project's level is. For
-each team that your roles' profiles name, the Ceiling lists one line:
+each team that your roles' profiles name, the ladder lists one line:
 
 - "✓ The team X runs lights-out."
-- "✗ The team X keeps its tasks at L3." followed by what to change.
+- "✗ The team X keeps its tasks at L3." followed by what to change, and a link **Run X lights-out** to the
+  Administrator Guide.
 - For a team that no runner reports yet: "✗ The team X keeps its tasks at L3. No runner reports this team
-  yet".
+  yet", with a link to the Agents page.
 
-While a team needs a person, the ceiling reads L3 and the Merge step shows L4 and L5 disabled, with the same
-reason. Other things that hold L4 and L5 off appear below the teams, each with a ✗: GitHub polling is off on
-this board, the verifier is not installed where the board runs, or the project has no public key.
+While a team needs a person, the ceiling reads L3 and the Merge section shows L4 and L5 disabled, with the
+same reason. Other things that hold L4 and L5 off appear below the teams, each with a ✗ and a link to its
+fix: GitHub polling is off on this board (**Turn on GitHub polling**), the verifier is not installed where the
+board runs (**Install the verifier**), or the project has no public key (**Add the public key**, which takes
+you to the key field).
 
 The ceiling holds back only the automatic merge. The **Merge** button is never held by it. If the team that
 ran a change needs a person, the automatic merge holds the change and the task says "The team that ran this

@@ -1,4 +1,4 @@
-import { type Accessor, type Component, createResource } from 'solid-js';
+import { type Accessor, type Component, type JSX, For, createResource } from 'solid-js';
 import { api } from '../../../../shared/api';
 import type { AutonomySettings } from '../../../../shared/api/autonomy';
 import type { AgentProfileSummary } from '../../../../shared/execution';
@@ -7,7 +7,9 @@ import { toast } from '../../../../shared/ui/toast';
 import Teams from './Teams';
 import Start from './Start';
 import Merge from './Merge';
-import Ceiling from './Ceiling';
+import Limits from './Limits';
+import Rungs from './Rungs';
+import { Section, inputStyle } from './parts';
 
 interface Props {
   projectId: string;
@@ -15,11 +17,25 @@ interface Props {
   statuses: Accessor<{ name: string; order: number; category?: string }[]>;
   profiles: Accessor<AgentProfileSummary[]>;
   saveProject: (patch: UpdateProject) => void | Promise<void>;
+  /** The default agent, its model and profile. */
+  agent: JSX.Element;
+  /** Where the code is and how the agent works on it. */
+  workspace: JSX.Element;
+  /** What happens to the item when a run finishes. */
+  finish: JSX.Element;
 }
 
+/** The sections in the order a person sets them up, and what the index beside them says. */
+const SECTIONS = [
+  { id: 'automation-who', label: 'Who' },
+  { id: 'automation-when', label: 'When' },
+  { id: 'automation-merge', label: 'Merge' },
+  { id: 'automation-limits', label: 'Limits' },
+] as const;
+
 /**
- * The four rungs in the order a person climbs them: Teams, Start, Merge, Ceiling.
- * The ladder owns what two rungs share: the project's roles and its autonomy settings.
+ * The ladder graphic, then the four sections in the order a person sets them up: Who, When,
+ * Merge, Limits. It owns what several of them share: the project's roles and its autonomy settings.
  */
 const Ladder: Component<Props> = (props) => {
   const [roles, { refetch: refetchRoles }] = createResource(() => props.projectId, (id) => api.roles.list(id));
@@ -38,20 +54,58 @@ const Ladder: Component<Props> = (props) => {
   const roleList = () => (roles.error || !Array.isArray(roles()) ? [] : roles()!);
 
   return (
-    <div class="flex flex-col gap-4" data-testid="ladder">
-      <Teams
-        roles={roleList}
-        profiles={props.profiles}
-        settings={settings}
-        rolesError={() => roles.error}
-        onRetryRoles={() => void refetchRoles()}
-        project={props.project}
-        onRoleSaved={() => void refetchRoles()}
-        onDefaultProfile={(id) => void props.saveProject({ default_profile_id: id })}
-      />
-      <Start project={props.project} roles={roleList} statuses={props.statuses} save={props.saveProject} />
-      <Merge settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} save={saveAutonomy} />
-      <Ceiling settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} />
+    <div class="flex min-w-0 flex-col gap-4" data-testid="ladder">
+      <Rungs settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} />
+      <div class="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
+        <nav aria-label="Sections" data-testid="section-index" class="lg:sticky lg:top-4 lg:w-32 lg:shrink-0">
+          <ul class="flex flex-wrap gap-2 lg:flex-col lg:gap-1.5">
+            <For each={SECTIONS}>
+              {(section) => (
+                <li>
+                  <a
+                    href={`#${section.id}`}
+                    class="inline-block rounded-full border px-3 py-1 text-sm"
+                    style={inputStyle}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      document.getElementById(section.id)?.scrollIntoView?.();
+                    }}
+                  >
+                    {section.label}
+                  </a>
+                </li>
+              )}
+            </For>
+          </ul>
+        </nav>
+        <div class="flex min-w-0 max-w-xl flex-1 flex-col gap-4">
+          <Section id="automation-who" title="Who" lead="The agent, model and profile that work on this project, and the team each role goes to.">
+            {props.agent}
+            <Teams
+              roles={roleList}
+              profiles={props.profiles}
+              settings={settings}
+              rolesError={() => roles.error}
+              onRetryRoles={() => void refetchRoles()}
+              project={props.project}
+              onRoleSaved={() => void refetchRoles()}
+              onDefaultProfile={(id) => void props.saveProject({ default_profile_id: id })}
+            />
+            {props.workspace}
+          </Section>
+          <Section id="automation-when" title="When" lead="When a task starts by itself, and what happens to it when a run finishes.">
+            <Start project={props.project} roles={roleList} statuses={props.statuses} save={props.saveProject} />
+            {/* The status a run moves its item to when it starts belongs here, between starting and finishing. */}
+            {props.finish}
+          </Section>
+          <Section id="automation-merge" title="Merge" lead="How much Tack may merge by itself, and what it needs to do so.">
+            <Merge settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} save={saveAutonomy} />
+          </Section>
+          <Section id="automation-limits" title="Limits" lead="What the project may spend and queue, in tokens.">
+            <Limits settings={settings} save={saveAutonomy} />
+          </Section>
+        </div>
+      </div>
     </div>
   );
 };

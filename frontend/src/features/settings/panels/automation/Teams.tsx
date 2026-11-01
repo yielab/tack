@@ -7,7 +7,7 @@ import { toast } from '../../../../shared/ui/toast';
 import { HELP } from '../../../../shared/help/texts';
 import { BOOK } from '../../../../shared/help/routes';
 import type { Project, Role } from '../../../../shared/types';
-import { Heading, Note, SECTION, inputStyle, teamOf } from './parts';
+import { Block, Heading, Note, inputStyle, teamOf } from './parts';
 
 interface Props {
   roles: Accessor<Role[]>;
@@ -23,7 +23,7 @@ interface Props {
   onDefaultProfile: (profileId: string | null) => void;
 }
 
-/** Rung 1: which profile each role works with, and the team and machine that profile names. */
+/** Which profile each role works with, and the team and machine that profile names. */
 const Teams: Component<Props> = (props) => {
   const [fleetList, { refetch: refetchFleets }] = createResource(() => fleetsApi.list().then((r) => r.data.data ?? []));
   const fleets = () => (fleetList.error ? [] : fleetList());
@@ -144,7 +144,7 @@ const Teams: Component<Props> = (props) => {
   );
 
   return (
-    <div class={SECTION} id="automation-teams" data-testid="rung-teams">
+    <Block id="automation-teams" testid="rung-teams">
       <div class="flex items-center gap-2">
         <Heading>Teams</Heading>
         <HelpHint label="Teams" help={HELP.ladderTeams} />
@@ -193,7 +193,7 @@ const Teams: Component<Props> = (props) => {
           How to set up a team there
         </a>
       </div>
-    </div>
+    </Block>
   );
 };
 
