@@ -1,5 +1,5 @@
-import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal, on, onCleanup, onMount } from 'solid-js';
-import { Badge, Button, LoadError } from '../ui';
+import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal, createUniqueId, on, onCleanup, onMount } from 'solid-js';
+import { Button, LoadError, RunState, type DocketRunWord, type RunStateName } from '../ui';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
@@ -23,8 +23,10 @@ import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
+import RunWithAgentButton from './RunWithAgentButton';
 import RunWithAgentModal from './RunWithAgentModal';
 import TeamStepsLine, { runWho } from './TeamSteps';
+import UsageMeter from './UsageMeter';
 import { parseRunLog } from './runLog';
 import { stoppedByLimit } from './runLimit';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso, type StateTone } from './shared';
@@ -40,10 +42,36 @@ export interface LatestRunSummaryProps {
   /** The Execution tab is open and asks for the verdict in its own banner, so the card leaves
    *  out Accept and Reject… and keeps its state, its line and its other links. */
   reviewInTab?: boolean;
+  /** Told the run's state whenever it changes, and `undefined` while the item has no run, so the
+   *  screen can mark the Execution tab with the same state. */
+  onState?: (state: { state: RunStateName; docket?: DocketRunWord } | undefined) => void;
+  /** Under the Run button of an item with no run: who would do it. */
+  idle?: JSX.Element;
+  /** The panel's last line: what happens to the item without the person. It brings its own hairline. */
+  footer?: JSX.Element;
 }
 
-/** Which card the run is: it sets the card's colour and its actions. */
-type RunCardKind = 'queued' | 'running' | 'review' | 'failed' | 'merged' | 'done';
+/** Which card the run is: it sets the card's state and its actions. */
+export type RunCardKind = 'queued' | 'running' | 'review' | 'failed' | 'merged' | 'done';
+
+/** The one filled button of the panel, chosen by where the item is (Run, Answer the question,
+ *  Review and merge, See why it failed, Run again); null when nothing needs doing now. */
+export type NowAction = 'run' | 'answer' | 'review' | 'why' | 'again';
+
+export function primaryNowAction(input: { hasRun: boolean; kind: RunCardKind; asking: boolean; askingBehind: boolean }): NowAction | null {
+  if (!input.hasRun) return 'run';
+  switch (input.kind) {
+    case 'queued': return input.askingBehind ? 'answer' : null;
+    case 'running': return input.asking ? 'answer' : null;
+    case 'review': return 'review';
+    case 'failed': return 'why';
+    case 'merged':
+    case 'done': return 'again';
+  }
+}
+
+/** Status words the banner already says, so the line under it does not repeat them. */
+const SAID_BY_BANNER = new Set(['Queued', 'Running', 'Failed', 'Cancelled', 'Needs a person']);
 
 const EXCERPT_CHARS = 220;
 const ANSWER_CHARS = 600;
@@ -54,10 +82,10 @@ const excerpt = (text: string, max: number) => {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 };
 
-/** The item's latest run as one card whose colour and actions follow the run: its last steps
- *  and Stop while it runs; the opening of its report and Accept / Reject… when it wants a
- *  verdict; why it failed; that it merged; why it still waits. Renders nothing until the
- *  item has a run. */
+/** The item's Now panel: its latest run as one card whose state and actions follow the run (its
+ *  last steps and Stop while it runs; the opening of its report and Accept / Reject… when it wants
+ *  a verdict; why it failed; that it merged; why it still waits), with one filled button for what
+ *  to do next. An item with no run shows Run with agent instead. */
 const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const store = useExecutionStore();
   onMount(() => onCleanup(store.watchItem(props.itemId)));
@@ -108,15 +136,27 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     const s = describeExecutionState(latest()?.state ?? 'queued');
     return { label: s.label, tone: s.tone };
   };
-  const background = () => {
+  // The run in the one language every screen uses; the docket words stay as the banner's second line.
+  const runState = (): { state: RunStateName; docket?: DocketRunWord } => {
+    const raw = attempt()?.state ?? latest()?.state;
     switch (kind()) {
-      case 'running': return 'var(--color-accent-soft)';
-      case 'review': return 'var(--color-warning-100)';
-      case 'merged': return 'var(--color-success-100)';
-      case 'failed': return status().tone === 'danger' ? 'var(--color-danger-100)' : 'var(--color-bg-subtle)';
-      case 'done': return status().tone === 'success' ? 'var(--color-success-100)' : 'var(--color-bg-app)';
-      default: return 'var(--color-bg-subtle)';
+      case 'queued': return { state: 'queued' };
+      case 'running':
+        if (asking()) return { state: 'needs', docket: 'Needs a person' };
+        return stopRequested() ? { state: 'running', docket: 'Cancellation requested' } : { state: 'running' };
+      case 'review': return { state: 'review', docket: 'Needs your review' };
+      case 'failed':
+        if (needsPerson()) return { state: 'needs', docket: 'Needs a person' };
+        return { state: raw === 'cancelled' ? 'cancelled' : 'failed' };
+      case 'merged': return { state: 'done' };
+      case 'done': return noChange() ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
     }
+  };
+  // The words under the banner: what the status adds to it, and when it last changed.
+  const statusLine = () => {
+    const label = status().label;
+    const when = relativeTimeFromIso(attempt()?.ended_at ?? attempt()?.started_at ?? latest()?.created_at ?? '');
+    return [SAID_BY_BANNER.has(label) ? null : label, when].filter(Boolean).join(' · ');
   };
 
   // What the agent said at the end: the opening of its report, or, for a run that changed
@@ -249,243 +289,290 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const [another, setAnother] = createSignal(false);
   const canPickAnother = () => !!props.itemTitle && !!props.projectId;
 
+  createEffect(() => props.onState?.(latest() ? runState() : undefined));
+
+  const headingId = createUniqueId();
   const muted = (extra?: JSX.CSSProperties): JSX.CSSProperties => ({ color: 'var(--color-text-secondary)', ...extra });
   const open = (label: string) => (
     <Button size="sm" variant="secondary" onClick={() => props.onOpen()}>
       {label}
     </Button>
   );
+  const openPrimary = (label: string) => <Button size="md" onClick={() => props.onOpen()}>{label}</Button>;
+  const primary = () =>
+    primaryNowAction({ hasRun: !!latest(), kind: kind(), asking: asking(), askingBehind: !!askingBehind() });
+  const runAgain = (variant: 'primary' | 'ghost') => (
+    <RunWithAgentButton
+      itemId={props.itemId}
+      itemTitle={props.itemTitle ?? ''}
+      projectId={props.projectId ?? ''}
+      variant={variant}
+      onCreated={props.onCreated}
+    />
+  );
 
   return (
-    <Show when={latest()}>
-      {(run) => (
-        <div
-          data-testid="latest-run"
-          data-state={kind()}
-          class="min-w-0 space-y-2 rounded-item p-4"
-          style={{ 'background-color': background(), 'box-shadow': 'var(--shadow-sm)' }}
-        >
+    <section
+      data-testid="now-panel"
+      aria-labelledby={headingId}
+      class="min-w-0 space-y-3 rounded-item p-4"
+      style={{ 'background-color': 'var(--color-bg-panel)', 'box-shadow': 'var(--shadow-sm)' }}
+    >
+      <h2 id={headingId} class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Now</h2>
+
+      <Show when={!latest()}>
+        <div data-testid="now-idle" class="space-y-1.5">
+          <p class="text-sm" style={muted()}>Nothing has run on this task yet.</p>
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Last run</span>
-            <span role="status" aria-live="polite" class="inline-flex">
-              <Badge tone={status().tone}>{status().label}</Badge>
-            </span>
-            <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              {relativeTimeFromIso(attempt()?.ended_at ?? attempt()?.started_at ?? run().created_at)}
-            </span>
+            <RunWithAgentButton
+              itemId={props.itemId}
+              itemTitle={props.itemTitle ?? ''}
+              projectId={props.projectId ?? ''}
+              onCreated={props.onCreated}
+            />
           </div>
+          {props.idle}
+        </div>
+      </Show>
 
-          {/* A question waiting for the person comes first, with its answer open. On the Execution
-              tab the attempt shows it, so it is asked for in one place. */}
-          <Show when={asking() && !props.reviewInTab && attempt()}>
-            {(a) => (
-              <DecisionInbox
-                requestId={a().request_id}
-                attemptNumber={a().attempt_number}
-                attemptId={a().attempt_id}
-                attemptState={a().state}
-                pendingOnly
-                onResolved={reload}
-              />
-            )}
-          </Show>
-
-          <Show when={attempts().status === 'error'}>
-            {(() => {
-              const a = attempts();
-              return a.status === 'error' ? <LoadError what="the run's attempts" error={a.error} onRetry={reload} /> : null;
-            })()}
-          </Show>
-
-          <Show when={kind() === 'queued'}>
-            <p data-testid="latest-run-waiting" class="text-sm" style={muted()}>
-              <Show when={waitingReason()} fallback="Waiting for a runner to pick it up.">
-                Waiting:{' '}
-                <For each={waitingParts()}>
-                  {(part) => (
-                    <Show when={part.href} fallback={part.text}>
-                      <a href={part.href} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
-                        {part.text}
-                      </a>
-                    </Show>
-                  )}
-                </For>
-              </Show>
-              <Show when={waitingReason() && latest()?.waiting_since}>
-                {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
-              </Show>
+      <Show when={latest()}>
+        {(run) => (
+          <div data-testid="latest-run" data-state={kind()} class="min-w-0 space-y-2">
+            <div role="status" aria-live="polite">
+              <RunState size="banner" {...runState()} />
+            </div>
+            <p data-testid="latest-run-status" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {statusLine()}
             </p>
-          </Show>
 
-          <Show when={kind() === 'running' && eventsFailed()}>
-            <LoadError what="the agent's last steps" error={events.error} onRetry={() => void refetch()} />
-          </Show>
-
-          <Show when={kind() === 'running'}>
-            <TeamStepsLine profileId={runWho(latest()).profileId} agentKind={runWho(latest()).agentKind} events={events.state === 'errored' ? [] : (events.latest ?? [])} />
-            <Show
-              when={steps().length > 0}
-              fallback={
-                <p class="text-sm" style={muted()}>
-                  {asking()
-                    ? 'The agent is waiting for your answer.'
-                    : 'The agent is working on it.'}
-                </p>
-              }
-            >
-              <ol data-testid="latest-run-steps" class="space-y-0.5 text-sm" style={muted()}>
-                <For each={steps()}>{(line) => <li class="break-words">{line}</li>}</For>
-              </ol>
+            {/* A question waiting for the person comes first, with its answer open. On the Execution
+                tab the attempt shows it, so it is asked for in one place. */}
+            <Show when={asking() && !props.reviewInTab && attempt()}>
+              {(a) => (
+                <DecisionInbox
+                  requestId={a().request_id}
+                  attemptNumber={a().attempt_number}
+                  attemptId={a().attempt_id}
+                  attemptState={a().state}
+                  pendingOnly
+                  onResolved={reload}
+                />
+              )}
             </Show>
-          </Show>
 
-          <Show when={kind() === 'failed'}>
-            <Show
-              when={whyStopped() ?? failedReason()}
-              fallback={<p class="text-sm" style={muted()}>The run did not finish.</p>}
-            >
-              {(why) => (
-                <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: needsAPerson(attempt()) ? 'var(--color-text-primary)' : 'var(--color-danger-600)' }}>
-                  {why()}
+            <Show when={attempts().status === 'error'}>
+              {(() => {
+                const a = attempts();
+                return a.status === 'error' ? <LoadError what="the run's attempts" error={a.error} onRetry={reload} /> : null;
+              })()}
+            </Show>
+
+            <Show when={kind() === 'queued'}>
+              <p data-testid="latest-run-waiting" class="text-sm" style={muted()}>
+                <Show when={waitingReason()} fallback="Waiting for a runner to pick it up.">
+                  Waiting:{' '}
+                  <For each={waitingParts()}>
+                    {(part) => (
+                      <Show when={part.href} fallback={part.text}>
+                        <a href={part.href} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
+                          {part.text}
+                        </a>
+                      </Show>
+                    )}
+                  </For>
+                </Show>
+                <Show when={waitingReason() && latest()?.waiting_since}>
+                  {(since) => <span style={{ color: 'var(--color-text-tertiary)' }}> · first seen {relativeTimeFromIso(since())}</span>}
+                </Show>
+              </p>
+            </Show>
+
+            <Show when={kind() === 'running' && eventsFailed()}>
+              <LoadError what="the agent's last steps" error={events.error} onRetry={() => void refetch()} />
+            </Show>
+
+            <Show when={kind() === 'running'}>
+              <TeamStepsLine profileId={runWho(latest()).profileId} agentKind={runWho(latest()).agentKind} events={events.state === 'errored' ? [] : (events.latest ?? [])} />
+              <Show
+                when={steps().length > 0}
+                fallback={
+                  <p class="text-sm" style={muted()}>
+                    {asking()
+                      ? 'The agent is waiting for your answer.'
+                      : 'The agent is working on it.'}
+                  </p>
+                }
+              >
+                <ol data-testid="latest-run-steps" class="space-y-0.5 text-sm" style={muted()}>
+                  <For each={steps()}>{(line) => <li class="break-words">{line}</li>}</For>
+                </ol>
+              </Show>
+            </Show>
+
+            <Show when={kind() === 'failed'}>
+              <Show
+                when={whyStopped() ?? failedReason()}
+                fallback={<p class="text-sm" style={muted()}>The run did not finish.</p>}
+              >
+                {(why) => (
+                  <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: needsAPerson(attempt()) ? 'var(--color-text-primary)' : 'var(--color-danger-600)' }}>
+                    {why()}
+                  </p>
+                )}
+              </Show>
+            </Show>
+
+            <Show when={kind() === 'merged'}>
+              <p data-testid="latest-run-merged" class="text-sm" style={muted()}>
+                {mergedBy() ? `Merged ${relativeTimeFromIso(mergedBy()!.merged_at)}` : 'Its pull request is merged.'}
+              </p>
+            </Show>
+
+            <Show when={kind() === 'review' || kind() === 'done' || kind() === 'merged'}>
+              <Show when={whyStopped()}>
+                {(why) => <p data-testid="latest-run-why" class="text-sm" style={{ color: 'var(--color-danger-600)' }}>{why()}</p>}
+              </Show>
+              <Show when={folder()}>
+                <p data-testid="latest-run-folder" class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This team works in a folder: nothing to merge</p>
+              </Show>
+              <Show when={said()}>
+                {(text) => (
+                  <>
+                    <Show when={noChange()}>
+                      <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
+                    </Show>
+                    <p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>
+                  </>
+                )}
+              </Show>
+            </Show>
+
+            <Show when={metaLine()}>
+              {(line) => (
+                <p data-testid="latest-run-meta" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>
+              )}
+            </Show>
+            <Show when={usageLine()}>
+              {(line) => (
+                <p data-testid="latest-run-usage" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  {line()}
                 </p>
               )}
             </Show>
-          </Show>
-
-          <Show when={kind() === 'merged'}>
-            <p data-testid="latest-run-merged" class="text-sm" style={muted()}>
-              {mergedBy() ? `Merged ${relativeTimeFromIso(mergedBy()!.merged_at)}` : 'Its pull request is merged.'}
-            </p>
-          </Show>
-
-          <Show when={kind() === 'review' || kind() === 'done' || kind() === 'merged'}>
-            <Show when={whyStopped()}>
-              {(why) => <p data-testid="latest-run-why" class="text-sm" style={{ color: 'var(--color-danger-600)' }}>{why()}</p>}
+            <Show when={questionCount() > 0}>
+              <p data-testid="latest-run-questions" class="text-xs">
+                <button type="button" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => props.onOpen()}>
+                  The agent asked {questionCount()} {questionCount() === 1 ? 'question' : 'questions'}
+                </button>
+              </p>
             </Show>
-            <Show when={folder()}>
-              <p data-testid="latest-run-folder" class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This team works in a folder: nothing to merge</p>
-            </Show>
-            <Show when={said()}>
-              {(text) => (
+            <Show when={latest()?.limit}>
+              {(limit) => (
                 <>
-                  <Show when={noChange()}>
-                    <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
+                  <Show when={limit().tokens !== null && limit().used !== null && limit().used !== undefined}>
+                    <UsageMeter testId="run-limit-used" used={limit().used!} limit={limit().tokens!} />
                   </Show>
-                  <p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>
+                  <RunLimitNote
+                    limit={limit()}
+                    running={false}
+                    stopped={kind() === 'failed' && stoppedByLimit(attempt()?.terminal_reason)}
+                    testId="latest-run-limit"
+                    itemId={props.itemId}
+                    itemTitle={props.itemTitle}
+                    projectId={props.projectId}
+                    onCreated={props.onCreated}
+                  />
                 </>
               )}
             </Show>
-          </Show>
 
-          <Show when={metaLine()}>
-            {(line) => (
-              <p data-testid="latest-run-meta" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>
-            )}
-          </Show>
-          <Show when={usageLine()}>
-            {(line) => (
-              <p data-testid="latest-run-usage" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                {line()}
-              </p>
-            )}
-          </Show>
-          <Show when={questionCount() > 0}>
-            <p data-testid="latest-run-questions" class="text-xs">
-              <button type="button" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }} onClick={() => props.onOpen()}>
-                The agent asked {questionCount()} {questionCount() === 1 ? 'question' : 'questions'}
-              </button>
-            </p>
-          </Show>
-          <Show when={latest()?.limit}>
-            {(limit) => (
-              <RunLimitNote
-                limit={limit()}
-                running={kind() === 'running'}
-                stopped={kind() === 'failed' && stoppedByLimit(attempt()?.terminal_reason)}
-                testId="latest-run-limit"
+            <Show when={kind() === 'failed' && needsAPerson(attempt())}>
+              <RerunAtL3
+                attempt={attempt()!}
                 itemId={props.itemId}
                 itemTitle={props.itemTitle}
                 projectId={props.projectId}
                 onCreated={props.onCreated}
               />
-            )}
-          </Show>
-
-          <Show when={kind() === 'failed' && needsAPerson(attempt())}>
-            <RerunAtL3
-              attempt={attempt()!}
-              itemId={props.itemId}
-              itemTitle={props.itemTitle}
-              projectId={props.projectId}
-              onCreated={props.onCreated}
-            />
-          </Show>
-
-          <div class="flex flex-wrap items-center gap-2 pt-1">
-            <Show when={kind() === 'running'}>
-              {open(asking() ? 'Open the question' : 'Follow live')}
-              <Button size="sm" variant="secondary" disabled={stopping() || stopRequested()} loading={stopping()} onClick={() => void stop()}>
-                {stopRequested() ? 'Stopping…' : 'Stop'}
-              </Button>
             </Show>
-            <Show when={kind() === 'queued'}>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!canPickAnother()}
-                title={canPickAnother() ? undefined : 'This screen does not know the task'}
-                onClick={() => setAnother(true)}
-              >
-                Run on another computer
-              </Button>
-              <Show when={askingBehind()}>
-                {(b) => (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    title={b().question ?? undefined}
-                    onClick={() => window.location.assign(itemHref(b(), `?tab=execution&run=${encodeURIComponent(b().request_id)}`))}
-                  >
-                    Answer it
-                  </Button>
-                )}
+
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <Show when={primary() === 'answer' && kind() === 'running'}>{openPrimary('Answer the question')}</Show>
+              <Show when={primary() === 'answer' && kind() === 'queued' && askingBehind()}>
+                {(() => {
+                  const b = askingBehind()!;
+                  return (
+                    <Button
+                      size="md"
+                      title={b.question ?? undefined}
+                      onClick={() => window.location.assign(itemHref(b, `?tab=execution&run=${encodeURIComponent(b.request_id)}`))}
+                    >
+                      Answer it
+                    </Button>
+                  );
+                })()}
               </Show>
-              <Show when={canPickAnother()}>
-                <RunWithAgentModal
-                  isOpen={another()}
-                  onClose={() => setAnother(false)}
-                  itemId={props.itemId}
-                  itemTitle={props.itemTitle!}
-                  projectId={props.projectId!}
-                  onCreated={(requestId) => {
-                    void store.cancel(run().request_id).catch(() => undefined);
-                    props.onCreated?.(requestId);
+              <Show when={primary() === 'review'}>{openPrimary('Review and merge')}</Show>
+              <Show when={primary() === 'why'}>{openPrimary(needsPerson() ? 'Open the question' : 'See why it failed')}</Show>
+              <Show when={primary() === 'again'}>{runAgain('primary')}</Show>
+
+              <Show when={kind() === 'running'}>
+                <Show when={!asking()}>{open('Follow live')}</Show>
+                <Button size="sm" variant="secondary" disabled={stopping() || stopRequested()} loading={stopping()} onClick={() => void stop()}>
+                  {stopRequested() ? 'Stopping…' : 'Stop'}
+                </Button>
+              </Show>
+              <Show when={kind() === 'queued'}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={!canPickAnother()}
+                  title={canPickAnother() ? undefined : 'This screen does not know the task'}
+                  onClick={() => setAnother(true)}
+                >
+                  Run on another computer
+                </Button>
+                <Show when={canPickAnother()}>
+                  <RunWithAgentModal
+                    isOpen={another()}
+                    onClose={() => setAnother(false)}
+                    itemId={props.itemId}
+                    itemTitle={props.itemTitle!}
+                    projectId={props.projectId!}
+                    onCreated={(requestId) => {
+                      void store.cancel(run().request_id).catch(() => undefined);
+                      props.onCreated?.(requestId);
+                    }}
+                  />
+                </Show>
+              </Show>
+              <Show when={!props.reviewInTab && attempt() && (kind() === 'review' || (kind() === 'done' && !!review()))}>
+                <ReviewActions
+                  requestId={attempt()!.request_id}
+                  attemptNumber={attempt()!.attempt_number}
+                  review={review()}
+                  acceptVariant="secondary"
+                  onReviewed={(r) => {
+                    setSaved(r);
+                    reload();
                   }}
                 />
               </Show>
-            </Show>
-            <Show when={!props.reviewInTab && attempt() && (kind() === 'review' || (kind() === 'done' && !!review()))}>
-              <ReviewActions
-                requestId={attempt()!.request_id}
-                attemptNumber={attempt()!.attempt_number}
-                review={review()}
-                onReviewed={(r) => {
-                  setSaved(r);
-                  reload();
-                }}
-              />
-            </Show>
-            <Show when={kind() === 'review' || kind() === 'merged' || kind() === 'done' || kind() === 'failed'}>
-              {open(needsPerson() ? 'Open the question' : 'See what it did')}
+              <Show when={kind() === 'merged' || kind() === 'done'}>{open('See what it did')}</Show>
+              {/* Starting another run stays possible from every state, drawn as the quietest button
+                  when something else is what to do now. */}
+              <Show when={primary() !== 'again'}>{runAgain('ghost')}</Show>
+            </div>
+
+            <Show when={finished() && !noChange() && kind() !== 'failed' && !isMerged() && attempt()?.merge}>
+              {(merge) => <MergeButton attemptId={attempt()!.attempt_id} merge={merge()} variant="secondary" onMerged={reload} />}
             </Show>
           </div>
+        )}
+      </Show>
 
-          <Show when={finished() && !noChange() && kind() !== 'failed' && !isMerged() && attempt()?.merge}>
-            {(merge) => <MergeButton attemptId={attempt()!.attempt_id} merge={merge()} onMerged={reload} />}
-          </Show>
-        </div>
-      )}
-    </Show>
+      {props.footer}
+    </section>
   );
 };
 
