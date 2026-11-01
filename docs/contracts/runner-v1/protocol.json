@@ -24,6 +24,13 @@
       "authentication": "runner_bearer_credential",
       "request_fixture": "recovery-observation.request.json",
       "response_fixture": "recovery-observation.response.json"
+    },
+    "team_activity": {
+      "method": "POST",
+      "path": "/activity",
+      "authentication": "runner_bearer_credential",
+      "request_fixture": "activity.request.json",
+      "response_fixture": "activity.response.json"
     }
   },
   "stable_error_codes": [

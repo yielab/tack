@@ -1476,6 +1476,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runner/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report what a harness's teams are doing: the tasks that changed, each replacing what the board holds for it (additive v1 operation; exact path fixed by protocol.json)
+         * @description Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description protocol_version: 1, plus this exchange's fixture-frozen fields */
+            requestBody: {
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            responses: {
+                /** @description Activity recorded; a repeated report changes nothing */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+                /** @description invalid_request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description forbidden / runner_revoked */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description not_found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runner/v1/attempts/{attempt_id}/accept": {
         parameters: {
             query?: never;
@@ -2937,6 +3026,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/teams/{id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/teams/{id}/activity */
+        get: operations["team_activity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/templates": {
         parameters: {
             query?: never;
@@ -3031,6 +3137,31 @@ export interface components {
             kind: "manual";
             text: string;
             title: string;
+        };
+        /**
+         * @description Where a task is in its life.
+         * @enum {string}
+         */
+        ActivityState: "queued" | "running" | "waiting" | "blocked" | "done" | "failed" | "cancelled";
+        /** @description One task a team holds. */
+        ActivityTask: {
+            /**
+             * Format: date-time
+             * @description When the harness last changed the task. Absent when it did not say.
+             */
+            changed_at?: string | null;
+            current_step?: null | components["schemas"]["CurrentStep"];
+            /** @description The steps that already ended, oldest first. */
+            finished_steps?: components["schemas"]["FinishedStep"][];
+            /**
+             * @description The item the board started this task for; absent for work the board did not start (one a
+             *     person, a routine or another channel gave the team directly).
+             */
+            on_board?: string | null;
+            /** @description The task's name in the harness, which is all a person can find it by there. */
+            ref: string;
+            state: components["schemas"]["ActivityState"];
+            waits_on?: null | components["schemas"]["WaitsOn"];
         };
         /**
          * @description Request body for `POST /api/runner-fleets/{fleet_id}/members`.
@@ -3867,6 +3998,24 @@ export interface components {
             /** @description The team that no profile, or more than one, names; the item's run settings name no profile. */
             unresolved_team?: string | null;
         };
+        /** @description The step a task is inside. */
+        CurrentStep: {
+            /**
+             * Format: int32
+             * @description How many times the task went back to an earlier step before this one; `0` on a first pass.
+             */
+            cycle?: number | null;
+            /** @description The model the step was planned on, which is not always the one that served it. */
+            model?: string | null;
+            name: string;
+            /** @description Who does the step, in the harness's own word for it, shown as data. */
+            role?: string | null;
+            /**
+             * Format: date-time
+             * @description When the step began.
+             */
+            since?: string | null;
+        };
         CustomFieldDefinition: {
             /** Format: date-time */
             created_at: string;
@@ -4202,6 +4351,29 @@ export interface components {
             runs_by_start: components["schemas"]["RunsByStart"];
             since?: string | null;
             verification_tax: components["schemas"]["VerificationTax"];
+        };
+        /** @description A step that ended, with what it said. */
+        FinishedStep: {
+            /** @description What the step took for granted. */
+            assumptions?: string[];
+            /** Format: date-time */
+            finished_at?: string | null;
+            model?: string | null;
+            name: string;
+            /** @description Whether the step ended well. Absent when the harness did not say. */
+            ok?: boolean | null;
+            /** @description What the step left to the next one or to a person. */
+            questions?: string[];
+            role?: string | null;
+            /** @description What the step said it did. */
+            summary?: string | null;
+            /**
+             * Format: int64
+             * @description The tokens the step used, cache reads not counted. Absent when not measured.
+             */
+            tokens?: number | null;
+            /** @description What a reviewing step decided, in the harness's own word, shown as data. */
+            verdict?: string | null;
         };
         FleetListResponse: {
             data: components["schemas"]["FleetSummary"][];
@@ -5150,6 +5322,30 @@ export interface components {
             order: number;
             wip_limit?: number | null;
         };
+        /** @description What a team is doing, as its agent last reported it. */
+        TeamActivityEntry: {
+            harness: string;
+            reason?: string | null;
+            /**
+             * Format: date-time
+             * @description When the board last heard what the team is doing; `null` when it never has.
+             */
+            reported_at?: string | null;
+            /** @description The runner whose report this is: the newest one when several report the team. */
+            runner?: string | null;
+            /**
+             * @description Whether the agent can say what its teams are doing. When `false`, `tasks` is empty and
+             *     `reason` says why.
+             */
+            supported: boolean;
+            /**
+             * @description The tasks the team holds, the ones still going first. A task with `on_board` `null` is work
+             *     the board did not start: a person, a routine or another channel gave it to the team
+             *     directly. Tasks that ended stay for 14 days.
+             */
+            tasks: components["schemas"]["ActivityTask"][];
+            team: string;
+        };
         /**
          * @description Whether a team runs to the end alone.
          * @enum {string}
@@ -5594,6 +5790,11 @@ export interface components {
             /** @description When the run started, or was taken by the computer if it has not started (RFC 3339). */
             started_at: string;
         };
+        /**
+         * @description What a waiting task waits for.
+         * @enum {string}
+         */
+        WaitsOn: "approval" | "answer";
         /** @description Full workflow configuration for a project. */
         WorkflowConfig: {
             statuses: components["schemas"]["StatusDef"][];
@@ -9668,6 +9869,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["TeamList"];
                 };
+            };
+        };
+    };
+    team_activity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The team's name */
+                id: string;
+                harness: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamActivityEntry"];
+                };
+            };
+            /** @description not_found (no active runner reports a team of that name) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

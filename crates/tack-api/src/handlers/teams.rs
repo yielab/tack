@@ -7,13 +7,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::instrument;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use tack_db::queries;
-use tack_protocol::execution::TeamReport;
+use tack_protocol::execution::{
+    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, TeamReport,
+};
 
-use crate::error::ApiResult;
-use crate::extract::Json;
+use crate::error::{ApiError, ApiResult};
+use crate::extract::{Json, Path, Query};
 use crate::router::AppState;
 
 /// A profile that names a team.
@@ -144,4 +146,148 @@ pub async fn list_teams(State(state): State<AppState>) -> ApiResult<Json<TeamLis
         .collect();
     teams.sort_by(|a, b| (&a.name, &a.harness).cmp(&(&b.name, &b.harness)));
     Ok(Json(TeamList { teams }))
+}
+
+/// Which agent's team is meant when two report a team of the same name.
+#[derive(Debug, Deserialize, IntoParams)]
+pub struct ActivityQuery {
+    pub harness: Option<String>,
+}
+
+/// What a team is doing, as its agent last reported it.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct TeamActivityEntry {
+    pub team: String,
+    pub harness: String,
+    /// Whether the agent can say what its teams are doing. When `false`, `tasks` is empty and
+    /// `reason` says why.
+    pub supported: bool,
+    pub reason: Option<String>,
+    /// The runner whose report this is: the newest one when several report the team.
+    pub runner: Option<String>,
+    /// When the board last heard what the team is doing; `null` when it never has.
+    pub reported_at: Option<DateTime<Utc>>,
+    /// The tasks the team holds, the ones still going first. A task with `on_board` `null` is work
+    /// the board did not start: a person, a routine or another channel gave it to the team
+    /// directly. Tasks that ended stay for 14 days.
+    pub tasks: Vec<ActivityTask>,
+}
+
+/// The text of a stored enum word as the enum.
+fn word<T: serde::de::DeserializeOwned>(text: &str) -> Option<T> {
+    serde_json::from_value(Value::String(text.to_owned())).ok()
+}
+
+fn instant(text: &str) -> Option<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|at| at.with_timezone(&Utc))
+}
+
+/// GET /api/teams/{id}/activity
+#[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/teams/{id}/activity",
+    tag = "teams",
+    params(("id" = String, Path, description = "The team's name"), ActivityQuery),
+    responses(
+        (status = 200, description = "What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say", body = TeamActivityEntry),
+        (status = 404, description = "not_found (no active runner reports a team of that name)"),
+    ),
+)]
+pub async fn team_activity(
+    State(state): State<AppState>,
+    Path(team): Path<String>,
+    Query(query): Query<ActivityQuery>,
+) -> ApiResult<Json<TeamActivityEntry>> {
+    // The newest report of the team, by the agents that report it.
+    let mut found: Option<(String, String, DateTime<Utc>, Option<String>)> = None;
+    for runner in state.repo.list_runners().await? {
+        if runner.state != "active" || runner.revoked_at.is_some() {
+            continue;
+        }
+        for harness in tack_app::autonomy::harnesses_of(&runner.capability_snapshot) {
+            let Some(kind) = serde_json::to_value(&harness.harness_kind)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_owned))
+            else {
+                continue;
+            };
+            let reports = harness
+                .teams
+                .as_ref()
+                .is_some_and(|teams| teams.iter().any(|reported| reported.name == team));
+            if !reports
+                || query.harness.as_ref().is_some_and(|wanted| *wanted != kind)
+                || found
+                    .as_ref()
+                    .is_some_and(|(_, _, seen, _)| *seen > harness.probed_at)
+            {
+                continue;
+            }
+            let activity = harness.features().and_then(|features| features.activity);
+            let unsupported = match activity {
+                Some(value) if value.support == CapabilitySupport::Supported => None,
+                Some(value) => Some(value.reason.unwrap_or_default()),
+                None => Some("this agent does not say".to_owned()),
+            };
+            found = Some((kind, runner.name.clone(), harness.probed_at, unsupported));
+        }
+    }
+    let Some((harness, runner, _, unsupported)) = found else {
+        return Err(ApiError::NotFound(format!(
+            "no active runner reports a team named {team}"
+        )));
+    };
+    if unsupported.is_some() {
+        return Ok(Json(TeamActivityEntry {
+            team,
+            harness,
+            supported: false,
+            reason: unsupported,
+            runner: Some(runner),
+            reported_at: None,
+            tasks: Vec::new(),
+        }));
+    }
+    let rows = queries::team_activity::team_tasks(&state.repo, &team, Some(&harness)).await?;
+    let mut steps = std::collections::HashMap::<String, Vec<FinishedStep>>::new();
+    for row in queries::team_activity::team_task_steps(&state.repo, &harness, &team).await? {
+        if let Ok(step) = serde_json::from_str::<FinishedStep>(&row.step) {
+            steps.entry(row.task_ref).or_default().push(step);
+        }
+    }
+    let reported_at = rows
+        .iter()
+        .filter_map(|row| instant(&row.reported_at))
+        .max();
+    let mut tasks: Vec<ActivityTask> = rows
+        .into_iter()
+        .filter_map(|row| {
+            Some(ActivityTask {
+                state: word(&row.state)?,
+                waits_on: row.waits_on.as_deref().and_then(word),
+                current_step: row
+                    .current_step
+                    .as_deref()
+                    .and_then(|text| serde_json::from_str::<CurrentStep>(text).ok()),
+                finished_steps: steps.remove(&row.task_ref).unwrap_or_default(),
+                changed_at: row.changed_at.as_deref().and_then(instant),
+                on_board: row.on_board,
+                task_ref: row.task_ref,
+            })
+        })
+        .collect();
+    // The ones still going first; the rows come newest change first and the sort keeps that.
+    tasks.sort_by_key(|task| task.state.over());
+    Ok(Json(TeamActivityEntry {
+        team,
+        harness,
+        supported: true,
+        reason: None,
+        runner: Some(runner),
+        reported_at,
+        tasks,
+    }))
 }

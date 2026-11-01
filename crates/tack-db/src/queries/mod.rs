@@ -29,3 +29,4 @@ pub mod prill_records;
 pub mod projects;
 pub mod pull_requests;
 pub mod rate_card;
+pub mod team_activity;

@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, Usage,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, Usage,
     WorkspaceId as DomainWorkspaceId,
 };
 use tokio::sync::{Mutex, mpsc};
@@ -40,6 +40,7 @@ use crate::{
     },
 };
 
+mod activity;
 mod client;
 pub mod daemon;
 mod probe;
@@ -156,6 +157,11 @@ fn capabilities() -> FeatureCapabilities {
             CapabilitySupport::Supported,
             "through a team's `tack_proposals` record set",
         )),
+        activity: Some(capability(
+            CapabilitySupport::Supported,
+            "the team's task list, with the step each task is in and the steps it finished, \
+             including the work its CLI, a routine or another channel gave it",
+        )),
         additional: policy_capability(
             CapabilitySupport::Supported,
             "the profile's denied tools and the network flag become the task's restrictions, \
@@ -241,6 +247,8 @@ pub struct DocketAdapter {
     state_dir: PathBuf,
     ensured: Mutex<HashSet<String>>,
     live: Mutex<HashMap<String, Live>>,
+    /// Where the activity reader is in each team's tasks and trace.
+    activity: Mutex<HashMap<String, activity::TeamCursor>>,
 }
 
 impl DocketAdapter {
@@ -252,6 +260,7 @@ impl DocketAdapter {
             state_dir,
             ensured: Mutex::new(HashSet::new()),
             live: Mutex::new(HashMap::new()),
+            activity: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1217,6 +1226,11 @@ impl HarnessProbe for DocketAdapter {
 
     fn declared_capabilities(&self) -> FeatureCapabilities {
         capabilities()
+    }
+
+    async fn activity(&self) -> Option<Vec<TeamActivity>> {
+        let mut cursors = self.activity.lock().await;
+        Some(activity::read(&self.client, &mut cursors, Utc::now()).await)
     }
 }
 

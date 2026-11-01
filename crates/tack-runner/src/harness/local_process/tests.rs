@@ -53,6 +53,7 @@ impl HarnessGrammar for TestGrammar {
         let advisory = || capability(CapabilitySupport::Advisory, "test");
         FeatureCapabilities {
             proposals: None,
+            activity: None,
             cancel: advisory(),
             resume: advisory(),
             decisions: advisory(),

@@ -1,9 +1,9 @@
 //! Runner-protocol handler modules, mounted under `/api/runner/v1` (see
 //! `docs/contracts/runner-v1/protocol.json`'s `base_path`) by `router.rs`.
 //!
-//! Only the additive `recovery-observation` operation has an explicit path in
-//! `protocol.json` (`/attempts/{attempt_id}/recovery-observation`, preserved
-//! here verbatim, relative to `base_path`); every other canonical exchange in
+//! Only the additive `recovery-observation` and `team_activity` operations have an explicit
+//! path in `protocol.json` (`/attempts/{attempt_id}/recovery-observation` and `/activity`,
+//! preserved here verbatim, relative to `base_path`); every other canonical exchange in
 //! `docs/contracts/runner-v1/` fixes payload shapes, not URLs.
 //!
 //! `runner_auth` lives at `handlers/runner_protocol/runner_auth.rs` (a
@@ -46,6 +46,7 @@ use tack_app::runs::submit_artifacts::{
 };
 use tack_db::StoreError;
 use tack_db::repo::execution::state as execution_state;
+use tack_db::repo::team_activity::TeamTaskReport;
 use tack_db::{
     Repository, queries,
     repo::execution::{
@@ -55,17 +56,17 @@ use tack_db::{
     },
 };
 use tack_protocol::execution::{
-    ArtifactContentResponse, ArtifactGrant, ArtifactManifestRequest, ArtifactManifestResponse,
-    ArtifactUpload, AttemptId, AttemptSnapshot, AttemptTransitionRequest,
-    AttemptTransitionResponse, CancelObservation, CancellationObservationRequest,
-    CancellationObservationResponse, ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest,
-    ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer, DecisionCreateRequest,
-    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
-    DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot, EnrollmentRequest,
-    EnrollmentResponse, EventBatchRequest, EventBatchResponse, ExecutionRequestSnapshot,
-    ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse, LeaseResult,
-    ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse, RefreshRequest,
-    RefreshResponse, RunnerId, StableErrorCode,
+    ActivityReport, ActivityResponse, ActivityState, ArtifactContentResponse, ArtifactGrant,
+    ArtifactManifestRequest, ArtifactManifestResponse, ArtifactUpload, AttemptId, AttemptSnapshot,
+    AttemptTransitionRequest, AttemptTransitionResponse, CancelObservation,
+    CancellationObservationRequest, CancellationObservationResponse, ClaimGranted, ClaimIdle,
+    ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer,
+    DecisionCreateRequest, DecisionCreateResponse, DecisionOption, DecisionPollRequest,
+    DecisionPollResponse, DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot,
+    EnrollmentRequest, EnrollmentResponse, EventBatchRequest, EventBatchResponse,
+    ExecutionRequestSnapshot, ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse,
+    LeaseResult, ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse,
+    RefreshRequest, RefreshResponse, RunnerId, StableErrorCode,
 };
 use uuid::Uuid;
 
@@ -174,6 +175,7 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
         .route("/refresh", post(refresh))
         .route("/claim", post(claim))
         .route("/heartbeat", post(heartbeat))
+        .route("/activity", post(submit_activity))
         .route("/attempts/{attempt_id}/accept", post(accept_attempt))
         .route("/attempts/{attempt_id}/start", post(start_attempt))
         .route("/attempts/{attempt_id}/events", post(submit_events))
@@ -287,6 +289,13 @@ const ARTIFACT_UPLOAD_WINDOW_SECONDS: i64 = 600;
 const ARTIFACT_FENCING_TOKEN_HEADER: &str = "x-tack-fencing-token";
 /// Not fixed by any fixture: a reasonable no-work poll backoff hint.
 const NO_WORK_RETRY_AFTER_MS: u64 = 5_000;
+/// Not fixed by `limits.json`: what one activity report may hold. The body is bounded by
+/// `json_body_bytes_max` as every other.
+const ACTIVITY_TEAMS_MAX: usize = 64;
+const ACTIVITY_TASKS_MAX: usize = 500;
+const ACTIVITY_STEPS_PER_TASK_MAX: usize = 200;
+/// How long a team's finished work stays on the board.
+const ACTIVITY_WINDOW_DAYS: i64 = 14;
 
 // ---------------------------------------------------------------------
 // Shared request parsing helpers.
@@ -934,6 +943,122 @@ pub async fn heartbeat(
         Heartbeat::StaleLease(id) => Err(stale_lease(id.as_str())),
         Heartbeat::RunnerNotActive => Err(stale_lease(principal.runner_id.as_str())),
     }
+}
+
+// ---------------------------------------------------------------------
+// Team activity (additive v1 operation).
+// ---------------------------------------------------------------------
+
+/// A serde enum's wire word.
+fn wire_word(value: &impl serde::Serialize) -> Option<String> {
+    serde_json::to_value(value)
+        .ok()?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// `POST /activity`: the tasks of a harness's teams that changed. Each task replaces what the
+/// board holds for it, so a repeated report changes nothing; whatever finished more than 14 days
+/// ago is forgotten.
+pub async fn submit_activity(
+    State(state): State<RunnerProtocolState>,
+    headers: HeaderMap,
+    RawBody(body): RawBody,
+) -> HandlerResult {
+    let now = state.clock.now();
+    let principal = runner_auth::authenticate(&state.repo, &headers, now).await?;
+    let value = parse_body(&body)?;
+    check_protocol_version(&value)?;
+    runner_auth::require_matching_runner(&value, &principal)?;
+    let report: ActivityReport = parse_message(value)?;
+    if report.teams.len() > ACTIVITY_TEAMS_MAX {
+        return Err(payload_too_large(
+            "activity_teams_max",
+            ACTIVITY_TEAMS_MAX as u64,
+        ));
+    }
+    if report
+        .teams
+        .iter()
+        .map(|team| team.tasks.len())
+        .sum::<usize>()
+        > ACTIVITY_TASKS_MAX
+    {
+        return Err(payload_too_large(
+            "activity_tasks_max",
+            ACTIVITY_TASKS_MAX as u64,
+        ));
+    }
+    if report
+        .teams
+        .iter()
+        .flat_map(|team| &team.tasks)
+        .any(|task| task.finished_steps.len() > ACTIVITY_STEPS_PER_TASK_MAX)
+    {
+        return Err(payload_too_large(
+            "activity_steps_per_task_max",
+            ACTIVITY_STEPS_PER_TASK_MAX as u64,
+        ));
+    }
+    let harness = report.harness_kind.as_str();
+    let reported_at = normalize_datetime(now);
+    let mut recorded = 0_u32;
+    for team in &report.teams {
+        for task in &team.tasks {
+            let current = task
+                .current_step
+                .as_ref()
+                .and_then(|step| serde_json::to_string(step).ok());
+            let steps = task
+                .finished_steps
+                .iter()
+                .filter_map(|step| {
+                    let ended = step
+                        .finished_at
+                        .map_or_else(|| reported_at.clone(), normalize_datetime);
+                    Some((ended, serde_json::to_string(step).ok()?))
+                })
+                .collect();
+            state
+                .repo
+                .record_team_task(&TeamTaskReport {
+                    runner_id: principal.runner_id.as_str(),
+                    harness,
+                    team: &team.team,
+                    task_ref: &task.task_ref,
+                    on_board: task.on_board.as_deref(),
+                    state: task.state.as_str(),
+                    waits_on: wire_word(&task.waits_on).as_deref(),
+                    current_step: current.as_deref(),
+                    changed_at: task.changed_at.map(normalize_datetime).as_deref(),
+                    reported_at: &reported_at,
+                    steps,
+                })
+                .await
+                .map_err(|failure| {
+                    tracing::error!(error = %failure, "Could not record team activity");
+                    internal_error("Could not record team activity")
+                })?;
+            recorded += 1;
+        }
+    }
+    state
+        .repo
+        .prune_team_activity(
+            &normalize_datetime(now - Duration::days(ACTIVITY_WINDOW_DAYS)),
+            &ActivityState::OVER.map(ActivityState::as_str),
+        )
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not prune team activity");
+            internal_error("Could not prune team activity")
+        })?;
+    message_json(&ActivityResponse {
+        protocol_version: ProtocolVersion::v1(),
+        report_id: report.report_id,
+        accepted_at: now,
+        tasks_recorded: recorded,
+    })
 }
 
 // ---------------------------------------------------------------------

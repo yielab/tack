@@ -121,6 +121,11 @@ impl Client {
         self.send(Method::GET, &["status.json"], &[], None).await
     }
 
+    /// `GET /health`: the API version and the features this docket answers to. Needs no token.
+    pub async fn health(&self) -> Result<Reply, String> {
+        self.send(Method::GET, &["health"], &[], None).await
+    }
+
     /// `GET /pods`.
     pub async fn pods(&self) -> Result<Reply, String> {
         self.send(Method::GET, &["pods"], &[], None).await
@@ -172,6 +177,16 @@ impl Client {
     pub async fn enqueue_task(&self, pod: &str, body: Value) -> Result<Reply, String> {
         self.send(Method::POST, &["tasks", pod], &[], Some(body))
             .await
+    }
+
+    /// `GET /tasks/<pod>`: every task the pod holds, or with `updated_since` (docket's
+    /// `taskCursor` feature) only those changed after that cursor, and `next`.
+    pub async fn tasks(&self, pod: &str, updated_since: Option<&str>) -> Result<Reply, String> {
+        let query: Vec<(&str, &str)> = updated_since
+            .map(|cursor| ("updatedSince", cursor))
+            .into_iter()
+            .collect();
+        self.send(Method::GET, &["tasks", pod], &query, None).await
     }
 
     /// `GET /tasks/<pod>/<id>`.

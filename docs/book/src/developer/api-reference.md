@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (98 paths, 136 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (100 paths, 138 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -410,6 +410,20 @@ GET /api/teams
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Every team any active runner reports, once per name and agent, with the profiles that name it; plus the names profiles use that no runner reports | `TeamList` |
+
+#### `GET /api/teams/{id}/activity`
+
+GET /api/teams/{id}/activity
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | The team's name |
+| `harness` | path | `['string', 'null']` | yes |  |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say | `TeamActivityEntry` |
+| 404 | not_found (no active runner reports a team of that name) | — |
 
 ---
 
@@ -1613,6 +1627,19 @@ Creates a pending runner and stores only a SHA-256 enrollment-token hash.
 ## Runner Protocol V1
 
 Harness-agnostic runner fleet (Part III): the pull protocol a `tack-runner` process speaks at `/api/runner/v1` (enroll, claim, heartbeat, report). Authenticated by a distinct, per-runner hashed bearer credential — never the operator token, and never substitutable for it (docs/contracts/runner-v1/protocol.json: `credentials_are_not_substitutable`). Every wire shape is frozen by docs/contracts/runner-v1/, not independently re-specified here.
+
+#### `POST /api/runner/v1/activity`
+
+Report what a harness's teams are doing: the tasks that changed, each replacing what the board holds for it (additive v1 operation; exact path fixed by protocol.json)
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Activity recorded; a repeated report changes nothing | — |
+| 400 | invalid_request | `RunnerV1ErrorEnvelope` |
+| 401 | unauthorized | `RunnerV1ErrorEnvelope` |
+| 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
+| 409 | conflict / idempotency_conflict / invalid_transition / stale_lease | `RunnerV1ErrorEnvelope` |
 
 #### `POST /api/runner/v1/attempts/{attempt_id}/accept`
 

@@ -1,0 +1,48 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "report_id": "activity_01",
+  "sent_at": "2026-01-01T00:00:15Z",
+  "harness_kind": "docket",
+  "teams": [
+    {
+      "team": "saas-dev",
+      "tasks": [
+        {
+          "ref": "task-0001",
+          "on_board": "item_01J00000000000000000000001",
+          "state": "running",
+          "current_step": {
+            "name": "implementer",
+            "role": "implementer",
+            "model": "local/local-model",
+            "since": "2026-01-01T00:00:05Z",
+            "cycle": 0
+          },
+          "finished_steps": [
+            {
+              "name": "lead",
+              "role": "lead",
+              "model": "local/local-model",
+              "ok": true,
+              "summary": "Planned the change as two steps.",
+              "assumptions": [
+                "The module is not public API."
+              ],
+              "questions": [],
+              "tokens": 1200,
+              "finished_at": "2026-01-01T00:00:04Z"
+            }
+          ],
+          "changed_at": "2026-01-01T00:00:05Z"
+        },
+        {
+          "ref": "task-0002",
+          "state": "waiting",
+          "waits_on": "approval",
+          "finished_steps": []
+        }
+      ]
+    }
+  ]
+}

@@ -102,6 +102,8 @@ fn claim_heartbeat_event_batch_and_completion_fixtures_round_trip_through_the_st
         typed
     }
 
+    round_trips::<tack_protocol::execution::ActivityReport>("activity.request.json");
+    round_trips::<tack_protocol::execution::ActivityResponse>("activity.response.json");
     round_trips::<ClaimRequest>("claim.request.json");
     assert!(matches!(
         round_trips::<ClaimResponse>("claim.response.json"),
