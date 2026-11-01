@@ -616,6 +616,16 @@ describe('Settings panels', () => {
       expect(lines[0]).not.toContain('✗');
     });
 
+    it('a_team_fix_the_server_writes_in_lower_case_starts_a_sentence_after_the_full_stop', async () => {
+      autonomy.ceiling = 'L3';
+      autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: 'L3', fix: 'run it lights-out' }];
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const line = rung(container, 'ceiling').querySelector('[data-testid="ceiling-team"]')!.textContent;
+      expect(line).toBe('✗ The team saas-content keeps its tasks at L3. Run it lights-out');
+    });
+
     it('a_team_line_with_a_fix_renders_in_the_ceiling', async () => {
       autonomy.ceiling = 'L3';
       autonomy.teams = [{ name: 'saas-content', profile: 'Content', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
@@ -664,8 +674,8 @@ describe('Settings panels', () => {
       expect(rungs(container)[0].textContent).toContain('Ceiling');
       expect(rungs(container).map((r) => r.querySelector('[data-testid="ladder-status"]')!.textContent)).toEqual([
         'Set here',
-        'Held off by 3',
-        'Held off by 3',
+        'Blocked by 3 things',
+        'Blocked by 3 things',
       ]);
       expect(container.querySelectorAll('[data-testid="ladder-ceiling-mark"]')).toHaveLength(1);
     });

@@ -32,7 +32,7 @@ const Merge: Component<{
   return (
     <Block id="automation-autonomy" testid="rung-merge">
       <div class="flex items-center gap-2">
-        <Heading>Merge</Heading>
+        <Heading>Autonomy level</Heading>
         <HelpHint label="Autonomy" help={HELP.autonomyLevel} />
       </div>
       <Show
