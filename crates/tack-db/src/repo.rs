@@ -5,6 +5,7 @@ pub mod backup;
 pub mod boards;
 pub mod briefs;
 pub mod budgets;
+pub mod change_sets;
 pub mod comments;
 pub mod custom_fields;
 pub mod dependencies;
