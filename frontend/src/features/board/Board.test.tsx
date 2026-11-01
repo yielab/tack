@@ -393,41 +393,27 @@ describe('Board agent strip and column bars', () => {
 describe('Board always-show-priority choice', () => {
   afterEach(() => localStorage.clear());
 
-  it('is_off_until_chosen_then_remembered_in_this_browser', async () => {
+  it('has_no_switch_of_its_own_and_follows_the_choice_made_in_settings', async () => {
     const items = [makeItem({ id: 'a', priority: 'medium' })];
-    const c = await mountBoard(items, []);
-    const toggle = c.querySelector<HTMLInputElement>('input[role="switch"]')!;
-    expect(toggle.closest('label')?.textContent).toContain('Always show priority on cards');
-    expect(toggle.checked).toBe(false);
-    expect(c.querySelector('[data-testid="card-meta"]')?.textContent).not.toContain('Medium');
+    const off = await mountBoard(items, []);
+    expect(off.querySelector('input[role="switch"]')).toBeNull();
+    expect(off.textContent).not.toContain('Always show priority on cards');
+    expect(off.querySelector('[data-testid="card-meta"]')?.textContent).not.toContain('Medium');
 
-    toggle.click();
-    await flush();
-    expect(c.querySelector('[data-testid="card-meta"]')?.textContent).toContain('Medium');
-    expect(localStorage.getItem('tack_board_always_priority')).toBe('1');
-
-    // A fresh board in the same browser starts with it on.
-    const again = await mountBoard(items, []);
-    expect(again.querySelector<HTMLInputElement>('input[role="switch"]')!.checked).toBe(true);
+    localStorage.setItem('tack_board_always_priority', '1');
+    const on = await mountBoard(items, []);
+    expect(on.querySelector('[data-testid="card-meta"]')?.textContent).toContain('Medium');
   });
 
   it('still_works_when_storage_throws', async () => {
     // Only the board's own key is blocked: the socket's session storage is not under test.
     const realGet = Storage.prototype.getItem;
-    const realSet = Storage.prototype.setItem;
     const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
       if (key === 'tack_board_always_priority') throw new Error('blocked');
       return realGet.call(this, key);
     });
-    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
-      if (key === 'tack_board_always_priority') throw new Error('blocked');
-      realSet.call(this, key, value);
-    });
     const c = await mountBoard([makeItem({ id: 'a', priority: 'medium' })], []);
-    c.querySelector<HTMLInputElement>('input[role="switch"]')!.click();
-    await flush();
-    expect(c.querySelector('[data-testid="card-meta"]')?.textContent).toContain('Medium');
+    expect(c.querySelector('[data-testid="card-meta"]')?.textContent).not.toContain('Medium');
     get.mockRestore();
-    set.mockRestore();
   });
 });

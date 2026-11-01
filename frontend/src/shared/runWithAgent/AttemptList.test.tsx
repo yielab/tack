@@ -168,7 +168,7 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('Ran on m1, as requested.');
   });
 
-  it('leads the usage with tokens, counts the cache, names the models and calls the cost approximate', () => {
+  it('leads the usage with tokens, counts the cache, names the models and shows no dollar figure', () => {
     const c = mount([
       attempt({
         actual_execution: { harness_kind: 'claude-code', model: 'claude-sonnet-5-5', model_source: 'reported' },
@@ -199,8 +199,9 @@ describe('AttemptList', () => {
     expect(usage.textContent).toContain('6 model calls');
     expect(usage.textContent).toContain('1m 53s');
     expect(usage.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
-    expect(usage.querySelector('[data-testid="usage-cost"]')!.textContent).toContain('≈ $1.34 (estimated)');
-    expect(usage.textContent).toContain("Claude Code's own estimate at list price, not your bill");
+    // Limits and reports are in tokens: the harness's dollar estimate stays in the data and is not shown.
+    expect(usage.querySelector('[data-testid="usage-cost"]')).toBeNull();
+    expect(usage.textContent).not.toMatch(/\$|Cost|estimate/);
     // One time figure: the runner-time dollar tile, never measured, is gone.
     expect(usage.textContent!.match(/Not measured/g)).toBeNull();
   });
@@ -269,7 +270,7 @@ describe('AttemptList', () => {
     expect(c.textContent).not.toContain('$0.00');
   });
 
-  it('renders a real measured/estimated dollar figure honestly when present, distinct from "Not measured"', () => {
+  it('shows no dollar figure even when the harness reported one: the cost stays in the data, the screen speaks in tokens', () => {
     const c = mount([
       attempt({
         usage_economics: {
@@ -278,8 +279,8 @@ describe('AttemptList', () => {
         },
       }),
     ]);
-    expect(c.textContent).toContain('≈ $0.42 (estimated)');
-    expect(c.textContent).not.toContain('$0.42 (measured)');
+    expect(c.textContent).not.toContain('$0.42');
+    expect(c.textContent).not.toContain('Cost');
     expect(c.textContent).toContain('4m 55s');
   });
 

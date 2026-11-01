@@ -140,10 +140,9 @@ long it ran. The full **Usage** panel is under **Technical**. It leads with toke
 - **The models** the run used, and, where it matters, whether the agent named the model that answered or
   Tack only knows the one you requested.
 - **Model calls** and how long the run took.
-- **Cost**, in two cases. When the agent reports an estimate, as Claude Code does, the panel shows
-  "≈ $x.xx (estimated)" and says it is the agent's own estimate at list price, not your bill. When the agent
-  reports none, the panel says **Cost: Not measured**. Tack never shows `$0.00` for a figure it does not
-  have, because zero would claim the run was free.
+
+The panel shows no dollar figure: limits and reports are in tokens. The factory metrics, below, price tokens
+from your own rate card.
 
 If an agent does not report tokens, the panel says **Tokens: Not measured**. The task's summary of its latest
 run gives the counted tokens, with what the cache served beside them, and the run's token limit with who

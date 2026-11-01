@@ -16,7 +16,7 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, Badge, RunState, Switch, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -25,7 +25,7 @@ import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
-  cardRun, countRuns, getAlwaysPriority, passesFilters, setAlwaysPriority, showsPriority,
+  cardRun, countRuns, getAlwaysPriority, passesFilters, showsPriority,
   type CardRun, type RunFilter,
 } from '../../shared/runWithAgent/cardRun';
 
@@ -441,7 +441,8 @@ const Board: Component = () => {
       if (!next.delete(filter)) next.add(filter);
       return next;
     });
-  const [alwaysPriority, setAlwaysPriorityShown] = createSignal(getAlwaysPriority());
+  // Chosen in Settings → Display & accessibility, remembered in this browser.
+  const alwaysPriority = () => getAlwaysPriority();
 
   const boardStateFromServer = createMemo((): BoardState | null => {
     const proj = project();
@@ -625,15 +626,6 @@ const Board: Component = () => {
           <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>
         <div style={{ flex: 1 }} />
-        <div role="group" aria-label="Card display">
-          <Switch
-            checked={alwaysPriority()}
-            onChange={(on) => { setAlwaysPriorityShown(on); setAlwaysPriority(on); }}
-            style={{ 'font-size': '0.75rem', color: 'var(--color-text-secondary)' }}
-          >
-            Always show priority on cards
-          </Switch>
-        </div>
         <Show when={assignees().length > 0}>
           <AvatarStack names={assignees()} max={5} />
         </Show>
