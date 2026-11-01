@@ -36,7 +36,9 @@ The **Agents** page is about this computer only. It holds nothing that belongs t
    look; if an agent is installed somewhere unusual, see
    [Where Tack looks for an agent](../admin-guide/runners.md#where-tack-looks-for-a-harness-binary).
 3. **Sign in.** One row per installed agent, asked of the agent itself: "Signed in", or "Not signed in.
-   Run `<command>` in a terminal." with a link to that agent's own documentation. Tack holds no model key.
+   Run `<command>` in a terminal." with a link to that agent's own documentation. When the agent cannot say
+   whether it is signed in, the row is a warning: it shows the command to run in a terminal to see why, and
+   the agent's own message in a fold, "What the agent said". Tack holds no model key.
    Each agent signs in and reaches its model with its own tools.
 4. **Run test.** Checks that an installed agent starts and answers. It names no model, so it uses an
    installed agent that runs with its own default. When every installed agent needs a model named, the
