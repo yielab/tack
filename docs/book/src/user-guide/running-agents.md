@@ -173,26 +173,33 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Web tools; and a collapsed Advanced section.">
 
-- **The summary line** says which profile runs the task, on which model, and where the agent works ("on a
-  new branch of your repo", "in the folder, directly"). A profile whose team works in its own folder on this
-  computer says "in the team's own folder on this computer, not in this repository", and the dialog shows no
-  install line for it. Each part links to where you change it.
-- **Where the profile came from** appears under the summary: "Chosen by the role X", "Project default",
-  "Saved on this task", "The built-in Implementer", or "More than one role has a profile, so the project
-  default is used". To use another profile for this run, choose it under **Who does it**.
-  [Teams](automation.md#teams) explains how a role chooses.
-- **Who does it** lists every profile, grouped by the team it names (with who is in the team) or, for a
-  profile with no team, by the agent that runs it (Claude Code, Codex, OpenCode or Docket). Each group
-  says what that agent can do, and what it cannot is shown greyed with the reason. Choosing a profile
-  also picks the agent it is written for, when this computer offers that agent, and a line says so when
-  it replaces the agent the task had. A profile that runs no commands says "No install: this profile
-  runs no commands" where the dialog tells what is installed before the agent starts.
+- **Who does it** is one compact list of every profile, each a radio button, grouped by the team it names
+  or, for a profile with no team, by the agent that runs it (Claude Code, Codex, OpenCode or Docket). A team
+  shows who is in it as small chips, an icon for where it works (a branch of your repository, or its own
+  folder) and five icons for what its agent can do: stop a run, pick it back up after a restart, answer
+  questions, propose items and report usage. What the agent can do is said once above the teams. Only
+  something the agent cannot do, or did not report, is drawn crossed out; hover it for the reason. Teams
+  that no profile names yet are one greyed row, "3 teams have no profile yet", with a link to the Agents
+  page. Single agents are a second group of the same shape. The profile the task's role chose is already
+  selected and says so under its row ("Chosen by the role X"; the other sources are "Project default", "Saved
+  on this task", "The built-in Implementer", or "More than one role has a profile, so the project default is
+  used"). [Teams](automation.md#teams) explains how a role chooses. Choosing a profile also picks the agent it
+  is written for, when this computer offers that agent, and a line says so when it replaces the agent the
+  task had.
+- **What will happen** is one line each, with an icon: which profile runs the task and on which model; where
+  the agent works ("on a new branch of your repo", "in the folder, directly"; a profile whose team works in
+  its own folder on this computer says "in the team's own folder on this computer, not in this repository");
+  what is installed before it starts ("No install: this profile runs no commands", or "Nothing is installed"
+  for a team that works in a folder); the checks ("2 Done when · verifier on"); the sandbox; and the network. The profile,
+  model and place link to where you change them.
 - **Machine or group.** Lists this computer and the other machines by name, then the groups. A machine that
   has stopped answering is shown disabled, with the time it was last heard. With one machine answering and
   no group there is nothing to choose, so the field is one line, "Runs on this computer".
 - **What the agent will read** shows the real text it will be given: the profile's instructions, the task's
   title and description, its acceptance criteria, the project's **Definition of done**, and anything in the
   task's collapsed **For the agent** block. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent).
+- **Start run** sits in a footer that stays in view while the dialog scrolls, beside **Cancel** and the run's
+  token limit. When something blocks the run, the footer gives the link that fixes it in its place.
 - **Ask before each action.** On when the agent is not sandboxed, off otherwise. When on, the agent pauses
   and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
   pause, the switch is disabled and says why.
@@ -212,7 +219,7 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 A setting you change here is saved on the task, and one you change in the project stays on the project, so
 running the same task again does not make you retype it. A field that cannot work says why in a sentence
 with a link where you typed it (the folder does not exist, the branch is not in the repository, the model
-is not on the agent's list), rather than leaving **Run** disabled with no explanation.
+is not on the agent's list), rather than leaving **Start run** disabled with no explanation.
 
 ### Token limits
 
@@ -270,7 +277,7 @@ verifier, refused its result; the last 20 count.
 While a run works, the line "Used 1 650 000 of 2 000 000 tokens" shows its count and turns amber at 80% of
 the limit. A run stopped by its limit says "Stopped at its limit: 2 000 000 of 2 000 000" and offers
 **Run again with more**, which opens the Run dialog for the same task with the token limit already typed as
-twice the old one. Change it or press **Run**.
+twice the old one. Change it or press **Start run**.
 
 A docket run that ended because the agent needed a person shows "Needs a person" and the agent's own
 sentence, and offers **Run again at L3**: the same task, run attended from the start, started only when you

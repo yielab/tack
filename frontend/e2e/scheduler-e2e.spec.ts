@@ -91,7 +91,7 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   await modal.getByLabel('Model name').fill(modelId);
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
-  const runButton = modal.getByRole('button', { name: 'Run', exact: true });
+  const runButton = modal.getByRole('button', { name: 'Start run', exact: true });
   await expect(runButton).toBeEnabled();
   await runButton.click();
   await expect(modal).toBeHidden();

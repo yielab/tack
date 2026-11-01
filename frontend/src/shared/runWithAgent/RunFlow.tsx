@@ -1,7 +1,8 @@
-import { type Accessor, type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { type Accessor, type Component, type JSX, For, Show, createResource, createSignal } from 'solid-js';
 import type { SetStoreFunction } from 'solid-js/store';
 import { A } from '@solidjs/router';
 import { Button, Field, FieldShell, HelpHint, Select, Badge, Switch } from '../ui';
+import { IconBranch, IconChecks, IconFolder, IconGlobe, IconPackage, IconShield, IconWho } from './runDialogIcons';
 import type { HarnessCapability } from '../execution/types';
 import ModelField from './ModelField';
 import { summarizeModels } from './models';
@@ -11,6 +12,7 @@ import type { Project } from '../types';
 import { api } from '../api';
 import { installLine } from './install';
 import { LEVEL_NEEDS_DOCKET, gateHarnessModelSelection } from './shared';
+import { spaced } from './runLimit';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
 import ProfilePicker from './ProfilePicker';
@@ -50,6 +52,8 @@ export interface RunFlowProps {
   rows: { runner: Accessor<PrerequisiteState>; harness: Accessor<PrerequisiteState>; profile: Accessor<PrerequisiteState>; model: Accessor<PrerequisiteState> };
   /** Whether the card's brief has an acceptance check; undefined while it loads. Never blocks the run. */
   checkedCard?: Accessor<boolean | undefined>;
+  /** How many acceptance checks ("Done when") the card's brief has; undefined while it loads or when it cannot be read. */
+  acceptanceCount?: Accessor<number | undefined>;
   profilesLoading: Accessor<boolean>;
   profiles: Accessor<AgentProfileSummary[]>;
   /** What the agents of the machines this run may use reported, to say what each can do. */
@@ -111,6 +115,15 @@ export function describeProfileSource(source: string | null | undefined): string
 /** The home prefix of an absolute path, shown as `~`. */
 const tilde = (path: string) => path.replace(/^\/(?:home|Users)\/[^/]+(?=\/|$)/, '~');
 
+/** One line of "What will happen": an icon, the word for it for a screen reader, then the fact. */
+const SummaryLine: Component<{ icon: JSX.Element; label: string; children: JSX.Element }> = (props) => (
+  <li class="flex min-w-0 items-start gap-2">
+    <span class="mt-0.5 flex-none" style={{ color: 'var(--color-text-tertiary)' }}>{props.icon}</span>
+    <span class="sr-only">{props.label}: </span>
+    <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>{props.children}</span>
+  </li>
+);
+
 /** The dialog as a pre-flight: what will run and where, with everything optional folded away. */
 const RunFlow: Component<RunFlowProps> = (props) => {
   const [advanced, setAdvanced] = createSignal(false);
@@ -142,10 +155,22 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       : mode === 'clone' ? `in a fresh clone of ${folder()}`
         : `on a new branch of ${folder()}`;
   };
+  const selectedProfile = () => props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId);
   const profileName = () => props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.name ?? 'Choose a profile';
   const blocker = (): { text: string; href: string } | undefined => {
     if (props.project()?.code_origin === 'none') return { text: "Choose where this project's code is →", href: automation() };
     if (props.rows.runner() === 'missing') return { text: 'Turn on agent execution →', href: '/agents' };
+  };
+  const checksText = () => {
+    const n = props.acceptanceCount?.();
+    const verifier = !props.verifyConfigured() ? 'no verifier on this runner' : props.form.verify ? 'verifier on' : 'verifier off';
+    return [n === undefined ? null : n === 0 ? 'No Done when' : `${n} Done when`, verifier].filter(Boolean).join(' · ');
+  };
+  const limitText = (): string | null => {
+    const text = props.form.tokenLimit.trim();
+    if (text === '') return 'No token limit';
+    const n = Number(text);
+    return Number.isInteger(n) && n > 0 ? `Token limit ${spaced(n)}` : null;
   };
   const models = () => summarizeModels(props.harnessReports());
   // Only an agent that must be told a model blocks the run here; the dialog says so in place of Run.
@@ -171,33 +196,12 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
       </Show>
 
-      <p data-testid="run-summary" class="rounded-item px-4 py-3 text-sm" style={PILL}>
-        <A href={automation()} class="font-semibold hover:underline" style={LINK}>{profileName()}</A>
-        {' · '}
-        <A href={automation()} class="hover:underline" style={LINK}>{props.modelLabel()}</A>
-        <Show when={props.project()?.repository || worksInFolder()}>
-          {' · '}
-          <A href={automation()} class="hover:underline" style={LINK}>{where()}</A>
-        </Show>
-      </p>
-
-      <Show when={describeProfileSource(props.profileSource?.())}>
-        {(text) => (
-          <p data-testid="profile-source" class="-mt-3 px-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>
-        )}
-      </Show>
-
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
         <p data-testid="no-tools" class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
           {profileName()} gives {props.harnessLabel()} no tools, so it can only answer in text: it cannot read or change files.{' '}
           <A href="/agents" class="font-semibold underline">Give the profile tools</A>, or name some under Advanced.
         </p>
       </Show>
-
-      <details>
-        <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
-        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
-      </details>
 
       <Show
         when={props.profilesLoading() || props.profiles().length > 0}
@@ -217,6 +221,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             value={props.form.agentProfileId || null}
             profiles={props.profiles()}
             reports={props.agentReports()}
+            choiceNote={describeProfileSource(props.profileSource?.())}
             onChange={(p) => { if (!p) return; props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
           />
         </FieldShell>
@@ -233,15 +238,49 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <Show when={props.checkedCard?.() === false}>
         <Prerequisite state="notice" label="This card has no acceptance check: nothing tests what the agent delivers, so a person reviews it" />
       </Show>
-      <Show when={props.project()}>
-        {(project) => (
-          <Show when={installLine(project().prepare_command, folderCheck(), props.profiles().find((p) => p.agent_profile_id === props.form.agentProfileId)?.runs_commands, worksInFolder())}>
-            {(line) => (
-              <p data-testid="run-dialog-install" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{line()}</p>
-            )}
+      <section data-testid="run-will-happen" class="space-y-2 rounded-item px-4 py-3" style={PILL}>
+        <h3 class="font-heading text-lg">What will happen</h3>
+        <ul data-testid="run-summary" class="space-y-1.5 text-sm">
+          <SummaryLine icon={<IconWho />} label="Runs">
+            <A href={automation()} class="font-semibold hover:underline" style={LINK}>{profileName()}</A>
+            {' · '}
+            <A href={automation()} class="hover:underline" style={LINK}>{props.modelLabel()}</A>
+          </SummaryLine>
+          <Show when={props.project()?.repository || worksInFolder()}>
+            <SummaryLine icon={worksInFolder() ? <IconFolder /> : <IconBranch />} label="Works">
+              <A href={automation()} class="hover:underline" style={LINK}>{where()}</A>
+            </SummaryLine>
           </Show>
-        )}
-      </Show>
+          <Show when={props.project()}>
+            {(project) => {
+              const line = () => installLine(project().prepare_command, folderCheck(), selectedProfile()?.runs_commands, worksInFolder());
+              return (
+                <SummaryLine icon={<IconPackage />} label="Prepares">
+                  <Show when={line()} fallback={<span data-testid="run-dialog-nothing-installed">Nothing is installed</span>}>
+                    {(text) => <span data-testid="run-dialog-install">{text()}</span>}
+                  </Show>
+                </SummaryLine>
+              );
+            }}
+          </Show>
+          <SummaryLine icon={<IconChecks />} label="Checks">
+            <span data-testid="run-dialog-checks">{checksText()}</span>
+          </SummaryLine>
+          <SummaryLine icon={<IconShield />} label="Sandbox">
+            <Show when={props.sandboxLine()} fallback={<span>Not reported by the agent</span>}>
+              {(line) => (
+                <span class="inline-flex flex-wrap items-center gap-x-2" data-testid="sandbox-line">
+                  <span>{line().text}</span>
+                  <HelpHint label="Sandbox" help={HELP.sandbox} />
+                </span>
+              )}
+            </Show>
+          </SummaryLine>
+          <SummaryLine icon={<IconGlobe />} label="Network">
+            <span data-testid="run-dialog-network">{props.form.allowNetwork ? 'Web tools on: the agent may reach the network' : 'Web tools off: the agent has no network'}</span>
+          </SummaryLine>
+        </ul>
+      </section>
 
       <div class="space-y-2">
         <div class="flex items-center gap-2">
@@ -257,14 +296,6 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         </Switch>
         <HelpHint label="Ask before each action" help={HELP.askBeforeEachAction} />
         </div>
-        <Show when={props.sandboxLine()}>
-          {(line) => (
-            <div class="flex items-center gap-2 pl-4 text-xs" data-testid="sandbox-line" style={{ color: 'var(--color-text-tertiary)' }}>
-              <span>{line().text}</span>
-              <HelpHint label="Sandbox" help={HELP.sandbox} />
-            </div>
-          )}
-        </Show>
         <Show when={!props.decisionsAttested()}>
           <p class="pl-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>This agent can't pause to ask — it always decides on its own.</p>
         </Show>
@@ -280,6 +311,11 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         <HelpHint label="Web tools" help={HELP.webTools} />
         </div>
       </div>
+
+      <details>
+        <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>What the agent will read</summary>
+        <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs" style={PILL}>{props.agentContext() ?? 'Not available.'}</pre>
+      </details>
 
       <details open={advanced() || modelBlocked()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>Advanced for this run</summary>
@@ -391,7 +427,28 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         </ul>
       </Show>
 
-      <div class="flex items-center justify-end gap-2 pt-1">
+      <div
+        data-testid="run-footer"
+        class="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-6 py-3"
+        style={{
+          'background-color': 'var(--color-bg-elevated)',
+          'border-top': '1px solid var(--color-border-light)',
+          'border-radius': '0 0 32px 32px',
+          'z-index': 1,
+        }}
+      >
+        <Show when={props.limitSentence?.() ?? limitText()}>
+          {(text) => (
+            <span
+              data-testid="run-footer-limit"
+              class="mr-auto min-w-0 text-small"
+              style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
+              title={props.limitSentence?.()}
+            >
+              {text()}
+            </span>
+          )}
+        </Show>
         <Button type="button" variant="secondary" onClick={props.onClose} disabled={props.submitting()}>
           Cancel
         </Button>
@@ -402,7 +459,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               when={modelBlocked()}
               fallback={
                 <Button type="submit" loading={props.submitting()} disabled={!props.canSubmit()}>
-                  Run
+                  Start run
                 </Button>
               }
             >

@@ -151,7 +151,7 @@ each part of the dialog does, and where its defaults come from, is in
 
 ## 9. Run it and track it
 
-Click **Run**. The request queues, the runner picks it up and the agent starts — and the board
+Click **Start run**. The request queues, the runner picks it up and the agent starts — and the board
 says so without being asked: the card carries a live status chip, here still **Queued**.
 Clicking the chip opens the task's **Execution** tab:
 

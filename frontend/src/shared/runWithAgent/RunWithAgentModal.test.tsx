@@ -234,7 +234,7 @@ function setField(el: HTMLInputElement, value: string) {
 }
 
 function submitButton(): HTMLButtonElement {
-  return [...document.querySelectorAll('button')].find((b) => b.textContent === 'Run') as HTMLButtonElement;
+  return [...document.querySelectorAll('button')].find((b) => b.textContent === 'Start run') as HTMLButtonElement;
 }
 
 function teardown() {
@@ -583,7 +583,8 @@ describe('RunWithAgentModal', () => {
     expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('a change on a branch');
     const claude = picker.querySelector('[data-testid="who-alone-claude-code"]')!;
     expect(claude.textContent).toContain('Claude Code');
-    expect(claude.textContent).toContain('A single agent, no team');
+    // Said once, above the single agents, not in each group.
+    expect(picker.textContent?.split('A single agent, no team').length).toBe(2);
     expect(claude.textContent).toContain('Reads the change and says what is wrong');
     // Claude Code reported nothing on this computer: said so, not guessed.
     expect(claude.textContent).toContain('Not reported by Claude Code');
@@ -607,13 +608,23 @@ describe('RunWithAgentModal', () => {
     await flush();
     const codex = document.querySelector('[data-testid="who-alone-codex"]')!;
     expect(codex.textContent).toContain('Can stop a run and answer questions.');
-    const cannot = [...codex.querySelectorAll('[aria-disabled="true"]')].map((e) => e.textContent);
-    expect(cannot).toContain('Cannot propose items · Codex has no plan file here');
+    const icon = (id: string) => codex.querySelector<HTMLElement>(`[data-capability="${id}"]`)!;
+    // What the agent can do is a plain icon; its name says so.
+    expect(icon('cancel').dataset.state).toBe('can');
+    expect(icon('cancel').getAttribute('aria-label')).toBe('Can stop a run');
+    expect(icon('cancel').querySelector('svg path[d="M2.5 13.5L13.5 2.5"]')).toBeNull();
+    // What it cannot is struck through, and the reason is the tooltip and the name.
+    expect(icon('proposals').dataset.state).toBe('cannot');
+    expect(icon('proposals').getAttribute('aria-label')).toBe('Cannot propose items · Codex has no plan file here');
+    expect(icon('proposals').title).toBe('Cannot propose items · Codex has no plan file here');
+    expect(icon('proposals').querySelector('svg path[d="M2.5 13.5L13.5 2.5"]')).not.toBeNull();
     // A feature the agent left out is "not reported", never filled from the computer's own report.
-    expect(cannot).toContain('Not reported by Codex');
+    expect(icon('usage').dataset.state).toBe('not_reported');
+    expect(icon('usage').title).toBe('Not reported by Codex');
+    expect(icon('usage').querySelector('svg path[d="M2.5 13.5L13.5 2.5"]')).not.toBeNull();
   });
 
-  it('shows a team with what it is made of, and a reported team no profile names as disabled with what to do', async () => {
+  it('shows a team with its members as chips, and a reported team no profile names as a disabled row', async () => {
     const teamProfile = { ...PROFILE, name: 'Content team', tool_policy: { agent: 'docket', docket: { team: 'saas-content' } } };
     const teams = [
       { name: 'saas-content', harness: 'docket', reported: true, profiles: [], report: { members: [{ role: 'Lead', model: null }, { role: 'Writer', model: null }] } },
@@ -631,11 +642,15 @@ describe('RunWithAgentModal', () => {
     await flush();
     const content = document.querySelector('[data-testid="who-team-saas-content"]')!;
     expect(content.textContent).toContain('Team saas-content');
-    expect(content.textContent).toContain('Made of Lead, Writer');
+    expect([...content.querySelectorAll('[aria-label="Made of"] li')].map((li) => li.textContent)).toEqual(['Lead', 'Writer']);
     expect(content.textContent).toContain('Content team');
-    const code = document.querySelector('[data-testid="who-team-saas-code"]')!;
-    expect(code.textContent).toContain('Make a profile for it on the Agents page');
-    expect(code.querySelector('input[type="radio"]')!.hasAttribute('disabled')).toBe(true);
+    // A reported team no profile names is not a group of its own: it is one disabled row.
+    expect(document.querySelector('[data-testid="who-team-saas-code"]')).toBeNull();
+    const bare = document.querySelector('[data-testid="who-teams-without-profile"]')!;
+    expect(bare.textContent).toContain('1 team has no profile yet');
+    expect(bare.textContent).toContain('saas-code');
+    expect(bare.querySelector('input[type="radio"]')!.getAttribute('aria-label')).toContain('Make a profile for it on the Agents page');
+    expect(bare.querySelector('input[type="radio"]')!.hasAttribute('disabled')).toBe(true);
     // The words of the engine never reach the screen.
     expect(document.querySelector('[data-testid="who-does-it"]')!.textContent).not.toMatch(/harness|pod|blueprint|archetype/i);
   });
@@ -1172,5 +1187,188 @@ describe('RunWithAgentModal', () => {
       const label = dialog.querySelector(`label[for="${id}"]`);
       expect(label, `no label for #${id}`).toBeTruthy();
     }
+  });
+});
+
+describe('the Run with agent dialog picks a team in one glance', () => {
+  const DOCKET_RUNNER = runnerRow('runner-d', 'This computer', runnerCapabilitySnapshot({
+    verify_configured: true,
+    harnesses: [{
+      harness_kind: 'docket', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: false,
+      features: {
+        cancel: { support: 'supported', reason: null },
+        resume: { support: 'supported', reason: 'by task id' },
+        decisions: { support: 'supported', reason: null },
+        proposals: { support: 'unsupported', reason: 'No record set named tack_proposals' },
+        usage: { support: 'supported', reason: null },
+      },
+    }],
+  }));
+  const teamProfile = (id: string, name: string, team: string) => ({ ...PROFILE, agent_profile_id: id, name, tool_policy: { agent: 'docket', docket: { team } } });
+  const team = (name: string, extra: Record<string, unknown> = {}) => ({ name, harness: 'docket', reported: true, profiles: [], report: { members: [{ role: 'Lead' }], ...extra } });
+
+  /** The dialog with the given teams reported by `GET /api/teams`. */
+  async function mountWithTeams(teams: unknown[], fetchOpts: Parameters<typeof mockFetch>[0]) {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/teams')) return Promise.resolve(new Response(JSON.stringify({ teams }), { status: 200 }));
+      return (mockFetch(fetchOpts) as typeof fetch)(input, init);
+    }) as typeof fetch);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(() => <Host />, container);
+    disposers.push(() => { dispose(); container.remove(); });
+    await flush();
+    await flush();
+  }
+
+  it('groups the profiles by team, each with its members, where it works and what its agent can do, and says the shared sentence once', async () => {
+    const teams = [
+      team('saas-content', { members: [{ role: 'Lead' }, { role: 'Writer' }], works_in: 'folder' }),
+      team('saas-code', { members: [{ role: 'Builder' }], works_in: 'repository' }),
+    ];
+    await mountWithTeams(teams, {
+      runners: [DOCKET_RUNNER], fleets: [],
+      agentProfiles: [teamProfile('p-1', 'Content team', 'saas-content'), teamProfile('p-2', 'Code team', 'saas-code'), teamProfile('p-3', 'Code reviewers', 'saas-code')],
+    });
+    const picker = document.querySelector('[data-testid="who-does-it"]')!;
+    const code = picker.querySelector('[data-testid="who-team-saas-code"]')!;
+    // One radio per profile, under the team that names it.
+    expect([...code.querySelectorAll('input[type="radio"]')].length).toBe(2);
+    expect([...code.querySelectorAll('label')].map((l) => l.textContent)).toEqual(['Code team', 'Code reviewers']);
+    expect(picker.querySelector('[data-testid="who-team-saas-content"]')!.querySelectorAll('input[type="radio"]').length).toBe(1);
+    expect([...picker.querySelectorAll('[data-testid="who-team-saas-content"] [aria-label="Made of"] li')].map((li) => li.textContent)).toEqual(['Lead', 'Writer']);
+    // Where each works is an icon with its words.
+    expect(picker.querySelector('[data-testid="who-team-saas-content"] [data-works-in="folder"]')!.getAttribute('aria-label')).toBe('Works in its own folder, not in the repository');
+    expect(picker.querySelector('[data-testid="who-team-saas-code"] [data-works-in="repository"]')!.getAttribute('title')).toBe('Works on a branch of the repository');
+    // Five capability icons per team.
+    expect(code.querySelectorAll('[data-capability]').length).toBe(5);
+    // What the agent can do is said once for all the teams, not in each.
+    expect(picker.querySelectorAll('[data-testid="who-can"]').length).toBe(1);
+    expect(picker.textContent?.split('Docket can stop a run, pick a run back up after a restart, answer questions and report usage.').length).toBe(2);
+  });
+
+  it('draws only a capability the agent lacks struck through, with its reason in the tooltip, and keeps a supported one’s note there', async () => {
+    await mountWithTeams([team('saas-code')], { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')] });
+    const icon = (id: string) => document.querySelector<HTMLElement>(`[data-testid="who-team-saas-code"] [data-capability="${id}"]`)!;
+    const struck = (id: string) => icon(id).querySelector('svg path[d="M2.5 13.5L13.5 2.5"]') !== null;
+    expect(['cancel', 'resume', 'decisions', 'proposals', 'usage'].filter(struck)).toEqual(['proposals']);
+    expect(icon('proposals').title).toBe('Cannot propose items · No record set named tack_proposals');
+    expect(icon('resume').title).toBe('Can pick a run back up after a restart · by task id');
+  });
+
+  it('collapses the teams no profile names into one disabled row that links to Agents', async () => {
+    const teams = [team('a-team'), team('b-team'), team('c-team'), team('saas-code')];
+    await mountWithTeams(teams, { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')] });
+    const rows = document.querySelectorAll('[data-testid="who-teams-without-profile"]');
+    expect(rows.length).toBe(1);
+    const row = rows[0];
+    expect(row.textContent).toContain('3 teams have no profile yet');
+    expect(row.textContent).toContain('a-team, b-team, c-team');
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    expect((row.querySelector('input[type="radio"]') as HTMLInputElement).disabled).toBe(true);
+    expect(row.querySelector('a')!.getAttribute('href')).toBe('/agents');
+    for (const name of ['a-team', 'b-team', 'c-team']) expect(document.querySelector(`[data-testid="who-team-${name}"]`)).toBeNull();
+  });
+
+  it('preselects the profile the item\'s role chose and says so under its row', async () => {
+    await mountWithTeams([team('saas-code')], {
+      runners: [DOCKET_RUNNER], fleets: [],
+      agentProfiles: [teamProfile('p-1', 'Content team', 'saas-code'), teamProfile('p-2', 'Code team', 'saas-code')],
+      project: { ...PROJECT, default_profile_id: null },
+      resolved: { profile_id: 'p-2', profile_source: 'role:Implementer' },
+    });
+    expect(profileRadio('Code team').checked).toBe(true);
+    expect(profileRadio('Content team').checked).toBe(false);
+    const note = document.querySelector('[data-testid="profile-source"]')!;
+    expect(note.textContent).toBe('Chosen by the role Implementer');
+    // It sits with the chosen profile's row, not at the top of the dialog.
+    expect(note.closest('[data-testid="who-does-it"]')).not.toBeNull();
+    expect(note.parentElement!.querySelector('label')!.textContent).toBe('Code team');
+  });
+
+  it('puts the single agents in a second group of the same shape, with their notes in the icons\' tooltips', async () => {
+    const mine = { ...PROFILE_2, name: 'Fixer', tool_policy: { agent: 'codex' } };
+    const runner = runnerRow('runner-1', 'This computer', runnerCapabilitySnapshot({
+      harnesses: [{
+        harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+        features: { cancel: { support: 'advisory', reason: 'sends SIGKILL to the process group' } },
+      }],
+    }));
+    await mountWithTeams([team('saas-code')], { runners: [runner], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code'), mine] });
+    const picker = document.querySelector('[data-testid="who-does-it"]')!;
+    const codex = picker.querySelector('[data-testid="who-alone-codex"]')!;
+    expect(codex.querySelectorAll('[data-capability]').length).toBe(5);
+    expect(codex.querySelector<HTMLElement>('[data-capability="cancel"]')!.title).toBe('Can stop a run · sends SIGKILL to the process group');
+    // The adapter's note is not a line of its own.
+    expect([...picker.querySelectorAll('p, span')].some((e) => e.children.length === 0 && e.textContent === 'sends SIGKILL to the process group')).toBe(false);
+    expect(picker.textContent).toContain('A single agent, no team');
+    expect(picker.querySelectorAll('input[type="radio"]').length).toBe(2);
+  });
+
+  it('says what will happen in one line each: where, what is prepared, the checks, the sandbox and the network', async () => {
+    const sandboxed = runnerRow('runner-7', 'Box', runnerCapabilitySnapshot({
+      verify_configured: true,
+      harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], decisions: { support: 'supported', reason: null }, sandbox: 'bwrap' }],
+    }));
+    const brief = { acceptance: [
+      { id: 'a1', kind: 'command', title: 'tests pass', run: 'npm test', expect_exit: 0 },
+      { id: 'a2', kind: 'command', title: 'lint passes', run: 'npm run lint', expect_exit: 0 },
+    ] };
+    mount({}, { runners: [sandboxed], fleets: [], brief, project: { ...PROJECT, prepare_command: 'npm ci' } });
+    await flush();
+    await flush();
+    const section = document.querySelector('[data-testid="run-will-happen"]')!;
+    expect(section.querySelector('h3')!.textContent).toBe('What will happen');
+    const line = (label: string) => [...section.querySelectorAll('li')].find((li) => li.querySelector('.sr-only')?.textContent === `${label}: `)!;
+    expect(line('Works').textContent).toContain('on a new branch of ~/src/app');
+    expect(line('Prepares').textContent).toContain('Replaced: npm ci');
+    expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('2 Done when · verifier on');
+    expect(line('Sandbox').textContent).toContain('Sandboxed: the agent only reaches its workspace');
+    expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');
+    // Each line has an icon that is hidden from a screen reader, which reads the word instead.
+    for (const li of section.querySelectorAll('li')) {
+      expect(li.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+      expect(li.querySelector('.sr-only')).not.toBeNull();
+    }
+    // The toggles stay, and the network line follows the Web tools switch.
+    const web = [...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement;
+    web.click();
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools on');
+  });
+
+  it('says nothing is installed when the team works in a folder, and counts no Done when', async () => {
+    const folderProfile = { ...PROFILE, tool_policy: { docket: { team: 'saas-content' } } };
+    const teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder' }];
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [folderProfile], autonomy: { teams } });
+    await flush();
+    await flush();
+    expect(document.querySelector('[data-testid="run-dialog-nothing-installed"]')!.textContent).toBe('Nothing is installed');
+    expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('No Done when · no verifier on this runner');
+  });
+
+  it('keeps a sticky footer with the token limit, Cancel and Start run', async () => {
+    const limits = { budgets: { tokens: 300000 }, timeout_seconds: 1800 };
+    mount({}, { runners: [RUNNER], fleets: [], limits });
+    await flush();
+    await flush();
+    const footer = document.querySelector<HTMLElement>('[data-testid="run-footer"]')!;
+    expect(footer.classList.contains('sticky')).toBe(true);
+    expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Start run']);
+    expect(footer.querySelector('[data-testid="run-footer-limit"]')!.textContent).toBeTruthy();
+    // The field itself is still under Advanced for this run.
+    expect(field('Token limit').value).toBe('300000');
+    (footer.querySelector('button') as HTMLButtonElement).click();
+    await flush();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('a blocked run has no Start run in the footer, only Cancel and the link that fixes it', async () => {
+    mount({}, { project: { ...PROJECT, code_origin: 'none', repository: null } });
+    await flush();
+    await flush();
+    const footer = document.querySelector('[data-testid="run-footer"]')!;
+    expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel']);
+    expect(footer.querySelector('a')!.textContent).toBe("Choose where this project's code is →");
   });
 });
