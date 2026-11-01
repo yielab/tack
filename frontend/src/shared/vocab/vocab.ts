@@ -15,7 +15,9 @@ export const VOCAB_KEYS = [
 
 export type VocabKey = (typeof VOCAB_KEYS)[number];
 
-const DEFAULT_LABELS: Record<VocabKey, string> = {
+// `orchestration` names a work view, not an item word, so it is a default only: the server's
+// vocabulary has no such key to customize.
+const DEFAULT_LABELS: Record<VocabKey | 'orchestration', string> = {
   epic:         'Epic',
   feature:      'Feature',
   task:         'Task',
@@ -32,6 +34,7 @@ const DEFAULT_LABELS: Record<VocabKey, string> = {
   phase:        'Phase',
   milestone:    'Milestone',
   release:      'Release',
+  orchestration: 'Orchestration',
 };
 
 export function resolveLabel(vocab: Record<string, string> | undefined, key: string): string {

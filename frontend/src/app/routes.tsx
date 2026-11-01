@@ -6,6 +6,7 @@ import WorkLayout from './WorkLayout';
 
 const Projects      = lazy(() => import('../features/projects/Projects'));
 const Board         = lazy(() => import('../features/board/Board'));
+const Orchestration = lazy(() => import('../features/orchestration/Orchestration'));
 const List          = lazy(() => import('../features/list/List'));
 const Dashboard     = lazy(() => import('../features/dashboard/Dashboard'));
 const FactoryMetrics = lazy(() => import('../features/dashboard/FactoryMetrics'));
@@ -55,6 +56,7 @@ export const routes: RouteDefinition[] = [
     component: guarded(WorkLayout),
     children: [
       { path: '/board',    component: guarded(Board) },
+      { path: '/orchestration', component: guarded(Orchestration) },
       { path: '/list',     component: guarded(List) },
       { path: '/table',    component: RedirectToList },
       { path: '/calendar', component: guarded(Calendar) },

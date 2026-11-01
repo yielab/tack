@@ -930,6 +930,18 @@ body {
   }
 }
 
+/* A task that moved to another station in the Orchestration view arrives with a short slide;
+   under reduced motion it simply appears there. */
+@keyframes tk-arrive {
+  from { opacity: 0; transform: translateX(-0.5rem); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="reduce"]) .flow-arrive {
+    animation: tk-arrive 0.28s ease-out;
+  }
+}
+
 /* Reduced motion: the OS setting, or the app's own (display.ts). Animations
    and transitions end at once instead of playing; nothing that conveys state
    depends on the motion itself. */

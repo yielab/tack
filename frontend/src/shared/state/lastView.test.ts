@@ -32,7 +32,7 @@ describe('getLastLens', () => {
   });
 
   it('returns each valid lens correctly', () => {
-    for (const lens of ['board', 'list', 'calendar', 'timeline', 'sprint'] as const) {
+    for (const lens of ['board', 'orchestration', 'list', 'calendar', 'timeline', 'sprint'] as const) {
       setLastLens(lens);
       expect(getLastLens()).toBe(lens);
     }

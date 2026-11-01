@@ -148,7 +148,7 @@ const TeamCard: Component<TeamCardProps> = (props) => {
   const report = () => entry().report ?? undefined;
 
   return (
-    <li class="flex min-w-0 flex-col gap-2.5 rounded-xl bg-app px-4 py-3.5" data-testid={`team-card-${entry().name}`}>
+    <li id={`team-${entry().name}`} class="flex min-w-0 flex-col gap-2.5 rounded-xl bg-app px-4 py-3.5" data-testid={`team-card-${entry().name}`}>
       <div class="flex flex-wrap items-center gap-2">
         <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
           {entry().name}

@@ -1,6 +1,6 @@
 import type { Component } from 'solid-js';
 import {
-  IconBoard, IconList, IconCalendar, IconTimeline, IconSprint,
+  IconBoard, IconOrchestration, IconList, IconCalendar, IconTimeline, IconSprint,
   IconOverview, IconProjects, IconTemplates, IconAgent, IconSettings, type IconProps,
 } from './icons';
 
@@ -24,6 +24,7 @@ export interface Destination {
 /** The views of one project, in sidebar order. */
 export const PROJECT_DESTINATIONS: Destination[] = [
   { id: 'board', label: () => 'Board', icon: IconBoard, path: (p) => `/projects/${p}/board` },
+  { id: 'orchestration', label: (t) => t('orchestration'), icon: IconOrchestration, path: (p) => `/projects/${p}/orchestration` },
   { id: 'list', label: () => 'List', icon: IconList, path: (p) => `/projects/${p}/list` },
   { id: 'calendar', label: () => 'Calendar', icon: IconCalendar, path: (p) => `/projects/${p}/calendar` },
   { id: 'timeline', label: () => 'Timeline', icon: IconTimeline, path: (p) => `/projects/${p}/timeline` },
