@@ -69,7 +69,7 @@ that does not is shown on the task, and a person reviews it as usual:
 7. The project has not used up its tokens or its automatic merges for today.
 8. The pull request is open, and CI on that commit is green.
 
-The Merge step says what on this board stops an automatic merge: GitHub polling off, no verifier
+The ladder at the top of Automation and the Merge section say what on this board stops an automatic merge: GitHub polling off, no verifier
 installed where the board runs, no public key, a team that needs a person. While any of them holds,
 L4 and L5 are shown disabled with the reasons ("L4 and L5 are off: …"). Each domain shows its merged and
 undone changes beside its level.
@@ -106,7 +106,7 @@ review with every attempt kept.
 
 ## Budgets
 
-Each project can cap three things, set under **Daily limits** in the Merge step. Leave a box empty for no
+Each project can cap three things, set under **Daily limits** in the Limits section. Leave a box empty for no
 limit; nothing has one until you set it.
 
 | Limit | What happens when it is reached |

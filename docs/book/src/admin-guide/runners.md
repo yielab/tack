@@ -356,7 +356,7 @@ A team that can finish a task with nobody present is `lights-out`. Any other tea
 the line ends with the fixes docket asks for, in docket's words (the example above is the doctor's
 own test data). A team that is `attended`, or reports any fix, **keeps its tasks at autonomy level
 L3**, however high the project's level is: Tack will not merge them by itself. The project's
-Automation settings show the same teams and fixes under "Ceiling". Run the fix with docket's own
+Automation settings show the same teams and fixes in the ladder at the top of the tab. Run the fix with docket's own
 commands, then run the doctor again. The Merge button is not held by this ceiling. See
 [Automating a Project](../user-guide/automation.md) for the person's side.
 

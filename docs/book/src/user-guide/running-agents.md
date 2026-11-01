@@ -229,8 +229,8 @@ A limit is in tokens. A run has one unless the profile sets none and the project
 |---|---|
 | A profile, on the Agents page: **Token limit per run** and **Time limit** | Every run of that profile |
 | The dialog's **Advanced** section | This run only; it replaces the profile's and the provisional limit, and an empty box runs it with the profile's, else the provisional one |
-| Settings → Automation → Merge, **Provisional tokens per run** | Every run whose profile sets no limit; 2 000 000 tokens until you change it, and empty means no limit |
-| Settings → Automation → Merge, **Tokens per day** | The project's day; see [Budgets](merging.md#budgets) |
+| Settings → Automation → Limits, **Provisional tokens per run** | Every run whose profile sets no limit; 2 000 000 tokens until you change it, and empty means no limit |
+| Settings → Automation → Limits, **Tokens per day** | The project's day; see [Budgets](merging.md#budgets) |
 
 A token counted is a new one: the input the agent's cache did not serve, what it wrote to the cache, and
 its output. What the cache served is shown beside the count and never counted, because the model did not

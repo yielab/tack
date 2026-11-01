@@ -298,7 +298,7 @@ a minute. All the keys are in [docket teams](runners.md#docket-teams).
   team saas-research: attended (fix: docket pod set network none) · reads nothing outside its work
 ```
 
-In the project's **Settings → Automation → Ceiling**, the team is listed with "keeps its tasks at L3"
+In the ladder at the top of the project's **Settings → Automation**, the team is listed with "keeps its tasks at L3"
 and the same fix. The project merges nothing by itself even though its level is higher.
 
 **Cause.** A team that cannot finish a task without a person present is attended. Tack will not merge
