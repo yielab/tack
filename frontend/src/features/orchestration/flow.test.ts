@@ -16,6 +16,7 @@ import {
   nobodyText,
   placements,
   routeItem,
+  scopedNobody,
   sentBackOf,
   showsNobody,
   startOrder,
@@ -26,6 +27,7 @@ import {
   withProfile,
   type FlowFilter,
   type FlowInput,
+  type FlowScope,
   type RoutingContext,
 } from './flow';
 
@@ -616,5 +618,38 @@ describe('laneQueue and candidateIds', () => {
     ];
     const statuses = [{ name: 'To Do', category: 'todo' }, { name: 'Doing', category: 'in_progress' }];
     expect(candidateIds(items, [run({ item_id: 'ran' })], statuses, 'To Do')).toEqual(['ready', 'ran', 'child']);
+  });
+});
+
+describe('a scope chosen on the Map narrows Flow', () => {
+  const flow = buildFlow(
+    input({
+      teams: [team('saas-notes'), team('other')],
+      profiles: [profile('notes', 'saas-notes'), profile('o', 'other')],
+      items: [item({ id: 'a', run_settings: own('notes') }), item({ id: 'b', run_settings: own('o') }), item({ id: 'lost' })],
+      roles: new Map([['lost', []]]),
+    }),
+  );
+  const scope = (lanes: string[], nobody: string[] = []): FlowScope => ({ kind: 'team', label: 'the team saas-notes', lanes, nobody });
+
+  it('keeps_every_lane_and_task_without_a_scope', () => {
+    expect(visibleLanes(flow, new Set()).length).toBe(2);
+    expect(scopedNobody(flow, null).map((e) => e.id)).toEqual(['lost']);
+  });
+
+  it('keeps_only_the_lanes_the_scope_names', () => {
+    expect(visibleLanes(flow, new Set(), scope(['team:saas-notes'])).map((l) => l.name)).toEqual(['saas-notes']);
+    expect(visibleLanes(flow, new Set(), scope([])).length).toBe(0);
+  });
+
+  it('keeps_only_the_tasks_nobody_will_take_that_the_scope_names', () => {
+    expect(scopedNobody(flow, scope([], ['lost'])).map((e) => e.id)).toEqual(['lost']);
+    expect(scopedNobody(flow, scope(['team:saas-notes']))).toEqual([]);
+  });
+
+  it('applies_the_state_filters_inside_the_scope', () => {
+    const both = scope(['team:saas-notes', 'team:other']);
+    expect(visibleLanes(flow, new Set<FlowFilter>(['queued']), both).length).toBe(0);
+    expect(visibleLanes(flow, new Set(), both).length).toBe(2);
   });
 });

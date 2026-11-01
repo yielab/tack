@@ -606,12 +606,33 @@ export function tokenPasses(token: FlowToken, filters: ReadonlySet<FlowFilter>):
   return passesFilters(token.run, runFilters);
 }
 
-/** The lanes to draw under the filters: with none set, all of them; otherwise those with a task that passes. */
-export function visibleLanes(flow: Flow, filters: ReadonlySet<FlowFilter>): FlowLane[] {
+/**
+ * What the Map narrows Flow to: one role, profile, team or member, or a whole column. The Map works out
+ * which lanes and which unrouted tasks pass through what was chosen, since it holds the routes; Flow
+ * only keeps those.
+ */
+export interface FlowScope {
+  kind: 'role' | 'profile' | 'team' | 'member' | 'column';
+  /** What was chosen, in words: "the role Reviewer", "every team". */
+  label: string;
+  /** The keys of the lanes that pass. */
+  lanes: readonly string[];
+  /** The ids of the tasks nobody will take that pass. */
+  nobody: readonly string[];
+}
+
+/** The lanes to draw under the filters and the scope: with none set, all of them; otherwise those with a task that passes. */
+export function visibleLanes(flow: Flow, filters: ReadonlySet<FlowFilter>, scope: FlowScope | null = null): FlowLane[] {
+  const inScope = scope ? flow.lanes.filter((l) => scope.lanes.includes(l.key)) : flow.lanes;
   const runFilters = [...filters].some((f) => f !== 'nobody');
-  if (filters.size === 0) return flow.lanes;
+  if (filters.size === 0) return inScope;
   if (!runFilters) return [];
-  return flow.lanes.filter((l) => l.tokens.some((t) => tokenPasses(t, filters)));
+  return inScope.filter((l) => l.tokens.some((t) => tokenPasses(t, filters)));
+}
+
+/** The tasks nobody will take that the scope lets through: all of them without a scope. */
+export function scopedNobody(flow: Flow, scope: FlowScope | null): NobodyEntry[] {
+  return scope ? flow.nobody.filter((e) => scope.nobody.includes(e.id)) : flow.nobody;
 }
 
 /** Whether the Nobody lane shows: always when nothing is filtered, else only when asked for. */

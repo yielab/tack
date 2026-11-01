@@ -528,3 +528,220 @@ describe('Orchestration: following the stream', () => {
     expect(q(c, '[data-item-id="a"]')!.className).toContain('flow-arrive');
   });
 });
+
+describe('Orchestration: Map and Compare', () => {
+  afterEach(() => {
+    try {
+      localStorage.clear();
+    } catch {
+      /* nothing to clear */
+    }
+  });
+
+  /** Three lanes as before, a role with no profile and a team no profile names. */
+  function mapWorld(): World {
+    const w = threeLanes();
+    w.roles = [...w.roles, { id: 'role-2', name: 'Scribe', agent_profile_id: 'notes-p', project_id: 'p1' }, { id: 'role-3', name: 'Orphan', agent_profile_id: null, project_id: 'p1' }];
+    w.teams = [...w.teams, team('lonely', null, { profiles: [], reported: false, report: null })];
+    w.runners = [{ runner_id: 'r1', name: 'This computer (ox)', state: 'active', online: true, total_capacity: 1, available_capacity: 1, capability_snapshot: null }];
+    w.teams = w.teams.map((t) => ({ ...t, runner: t.reported ? 'r1' : null }));
+    return w;
+  }
+
+  const modeButton = (c: ParentNode, mode: 'flow' | 'map') => q<HTMLButtonElement>(c, `[data-testid="orchestration-mode-${mode}"]`)!;
+  const node = (c: ParentNode, id: string) => qa<SVGGElement>(c, '[data-testid="map-node"], [data-testid="map-column"]').find((n) => n.getAttribute('data-node') === id)!;
+  const press = async (el: Element, key: string) => {
+    el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    await flush();
+  };
+
+  it('opens_in_Flow_and_switches_to_Map_with_the_diagram_and_the_table_under_it', async () => {
+    const c = await mount(mapWorld());
+    expect(modeButton(c, 'flow').getAttribute('aria-pressed')).toBe('true');
+    expect(q(c, '[data-testid="map"]')).toBeNull();
+    modeButton(c, 'map').click();
+    await settle();
+    expect(modeButton(c, 'map').getAttribute('aria-pressed')).toBe('true');
+    expect(q(c, '[data-testid="flow"]')).toBeNull();
+    const map = q(c, '[data-testid="map"]')!;
+    const compare = q(c, '[data-testid="compare"]')!;
+    expect(map).not.toBeNull();
+    // The table sits under the diagram.
+    expect(map.compareDocumentPosition(compare) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    modeButton(c, 'flow').click();
+    await settle();
+    expect(q(c, '[data-testid="flow"]')).not.toBeNull();
+  });
+
+  it('remembers_the_mode_in_this_browser_and_falls_back_to_Flow_when_storage_is_closed', async () => {
+    const first = await mount(mapWorld());
+    modeButton(first, 'map').click();
+    await settle();
+    expect(localStorage.getItem('tack_orchestration_mode')).toBe('map');
+    while (disposers.length) disposers.pop()!();
+    document.body.innerHTML = '';
+    const again = await mount(mapWorld());
+    expect(modeButton(again, 'map').getAttribute('aria-pressed')).toBe('true');
+    expect(q(again, '[data-testid="map"]')).not.toBeNull();
+
+    while (disposers.length) disposers.pop()!();
+    document.body.innerHTML = '';
+    const read = Storage.prototype.getItem;
+    const write = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
+      if (key === 'tack_orchestration_mode') throw new Error('closed');
+      return read.call(this, key);
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === 'tack_orchestration_mode') throw new Error('closed');
+      write.call(this, key, value);
+    });
+    const closed = await mount(mapWorld());
+    expect(q(closed, '[data-testid="flow"]')).not.toBeNull();
+    modeButton(closed, 'map').click();
+    await settle();
+    expect(q(closed, '[data-testid="map"]')).not.toBeNull();
+  });
+
+  it('draws_the_four_columns_with_a_title_and_a_description_and_every_node_focusable_with_a_name', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const svg = q<SVGSVGElement>(c, '[data-testid="map"] svg')!;
+    expect(q(svg, 'title')!.textContent).toContain('Roles, profiles, teams and members');
+    expect(q(svg, 'desc')).not.toBeNull();
+    expect(qa(c, '[data-testid="map-column"]').map((n) => n.getAttribute('aria-label')!.split('.')[0])).toEqual(['Roles', 'Profiles', 'Teams', 'Members']);
+    const nodes = qa(c, '[data-testid="map-node"]');
+    expect(nodes.length).toBeGreaterThan(6);
+    for (const n of nodes) {
+      expect(n.getAttribute('role')).toBe('button');
+      expect(n.hasAttribute('tabindex')).toBe(true);
+      expect(n.getAttribute('aria-label')).toMatch(/Press Enter to show it in Flow/);
+    }
+    // Only one stop is in the tab order.
+    expect([...nodes, ...qa(c, '[data-testid="map-column"]')].filter((n) => n.getAttribute('tabindex') === '0').length).toBe(1);
+  });
+
+  it('draws_a_role_with_no_profile_and_a_team_no_profile_names_dashed_with_the_fix_as_a_link', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const orphan = node(c, 'role:Orphan');
+    expect(orphan.getAttribute('data-dashed')).toBe('true');
+    expect(q(orphan, 'rect')!.getAttribute('stroke-dasharray')).toBeTruthy();
+    const lonely = node(c, 'team:lonely');
+    expect(lonely.getAttribute('data-dashed')).toBe('true');
+    const fixes = qa<SVGAElement>(c, '[data-testid="map-fix"]').map((a) => a.getAttribute('href'));
+    expect(fixes).toContain('/projects/p1/settings?tab=automation');
+    expect(fixes).toContain('/agents');
+    expect(node(c, 'team:saas-notes').getAttribute('data-dashed')).toBeNull();
+  });
+
+  it('moves_between_nodes_with_the_arrow_keys', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const first = node(c, 'column:roles');
+    first.focus();
+    expect(document.activeElement).toBe(first);
+    await press(first, 'ArrowDown');
+    // The first role down the column is the one drawn highest.
+    const top = qa(c, '[data-testid="map-node"]')
+      .filter((n) => n.getAttribute('data-kind') === 'role')
+      .sort((a, b) => Number(q(a, 'rect')!.getAttribute('y')) - Number(q(b, 'rect')!.getAttribute('y')))[0];
+    expect(document.activeElement).toBe(top);
+    await press(document.activeElement!, 'ArrowRight');
+    expect(document.activeElement!.getAttribute('data-kind')).toBe('profile');
+    await press(document.activeElement!, 'ArrowLeft');
+    expect(document.activeElement!.getAttribute('data-kind')).toBe('role');
+    // The stop that has the focus is the one in the tab order.
+    expect(document.activeElement!.getAttribute('tabindex')).toBe('0');
+    await press(node(c, 'role:Idler'), 'ArrowRight');
+    expect(document.activeElement!.getAttribute('data-node')).toBe('profile:idle-p');
+  });
+
+  it('opens_Flow_narrowed_to_the_lanes_a_node_passes_through_and_clears_back', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    node(c, 'role:Idler').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(q(c, '[data-testid="map"]')).toBeNull();
+    expect(laneNames(c)).toEqual(['idle-team']);
+    expect(q(c, '[data-testid="flow-scope"]')!.textContent).toContain('the role Idler');
+    // The visit does not become the mode left on: Map stays what was saved.
+    expect(localStorage.getItem('tack_orchestration_mode')).toBe('map');
+    q<HTMLButtonElement>(c, '[data-testid="flow-scope-clear"]')!.click();
+    await settle();
+    expect(laneNames(c).length).toBe(3);
+    expect(q(c, '[data-testid="flow-scope"]')).toBeNull();
+  });
+
+  it('opens_Flow_from_the_keyboard_with_Enter_and_from_a_column_header', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    await press(node(c, 'team:saas-code'), 'Enter');
+    expect(laneNames(c)).toEqual(['saas-code']);
+    modeButton(c, 'map').click();
+    await settle();
+    expect(q(c, '[data-testid="flow-scope"]')).toBeNull();
+    node(c, 'column:teams').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(q(c, '[data-testid="flow-scope"]')!.textContent).toContain('every team');
+    expect(laneNames(c).sort()).toEqual(['idle-team', 'saas-code', 'saas-notes']);
+  });
+
+  it('writes_the_same_routes_as_text_one_line_for_each_link', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const links = qa(c, '[data-testid="map-link"]');
+    const lines = qa(c, '[data-route]').filter((li) => links.some((l) => l.getAttribute('data-link') === li.getAttribute('data-route')));
+    expect(links.length).toBeGreaterThan(0);
+    expect(lines.length).toBe(links.length);
+    for (const l of links) {
+      const line = lines.find((li) => li.getAttribute('data-route') === l.getAttribute('data-link'))!;
+      const tasks = Number(l.getAttribute('data-tasks'));
+      expect(line.textContent).toContain(`${tasks} open ${tasks === 1 ? 'task' : 'tasks'}`);
+    }
+    // The text is in the page whether or not the fold is open, and says what is dashed with its fix.
+    const fold = q<HTMLDetailsElement>(c, '[data-testid="map-routes"]')!;
+    expect(fold.open).toBe(false);
+    expect(fold.textContent).toContain('Routes as text');
+    const notes = q(c, '[data-testid="map-routes-notes"]')!;
+    expect(notes.textContent).toContain('Orphan');
+    expect(qa<HTMLAnchorElement>(notes, 'a').map((a) => a.getAttribute('href'))).toContain('/projects/p1/settings?tab=automation');
+  });
+
+  it('compares_the_teams_in_a_table_with_row_and_column_headers', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const table = q<HTMLTableElement>(c, '[data-testid="compare"] table')!;
+    expect(qa(table, 'thead th[scope="col"]').length).toBe(1 + 4);
+    expect(qa(table, 'tbody th[scope="row"]').map((th) => th.textContent)).toContain('Token limit per run');
+    expect(qa(table, '[data-testid="compare-team"]').map((th) => th.textContent!.trim().split('No computer')[0].trim())).toEqual(['idle-team', 'lonely', 'saas-code', 'saas-notes']);
+    const cellFor = (rowKey: string, teamName: string) => {
+      const col = qa(table, '[data-testid="compare-team"]').findIndex((th) => th.textContent!.startsWith(teamName));
+      return qa(q(table, `[data-row="${rowKey}"]`)!, 'td')[col];
+    };
+    expect(cellFor('works-in', 'saas-notes').textContent).toContain('The repository, on a branch');
+    expect(cellFor('network', 'saas-notes').textContent).toBe('No network');
+    expect(cellFor('members', 'saas-notes').textContent).toContain('Lead · m');
+    expect(cellFor('steps', 'saas-notes').textContent).toContain('checked by a reviewer');
+    expect(cellFor('merge', 'saas-notes').textContent).toBe('You merge (L3)');
+  });
+
+  it('reads_not_reported_for_what_a_team_left_out_with_the_reason_on_hover', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const lonelyCol = qa(c, '[data-testid="compare-team"]').findIndex((th) => th.textContent!.startsWith('lonely'));
+    const cell = qa(q(c, '[data-row="works-in"]')!, 'td')[lonelyCol];
+    const missing = q(cell, '[data-missing="true"]')!;
+    expect(missing.textContent).toContain('not reported');
+    expect(missing.getAttribute('title')).toContain('No computer reports this team');
+    expect(qa(c, '[data-missing="true"]').length).toBeGreaterThan(3);
+  });
+});
