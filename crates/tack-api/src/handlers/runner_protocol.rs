@@ -1091,6 +1091,26 @@ async fn transition_attempt(
             })?;
     }
 
+    // Only the report that starts the run moves the item; a replay of it must not move it again
+    // after a person has put it elsewhere.
+    if matches!(phase, AttemptTransitionPhase::Running)
+        && matches!(result, AttemptTransitionResult::Applied(_))
+        && let Some(moved) =
+            tack_app::runs::move_on_start::move_item(&state.repo, attempt_id.as_str()).await
+        && let Some(app) = state.app.as_ref()
+    {
+        // The board learns about the move the same way as from an edit.
+        crate::handlers::websocket::broadcast_event(
+            app,
+            crate::handlers::websocket::BoardEvent::ItemUpdated {
+                project_id: moved.project_id,
+                item_id: moved.item_id,
+                old_status: Some(moved.old_status),
+                new_status: moved.new_status,
+            },
+        );
+    }
+
     match result {
         AttemptTransitionResult::Applied(resp) => transition_json(resp, false),
         AttemptTransitionResult::Replayed(resp) => transition_json(resp, true),

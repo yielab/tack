@@ -629,6 +629,7 @@ async fn write_automation(
             .map(Some),
         default_model: auto.default_model.clone().map(Some),
         on_finish_status: auto.on_finish_status.clone().map(Some),
+        on_start_status: auto.on_start_status.clone().map(Some),
         definition_of_done: auto.definition_of_done.clone().map(Some),
         ..Default::default()
     };
@@ -710,11 +711,22 @@ async fn write(
     if is_new {
         let mut vocabulary = vocabulary_for_type(&project.project_type);
         vocabulary.extend(plan.vocabulary.take().unwrap_or_default());
+        // The project was made with its type's workflow; the file's replaces it, so the status a
+        // run's start moves to is chosen again from it. A file with an automation section says
+        // everything about automation, and an export omits the setting when it is off.
+        let on_start_status = match plan.automation {
+            Some(_) => None,
+            None => board
+                .workflow
+                .find_first_in_progress_status()
+                .map(str::to_string),
+        };
         repo.update_project(
             project_id,
             UpdateProject {
                 vocabulary: Some(vocabulary),
                 workflow: Some(board.workflow.clone()),
+                on_start_status: Some(on_start_status),
                 ..Default::default()
             },
         )

@@ -56,6 +56,8 @@ pub struct Project {
     pub default_harness: Option<String>,
     pub default_profile_id: Option<String>,
     pub on_finish_status: Option<String>,
+    /// The status an item moves to when a run of it starts.
+    pub on_start_status: Option<String>,
     pub definition_of_done: Option<String>,
     /// The project starts a task by itself when it reaches `auto_start_status`.
     pub auto_start_enabled: bool,
@@ -682,6 +684,8 @@ pub struct UpdateProject {
     pub default_profile_id: Option<Option<String>>,
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub on_finish_status: Option<Option<String>>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub on_start_status: Option<Option<String>>,
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub definition_of_done: Option<Option<String>>,
     pub auto_start_enabled: Option<bool>,

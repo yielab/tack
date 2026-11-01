@@ -186,6 +186,10 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("automation.on_finish_status \"Nowhere\""),
         ),
         (
+            "automation: { on_start_status: Nowhere }",
+            Problem("automation.on_start_status \"Nowhere\""),
+        ),
+        (
             "automation: { auto_start: { status: Nowhere } }",
             Problem("automation.auto_start.status \"Nowhere\""),
         ),
@@ -327,6 +331,7 @@ fn synthetic_project() -> Project {
         default_harness: None,
         default_profile_id: None,
         on_finish_status: None,
+        on_start_status: None,
         definition_of_done: None,
         auto_start_enabled: false,
         auto_start_status: None,
