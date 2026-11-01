@@ -49,7 +49,7 @@ function mockFetch(opts: { executions?: unknown[] } = {}): typeof fetch {
 }
 
 function mount(
-  props: { compact?: boolean; showStateChip?: boolean } = {},
+  props: { compact?: boolean; showStateChip?: boolean; variant?: 'primary' | 'secondary' | 'ghost' } = {},
   fetchOpts: Parameters<typeof mockFetch>[0] = {},
 ) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch(fetchOpts));
@@ -111,6 +111,13 @@ describe('RunWithAgentButton', () => {
     await flush();
     expect(c.textContent).toContain('Run again');
     expect(c.textContent).not.toContain('Run with agent');
+  });
+
+  it('the labeled trigger is the filled button unless the screen draws it quieter', () => {
+    const filled = mount({ compact: false });
+    expect(filled.querySelector('button')!.getAttribute('style')).toContain('--color-primary-600');
+    const quiet = mount({ compact: false, variant: 'ghost' });
+    expect(quiet.querySelector('button')!.getAttribute('style')).not.toContain('--color-primary-600');
   });
 
   it('clicking the trigger opens the shared modal, titled with the item', async () => {

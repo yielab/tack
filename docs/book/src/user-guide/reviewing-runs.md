@@ -62,7 +62,7 @@ title, description and acceptance criteria can be edited. Its **Type** and **Rol
 must wait for. An item nested under another is unticked when its parent is unticked. Nothing is created
 until you press **Create selected**, so no agent writes to your board on its own.
 
-To propose items from a file, open the item and use **Propose items from a file**, under Run with agent.
+To propose items from a file, open the item and choose **Propose items from a file** in its **⋯** menu.
 Choose a `tack-plan.json`. Tack checks it and names the first entry that does not fit, and why. A file that
 fits opens the same list.
 

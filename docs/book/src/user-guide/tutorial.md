@@ -157,7 +157,7 @@ Clicking the chip opens the task's **Execution** tab:
 
 <img src="../screenshots/tutorial/12-board-tracking.png" width="98%" alt="The board right after Run: the 'Draft the launch announcement' card carries a live 'Queued' chip.">
 
-The drawer follows the run as it happens: the **Last run** panel at the top reads **Running** —
+The drawer follows the run as it happens: the **Now** panel under the header reads **Running** —
 *The agent is working on it* — with **Follow live** and **Stop**, and the Execution tab shows **Run 1**
 with the runner that took it. What the agent did, the tokens it used and its cost appear when it
 finishes:
@@ -170,7 +170,7 @@ When the run finishes, the same tab is the record of what happened: one run card
 the verdict it waits for (**Accept** or **Reject…**), what the agent concluded, what it did and
 what it got, and its usage — tokens counted against the limit, folded under **Usage**; opened, it
 also gives the approximate cost, which is the agent's own estimate at list price, not your bill.
-(The **Last run** panel at the top of the drawer gives the same in short.) This agent only wrote text and its profile allows only read tools, so no change was expected
+(The **Now** panel under the header gives the same in short.) This agent only wrote text and its profile allows only read tools, so no change was expected
 and the run reads **Finished — no changes recorded**, and **What the agent concluded** is the announcement itself:
 
 <img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the Execution tab: Run 1 'Finished — no changes recorded', a 'This run is waiting for your verdict' banner with Accept and Reject…, the agent and runner, 'The agent ended without changing any files. What it said is below.' with a Copy path button, What the agent concluded showing the opening of the announcement with a Read full report link, What the agent did as a timeline of three steps (Install skipped, agent.model_call, The run ended), What the agent got (Sandboxed with bwrap, no environment variables, the project's folder), a collapsed Usage line reading about 3 000 tokens counted and 0% of its limit, the request and attempt ids with Copy, a Raw log button, and Show questions & files; the board card behind carries a Finished chip.">

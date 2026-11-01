@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
+import { MemoryRouter, Route } from '@solidjs/router';
 import { ExecutionStoreProvider } from '../state/executionContext';
-import LatestRunSummary from './LatestRunSummary';
+import LatestRunSummary, { primaryNowAction, type LatestRunSummaryProps } from './LatestRunSummary';
 import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
@@ -25,7 +26,7 @@ const ATTEMPT = {
   pull_request: null, review: null,
 };
 
-function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = [], reviewInTab = false, decisions: unknown[] = []) {
+function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [ATTEMPT], events: unknown[] = [], reviewInTab = false, decisions: unknown[] = [], extra: Partial<LatestRunSummaryProps> = {}) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/decisions')) return new Response(JSON.stringify({ protocol_version: 1, data: decisions }), { status: 200 });
@@ -40,7 +41,14 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
   const dispose = render(
     () => (
       <ExecutionStoreProvider>
-        <LatestRunSummary itemId="item-1" itemTitle="Fix it" projectId="proj-1" onOpen={onOpen} reviewInTab={reviewInTab} />
+        <MemoryRouter>
+          <Route
+            path="/"
+            component={() => (
+              <LatestRunSummary itemId="item-1" itemTitle="Fix it" projectId="proj-1" onOpen={onOpen} reviewInTab={reviewInTab} {...extra} />
+            )}
+          />
+        </MemoryRouter>
       </ExecutionStoreProvider>
     ),
     container,
@@ -77,20 +85,20 @@ describe('LatestRunSummary', () => {
     expect(panel.querySelector('[data-testid="latest-run-usage"]')!.textContent).toBe(
       '289 710 tokens (+ 791 447 read from cache, not counted) · ≈ $1.34 (estimated) · 6 model calls · claude-sonnet-5-5',
     );
-    const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'See what it did')!;
+    const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Review and merge')!;
     open.click();
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
   const buttons = (c: Element) => [...c.querySelectorAll('button')].map((b) => b.textContent);
 
-  it('a run that needs a verdict is an amber card with the opening of its report, its duration, Accept and Reject…', async () => {
+  it('a run that needs a verdict is a Ready for review card with the opening of its report, its duration, Accept and Reject…', async () => {
     const c = mount([RUN]);
     for (let i = 0; i < 4; i++) await flush();
     const card = c.querySelector('[data-testid="latest-run"]')!;
     expect(card.getAttribute('data-state')).toBe('review');
     expect(card.querySelector('[data-testid="latest-run-meta"]')!.textContent).toBe('1m 55s');
-    expect(buttons(card)).toEqual(expect.arrayContaining(['Accept', 'Reject…', 'See what it did']));
+    expect(buttons(card)).toEqual(expect.arrayContaining(['Review and merge', 'Accept', 'Reject…']));
   });
 
   it('while the Execution tab is open the card keeps its state and its links but leaves out Accept and Reject…', async () => {
@@ -99,7 +107,7 @@ describe('LatestRunSummary', () => {
     const card = c.querySelector('[data-testid="latest-run"]')!;
     expect(card.getAttribute('data-state')).toBe('review');
     expect(card.querySelector('[data-testid="latest-run-meta"]')!.textContent).toBe('1m 55s');
-    expect(buttons(card)).toContain('See what it did');
+    expect(buttons(card)).toContain('Review and merge');
     expect(buttons(card)).not.toContain('Accept');
     expect(buttons(card)).not.toContain('Reject…');
   });
@@ -134,7 +142,12 @@ describe('LatestRunSummary', () => {
     const card = c.querySelector('[data-testid="latest-run"]')!;
     expect(card.getAttribute('data-state')).toBe('running');
     expect([...card.querySelectorAll('[data-testid="latest-run-steps"] li')].map((li) => li.textContent)).toEqual(['two', 'three', 'four']);
-    expect(card.querySelector('[data-testid="run-limit-used"]')!.textContent).toBe('Used 120 000 of 300 000 tokens');
+    // The count is a bar; its sentence is the bar's accessible name.
+    const meter = card.querySelector('[data-testid="run-limit-used"]')!;
+    expect(meter.getAttribute('role')).toBe('meter');
+    expect(meter.getAttribute('aria-label')).toBe('Used 120 000 of 300 000 tokens');
+    expect(meter.getAttribute('aria-valuenow')).toBe('120000');
+    expect(meter.getAttribute('aria-valuemax')).toBe('300000');
     expect(buttons(card)).toEqual(expect.arrayContaining(['Follow live', 'Stop']));
     [...card.querySelectorAll('button')].find((b) => b.textContent === 'Follow live')!.click();
     expect(onOpen).toHaveBeenCalledOnce();
@@ -146,10 +159,10 @@ describe('LatestRunSummary', () => {
     for (let i = 0; i < 6; i++) await flush();
     const card = asking.querySelector('[data-testid="latest-run"]')!;
     const status = card.querySelector('[role="status"]')!;
-    expect(status.textContent).toBe('Needs a person');
+    expect(status.textContent).toBe('Needs youNeeds a person');
     expect(status.getAttribute('aria-live')).toBe('polite');
     expect(buttons(card)).not.toContain('Follow live');
-    [...card.querySelectorAll('button')].find((b) => b.textContent === 'Open the question')!.click();
+    [...card.querySelectorAll('button')].find((b) => b.textContent === 'Answer the question')!.click();
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
@@ -318,5 +331,110 @@ describe('LatestRunSummary: questions the agent asked and a folder team', () => 
     expect(labels).not.toContain('Accept');
     expect(labels).not.toContain('Reject…');
     expect(labels).not.toContain('Merge');
+  });
+});
+
+describe('LatestRunSummary: the Now panel in each state', () => {
+  const buttonsOf = (root: Element) => [...root.querySelectorAll<HTMLButtonElement>('button')];
+  /** The filled buttons: the panel has at most one. */
+  const filled = (root: Element) =>
+    buttonsOf(root).filter((b) => (b.getAttribute('style') ?? '').includes('--color-primary-600')).map((b) => b.textContent);
+  const banner = (c: Element) => c.querySelector('[data-testid="now-panel"] [role="status"]')!.textContent;
+  const panel = (c: Element) => c.querySelector('[data-testid="now-panel"]')!;
+  const settle = async () => {
+    for (let i = 0; i < 6; i++) await flush();
+  };
+
+  it('an item with no run shows Run with agent as its one filled button, and who would do it', async () => {
+    const c = mount([], () => {}, [], [], false, [], { idle: <p data-testid="now-who">Would go to Code agent · team saas-code</p> });
+    await settle();
+    expect(c.querySelector('[data-testid="latest-run"]')).toBeNull();
+    expect(c.querySelector('[data-testid="now-idle"]')).not.toBeNull();
+    expect(filled(panel(c))).toEqual(['Run with agent']);
+    expect(c.querySelector('[data-testid="now-who"]')!.textContent).toBe('Would go to Code agent · team saas-code');
+  });
+
+  it('a queued run says Queued and has no filled button, only another computer and a quiet Run again', async () => {
+    const c = mount([{ ...RUN, state: 'queued' }], () => {}, []);
+    await settle();
+    expect(banner(c)).toBe('Queued');
+    expect(filled(panel(c))).toEqual([]);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run on another computer', 'Run again']);
+  });
+
+  it('a running run says Running; Follow live and Stop are secondary and nothing is filled', async () => {
+    const c = mount([{ ...RUN, state: 'running' }], () => {}, [{ ...ATTEMPT, state: 'running', terminal_reason: null, ended_at: null }]);
+    await settle();
+    expect(banner(c)).toBe('Running');
+    expect(filled(panel(c))).toEqual([]);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Follow live', 'Stop', 'Run again']);
+  });
+
+  it('a run that needs you says Needs you with the docket words, and Answer the question is the filled button', async () => {
+    const c = mount([{ ...RUN, state: 'running' }], () => {}, [{ ...ATTEMPT, state: 'waiting_decision', terminal_reason: null, ended_at: null }]);
+    await settle();
+    expect(banner(c)).toBe('Needs youNeeds a person');
+    expect(filled(panel(c))).toEqual(['Answer the question']);
+  });
+
+  it('a run ready for review says so, and Review and merge is the only filled button; Accept is secondary', async () => {
+    const c = mount([RUN]);
+    await settle();
+    expect(banner(c)).toBe('Ready for reviewNeeds your review');
+    expect(filled(panel(c))).toEqual(['Review and merge']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(expect.arrayContaining(['Accept', 'Reject…']));
+  });
+
+  it('a failed run says Failed with why, and See why it failed is the filled button', async () => {
+    const c = mount([{ ...RUN, state: 'failed' }], () => {}, [{ ...ATTEMPT, state: 'failed', terminal_reason: { code: 'timeout' } }]);
+    await settle();
+    expect(banner(c)).toBe('Failed');
+    expect(c.querySelector('[data-testid="latest-run-why"]')!.textContent).toBe("The run's time ran out");
+    expect(filled(panel(c))).toEqual(['See why it failed']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toContain('Run again');
+  });
+
+  it('a merged run says Done, and Run again is the filled button, once', async () => {
+    const merged = { ...ATTEMPT, merge: { enabled: false, reason: null, merged: { merged_at: '2026-10-08T12:30:00Z' } } };
+    const c = mount([RUN], () => {}, [merged]);
+    await settle();
+    expect(banner(c)).toBe('Done');
+    expect(c.querySelector('[data-testid="latest-run-merged"]')).not.toBeNull();
+    expect(filled(panel(c))).toEqual(['Run again']);
+    expect(buttonsOf(panel(c)).filter((b) => b.textContent === 'Run again')).toHaveLength(1);
+  });
+
+  it('the panel tells its screen the run state, and undefined while there is no run', async () => {
+    const onState = vi.fn();
+    mount([RUN], () => {}, [ATTEMPT], [], false, [], { onState });
+    await settle();
+    expect(onState).toHaveBeenLastCalledWith({ state: 'review', docket: 'Needs your review' });
+    const none = vi.fn();
+    mount([], () => {}, [], [], false, [], { onState: none });
+    await settle();
+    expect(none).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it('the footer slot is the last thing in the panel', async () => {
+    const c = mount([RUN], () => {}, [ATTEMPT], [], false, [], { footer: <p data-testid="foot">By hand</p> });
+    await settle();
+    expect(panel(c).lastElementChild!.getAttribute('data-testid')).toBe('foot');
+  });
+});
+
+describe('primaryNowAction', () => {
+  const base = { hasRun: true, asking: false, askingBehind: false };
+  it.each([
+    [{ hasRun: false, kind: 'done' }, 'run'],
+    [{ kind: 'queued' }, null],
+    [{ kind: 'queued', askingBehind: true }, 'answer'],
+    [{ kind: 'running' }, null],
+    [{ kind: 'running', asking: true }, 'answer'],
+    [{ kind: 'review' }, 'review'],
+    [{ kind: 'failed' }, 'why'],
+    [{ kind: 'done' }, 'again'],
+    [{ kind: 'merged' }, 'again'],
+  ] as const)('%j chooses %s', (input, expected) => {
+    expect(primaryNowAction({ ...base, ...input } as Parameters<typeof primaryNowAction>[0])).toBe(expected);
   });
 });
