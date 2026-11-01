@@ -49,7 +49,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   configured model its login rejects), the desktop shots, `recovery-demo.gif` (a released build) and three
   small items listed in the roadmap.
 - **The live suite (2026-10-27):** 14 of 15 against docket `52c22f89` (API 6) and prill `6b95423` on the local
-  model; the fifteenth needs the model's lead step, which repeats itself, and `--check` passes. It found five Tack
+  model; the fifteenth needs the model's lead step, which repeats itself (it passes with Claude Haiku 5.5, 2026-10-31, where 01 to 18 passed in one run and 19 and 20 in another, never all 20 in one), and `--check` passes. It found five Tack
   defects, fixed in Phase 81's round 1. Since 2026-10-26 the suite lives in the
   git-ignored `onboarding-lab/e2e/` (`docket-prill-e2e.sh`), beside the `onboard-project` skill it exercises.
   Every other docket test runs against the in-process fake in `crates/tack-runner/tests/fake_docket/`.
