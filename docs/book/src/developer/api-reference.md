@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (108 paths, 148 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (109 paths, 149 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -92,6 +92,19 @@ Projects: the top-level container for work.
 | 200 | Updated project | `Project` |
 | 400 | Validation error | `ErrorEnvelope` |
 | 404 | Project not found | `ErrorEnvelope` |
+
+#### `GET /api/projects/{id}/auto-start`
+
+start
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Project ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Whether the project starts tasks by itself and why each waiting task is not started yet | `AutoStartState` |
+| 404 | No such project | `ErrorEnvelope` |
 
 ---
 

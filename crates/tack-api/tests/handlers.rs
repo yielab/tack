@@ -15,6 +15,8 @@ mod attachments;
 mod attempt_lists;
 #[path = "handlers/attempt_scoping.rs"]
 mod attempt_scoping;
+#[path = "handlers/auto_start.rs"]
+mod auto_start;
 #[path = "handlers/autonomy.rs"]
 mod autonomy;
 #[path = "handlers/boards_multi.rs"]

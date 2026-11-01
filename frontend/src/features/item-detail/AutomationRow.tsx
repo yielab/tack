@@ -4,6 +4,7 @@ import { request } from '../../shared/api/client';
 import { agentProfilesApi, runnersApi, teamOf } from '../../shared/execution';
 import { noPlaceToRun } from '../../shared/runWithAgent/shared';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
+import { useAutoStart } from '../../shared/state/autoStart';
 import { toast } from '../../shared/ui/toast';
 import { HelpHint, LoadError } from '../../shared/ui';
 import { HELP } from '../../shared/help/texts';
@@ -24,6 +25,8 @@ export function automationSentence(input: {
   who?: string | null;
   /** Why the board cannot pick a computer for it, when it cannot (`noPlaceToRun`). */
   noPlace?: string | null;
+  /** Why auto-start has not started it yet, when it would have (`useAutoStart`). */
+  waiting?: string | null;
 }): string {
   if (!input.hasProfile && input.roleWithoutProfile) return `By hand: the role ${input.roleWithoutProfile} has no profile`;
   if (!input.starts) return "By hand: this project doesn't start tasks by itself";
@@ -31,6 +34,7 @@ export function automationSentence(input: {
     input.noPlace
       ? `By hand: it would start when it reaches ${input.startsAt}, but ${input.noPlace}`
       : `Starts by itself when it reaches ${input.startsAt}`,
+    input.waiting && !input.noPlace ? `Waiting to start: ${input.waiting}` : null,
     input.who ? `Goes to ${input.who}` : null,
     input.team ? `Team ${input.team}` : null,
     input.merge ? `Merge ${input.merge}` : null,
@@ -67,6 +71,9 @@ export function useAutomation(item: () => Item) {
       return { project, roles: detail.roles ?? [], runSettings: detail.item?.run_settings ?? null, profiles, autonomy, runners };
     },
   );
+  const autoStart = useAutoStart(() => item().project_id);
+  /** Why auto-start has not started the task yet, as a sentence; null when nothing holds it back. */
+  const waiting = () => autoStart.waiting(item().id)?.text ?? null;
   // The choice made on the task comes first, then the role's, then the project's.
   const chosen = () => {
     const d = resource.error ? undefined : resource();
@@ -93,9 +100,10 @@ export function useAutomation(item: () => Item) {
       hasProfile: !!profileId,
       who: !whoShownAbove && profile && from ? `${profile.name} (${from})` : null,
       noPlace: profile && d.runners ? noPlaceToRun(d.runners, profile.fleet_id) : null,
+      waiting: waiting(),
     });
   };
-  return { resource, refetch, chosen, sentence, item };
+  return { resource, refetch, chosen, sentence, waiting, item };
 }
 
 export type Automation = ReturnType<typeof useAutomation>;
@@ -109,15 +117,24 @@ export function whoWouldDoIt(automation: Automation): string | null {
   return team ? `${c.profile.name} · team ${team}` : c.profile.name;
 }
 
-/** Under the Run button of a task with no run: who would do it. */
+/** Under the Run button of a task with no run: who would do it, and why auto-start has not started it yet. */
 export const WhoWouldDoIt: Component<{ automation: Automation }> = (props) => (
-  <Show when={whoWouldDoIt(props.automation)}>
-    {(text) => (
-      <p data-testid="now-who" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-        Would go to {text()}
-      </p>
-    )}
-  </Show>
+  <>
+    <Show when={whoWouldDoIt(props.automation)}>
+      {(text) => (
+        <p data-testid="now-who" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          Would go to {text()}
+        </p>
+      )}
+    </Show>
+    <Show when={props.automation.waiting()}>
+      {(text) => (
+        <p data-testid="now-waiting" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          Waiting to start: {text()}
+        </p>
+      )}
+    </Show>
+  </>
 );
 
 /** What happens to this task without you: one muted line with its help, and the choice of who does it. It sits at the foot of the Now panel, under a hairline. */

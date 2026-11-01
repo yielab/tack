@@ -80,6 +80,82 @@ pub fn pick(candidates: &[Candidate], limits: &Limits) -> (Vec<Uuid>, Vec<(Uuid,
     (picked, skipped)
 }
 
+/// The first in-progress column and how full it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WipColumn {
+    pub name: String,
+    pub taken: usize,
+    pub limit: usize,
+}
+
+/// The numbers the sentence of a [`Skip`] quotes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Facts {
+    pub wip: Option<WipColumn>,
+    pub max_open: usize,
+    pub open_now: usize,
+}
+
+/// Why a task is not started, as a code a screen switches on and a sentence a person reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Why {
+    pub code: &'static str,
+    pub text: String,
+}
+
+fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// The reason a task waits, in plain words that carry the way out where there is one.
+pub fn why(skip: &Skip, facts: &Facts) -> Why {
+    let (code, text) = match skip {
+        Skip::OpenRequest => ("open_request", "It already has a run open".to_owned()),
+        Skip::Blocked(n) => (
+            "blocked",
+            format!(
+                "Blocked by {}",
+                count(*n, "unfinished task", "unfinished tasks")
+            ),
+        ),
+        Skip::NoProfile => ("no_profile", "No one is chosen to do it".to_owned()),
+        Skip::NoMachine => ("no_machine", "No computer can run it".to_owned()),
+        Skip::Wip => ("wip", wip_text(facts.wip.as_ref())),
+        Skip::Budget => ("budget", "This project's token limit is reached".to_owned()),
+        Skip::MaxOpen => ("max_open", max_open_text(facts)),
+    };
+    Why { code, text }
+}
+
+fn wip_text(column: Option<&WipColumn>) -> String {
+    match column {
+        Some(c) if c.taken >= c.limit => format!(
+            "{} is full ({} of {}): move something on to make room",
+            c.name, c.taken, c.limit
+        ),
+        Some(c) => format!(
+            "{} has room for {} more, and the tasks ahead of this one take it",
+            c.name,
+            c.limit - c.taken
+        ),
+        None => "The column it moves to is full".to_owned(),
+    }
+}
+
+fn max_open_text(facts: &Facts) -> String {
+    if facts.open_now >= facts.max_open {
+        format!(
+            "{} already open, the most this project allows",
+            count(facts.open_now, "run is", "runs are")
+        )
+    } else {
+        format!(
+            "This project allows {} open at once, and the tasks ahead of this one take the places left",
+            count(facts.max_open, "run", "runs")
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +276,88 @@ mod tests {
         for (limits, picked, skipped) in rows {
             assert_eq!(pick(&all, &limits), (picked, skipped), "{limits:?}");
         }
+    }
+
+    fn facts() -> Facts {
+        Facts {
+            wip: Some(WipColumn {
+                name: "In Progress".into(),
+                taken: 5,
+                limit: 5,
+            }),
+            max_open: 3,
+            open_now: 3,
+        }
+    }
+
+    #[test]
+    fn each_skip_has_a_code_and_a_plain_sentence() {
+        let facts = facts();
+        // (skip, code, text)
+        let rows = [
+            (
+                Skip::OpenRequest,
+                "open_request",
+                "It already has a run open",
+            ),
+            (Skip::Blocked(2), "blocked", "Blocked by 2 unfinished tasks"),
+            (Skip::Blocked(1), "blocked", "Blocked by 1 unfinished task"),
+            (Skip::NoProfile, "no_profile", "No one is chosen to do it"),
+            (Skip::NoMachine, "no_machine", "No computer can run it"),
+            (
+                Skip::Wip,
+                "wip",
+                "In Progress is full (5 of 5): move something on to make room",
+            ),
+            (
+                Skip::Budget,
+                "budget",
+                "This project's token limit is reached",
+            ),
+            (
+                Skip::MaxOpen,
+                "max_open",
+                "3 runs are already open, the most this project allows",
+            ),
+        ];
+        for (skip, code, text) in rows {
+            assert_eq!(
+                why(&skip, &facts),
+                Why {
+                    code,
+                    text: text.into()
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn a_column_or_a_cap_with_room_says_the_tasks_ahead_take_it() {
+        let open = Facts {
+            wip: Some(WipColumn {
+                name: "Doing".into(),
+                taken: 3,
+                limit: 5,
+            }),
+            max_open: 1,
+            open_now: 0,
+        };
+        assert_eq!(
+            why(&Skip::Wip, &open).text,
+            "Doing has room for 2 more, and the tasks ahead of this one take it"
+        );
+        assert_eq!(
+            why(&Skip::MaxOpen, &open).text,
+            "This project allows 1 run open at once, and the tasks ahead of this one take the places left"
+        );
+        let one = Facts {
+            max_open: 1,
+            open_now: 1,
+            ..open
+        };
+        assert_eq!(
+            why(&Skip::MaxOpen, &one).text,
+            "1 run is already open, the most this project allows"
+        );
     }
 }
