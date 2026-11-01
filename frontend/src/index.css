@@ -170,6 +170,34 @@
   --color-avatar-ink-white: #ffffff;
   --color-avatar-ink-black: #000000;
 
+  /* Run state (shared/ui/RunState.tsx): seven states, each an ink and a soft
+     fill, and a line for its outline. They alias the palette tokens above, so
+     a palette or a mode change restyles them with the rest. Declared once,
+     here: on <html> each alias resolves against that element's final values
+     (light or dark, any palette). RunState.test.tsx holds every ink to AA on
+     its soft fill, for each palette and both modes. */
+  --run-queued-ink: var(--color-text-secondary);
+  --run-queued-soft: var(--color-bg-subtle);
+  --run-queued-line: color-mix(in srgb, var(--run-queued-ink) 30%, transparent);
+  --run-running-ink: var(--color-accent-ink);
+  --run-running-soft: var(--color-accent-soft);
+  --run-running-line: color-mix(in srgb, var(--run-running-ink) 30%, transparent);
+  --run-needs-ink: var(--color-warning-600);
+  --run-needs-soft: var(--color-warning-100);
+  --run-needs-line: color-mix(in srgb, var(--run-needs-ink) 30%, transparent);
+  --run-review-ink: var(--color-accent2-ink);
+  --run-review-soft: var(--color-accent2-soft);
+  --run-review-line: color-mix(in srgb, var(--run-review-ink) 30%, transparent);
+  --run-done-ink: var(--color-success-600);
+  --run-done-soft: var(--color-success-100);
+  --run-done-line: color-mix(in srgb, var(--run-done-ink) 30%, transparent);
+  --run-failed-ink: var(--color-danger-600);
+  --run-failed-soft: var(--color-danger-100);
+  --run-failed-line: color-mix(in srgb, var(--run-failed-ink) 30%, transparent);
+  --run-cancelled-ink: var(--color-text-tertiary);
+  --run-cancelled-soft: var(--color-bg-subtle);
+  --run-cancelled-line: color-mix(in srgb, var(--run-cancelled-ink) 30%, transparent);
+
   --shadow-sm: 0 1px 2px rgb(15 40 35 / 0.06);
   --shadow-md: 0 1px 2px rgb(15 40 35 / 0.06), 0 4px 12px rgb(15 40 35 / 0.04);
   --shadow-lg: 0 18px 44px rgb(15 40 35 / 0.18);
@@ -891,6 +919,15 @@ body {
 }
 @keyframes tk-spin {
   to { transform: rotate(360deg); }
+}
+
+/* The Running glyph turns only when the person has not asked for less motion,
+   by the OS setting or the app's own. Stopped, it is still an open arc, so the
+   state reads from its shape and its label. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-motion="reduce"]) .run-state-spin {
+    animation: tk-spin 0.9s linear infinite;
+  }
 }
 
 /* Reduced motion: the OS setting, or the app's own (display.ts). Animations
