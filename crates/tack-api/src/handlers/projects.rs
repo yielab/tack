@@ -140,6 +140,13 @@ pub async fn update_project(
             Err(message) => return ApiError::BadRequest(message.to_owned()).into_response(),
         }
     }
+    if let Some(message) = input
+        .agents_on_board
+        .as_ref()
+        .and_then(|rung| rung.problem())
+    {
+        return ApiError::BadRequest(message).into_response();
+    }
     let current = match state.repo.get_project(id).await {
         Ok(Some(project)) => project,
         Ok(None) => return ApiError::NotFound(format!("Project {id} not found")).into_response(),

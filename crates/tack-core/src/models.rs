@@ -69,6 +69,8 @@ pub struct Project {
     pub prepare_command: Option<String>,
     /// Why auto-start switched itself off (the project dropped to L3); read, never written.
     pub auto_start_disabled_reason: Option<String>,
+    /// How far an agent may go on this project: the rung and the caps on creates (ADR 0034).
+    pub agents_on_board: crate::change_set::AgentsOnBoard,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -715,6 +717,8 @@ pub struct UpdateProject {
     /// install off, any other single line replaces the detected command.
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub prepare_command: Option<Option<String>>,
+    /// Replaces the project's rung and the caps on creates; omitted leaves them.
+    pub agents_on_board: Option<crate::change_set::AgentsOnBoard>,
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

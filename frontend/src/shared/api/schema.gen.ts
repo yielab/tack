@@ -369,6 +369,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/change-sets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/change-sets/{id} */
+        get: operations["get_change_set"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/change-sets/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/change-sets/{id}/apply */
+        post: operations["apply_change_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/change-sets/{id}/operations/{index}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** PATCH /api/change-sets/{id}/operations/{index} */
+        patch: operations["edit_operation"];
+        trace?: never;
+    };
+    "/api/change-sets/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/change-sets/{id}/reject */
+        post: operations["reject_change_set"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/custom-fields/{id}": {
         parameters: {
             query?: never;
@@ -1322,6 +1390,24 @@ export interface paths {
         put?: never;
         /** POST /api/projects/:id/boards - Create a new board for a project */
         post: operations["create_board"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/change-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{project_id}/change-sets */
+        get: operations["list_change_sets"];
+        put?: never;
+        /** POST /api/projects/{project_id}/change-sets */
+        post: operations["propose_change_set"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3290,6 +3376,30 @@ export interface components {
             /** @description Read only: whether its tools or its network flag reach the network, derived from `tool_policy`. */
             readonly uses_network: boolean;
         };
+        /**
+         * @description A project's `agents_on_board` setting: the level, and the two caps on creates that apply at
+         *     once. A cap of 0 lets none through, so Create with no caps behaves as Act.
+         */
+        AgentsOnBoard: {
+            /**
+             * Format: int32
+             * @description Creates that apply at once, per change set, at Create.
+             */
+            creates_per_change_set: number;
+            /**
+             * Format: int32
+             * @description Creates that apply at once, per day (UTC), at Create.
+             */
+            creates_per_day: number;
+            level: components["schemas"]["RungLevel"];
+        };
+        /** @description What a person applies. */
+        ApplyChangeSet: {
+            /** @description Edits to waiting operations, made before they apply. */
+            edits?: components["schemas"]["OperationEdit"][];
+            /** @description The positions to apply; absent means everything that waits. */
+            operations?: number[] | null;
+        };
         ArtifactListResponse: {
             data: components["schemas"]["ArtifactSummary"][];
             /** Format: int32 */
@@ -3713,6 +3823,53 @@ export interface components {
          * @enum {string}
          */
         Capability: "read" | "propose" | "act" | "converse";
+        /** @description An operation with its state. */
+        ChangeOp: {
+            operation: components["schemas"]["Operation"];
+            result?: null | components["schemas"]["OpResult"];
+            state?: components["schemas"]["OpState"];
+        };
+        /** @description A list of operations on one project's board, from one principal. */
+        ChangeSet: {
+            /**
+             * Format: uuid
+             * @description The item a plan's entries hang under; its type is the type of an entry that names none
+             *     the project has.
+             */
+            anchor?: string | null;
+            /** @description The plan artifact the creates came from. */
+            artifact_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            decided_at?: string | null;
+            /** @description Who applied or turned it down last: a principal label. */
+            decided_by?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @description The same key twice is the same change set. */
+            idempotency_key?: string | null;
+            ops: components["schemas"]["ChangeOp"][];
+            origin: components["schemas"]["Origin"];
+            /** @description The run or thread it came from, when it came from one. */
+            origin_ref?: string | null;
+            /** @description Who proposed it: a principal label (`agent:<credential id>`, `operator:local`). */
+            principal: string;
+            /** @description The proposer's name when it is an agent credential. */
+            principal_name?: string | null;
+            /** Format: uuid */
+            project: string;
+            /** @description Why the proposer wants it. */
+            reason: string;
+            /** @description Why a person turned the waiting operations down. */
+            rejection?: string | null;
+            status: components["schemas"]["ChangeSetStatus"];
+        };
+        /**
+         * @description Where a change set stands. It is derived from its operations, never set on its own.
+         * @enum {string}
+         */
+        ChangeSetStatus: "waiting" | "applied" | "rejected" | "partly";
         /** @enum {string} */
         CodeOrigin: "folder" | "new_folder" | "url" | "none";
         Comment: {
@@ -3947,6 +4104,27 @@ export interface components {
             sprint_id?: string | null;
             tags?: string[] | null;
             title: string;
+        };
+        /**
+         * @description One `create`: an entry of a plan (`docs/contracts/plan-v1`), with refs where the plan has
+         *     indexes.
+         */
+        CreateOp: {
+            /** @description Acceptance criteria the item starts with. */
+            acceptance?: string[];
+            /** @description The items that block this one. */
+            depends_on?: components["schemas"]["ItemRef"][];
+            description?: string | null;
+            parent?: null | components["schemas"]["ItemRef"];
+            /** @description A profile, by id; it wins over `team`. */
+            profile_id?: string | null;
+            /** @description A project role, by name. */
+            role?: string | null;
+            /** @description A team, by name; the one profile that names it does the item. */
+            team?: string | null;
+            title: string;
+            /** @description The item type, when the project has it; else the type of the set's anchor, else a task. */
+            type?: string | null;
         };
         CreatePendingRunner: {
             /** Format: int64 */
@@ -4237,6 +4415,9 @@ export interface components {
              *     took the domain down a level).
              */
             readonly undone?: number;
+        };
+        EditOperation: {
+            operation: components["schemas"]["Operation"];
         };
         ErrorBody: {
             /**
@@ -4705,6 +4886,8 @@ export interface components {
             item: components["schemas"]["ItemCard"];
             roles: components["schemas"]["Role"][];
         };
+        /** @description An item an operation names: one the change set creates, or one the board already has. */
+        ItemRef: number | string;
         ItemRole: {
             /** Format: uuid */
             item_id: string;
@@ -4840,6 +5023,78 @@ export interface components {
         };
         /** @enum {string} */
         MrpVerdict: "accept" | "reject";
+        /** @description What an applied operation did, in the words the plan's answer has always used. */
+        OpResult: {
+            /**
+             * Format: uuid
+             * @description The item a `create` made, or the one the operation changed.
+             */
+            item?: string | null;
+            /** @description For a `move`, where the item was. */
+            moved_from?: string | null;
+            title?: string | null;
+            /** @description The profile id that no profile has. */
+            unknown_profile?: string | null;
+            /** @description The role name the project does not have; the item has no role. */
+            unknown_role?: string | null;
+            /** @description The type the project does not have; the item has the fallback type. */
+            unknown_type?: string | null;
+            /** @description The team that no profile, or more than one, names. */
+            unresolved_team?: string | null;
+        };
+        /**
+         * @description Whether an operation was decided.
+         * @enum {string}
+         */
+        OpState: "waiting" | "applied" | "rejected";
+        /** @description One change to the board. */
+        Operation: (components["schemas"]["CreateOp"] & {
+            /** @enum {string} */
+            op: "create";
+        }) | {
+            item: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "who_does_it";
+            profile_id?: string | null;
+            role?: string | null;
+            team?: string | null;
+        } | {
+            item: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "priority";
+            priority: components["schemas"]["Priority"];
+        } | {
+            item: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "move";
+            status: string;
+        } | {
+            blocked: components["schemas"]["ItemRef"];
+            blocker: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "depend";
+        } | {
+            item: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "comment";
+            text: string;
+        } | {
+            /** Format: date-time */
+            due?: string | null;
+            item: components["schemas"]["ItemRef"];
+            /** @enum {string} */
+            op: "due";
+        };
+        /** @description An operation to put in place of a waiting one. */
+        OperationEdit: {
+            index: number;
+            operation: components["schemas"]["Operation"];
+        };
+        /**
+         * @description Where a change set came from.
+         * @enum {string}
+         */
+        Origin: "run" | "thread" | "mcp";
         Outcomes: {
             /** Format: int64 */
             closed: number;
@@ -5002,6 +5257,8 @@ export interface components {
             runs_needed: number;
         };
         Project: {
+            /** @description How far an agent may go on this project: the rung and the caps on creates (ADR 0034). */
+            agents_on_board: components["schemas"]["AgentsOnBoard"];
             archived: boolean;
             /** @description Why auto-start switched itself off (the project dropped to L3); read, never written. */
             auto_start_disabled_reason?: string | null;
@@ -5084,6 +5341,25 @@ export interface components {
         };
         /** @enum {string} */
         ProjectType: "software" | "web" | "mobile" | "construction" | "personal" | "homework" | "maintenance" | "legal" | "research" | "event" | "custom";
+        /** @description What proposes a change set. */
+        ProposeChangeSet: {
+            /** @description The same key on a project answers the first change set again. */
+            idempotency_key?: string | null;
+            operations: components["schemas"]["Operation"][];
+            origin?: null | components["schemas"]["Origin"];
+            /** @description The run or thread it came from. */
+            origin_ref?: string | null;
+            /** @description Why the change is wanted, in a sentence a person reads before deciding. */
+            reason: string;
+        };
+        /** @description A change set as it stands after it was proposed. */
+        ProposedChangeSet: {
+            /** @description The positions of the operations that applied at once; the rest wait for a person. */
+            applied_now: number[];
+            change_set: components["schemas"]["ChangeSet"];
+            /** @description False when the idempotency key had been used: this is the first answer again. */
+            made: boolean;
+        };
         /** @description What prill measured. Present only when prill answered. */
         Quality: {
             prill_version: string;
@@ -5126,6 +5402,10 @@ export interface components {
          * @enum {string}
          */
         Recurrence: "weekly" | "monthly" | "quarterly";
+        RejectChangeSet: {
+            /** @description Why the waiting operations are turned down. */
+            reason: string;
+        };
         /** @description One repository's figures from prill's store. */
         RepositoryQuality: {
             /**
@@ -5269,6 +5549,11 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * @description How far an agent may go on a project (ADR 0034, decision 4), in order.
+         * @enum {string}
+         */
+        RungLevel: "read" | "propose" | "act" | "create";
         RunnerListResponse: {
             data: components["schemas"]["RunnerSummary"][];
             /** Format: int32 */
@@ -5765,6 +6050,7 @@ export interface components {
             tool_policy?: unknown;
         };
         UpdateProject: {
+            agents_on_board?: null | components["schemas"]["AgentsOnBoard"];
             archived?: boolean | null;
             auto_start_enabled?: boolean | null;
             /** Format: int64 */
@@ -6644,6 +6930,184 @@ export interface operations {
             };
             /** @description Board not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_change_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Change set ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The change set with each operation's state and result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSet"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    apply_change_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Change set ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyChangeSet"];
+            };
+        };
+        responses: {
+            /** @description Applied in one transaction */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSet"];
+                };
+            };
+            /** @description Refused whole, with every reason; the change set is as it was */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description An operation chosen is not waiting */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    edit_operation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Change set ID */
+                id: string;
+                /** @description Position of the operation */
+                index: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditOperation"];
+            };
+        };
+        responses: {
+            /** @description The operation is replaced; it is checked when applied */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSet"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The operation is not waiting, or the edit changes its kind */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    reject_change_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Change set ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectChangeSet"];
+            };
+        };
+        responses: {
+            /** @description What waited is turned down */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSet"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Nothing waits in it */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9113,6 +9577,96 @@ export interface operations {
             };
             /** @description Validation error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_change_sets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                project_id: string;
+                /** @description Comma-separated statuses: `waiting`, `applied`, `rejected`, `partly`. Absent lists all. */
+                status: string | null;
+                /** @description At most this many, the newest first (default 100, at most 500). */
+                limit: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The project's change sets, the newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangeSet"][];
+                };
+            };
+            /** @description A status that is not one */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    propose_change_set: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeChangeSet"];
+            };
+        };
+        responses: {
+            /** @description Kept; what the project's rung allows has applied, the rest waits */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposedChangeSet"];
+                };
+            };
+            /** @description Refused whole, with every reason; nothing was kept */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential lacks the scope `propose` */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

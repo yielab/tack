@@ -982,6 +982,258 @@
         }
       }
     },
+    "/api/change-sets/{id}": {
+      "get": {
+        "tags": [
+          "change-sets"
+        ],
+        "summary": "GET /api/change-sets/{id}",
+        "operationId": "get_change_set",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Change set ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The change set with each operation's state and result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSet"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/change-sets/{id}/apply": {
+      "post": {
+        "tags": [
+          "change-sets"
+        ],
+        "summary": "POST /api/change-sets/{id}/apply",
+        "operationId": "apply_change_set",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Change set ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyChangeSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Applied in one transaction",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused whole, with every reason; the change set is as it was",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "An operation chosen is not waiting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/change-sets/{id}/operations/{index}": {
+      "patch": {
+        "tags": [
+          "change-sets"
+        ],
+        "summary": "PATCH /api/change-sets/{id}/operations/{index}",
+        "operationId": "edit_operation",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Change set ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "description": "Position of the operation",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditOperation"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The operation is replaced; it is checked when applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSet"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The operation is not waiting, or the edit changes its kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/change-sets/{id}/reject": {
+      "post": {
+        "tags": [
+          "change-sets"
+        ],
+        "summary": "POST /api/change-sets/{id}/reject",
+        "operationId": "reject_change_set",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Change set ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectChangeSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "What waited is turned down",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSet"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing waits in it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/custom-fields/{id}": {
       "get": {
         "tags": [
@@ -4442,6 +4694,149 @@
         }
       }
     },
+    "/api/projects/{project_id}/change-sets": {
+      "get": {
+        "tags": [
+          "change-sets"
+        ],
+        "summary": "GET /api/projects/{project_id}/change-sets",
+        "operationId": "list_change_sets",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "status",
+            "in": "path",
+            "description": "Comma-separated statuses: `waiting`, `applied`, `rejected`, `partly`. Absent lists all.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "description": "At most this many, the newest first (default 100, at most 500).",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The project's change sets, the newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChangeSet"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A status that is not one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "change-sets"
+        ],
+        "summary": "POST /api/projects/{project_id}/change-sets",
+        "operationId": "propose_change_set",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeChangeSet"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Kept; what the project's rung allows has applied, the rest waits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposedChangeSet"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused whole, with every reason; nothing was kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential lacks the scope `propose`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{project_id}/custom-fields": {
       "get": {
         "tags": [
@@ -7840,6 +8235,56 @@
           }
         }
       },
+      "AgentsOnBoard": {
+        "type": "object",
+        "description": "A project's `agents_on_board` setting: the level, and the two caps on creates that apply at\nonce. A cap of 0 lets none through, so Create with no caps behaves as Act.",
+        "required": [
+          "level",
+          "creates_per_change_set",
+          "creates_per_day"
+        ],
+        "properties": {
+          "creates_per_change_set": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Creates that apply at once, per change set, at Create.",
+            "minimum": 0
+          },
+          "creates_per_day": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Creates that apply at once, per day (UTC), at Create.",
+            "minimum": 0
+          },
+          "level": {
+            "$ref": "#/components/schemas/RungLevel"
+          }
+        }
+      },
+      "ApplyChangeSet": {
+        "type": "object",
+        "description": "What a person applies.",
+        "properties": {
+          "edits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationEdit"
+            },
+            "description": "Edits to waiting operations, made before they apply."
+          },
+          "operations": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "The positions to apply; absent means everything that waits."
+          }
+        }
+      },
       "ArtifactListResponse": {
         "type": "object",
         "required": [
@@ -9117,6 +9562,146 @@
           "converse"
         ]
       },
+      "ChangeOp": {
+        "type": "object",
+        "description": "An operation with its state.",
+        "required": [
+          "operation"
+        ],
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/Operation"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OpResult"
+              }
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/OpState"
+          }
+        }
+      },
+      "ChangeSet": {
+        "type": "object",
+        "description": "A list of operations on one project's board, from one principal.",
+        "required": [
+          "id",
+          "project",
+          "principal",
+          "origin",
+          "reason",
+          "status",
+          "ops",
+          "created_at"
+        ],
+        "properties": {
+          "anchor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The item a plan's entries hang under; its type is the type of an entry that names none\nthe project has."
+          },
+          "artifact_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The plan artifact the creates came from."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "decided_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "decided_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who applied or turned it down last: a principal label."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same key twice is the same change set."
+          },
+          "ops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeOp"
+            }
+          },
+          "origin": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "origin_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The run or thread it came from, when it came from one."
+          },
+          "principal": {
+            "type": "string",
+            "description": "Who proposed it: a principal label (`agent:<credential id>`, `operator:local`)."
+          },
+          "principal_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The proposer's name when it is an agent credential."
+          },
+          "project": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the proposer wants it."
+          },
+          "rejection": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a person turned the waiting operations down."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChangeSetStatus"
+          }
+        }
+      },
+      "ChangeSetStatus": {
+        "type": "string",
+        "description": "Where a change set stands. It is derived from its operations, never set on its own.",
+        "enum": [
+          "waiting",
+          "applied",
+          "rejected",
+          "partly"
+        ]
+      },
       "CodeOrigin": {
         "type": "string",
         "enum": [
@@ -9722,6 +10307,77 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "CreateOp": {
+        "type": "object",
+        "description": "One `create`: an entry of a plan (`docs/contracts/plan-v1`), with refs where the plan has\nindexes.",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "acceptance": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Acceptance criteria the item starts with."
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ItemRef"
+            },
+            "description": "The items that block this one."
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ItemRef",
+                "description": "The item this one is a sub-item of; absent means a top-level item. A `New` parent is an\nearlier operation."
+              }
+            ]
+          },
+          "profile_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A profile, by id; it wins over `team`."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A project role, by name."
+          },
+          "team": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A team, by name; the one profile that names it does the item."
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item type, when the project has it; else the type of the set's anchor, else a task."
           }
         }
       },
@@ -10622,6 +11278,17 @@
             "format": "int64",
             "description": "Read only: of those, how many were reverted or turned CI red (each one\ntook the domain down a level).",
             "readOnly": true
+          }
+        }
+      },
+      "EditOperation": {
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/Operation"
           }
         }
       },
@@ -11826,6 +12493,21 @@
           }
         }
       },
+      "ItemRef": {
+        "oneOf": [
+          {
+            "type": "integer",
+            "format": "int32",
+            "description": "The position, in the change set's operations, of a `create` that makes the item.",
+            "minimum": 0
+          },
+          {
+            "type": "string",
+            "format": "uuid"
+          }
+        ],
+        "description": "An item an operation names: one the change set creates, or one the board already has."
+      },
       "ItemRole": {
         "type": "object",
         "required": [
@@ -12155,6 +12837,274 @@
         "enum": [
           "accept",
           "reject"
+        ]
+      },
+      "OpResult": {
+        "type": "object",
+        "description": "What an applied operation did, in the words the plan's answer has always used.",
+        "properties": {
+          "item": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The item a `create` made, or the one the operation changed."
+          },
+          "moved_from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For a `move`, where the item was."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "unknown_profile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The profile id that no profile has."
+          },
+          "unknown_role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The role name the project does not have; the item has no role."
+          },
+          "unknown_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The type the project does not have; the item has the fallback type."
+          },
+          "unresolved_team": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The team that no profile, or more than one, names."
+          }
+        }
+      },
+      "OpState": {
+        "type": "string",
+        "description": "Whether an operation was decided.",
+        "enum": [
+          "waiting",
+          "applied",
+          "rejected"
+        ]
+      },
+      "Operation": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CreateOp"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "op"
+                ],
+                "properties": {
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "create"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "description": "Gives an item a role, a team's profile, or a profile: at least one.",
+            "required": [
+              "item",
+              "op"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "who_does_it"
+                ]
+              },
+              "profile_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "role": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "team": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "priority",
+              "op"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "priority"
+                ]
+              },
+              "priority": {
+                "$ref": "#/components/schemas/Priority"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "status",
+              "op"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "move"
+                ]
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "`blocker` must finish before `blocked`.",
+            "required": [
+              "blocker",
+              "blocked",
+              "op"
+            ],
+            "properties": {
+              "blocked": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "blocker": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "depend"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "item",
+              "text",
+              "op"
+            ],
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "comment"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "A date, or `null` to clear it.",
+            "required": [
+              "item",
+              "op"
+            ],
+            "properties": {
+              "due": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "item": {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "due"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One change to the board."
+      },
+      "OperationEdit": {
+        "type": "object",
+        "description": "An operation to put in place of a waiting one.",
+        "required": [
+          "index",
+          "operation"
+        ],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "operation": {
+            "$ref": "#/components/schemas/Operation"
+          }
+        }
+      },
+      "Origin": {
+        "type": "string",
+        "description": "Where a change set came from.",
+        "enum": [
+          "run",
+          "thread",
+          "mcp"
         ]
       },
       "Outcomes": {
@@ -12635,9 +13585,14 @@
           "workspace_mode",
           "push_after_run",
           "auto_start_enabled",
-          "auto_start_max_open"
+          "auto_start_max_open",
+          "agents_on_board"
         ],
         "properties": {
+          "agents_on_board": {
+            "$ref": "#/components/schemas/AgentsOnBoard",
+            "description": "How far an agent may go on this project: the rung and the caps on creates (ADR 0034)."
+          },
           "archived": {
             "type": "boolean"
           },
@@ -12878,6 +13833,77 @@
           "custom"
         ]
       },
+      "ProposeChangeSet": {
+        "type": "object",
+        "description": "What proposes a change set.",
+        "required": [
+          "reason",
+          "operations"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The same key on a project answers the first change set again."
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            }
+          },
+          "origin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Origin",
+                "description": "Where it came from; absent means an MCP tool call."
+              }
+            ]
+          },
+          "origin_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The run or thread it came from."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the change is wanted, in a sentence a person reads before deciding."
+          }
+        }
+      },
+      "ProposedChangeSet": {
+        "type": "object",
+        "description": "A change set as it stands after it was proposed.",
+        "required": [
+          "change_set",
+          "made",
+          "applied_now"
+        ],
+        "properties": {
+          "applied_now": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "The positions of the operations that applied at once; the rest wait for a person."
+          },
+          "change_set": {
+            "$ref": "#/components/schemas/ChangeSet"
+          },
+          "made": {
+            "type": "boolean",
+            "description": "False when the idempotency key had been used: this is the first answer again."
+          }
+        }
+      },
       "Quality": {
         "type": "object",
         "description": "What prill measured. Present only when prill answered.",
@@ -12991,6 +14017,18 @@
           "monthly",
           "quarterly"
         ]
+      },
+      "RejectChangeSet": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Why the waiting operations are turned down."
+          }
+        }
       },
       "RepositoryQuality": {
         "type": "object",
@@ -13358,6 +14396,16 @@
           }
         },
         "additionalProperties": {}
+      },
+      "RungLevel": {
+        "type": "string",
+        "description": "How far an agent may go on a project (ADR 0034, decision 4), in order.",
+        "enum": [
+          "read",
+          "propose",
+          "act",
+          "create"
+        ]
       },
       "RunnerListResponse": {
         "type": "object",
@@ -14665,6 +15713,17 @@
       "UpdateProject": {
         "type": "object",
         "properties": {
+          "agents_on_board": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AgentsOnBoard",
+                "description": "Replaces the project's rung and the caps on creates; omitted leaves them."
+              }
+            ]
+          },
           "archived": {
             "type": [
               "boolean",
@@ -15190,6 +16249,10 @@
     {
       "name": "agent-credentials",
       "description": "Keys the operator hands to agents: each holds scopes (projects times what it may do), is stored hashed, expires after 90 days and is revoked here."
+    },
+    {
+      "name": "change-sets",
+      "description": "What an agent proposes to change on a board: operations checked whole, applied in one transaction, and decided one by one by the project's rung."
     },
     {
       "name": "teams",

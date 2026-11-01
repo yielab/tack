@@ -10,6 +10,8 @@
 
 #[path = "repository/brief_write_lock.rs"]
 mod brief_write_lock;
+#[path = "repository/change_sets.rs"]
+mod change_sets;
 #[path = "repository/corrupt_rows.rs"]
 mod corrupt_rows;
 #[path = "repository/counted_tokens.rs"]

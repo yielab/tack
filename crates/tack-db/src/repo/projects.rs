@@ -4,6 +4,7 @@ use tracing::{debug, instrument};
 use uuid::Uuid;
 
 use tack_core::auto_start::DROPPED_TO_L3;
+use tack_core::change_set::AgentsOnBoard;
 use tack_core::models::{CreateProject, Project, UpdateProject};
 use tack_core::vocabulary::vocabulary_for_type;
 use tack_core::workflow::workflow_for_type;
@@ -85,6 +86,7 @@ impl Repository {
             auto_start_max_open: 3,
             prepare_command: None,
             auto_start_disabled_reason: None,
+            agents_on_board: Default::default(),
         })
     }
 
@@ -94,6 +96,7 @@ impl Repository {
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, on_start_status, definition_of_done,
                     auto_start_enabled, auto_start_status, auto_start_max_open, prepare_command,
+                    agents_on_board, agents_create_per_set, agents_create_per_day,
                     CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
                         SELECT 1 FROM comments c JOIN items i ON i.id = c.item_id
                         WHERE i.project_id = projects.id AND c.content = ?
@@ -115,6 +118,7 @@ impl Repository {
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
                     code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, on_start_status, definition_of_done,
                     auto_start_enabled, auto_start_status, auto_start_max_open, prepare_command,
+                    agents_on_board, agents_create_per_set, agents_create_per_day,
                     CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
                         SELECT 1 FROM comments c JOIN items i ON i.id = c.item_id
                         WHERE i.project_id = projects.id AND c.content = ?
@@ -205,6 +209,19 @@ impl Repository {
                 .bind(id.to_string())
                 .execute(self.pool())
                 .await?;
+        }
+        if let Some(rung) = input.agents_on_board {
+            sqlx::query(
+                "UPDATE projects SET agents_on_board = ?, agents_create_per_set = ?,
+                        agents_create_per_day = ?, updated_at = ? WHERE id = ?",
+            )
+            .bind(rung.level.as_str())
+            .bind(i64::from(rung.creates_per_change_set))
+            .bind(i64::from(rung.creates_per_day))
+            .bind(&now)
+            .bind(id.to_string())
+            .execute(self.pool())
+            .await?;
         }
         for (column, value) in [
             (
@@ -313,6 +330,9 @@ struct ProjectRow {
     auto_start_max_open: i64,
     prepare_command: Option<String>,
     auto_start_disabled_reason: Option<String>,
+    agents_on_board: String,
+    agents_create_per_set: i64,
+    agents_create_per_day: i64,
 }
 
 impl ProjectRow {
@@ -346,6 +366,13 @@ impl ProjectRow {
             auto_start_max_open: self.auto_start_max_open,
             prepare_command: self.prepare_command,
             auto_start_disabled_reason: self.auto_start_disabled_reason,
+            agents_on_board: AgentsOnBoard {
+                level: decode::variant(TABLE, "agents_on_board", &self.agents_on_board)?,
+                creates_per_change_set: u32::try_from(self.agents_create_per_set)
+                    .map_err(|error| StoreError::corrupt(TABLE, "agents_create_per_set", error))?,
+                creates_per_day: u32::try_from(self.agents_create_per_day)
+                    .map_err(|error| StoreError::corrupt(TABLE, "agents_create_per_day", error))?,
+            },
         })
     }
 }

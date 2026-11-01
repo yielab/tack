@@ -95,93 +95,10 @@ impl Repository {
         item_id: Uuid,
         input: UpsertItemBrief,
     ) -> Result<ItemBrief, StoreError> {
-        let now = Utc::now().to_rfc3339();
-        let risk = input
-            .risk
-            .as_ref()
-            .map(|r| serde_json::to_value(r).map_err(StoreError::unwritable))
-            .transpose()?
-            .and_then(|v| v.as_str().map(str::to_owned));
-        let acceptance =
-            serde_json::to_string(&input.acceptance).map_err(StoreError::unwritable)?;
-        let constraints =
-            serde_json::to_string(&input.constraints).map_err(StoreError::unwritable)?;
         // The first statement reads and the next writes, so the transaction takes the write lock when it begins: a deferred one that
         // lost the upgrade to another writer failed at once (`database is locked`, a 500 on a person's save) instead of waiting for it.
         let mut tx = self.pool().begin_with("BEGIN IMMEDIATE").await?;
-        let stored = sqlx::query(
-            "SELECT acceptance, constraints, definition_of_done, risk
-             FROM item_briefs WHERE item_id = ?",
-        )
-        .bind(item_id.to_string())
-        .fetch_optional(&mut *tx)
-        .await?;
-        if let Some(row) = &stored {
-            let same = row.get::<String, _>("acceptance") == acceptance
-                && row.get::<String, _>("constraints") == constraints
-                && row.get::<Option<String>, _>("definition_of_done") == input.definition_of_done
-                && row.get::<Option<String>, _>("risk") == risk;
-            if same {
-                drop(tx);
-                return self
-                    .get_item_brief(item_id)
-                    .await?
-                    .ok_or(StoreError::not_found("item brief"));
-            }
-        }
-        sqlx::query(
-            "INSERT INTO item_briefs
-                 (item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(item_id) DO UPDATE SET
-                 acceptance = excluded.acceptance,
-                 constraints = excluded.constraints,
-                 definition_of_done = excluded.definition_of_done,
-                 risk = excluded.risk,
-                 updated_at = excluded.updated_at",
-        )
-        .bind(item_id.to_string())
-        .bind(&acceptance)
-        .bind(&constraints)
-        .bind(&input.definition_of_done)
-        .bind(&risk)
-        .bind(&now)
-        .bind(&now)
-        .execute(&mut *tx)
-        .await?;
-        let row = sqlx::query(
-            "SELECT item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at
-             FROM item_briefs WHERE item_id = ?",
-        )
-        .bind(item_id.to_string())
-        .fetch_one(&mut *tx)
-        .await?;
-        let brief = brief_from_row(&row)?;
-        // `brief.json` as the runner stages it: the brief as a JSON value, pretty-printed.
-        let staged = serde_json::to_vec_pretty(
-            &serde_json::to_value(&brief).map_err(StoreError::unwritable)?,
-        )
-        .map_err(StoreError::unwritable)?;
-        let brief_sha256: String = Sha256::digest(&staged)
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
-        sqlx::query(
-            "INSERT INTO item_brief_versions
-                 (item_id, version, acceptance, constraints, definition_of_done, risk, brief_sha256, created_at)
-             VALUES (?, (SELECT COALESCE(MAX(version), 0) + 1 FROM item_brief_versions WHERE item_id = ?),
-                     ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(item_id.to_string())
-        .bind(item_id.to_string())
-        .bind(&acceptance)
-        .bind(&constraints)
-        .bind(&input.definition_of_done)
-        .bind(&risk)
-        .bind(&brief_sha256)
-        .bind(&now)
-        .execute(&mut *tx)
-        .await?;
+        let brief = upsert_brief_in(&mut tx, item_id, input).await?;
         tx.commit().await?;
         Ok(brief)
     }
@@ -266,4 +183,99 @@ impl Repository {
             .await?;
         Ok(result.rows_affected() > 0)
     }
+}
+
+/// The body of [`Repository::upsert_item_brief`] over a transaction the caller opened with
+/// `BEGIN IMMEDIATE` and ends: a change set that makes an item with acceptance criteria calls
+/// it inside its own.
+pub(crate) async fn upsert_brief_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    item_id: Uuid,
+    input: UpsertItemBrief,
+) -> Result<ItemBrief, StoreError> {
+    let now = Utc::now().to_rfc3339();
+    let risk = input
+        .risk
+        .as_ref()
+        .map(|r| serde_json::to_value(r).map_err(StoreError::unwritable))
+        .transpose()?
+        .and_then(|v| v.as_str().map(str::to_owned));
+    let acceptance = serde_json::to_string(&input.acceptance).map_err(StoreError::unwritable)?;
+    let constraints = serde_json::to_string(&input.constraints).map_err(StoreError::unwritable)?;
+    let stored = sqlx::query(
+        "SELECT acceptance, constraints, definition_of_done, risk
+             FROM item_briefs WHERE item_id = ?",
+    )
+    .bind(item_id.to_string())
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some(row) = &stored {
+        let same = row.get::<String, _>("acceptance") == acceptance
+            && row.get::<String, _>("constraints") == constraints
+            && row.get::<Option<String>, _>("definition_of_done") == input.definition_of_done
+            && row.get::<Option<String>, _>("risk") == risk;
+        if same {
+            let row = sqlx::query(
+                    "SELECT item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at
+                     FROM item_briefs WHERE item_id = ?",
+                )
+                .bind(item_id.to_string())
+                .fetch_one(&mut **tx)
+                .await?;
+            return brief_from_row(&row);
+        }
+    }
+    sqlx::query(
+            "INSERT INTO item_briefs
+                 (item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(item_id) DO UPDATE SET
+                 acceptance = excluded.acceptance,
+                 constraints = excluded.constraints,
+                 definition_of_done = excluded.definition_of_done,
+                 risk = excluded.risk,
+                 updated_at = excluded.updated_at",
+        )
+        .bind(item_id.to_string())
+        .bind(&acceptance)
+        .bind(&constraints)
+        .bind(&input.definition_of_done)
+        .bind(&risk)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut **tx)
+        .await?;
+    let row = sqlx::query(
+        "SELECT item_id, acceptance, constraints, definition_of_done, risk, created_at, updated_at
+             FROM item_briefs WHERE item_id = ?",
+    )
+    .bind(item_id.to_string())
+    .fetch_one(&mut **tx)
+    .await?;
+    let brief = brief_from_row(&row)?;
+    // `brief.json` as the runner stages it: the brief as a JSON value, pretty-printed.
+    let staged =
+        serde_json::to_vec_pretty(&serde_json::to_value(&brief).map_err(StoreError::unwritable)?)
+            .map_err(StoreError::unwritable)?;
+    let brief_sha256: String = Sha256::digest(&staged)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    sqlx::query(
+            "INSERT INTO item_brief_versions
+                 (item_id, version, acceptance, constraints, definition_of_done, risk, brief_sha256, created_at)
+             VALUES (?, (SELECT COALESCE(MAX(version), 0) + 1 FROM item_brief_versions WHERE item_id = ?),
+                     ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(item_id.to_string())
+        .bind(item_id.to_string())
+        .bind(&acceptance)
+        .bind(&constraints)
+        .bind(&input.definition_of_done)
+        .bind(&risk)
+        .bind(&brief_sha256)
+        .bind(&now)
+        .execute(&mut **tx)
+        .await?;
+    Ok(brief)
 }
