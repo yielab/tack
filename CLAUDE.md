@@ -74,6 +74,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   accepts. Planner and Researcher can write the plan file and a run that changes anything else fails. The
   live suite (20 tests, git-ignored `onboarding-lab/e2e/`) runs against docket `cdeabac3`: 15 fails on the
   local model's looping lead step, the rest pass; with Claude Haiku 5.5 all 20 pass in one run.
+- **Accepted 2026-11-01, no card started:** Phase 84 (`docs/plans/phase-84.md`, ADR 0033) — from an audit of
+  the live suite's screenshots: one run-state language, every screen ordered by what needs a person first, a run
+  that starts can move its item, the Table view removed (the List sorts, filters and edits in place), and a new
+  work view, Orchestration: Flow (a lane per team with its own steps) and Map (roles → profiles → teams →
+  members). Front end except N (`on_start_status`) and S (`GET /api/executions?project_id=` with `latest_hop`).
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
