@@ -877,6 +877,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::mrp::mark_viewed,
         handlers::mrp::review_mrp,
         // ── Factory metrics ───────────────────────────────────────────────
+        handlers::auto_start::get_auto_start,
         handlers::autonomy::get_autonomy,
         handlers::autonomy::put_autonomy,
         handlers::change_sets::list_change_sets,
@@ -981,6 +982,9 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         ErrorEnvelope,
         ErrorBody,
         ErrorDetails,
+        handlers::auto_start::AutoStartState,
+        handlers::auto_start::WaitingTask,
+        handlers::auto_start::WaitingReason,
         handlers::autonomy::AutonomySettings,
         handlers::autonomy::DomainSettings,
         handlers::autonomy::BudgetSettings,

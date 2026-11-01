@@ -56,7 +56,14 @@ pub fn classify(method: &Method, path: &str) -> Access {
         (["teams"], true) => Some(Access::Anywhere(Read)),
         (["search"], true) => Some(Access::Everywhere(Read)),
         (["projects", project], true) => id(project).map(|p| Access::Project(p, Read)),
-        (["projects", project, "items" | "search" | "roles"], true)
+        (
+            [
+                "projects",
+                project,
+                "items" | "search" | "roles" | "auto-start",
+            ],
+            true,
+        )
         | (["projects", project, "items", "tree"], true) => {
             id(project).map(|p| Access::Project(p, Read))
         }
@@ -192,6 +199,10 @@ mod tests {
         let (item, i) = some();
         assert_eq!(
             classify(&Method::GET, &format!("/api/projects/{p}/items")),
+            Access::Project(project, Capability::Read)
+        );
+        assert_eq!(
+            classify(&Method::GET, &format!("/api/projects/{p}/auto-start")),
             Access::Project(project, Capability::Read)
         );
         assert_eq!(

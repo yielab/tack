@@ -23,8 +23,8 @@ use crate::error::ApiError;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    agent_credentials, attachments, attempt_lists, autonomy, backup, boards_multi, briefs,
-    change_sets, comments, custom_fields, decisions, dependencies, executions, export,
+    agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
+    briefs, change_sets, comments, custom_fields, decisions, dependencies, executions, export,
     import_github, import_linear, items, local_runner, metrics, mrp, outline, projects, roles,
     runner_admin, runner_protocol, settings, sprints, teams, templates, websocket,
 };
@@ -397,6 +397,7 @@ pub fn build_router(state: AppState) -> Router {
             "/agent-credentials/{id}/revoke",
             post(agent_credentials::revoke_credential),
         )
+        .route("/projects/{id}/auto-start", get(auto_start::get_auto_start))
         .route(
             "/projects/{id}/autonomy",
             get(autonomy::get_autonomy).put(autonomy::put_autonomy),
