@@ -106,15 +106,20 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     () => (props.isOpen ? props.itemId : undefined),
     (id) => api.briefs.agentContext(id).then((r) => ({ id: r.profile_id ?? null, source: r.profile_source ?? null }), () => null),
   );
-  // Whether something can test what the agent delivers: the brief's acceptance checks.
+  // How many things can test what the agent delivers: the brief's acceptance checks.
   // A card with no brief has none; any other failure says nothing rather than guess.
-  const [checkedCard] = createResource(
+  const [acceptanceCount] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
     (id) => api.briefs.get(id).then(
-      (brief) => (brief.acceptance?.length ?? 0) > 0,
-      (error) => (error instanceof ApiError && error.status === 404 ? false : undefined),
+      (brief) => brief.acceptance?.length ?? 0,
+      (error) => (error instanceof ApiError && error.status === 404 ? 0 : undefined),
     ),
   );
+  const checkedCard = (): boolean | undefined => {
+    if (acceptanceCount.loading) return undefined;
+    const n = acceptanceCount();
+    return n === undefined ? undefined : n > 0;
+  };
   const [agentContext] = createResource(
     () => (props.isOpen ? { id: props.itemId, profileId: form.agentProfileId } : undefined),
     ({ id, profileId }) => api.briefs.agentContext(id, profileId || undefined).then((r) => ({ text: r.text, limits: profileLimits(r.limits) }), () => undefined),
@@ -486,7 +491,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
               setForm('selectorId', ok ? (id ?? '') : '');
             }}
             rows={rows}
-            checkedCard={() => (checkedCard.loading ? undefined : checkedCard())}
+            checkedCard={checkedCard}
+            acceptanceCount={() => (acceptanceCount.loading ? undefined : acceptanceCount())}
             profilesLoading={() => agentProfiles.loading}
             profiles={agentProfilesData}
             agentReports={agentReports}
