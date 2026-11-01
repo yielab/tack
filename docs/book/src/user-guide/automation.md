@@ -116,21 +116,26 @@ The **Agents** page answers three questions that the profile list alone cannot: 
 each agent can do, and what a team is made of. Each task can use a different agent, so none of this is a
 global choice: you pick the profile, and with it the agent and team, for each task.
 
-**What each agent can do** names the four agents (Claude Code, Codex, OpenCode and Docket) and says, from what
-the agent itself reported, whether it can stop a run, pick a run back up after a restart, answer your
-questions, propose items and report what a run used. A thing the agent cannot do keeps its reason in a greyed
-line. A thing the agent did not report reads "Not reported by" the agent: Tack never guesses it.
+**What each agent can do** is a table: the four agents (Claude Code, Codex, OpenCode and Docket) are the
+columns and the five things an agent can do are the rows: stop a run, pick a run back up after a restart,
+answer your questions, propose items and report what a run used. Each cell is a tick (it can), a cross (it
+cannot) or a dash (the agent did not report it: Tack never guesses). Under each mark, **How we know** opens
+what the agent itself said, including the reason for a cross. An agent no computer reports is a column of
+dashes whose heading says how to get it.
 
 **Teams** has one card per team any agent reports. A card shows only what the agent said:
 
-- The agent that runs the team, and the shape it calls it.
-- **Works in this repository** or **Works in a folder**.
-- Its members, as "Lead · opus": the role as the agent names it, and the model.
-- **Runs to the end by itself** or **Stops to ask a person**, with what to change so that it runs to the end.
-- Its network, what it has waiting and running ("3 waiting, 1 running") and the record sets it keeps.
-- **Can propose items**, or the reason it cannot.
-- Its steps in order, each with what checks it, and where a failed check sends the work back and how many
-  times ("sent back to write up to 2 times").
+- At the top, the agent that runs the team ("Run by Docket"), its shape as a badge, and where it works, with
+  an icon: **Works in this repository** or **Works in a folder**.
+- Its members as rows: a chip with the role as the agent names it, the model, and up to two icons, one for
+  **Reads only** or **Changes the project** and one for **Can propose items**. Hover an icon for its words.
+- Its steps as a pipeline in order, each with what checks it, and where a failed check sends the work back and
+  how many times ("sent back to write up to 2 times"). A step that waits is a dashed box of its own.
+- **Work now** as two counters, waiting and running, and **Keeps**: each record set it keeps with its row
+  count ("leads, 2 rows").
+- **Runs to the end by itself** or **Stops to ask a person**, with what to change so that it runs to the end;
+  its network; and **Can propose items**, or the reason it cannot.
+- **Profiles that use it**, each a link that opens the profile for editing.
 
 A line the agent did not report is one greyed line, "Not reported by Docket", so that "no network" and "the
 agent did not say" are never mixed up. A team that only your profiles name, and no computer reports, is marked

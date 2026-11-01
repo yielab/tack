@@ -29,6 +29,18 @@ export function allSignedIn(runner: RunnerSummary | null): boolean {
     .every(({ harness }) => harness.sign_in?.state === 'signed_in');
 }
 
+/** The command a failure message names between backticks ("`opencode debug config` exited with status 1"). */
+function failedCommandOf(detail: string | undefined): string | null {
+  return /`([^`]+)`/.exec(detail ?? '')?.[1] ?? null;
+}
+
+/** A command to copy: its own block, scrolling sideways inside itself when long. */
+const CodeBlock: Component<{ children: string }> = (props) => (
+  <pre class="max-w-full overflow-x-auto rounded-item px-2.5 py-1.5" style={{ 'background-color': 'var(--color-bg-subtle)' }}>
+    <code class="font-mono text-caption" style={{ color: 'var(--color-text-primary)' }}>{props.children}</code>
+  </pre>
+);
+
 /**
  * Step 3: one row per installed agent saying whether it is signed in on this computer,
  * from what the runner reports. Tack never reads or stores the agent's credentials.
@@ -52,15 +64,23 @@ const SignInStep: Component<SignInStepProps> = (props) => {
           {({ kind, label, harness }) => {
             const signIn = () => harness.sign_in ?? null;
             const link = () => harness.docs?.sign_in;
+            // The agent could not say: its own message is the raw level, the command it names is what to run to see why.
+            const cannotSay = () => signIn()?.state !== 'signed_in' && signIn()?.state !== 'signed_out';
+            const failedCommand = () => failedCommandOf(signIn()?.detail);
             return (
-              <div class="flex flex-wrap items-center gap-3 rounded-xl bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
+              <div class="flex min-w-0 flex-wrap items-center gap-3 rounded-xl bg-app px-3.5 py-3 text-sm" data-testid={`sign-in-${kind}`} data-sign-in={signIn()?.state ?? 'unknown'}>
                 <span class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{label}</span>
                 <Show
                   when={signIn()?.state === 'signed_in'}
                   fallback={
                     <Show
                       when={signIn()?.state === 'signed_out'}
-                      fallback={<span style={{ color: 'var(--color-text-secondary)' }}>{signIn()?.detail ?? `${label} can't say whether it is signed in.`}</span>}
+                      fallback={
+                        <>
+                          <Badge tone="warning">Can't tell</Badge>
+                          <span style={{ color: 'var(--color-text-secondary)' }}>{`${label} can't say whether it is signed in.`}</span>
+                        </>
+                      }
                     >
                       <span style={{ color: 'var(--color-text-secondary)' }}>
                         Not signed in.
@@ -80,6 +100,34 @@ const SignInStep: Component<SignInStepProps> = (props) => {
                       How to sign in to {label}
                     </a>
                   )}
+                </Show>
+                <Show when={cannotSay() && (failedCommand() || signIn()?.command || signIn()?.detail)}>
+                  <div class="flex w-full min-w-0 flex-col gap-1.5" data-testid={`sign-in-trouble-${kind}`}>
+                    <Show when={failedCommand()}>
+                      {(command) => (
+                        <>
+                          <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>To see why, run this in a terminal:</span>
+                          <CodeBlock>{command()}</CodeBlock>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={signIn()?.command}>
+                      {(command) => (
+                        <>
+                          <span class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>To sign in, run:</span>
+                          <CodeBlock>{command()}</CodeBlock>
+                        </>
+                      )}
+                    </Show>
+                    <Show when={signIn()?.detail}>
+                      {(detail) => (
+                        <details>
+                          <summary class="cursor-pointer text-xs" style={{ color: 'var(--color-text-secondary)' }}>What {label} said</summary>
+                          <p class="mt-1 font-mono text-caption" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{detail()}</p>
+                        </details>
+                      )}
+                    </Show>
+                  </div>
                 </Show>
               </div>
             );
