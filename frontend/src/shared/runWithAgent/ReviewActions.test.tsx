@@ -33,6 +33,27 @@ describe('ReviewActions', () => {
     expect(onReviewed).toHaveBeenCalledWith(expect.objectContaining({ verdict: 'rejected' }));
   });
 
+  it('without a pack Accept sends no note and Reject sends one only when it was written; the ids are stable', async () => {
+    const calls: Array<unknown> = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation((async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.body) calls.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
+    }) as typeof fetch);
+    const c = document.createElement('div');
+    document.body.appendChild(c);
+    disposers.push(render(() => <ReviewActions requestId="req-1" attemptNumber={1} review={null} />, c));
+    const byId = (id: string) => c.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)!;
+    byId('review-accept').click();
+    await flush();
+    await flush();
+    byId('review-reject').click();
+    expect(c.querySelector('input[data-testid="review-reason"]')).not.toBeNull();
+    byId('review-reject').click();
+    await flush();
+    await flush();
+    expect(calls).toEqual([{ verdict: 'accepted' }, { verdict: 'rejected' }]);
+  });
+
   it('shows the verdict in place of the buttons once there is one', () => {
     const c = document.createElement('div');
     document.body.appendChild(c);

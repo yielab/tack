@@ -924,6 +924,97 @@ describe('AttemptList', () => {
       expect(calls.find(([u]) => u.endsWith('/mrp/review'))?.[1]).toBe(JSON.stringify({ verdict: 'accept', reason: 'looks right' }));
     });
 
+    /** The pack and the run each keep a verdict: the calls are recorded, and the run's review can be made to fail. */
+    function routeReviews(opts: { packReview?: unknown; runReviewFails?: { value: boolean } } = {}) {
+      const calls: Array<{ url: string; body: unknown }> = [];
+      const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        const url = String(input);
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        if (init?.method === 'POST') calls.push({ url, body });
+        if (url.endsWith('/artifacts')) return json({ protocol_version: 1, data: FILES });
+        if (url.endsWith('/content')) return Promise.resolve(new Response(PATCH));
+        if (url.endsWith('/mrp')) return json({ pack: ready, review: opts.packReview ?? null });
+        if (url.endsWith('/mrp/viewed')) return json({});
+        if (url.endsWith('/mrp/review')) {
+          return json({ attempt_id: 'att_1', artifact_id: 'a3', verdict: body.verdict, reason: body.reason, viewed_at: null, reviewed_at: '2026-08-06T12:07:00Z', reviewed_by: 'me' });
+        }
+        if (url.endsWith('/attempts/1/review')) {
+          return opts.runReviewFails?.value ? json({ error: { status: 500, message: 'The run could not be reached' } }, 500) : json({});
+        }
+        if (url.endsWith('/attempts')) {
+          return json({ protocol_version: 1, data: [{ ...FINISHED(), review: { verdict: calls.at(-1)?.body && (calls.at(-1)!.body as { verdict: string }).verdict, note: null, reviewed_at: '2026-08-06T12:07:00Z' } }] });
+        }
+        if (url.endsWith('/decisions')) return json({ protocol_version: 1, data: [] });
+        if (url.endsWith('/events')) return json({ protocol_version: 1, data: [] });
+        return json({ error: { status: 404, message: 'none' } }, 404);
+      });
+      return calls;
+    }
+    const type = (input: HTMLInputElement, text: string) => {
+      input.value = text;
+      input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    };
+    const runReviewCalls = (calls: Array<{ url: string; body: unknown }>) => calls.filter((c) => c.url.endsWith('/attempts/1/review'));
+
+    it('the reason is saved on the run\'s verdict for Accept and for Reject, and the buttons carry stable ids', async () => {
+      for (const [testid, verdict] of [['review-accept', 'accepted'], ['review-reject', 'rejected']] as const) {
+        const calls = routeReviews();
+        const c = mountFull(FINISHED());
+        await settle();
+        type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'checked by hand');
+        c.querySelector<HTMLButtonElement>(`[data-testid="${testid}"]`)!.click();
+        await settle();
+        expect(calls.find((x) => x.url.endsWith('/mrp/review'))?.body).toEqual({ verdict: verdict === 'accepted' ? 'accept' : 'reject', reason: 'checked by hand' });
+        expect(runReviewCalls(calls).map((x) => x.body)).toEqual([{ verdict, note: 'checked by hand' }]);
+        disposers.pop()!();
+        document.body.innerHTML = '';
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('when the pack is reviewed and the run is not, one action saves the pack\'s verdict on the run, and says so again if it fails', async () => {
+      const packReview = { attempt_id: 'att_1', artifact_id: 'a3', verdict: 'accept', reason: 'checked by hand', viewed_at: null, reviewed_at: '2026-08-06T12:07:00Z', reviewed_by: 'me' };
+      const fails = { value: true };
+      const calls = routeReviews({ packReview, runReviewFails: fails });
+      const c = mountFull(FINISHED());
+      await settle();
+      const banner = c.querySelector('[data-testid="review-banner"]')!;
+      expect(banner.textContent).toContain('You already reviewed the pack');
+      // Neither a new Reject nor a new reason is offered: only the pack's verdict is saved on the run.
+      expect(banner.querySelector('[data-testid="review-reject"]')).toBeNull();
+      expect(banner.querySelector('[data-testid="review-reason"]')).toBeNull();
+      expect(banner.textContent).toContain('The pack was accepted');
+      const save = () => [...banner.querySelectorAll('button')].filter((b) => b.textContent === 'Save the verdict on the run');
+      expect(save()).toHaveLength(1);
+      save()[0].click();
+      await settle();
+      expect(banner.textContent).toContain('The run could not be reached');
+      expect(save()).toHaveLength(1);
+      fails.value = false;
+      save()[0].click();
+      await settle();
+      expect(runReviewCalls(calls).map((x) => x.body)).toEqual([
+        { verdict: 'accepted', note: 'checked by hand' },
+        { verdict: 'accepted', note: 'checked by hand' },
+      ]);
+      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(false);
+    });
+
+    it('a run whose first attempt review fails after the pack was reviewed offers the save, not a new Reject', async () => {
+      const fails = { value: true };
+      const calls = routeReviews({ runReviewFails: fails });
+      const c = mountFull(FINISHED());
+      await settle();
+      type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'looks right');
+      c.querySelector<HTMLButtonElement>('[data-testid="review-accept"]')!.click();
+      await settle();
+      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(true);
+      const banner = c.querySelector('[data-testid="review-banner"]')!;
+      expect([...banner.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Save the verdict on the run']);
+      expect(banner.textContent).toContain('The run could not be reached');
+    });
+
     it('a folder team says it works in a folder, with nothing to merge, in the verdict', async () => {
       route();
       const c = mountFull(attempt({ terminal_reason: { outside_repository: true, summary: 'Wrote three notes.' }, merge: { enabled: false, reason: 'no branch was pushed' } }));

@@ -120,8 +120,13 @@ A section the verifier did not run says **Not run**. That is not a pass: nothing
 To record your verdict, write a reason, then choose **Accept** or **Reject**. Both stay disabled until the
 reason has text, and the line "Write a reason to enable Accept and Reject" says so. The first review is
 final; a second one is refused. While the run waits for your verdict, this is the one block at the top of
-the run, and the one reason is saved with the run's verdict (which clears **Needs your review**) and with
-the pack. Once it is given, **Your review** shows it here.
+the run, and the one reason is saved with the run's verdict, whether you accept or reject (which clears
+**Needs your review**), and with the pack. Once it is given, **Your review** shows it here.
+
+If the pack's review is saved but the run's verdict cannot be (for instance, the connection dropped between
+the two), the block does not ask for a reason again and does not offer **Reject**: it says the pack was
+accepted or rejected and offers **Save the verdict on the run**, which gives the run the pack's verdict and
+reason. If saving fails again, the block shows why, and you can press it again.
 
 If you started the run from the command line with `--status-map-policy done_on_mrp_accepted`, accepting the
 pack also moves the task to its workflow's first Done status; see [CLI](cli.md#runs).
