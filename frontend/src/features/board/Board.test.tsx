@@ -326,7 +326,7 @@ describe('Board agent strip and column bars', () => {
     const strip = c.querySelector('[data-testid="agent-strip"]')!;
     expect(strip.getAttribute('aria-label')).toBe('Agent runs on this board');
     const names = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim());
-    expect(names[0]).toContain('1 Waiting for you');
+    expect(names[0]).toContain('1 Your turn');
     expect(names[0]).toContain('Failed runs are counted under Failed');
     expect(names.slice(1)).toEqual(['0 Queued', '2 Running', '1 Needs you', '0 Ready for review', '1 Failed']);
     // A counter with nothing in it says why it cannot be used.
