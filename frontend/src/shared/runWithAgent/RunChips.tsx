@@ -1,24 +1,40 @@
 import { type Component, For } from 'solid-js';
+import { RunState, type RunStateName } from '../ui';
 import type { StateTone } from './shared';
 
 export interface RunChip {
   id: string;
   /** What the chip says: "Run 3", "Attempt 2". */
   label: string;
-  /** The state colour of the dot. */
+  /** The state tone the run's words were given. */
   tone: StateTone;
   /** The state in words, for the tooltip and the screen reader. */
   state: string;
 }
 
-const DOT: Record<StateTone, string> = {
-  neutral: 'var(--color-text-tertiary)',
-  primary: 'var(--color-primary-600)',
-  success: 'var(--color-success-600)',
-  warning: 'var(--color-warning-600)',
-  danger: 'var(--color-danger-600)',
-  info: 'var(--color-info-600)',
-};
+/**
+ * The run-state glyph a chip shows. Tone alone cannot tell Queued from
+ * Cancelled, so the words decide first; the tone settles the rest.
+ */
+function chipState(tone: StateTone, words: string): RunStateName {
+  if (/needs your review|no changes recorded/i.test(words)) return 'review';
+  if (/needs a person|needs operator/i.test(words)) return 'needs';
+  if (/cancel/i.test(words)) return 'cancelled';
+  if (/queued/i.test(words)) return 'queued';
+  switch (tone) {
+    case 'success':
+      return 'done';
+    case 'danger':
+      return 'failed';
+    case 'warning':
+      return 'needs';
+    case 'primary':
+    case 'info':
+      return 'running';
+    default:
+      return 'cancelled';
+  }
+}
 
 /** A row of chips that picks one run (or one attempt): the picked chip is pressed. */
 const RunChips: Component<{
@@ -46,7 +62,9 @@ const RunChips: Component<{
               'box-shadow': on() ? '0 0 0 2px var(--color-accent-line)' : 'none',
             }}
           >
-            <span aria-hidden="true" class="h-2 w-2 flex-none rounded-full" style={{ 'background-color': DOT[chip.tone] }} />
+            <span aria-hidden="true" class="inline-flex flex-none items-center">
+              <RunState state={chipState(chip.tone, chip.state)} size="dot" />
+            </span>
             {chip.label}
             <span class="sr-only">{`, ${chip.state}`}</span>
           </button>
