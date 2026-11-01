@@ -5,6 +5,7 @@ import SearchBar from '../shared/ui/SearchBar';
 import ToastContainer from '../shared/ui/ToastContainer';
 import Breadcrumb from '../shared/ui/Breadcrumb';
 import HelpButton from '../shared/ui/HelpButton';
+import { WaitingBadge } from '../shared/runWithAgent/WaitingForYou';
 import { ProjectProvider } from '../shared/state/projectContext';
 import CommandPalette, { type Command } from '../shared/ui/CommandPalette';
 import { paletteOpen, openPalette, closePalette } from '../shared/state/commandPalette';
@@ -146,6 +147,8 @@ const LayoutInner: Component<LayoutProps> = (props) => {
           >
             <IconPlus size={14} /> New
           </button>
+
+          <WaitingBadge />
 
           <HelpButton />
 
