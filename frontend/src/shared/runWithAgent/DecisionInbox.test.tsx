@@ -106,6 +106,21 @@ describe('DecisionInbox — discovers decisions, never asks for an id', () => {
     expect((c.querySelector('input[type="password"]') as HTMLInputElement).placeholder).toBe('');
   });
 
+  it('a token already given this session is not asked for again on a run; Change brings the field back', async () => {
+    mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
+    decisionTokenStore.set('given-elsewhere');
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.querySelector('input[type="password"]')).toBeNull();
+    expect(c.querySelector('[data-testid="decision-token-given"]')!.textContent).toContain('Decision token given for this browser session');
+    expect(c.textContent).not.toContain('given-elsewhere');
+    [...c.querySelectorAll('button')].find((b) => b.textContent === 'Change')!.click();
+    await flush();
+    expect(c.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
   it('a failed load says what could not load and Try again loads it', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')

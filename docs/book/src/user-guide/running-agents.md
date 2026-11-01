@@ -345,8 +345,8 @@ you to approve it blind; the timeline says to answer it in docket, where it is s
 <img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
-sign-in. Paste it into the field **Your decision token** under the question, in **Needs you**; the browser keeps it for the
-session. How to set it is in
+sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the
+session, and once it is given neither place asks again (**Change** replaces it). How to set it is in
 [Installing and Operating Runners](../admin-guide/runners.md#non-loopback-and-security-posture). A question
 nobody answers in time expires, and an expired question is never treated as an Allow. The run then ends as
 *Nobody answered* with the question, when it was asked and how long the team waited; it does not read as a
