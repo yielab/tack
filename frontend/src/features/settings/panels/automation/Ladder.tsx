@@ -80,7 +80,7 @@ const Ladder: Component<Props> = (props) => {
             </For>
           </ul>
         </nav>
-        <div class="flex min-w-0 max-w-xl flex-1 flex-col gap-4">
+        <div class="flex min-w-0 flex-1 flex-col gap-4">
           <Section id="automation-who" title="Who" lead="The agent, model and profile that work on this project, and the team each role goes to.">
             {props.agent}
             <Teams

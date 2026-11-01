@@ -56,6 +56,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- Settings → Automation: the ladder says **Blocked by 3 things** instead of "Held off by 3", the Merge block is titled **Autonomy level** (it sat under a section also called Merge), the sentence "Keep at most [n] runs open" stays on one line, a team's fix starts a sentence with a capital, and the sections are as wide as the ladder.
 - A tab list that does not fit (the item drawer) fades at the edge that has more tabs, and keeps the selected tab in view.
 - A run's checks and next steps are said in plain words ("A person checks it · from the Done when list", "A criterion needs a person to check it") with the verifier's raw kind, note and codes under **How we know**; a check that needs a person uses the run-state hand at text size instead of a speck; and the Steps track no longer repeats the model and verdict that **What each step ran** gives.
 - The Execution tab no longer says a run twice when the item's Now panel is above it: the newest run leaves out its state banner, waiting or failure reason, token limit and meter (Now has them), and the run, its attempt and its Usage fold are a heading and a hairline instead of a card inside a card.
