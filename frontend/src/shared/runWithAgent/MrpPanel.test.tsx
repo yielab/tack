@@ -201,7 +201,7 @@ describe('MrpPanel', () => {
       const el = mount();
       await flush();
       const [first, second] = [...el.querySelectorAll('[data-testid="mrp-criterion"]')];
-      expect(first.textContent).toContain('command · Verifier');
+      expect(first.textContent).toContain('command · Agent');
       expect(first.textContent).toContain('Evidence: ev/a.txt');
       expect(second.textContent).not.toContain('Evidence');
     });
@@ -225,7 +225,10 @@ describe('MrpPanel', () => {
       ]);
       expect(items[0].textContent).toContain('Done when');
       expect(items[0].textContent).toContain('Ticked by a person');
-      expect(items[1].textContent).toContain('Verifier');
+      expect(items[1].textContent).toContain("from the agent's checks");
+      expect(items[0].textContent).toContain("from the item's Done when");
+      // A check the agent brings (a command) is the agent's, even when the item's brief lists it.
+      expect(items[3].textContent).toContain("from the agent's checks");
       expect(items[3].textContent).toContain('The verifier did not run it');
     });
 
@@ -240,8 +243,8 @@ describe('MrpPanel', () => {
       const el = mount();
       await flush();
       const first = el.querySelector('[data-testid="mrp-criterion"]')!;
-      expect(first.querySelector('p:nth-of-type(2)')!.textContent).toBe('A person checks it · from the verifier · waits for a person to decide');
-      expect(first.querySelector('details')!.textContent).toContain('manual · Verifier · needs_human');
+      expect(first.querySelector('p:nth-of-type(2)')!.textContent).toBe("A person checks it · from the agent's checks · waits for a person to decide");
+      expect(first.querySelector('details')!.textContent).toContain('manual · Agent · needs_human');
       const steps = [...el.querySelectorAll('[data-testid="mrp-next-step"]')].map((li) => li.textContent);
       expect(steps).toEqual(['Needs a look A criterion needs a person to check it.', 'Warning A verifier stage ran in a reduced way. (anti tautology)']);
       expect(steps.join()).not.toMatch(/criterion_manual|stage_degraded|anti_tautology/);

@@ -28,6 +28,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- A run's checks name their true source ("from the item's Done when" or "from the agent's checks"), and the Run dialog counts each apart: "2 Done when · 2 agent checks", where it counted all four as Done when.
 - In Orchestration, a member is drawn under its team and a line with no open task appears only when you point at or focus a box; a team that no role of the project reaches is dashed too, with the fix. Compare and the team card read who can propose from the same field of the team's report, and a Flow lane says what the ring and the dot on a member mean.
 - The item drawer is wider, with smaller side padding on a narrow screen, so its panels are not cut at the right edge, and a tab bar that does not fit shows a chevron button at each edge that has more tabs.
 - A question that needs you shows what is being approved first (the command or call, or the question itself); the text the agent was given waits in a closed fold, the decision id is shortened with a Copy button, and an empty events, files or questions section is one grey line.
