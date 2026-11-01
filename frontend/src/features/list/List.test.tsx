@@ -77,6 +77,8 @@ describe('List columns', () => {
   beforeEach(() => localStorage.clear());
 
   it('has_a_header_row_whose_columns_are_buttons_that_say_which_way_they_sort', async () => {
+    // Every sortable column on show: a remembered choice, so the empty Run column is not hidden.
+    localStorage.setItem('tack_list_cols', JSON.stringify(['item_type']));
     const c = await mountProjectView(() => <List />, 'list', { items: FAMILY });
     const sortable = ['Title', 'Status', 'Priority', 'Assignee', 'Due', 'Run'];
     for (const name of sortable) {
@@ -160,7 +162,32 @@ describe('List columns', () => {
     await flush();
     expect(header(c, 'Type')).toBeDefined();
     expect(header(c, 'Due')).toBeUndefined();
-    expect(JSON.parse(localStorage.getItem('tack_list_cols')!)).toEqual(['due_date']);
+    expect(JSON.parse(localStorage.getItem('tack_list_cols')!)).toEqual(['run', 'details', 'due_date']); // the empty columns were hidden, and choosing keeps them so
+  });
+
+  it('hides_the_columns_no_item_has_a_value_in_until_a_choice_is_made_and_lists_them_in_Columns', async () => {
+    const c = await mountProjectView(() => <List />, 'list', {
+      items: [makeItem({ id: 'a', title: 'One', assignee: 'Kim' }), makeItem({ id: 'b', title: 'Two' })],
+    });
+    expect(header(c, 'Assignee')).toBeDefined();
+    expect(header(c, 'Due')).toBeUndefined();
+    expect(header(c, 'Run')).toBeUndefined();
+    expect(header(c, 'Details')).toBeUndefined();
+    expect(localStorage.getItem('tack_list_cols')).toBeNull(); // hiding them is not a choice
+    [...c.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.startsWith('Columns'))!.click();
+    await flush();
+    const due = [...c.querySelectorAll<HTMLLabelElement>('[aria-label="Columns"] label')].find((l) => l.textContent?.startsWith('Due'))!.querySelector('input')!;
+    expect(due.checked).toBe(false);
+    due.click();
+    await flush();
+    expect(header(c, 'Due')).toBeDefined();
+  });
+
+  it('lets_a_long_title_wrap_instead_of_cutting_it_off', async () => {
+    const c = await mountProjectView(() => <List />, 'list', { items: [makeItem({ id: 'a', title: 'divide() returns the product instead of the quotient' })] });
+    const title = [...c.querySelectorAll<HTMLElement>('[data-testid="list-row"] span')].find((e) => e.textContent?.startsWith('divide()'))!;
+    expect(title.className).toContain('line-clamp-2');
+    expect(title.className).not.toContain('truncate');
   });
 
   it('starts_from_the_columns_this_browser_remembers_and_moves_the_Tables_choice_over', async () => {
