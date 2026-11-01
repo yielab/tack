@@ -25,6 +25,14 @@ impl TackClient {
         })
     }
 
+    /// Whether the token is an agent credential rather than the operator's. `tack mcp` uses it
+    /// to send an agent's writes as change sets, the only way an agent changes the board.
+    pub fn acts_as_agent(&self) -> bool {
+        self.token
+            .as_deref()
+            .is_some_and(|token| token.starts_with(tack_app::runs::agent_credential::SECRET_PREFIX))
+    }
+
     /// The same client, marking every call as made through `tack mcp`.
     pub fn marked_mcp(&self) -> Self {
         Self {

@@ -87,7 +87,7 @@
     "name": "search_items"
   },
   {
-    "description": "Create an item in a project. To create many items, or a project with its items, use create_outline: one call instead of one per item.",
+    "description": "Create an item in a project. To create many items, or a project with its items, use create_outline: one call instead of one per item. With an agent credential this proposes a change set (no assignee or tags).",
     "inputSchema": {
       "properties": {
         "assignee": {
@@ -112,6 +112,10 @@
           "type": "string"
         },
         "project_id": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why, for the person who reads the change set; used when you hold an agent credential",
           "type": "string"
         },
         "tags": {
@@ -155,7 +159,7 @@
     "name": "create_project"
   },
   {
-    "description": "Create many items in one call, with their hierarchy and dependencies: in a new project (pass project) or an existing one (pass project_id). Every item is checked before anything is written, and every problem is reported at once; nothing is written unless all of it can be. Give an item a ref and name it from other items' parent or depends_on (an exact title works too). Order does not matter. Use dry_run first to see what would be created and any warnings. The file may also carry fields, profiles, roles, sprints and automation, as in Tack's project file (Settings → Data → File format).",
+    "description": "Create many items in one call, with their hierarchy and dependencies: in a new project (pass project) or an existing one (pass project_id). Every item is checked before anything is written, and every problem is reported at once; nothing is written unless all of it can be. Give an item a ref and name it from other items' parent or depends_on (an exact title works too). Order does not matter. Use dry_run first to see what would be created and any warnings. The file may also carry fields, profiles, roles, sprints and automation, as in Tack's project file (Settings → Data → File format). With an agent credential this proposes a change set: pass project_id, and no assignee, estimate or tags, project file parts or dry_run. A reason may be given.",
     "inputSchema": {
       "properties": {
         "automation": {
@@ -256,6 +260,10 @@
           "description": "Add to this project (mutually exclusive with project)",
           "type": "string"
         },
+        "reason": {
+          "description": "Why, for the person who reads the change set; used when you hold an agent credential",
+          "type": "string"
+        },
         "roles": {
           "description": "Roles and the profile each one uses",
           "type": "array"
@@ -273,11 +281,18 @@
     "name": "create_outline"
   },
   {
-    "description": "Update fields on an item. Status changes are validated against the workflow.",
+    "description": "Update fields on an item. Status changes are validated against the workflow. who_does_it (an agent profile id) and depends_on (ids of items that must finish first) propose a change set. With an agent credential every change does, and title, description and assignee cannot be changed.",
     "inputSchema": {
       "properties": {
         "assignee": {
           "type": "string"
+        },
+        "depends_on": {
+          "description": "Ids of items that must finish before this one",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "description": {
           "type": "string"
@@ -292,10 +307,18 @@
         "priority": {
           "type": "string"
         },
+        "reason": {
+          "description": "Why, for the person who reads the change set; used when you hold an agent credential",
+          "type": "string"
+        },
         "status": {
           "type": "string"
         },
         "title": {
+          "type": "string"
+        },
+        "who_does_it": {
+          "description": "An agent profile id: the profile that does this item",
           "type": "string"
         }
       },
@@ -311,6 +334,10 @@
     "inputSchema": {
       "properties": {
         "id": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why, for the person who reads the change set; used when you hold an agent credential",
           "type": "string"
         },
         "status": {
@@ -331,12 +358,17 @@
     "inputSchema": {
       "properties": {
         "author": {
+          "description": "Ignored with an agent credential: the comment carries the credential's name",
           "type": "string"
         },
         "content": {
           "type": "string"
         },
         "item_id": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why, for the person who reads the change set; used when you hold an agent credential",
           "type": "string"
         }
       },
@@ -460,5 +492,134 @@
       "type": "object"
     },
     "name": "create_execution"
+  },
+  {
+    "description": "A bounded summary of the projects you may read: items per status, what waits on a person and since when, blocked chains, tasks no team will pick up and why, stale items, runs that failed since `since`, tokens against the limits, each team's current work and queue, and the change sets waiting. Every list shows a fixed number of rows and says how many more there are. Read it first; ask for detail after.",
+    "inputSchema": {
+      "properties": {
+        "projects": {
+          "description": "Project UUIDs to describe; omit for every project you may read",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "since": {
+          "description": "RFC3339; runs that failed before it are left out. Default: the last 24 hours",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "digest"
+  },
+  {
+    "description": "What one team is doing: the tasks it holds, the ones still going first, with each task's state, what it waits on and the step it is in. Work the board did not start (a person or a routine gave it to the team directly) is included, with `on_board` absent.",
+    "inputSchema": {
+      "properties": {
+        "harness": {
+          "description": "Which agent's team, when two report a team of that name",
+          "type": "string"
+        },
+        "team": {
+          "description": "The team's name, as list_teams gives it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
+    "name": "team_activity"
+  },
+  {
+    "description": "List the teams agents report: who is in each and what they can do, whether it runs to the end or asks a person, its queue, and the agent profiles that name it (the ids to give a task with who_does_it).",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_teams"
+  },
+  {
+    "description": "List a project's roles and the agent profile each one runs with. A task with a role is done by that profile unless it names another.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "description": "Project UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_roles"
+  },
+  {
+    "description": "Read one change set: its reason, who proposed it, its status and each operation with its state and what it did.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "description": "Change set UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "get_change_set"
+  },
+  {
+    "description": "Propose changes to a project's board as one change set: an agent's only way to change it. Checked whole against the workflow, the WIP limits and the dependency graph: either refused with every reason, or kept. The project's rung decides which operations apply at once; the rest wait for a person. The answer says `applied`, `waiting for a person (change set <id>)` or both.",
+    "inputSchema": {
+      "properties": {
+        "idempotency_key": {
+          "description": "The same key on a project answers the first change set again",
+          "type": "string"
+        },
+        "operations": {
+          "description": "Each operation is an object with an `op`: `create` {title, description?, acceptance?, type?, role?, team?, profile_id?, parent?, depends_on?}; `who_does_it` {item, role? | team? | profile_id?}; `priority` {item, priority}; `move` {item, status}; `depend` {blocker, blocked}; `comment` {item, text}; `due` {item, due: RFC3339 or null}. An `item` is an existing item's id, or the position (from 0) of a `create` earlier in the list; `parent` must be earlier.",
+          "items": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "create",
+                  "who_does_it",
+                  "priority",
+                  "move",
+                  "depend",
+                  "comment",
+                  "due"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why, in a sentence a person reads before deciding",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "reason",
+        "operations"
+      ],
+      "type": "object"
+    },
+    "name": "propose"
   }
 ]

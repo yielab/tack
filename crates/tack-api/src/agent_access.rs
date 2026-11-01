@@ -1,6 +1,8 @@
 //! Which routes an agent credential may call, and the scope each one needs (ADR 0034,
 //! decision 2). The table is closed: a route that is not here answers an agent `403`, so a new
 //! route is the operator's until someone adds it on purpose. The operator is never asked.
+//! An agent reads through the routes below and changes the board only through a change set
+//! (decision 3): the routes that write an item, a comment or a dependency directly answer it `403`.
 //!
 //! [`classify`] is pure; [`authorize`] adds the one lookup it needs (an item's project).
 
@@ -29,6 +31,9 @@ pub enum Access {
     Everywhere(Capability),
     /// The handler filters its answer by the principal's scopes (the project list).
     Filtered,
+    /// A direct write to the board: an agent makes the same change by proposing a change set
+    /// (ADR 0034, decision 3), so the route answers `403` and names that one.
+    ChangeSetOnly,
     /// No agent credential may call it.
     OperatorOnly,
 }
@@ -48,7 +53,7 @@ fn id(segment: &str) -> Option<Uuid> {
 
 /// The access `method path` needs.
 pub fn classify(method: &Method, path: &str) -> Access {
-    use Capability::{Act, Read};
+    use Capability::Read;
     let get = method == Method::GET;
     let segments = segments(path);
     let access = match (segments.as_slice(), get) {
@@ -69,7 +74,7 @@ pub fn classify(method: &Method, path: &str) -> Access {
             id(project).map(|p| Access::Project(p, Read))
         }
         (["projects", project, "items"], false) if method == Method::POST => {
-            id(project).map(|p| Access::Project(p, Act))
+            id(project).map(|_| Access::ChangeSetOnly)
         }
         (["projects", project, "change-sets"], true) => {
             id(project).map(|p| Access::Project(p, Read))
@@ -80,18 +85,13 @@ pub fn classify(method: &Method, path: &str) -> Access {
         (["change-sets", change_set], true) => id(change_set).map(|c| Access::ChangeSet(c, Read)),
         (["items", item], true) => id(item).map(|i| Access::Item(i, Read)),
         (["items", item], false) if method == Method::PATCH => {
-            id(item).map(|i| Access::Item(i, Act))
+            id(item).map(|_| Access::ChangeSetOnly)
         }
         (["items", item, "comments" | "dependencies" | "brief"], true) => {
             id(item).map(|i| Access::Item(i, Read))
         }
         (["items", item, "comments" | "dependencies"], false) if method == Method::POST => {
-            id(item).map(|i| Access::Item(i, Act))
-        }
-        (["items", item, "dependencies", dep], false)
-            if method == Method::DELETE && id(dep).is_some() =>
-        {
-            id(item).map(|i| Access::Item(i, Act))
+            id(item).map(|_| Access::ChangeSetOnly)
         }
         _ => None,
     };
@@ -131,6 +131,11 @@ pub async fn authorize(
     match classify(method, path) {
         Access::OperatorOnly => Err(refusal(
             "This route is not available to an agent credential; it needs the operator's token."
+                .into(),
+        )),
+        Access::ChangeSetOnly => Err(refusal(
+            "An agent changes the board only through a change set: POST \
+             /api/projects/{project_id}/change-sets with the operations and a reason."
                 .into(),
         )),
         Access::Filtered => Ok(()),
@@ -195,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn reads_need_read_and_writes_need_act() {
+    fn reads_need_read_and_direct_writes_are_for_change_sets() {
         let (project, p) = some();
         let (item, i) = some();
         assert_eq!(
@@ -207,27 +212,29 @@ mod tests {
             Access::Project(project, Capability::Read)
         );
         assert_eq!(
-            classify(&Method::POST, &format!("/api/projects/{p}/items")),
-            Access::Project(project, Capability::Act)
-        );
-        assert_eq!(
-            classify(&Method::PATCH, &format!("/api/items/{i}")),
-            Access::Item(item, Capability::Act)
-        );
-        assert_eq!(
-            classify(&Method::POST, &format!("/api/items/{i}/comments")),
-            Access::Item(item, Capability::Act)
-        );
-        assert_eq!(
             classify(&Method::GET, &format!("/api/items/{i}/dependencies")),
             Access::Item(item, Capability::Read)
         );
+        // Writing an item, a comment or a dependency directly is a change set's job.
+        for (method, path) in [
+            (Method::POST, format!("/api/projects/{p}/items")),
+            (Method::PATCH, format!("/api/items/{i}")),
+            (Method::POST, format!("/api/items/{i}/comments")),
+            (Method::POST, format!("/api/items/{i}/dependencies")),
+        ] {
+            assert_eq!(
+                classify(&method, &path),
+                Access::ChangeSetOnly,
+                "{method} {path}"
+            );
+        }
+        // A change set has no operation that removes a dependency.
         assert_eq!(
             classify(
                 &Method::DELETE,
                 &format!("/api/items/{i}/dependencies/{}", Uuid::new_v4())
             ),
-            Access::Item(item, Capability::Act)
+            Access::OperatorOnly
         );
     }
 

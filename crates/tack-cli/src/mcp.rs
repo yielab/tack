@@ -9,6 +9,8 @@
 //!
 //! See `docs/MCP.md` for the transport decision and the Claude Code config.
 
+mod board;
+mod changes;
 mod fleet;
 mod items;
 mod projection;
