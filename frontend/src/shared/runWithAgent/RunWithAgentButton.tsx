@@ -155,14 +155,14 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
             color: 'var(--color-text-secondary)',
             display: 'grid',
             'place-items': 'center',
-            'line-height': '1',
-            'font-size': '0.5625rem',
             padding: 0,
             'flex-shrink': 0,
           }}
           class="focus:outline-none focus-visible:ring-2"
         >
-          ▶
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+            <path d="M2 1.2v7.6a.5.5 0 0 0 .76.43l6.1-3.8a.5.5 0 0 0 0-.86l-6.1-3.8A.5.5 0 0 0 2 1.2z" />
+          </svg>
         </button>
       ) : (
         <Button
