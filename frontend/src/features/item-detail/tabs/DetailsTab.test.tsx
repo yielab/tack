@@ -40,11 +40,11 @@ beforeEach(() => {
   });
 });
 
-function mount() {
+function mount(item: Item = ITEM) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const dispose = render(
-    () => <DetailsTab item={ITEM} onDescriptionChange={() => {}} />,
+    () => <DetailsTab item={item} onDescriptionChange={() => {}} />,
     container,
   );
   return { container, dispose };
@@ -242,5 +242,17 @@ describe('DetailsTab', () => {
     const alert = container.querySelector('[role="alert"]')!;
     expect(alert.textContent).toBe('criterion id `m1` is used twice');
     expect(alert.closest('section')!.textContent).toContain('Done when');
+  });
+});
+
+describe('DetailsTab description', () => {
+  it('renders a Markdown description instead of showing its markers', async () => {
+    const { container, dispose } = mount({ ...ITEM, description: '**Fix** the parser\n\n- one\n- two' } as Item);
+    await flush();
+    const shown = container.querySelector('[data-testid="description"]')!;
+    expect(shown.querySelector('strong')?.textContent).toBe('Fix');
+    expect(shown.querySelectorAll('li')).toHaveLength(2);
+    expect(shown.textContent).not.toContain('**');
+    dispose();
   });
 });

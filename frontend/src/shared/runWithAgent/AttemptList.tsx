@@ -1,6 +1,7 @@
 import { type Component, For, Show, createEffect, createMemo, createResource, createSignal, on } from 'solid-js';
 import { Badge, Button, LoadError, Modal } from '../ui';
 import { toast } from '../ui/toast';
+import { truncateMiddle } from '../ui/truncateMiddle';
 import { api } from '../api';
 import { artifactsApi, attemptsApi, readRunRecords, readRunSteps, type AttemptSummary } from '../execution';
 import type { RunLimit } from '../execution/api';
@@ -137,7 +138,7 @@ const IdRow: Component<{ label: string; value: string }> = (props) => (
     <dt class="w-14 flex-none" style={{ color: 'var(--color-text-tertiary)' }}>{props.label}</dt>
     <dd class="m-0 flex min-w-0 flex-1 items-center gap-2">
       <span class="min-w-0 flex-1 truncate" title={props.value} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-secondary)' }}>
-        {props.value}
+        {truncateMiddle(props.value)}
       </span>
       <button
         type="button"

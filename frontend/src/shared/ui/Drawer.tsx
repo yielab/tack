@@ -71,7 +71,7 @@ const Drawer: Component<DrawerProps> = (props) => {
             aria-label={props.title}
             tabindex={-1}
             class={clsx(
-              'flex h-full w-full flex-col focus:outline-none sm:rounded-l-[28px]',
+              'flex h-full w-full min-w-0 flex-col focus:outline-none sm:rounded-l-[28px]',
               WIDTH[props.width ?? 'lg']
             )}
             style={{
@@ -114,7 +114,12 @@ const Drawer: Component<DrawerProps> = (props) => {
                 </div>
               </div>
             </Show>
-            <div class="flex-1 overflow-y-auto px-6 py-4">{props.children}</div>
+            {/* Long values wrap or clip here, never widen the drawer: children may shrink below their
+             * content width (flex and grid children default to min-width: auto), and the body clips
+             * sideways so an unbroken id cannot push the panel wider than the screen. */}
+            <div class="min-w-0 flex-1 overflow-y-auto overflow-x-clip px-6 py-4 wrap-anywhere [&_*]:min-w-0">
+              {props.children}
+            </div>
           </div>
         </div>
       </Portal>
