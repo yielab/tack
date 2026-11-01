@@ -275,6 +275,17 @@ export function countPatchFiles(patch: string): number {
   return (patch.match(/^diff --git /gm) ?? []).length;
 }
 
+/** The files a unified diff touches and the lines it adds and removes. */
+export function patchStats(patch: string): { files: number; added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+') && !line.startsWith('+++')) added += 1;
+    else if (line.startsWith('-') && !line.startsWith('---')) removed += 1;
+  }
+  return { files: countPatchFiles(patch), added, removed };
+}
+
 /** A path, or text that holds paths, as the project knows it: the runner's workspace
  *  prefix is left off, so a file under `/var/tmp/ws-123/` reads as its path inside the
  *  project and the workspace itself reads `.`. Without a workspace the text comes back as it was. */

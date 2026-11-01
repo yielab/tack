@@ -1,12 +1,13 @@
 import { type Component, Show, createEffect, createMemo, createSignal, on } from 'solid-js';
-import { Badge, Button, EmptyState, Field, Icons, LoadError } from '../ui';
+import { Badge, Button, EmptyState, Field, Icons, LoadError, RunState } from '../ui';
+import { RUN_STATE_LABEL } from '../ui/RunState';
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
-import AttemptList from './AttemptList';
-import RunChips from './RunChips';
+import AttemptList, { attemptRunState } from './AttemptList';
+import RunChips, { chipState } from './RunChips';
 import RunWithAgentModal from './RunWithAgentModal';
-import { describeAttemptStatus, isTerminalAttemptState } from './attemptFormat';
-import { AttemptTeamSteps, runWho } from './TeamSteps';
+import { describeAttemptStatus } from './attemptFormat';
+import { runWho } from './TeamSteps';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
@@ -74,8 +75,6 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
   );
   const page = () => props.layout === 'page';
   const [side, setSide] = createSignal<HTMLElement | undefined>(undefined);
-  const [again, setAgain] = createSignal(false);
-  const canRerun = () => !!props.itemTitle && !!props.projectId;
 
   return (
     <div class="space-y-3">
@@ -103,32 +102,10 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
       >
         <div data-testid="execution-columns" class={page() ? 'grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]' : 'space-y-3'}>
           <div class="min-w-0 space-y-3">
-            {/* Newest first, so the first chip is the latest run. */}
-            <div class="flex flex-wrap items-center gap-2">
-              <Show when={requests().length > 1}>
-                <RunChips chips={chips()} active={active()?.id ?? ''} onPick={pick} label="Runs" testId="run-chips" />
-              </Show>
-              <Button
-                size="sm"
-                variant="secondary"
-                class="ml-auto"
-                disabled={!canRerun()}
-                title={canRerun() ? undefined : 'This screen does not know the task'}
-                onClick={() => setAgain(true)}
-              >
-                Run again
-              </Button>
-              <Show when={canRerun()}>
-                <RunWithAgentModal
-                  isOpen={again()}
-                  onClose={() => setAgain(false)}
-                  itemId={props.itemId}
-                  itemTitle={props.itemTitle!}
-                  projectId={props.projectId!}
-                  onCreated={pick}
-                />
-              </Show>
-            </div>
+            {/* Newest first, so the first chip is the latest run; each carries its run's state. */}
+            <Show when={requests().length > 1}>
+              <RunChips chips={chips()} active={active()?.id ?? ''} onPick={pick} label="Runs" testId="run-chips" />
+            </Show>
             <Show when={active()?.id} keyed>
               {(_id) => (
                 <Show when={active()}>
@@ -242,6 +219,38 @@ const RequestRow: Component<{
   const latestAttempt = () => latestOf(readyAttempts());
 
   const status = createMemo(() => runStatus(store, props.record));
+  // The run in the one language every screen uses: its latest attempt's state, else the request's own.
+  const banner = () => {
+    const a = latestAttempt();
+    return a ? attemptRunState(a) : { state: chipState(status().tone, status().label) };
+  };
+
+  // Starting another run of the task: the verdict offers it as its action once nothing else is.
+  const [again, setAgain] = createSignal(false);
+  const canRerun = () => !!props.itemTitle && !!props.projectId;
+  const runAgain = (variant: 'primary' | 'secondary') => (
+    <>
+      <Button
+        size="sm"
+        variant={variant}
+        disabled={!canRerun()}
+        title={canRerun() ? undefined : 'This screen does not know the task'}
+        onClick={() => setAgain(true)}
+      >
+        Run again
+      </Button>
+      <Show when={canRerun()}>
+        <RunWithAgentModal
+          isOpen={again()}
+          onClose={() => setAgain(false)}
+          itemId={props.itemId}
+          itemTitle={props.itemTitle!}
+          projectId={props.projectId!}
+          onCreated={props.onCreated}
+        />
+      </Show>
+    </>
+  );
 
   // Lazy first load: fetch attempts once per request the moment its row is
   // rendered, never repeatedly — a subsequent render with the same `idle`
@@ -258,14 +267,6 @@ const RequestRow: Component<{
     <section data-testid="run" class="space-y-4 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
-        <span role="status" aria-live="polite" class="inline-flex">
-          <Badge tone={status().tone}>{status().label}</Badge>
-        </span>
-        <Show when={!status().known}>
-          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            (unrecognised state — showing raw value)
-          </span>
-        </Show>
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           created {relativeTimeFromIso(summary()?.created_at)}
         </span>
@@ -280,6 +281,27 @@ const RequestRow: Component<{
         </Show>
         <Show when={props.record.cancellation.conflict}>
           <Badge tone="danger">Already terminal — cancel had no effect</Badge>
+        </Show>
+      </div>
+
+      {/* The run's one state, announced politely as it changes; the attempt's own words come under it
+          when the banner's say less. */}
+      <div role="status" aria-live="polite" class="min-w-0 space-y-1">
+        <Show
+          when={status().known}
+          fallback={
+            <div class="flex flex-wrap items-center gap-2">
+              <Badge tone={status().tone}>{status().label}</Badge>
+              <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                (unrecognised state — showing raw value)
+              </span>
+            </div>
+          }
+        >
+          <RunState size="banner" {...banner()} />
+          <Show when={status().label !== RUN_STATE_LABEL[banner().state]}>
+            <p data-testid="run-status-words" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{status().label}</p>
+          </Show>
         </Show>
       </div>
 
@@ -342,25 +364,18 @@ const RequestRow: Component<{
           ) : null;
         })()}
       </Show>
-      {/* The team's steps in order, above the timeline of what the agent did. */}
-      <Show when={latestAttempt() && (runWho(summary()).profileId || runWho(summary()).agentKind)}>
-        <AttemptTeamSteps
-          requestId={latestAttempt()!.request_id}
-          attemptNumber={latestAttempt()!.attempt_number}
-          live={!isTerminalAttemptState(latestAttempt()!.state)}
-          profileId={runWho(summary()).profileId}
-          agentKind={runWho(summary()).agentKind}
-        />
-      </Show>
       {/* Mounted once and fed the fresh attempts, so a refresh updates the
           rows in place and what the person opened on them stays open. */}
       <Show when={attempts().status === 'ready'}>
         <Show
           when={readyAttempts().length > 0}
           fallback={
-            <p class="rounded-item border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
-              No attempts yet.
-            </p>
+            <>
+              <p class="rounded-item border-2 border-dashed px-4 py-3 text-xs" style={{ color: 'var(--color-text-tertiary)', 'border-color': 'var(--color-border-light)' }}>
+                No attempts yet.
+              </p>
+              <div class="flex flex-wrap items-center gap-2">{runAgain('secondary')}</div>
+            </>
           }
         >
           <AttemptList
@@ -368,6 +383,9 @@ const RequestRow: Component<{
             attempts={readyAttempts()}
             itemId={props.itemId}
             limit={summary()?.limit}
+            profileId={runWho(summary()).profileId}
+            agentKind={runWho(summary()).agentKind}
+            runAgain={runAgain}
             layout={props.layout}
             sideTarget={props.sideTarget}
             onReviewed={() => {

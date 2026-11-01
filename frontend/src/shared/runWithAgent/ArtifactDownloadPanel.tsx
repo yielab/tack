@@ -1,5 +1,5 @@
-import { type Component, For, Show, createResource, createSignal } from 'solid-js';
-import { Badge, Button, EmptyState, Modal } from '../ui';
+import { type Component, For, type JSX, Show, createResource, createSignal } from 'solid-js';
+import { Badge, EmptyState, Modal } from '../ui';
 import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound, type ArtifactRecord } from '../execution';
 import DiffView from './DiffView';
 import { inDesktop } from './desktop';
@@ -7,6 +7,8 @@ import { inDesktop } from './desktop';
 export interface ArtifactDownloadPanelProps {
   requestId: string;
   attemptNumber: number;
+  /** The files the attempt manifested, listed by the screen that also needs them for its other sections. */
+  artifacts: ArtifactRecord[];
 }
 
 type DownloadStatusKind = 'idle' | 'downloading' | 'done' | 'not_found' | 'not_verified' | 'error';
@@ -45,6 +47,20 @@ export const ArtifactView: Component<{
     </Modal>
   );
 };
+
+const glyph = (body: JSX.Element) => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    {body}
+  </svg>
+);
+const IconEye: Component = () =>
+  glyph(
+    <>
+      <path d="M1.8 8s2.2-4 6.2-4 6.2 4 6.2 4-2.2 4-6.2 4-6.2-4-6.2-4z" />
+      <circle cx="8" cy="8" r="1.9" />
+    </>,
+  );
+const IconDownload: Component = () => glyph(<path d="M8 2.5v7.5M4.8 7.3 8 10.5l3.2-3.2M3 13h10" />);
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -103,93 +119,103 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
     }
   };
 
-  return (
-    <li class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          {props.artifact.name}
-        </span>
-        <Badge tone="neutral">{props.artifact.kind}</Badge>
-        <Show when={!props.artifact.content_verified}>
-          <Badge tone="warning">Not verified yet</Badge>
-        </Show>
-        <span class="text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-          {formatSize(props.artifact.size_bytes)}
-        </span>
-        <div class="ml-auto flex gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setViewing(true)}>View</Button>
-          <Button size="sm" variant="secondary" onClick={download} disabled={status() === 'downloading'} loading={status() === 'downloading'}>
-            Download
-          </Button>
-        </div>
-      </div>
-      <ArtifactView requestId={props.requestId} attemptNumber={props.attemptNumber}
-        artifact={viewing() ? props.artifact : undefined} onClose={() => setViewing(false)} />
+  const iconButton = (label: string, icon: JSX.Element, onClick: () => void, busy: () => boolean = () => false) => (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={busy()}
+      onClick={onClick}
+      class="inline-flex h-7 w-7 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 disabled:cursor-wait disabled:opacity-60"
+      style={{ color: 'var(--color-accent-ink)', border: '1px solid var(--color-border-light)' }}
+    >
+      {icon}
+    </button>
+  );
 
+  return (
+    <>
+      <tr data-testid="artifact-row">
+        <th scope="row" class="min-w-0 px-3 py-2 text-left text-sm font-semibold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+          {props.artifact.name}
+          <Show when={!props.artifact.content_verified}>
+            <span class="ml-2 align-middle"><Badge tone="warning">Not verified yet</Badge></span>
+          </Show>
+        </th>
+        <td class="px-3 py-2"><Badge tone="neutral">{props.artifact.kind}</Badge></td>
+        <td class="whitespace-nowrap px-3 py-2 text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
+          {formatSize(props.artifact.size_bytes)}
+        </td>
+        <td class="px-3 py-2">
+          <div class="flex justify-end gap-1.5">
+            {iconButton('View', <IconEye />, () => setViewing(true))}
+            {iconButton('Download', <IconDownload />, download, () => status() === 'downloading')}
+          </div>
+          <ArtifactView requestId={props.requestId} attemptNumber={props.attemptNumber}
+            artifact={viewing() ? props.artifact : undefined} onClose={() => setViewing(false)} />
+        </td>
+      </tr>
       {/* Every outcome — success and each distinct failure — is a visible,
           named state: artifact failure stays visible. */}
-      <Show when={status() === 'done'}>
-        <p class="text-xs" style={{ color: 'var(--color-success-700)' }}>
-          {inDesktop() ? `Saved to your Downloads folder as ${fileName()}.` : `Sent to your browser's downloads as ${fileName()}.`}
-        </p>
+      <Show when={status() !== 'idle' && status() !== 'downloading'}>
+        <tr>
+          <td colspan="4" class="px-3 pb-2">
+            <Show when={status() === 'done'}>
+              <p class="text-xs" style={{ color: 'var(--color-success-700)' }}>
+                {inDesktop() ? `Saved to your Downloads folder as ${fileName()}.` : `Sent to your browser's downloads as ${fileName()}.`}
+              </p>
+            </Show>
+            <Show when={status() === 'not_found'}>
+              <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+                No artifact with that id exists for this attempt.
+              </p>
+            </Show>
+            <Show when={status() === 'not_verified'}>
+              <p class="text-xs" style={{ color: 'var(--color-warning-700)' }}>
+                This artifact's manifest exists, but its content hasn't been verified yet — try again
+                shortly.
+              </p>
+            </Show>
+            <Show when={status() === 'error'}>
+              <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
+                {errorMessage() ?? 'Download failed.'}
+              </p>
+            </Show>
+          </td>
+        </tr>
       </Show>
-      <Show when={status() === 'not_found'}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          No artifact with that id exists for this attempt.
-        </p>
-      </Show>
-      <Show when={status() === 'not_verified'}>
-        <p class="text-xs" style={{ color: 'var(--color-warning-700)' }}>
-          This artifact's manifest exists, but its content hasn't been verified yet — try again
-          shortly.
-        </p>
-      </Show>
-      <Show when={status() === 'error'}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          {errorMessage() ?? 'Download failed.'}
-        </p>
-      </Show>
-    </li>
+    </>
   );
 };
 
 /**
- * Every artifact manifested for one attempt, reading real data from
- * `GET /executions/{request_id}/attempts/{attempt_number}/artifacts`
- * — no artifact id is ever typed by an operator.
+ * Every artifact manifested for one attempt as one compact table: its name, kind and size, and
+ * View and Download as icon buttons. The list comes from the screen that asked for it
+ * (`GET /executions/{request_id}/attempts/{attempt_number}/artifacts`) — no artifact id is ever
+ * typed by an operator.
  */
-const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => {
-  const [artifacts] = createResource(
-    () => `${props.requestId}:${props.attemptNumber}`,
-    () => artifactsApi.list(props.requestId, props.attemptNumber),
-  );
-
-  return (
-    <div>
-      <Show when={artifacts.loading}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          Loading artifacts…
-        </p>
-      </Show>
-      <Show when={artifacts.error}>
-        <p class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
-          Couldn't load artifacts: {artifacts.error instanceof Error ? artifacts.error.message : 'unknown error'}
-        </p>
-      </Show>
-      <Show when={!artifacts.loading && !artifacts.error && (artifacts() ?? []).length === 0}>
-        <EmptyState title="No artifacts yet" />
-      </Show>
-      <Show when={!artifacts.loading && !artifacts.error && (artifacts() ?? []).length > 0}>
-        <ul class="space-y-2">
-          <For each={artifacts()}>
+const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => (
+  <Show when={props.artifacts.length > 0} fallback={<EmptyState title="No artifacts yet" />}>
+    <div class="max-w-full overflow-x-auto">
+      <table data-testid="artifact-table" class="w-full text-left" style={{ 'table-layout': 'auto' }}>
+        <thead class="sr-only">
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Kind</th>
+            <th scope="col">Size</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y" style={{ 'border-color': 'var(--color-border-light)' }}>
+          <For each={props.artifacts}>
             {(artifact) => (
               <ArtifactRow requestId={props.requestId} attemptNumber={props.attemptNumber} artifact={artifact} />
             )}
           </For>
-        </ul>
-      </Show>
+        </tbody>
+      </table>
     </div>
-  );
-};
+  </Show>
+);
 
 export default ArtifactDownloadPanel;

@@ -323,7 +323,7 @@ With docket, a question names the call and docket's reason for stopping it. For 
 reason follows when it gave one. **Allow** lets the call run. **Deny** refuses it, tells the agent it was
 refused, and the agent carries on.
 
-A question waits first in the **Now** panel, with its answers open, and on the task's Execution tab, in the attempt's **Questions from the agent**, which opens by itself while the run waits for you. A question asked while you already have the task open appears without a reload. Each question
+A question waits first in the **Now** panel, with its answers open, and on the task's Execution tab, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload. Each question
 shows its kind, so a tool permission reads differently from a choice the agent wants you to make. An option
 can carry a short description, its risks and a rough cost in tokens. When the agent has a preferred answer,
 that option is preselected and marked **Recommended**, with the reason and the files it looked at beneath it.
@@ -343,7 +343,7 @@ you to approve it blind; the timeline says to answer it in docket, where it is s
 <img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
-sign-in. Paste it into the field **Your decision token** above the question; the browser keeps it for the
+sign-in. Paste it into the field **Your decision token** under the question, in **Needs you**; the browser keeps it for the
 session. How to set it is in
 [Installing and Operating Runners](../admin-guide/runners.md#non-loopback-and-security-posture). A question
 nobody answers in time expires, and an expired question is never treated as an Allow. The run then ends as

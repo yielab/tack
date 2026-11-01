@@ -176,45 +176,51 @@ On the tab, **chips** pick the run: **Run 3**, **Run 2**, **Run 1**, newest firs
 the colour of its state, and the latest is shown until you pick another. The address names the run you picked (`?tab=execution&run=…` on the item's own page), so a run can be
 linked to and opened again. **Run again** starts a new
 run of the same task. A run that had several attempts has a second row of chips for them. The tab
-shows only the run you picked, in this order:
+shows only the run you picked, and reads it from the top down in this order:
 
-- **The review banner**, when the run waits for your verdict: **Accept**, or **Reject…** with a note
-  saying why, which is optional. While this tab is open the Now panel leaves out its own
-  **Accept** and **Reject…**, so the verdict is asked for in one place.
-- The run's status — *Running*, *Finished — needs your review*, *Finished — no changes recorded* (a run
-  that was not meant to change files), *Failed* (including a run that was meant to change files and
-  changed nothing), *Accepted*, and so on — with the agent that ran and, when the run's branch became
-  a pull request, a **PR #n** link and its state.
-- **The team's steps**, when the run's team reports them: a line of steps in order, each marked
-  *Done*, *Running* or *Waiting* as the run goes, with what checks it in words ("checked by a command",
-  "a reviewer can send it back, up to 2 times", "asks you", "checked outside the team"). A step sent
-  back shows as *Running* again and the steps after it wait again. A step that no one on the team does
-  (a command, a question, a wait) is listed in its place with no mark, because nothing in the run says
-  where it stands. When the team or its agent reports no steps, the tab says "<Agent> does not report
-  its steps in advance", and the timeline below shows the steps taken so far.
-- **What the agent concluded**: the agent's report as it wrote it, cut to a few lines. **Read full
-  report** shows the rest.
-- **What the agent did**, two ways. **By tool** groups its steps by the tool it used, with how many
-  times, and shows the files and commands it worked on as chips. **Timeline** lists the run's
-  events as they happened, and fills while the run is going: each call to the model, each tool it
-  ran (a shell command is shown as the command) and each call a docket team refused. Only the Claude Code
-  log names its steps by tool; for any other agent **By tool** is disabled and says why, and the
-  timeline is what there is.
-- **What each step ran** lists, for a run that went through a team's steps one after another, each step in
-  order: who did it (Lead, Implementer, Reviewer, or the name of a role your team gave), the model it used
-  (with "a small model" or "a strong model" when the team said which), its verdict when it gave one, and,
-  under it, what the agent assumed and what it asked when it said any. Steps that came out alike one after
-  another are one row with a count, such as "Implementer ×3". The prompts a step read are folded under
-  **Prompts used**, each with its name and version and where it came from: built in, the team's own, this
-  repository's, your settings or this task. **What the team recorded** shows the rows the team
-  wrote during the run, one small table for each kind of record; when a table was cut short, it says the
-  rest are kept by the team in docket. A team that works in a folder rather than a repository says so on
-  the Now panel: there is nothing to merge, and what it did is the last step's summary. A run from
-  before these sections existed shows the tab as it always did.
-- **Show questions & files** opens the questions the agent asked, the files from the run and, when a
-  verifier ran, the merge-readiness pack. A question that is still waiting appears there, with the
+- **The verdict.** The run's status as a banner — *Running*, *Ready for review*, *Done*, *Failed* and so on —
+  with the exact words under it (*Finished — needs your review*, *Finished — no changes recorded* for a run
+  that was not meant to change files, *Failed* including a run that was meant to change files and changed
+  nothing, *Accepted*), the agent that ran and, when the run's branch became a pull request, a **PR #n**
+  link and its state. Beside it, the verifier's recommendation and risk when a verifier ran, the tokens as
+  a bar against the run's limit, how long it took and whether it merged. The one filled button is for what
+  to do next. When the run waits for your verdict it holds **Accept**, or **Reject…** with a note saying
+  why, which is optional; while this tab is open the Now panel leaves out its own **Accept** and
+  **Reject…**, so the verdict is asked for in one place. **What the agent concluded** is the agent's
+  report as it wrote it, cut to a few lines; **Read full report** shows the rest.
+- **Needs you** appears only while the run waits for an answer: the question that is still waiting, with the
   command it is about, why the agent's policy stopped it, the options, their risks and the agent's
-  recommendation. When the run is waiting for you, this opens by itself.
+  recommendation. The decision token field is part of it. The questions already answered, and a muted line
+  when the agent asked nothing, are in the folded **Activity** under **Steps**.
+- **Checks**: the criteria as a checklist, joined to the task's **Done when** list; see
+  [Reviewing a Run](reviewing-runs.md).
+- **Changes**: how many files and lines, with **Open diff**, **Open folder** and **Copy branch**.
+- **Steps**, in three parts. **The team's steps**, when the run's team reports them: a track of steps in
+  order, each marked *Done*, *Running* or *Waiting* as the run goes, with what checks it in words ("checked
+  by a command", "a reviewer can send it back, up to 2 times", "asks you", "checked outside the team") and,
+  once the run has ended, the model and verdict of the role that did it. A step sent back shows as *Running*
+  again and the steps after it wait again. A step that no one on the team does (a command, a question, a
+  wait) is listed in its place with no mark, because nothing in the run says where it stands. When the team
+  or its agent reports no steps, the tab says "<Agent> does not report its steps in advance" and the track
+  is made of the steps the run took. **What each step ran** lists each step in order: who did it (Lead,
+  Implementer, Reviewer, or the name of a role your team gave), the model it used (with "a small model" or
+  "a strong model" when the team said which), its verdict when it gave one, and, under it, what the agent
+  assumed and what it asked when it said any. Steps that came out alike one after another are one row with
+  a count, such as "Implementer ×3". The prompts a step read are folded under **Prompts used**, each with
+  its name and version and where it came from: built in, the team's own, this repository's, your settings
+  or this task. **What the team recorded** shows the rows the team wrote during the run, one small table
+  for each kind of record; when a table was cut short, it says the rest are kept by the team in docket. A
+  team that works in a folder rather than a repository says so in the verdict: there is nothing to merge,
+  and what it did is the last step's summary. **Activity**, folded while the run is over and open while it
+  goes, holds **What the agent did**, two ways: **By tool** groups its steps by the tool it used, with how
+  many times, and shows the files and commands it worked on as chips; **Timeline** lists the run's events as
+  they happened, and fills while the run is going: each call to the model, each tool it ran (a shell
+  command is shown as the command) and each call a docket team refused. Only the Claude Code log names its
+  steps by tool; for any other agent **By tool** is disabled and says why, and the timeline is what there
+  is. A run from before these sections existed shows the tab as it always did.
+- **Files from this run**: one row for each file, with **View** and **Download**.
+- **Technical**, folded: the request, attempt and runner ids, what the agent got and read, the usage in
+  full and the **Raw log**.
 
 Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on
 the computer that ran it.
