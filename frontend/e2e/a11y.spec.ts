@@ -508,7 +508,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   // With no model named, "Advanced for this run" is already open on the model.
   await modal.getByRole('combobox', { name: 'Model' }).selectOption({ label: 'Another model…' });
   await modal.getByLabel('Model name').fill('opaque/model-a11y');
-  await modal.getByRole('button', { name: 'Run', exact: true }).click();
+  await modal.getByRole('button', { name: 'Start run', exact: true }).click();
   await expect(modal).toBeHidden();
 
   await drawer.getByRole('tab', { name: 'Execution' }).click();

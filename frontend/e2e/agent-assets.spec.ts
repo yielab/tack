@@ -252,7 +252,7 @@ test('hero gif', async ({ page }) => {
   await page.waitForTimeout(900);
 
   // ── Scene: submit the real dialog ───────────────────────────────────────
-  await page.getByRole('button', { name: 'Run', exact: true }).click();
+  await page.getByRole('button', { name: 'Start run', exact: true }).click();
   await page.waitForTimeout(1200);
 
   // `store.create`'s own success toast doesn't carry the request id in a

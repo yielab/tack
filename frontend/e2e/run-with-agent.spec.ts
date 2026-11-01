@@ -83,7 +83,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   // Nothing is filled in yet — there is no Run button at all, one sentence
   // with one link stands in its place, and the specific reasons are listed
   // rather than the request being rejected server-side after a click.
-  await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('link', { name: "Choose where this project's code is →" })).toBeVisible();
   await expect(dialog.getByText('Select where this runs.')).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Implementer', pressed: true })).toBeVisible();
@@ -173,7 +173,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   await modal.getByLabel('Model name').fill('opaque/model-alpha');
   await expect(modal.getByText('Supported', { exact: true })).toBeVisible();
 
-  const runButton = modal.getByRole('button', { name: 'Run', exact: true });
+  const runButton = modal.getByRole('button', { name: 'Start run', exact: true });
   await expect(runButton).toBeEnabled();
   await runButton.click();
 
@@ -250,7 +250,7 @@ test('the run form submits the project\'s configured model default, byte for byt
 
   await modal.getByRole('button', { name: profileName, exact: true }).click();
 
-  await modal.getByRole('button', { name: 'Run', exact: true }).click();
+  await modal.getByRole('button', { name: 'Start run', exact: true }).click();
   await expect(modal).toBeHidden();
 
   expect(capturedBody, 'no POST /api/executions was captured').toBeDefined();
@@ -312,7 +312,7 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
   };
 
   let modal = await openModal();
-  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toHaveCount(0);
+  await expect(modal.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
   // The row that replaces Run says why, and "Advanced for this run" opens on the model.
   await expect(modal.locator('[data-prerequisite="missing"]')).toContainText('needs a model');
   await modal.getByRole('link', { name: 'Set a default model for this project' }).click();
@@ -322,7 +322,7 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
   await setProjectDefaultModel(request, projectId, 'codex', 'opaque/model-alpha');
   await page.goBack();
   modal = await openModal();
-  await expect(modal.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
+  await expect(modal.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled();
 });
 
 test('Board: the run dialog opens with the role\'s profile on an item with a role, and says so', async ({

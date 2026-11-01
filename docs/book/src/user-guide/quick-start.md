@@ -112,7 +112,7 @@ Nothing here runs an agent until you turn one on: the server is a full project m
 
 1. **Turn agents on for this computer.** Open **Agents** in the sidebar and click **Turn on**. It starts at once, with no restart. Sign in to the agent you want with the agent's own command (for example `claude`); the page tells you which agents are installed and whether each is signed in. See [Agents on this computer](running-agents.md#agents-on-this-computer).
 2. **Tell the project where its code is.** If you answered **Does this project have code?** when you created it, this is done; otherwise open **Settings → Automation**. See [Where the agent works](automation.md#where-the-agent-works).
-3. **Open a task and click Run with agent**, then **Run**. The defaults are the recommended ones. See [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
+3. **Open a task and click Run with agent**, then **Start run**. The defaults are the recommended ones. See [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: a one-line summary of who runs it and where, the text the agent will read, two switches, and an Advanced section.">
 
