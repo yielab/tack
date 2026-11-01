@@ -5356,6 +5356,84 @@
         }
       }
     },
+    "/api/runner/v1/activity": {
+      "post": {
+        "tags": [
+          "runner-protocol-v1"
+        ],
+        "summary": "Report what a harness's teams are doing: the tasks that changed, each replacing what the board holds for it (additive v1 operation; exact path fixed by protocol.json)",
+        "description": "Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.",
+        "requestBody": {
+          "description": "protocol_version: 1, plus this exchange's fixture-frozen fields",
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Activity recorded; a repeated report changes nothing",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden / runner_revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runner/v1/attempts/{attempt_id}/accept": {
       "post": {
         "tags": [
@@ -7105,6 +7183,52 @@
         }
       }
     },
+    "/api/teams/{id}/activity": {
+      "get": {
+        "tags": [
+          "teams"
+        ],
+        "summary": "GET /api/teams/{id}/activity",
+        "operationId": "team_activity",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The team's name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "harness",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamActivityEntry"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (no active runner reports a team of that name)"
+          }
+        }
+      }
+    },
     "/api/templates": {
       "get": {
         "tags": [
@@ -7457,6 +7581,80 @@
           }
         ],
         "description": "One check on the result. `id` is client-chosen and unique within the brief."
+      },
+      "ActivityState": {
+        "type": "string",
+        "description": "Where a task is in its life.",
+        "enum": [
+          "queued",
+          "running",
+          "waiting",
+          "blocked",
+          "done",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "ActivityTask": {
+        "type": "object",
+        "description": "One task a team holds.",
+        "required": [
+          "ref",
+          "state"
+        ],
+        "properties": {
+          "changed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the harness last changed the task. Absent when it did not say."
+          },
+          "current_step": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CurrentStep",
+                "description": "The step the task is inside now. Absent when it is inside none."
+              }
+            ]
+          },
+          "finished_steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinishedStep"
+            },
+            "description": "The steps that already ended, oldest first."
+          },
+          "on_board": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The item the board started this task for; absent for work the board did not start (one a\nperson, a routine or another channel gave the team directly)."
+          },
+          "ref": {
+            "type": "string",
+            "description": "The task's name in the harness, which is all a person can find it by there."
+          },
+          "state": {
+            "$ref": "#/components/schemas/ActivityState"
+          },
+          "waits_on": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WaitsOn",
+                "description": "What a waiting task waits for. Absent unless `state` is `waiting`."
+              }
+            ]
+          }
+        }
       },
       "AddFleetMember": {
         "type": "object",
@@ -10010,6 +10208,49 @@
           "revoked"
         ]
       },
+      "CurrentStep": {
+        "type": "object",
+        "description": "The step a task is inside.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "cycle": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "How many times the task went back to an earlier step before this one; `0` on a first pass.",
+            "minimum": 0
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The model the step was planned on, which is not always the one that served it."
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who does the step, in the harness's own word for it, shown as data."
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the step began."
+          }
+        }
+      },
       "CustomFieldDefinition": {
         "type": "object",
         "required": [
@@ -10877,6 +11118,81 @@
           },
           "verification_tax": {
             "$ref": "#/components/schemas/VerificationTax"
+          }
+        }
+      },
+      "FinishedStep": {
+        "type": "object",
+        "description": "A step that ended, with what it said.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the step took for granted."
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the step ended well. Absent when the harness did not say."
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "What the step left to the next one or to a person."
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the step said it did."
+          },
+          "tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The tokens the step used, cache reads not counted. Absent when not measured.",
+            "minimum": 0
+          },
+          "verdict": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What a reviewing step decided, in the harness's own word, shown as data."
           }
         }
       },
@@ -13469,6 +13785,56 @@
           }
         }
       },
+      "TeamActivityEntry": {
+        "type": "object",
+        "description": "What a team is doing, as its agent last reported it.",
+        "required": [
+          "team",
+          "harness",
+          "supported",
+          "tasks"
+        ],
+        "properties": {
+          "harness": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reported_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When the board last heard what the team is doing; `null` when it never has."
+          },
+          "runner": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The runner whose report this is: the newest one when several report the team."
+          },
+          "supported": {
+            "type": "boolean",
+            "description": "Whether the agent can say what its teams are doing. When `false`, `tasks` is empty and\n`reason` says why."
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityTask"
+            },
+            "description": "The tasks the team holds, the ones still going first. A task with `on_board` `null` is work\nthe board did not start: a person, a routine or another channel gave it to the team\ndirectly. Tasks that ended stay for 14 days."
+          },
+          "team": {
+            "type": "string"
+          }
+        }
+      },
       "TeamDecides": {
         "type": "string",
         "description": "Whether a team runs to the end alone.",
@@ -14695,6 +15061,14 @@
             "description": "When the run started, or was taken by the computer if it has not started (RFC 3339)."
           }
         }
+      },
+      "WaitsOn": {
+        "type": "string",
+        "description": "What a waiting task waits for.",
+        "enum": [
+          "approval",
+          "answer"
+        ]
       },
       "WorkflowConfig": {
         "type": "object",

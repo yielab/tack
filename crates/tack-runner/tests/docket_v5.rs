@@ -3824,6 +3824,7 @@ fn report(
         harnesses,
         features: FeatureCapabilities {
             proposals: None,
+            activity: None,
             cancel: feature("advisory"),
             resume: feature("unsupported"),
             decisions: feature("supported"),
@@ -3951,7 +3952,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 15] = [
+const CLIENT_ROUTES: [&str; 16] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -3960,6 +3961,7 @@ const CLIENT_ROUTES: [&str; 15] = [
     "GET /pods/<pod>/records/<set>",
     "POST /pods",
     "POST /tasks/<pod>",
+    "GET /tasks/<pod>",
     "GET /tasks/<pod>/<id>",
     "POST /tasks/<pod>/<id>/cancel",
     "GET /tasks/<pod>/<id>/diff",
@@ -3969,8 +3971,12 @@ const CLIENT_ROUTES: [&str; 15] = [
     "POST /escalations/<id>",
 ];
 
-/// `GET /health` is sent by the daemon's supervision, not by `client.rs`.
-const NOT_IN_CLIENT: [&str; 1] = ["GET /health"];
+/// Every route above is sent by `client.rs`.
+const NOT_IN_CLIENT: [&str; 0] = [];
+
+/// Routes with no capture, only an answer built from the spec: the capture script queues no task
+/// that stays running, and `current` and `updatedSince` need one.
+const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {
@@ -3982,13 +3988,18 @@ fn every_route_the_client_sends_has_a_captured_file() {
     );
     let provenances = fake_docket::provenances();
     for route in CLIENT_ROUTES {
+        let kept = if CONSTRUCTED_ONLY.contains(&route) {
+            "constructed"
+        } else {
+            "captured"
+        };
         let captured: Vec<_> = provenances
             .iter()
-            .filter(|found| found.state == "captured" && found.get("route") == Some(route))
+            .filter(|found| found.state == kept && found.get("route") == Some(route))
             .collect();
         assert!(
             !captured.is_empty(),
-            "no captured file for {route}: rerun scripts/capture-docket-fixtures.sh"
+            "no {kept} file for {route}: rerun scripts/capture-docket-fixtures.sh"
         );
         for found in captured {
             let answer = fake_docket::fixtures_dir().join(format!("{}.json", found.name));
@@ -5116,4 +5127,259 @@ async fn proposals_docket_refuses_to_give_propose_nothing_and_say_why() {
         "{why}"
     );
     assert!(outcome.terminal_reason.get("records").is_none());
+}
+
+// ── What a team is doing ──────────────────────────────────────────────────────
+
+const ITEM: &str = "7f0f6c8e-5a4e-4b1c-9d0a-0c3a2f1b9e11";
+
+/// Posts a task to the fake as something other than a run of Tack's would: `label` is its
+/// `externalRef`.
+async fn enqueue(fake: &FakeDocket, label: &str) -> String {
+    let mut body = request_file("post-task-created");
+    body["externalRef"] = json!(label);
+    body["idempotencyKey"] = json!(format!("key-{label}"));
+    let (status, answer) = ask(fake, "POST", &format!("/tasks/{POD}"), Some(body)).await;
+    assert_eq!(status, 201, "{answer:?}");
+    answer["task"].as_str().expect("a task id").to_owned()
+}
+
+/// What `activity()` reports for the one team, task by task.
+async fn activity_of(adapter: &DocketAdapter) -> Vec<tack_protocol::execution::ActivityTask> {
+    let teams = adapter.activity().await.expect("docket reports activity");
+    teams
+        .into_iter()
+        .inspect(|team| assert_eq!(team.team, POD))
+        .flat_map(|team| team.tasks)
+        .collect()
+}
+
+fn reads_of(fake: &FakeDocket, prefix: &str) -> Vec<String> {
+    fake.requests_to("GET", prefix)
+        .into_iter()
+        .map(|request| request.query)
+        .collect()
+}
+
+/// A task a person started at the CLI, and one the board started, both running in a step.
+async fn running_pair(fake: &FakeDocket) -> (String, String) {
+    fake.script(Script {
+        before: vec![("hop_started".into(), hop("implementer", "local/planned", 0))],
+        gate: Gate::Hold,
+        ..Script::default()
+    });
+    fake.next_task_from("cli");
+    let cli = enqueue(fake, "fix the flaky test").await;
+    let board = enqueue(fake, &format!("{ITEM}/attempt-2")).await;
+    (cli, board)
+}
+
+#[tokio::test]
+async fn a_task_started_at_the_cli_is_outside_the_board_with_its_step() {
+    for with_features in [true, false] {
+        let fake = pods_fake().await;
+        if !with_features {
+            fake.without_task_features();
+        }
+        let (cli, board) = running_pair(&fake).await;
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+
+        let tasks = activity_of(&adapter).await;
+        let find = |id: &str| tasks.iter().find(|task| task.task_ref == id).expect(id);
+
+        let outside = find(&cli);
+        assert_eq!(outside.on_board, None, "features: {with_features}");
+        assert_eq!(
+            outside.state,
+            tack_protocol::execution::ActivityState::Running
+        );
+        let step = outside
+            .current_step
+            .as_ref()
+            .expect("the step it is inside");
+        assert_eq!(step.name, "implementer");
+        assert_eq!(step.role.as_deref(), Some("implementer"));
+        assert_eq!(step.model.as_deref(), Some("local/planned"));
+        assert_eq!(step.cycle, Some(0));
+        assert!(step.since.is_some());
+
+        let on_board = find(&board);
+        assert_eq!(on_board.on_board.as_deref(), Some(ITEM));
+        assert_eq!(
+            on_board.current_step,
+            outside.current_step.clone().map(|mut s| {
+                s.since = on_board.current_step.as_ref().and_then(|c| c.since);
+                s
+            })
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_finished_step_shows_its_verdict_and_summary() {
+    for with_features in [true, false] {
+        let fake = pods_fake().await;
+        if !with_features {
+            fake.without_task_features();
+        }
+        let mut finished = hop_finished(
+            "reviewer",
+            "anthropic/claude-sonnet-4-6",
+            1,
+            json!("approve"),
+        );
+        finished["artifact"] = json!({
+            "summary": "The retry is bounded and tested.",
+            "verdict": "approve",
+            "assumptions": ["The client is never shared."],
+            "questions": ["Should the old name keep working?"],
+        });
+        fake.script(Script {
+            after: vec![("hop_finished".into(), finished)],
+            ..Script::default()
+        });
+        let id = enqueue(&fake, &format!("{ITEM}/attempt-1")).await;
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+
+        let tasks = activity_of(&adapter).await;
+        let [task] = tasks.as_slice() else {
+            panic!("one task, got {tasks:?}");
+        };
+        assert_eq!(task.task_ref, id);
+        assert_eq!(task.on_board.as_deref(), Some(ITEM));
+        assert_eq!(task.state, tack_protocol::execution::ActivityState::Done);
+        assert_eq!(task.current_step, None);
+        let [step] = task.finished_steps.as_slice() else {
+            panic!("one step, got {:?}", task.finished_steps);
+        };
+        assert_eq!(step.name, "reviewer");
+        assert_eq!(
+            step.verdict.as_deref(),
+            Some("approve"),
+            "features: {with_features}"
+        );
+        assert_eq!(
+            step.summary.as_deref(),
+            Some("The retry is bounded and tested.")
+        );
+        assert_eq!(step.assumptions, ["The client is never shared."]);
+        assert_eq!(step.questions, ["Should the old name keep working?"]);
+        assert_eq!(step.ok, Some(true));
+        assert_eq!(step.tokens, Some(1200));
+        assert!(step.finished_at.is_some());
+    }
+}
+
+#[tokio::test]
+async fn only_what_changed_is_reported_again_and_the_features_decide_how_it_is_read() {
+    for with_features in [true, false] {
+        let fake = pods_fake().await;
+        if !with_features {
+            fake.without_task_features();
+        }
+        let (_, board) = running_pair(&fake).await;
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+
+        assert_eq!(activity_of(&adapter).await.len(), 2);
+        assert!(
+            activity_of(&adapter).await.is_empty(),
+            "nothing changed since the last read (features: {with_features})"
+        );
+
+        // The board's task ends, and only it is reported.
+        let (status, _) = ask(
+            &fake,
+            "POST",
+            &format!("/tasks/{POD}/{board}/cancel"),
+            Some(json!({"reason": "x"})),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let tasks = activity_of(&adapter).await;
+        let [task] = tasks.as_slice() else {
+            panic!("one task changed, got {tasks:?}");
+        };
+        assert_eq!(task.task_ref, board);
+        assert_eq!(
+            task.state,
+            tack_protocol::execution::ActivityState::Cancelled
+        );
+        assert_eq!(task.current_step, None);
+
+        let lists = reads_of(&fake, &format!("/tasks/{POD}"))
+            .into_iter()
+            .filter(|_| true)
+            .collect::<Vec<_>>();
+        let traces = fake.requests_to("GET", &format!("/traces/{POD}")).len();
+        if with_features {
+            // The cursor is asked for from the start, then from where the last answer left off.
+            assert_eq!(lists.len(), 3);
+            assert_eq!(lists[0], "updatedSince=0");
+            assert_ne!(lists[1], "updatedSince=0");
+            assert_eq!(traces, 0, "`current` makes the trace unnecessary");
+        } else {
+            assert!(lists.iter().all(String::is_empty), "{lists:?}");
+            assert_eq!(traces, 3, "the step is derived from the trace");
+        }
+    }
+}
+
+#[test]
+fn the_constructed_task_lists_have_the_keys_of_a_captured_task() {
+    let captured = fixture("task-done");
+    for name in ["tasks-list", "tasks-updated-since"] {
+        let list = fixture(name);
+        for task in list["tasks"].as_array().expect("tasks") {
+            // A task carries `rev` and, while running, `current`; nothing else beyond a captured one.
+            let mut keys: Vec<&String> = task.as_object().unwrap().keys().collect();
+            keys.retain(|key| !["current", "rev"].contains(&key.as_str()));
+            let expected: Vec<&String> = captured
+                .as_object()
+                .unwrap()
+                .keys()
+                .filter(|key| {
+                    task.get(key.as_str()).is_some()
+                        || !["externalRef", "usage"].contains(&key.as_str())
+                })
+                .collect();
+            for key in keys {
+                assert!(
+                    expected.contains(&key),
+                    "{name}: {key} is not a key of a captured task"
+                );
+            }
+        }
+    }
+    assert_eq!(fixture("tasks-updated-since")["next"], json!("8"));
+}
+
+#[tokio::test]
+async fn the_fake_answers_the_task_list_as_the_constructed_files_do() {
+    let fake = pods_fake().await;
+    let (_, _) = running_pair(&fake).await;
+    let (status, plain) = ask(&fake, "GET", &format!("/tasks/{POD}"), None).await;
+    assert_eq!(status, 200);
+    let (status, changed) = ask(&fake, "GET", &format!("/tasks/{POD}?updatedSince=0"), None).await;
+    assert_eq!(status, 200);
+    assert_eq!(plain["tasks"].as_array().map(Vec::len), Some(2));
+    assert!(plain.get("next").is_none(), "the plain list has no cursor");
+    assert_eq!(changed["next"], json!("2"));
+    let running = &changed["tasks"][0];
+    assert_eq!(running["current"]["stepId"], json!("implementer"));
+    // The step it is inside has the keys of the constructed answer's.
+    let constructed = &fixture("tasks-list")["tasks"][1];
+    let keys = |value: &Value| {
+        let mut keys: Vec<String> = value.as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+    assert_eq!(keys(&running["current"]), keys(&constructed["current"]));
+    assert_eq!(running["channel"], constructed["channel"]);
+    assert!(running["rev"].is_u64() && constructed["rev"].is_u64());
+    let _ = fixture("tasks-updated-since");
+    let (status, _) = ask(&fake, "GET", &format!("/tasks/{POD}?updatedSince=x"), None).await;
+    assert_eq!(status, 400);
 }

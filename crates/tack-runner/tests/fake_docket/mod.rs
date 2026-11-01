@@ -277,6 +277,11 @@ struct Task {
     gate_open: bool,
     /// The id of the escalation the gate opened.
     escalation: Option<String>,
+    /// The channel that enqueued the task, as docket's `channel`.
+    channel: String,
+    /// The task's place in its pod's change counter, and what it looked like when it got it.
+    rev: u64,
+    stamped: (String, usize, bool),
 }
 
 /// One escalation docket keeps: its view as `GET /escalations` sends it, and where it sits in the
@@ -352,6 +357,14 @@ struct World {
     /// no `capabilities`, and `?task=` is an unknown parameter docket ignores, answering every row
     /// of the set. A caller that sends it is told apart from one that does not by the request log.
     before_task_scope: bool,
+    /// A docket before `taskCurrent` and `taskCursor`: `/health` lists neither, a task has no
+    /// `rev` and no `current`, and `updatedSince` is an unknown parameter docket ignores.
+    without_task_features: bool,
+    /// The change counter of the tasks.
+    rev: u64,
+    /// The channel of the next task posted; `http` unless a test says another (a person at the
+    /// CLI, a routine).
+    next_channel: Option<String>,
 }
 
 pub struct FakeDocket {
@@ -385,6 +398,9 @@ impl FakeDocket {
             without_shape_and_steps: false,
             without_workspace_kind: false,
             before_task_scope: false,
+            without_task_features: false,
+            rev: 0,
+            next_channel: None,
         }));
         let app = Router::new()
             .fallback(handle)
@@ -444,6 +460,17 @@ impl FakeDocket {
     }
 
     /// Makes the fake a docket that sends neither `blueprint` nor `pipeline.steps`.
+    /// A docket before `taskCurrent` and `taskCursor`.
+    pub fn without_task_features(&self) {
+        self.shared.lock().unwrap().without_task_features = true;
+    }
+
+    /// The next task posted comes from this channel (`cli`, `routine`), as docket records the
+    /// channel of whatever enqueued it, and carries no `externalRef` unless the body has one.
+    pub fn next_task_from(&self, channel: &str) {
+        self.shared.lock().unwrap().next_channel = Some(channel.to_owned());
+    }
+
     pub fn without_shape_and_steps(&self) {
         self.shared.lock().unwrap().without_shape_and_steps = true;
     }
@@ -568,6 +595,7 @@ impl FakeDocket {
             }
             finish(state, index);
         }
+        stamp(state);
     }
 
     /// The id of the escalation the task opened, which is the route its answer goes to.
@@ -750,11 +778,14 @@ async fn handle(
     if let Some(refused) = refused_keys {
         return refused;
     }
-    match (method.as_str(), segments.as_slice()) {
+    let response = match (method.as_str(), segments.as_slice()) {
         ("GET", ["status.json"]) => status(&state),
         ("GET", ["health"]) => {
             let mut answer = fixture("health");
             answer["apiVersion"] = json!(state.api_version);
+            if state.without_task_features {
+                answer.as_object_mut().expect("health").remove("features");
+            }
             reply(200, answer)
         }
         ("GET", ["pods"]) => pods(&state),
@@ -765,6 +796,7 @@ async fn handle(
         ("POST", ["pods"]) => post_pod(&mut state, &parsed),
         ("POST", ["tasks", _]) if raw_body => refusal("post-tasks-invalid-json", &[]),
         ("POST", ["tasks", pod]) => post_task(&mut state, pod, &parsed),
+        ("GET", ["tasks", pod]) => list_tasks(&state, pod, &query),
         ("GET", ["tasks", pod, id]) => get_task(&state, pod, id),
         ("POST", ["tasks", pod, id, "cancel"]) => cancel_task(&mut state, pod, id),
         ("GET", ["tasks", pod, id, "diff"]) => diff(&state, pod, id),
@@ -773,6 +805,24 @@ async fn handle(
         ("GET", ["escalations", id]) => escalation_detail(&state, id),
         ("POST", ["escalations", id]) => resolve(&mut state, id, &parsed),
         _ => error(404, "not found"),
+    };
+    stamp(&mut state);
+    response
+}
+
+/// Gives every task that changed since it was last stamped the next value of the pod's counter,
+/// as docket does inside the write that changed it.
+fn stamp(state: &mut World) {
+    for index in 0..state.tasks.len() {
+        let task = &state.tasks[index];
+        let now = (task.status.clone(), task.hops.len(), task.gate_open);
+        if task.stamped != now {
+            state.rev += 1;
+            let rev = state.rev;
+            let task = &mut state.tasks[index];
+            task.rev = rev;
+            task.stamped = now;
+        }
     }
 }
 
@@ -1334,6 +1384,12 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
         folder,
         gate_open: true,
         escalation: None,
+        channel: state
+            .next_channel
+            .take()
+            .unwrap_or_else(|| "http".to_owned()),
+        rev: 0,
+        stamped: (String::new(), 0, false),
     });
     let index = state.tasks.len() - 1;
     match state.tasks[index].script.gate {
@@ -1489,6 +1545,15 @@ fn finish(state: &mut World, index: usize) {
                 "role": payload["role"],
                 "model": payload["model"],
             });
+            // What a hop of docket's record carries beside its role: the step, the tokens it
+            // used and the span of its trace.
+            if let Some(step) = payload.get("step") {
+                hop["stepId"] = step.clone();
+            }
+            if let Some(usage) = payload.get("usage") {
+                hop["usage"] = usage.clone();
+            }
+            hop["trace"] = json!({"lastTs": timestamp(state.trace.len())});
             if let Some(event) = payload.as_object_mut() {
                 for key in ["promptManifest", "artifact"] {
                     if let Some(value) = event.remove(key) {
@@ -1536,7 +1601,7 @@ fn finish(state: &mut World, index: usize) {
 /// task's own values. The keys of the request that docket stores come back
 /// only when the request had them; the sentence is `reason`, and a task has no
 /// `error` key.
-fn task_record(task: &Task) -> Value {
+fn task_record(state: &World, task: &Task) -> Value {
     let body = &task.body;
     let parked =
         task.gate_open && matches!(task.status.as_str(), "waiting_input" | "waiting_approval");
@@ -1557,6 +1622,14 @@ fn task_record(task: &Task) -> Value {
         _ => "task-failed-pipeline",
     });
     record["id"] = json!(task.id);
+    record["channel"] = json!(task.channel);
+    // The moments are this run's, not the capture's: a task that ended long ago is not reported.
+    for key in ["created", "startedAt", "claimedAt", "completedAt"] {
+        if record[key].is_string() {
+            record[key] =
+                json!(chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true));
+        }
+    }
     record["description"] = body["description"].clone();
     record["status"] = json!(task.status);
     record["priority"] = json!(body["priority"].as_str().unwrap_or("normal"));
@@ -1600,6 +1673,17 @@ fn task_record(task: &Task) -> Value {
     }
     record["reason"] = json!(task.script.reason);
     record["hops"] = json!(task.hops);
+    let object = record.as_object_mut().expect("record");
+    if state.without_task_features {
+        object.remove("rev");
+    } else {
+        object.insert("rev".to_owned(), json!(task.rev));
+        if task.status == "running"
+            && let Some(current) = current_hop(state, task)
+        {
+            object.insert("current".to_owned(), current);
+        }
+    }
     if task.status == "done" {
         record["usage"] = task.script.usage.clone();
     }
@@ -1631,9 +1715,63 @@ fn consult_schema(property: &str, options: &[String]) -> Value {
     json!({"type": "object", "properties": {property: {"type": "string"}}, "required": required})
 }
 
+/// The hop a running task is inside, as docket's `current`: the newest `hop_started` of the task
+/// with no `hop_finished` after it.
+fn current_hop(state: &World, task: &Task) -> Option<Value> {
+    let (_, line, _) = state.trace.iter().rev().find(|(pod, line, _)| {
+        *pod == task.pod
+            && line["payload"]["task"] == json!(task.id)
+            && matches!(
+                line["event_type"].as_str(),
+                Some("hop_started" | "hop_finished")
+            )
+    })?;
+    if line["event_type"] != json!("hop_started") {
+        return None;
+    }
+    let payload = &line["payload"];
+    Some(json!({
+        "stepId": payload["step"],
+        "role": payload["role"],
+        "member": payload["member"],
+        "model": payload["model"],
+        "startedAt": line["ts"],
+        "cycle": payload["cycle"],
+    }))
+}
+
+/// `GET /tasks/<pod>`: the pod's tasks, newest first; with `updatedSince` (a docket that
+/// has `taskCursor`) only those stamped after it, in `rev` order, and `next`.
+fn list_tasks(state: &World, pod: &str, query: &str) -> Response {
+    let since = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("updatedSince="))
+        .filter(|_| !state.without_task_features);
+    let cursor = match since.map(str::parse::<u64>) {
+        Some(Err(_)) => return error(400, "updatedSince is not a non-negative integer"),
+        Some(Ok(cursor)) => Some(cursor),
+        None => None,
+    };
+    let mut tasks: Vec<&Task> = state
+        .tasks
+        .iter()
+        .filter(|task| task.pod == pod && cursor.is_none_or(|cursor| task.rev > cursor))
+        .collect();
+    if cursor.is_some() {
+        tasks.sort_by_key(|task| task.rev);
+    }
+    let mut body =
+        json!({"tasks": tasks.iter().map(|task| task_record(state, task)).collect::<Vec<_>>()});
+    if let Some(cursor) = cursor {
+        let next = tasks.iter().map(|task| task.rev).max().unwrap_or(cursor);
+        body["next"] = json!(next.to_string());
+    }
+    reply(200, body)
+}
+
 fn get_task(state: &World, pod: &str, id: &str) -> Response {
     match state.tasks.iter().find(|t| t.pod == pod && t.id == id) {
-        Some(task) => reply(200, task_record(task)),
+        Some(task) => reply(200, task_record(state, task)),
         None => refusal("task-unknown", &[("saas-dev", pod), ("task-unknown", id)]),
     }
 }

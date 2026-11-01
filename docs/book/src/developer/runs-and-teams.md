@@ -77,6 +77,8 @@ The adapter is registered in `harness::discover` only when `[docket]` names a `b
 | Answer either | `POST /escalations/<id>` with `{optionId, content?, actor: "tack"}` | `deliver` |
 | Cancel | `POST /tasks/<pod>/<id>/cancel` | `cancel` |
 | Untracked files | `GET /tasks/<pod>/<id>/diff` | `finish` |
+| Which features docket has | `GET /health`; `features` lists `taskCurrent` and `taskCursor` when it has them | `activity::Features::of` |
+| What a team is doing | `GET /tasks/<pod>`, with `?updatedSince=<cursor>` when `taskCursor` is listed; the trace, as above, when `taskCurrent` is not | `activity::read` |
 
 An `apiVersion` below 6, or one that is not a number, is a probe error: "needs docket 0.2.0-beta.6 (API 6); this docket answers API N". A docket that answers the version but not `GET /escalations` is a probe error too: "needs docket 0.2.0-beta.6 with the escalation record; this docket answers API N without it". The version number cannot tell the two apart, so the route decides. `validate` runs both checks before any task is posted, so no task reaches a docket of another version. The version docket answered is the one the doctor and the run's `harness_version` print.
 
@@ -132,6 +134,14 @@ A team that declares a set named `tack_proposals` proposes items through it, bec
 
 `capabilities()` declares `cancel`, `decisions`, `artifacts`, `usage`, `policy` and `proposals` ("through a team's `tack_proposals` record set") and `resume` as supported (a task still running when the runner restarts is taken back from the journal's handle). Whether a given team uses `proposals` is in that team's `records`. `sandbox()` returns `"harness"`, which the server accepts beside `bwrap` and `none` and the UI renders as "Runs in an isolated sandbox". `probe::probe` adds the teams to the capability snapshot and sets `autonomy_ceiling` to `L3` when any team is capped, else `L5`.
 
+## What a team is doing
+
+`FeatureCapabilities.activity` says whether an agent can report the work its teams hold (`TeamActivity` in `tack-protocol`, `execution/activity.rs`). docket does; Claude Code, Codex and opencode report it unsupported, with the reason that they hold no team. The report is in Tack's words: a task has a `ref`, an `on_board` item id (absent for work the board did not start: a person at docket's CLI, a routine, another channel), a `state` (`queued`, `running`, `waiting`, `blocked`, `done`, `failed`, `cancelled`), what a waiting task `waits_on`, its `current_step` (`name`, `role`, `model`, `since`, `cycle`) and its `finished_steps` (`name`, `ok`, `verdict`, `summary`, `assumptions`, `questions`, `tokens`, `finished_at`). A task is `on_board` only when its `externalRef` is `<item id>/attempt-<n>`, the label the board writes.
+
+The docket adapter reads it in `harness/docket/activity.rs`, once per team and call, and keeps a cursor per team in memory. `GET /health` says which features this docket has. With `taskCursor` it asks `GET /tasks/<team>?updatedSince=<cursor>` and keeps the `next` it answers; without it, it reads the whole list and sends only the tasks that differ from what it sent last. With `taskCurrent` a running task carries `current`; without it the adapter reads `GET /traces/<team>` past its trace cursor and takes the newest `hop_started` of a task with no `hop_finished` after it. A finished task whose last change is more than 14 days old is not reported. The steps come from the hops of the task record: `artifact.summary`, `artifact.verdict`, `assumptions` and `questions`, and the tokens as docket counts them (`input - cached + output`).
+
+The runner sends what changed every 15 seconds (`transport::ACTIVITY_INTERVAL`) to `POST /api/runner/v1/activity`, an additive v1 operation (`activity.request.json`, `activity.response.json`, runner-authenticated like the heartbeat). Each task replaces what the board holds for it, so a repeated report changes nothing, and a batch the board did not take is kept for the next tick. Tack stores it in `team_tasks` and `team_task_steps` (migration 099), forgets finished work after 14 days, and answers `GET /api/teams/{id}/activity` (`id` is the team's name; `?harness=` picks one when two agents report the same name). A task with `on_board` absent is the one the screen calls "outside the board". An agent that cannot report answers `supported: false` with its reason.
+
 ## The ceiling
 
 `probe::capped` marks a team as one that needs a person during a run: its profile is not `lights-out`, or it reports a violation. The runner reports the teams in `HarnessCapability.teams` (`TeamReport`), the one description of a team any agent fills in Tack's own words (ADR 0032). `name`, `profile` and `violations` are always there; every other field is optional, and absent means the agent did not say, which is never "none". No field carries a docket word: docket's own names arrive only as data, in `shape`, in a member's or step's `role` and in a step's `name`. The docket adapter fills them from `GET /pods` and `GET /pods/<team>` (`probe::team`):
@@ -183,6 +193,7 @@ The Factory page (`handlers/metrics.rs`) reads it, so every figure it shows come
 | `093_project_prepare_command` | `projects.prepare_command`: NULL detects the install command from the lockfile, `''` turns the install off, any other text replaces it |
 | `094_provisional_tokens_per_run` | `project_budgets.provisional_tokens_per_run`: the token limit of a run whose profile sets none (2 000 000 by default; NULL turns it off) |
 | `095_profile_delivers` | `agent_profiles.delivers`: one line saying what the profile delivers |
+| `099_team_activity` | `team_tasks` and `team_task_steps`: the tasks a team holds, whoever started them, with the steps that ended (14 days) |
 
 ## The fake docket
 
@@ -191,7 +202,7 @@ No test in CI runs a real docket. `crates/tack-runner/tests/fake_docket/mod.rs` 
 To extend it:
 
 1. Add the route to the fake's router and make it record the request, so a test can assert on `FakeDocket::requests_to(method, prefix)`.
-2. Script behaviour with a `Script`: trace events before and after the gate, a `Gate` (`None`, `Approval`, `Consult` or `Hold`), the final status, a file to commit on the task's branch, untracked files and the usage. A `hop_finished` entry may carry `promptManifest` and `artifact` (`summary`, `verdict`, `assumptions`, `questions`): the fake writes them on the task record's hop and leaves them off the trace event, as docket does, and a hop given neither has neither key.
+2. Script behaviour with a `Script`: trace events before and after the gate, a `Gate` (`None`, `Approval`, `Consult` or `Hold`), the final status, a file to commit on the task's branch, untracked files and the usage. `without_task_features()` is a docket before `taskCurrent` and `taskCursor` (`/health` lists neither, no `rev`, no `current`, `updatedSince` ignored), and `next_task_from("cli")` makes the next task one that did not come through the board. The fake stamps a `rev` on every task that changes and derives `current` from its trace, as docket does; its `GET /tasks/<pod>` answer is built from the spec (`tasks-list` and `tasks-updated-since` are `constructed`: the capture script queues no task that stays running). A `hop_finished` entry may carry `promptManifest` and `artifact` (`summary`, `verdict`, `assumptions`, `questions`): the fake writes them on the task record's hop and leaves them off the trace event, as docket does, and a hop given neither has neither key.
 3. Add the route to the "What the fake implements" list in the README, and the keys you skip to "What it leaves out".
 4. When docket's answer changes, run `scripts/capture-docket-fixtures.sh` against the new docket and replace the recordings; the README says which version they came from.
 

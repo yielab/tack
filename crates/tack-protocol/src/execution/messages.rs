@@ -13,11 +13,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use super::activity::TeamActivity;
 use super::capabilities::EmbeddedCapabilitySnapshot;
 use super::types::{
     ActualExecution, AttemptId, AttemptSnapshot, CancellationRequestId, Checkpoint, ClaimRequestId,
-    CompletionId, ExecutionRequestSnapshot, ExecutionState, FencingToken, ProtocolVersion,
-    RecoveryJournalState, RunnerId, Usage, WorkspaceId,
+    CompletionId, ExecutionRequestSnapshot, ExecutionState, FencingToken, HarnessKind,
+    ProtocolVersion, RecoveryJournalState, RunnerId, Usage, WorkspaceId,
 };
 
 /// `POST /enroll`: a runner redeems the single-use enrollment token and reports what it can do.
@@ -133,6 +134,27 @@ pub struct HeartbeatRequest {
     pub sent_at: DateTime<Utc>,
     pub available_capacity: u32,
     pub active_attempts: Vec<ActiveAttempt>,
+}
+
+/// `POST /activity`: what the teams of one harness are doing, the tasks that changed since the
+/// runner's last report. Each task is the whole of what the runner knows of it, so the board
+/// replaces what it holds for that task and a repeated report changes nothing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityReport {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub report_id: String,
+    pub sent_at: DateTime<Utc>,
+    pub harness_kind: HarnessKind,
+    pub teams: Vec<TeamActivity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityResponse {
+    pub protocol_version: ProtocolVersion,
+    pub report_id: String,
+    pub accepted_at: DateTime<Utc>,
+    pub tasks_recorded: u32,
 }
 
 /// What a heartbeat did to one lease.

@@ -31,8 +31,9 @@ The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outsi
 | Identity | `enroll`, `refresh` |
 | Work | `claim`, `heartbeat` |
 | One attempt | `accept`, `start`, `events`, `decisions`, `decisions/poll`, `artifacts`, `artifacts/{artifact_id}/content` (PUT, the bytes), `completion`, `cancellation-observation`, `recovery-observation` |
+| Team activity | `activity` (additive: the tasks a harness's teams hold that changed) |
 
-Thirteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The frozen fixtures under `docs/contracts/runner-v1/` are 48 files, including 15 error envelopes under `errors/`. They are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the count.
+Fourteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The frozen fixtures under `docs/contracts/runner-v1/` are 48 files, including 15 error envelopes under `errors/`. They are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the count.
 
 ### Several attempts at once
 
@@ -119,7 +120,7 @@ These are documented rather than papered over, per this project's "unsupported i
 
 This section separates what the contract guarantees from what the test suite proves. This is the one page where test names belong.
 
-**Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-protocol/tests/runner_contract.rs` (byte-pins all 48 frozen fixtures), and the integrator test files referenced throughout this page.
+**Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-protocol/tests/runner_contract.rs` (byte-pins all 50 frozen fixtures), and the integrator test files referenced throughout this page.
 
 **The `tack-runner` binary's own network transport is wired and proven.** `tack_runner::bootstrap::build_runtime` is the one composition root that both the standalone `tack-runner` binary and the embedded `tack serve --with-runner` and `tack runner start` paths call. It wires the real `HttpPullProtocol`, not `UnavailableProtocolClient`. `UnavailableProtocolClient` still exists in the crate as an explicit no-client fallback, reachable only if something constructs a runtime without attaching a protocol client, and stays pinned by `runtime::tests::unavailable_protocol_is_a_typed_failure_not_success` so that path fails as a typed `RunnerError::ProtocolUnavailable` rather than a silent success.
 

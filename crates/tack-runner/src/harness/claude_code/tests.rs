@@ -414,6 +414,15 @@ fn claude_code_declares_advisory_cancel_artifacts_and_policy() {
             .contains("tack-plan.json"),
         "{proposals:?}"
     );
+    let activity = declared.activity.expect("reports activity");
+    assert_eq!(activity.support, CapabilitySupport::Unsupported);
+    assert!(
+        activity
+            .reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty()),
+        "an unsupported capability says why: {activity:?}"
+    );
     assert_eq!(declared.artifacts.support, CapabilitySupport::Advisory);
     assert_eq!(
         declared.additional["permission_policy"]["support"],

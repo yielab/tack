@@ -5,6 +5,7 @@ use crate::common;
 use crate::handlers::autonomy::{board, fake_prill};
 use crate::handlers::mrp::operator_headers;
 use serde_json::{Value, json};
+use tack_db::repo::team_activity::TeamTaskReport;
 use tack_test_support::seed;
 
 fn snapshot(harnesses: Value) -> String {
@@ -117,4 +118,95 @@ async fn teams_join_two_runners_and_a_name_only_a_profile_uses() {
         json!([{"id": "p2", "name": "Ghost"}]),
         "{got}"
     );
+}
+
+/// `GET /api/teams/{id}/activity`: what the team holds, the work the board did not start included,
+/// and an agent that cannot say answers why.
+#[tokio::test]
+async fn a_teams_activity_shows_work_outside_the_board_and_says_why_an_agent_cannot() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    let get = |uri: &'static str| {
+        let (app, headers) = (&b.app, operator_headers());
+        async move { common::send(app, "GET", uri, Value::Null, &headers).await }
+    };
+    let snapshot = json!({"harnesses": [
+        {"harness_kind": "docket", "installed_version": "0.3.0", "probe_error": null,
+         "probed_at": "2026-08-06T12:00:00Z",
+         "teams": [{"name": "writers", "profile": "lights-out", "violations": []}],
+         "features": {"cancel": {"support": "supported"}, "resume": {"support": "supported"},
+             "decisions": {"support": "supported"}, "artifacts": {"support": "supported"},
+             "usage": {"support": "supported"}, "activity": {"support": "supported", "reason": "the task list"}}},
+        {"harness_kind": "codex", "installed_version": "0.149", "probe_error": null,
+         "probed_at": "2026-08-06T12:00:00Z",
+         "teams": [{"name": "solo", "profile": "attended", "violations": []}],
+         "features": {"cancel": {"support": "advisory"}, "resume": {"support": "unsupported"},
+             "decisions": {"support": "supported"}, "artifacts": {"support": "advisory"},
+             "usage": {"support": "advisory"},
+             "activity": {"support": "unsupported", "reason": "codex holds no team"}}},
+    ]})
+    .to_string();
+    seed::agent_runner_reporting(repo, "ru1", &snapshot).await;
+
+    let (status, _) = get("/api/teams/nobody/activity").await;
+    assert_eq!(status, 404);
+
+    let step = r#"{"name":"lead","verdict":"approve","summary":"Planned the change."}"#;
+    for (task, on_board, state, current, steps) in [
+        (
+            "task-cli",
+            None,
+            "running",
+            Some(r#"{"name":"implementer","role":"implementer"}"#),
+            vec![],
+        ),
+        ("task-board", Some("item-1"), "done", None, vec![step]),
+    ] {
+        repo.record_team_task(&TeamTaskReport {
+            runner_id: "ru1",
+            harness: "docket",
+            team: "writers",
+            task_ref: task,
+            on_board,
+            state,
+            waits_on: None,
+            current_step: current,
+            changed_at: None,
+            reported_at: "2026-08-06T12:00:00+00:00",
+            steps: steps
+                .into_iter()
+                .map(|step| ("2026-08-06T11:59:00+00:00".to_owned(), step.to_owned()))
+                .collect(),
+        })
+        .await
+        .unwrap();
+    }
+    let (status, got) = get("/api/teams/writers/activity").await;
+    assert_eq!(status, 200, "{got}");
+    assert_eq!(
+        (got["supported"].clone(), got["harness"].clone()),
+        (json!(true), json!("docket"))
+    );
+    let tasks = got["tasks"].as_array().unwrap();
+    // The one still going comes first.
+    assert_eq!(tasks[0]["ref"], "task-cli", "{got}");
+    assert!(
+        tasks[0].get("on_board").is_none(),
+        "outside the board: {got}"
+    );
+    assert_eq!(tasks[0]["current_step"]["name"], "implementer");
+    assert_eq!(tasks[1]["on_board"], "item-1");
+    assert_eq!(tasks[1]["finished_steps"][0]["verdict"], "approve", "{got}");
+    assert_eq!(
+        tasks[1]["finished_steps"][0]["summary"],
+        "Planned the change."
+    );
+
+    let (status, got) = get("/api/teams/solo/activity").await;
+    assert_eq!(status, 200, "{got}");
+    assert_eq!(got["supported"], false);
+    assert_eq!(got["reason"], "codex holds no team");
+    assert_eq!(got["tasks"], json!([]));
 }

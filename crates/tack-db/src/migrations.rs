@@ -161,6 +161,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("097_plan_instructions_name_no_file", &MIGRATION_097[..]),
         ordinary("098_project_on_start_status", &MIGRATION_098[..]),
         ordinary("099_agent_credentials", &MIGRATION_099[..]),
+        ordinary("100_team_activity", &MIGRATION_100[..]),
     ]
 }
 
@@ -1941,4 +1942,34 @@ const MIGRATION_099: [&str; 6] = [
     "ALTER TABLE items ADD COLUMN updated_by TEXT",
     "ALTER TABLE comments ADD COLUMN principal TEXT",
     "ALTER TABLE dependencies ADD COLUMN created_by TEXT",
+];
+
+// 100: what a team is doing, as its runner last reported it (ADR 0034 decision 5): one row per task a team
+// holds, the board's or not (`on_board` is NULL for work it did not start), with the steps that ended, kept
+// for 14 days. A report replaces a task whole, so the same report twice changes nothing.
+const MIGRATION_100: [&str; 3] = [
+    r##"CREATE TABLE team_tasks (
+        harness TEXT NOT NULL,
+        team TEXT NOT NULL,
+        task_ref TEXT NOT NULL,
+        runner_id TEXT NOT NULL,
+        on_board TEXT,
+        state TEXT NOT NULL,
+        waits_on TEXT,
+        current_step TEXT,
+        changed_at TEXT,
+        reported_at TEXT NOT NULL,
+        PRIMARY KEY (harness, team, task_ref)
+    )"##,
+    r##"CREATE TABLE team_task_steps (
+        harness TEXT NOT NULL,
+        team TEXT NOT NULL,
+        task_ref TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        finished_at TEXT NOT NULL,
+        step TEXT NOT NULL,
+        PRIMARY KEY (harness, team, task_ref, position),
+        FOREIGN KEY (harness, team, task_ref) REFERENCES team_tasks (harness, team, task_ref) ON DELETE CASCADE
+    )"##,
+    "CREATE INDEX idx_team_tasks_reported ON team_tasks (reported_at)",
 ];

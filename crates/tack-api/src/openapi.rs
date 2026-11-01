@@ -529,6 +529,19 @@ impl OpenApi for RunnerProtocolApiDoc {
                 ),
             )
             .path(
+                "/activity",
+                PathItem::new(
+                    HttpMethod::Post,
+                    op(
+                        "Report what a harness's teams are doing: the tasks that changed, each \
+                         replacing what the board holds for it (additive v1 operation; exact \
+                         path fixed by protocol.json)",
+                        vec![],
+                        "Activity recorded; a repeated report changes nothing",
+                    ),
+                ),
+            )
+            .path(
                 "/attempts/{attempt_id}/recovery-observation",
                 PathItem::new(
                     HttpMethod::Post,
@@ -871,6 +884,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::agent_credentials::issue_credential,
         handlers::agent_credentials::rotate_credential,
         handlers::agent_credentials::revoke_credential,
+        handlers::teams::team_activity,
         handlers::metrics::factory_metrics,
         // ── Comments ──────────────────────────────────────────────────────
         handlers::comments::create_comment,
@@ -973,6 +987,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         tack_core::principal::Scope,
         tack_core::principal::Capability,
         tack_core::principal::CredentialState,
+        handlers::teams::TeamActivityEntry,
         handlers::metrics::FactoryMetrics,
         handlers::metrics::Ratio,
         handlers::metrics::HumanMinutes,
