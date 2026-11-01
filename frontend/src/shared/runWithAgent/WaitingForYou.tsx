@@ -2,7 +2,7 @@ import { A, useLocation } from '@solidjs/router';
 import { type Component, For, Show } from 'solid-js';
 import type { Project } from '../types';
 import { RunState, type RunStateName } from '../ui';
-import { IconAgent, IconChevronDown } from '../ui/icons';
+import { IconChevronDown, IconComment } from '../ui/icons';
 import {
   WAITING_GROUPS,
   closeWaiting,
@@ -34,8 +34,10 @@ const countStyle = (count: number) => ({
   'text-align': 'center' as const,
   'font-size': '0.75rem',
   'font-weight': 700,
-  background: count > 0 ? 'var(--color-primary-600)' : 'var(--color-bg-app)',
-  color: count > 0 ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
+  // The same amber as "Needs you" on the board: one thing that waits on a person has one colour.
+  background: count > 0 ? 'var(--run-needs-soft)' : 'var(--color-bg-app)',
+  color: count > 0 ? 'var(--run-needs-ink)' : 'var(--color-text-secondary)',
+  'box-shadow': count > 0 ? 'inset 0 0 0 1px var(--run-needs-line)' : 'none',
 });
 
 const Row: Component<{ row: WaitingRow; project: string | undefined; action: string; state: RunStateName; onNavigate: () => void }> = (p) => {
@@ -123,7 +125,7 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
           color: 'var(--color-text-primary)',
         }}
       >
-        <IconAgent size={16} />
+        <IconComment size={16} />
         <span style={{ flex: 1, 'text-align': 'left' }}>Waiting for you</span>
         <span data-testid="waiting-count" aria-hidden="true" style={countStyle(waitingCount())}>
           {waitingCount()}
@@ -210,7 +212,7 @@ export const WaitingBadge: Component = () => {
         color: 'var(--color-text-secondary)',
       }}
     >
-      <IconAgent size={15} />
+      <IconComment size={15} />
       <span aria-hidden="true" style={countStyle(waitingCount())}>
         {waitingCount()}
       </span>

@@ -16,7 +16,7 @@ import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, Badge, RunState, Switch, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -25,7 +25,7 @@ import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
-  cardRun, countRuns, getAlwaysPriority, passesFilters, setAlwaysPriority, showsPriority,
+  cardRun, countRuns, getAlwaysPriority, passesFilters, showsPriority,
   type CardRun, type RunFilter,
 } from '../../shared/runWithAgent/cardRun';
 
@@ -153,7 +153,26 @@ export const ItemCard: Component<{
             onMove={(status) => props.onMove(props.item.id, status)}
             itemRef={shortId(props.item.id)}
           />
-          <Show when={!props.run?.live}>
+          {/* The action follows the state: a run waiting for review is reviewed, not started again;
+              a live run has its own link in the meta line. */}
+          <Show when={props.run?.state === 'review'}>
+            <button
+              type="button"
+              data-testid="card-review"
+              aria-label={`Review the run: ${props.item.title}`}
+              title="Review and merge"
+              onClick={openExecutionTab}
+              class="focus:outline-none focus-visible:ring-2"
+              style={{
+                width: '24px', height: '24px', 'border-radius': '50%', border: 'none', padding: 0, 'flex-shrink': 0,
+                display: 'grid', 'place-items': 'center', cursor: 'pointer',
+                background: 'var(--run-review-soft)', color: 'var(--run-review-ink)',
+              }}
+            >
+              <RunState state="review" size="dot" />
+            </button>
+          </Show>
+          <Show when={!props.run?.live && props.run?.state !== 'review'}>
             <RunWithAgentButton
               itemId={props.item.id}
               itemTitle={props.item.title}
@@ -284,7 +303,6 @@ const BoardColumnView: Component<{
         <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
           {shown().length === props.column.items.length ? props.column.items.length : `${shown().length} of ${props.column.items.length}`}
         </span>
-        <RunMiniBar counts={runCounts()} active={props.filters} onToggle={props.onToggleFilter} />
         <Show when={props.column.wip_limit != null}>
           <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
         </Show>
@@ -306,6 +324,10 @@ const BoardColumnView: Component<{
           <IconPlus size={13} />
           Add item
         </button>
+      </div>
+      {/* The runs of the column sit under its name as a thin line, so the name keeps its width. */}
+      <div style={{ padding: '0 8px 2px' }}>
+        <RunMiniBar counts={runCounts()} active={props.filters} onToggle={props.onToggleFilter} />
       </div>
       {/* The column's own scroll: focusable, so the keyboard can scroll it, and
           it keeps the wheel to itself instead of passing it to the board. */}
@@ -419,7 +441,8 @@ const Board: Component = () => {
       if (!next.delete(filter)) next.add(filter);
       return next;
     });
-  const [alwaysPriority, setAlwaysPriorityShown] = createSignal(getAlwaysPriority());
+  // Chosen in Settings → Display & accessibility, remembered in this browser.
+  const alwaysPriority = () => getAlwaysPriority();
 
   const boardStateFromServer = createMemo((): BoardState | null => {
     const proj = project();
@@ -603,15 +626,6 @@ const Board: Component = () => {
           <span>{itemCount()} {itemCount() === 1 ? 'item' : 'items'}</span>
         </span>
         <div style={{ flex: 1 }} />
-        <div role="group" aria-label="Card display">
-          <Switch
-            checked={alwaysPriority()}
-            onChange={(on) => { setAlwaysPriorityShown(on); setAlwaysPriority(on); }}
-            style={{ 'font-size': '0.75rem', color: 'var(--color-text-secondary)' }}
-          >
-            Always show priority on cards
-          </Switch>
-        </div>
         <Show when={assignees().length > 0}>
           <AvatarStack names={assignees()} max={5} />
         </Show>

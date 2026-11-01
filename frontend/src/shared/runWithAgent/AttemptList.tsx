@@ -11,7 +11,6 @@ import {
   describeAttemptOutcome,
   describeAttemptStatus,
   describeModelProvenance,
-  formatApproxCost,
   formatTokenCount,
   formatWallClock,
   harnessName,
@@ -62,6 +61,9 @@ export interface AttemptListProps {
    *  column. `drawer` (the default): one column, in that same order. */
   layout?: 'drawer' | 'page';
   sideTarget?: HTMLElement;
+  /** The item's Now panel is on screen and shows this very run: what it already says (the state in
+   *  words, the token meter) is not said again here. */
+  nowShown?: boolean;
 }
 
 async function copyText(text: string, what: string) {
@@ -184,7 +186,10 @@ const AttemptRow: Component<{
   agentKind?: string | null;
   runAgain?: (variant: 'primary' | 'secondary') => JSX.Element;
   onReviewed?: () => void;
+  nowShown?: boolean;
 }> = (props) => {
+  // Now speaks for the run's newest attempt only.
+  const dupe = () => !!props.nowShown && props.latest;
   const n = () => props.attempt.attempt_number;
   const terminal = () => isTerminalAttemptState(props.attempt.state);
   const asking = () => props.attempt.state === 'waiting_decision';
@@ -367,7 +372,7 @@ const AttemptRow: Component<{
   };
 
   return (
-    <li data-testid="attempt" class="min-w-0 space-y-4 rounded-item p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+    <li data-testid="attempt" class="min-w-0 space-y-4">
       <section data-testid="run-verdict" aria-label="Verdict" class="min-w-0 space-y-3">
         <div class="flex flex-wrap items-center gap-2">
           {/* A run with one attempt shows its status in the run's own heading. */}
@@ -426,7 +431,7 @@ const AttemptRow: Component<{
         <Show when={terminal()}>
           <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
-              when={props.limit?.tokens != null && counted() !== null}
+              when={props.limit?.tokens != null && counted() !== null && !dupe()}
               fallback={<span data-testid="verdict-tokens">{tokensText()}</span>}
             >
               <div class="min-w-0" style={{ flex: '1 1 8rem' }}>
@@ -463,7 +468,7 @@ const AttemptRow: Component<{
           </div>
         </Show>
 
-        <Show when={!terminal()}>
+        <Show when={!terminal() && !(dupe() && asking())}>
           <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             {asking()
               ? 'The agent is waiting for your answer — see Needs you below.'
@@ -471,8 +476,8 @@ const AttemptRow: Component<{
           </p>
         </Show>
 
-        {/* The review banner: the verdict, with its optional note, is asked for here and nowhere
-            else on this tab. */}
+        {/* The review banner: the verdict is asked for here and nowhere else on this tab. With a
+            pack on screen the reason is required (the pack's review needs one); without, the note is optional. */}
         <Show when={needsVerdict(props.attempt)}>
           <section
             data-testid="review-banner"
@@ -482,13 +487,19 @@ const AttemptRow: Component<{
             <Show when={!review()}>
               <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
               <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                Accept it, or reject it with a note saying why. The note is optional.
+                <Show
+                  when={mrp.pack() && !mrp.review()?.verdict}
+                  fallback="Accept it, or reject it. When you reject, a note saying why is optional."
+                >
+                  Accept it, or reject it. A reason is required: it is saved with your verdict and with the checks below.
+                </Show>
               </p>
             </Show>
             <ReviewActions
               requestId={props.requestId}
               attemptNumber={props.attempt.attempt_number}
               review={review()}
+              mrp={mrp}
               onReviewed={(r) => {
                 setFresh(r);
                 props.onReviewed?.();
@@ -516,7 +527,7 @@ const AttemptRow: Component<{
       </Show>
 
       <Show when={asking()}>
-        <RunSection id="needs" title="Needs you" summary="The agent is waiting for your answer." headingRef={(el) => (needsHeading = el)}>
+        <RunSection id="needs" title="Needs you" summary={dupe() ? undefined : 'The agent is waiting for your answer.'} headingRef={(el) => (needsHeading = el)}>
           <DecisionInbox
             requestId={props.requestId}
             attemptNumber={props.attempt.attempt_number}
@@ -530,7 +541,7 @@ const AttemptRow: Component<{
 
       <Show when={terminal() || mrp.pack()}>
         <RunSection id="checks" title="Checks" summary={checksSummary(checks())}>
-          <MrpPanel mrp={mrp} doneWhen={doneWhen()} />
+          <MrpPanel mrp={mrp} doneWhen={doneWhen()} verdictAbove={needsVerdict(props.attempt) && !review()} />
         </RunSection>
       </Show>
 
@@ -591,6 +602,7 @@ const AttemptRow: Component<{
             profileId={props.profileId}
             agentKind={props.agentKind}
             hops={runSteps()}
+            track={(runSteps() ?? []).length > 0}
           />
         </Show>
         <Show when={(runSteps() ?? []).length > 0}>
@@ -642,7 +654,7 @@ const AttemptRow: Component<{
           <RunSection id="technical" title="Technical" fold>
             <Show when={terminal()}>
               <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-              <details data-testid="attempt-usage-fold" class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+              <details data-testid="attempt-usage-fold" class="min-w-0 border-t pt-3" style={{ 'border-color': 'var(--color-border-light)' }}>
                 <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                   Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
                 </summary>
@@ -687,13 +699,12 @@ const Unmeasured: Component = () => (
   </span>
 );
 
-/** What a finished attempt used, tokens first: they are what the harness
- *  measured; the dollar figure is its estimate, shown as approximate. The
+/** What a finished attempt used, in tokens: they are what the harness
+ *  measured. No dollar figure is shown (limits and reports are in tokens). The
  *  model provenance sits beside the model, and only when it says something
  *  the model name doesn't. */
 const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
   const usage = () => readAttemptUsage(props.attempt);
-  const harness = () => harnessName((props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind);
   const provenance = () => describeModelProvenance(props.attempt.model_provenance);
   // Nothing named a model, so there is none to show.
   const modelUnknown = () => !props.attempt.model_provenance?.served;
@@ -713,9 +724,8 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
     if (u.wallClockMs !== null) out.push(formatWallClock(u.wallClockMs, true));
     return out;
   };
-  const cost = () => formatApproxCost(usage().cost);
   return (
-    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2 rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="attempt-usage" aria-label="Usage" class="space-y-2">
       <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <Show
           when={usage().tokensIn !== null || usage().tokensOut !== null}
@@ -746,14 +756,6 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
             </Show>
           </span>
         </Show>
-        <Show
-          when={cost() !== NOT_MEASURED_TEXT}
-          fallback={<span data-testid="usage-cost" class="text-sm" title={`${harness()} did not report a cost`} style={{ color: 'var(--color-text-secondary)' }}>Cost: <Unmeasured /></span>}
-        >
-          <span data-testid="usage-cost" class="text-sm font-semibold" title={`${harness()}'s own estimate at list price — your bill may differ`} style={{ color: 'var(--color-text-primary)' }}>
-            {cost()}
-          </span>
-        </Show>
       </div>
       <Show when={cacheLine()}>
         {(line) => <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
@@ -777,11 +779,6 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
         </Show>
         <For each={facts()}>{(fact) => <span>· {fact}</span>}</For>
       </div>
-      <Show when={cost() !== NOT_MEASURED_TEXT}>
-        <p class="text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
-          The cost is {harness()}'s own estimate at list price, not your bill.
-        </p>
-      </Show>
     </section>
   );
 };
@@ -838,6 +835,7 @@ const AttemptList: Component<AttemptListProps> = (props) => {
                   agentKind={props.agentKind}
                   runAgain={props.runAgain}
                   onReviewed={props.onReviewed}
+                  nowShown={props.nowShown}
                 />
               )}
             </Show>

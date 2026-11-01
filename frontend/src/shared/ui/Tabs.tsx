@@ -1,4 +1,4 @@
-import { For, Show, createUniqueId, type Component, type JSX } from 'solid-js';
+import { For, Show, createEffect, createSignal, createUniqueId, onCleanup, onMount, type Component, type JSX } from 'solid-js';
 
 export interface TabItem {
   id: string;
@@ -31,6 +31,34 @@ const Tabs: Component<TabsProps> = (props) => {
     props.onChange(props.tabs[next].id);
   };
 
+  // When the tabs do not all fit, the list fades out at the edge that has more, so it reads as
+  // scrollable. It is a mask on the list: nothing is added to the tab order or to the accessibility tree.
+  let list: HTMLDivElement | undefined;
+  const [more, setMore] = createSignal<{ start: boolean; end: boolean }>({ start: false, end: false });
+  const measure = () => {
+    if (!list) return;
+    const start = list.scrollLeft > 1;
+    const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+    setMore((m) => (m.start === start && m.end === end ? m : { start, end }));
+  };
+  onMount(() => {
+    measure();
+    if (typeof ResizeObserver === 'undefined' || !list) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    onCleanup(() => observer.disconnect());
+  });
+  // The selected tab stays in view, so the arrow keys never move the selection out of sight.
+  createEffect(() => {
+    const id = props.active;
+    list?.querySelector<HTMLElement>(`[id="${tabId(id)}"]`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  });
+  const fade = () => {
+    const { start, end } = more();
+    if (!start && !end) return undefined;
+    return `linear-gradient(to right, ${start ? 'transparent 0, black 28px' : 'black 0'}, ${end ? 'black calc(100% - 28px), transparent 100%' : 'black 100%'})`;
+  };
+
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'ArrowRight') {
       e.preventDefault();
@@ -45,8 +73,11 @@ const Tabs: Component<TabsProps> = (props) => {
     <div class={props.class}>
       <div
         role="tablist"
+        ref={list}
+        data-fade={more().start ? (more().end ? 'both' : 'start') : more().end ? 'end' : undefined}
         class="flex overflow-x-auto border-b"
-        style={{ 'border-color': 'var(--color-border-light)' }}
+        style={{ 'border-color': 'var(--color-border-light)', '-webkit-mask-image': fade(), 'mask-image': fade() }}
+        onScroll={measure}
         onKeyDown={onKey}
       >
         <For each={props.tabs}>

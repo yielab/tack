@@ -35,6 +35,9 @@ const fixForTeam = (team: TeamLine): Fix =>
     ? { label: 'See the team on the Agents page', href: '/agents' }
     : { label: `Run ${team.name} lights-out`, href: BOOK.teamsAdmin };
 
+/** A fix the server writes starts lower-case ("run it lights-out"); after a full stop it is a sentence. */
+const sentence = (text: string | null | undefined) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : '');
+
 const FIX_CLASS = 'text-sm underline';
 const FIX_STYLE = { color: 'var(--color-text-primary)' } as const;
 
@@ -93,7 +96,7 @@ const Rungs: Component<{
     const current = props.settings()?.level;
     if (level === current) return held(level) ? `Set here, held at ${ceiling()}` : 'Set here';
     if (rank(level) < rank(current)) return '';
-    return held(level) ? (holdCount() > 0 ? `Held off by ${holdCount()}` : 'Held off') : 'Available';
+    return held(level) ? (holdCount() > 0 ? `Blocked by ${holdCount()} ${holdCount() === 1 ? 'thing' : 'things'}` : 'Blocked') : 'Available';
   };
 
   return (
@@ -160,7 +163,7 @@ const Rungs: Component<{
                 {(t, i) => (
                   <li class="flex flex-wrap items-baseline gap-x-3">
                     <p id={`${uid}-team-${i()}`} data-testid="ceiling-team" class="min-w-0 text-sm" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
-                      {t.caps_at ? `✗ The team ${t.name} keeps its tasks at ${t.caps_at}. ${t.fix ?? ''}` : `✓ The team ${t.name} runs lights-out.`}
+                      {t.caps_at ? `✗ The team ${t.name} keeps its tasks at ${t.caps_at}. ${sentence(t.fix)}` : `✓ The team ${t.name} runs lights-out.`}
                     </p>
                     <Show when={t.caps_at}>
                       <FixLink fix={fixForTeam(t)} />

@@ -29,7 +29,7 @@ The tab as it looks, with every control that can be disabled shown with its reas
 
 ```text
 Autonomy ladder
-   [ L3 You merge: Set here, Ceiling ]  [ L4 Inside the domains: Held off by 3 ]  [ L5 Anything that passes: Held off by 3 ]
+   [ L3 You merge: Set here, Ceiling ]  [ L4 Inside the domains: Blocked by 3 things ]  [ L5 Anything that passes: Blocked by 3 things ]
    This project can reach L3.
    ✗ The team saas-dev keeps its tasks at L3. <what to change>     Run saas-dev lights-out
    ✗ GitHub polling is off on this board, so Tack cannot read CI or merge     Turn on GitHub polling
@@ -266,7 +266,7 @@ L5 are off: …", until what an automatic merge needs is in place.
 The ladder at the top of the tab shows the most this project can reach, and what holds it down. It reads
 "This project can reach L5." until something lowers it. The level the project is set to is filled in, the
 ceiling is marked on its level, and each level above the one you set says whether it is **Available** or
-**Held off by** a number of things. A screen reader gets the same sentences as the lines below the picture.
+**Blocked by** a number of things. A screen reader gets the same sentences as the lines below the picture.
 
 A team that needs a person during a run keeps its tasks at **L3**, however high the project's level is. For
 each team that your roles' profiles name, the ladder lists one line:

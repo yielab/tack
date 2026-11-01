@@ -168,7 +168,7 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('Ran on m1, as requested.');
   });
 
-  it('leads the usage with tokens, counts the cache, names the models and calls the cost approximate', () => {
+  it('leads the usage with tokens, counts the cache, names the models and shows no dollar figure', () => {
     const c = mount([
       attempt({
         actual_execution: { harness_kind: 'claude-code', model: 'claude-sonnet-5-5', model_source: 'reported' },
@@ -199,8 +199,9 @@ describe('AttemptList', () => {
     expect(usage.textContent).toContain('6 model calls');
     expect(usage.textContent).toContain('1m 53s');
     expect(usage.querySelector('[data-testid="usage-models"]')!.textContent).toBe('claude-sonnet-5-5');
-    expect(usage.querySelector('[data-testid="usage-cost"]')!.textContent).toContain('≈ $1.34 (estimated)');
-    expect(usage.textContent).toContain("Claude Code's own estimate at list price, not your bill");
+    // Limits and reports are in tokens: the harness's dollar estimate stays in the data and is not shown.
+    expect(usage.querySelector('[data-testid="usage-cost"]')).toBeNull();
+    expect(usage.textContent).not.toMatch(/\$|Cost|estimate/);
     // One time figure: the runner-time dollar tile, never measured, is gone.
     expect(usage.textContent!.match(/Not measured/g)).toBeNull();
   });
@@ -269,7 +270,7 @@ describe('AttemptList', () => {
     expect(c.textContent).not.toContain('$0.00');
   });
 
-  it('renders a real measured/estimated dollar figure honestly when present, distinct from "Not measured"', () => {
+  it('shows no dollar figure even when the harness reported one: the cost stays in the data, the screen speaks in tokens', () => {
     const c = mount([
       attempt({
         usage_economics: {
@@ -278,8 +279,8 @@ describe('AttemptList', () => {
         },
       }),
     ]);
-    expect(c.textContent).toContain('≈ $0.42 (estimated)');
-    expect(c.textContent).not.toContain('$0.42 (measured)');
+    expect(c.textContent).not.toContain('$0.42');
+    expect(c.textContent).not.toContain('Cost');
     expect(c.textContent).toContain('4m 55s');
   });
 
@@ -898,6 +899,29 @@ describe('AttemptList', () => {
       const failed = mountWith(attempt({ state: 'failed', terminal_reason: { code: 'timeout' } }));
       await settle();
       expect(filled(failed)).toEqual(['Run again']);
+    });
+
+    it('a run with a pack has one verdict block, and its reason is required, as the pack demands', async () => {
+      const spy = route({ artifacts: FILES });
+      const c = mountFull(FINISHED());
+      await settle();
+      expect(c.querySelectorAll('[data-testid="review-actions"]')).toHaveLength(1);
+      expect(c.textContent).not.toContain('Your review');
+      expect(c.textContent).not.toContain('The note is optional');
+      const banner = c.querySelector('[data-testid="review-banner"]')!;
+      expect(banner.textContent).toContain('A reason is required');
+      const button = (label: string) => [...banner.querySelectorAll('button')].find((b) => b.textContent === label) as HTMLButtonElement;
+      expect(button('Accept').disabled).toBe(true);
+      expect(button('Reject').disabled).toBe(true);
+      const input = banner.querySelector('input')!;
+      input.value = 'looks right';
+      input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      expect(button('Accept').disabled).toBe(false);
+      spy.mockClear();
+      button('Accept').click();
+      await settle();
+      const calls = spy.mock.calls.map(([u, init]) => [String(u), (init as RequestInit | undefined)?.body] as const);
+      expect(calls.find(([u]) => u.endsWith('/mrp/review'))?.[1]).toBe(JSON.stringify({ verdict: 'accept', reason: 'looks right' }));
     });
 
     it('a folder team says it works in a folder, with nothing to merge, in the verdict', async () => {

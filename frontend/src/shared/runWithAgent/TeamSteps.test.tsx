@@ -21,7 +21,7 @@ const STEPS = [
 
 const PROFILE = { agent_profile_id: 'ap_dev', name: 'Dev', instructions: '', tool_policy: { docket: { team: 'my-saas-dev' } }, limits: null };
 
-function mount(opts: { steps?: unknown[] | null; events: () => Ev[]; agentKind?: string | null; profileId?: string | null; ended?: boolean; hops?: RunStep[] }) {
+function mount(opts: { steps?: unknown[] | null; events: () => Ev[]; agentKind?: string | null; profileId?: string | null; ended?: boolean; hops?: RunStep[]; track?: boolean }) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: [PROFILE] }), { status: 200 });
@@ -43,6 +43,7 @@ function mount(opts: { steps?: unknown[] | null; events: () => Ev[]; agentKind?:
         events={opts.events()}
         ended={opts.ended}
         hops={opts.hops}
+        track={opts.track}
       />
     ),
     container,
@@ -172,6 +173,15 @@ describe('TeamSteps', () => {
       expect(step(c, 'review').textContent).toContain('Verdict: approved');
       // A step nobody with a role does has no hop to show.
       expect(step(c, 'tests').textContent).not.toContain('Verdict');
+    });
+
+    it('as a track alone it leaves the model and verdict to the list of hops below, and says Done once the run ended', async () => {
+      const hops = [hop({ role: 'lead', model: 'model-x', verdict: 'ready' })];
+      const c = mount({ steps: null, events: () => [], hops, ended: true, track: true });
+      await flush();
+      await flush();
+      const nodes = [...c.querySelectorAll('[data-testid="run-hops"] > li')];
+      expect(nodes.map((n) => n.textContent)).toEqual(['LeadDone']);
     });
 
     it('draws the hops themselves when the team reports no steps in advance', async () => {

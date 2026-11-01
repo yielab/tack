@@ -72,4 +72,15 @@ describe('DisplaySettings', () => {
     expect(document.documentElement.getAttribute('data-font')).toBe('legible');
     expect(document.documentElement.getAttribute('data-motion')).toBe('reduce');
   });
+
+  it('holds the board\'s always-show-priority choice, kept under the key the board reads', () => {
+    const c = mount();
+    const toggle = c.querySelector<HTMLInputElement>('#always-priority')!;
+    expect(toggle.closest('div')?.parentElement?.textContent).toContain('Always show priority on cards');
+    expect(toggle.checked).toBe(false);
+    toggle.click();
+    expect(localStorage.getItem('tack_board_always_priority')).toBe('1');
+    toggle.click();
+    expect(localStorage.getItem('tack_board_always_priority')).toBe('0');
+  });
 });
