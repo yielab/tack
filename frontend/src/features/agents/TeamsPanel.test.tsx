@@ -99,8 +99,10 @@ describe('TeamsPanel', () => {
     expect(team.textContent).toContain('Run by Docket');
     expect(row(team, 'shape').textContent).toContain('build');
     expect(row(team, 'works-in').textContent).toContain('Works in this repository');
-    expect(row(team, 'members').textContent).toContain('Lead · opus');
-    expect(row(team, 'members').textContent).toContain('Reviewer · sonnet');
+    expect(row(team, 'members').textContent).toContain('Lead');
+    expect(row(team, 'members').textContent).toContain('opus');
+    expect(row(team, 'members').textContent).toContain('Reviewer');
+    expect(row(team, 'members').textContent).toContain('sonnet');
     expect(row(team, 'decides').textContent).toContain('Stops to ask a person');
     expect(row(team, 'decides').textContent).toContain('Allow it in the team settings');
     expect(row(team, 'network').textContent).toContain('Limited network');
@@ -134,11 +136,118 @@ describe('TeamsPanel', () => {
     await flush();
     await flush();
     const members = row(card(c, 'saas-code'), 'members');
-    const line = (role: string) => members.querySelector(`[data-testid="team-member-${role}"]`)!.textContent;
-    expect(line('Lead')).toBe('Lead · opus · Reads only · Can propose items');
-    expect(line('Builder')).toBe('Builder · sonnet · Changes the project');
-    expect(line('Reviewer')).toBe('Reviewer · sonnet');
+    const member = (role: string) => members.querySelector<HTMLElement>(`[data-testid="team-member-${role}"]`)!;
+    const words = (role: string) => Array.from(member(role).querySelectorAll('[role="img"]')).map((m) => m.getAttribute('aria-label'));
+    expect(words('Lead')).toEqual(['Reads only', 'Can propose items']);
+    expect(words('Builder')).toEqual(['Changes the project']);
+    expect(words('Reviewer')).toEqual([]);
+    expect(member('Reviewer').textContent).toBe('Reviewersonnet');
     expect(members.textContent).not.toMatch(/kinds|rec__|record/i);
+  });
+
+  it('draws each member as a row: a role chip, the model and one icon for what it reaches and one for proposing', async () => {
+    const team = {
+      ...FULL_TEAM,
+      report: {
+        ...FULL_TEAM.report,
+        members: [
+          { role: 'Lead', model: 'opus', can_propose: true, writes_project: false },
+          { role: 'Builder', model: 'sonnet', can_propose: false, writes_project: true },
+        ],
+      },
+    };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const members = row(card(c, 'saas-code'), 'members');
+    const lead = members.querySelector<HTMLElement>('[data-testid="team-member-Lead"]')!;
+    expect(lead.querySelector('span.rounded-full')!.textContent).toBe('Lead');
+    expect(lead.querySelector('.font-mono')!.textContent).toBe('opus');
+    expect(lead.querySelector('[data-mark="reads"]')!.getAttribute('title')).toBe('Reads only');
+    expect(lead.querySelector('[data-mark="proposes"]')!.getAttribute('aria-label')).toBe('Can propose items');
+    const builder = members.querySelector<HTMLElement>('[data-testid="team-member-Builder"]')!;
+    expect(builder.querySelector('[data-mark="changes"]')!.getAttribute('aria-label')).toBe('Changes the project');
+    expect(builder.querySelector('[data-mark="proposes"]')).toBeNull();
+    expect(builder.querySelectorAll('svg[aria-hidden="true"]').length).toBe(1);
+  });
+
+  it('draws the header with the shape as a badge and where it works as an icon with its words', async () => {
+    mockApi([FULL_TEAM, { ...FULL_TEAM, name: 'folder', report: { ...FULL_TEAM.report, name: 'folder', works_in: 'folder' } }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const team = card(c, 'saas-code');
+    const shape = row(team, 'shape').querySelector('span.rounded-full')!;
+    expect(shape.textContent).toBe('build');
+    const worksIn = row(team, 'works-in');
+    expect(worksIn.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(worksIn.textContent).toBe('Works in this repository');
+    expect(row(card(c, 'folder'), 'works-in').textContent).toBe('Works in a folder');
+  });
+
+  it('draws the steps as a pipeline of nodes, with a step that waits as a node of its own', async () => {
+    const team = {
+      ...FULL_TEAM,
+      report: {
+        ...FULL_TEAM.report,
+        steps: [
+          { name: 'write', kind: 'agent', role: 'Lead', checked_by: 'reviewer', sends_back_to: 'write', sends_back_max: 2 },
+          { name: 'hold', kind: 'wait' },
+          { name: 'ship', kind: 'command', checked_by: 'command' },
+        ],
+      },
+    };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const pipeline = row(card(c, 'saas-code'), 'steps').querySelector('ol')!;
+    expect(pipeline.getAttribute('aria-label')).toBe("The team's steps");
+    const nodes = Array.from(pipeline.querySelectorAll<HTMLElement>(':scope > li'));
+    expect(nodes.map((n) => n.dataset.kind)).toEqual(['agent', 'wait', 'command']);
+    expect(nodes[0].textContent).toContain('write');
+    expect(nodes[0].textContent).toContain('sent back to write up to 2 times');
+    const hold = nodes[1];
+    expect(hold.querySelector('.font-semibold')!.textContent).toBe('hold');
+    expect(hold.textContent).toBe('holdwaits');
+    expect((hold.firstElementChild as HTMLElement).style.border).toContain('dashed');
+    expect((nodes[0].firstElementChild as HTMLElement).style.border).toContain('solid');
+    // An arrow joins each node to the next, and none follows the last.
+    expect(nodes.map((n) => n.querySelectorAll('svg').length)).toEqual([1, 1, 0]);
+  });
+
+  it('shows work now as two counters with the sentence for a screen reader, and each record set with its row count', async () => {
+    const team = {
+      ...FULL_TEAM,
+      report: { ...FULL_TEAM.report, records: [{ name: 'leads', rows: 2, description: 'People to write to' }, { name: 'listings', rows: 1 }] },
+    };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const queue = row(card(c, 'saas-code'), 'queue');
+    expect(queue.querySelector('.sr-only')!.textContent).toBe('3 waiting, 1 running');
+    const counters = Array.from(queue.querySelectorAll('[aria-hidden="true"] > span')).map((n) => n.textContent);
+    expect(counters).toEqual(['3waiting', '1running']);
+    const sets = row(card(c, 'saas-code'), 'records').querySelectorAll('li');
+    expect(sets).toHaveLength(2);
+    expect(sets[0].querySelector('span.rounded-full')!.textContent).toBe('2 rows');
+    expect(sets[0].textContent).toContain('leads');
+    expect(sets[0].textContent).toContain('People to write to');
+    expect(sets[1].querySelector('span.rounded-full')!.textContent).toBe('1 row');
+  });
+
+  it('lists the profiles that use a team as links that open each one for editing', async () => {
+    const team = { ...FULL_TEAM, profiles: [{ id: 'ap_i', name: 'Implementer' }, { id: 'ap_r', name: 'Reviewer' }] };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const links = Array.from(card(c, 'saas-code').querySelectorAll<HTMLButtonElement>('[data-testid="team-profiles"] button'));
+    expect(links.map((l) => l.textContent)).toEqual(['Implementer', 'Reviewer']);
+    links[1].click();
+    expect(profileEditRequest()).toBe('ap_r');
   });
 
   it('explains the limit of proposals kept for all tasks together, only for a team that reports it', async () => {

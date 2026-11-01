@@ -1,5 +1,5 @@
-import { type Component, type JSX, For, Show, createResource, createSignal } from 'solid-js';
-import { Badge, Button, HelpHint, LoadError, Skeleton } from '../../shared/ui';
+import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { HelpHint, LoadError, Skeleton } from '../../shared/ui';
 import { HELP } from '../../shared/help/texts';
 import { toast } from '../../shared/ui/toast';
 import {
@@ -7,13 +7,8 @@ import {
   agentCapabilityLines,
   agentName,
   agentProfilesApi,
-  memberReachText,
-  networkText,
   pickHarness,
   profileAgentText,
-  queueText,
-  SHARED_PROPOSALS_TEXT,
-  stepText,
   teamOf,
   teamsApi,
   type AgentProfileSummary,
@@ -22,24 +17,7 @@ import {
 import type { RunnerSummary } from '../../shared/execution/api';
 import { harnessesOf } from './runnerObservations';
 import { requestProfileEdit } from './profileEditRequest';
-import DisabledLine from './DisabledLine';
-
-/** One labelled field of a team: drawn from `value` when the agent reported it, else one disabled line
- *  saying who did not. `value` is false-y only for a field the agent left out (an empty list is a report). */
-function Field<T>(props: { label: string; id: string; agent: string; value: T | null | undefined | false | ''; children: (value: NonNullable<T>) => JSX.Element }): JSX.Element {
-  return (
-    <div data-testid={`team-${props.id}`} class="flex flex-col gap-0.5 sm:flex-row sm:gap-3">
-      <dt class="w-28 flex-none text-micro font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-tertiary)' }}>
-        {props.label}
-      </dt>
-      <dd class="min-w-0 text-small" style={{ color: 'var(--color-text-primary)' }}>
-        <Show when={props.value} fallback={<DisabledLine reported={false}>Not reported by {props.agent}</DisabledLine>}>
-          {(v) => props.children(v() as NonNullable<T>)}
-        </Show>
-      </dd>
-    </div>
-  );
-}
+import TeamCard from './TeamCard';
 
 /**
  * Teams: one card per team any agent reports (`GET /api/teams`), each line drawn only from a field the
@@ -136,130 +114,14 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
       <ul class="flex flex-col gap-2.5">
         <For each={entries()}>
           {(entry) => {
-            const agent = () => (entry.harness ? agentName(entry.harness) : 'any computer');
-            const report = () => entry.report ?? undefined;
             return (
-              <li class="flex flex-col gap-2.5 rounded-xl bg-app px-4 py-3.5" data-testid={`team-card-${entry.name}`}>
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>
-                    {entry.name}
-                  </span>
-                  <Show
-                    when={entry.reported}
-                    fallback={<Badge tone="neutral">Not reported by any computer</Badge>}
-                  >
-                    <Badge tone="primary">Run by {agentName(entry.harness ?? '')}</Badge>
-                  </Show>
-                </div>
-
-                <Show when={entry.reported}>
-                  <dl class="flex flex-col gap-1.5">
-                    <Field label="Shape" id="shape" agent={agent()} value={report()?.shape}>
-                      {(shape) => shape}
-                    </Field>
-                    <Field label="Works in" id="works-in" agent={agent()} value={report()?.works_in}>
-                      {(where) => (where === 'repository' ? 'Works in this repository' : 'Works in a folder')}
-                    </Field>
-                    <Field label="Members" id="members" agent={agent()} value={report()?.members}>
-                      {(members) => (
-                        <ul>
-                          <For each={members} fallback={<DisabledLine>No members reported</DisabledLine>}>
-                            {(m) => (
-                              <li data-testid={`team-member-${m.role}`}>
-                                {[m.role, m.model, ...memberReachText(m)].filter(Boolean).join(' · ')}
-                              </li>
-                            )}
-                          </For>
-                        </ul>
-                      )}
-                    </Field>
-                    <Field label="Runs" id="decides" agent={agent()} value={report()?.decides}>
-                      {(decides) => (
-                        <>
-                          <span>{decides === 'to_the_end' ? 'Runs to the end by itself' : 'Stops to ask a person'}</span>
-                          <For each={report()?.violations ?? []}>
-                            {(v) => (
-                              <p class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
-                                {v.requirement}. To fix: {v.fix}
-                              </p>
-                            )}
-                          </For>
-                        </>
-                      )}
-                    </Field>
-                    <Field label="Network" id="network" agent={agent()} value={report()?.network}>
-                      {(network) => networkText(network)}
-                    </Field>
-                    <Field label="Work now" id="queue" agent={agent()} value={report()?.queue}>
-                      {(queue) => queueText(queue)}
-                    </Field>
-                    <Field label="Keeps" id="records" agent={agent()} value={report()?.records}>
-                      {(sets) => (
-                        <ul>
-                          <For each={sets} fallback={<DisabledLine>No record sets reported</DisabledLine>}>
-                            {(set) => (
-                              <li>
-                                {set.name} · {set.rows} {set.rows === 1 ? 'row' : 'rows'}
-                                <Show when={set.description}>
-                                  <span style={{ color: 'var(--color-text-secondary)' }}> · {set.description}</span>
-                                </Show>
-                              </li>
-                            )}
-                          </For>
-                        </ul>
-                      )}
-                    </Field>
-                    <Field label="Proposes" id="proposals" agent={agent()} value={proposes(entry).state !== 'not_reported' && proposes(entry)}>
-                      {(line) => (
-                        <span
-                          aria-disabled={line.state === 'can' ? undefined : 'true'}
-                          style={{ color: line.state === 'can' ? undefined : 'var(--color-text-tertiary)' }}
-                        >
-                          {line.state === 'can' ? 'Can propose items' : 'Cannot propose items'}
-                          <Show when={line.reason}>
-                            <span style={{ color: 'var(--color-text-tertiary)' }}> · {line.reason}</span>
-                          </Show>
-                        </span>
-                      )}
-                    </Field>
-                    <Field label="Steps" id="steps" agent={agent()} value={report()?.steps}>
-                      {(steps) => (
-                        <ol class="list-decimal pl-5">
-                          <For each={steps} fallback={<DisabledLine>No steps reported</DisabledLine>}>
-                            {(step) => <li>{stepText(step)}</li>}
-                          </For>
-                        </ol>
-                      )}
-                    </Field>
-                  </dl>
-                  <Show when={report()?.proposals_shared_across_tasks === true}>
-                    <p data-testid="team-proposals-shared" class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
-                      {SHARED_PROPOSALS_TEXT}
-                    </p>
-                  </Show>
-                </Show>
-
-                <div class="flex flex-wrap items-center gap-2 text-small" style={{ color: 'var(--color-text-secondary)' }}>
-                  <Show
-                    when={entry.profiles.length > 0}
-                    fallback={<span>No profile uses this team yet.</span>}
-                  >
-                    <span>Profiles that use it: {entry.profiles.map((p) => p.name).join(', ')}</span>
-                  </Show>
-                  <Show when={entry.reported && entry.harness && entry.profiles.length === 0}>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      loading={busy() === entry.name}
-                      disabled={busy() !== null}
-                      onClick={() => void makeProfile(entry)}
-                    >
-                      Make a profile for this team
-                    </Button>
-                  </Show>
-                </div>
-              </li>
+              <TeamCard
+                entry={entry}
+                proposes={proposes(entry)}
+                busy={busy() === entry.name}
+                anyBusy={busy() !== null}
+                onMakeProfile={() => void makeProfile(entry)}
+              />
             );
           }}
         </For>
