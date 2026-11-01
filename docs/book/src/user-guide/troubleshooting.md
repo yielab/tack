@@ -77,7 +77,7 @@ Auto-start is off by default for every project. A project file never switches it
 
 - an unknown key, which is usually a misspelling;
 - a name used twice in one section, or a name that points at nothing (a role's profile, an item's role, sprint or field);
-- a status the workflow does not have in `on_finish_status` or the auto-start status;
+- a status the workflow does not have in `on_start_status`, `on_finish_status` or the auto-start status;
 - a field value that is not among the field's options.
 
 The full list of refusals, and the warnings that do not stop an import, is in [Import, Export & Project Files](import-export.md#what-is-refused-and-what-is-only-a-warning). A file that asks for a higher merge level or for auto-start is not refused: Tack applies the level it can and leaves auto-start off, and the preview says so.

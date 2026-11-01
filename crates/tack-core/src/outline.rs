@@ -217,6 +217,9 @@ pub struct BundleAutomation {
     /// The status a card moves to when its run finishes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_finish_status: Option<String>,
+    /// The status a card moves to when its run starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_start_status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub definition_of_done: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

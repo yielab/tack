@@ -648,6 +648,16 @@ pub async fn project_on_finish_status(repo: &Repository, project_id: &str, statu
         .expect("seed projects on_finish_status");
 }
 
+/// Sets, or with `None` clears, the status a project moves an item to when a run starts.
+pub async fn project_on_start_status(repo: &Repository, project_id: &str, status: Option<&str>) {
+    sqlx::query("UPDATE projects SET on_start_status = ? WHERE id = ?")
+        .bind(status)
+        .bind(project_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed projects on_start_status");
+}
+
 /// Replaces the stored snapshot (raw text, valid or not) of an `execution_requests` row.
 pub async fn execution_request_snapshot(repo: &Repository, request_id: &str, snapshot: &str) {
     sqlx::query("UPDATE execution_requests SET request_snapshot = ? WHERE id = ?")

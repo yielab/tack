@@ -8293,6 +8293,13 @@
             ],
             "description": "The status a card moves to when its run finishes."
           },
+          "on_start_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The status a card moves to when its run starts."
+          },
           "prepare": {
             "type": [
               "string",
@@ -12040,6 +12047,13 @@
               "null"
             ]
           },
+          "on_start_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The status an item moves to when a run of it starts."
+          },
           "prepare_command": {
             "type": [
               "string",
@@ -13980,6 +13994,12 @@
             ]
           },
           "on_finish_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "on_start_status": {
             "type": [
               "string",
               "null"

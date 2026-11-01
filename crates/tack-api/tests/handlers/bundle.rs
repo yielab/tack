@@ -102,6 +102,7 @@ async fn the_fixture_makes_a_whole_project() {
     assert_eq!(project["vocabulary"]["epic"], "Colección");
     for (key, value) in [
         ("repository", "/home/person/Sites/my-saas"),
+        ("on_start_status", "En curso"),
         ("on_finish_status", "En revisión"),
     ] {
         assert_eq!(project[key], value, "{key}");
@@ -281,6 +282,37 @@ async fn an_import_never_raises_autonomy_past_the_projects_own() {
     assert_eq!(autonomy["level"], "L4");
     let warnings = section(&out, "automation")["warnings"].to_string();
     assert!(!warnings.contains("autonomy.level"), "{warnings}");
+}
+
+/// A new project gets the first in-progress status of the file's own workflow, unless the file
+/// has an automation section: then it says what the project does, and an absent key is "Do not move".
+#[tokio::test]
+async fn a_new_projects_start_status_comes_from_the_file() {
+    let workflow = "  workflow:\n    statuses:\n      - { name: Idea, category: todo }\n      - { name: Doing, category: in_progress }\n      - { name: Shipped, category: done }\n";
+    let app = app().await;
+    for (automation, expected) in [
+        ("", json!("Doing")),
+        ("automation:\n  push_after_run: true\n", Value::Null),
+        (
+            "automation:\n  on_start_status: shipped\n",
+            json!("Shipped"),
+        ),
+    ] {
+        let file = format!("project:\n  name: Mini\n{workflow}{automation}");
+        let (status, out) = import(&app, "/api/projects/outline", &file).await;
+        assert_eq!(status, StatusCode::OK, "{out}");
+        let pid = out["project"]["id"].as_str().unwrap();
+        let project = get(&app, &format!("/api/projects/{pid}")).await;
+        assert_eq!(project["on_start_status"], expected, "{automation}");
+    }
+
+    let nowhere = "project:\n  name: Mini\nautomation:\n  on_start_status: Nowhere\n";
+    let (status, out) = import(&app, "/api/projects/outline", nowhere).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{out}");
+    assert!(
+        out.to_string().contains("automation.on_start_status"),
+        "{out}"
+    );
 }
 
 #[tokio::test]
