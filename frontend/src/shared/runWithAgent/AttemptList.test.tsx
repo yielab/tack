@@ -334,6 +334,26 @@ describe('AttemptList', () => {
     expect([...plain.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(false);
   });
 
+  it('with the Now panel on screen the run holds no second button for the question; without it, it keeps its own', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
+    );
+    const mountNow = (attempts: AttemptSummary[], nowShown: boolean) => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts} nowShown={nowShown} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      return container;
+    };
+    const opens = (c: HTMLElement) => [...c.querySelectorAll('button')].filter((b) => b.textContent === 'Open the question').length;
+    const waiting = [attempt({ state: 'waiting_decision', ended_at: null })];
+    const ended = [attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } })];
+    expect(opens(mountNow(waiting, true))).toBe(0);
+    expect(opens(mountNow(ended, true))).toBe(0);
+    expect(opens(mountNow(waiting, false))).toBe(1);
+    expect(opens(mountNow(ended, false))).toBe(1);
+  });
+
   it('an attempt that starts to wait for an answer while the page is open shows its question by itself', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),

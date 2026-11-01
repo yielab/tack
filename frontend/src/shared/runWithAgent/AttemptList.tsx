@@ -514,7 +514,8 @@ const AttemptRow: Component<{
         </Show>
 
         <div data-testid="verdict-actions" class="flex flex-wrap items-center gap-2">
-          <Show when={personNeeded()}>
+          {/* The Now panel above already holds this button for the newest run; two for one question compete. */}
+          <Show when={personNeeded() && !dupe()}>
             <Button size="sm" variant={primary() === 'answer' ? 'primary' : 'secondary'} onClick={openQuestion}>
               Open the question
             </Button>
