@@ -169,56 +169,92 @@ async fn an_agent_credential_reads_only_its_projects() {
 }
 
 #[tokio::test]
-async fn a_credential_without_act_cannot_write_and_one_with_it_signs_its_writes() {
+async fn an_agent_changes_the_board_only_through_a_change_set_and_signs_it() {
     let s = setup().await;
     let (_, reader) = issue(&s.app, "Reader", &[&s.mine], &["read"]).await;
-    let (status, body) = agent(
-        &s.app,
-        &reader,
-        "POST",
-        &format!("/api/items/{}/comments", s.item_in_mine),
-        json!({"content": "hi"}),
-    )
-    .await;
+    let sets = format!("/api/projects/{}/change-sets", s.mine);
+    let proposal = json!({
+        "reason": "Triage",
+        "operations": [{"op": "priority", "item": s.item_in_mine, "priority": "high"}],
+    });
+    let (status, body) = agent(&s.app, &reader, "POST", &sets, proposal.clone()).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(body["error"]["message"].as_str().unwrap().contains("`act`"));
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("`propose`")
+    );
 
     let (_, secret) = issue(&s.app, "Planner bot", &[&s.mine], &["read", "act"]).await;
 
-    // A comment ignores the author the agent supplies and shows the credential's name.
-    let (status, comment) = agent(
+    // Every direct write answers 403 and names the change-set route, even with `act`.
+    for (method, uri, body) in [
+        (
+            "POST",
+            format!("/api/items/{}/comments", s.item_in_mine),
+            json!({"content": "looks done", "author": "Santiago"}),
+        ),
+        (
+            "POST",
+            format!("/api/projects/{}/items", s.mine),
+            json!({"title": "From the agent"}),
+        ),
+        (
+            "PATCH",
+            format!("/api/items/{}", s.item_in_mine),
+            json!({"priority": "high"}),
+        ),
+        (
+            "POST",
+            format!("/api/items/{}/dependencies", s.item_in_mine),
+            json!({"target_item_id": s.item_in_other, "dependency_type": "blocks"}),
+        ),
+    ] {
+        let (status, refused) = agent(&s.app, &secret, method, &uri, body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}: {refused}");
+        assert!(
+            refused["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("change-sets"),
+            "{refused}"
+        );
+    }
+
+    // At the Act rung the same changes go through a change set and carry the credential's name.
+    let (status, _) = op(
         &s.app,
-        &secret,
-        "POST",
-        &format!("/api/items/{}/comments", s.item_in_mine),
-        json!({"content": "looks done", "author": "Santiago"}),
+        "PATCH",
+        &format!("/api/projects/{}", s.mine),
+        json!({"agents_on_board": {"level": "act", "creates_per_change_set": 0, "creates_per_day": 0}}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{comment}");
-    assert_eq!(comment["author"], "Planner bot");
-    assert!(comment["principal"].as_str().unwrap().starts_with("agent:"));
-
-    // An item it creates and one it changes show its name.
-    let (status, created) = agent(
+    assert_eq!(status, StatusCode::OK);
+    let (_, second) = op(
         &s.app,
-        &secret,
         "POST",
         &format!("/api/projects/{}/items", s.mine),
-        json!({"title": "From the agent"}),
+        json!({"title": "Second"}),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{created}");
-    assert_eq!(created["created_by"], "Planner bot");
-    let (status, updated) = agent(
+    let (status, proposed) = agent(
         &s.app,
         &secret,
-        "PATCH",
-        &format!("/api/items/{}", s.item_in_mine),
-        json!({"priority": "high"}),
+        "POST",
+        &sets,
+        json!({
+            "reason": "Triage",
+            "operations": [
+                {"op": "priority", "item": s.item_in_mine, "priority": "high"},
+                {"op": "comment", "item": s.item_in_mine, "text": "looks done"},
+                {"op": "depend", "blocker": s.item_in_mine, "blocked": second["id"]},
+            ],
+        }),
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{updated}");
-    assert_eq!(updated["updated_by"], "Planner bot");
+    assert_eq!(status, StatusCode::OK, "{proposed}");
+    assert_eq!(proposed["applied_now"], json!([0, 1, 2]));
     let (_, read_back) = agent(
         &s.app,
         &secret,
@@ -228,24 +264,38 @@ async fn a_credential_without_act_cannot_write_and_one_with_it_signs_its_writes(
     )
     .await;
     assert_eq!(read_back["item"]["updated_by"], "Planner bot");
-
-    // A dependency shows its name too, and cannot reach an item in a project outside the scope.
-    let (status, dep) = agent(
+    let (_, comments) = agent(
         &s.app,
         &secret,
-        "POST",
-        &format!("/api/items/{}/dependencies", s.item_in_mine),
-        json!({"target_item_id": created["id"], "dependency_type": "blocks"}),
+        "GET",
+        &format!("/api/items/{}/comments", s.item_in_mine),
+        Value::Null,
     )
     .await;
-    assert_eq!(status, StatusCode::OK, "{dep}");
-    assert_eq!(dep["created_by"], "Planner bot");
+    assert_eq!(comments[0]["author"], "Planner bot");
+    assert!(
+        comments[0]["principal"]
+            .as_str()
+            .unwrap()
+            .starts_with("agent:")
+    );
+    let (_, deps) = agent(
+        &s.app,
+        &secret,
+        "GET",
+        &format!("/api/items/{}/dependencies", s.item_in_mine),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(deps[0]["created_by"], "Planner bot", "{deps}");
+
+    // A change set cannot reach a project outside the credential's scope.
     let (status, _) = agent(
         &s.app,
         &secret,
         "POST",
-        &format!("/api/items/{}/dependencies", s.item_in_mine),
-        json!({"target_item_id": s.item_in_other, "dependency_type": "blocks"}),
+        &format!("/api/projects/{}/change-sets", s.other),
+        proposal,
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
