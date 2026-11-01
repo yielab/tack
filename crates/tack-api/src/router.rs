@@ -24,9 +24,9 @@ use crate::error::ApiError;
 use crate::handlers::spa;
 use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
-    briefs, change_sets, comments, custom_fields, decisions, dependencies, executions, export,
-    import_github, import_linear, items, local_runner, metrics, mrp, outline, projects, roles,
-    runner_admin, runner_protocol, settings, sprints, teams, templates, websocket,
+    briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
+    export, import_github, import_linear, items, local_runner, metrics, mrp, outline, projects,
+    roles, runner_admin, runner_protocol, settings, sprints, teams, templates, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -383,6 +383,7 @@ pub fn build_router(state: AppState) -> Router {
             "/items/{item_id}/brief/versions",
             get(briefs::list_brief_versions),
         )
+        .route("/digest", get(digest::get_digest))
         .route("/teams", get(teams::list_teams))
         .route("/teams/{id}/activity", get(teams::team_activity))
         .route(

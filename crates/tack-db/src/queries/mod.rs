@@ -13,6 +13,7 @@ pub mod autonomy;
 pub mod backup;
 pub mod budgets;
 pub mod database;
+pub mod digest;
 pub mod execution_artifacts;
 pub mod execution_attempts;
 pub mod execution_claim_replays;

@@ -490,6 +490,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/digest */
+        get: operations["get_digest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/executions": {
         parameters: {
             query?: never;
@@ -3626,6 +3643,32 @@ export interface components {
             /** @description The verification stages prill must require before Tack merges alone. */
             verify_require: string[];
         };
+        Blocked: {
+            /**
+             * @description The open items that block others and are not blocked themselves, the one holding up the
+             *     most first.
+             */
+            chains: components["schemas"]["Section_BlockedChain"];
+            /**
+             * Format: int64
+             * @description How many open items wait for another open item.
+             */
+            items: number;
+        };
+        BlockedChain: {
+            blocker: components["schemas"]["DigestItem"];
+            /**
+             * Format: int64
+             * @description How many open items wait for it, directly or through others.
+             */
+            blocks: number;
+            /**
+             * Format: int32
+             * @description How many links the longest chain below it has.
+             */
+            depth: number;
+            status: string;
+        };
         Board: {
             /** Format: date-time */
             created_at: string;
@@ -4423,6 +4466,24 @@ export interface components {
             command: string;
             lockfile: string;
         };
+        Digest: {
+            /**
+             * Format: date-time
+             * @description The instant the digest was read at.
+             */
+            as_of: string;
+            /** @description The projects, by name. */
+            projects: components["schemas"]["Section_ProjectDigest"];
+            /** Format: date-time */
+            since: string;
+            /** @description The teams with work that has not ended, by name. */
+            teams: components["schemas"]["Section_TeamDigest"];
+        };
+        DigestItem: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+        };
         /** @description One named area of the repository with its own level. */
         DomainSettings: {
             /** @description Item types the domain covers; empty means any. */
@@ -4648,6 +4709,13 @@ export interface components {
             runs_by_start: components["schemas"]["RunsByStart"];
             since?: string | null;
             verification_tax: components["schemas"]["VerificationTax"];
+        };
+        FailedRun: {
+            /** Format: date-time */
+            failed_at: string;
+            item: components["schemas"]["DigestItem"];
+            reason?: string | null;
+            run: string;
         };
         /** @description A step that ended, with what it said. */
         FinishedStep: {
@@ -5346,6 +5414,26 @@ export interface components {
             workspace_id: string;
             workspace_mode: components["schemas"]["WorkspaceMode"];
         };
+        ProjectDigest: {
+            blocked: components["schemas"]["Blocked"];
+            /** @description Change sets with operations waiting for a person, the oldest first. */
+            change_sets: components["schemas"]["Section_WaitingChangeSet"];
+            /** @description Runs that failed since the digest's `since`, the newest first. */
+            failed_runs: components["schemas"]["Section_FailedRun"];
+            /** Format: uuid */
+            id: string;
+            /** @description The statuses that hold items, in the board's order. */
+            items_by_status: components["schemas"]["Section_StatusCount"];
+            /** Format: int64 */
+            items_total: number;
+            name: string;
+            /** @description Items in progress that nothing has changed for [`STALE_AFTER_DAYS`] days, the oldest first. */
+            stale: components["schemas"]["Section_StaleItem"];
+            tokens: components["schemas"]["Tokens"];
+            unclaimed: components["schemas"]["Unclaimed"];
+            /** @description What waits for a person, the longest wait first. */
+            waiting_on_person: components["schemas"]["Section_WaitingOnPerson"];
+        };
         ProjectTemplate: {
             automation?: null | components["schemas"]["BundleAutomation"];
             /** Format: date-time */
@@ -5420,6 +5508,11 @@ export interface components {
              * @description `null` when `null_reason` is set.
              */
             value?: number | null;
+        };
+        ReasonCount: {
+            code: string;
+            /** Format: int64 */
+            count: number;
         };
         RecoveryConfirmation: {
             reason: string;
@@ -5712,6 +5805,213 @@ export interface components {
             updated: number;
             warnings: string[];
         };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_BlockedChain: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                blocker: components["schemas"]["DigestItem"];
+                /**
+                 * Format: int64
+                 * @description How many open items wait for it, directly or through others.
+                 */
+                blocks: number;
+                /**
+                 * Format: int32
+                 * @description How many links the longest chain below it has.
+                 */
+                depth: number;
+                status: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_FailedRun: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                /** Format: date-time */
+                failed_at: string;
+                item: components["schemas"]["DigestItem"];
+                reason?: string | null;
+                run: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_ProjectDigest: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                blocked: components["schemas"]["Blocked"];
+                /** @description Change sets with operations waiting for a person, the oldest first. */
+                change_sets: components["schemas"]["Section_WaitingChangeSet"];
+                /** @description Runs that failed since the digest's `since`, the newest first. */
+                failed_runs: components["schemas"]["Section_FailedRun"];
+                /** Format: uuid */
+                id: string;
+                /** @description The statuses that hold items, in the board's order. */
+                items_by_status: components["schemas"]["Section_StatusCount"];
+                /** Format: int64 */
+                items_total: number;
+                name: string;
+                /** @description Items in progress that nothing has changed for [`STALE_AFTER_DAYS`] days, the oldest first. */
+                stale: components["schemas"]["Section_StaleItem"];
+                tokens: components["schemas"]["Tokens"];
+                unclaimed: components["schemas"]["Unclaimed"];
+                /** @description What waits for a person, the longest wait first. */
+                waiting_on_person: components["schemas"]["Section_WaitingOnPerson"];
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_StaleItem: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                item: components["schemas"]["DigestItem"];
+                /** Format: date-time */
+                last_change: string;
+                status: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_StatusCount: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                /** Format: int64 */
+                count: number;
+                done: boolean;
+                status: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_TeamDigest: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                /** Format: int64 */
+                blocked: number;
+                harness: string;
+                /** Format: int64 */
+                queued: number;
+                /** Format: int64 */
+                running: number;
+                /** @description The work, what is going first and the queue after it. */
+                tasks: components["schemas"]["Section_TeamTask"];
+                team: string;
+                /** Format: int64 */
+                waiting: number;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_TeamTask: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                /** Format: date-time */
+                changed_at?: string | null;
+                item?: null | components["schemas"]["DigestItem"];
+                /**
+                 * Format: uuid
+                 * @description The project the board started it for; `null` for work the board did not start.
+                 */
+                project?: string | null;
+                state: components["schemas"]["ActivityState"];
+                step?: null | components["schemas"]["TeamStep"];
+                /** @description The task's name in the team's own agent. */
+                task: string;
+                waits_on?: null | components["schemas"]["WaitsOn"];
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_UnclaimedTask: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                code: string;
+                item: components["schemas"]["DigestItem"];
+                why: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_WaitingChangeSet: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                /** Format: uuid */
+                id: string;
+                /**
+                 * Format: int32
+                 * @description How many of its operations wait.
+                 */
+                operations: number;
+                /** @description Who proposed it. */
+                principal: string;
+                reason: string;
+                /** Format: date-time */
+                since: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
+        /** @description A list cut to its first rows, with how many there were and how many are not shown. */
+        Section_WaitingOnPerson: {
+            /**
+             * Format: int64
+             * @description `total` less the rows shown: "and N more".
+             */
+            more: number;
+            rows: {
+                item: components["schemas"]["DigestItem"];
+                kind: components["schemas"]["WaitKind"];
+                /** Format: date-time */
+                since: string;
+            }[];
+            /** Format: int64 */
+            total: number;
+        };
         SetCustomFieldValue: {
             /** Format: uuid */
             field_id: string;
@@ -5745,8 +6045,20 @@ export interface components {
          * @enum {string}
          */
         StableErrorCode: "invalid_request" | "unauthorized" | "forbidden" | "not_found" | "conflict" | "idempotency_conflict" | "invalid_transition" | "stale_lease" | "runner_revoked" | "decision_expired" | "artifact_checksum_mismatch" | "payload_too_large" | "rate_limited" | "unsupported_protocol" | "internal_error" | "unprocessable" | "validation_failed" | "invalid_status_transition" | "wip_limit_exceeded" | "dependency_cycle" | "duplicate_dependency" | "invalid_vocabulary_key" | "empty_workflow" | "has_children" | "invalid_workflow" | "misdirected_host" | "cross_site_request" | "unsupported_media_type" | "unreadable_archive" | "section_failed" | "machine_revoked" | "precondition_failed" | "local_runner_unavailable" | "folder_not_empty" | "method_not_allowed";
+        StaleItem: {
+            item: components["schemas"]["DigestItem"];
+            /** Format: date-time */
+            last_change: string;
+            status: string;
+        };
         /** @enum {string} */
         StatusCategory: "todo" | "in_progress" | "done";
+        StatusCount: {
+            /** Format: int64 */
+            count: number;
+            done: boolean;
+            status: string;
+        };
         StatusDef: {
             category: components["schemas"]["StatusCategory"];
             name: string;
@@ -5783,6 +6095,20 @@ export interface components {
          * @enum {string}
          */
         TeamDecides: "to_the_end" | "asks_a_person";
+        TeamDigest: {
+            /** Format: int64 */
+            blocked: number;
+            harness: string;
+            /** Format: int64 */
+            queued: number;
+            /** Format: int64 */
+            running: number;
+            /** @description The work, what is going first and the queue after it. */
+            tasks: components["schemas"]["Section_TeamTask"];
+            team: string;
+            /** Format: int64 */
+            waiting: number;
+        };
         /** @description One team: what an agent reported about it, or only the name a profile gives it. */
         TeamEntry: {
             /** @description The agent that runs the team; `null` for a name only a profile that names no agent uses. */
@@ -5971,6 +6297,21 @@ export interface components {
          * @enum {string}
          */
         TeamStepKind: "agent" | "command" | "ask" | "wait" | "parallel";
+        TeamTask: {
+            /** Format: date-time */
+            changed_at?: string | null;
+            item?: null | components["schemas"]["DigestItem"];
+            /**
+             * Format: uuid
+             * @description The project the board started it for; `null` for work the board did not start.
+             */
+            project?: string | null;
+            state: components["schemas"]["ActivityState"];
+            step?: null | components["schemas"]["TeamStep"];
+            /** @description The task's name in the team's own agent. */
+            task: string;
+            waits_on?: null | components["schemas"]["WaitsOn"];
+        };
         /** @description One thing that makes a team need a person during a run, and how to fix it. */
         TeamViolation: {
             fix: string;
@@ -6000,9 +6341,49 @@ export interface components {
         TestRun: {
             harness_kind: string;
         };
+        /** @description Tokens counted as the project's limits count them: cache reads are not part of them. */
+        Tokens: {
+            /**
+             * Format: int64
+             * @description What is left of the day's limit; `null` without one.
+             */
+            left_today?: number | null;
+            /**
+             * Format: int64
+             * @description The day's limit; `null` when the project sets none.
+             */
+            limit_per_day?: number | null;
+            /**
+             * Format: int64
+             * @description The limit of one run that sets none; `null` when off.
+             */
+            per_run_limit?: number | null;
+            /** Format: int64 */
+            reserved_today: number;
+            /**
+             * Format: int64
+             * @description Used by the runs started since the digest's `since`.
+             */
+            used_since: number;
+            /** Format: int64 */
+            used_today: number;
+        };
         Transition: {
             from: string;
             to: string;
+        };
+        Unclaimed: {
+            /** @description Whether the project starts tasks by itself; when it does not, no task is waiting for it. */
+            auto_start: boolean;
+            /** @description How many tasks wait for each reason, by code. */
+            by_reason: components["schemas"]["ReasonCount"][];
+            /** @description The tasks it would start and has not, most urgent first. */
+            tasks: components["schemas"]["Section_UnclaimedTask"];
+        };
+        UnclaimedTask: {
+            code: string;
+            item: components["schemas"]["DigestItem"];
+            why: string;
         };
         /**
          * @description Incoming update. Any omitted/blank string field clears that override and
@@ -6201,6 +6582,11 @@ export interface components {
              */
             verification_tokens: number;
         };
+        /**
+         * @description What a person is waited for to do.
+         * @enum {string}
+         */
+        WaitKind: "decision" | "attention" | "review";
         /** @description One run that holds a slot of a full computer a queued request waits for. */
         WaitingBehind: {
             /** Format: int64 */
@@ -6222,6 +6608,26 @@ export interface components {
             runs_at_a_time: number;
             /** @description When the run started, or was taken by the computer if it has not started (RFC 3339). */
             started_at: string;
+        };
+        WaitingChangeSet: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: int32
+             * @description How many of its operations wait.
+             */
+            operations: number;
+            /** @description Who proposed it. */
+            principal: string;
+            reason: string;
+            /** Format: date-time */
+            since: string;
+        };
+        WaitingOnPerson: {
+            item: components["schemas"]["DigestItem"];
+            kind: components["schemas"]["WaitKind"];
+            /** Format: date-time */
+            since: string;
         };
         /** @description Why one task is not started. */
         WaitingReason: {
@@ -7282,6 +7688,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_digest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description The projects to describe, as ids separated by commas. Absent: every project the caller
+                 *     may read.
+                 */
+                projects: string | null;
+                /** @description Runs that failed before this instant (RFC 3339) are left out. Absent: the last 24 hours. */
+                since: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A computed, bounded summary of the projects: items per status, what waits on a person and since when, blocked chains, tasks no team will pick up and why, stale items, runs failed since `since`, tokens against the limits, each team's current work and queue, and the change sets waiting. Every list shows a fixed number of rows and says how many more there are */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Digest"];
+                };
+            };
+            /** @description `projects` or `since` is not what it should be */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential lacks the scope `read` on a project it asked for */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description A project it asked for does not exist */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

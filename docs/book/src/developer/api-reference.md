@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (109 paths, 149 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (110 paths, 150 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -105,6 +105,28 @@ start
 |---|---|---|
 | 200 | Whether the project starts tasks by itself and why each waiting task is not started yet | `AutoStartState` |
 | 404 | No such project | `ErrorEnvelope` |
+
+---
+
+## Digest
+
+A computed, bounded summary of the projects a caller may read.
+
+#### `GET /api/digest`
+
+GET /api/digest
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `projects` | path | `['string', 'null']` | yes | The projects to describe, as ids separated by commas. Absent: every project the caller |
+| `since` | path | `['string', 'null']` | yes | Runs that failed before this instant (RFC 3339) are left out. Absent: the last 24 hours. |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | A computed, bounded summary of the projects: items per status, what waits on a person and since when, blocked chains, tasks no team will pick up and why, stale items, runs failed since `since`, tokens against the limits, each team's current work and queue, and the change sets waiting. Every list shows a fixed number of rows and says how many more there are | `Digest` |
+| 400 | `projects` or `since` is not what it should be | `ErrorEnvelope` |
+| 403 | The credential lacks the scope `read` on a project it asked for | `ErrorEnvelope` |
+| 404 | A project it asked for does not exist | `ErrorEnvelope` |
 
 ---
 

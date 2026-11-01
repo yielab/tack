@@ -1390,6 +1390,83 @@
         }
       }
     },
+    "/api/digest": {
+      "get": {
+        "tags": [
+          "digest"
+        ],
+        "summary": "GET /api/digest",
+        "operationId": "get_digest",
+        "parameters": [
+          {
+            "name": "projects",
+            "in": "path",
+            "description": "The projects to describe, as ids separated by commas. Absent: every project the caller\nmay read.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "since",
+            "in": "path",
+            "description": "Runs that failed before this instant (RFC 3339) are left out. Absent: the last 24 hours.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A computed, bounded summary of the projects: items per status, what waits on a person and since when, blocked chains, tasks no team will pick up and why, stale items, runs failed since `since`, tokens against the limits, each team's current work and queue, and the change sets waiting. Every list shows a fixed number of rows and says how many more there are",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Digest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`projects` or `since` is not what it should be",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential lacks the scope `read` on a project it asked for",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A project it asked for does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/executions": {
       "get": {
         "tags": [
@@ -8864,6 +8941,54 @@
           }
         }
       },
+      "Blocked": {
+        "type": "object",
+        "required": [
+          "items",
+          "chains"
+        ],
+        "properties": {
+          "chains": {
+            "$ref": "#/components/schemas/Section_BlockedChain",
+            "description": "The open items that block others and are not blocked themselves, the one holding up the\nmost first."
+          },
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many open items wait for another open item.",
+            "minimum": 0
+          }
+        }
+      },
+      "BlockedChain": {
+        "type": "object",
+        "required": [
+          "blocker",
+          "status",
+          "blocks",
+          "depth"
+        ],
+        "properties": {
+          "blocker": {
+            "$ref": "#/components/schemas/DigestItem"
+          },
+          "blocks": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many open items wait for it, directly or through others.",
+            "minimum": 0
+          },
+          "depth": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many links the longest chain below it has.",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "Board": {
         "type": "object",
         "required": [
@@ -11307,6 +11432,50 @@
           }
         }
       },
+      "Digest": {
+        "type": "object",
+        "required": [
+          "since",
+          "as_of",
+          "projects",
+          "teams"
+        ],
+        "properties": {
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The instant the digest was read at."
+          },
+          "projects": {
+            "$ref": "#/components/schemas/Section_ProjectDigest",
+            "description": "The projects, by name."
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "teams": {
+            "$ref": "#/components/schemas/Section_TeamDigest",
+            "description": "The teams with work that has not ended, by name."
+          }
+        }
+      },
+      "DigestItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "DomainSettings": {
         "type": "object",
         "description": "One named area of the repository with its own level.",
@@ -11855,6 +12024,32 @@
           },
           "verification_tax": {
             "$ref": "#/components/schemas/VerificationTax"
+          }
+        }
+      },
+      "FailedRun": {
+        "type": "object",
+        "required": [
+          "run",
+          "item",
+          "failed_at"
+        ],
+        "properties": {
+          "failed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "item": {
+            "$ref": "#/components/schemas/DigestItem"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "run": {
+            "type": "string"
           }
         }
       },
@@ -13798,6 +13993,65 @@
           }
         }
       },
+      "ProjectDigest": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "items_total",
+          "items_by_status",
+          "waiting_on_person",
+          "blocked",
+          "unclaimed",
+          "stale",
+          "failed_runs",
+          "tokens",
+          "change_sets"
+        ],
+        "properties": {
+          "blocked": {
+            "$ref": "#/components/schemas/Blocked"
+          },
+          "change_sets": {
+            "$ref": "#/components/schemas/Section_WaitingChangeSet",
+            "description": "Change sets with operations waiting for a person, the oldest first."
+          },
+          "failed_runs": {
+            "$ref": "#/components/schemas/Section_FailedRun",
+            "description": "Runs that failed since the digest's `since`, the newest first."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "items_by_status": {
+            "$ref": "#/components/schemas/Section_StatusCount",
+            "description": "The statuses that hold items, in the board's order."
+          },
+          "items_total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "stale": {
+            "$ref": "#/components/schemas/Section_StaleItem",
+            "description": "Items in progress that nothing has changed for [`STALE_AFTER_DAYS`] days, the oldest first."
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/Tokens"
+          },
+          "unclaimed": {
+            "$ref": "#/components/schemas/Unclaimed"
+          },
+          "waiting_on_person": {
+            "$ref": "#/components/schemas/Section_WaitingOnPerson",
+            "description": "What waits for a person, the longest wait first."
+          }
+        }
+      },
       "ProjectTemplate": {
         "type": "object",
         "required": [
@@ -14061,6 +14315,23 @@
             ],
             "format": "double",
             "description": "`null` when `null_reason` is set."
+          }
+        }
+      },
+      "ReasonCount": {
+        "type": "object",
+        "required": [
+          "code",
+          "count"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         }
       },
@@ -14749,6 +15020,589 @@
           }
         }
       },
+      "Section_BlockedChain": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "blocker",
+                "status",
+                "blocks",
+                "depth"
+              ],
+              "properties": {
+                "blocker": {
+                  "$ref": "#/components/schemas/DigestItem"
+                },
+                "blocks": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many open items wait for it, directly or through others.",
+                  "minimum": 0
+                },
+                "depth": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "How many links the longest chain below it has.",
+                  "minimum": 0
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_FailedRun": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "run",
+                "item",
+                "failed_at"
+              ],
+              "properties": {
+                "failed_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "item": {
+                  "$ref": "#/components/schemas/DigestItem"
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "run": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_ProjectDigest": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name",
+                "items_total",
+                "items_by_status",
+                "waiting_on_person",
+                "blocked",
+                "unclaimed",
+                "stale",
+                "failed_runs",
+                "tokens",
+                "change_sets"
+              ],
+              "properties": {
+                "blocked": {
+                  "$ref": "#/components/schemas/Blocked"
+                },
+                "change_sets": {
+                  "$ref": "#/components/schemas/Section_WaitingChangeSet",
+                  "description": "Change sets with operations waiting for a person, the oldest first."
+                },
+                "failed_runs": {
+                  "$ref": "#/components/schemas/Section_FailedRun",
+                  "description": "Runs that failed since the digest's `since`, the newest first."
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "items_by_status": {
+                  "$ref": "#/components/schemas/Section_StatusCount",
+                  "description": "The statuses that hold items, in the board's order."
+                },
+                "items_total": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "name": {
+                  "type": "string"
+                },
+                "stale": {
+                  "$ref": "#/components/schemas/Section_StaleItem",
+                  "description": "Items in progress that nothing has changed for [`STALE_AFTER_DAYS`] days, the oldest first."
+                },
+                "tokens": {
+                  "$ref": "#/components/schemas/Tokens"
+                },
+                "unclaimed": {
+                  "$ref": "#/components/schemas/Unclaimed"
+                },
+                "waiting_on_person": {
+                  "$ref": "#/components/schemas/Section_WaitingOnPerson",
+                  "description": "What waits for a person, the longest wait first."
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_StaleItem": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "item",
+                "status",
+                "last_change"
+              ],
+              "properties": {
+                "item": {
+                  "$ref": "#/components/schemas/DigestItem"
+                },
+                "last_change": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_StatusCount": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "status",
+                "count",
+                "done"
+              ],
+              "properties": {
+                "count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "done": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_TeamDigest": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "team",
+                "harness",
+                "running",
+                "waiting",
+                "blocked",
+                "queued",
+                "tasks"
+              ],
+              "properties": {
+                "blocked": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "queued": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "running": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "tasks": {
+                  "$ref": "#/components/schemas/Section_TeamTask",
+                  "description": "The work, what is going first and the queue after it."
+                },
+                "team": {
+                  "type": "string"
+                },
+                "waiting": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_TeamTask": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "task",
+                "state"
+              ],
+              "properties": {
+                "changed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "item": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DigestItem"
+                    }
+                  ]
+                },
+                "project": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid",
+                  "description": "The project the board started it for; `null` for work the board did not start."
+                },
+                "state": {
+                  "$ref": "#/components/schemas/ActivityState"
+                },
+                "step": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/TeamStep",
+                      "description": "The step it is inside now."
+                    }
+                  ]
+                },
+                "task": {
+                  "type": "string",
+                  "description": "The task's name in the team's own agent."
+                },
+                "waits_on": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/WaitsOn"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_UnclaimedTask": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "item",
+                "code",
+                "why"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "item": {
+                  "$ref": "#/components/schemas/DigestItem"
+                },
+                "why": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_WaitingChangeSet": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "principal",
+                "reason",
+                "operations",
+                "since"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "operations": {
+                  "type": "integer",
+                  "format": "int32",
+                  "description": "How many of its operations wait.",
+                  "minimum": 0
+                },
+                "principal": {
+                  "type": "string",
+                  "description": "Who proposed it."
+                },
+                "reason": {
+                  "type": "string"
+                },
+                "since": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Section_WaitingOnPerson": {
+        "type": "object",
+        "description": "A list cut to its first rows, with how many there were and how many are not shown.",
+        "required": [
+          "total",
+          "rows",
+          "more"
+        ],
+        "properties": {
+          "more": {
+            "type": "integer",
+            "format": "int64",
+            "description": "`total` less the rows shown: \"and N more\".",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "item",
+                "kind",
+                "since"
+              ],
+              "properties": {
+                "item": {
+                  "$ref": "#/components/schemas/DigestItem"
+                },
+                "kind": {
+                  "$ref": "#/components/schemas/WaitKind"
+                },
+                "since": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "SetCustomFieldValue": {
         "type": "object",
         "required": [
@@ -14868,6 +15722,26 @@
           "method_not_allowed"
         ]
       },
+      "StaleItem": {
+        "type": "object",
+        "required": [
+          "item",
+          "status",
+          "last_change"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/DigestItem"
+          },
+          "last_change": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "StatusCategory": {
         "type": "string",
         "enum": [
@@ -14875,6 +15749,27 @@
           "in_progress",
           "done"
         ]
+      },
+      "StatusCount": {
+        "type": "object",
+        "required": [
+          "status",
+          "count",
+          "done"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "done": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
       },
       "StatusDef": {
         "type": "object",
@@ -14960,6 +15855,50 @@
           "to_the_end",
           "asks_a_person"
         ]
+      },
+      "TeamDigest": {
+        "type": "object",
+        "required": [
+          "team",
+          "harness",
+          "running",
+          "waiting",
+          "blocked",
+          "queued",
+          "tasks"
+        ],
+        "properties": {
+          "blocked": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "harness": {
+            "type": "string"
+          },
+          "queued": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "running": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/Section_TeamTask",
+            "description": "The work, what is going first and the queue after it."
+          },
+          "team": {
+            "type": "string"
+          },
+          "waiting": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
       },
       "TeamEntry": {
         "type": "object",
@@ -15409,6 +16348,68 @@
           "parallel"
         ]
       },
+      "TeamTask": {
+        "type": "object",
+        "required": [
+          "task",
+          "state"
+        ],
+        "properties": {
+          "changed_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "item": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DigestItem"
+              }
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "The project the board started it for; `null` for work the board did not start."
+          },
+          "state": {
+            "$ref": "#/components/schemas/ActivityState"
+          },
+          "step": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamStep",
+                "description": "The step it is inside now."
+              }
+            ]
+          },
+          "task": {
+            "type": "string",
+            "description": "The task's name in the team's own agent."
+          },
+          "waits_on": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WaitsOn"
+              }
+            ]
+          }
+        }
+      },
       "TeamViolation": {
         "type": "object",
         "description": "One thing that makes a team need a person during a run, and how to fix it.",
@@ -15476,6 +16477,60 @@
           }
         }
       },
+      "Tokens": {
+        "type": "object",
+        "description": "Tokens counted as the project's limits count them: cache reads are not part of them.",
+        "required": [
+          "used_since",
+          "used_today",
+          "reserved_today"
+        ],
+        "properties": {
+          "left_today": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "What is left of the day's limit; `null` without one.",
+            "minimum": 0
+          },
+          "limit_per_day": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The day's limit; `null` when the project sets none.",
+            "minimum": 0
+          },
+          "per_run_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The limit of one run that sets none; `null` when off.",
+            "minimum": 0
+          },
+          "reserved_today": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "used_since": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Used by the runs started since the digest's `since`.",
+            "minimum": 0
+          },
+          "used_today": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "Transition": {
         "type": "object",
         "required": [
@@ -15487,6 +16542,50 @@
             "type": "string"
           },
           "to": {
+            "type": "string"
+          }
+        }
+      },
+      "Unclaimed": {
+        "type": "object",
+        "required": [
+          "auto_start",
+          "by_reason",
+          "tasks"
+        ],
+        "properties": {
+          "auto_start": {
+            "type": "boolean",
+            "description": "Whether the project starts tasks by itself; when it does not, no task is waiting for it."
+          },
+          "by_reason": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReasonCount"
+            },
+            "description": "How many tasks wait for each reason, by code."
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/Section_UnclaimedTask",
+            "description": "The tasks it would start and has not, most urgent first."
+          }
+        }
+      },
+      "UnclaimedTask": {
+        "type": "object",
+        "required": [
+          "item",
+          "code",
+          "why"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "item": {
+            "$ref": "#/components/schemas/DigestItem"
+          },
+          "why": {
             "type": "string"
           }
         }
@@ -16129,6 +17228,15 @@
           }
         }
       },
+      "WaitKind": {
+        "type": "string",
+        "description": "What a person is waited for to do.",
+        "enum": [
+          "decision",
+          "attention",
+          "review"
+        ]
+      },
       "WaitingBehind": {
         "type": "object",
         "description": "One run that holds a slot of a full computer a queued request waits for.",
@@ -16188,6 +17296,59 @@
           "started_at": {
             "type": "string",
             "description": "When the run started, or was taken by the computer if it has not started (RFC 3339)."
+          }
+        }
+      },
+      "WaitingChangeSet": {
+        "type": "object",
+        "required": [
+          "id",
+          "principal",
+          "reason",
+          "operations",
+          "since"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operations": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How many of its operations wait.",
+            "minimum": 0
+          },
+          "principal": {
+            "type": "string",
+            "description": "Who proposed it."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WaitingOnPerson": {
+        "type": "object",
+        "required": [
+          "item",
+          "kind",
+          "since"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/DigestItem"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WaitKind"
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -16337,6 +17498,10 @@
     {
       "name": "projects",
       "description": "Projects: the top-level container for work."
+    },
+    {
+      "name": "digest",
+      "description": "A computed, bounded summary of the projects a caller may read."
     },
     {
       "name": "items",

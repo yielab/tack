@@ -54,6 +54,7 @@ pub fn classify(method: &Method, path: &str) -> Access {
     let access = match (segments.as_slice(), get) {
         (["projects"], true) => Some(Access::Filtered),
         (["teams"], true) => Some(Access::Anywhere(Read)),
+        (["digest"], true) => Some(Access::Filtered),
         (["search"], true) => Some(Access::Everywhere(Read)),
         (["projects", project], true) => id(project).map(|p| Access::Project(p, Read)),
         (
@@ -311,5 +312,7 @@ mod tests {
             classify(&Method::GET, "/api/search"),
             Access::Everywhere(Capability::Read)
         );
+        // The digest filters its own answer by the caller's scopes.
+        assert_eq!(classify(&Method::GET, "/api/digest"), Access::Filtered);
     }
 }
