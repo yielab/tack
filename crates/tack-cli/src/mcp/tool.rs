@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::{fleet, items, projects, runs};
+use super::{board, changes, fleet, items, projects, runs};
 use crate::client::TackClient;
 
 /// Whether a tool changes anything on the board.
@@ -66,6 +66,12 @@ pub static TOOLS: &[&Tool] = &[
     &runs::GET_EXECUTION,
     &runs::CANCEL_EXECUTION,
     &runs::CREATE_EXECUTION,
+    &board::DIGEST,
+    &board::TEAM_ACTIVITY,
+    &board::LIST_TEAMS,
+    &board::LIST_ROLES,
+    &changes::GET_CHANGE_SET,
+    &changes::PROPOSE,
 ];
 
 /// The `tools` array `tools/list` answers with.
@@ -101,7 +107,11 @@ pub fn opt_str(args: &Value, key: &str) -> Option<String> {
 /// A required id that will be placed in a URL path. Only letters, digits,
 /// `-` and `_`, 1 to 64 characters, so no `/`, `?` or `.` can change the route.
 pub fn require_id(args: &Value, key: &str) -> Result<String, String> {
-    let value = require_str(args, key)?;
+    check_id(key, require_str(args, key)?)
+}
+
+/// `value` when it is fit for a URL path, as [`require_id`] checks.
+pub fn check_id(key: &str, value: String) -> Result<String, String> {
     let valid = value.len() <= 64
         && value
             .chars()

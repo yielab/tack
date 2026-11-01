@@ -3,6 +3,7 @@
 
 use serde_json::{Value, json};
 
+use super::changes;
 use super::projection::{
     card_fence_id, compact_item, due_timestamp, fence_card_text, fence_field, item_list, item_rows,
 };
@@ -69,6 +70,7 @@ fn get_item(client: &TackClient, args: &Value) -> Result<Value, String> {
     let comments = call(client.get(&format!("/items/{id}/comments")))?;
     let fence = card_fence_id();
     fence_field(&mut item, "description", &fence);
+    fence_field(&mut item["item"], "description", &fence);
     if let Some(list) = comments.as_array() {
         let fenced: Vec<Value> = list
             .iter()
@@ -133,7 +135,8 @@ pub static CREATE_ITEM: Tool = Tool {
     name: "create_item",
     spec: Spec {
         description: "Create an item in a project. To create many items, or a project \
-             with its items, use create_outline: one call instead of one per item.",
+             with its items, use create_outline: one call instead of one per item. With an \
+             agent credential this proposes a change set (no assignee or tags).",
         input_schema: || {
             json!({
                 "type": "object",
@@ -146,7 +149,8 @@ pub static CREATE_ITEM: Tool = Tool {
                     "parent_id": { "type": "string" },
                     "assignee": { "type": "string" },
                     "due_date": { "type": "string", "description": "YYYY-MM-DD or an RFC3339 timestamp" },
-                    "tags": { "type": "array", "items": { "type": "string" } }
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }
                 },
                 "required": ["project_id", "title"]
             })
@@ -157,6 +161,9 @@ pub static CREATE_ITEM: Tool = Tool {
 };
 
 fn create_item(client: &TackClient, args: &Value) -> Result<Value, String> {
+    if client.acts_as_agent() {
+        return changes::create_item(client, args);
+    }
     let project_id = require_id(args, "project_id")?;
     let title = require_str(args, "title")?;
     let mut body = json!({
@@ -175,13 +182,18 @@ fn create_item(client: &TackClient, args: &Value) -> Result<Value, String> {
     if let Some(tags) = args.get("tags").filter(|v| v.is_array()) {
         body["tags"] = tags.clone();
     }
-    call(client.post(&format!("/projects/{project_id}/items"), &body))
+    let mut created = call(client.post(&format!("/projects/{project_id}/items"), &body))?;
+    fence_field(&mut created, "description", &card_fence_id());
+    Ok(created)
 }
 
 pub static UPDATE_ITEM: Tool = Tool {
     name: "update_item",
     spec: Spec {
-        description: "Update fields on an item. Status changes are validated against the workflow.",
+        description: "Update fields on an item. Status changes are validated against the workflow. \
+             who_does_it (an agent profile id) and depends_on (ids of items that must finish \
+             first) propose a change set. With an agent credential every change does, and \
+             title, description and assignee cannot be changed.",
         input_schema: || {
             json!({
                 "type": "object",
@@ -192,7 +204,10 @@ pub static UPDATE_ITEM: Tool = Tool {
                     "priority": { "type": "string" },
                     "assignee": { "type": "string" },
                     "status": { "type": "string" },
-                    "due_date": { "type": "string", "description": "RFC3339 timestamp" }
+                    "due_date": { "type": "string", "description": "RFC3339 timestamp" },
+                    "who_does_it": { "type": "string", "description": "An agent profile id: the profile that does this item" },
+                    "depends_on": { "type": "array", "items": { "type": "string" }, "description": "Ids of items that must finish before this one" },
+                    "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }
                 },
                 "required": ["id"]
             })
@@ -203,6 +218,12 @@ pub static UPDATE_ITEM: Tool = Tool {
 };
 
 fn update_item(client: &TackClient, args: &Value) -> Result<Value, String> {
+    let asks_for_a_change_set = ["who_does_it", "depends_on"]
+        .iter()
+        .any(|key| args.get(key).is_some_and(|value| !value.is_null()));
+    if client.acts_as_agent() || asks_for_a_change_set {
+        return changes::update_item(client, args);
+    }
     let id = require_id(args, "id")?;
     let mut body = json!({});
     let mut touched = false;
@@ -234,7 +255,8 @@ pub static MOVE_ITEM: Tool = Tool {
                 "type": "object",
                 "properties": {
                     "id": { "type": "string" },
-                    "status": { "type": "string", "description": "Target status column name (case-sensitive)" }
+                    "status": { "type": "string", "description": "Target status column name (case-sensitive)" },
+                    "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }
                 },
                 "required": ["id", "status"]
             })
@@ -245,6 +267,9 @@ pub static MOVE_ITEM: Tool = Tool {
 };
 
 fn move_item(client: &TackClient, args: &Value) -> Result<Value, String> {
+    if client.acts_as_agent() {
+        return changes::move_item(client, args);
+    }
     let id = require_id(args, "id")?;
     let status = require_str(args, "status")?;
     write_item(client, &id, &json!({ "status": status }))
@@ -260,7 +285,8 @@ pub static ADD_COMMENT: Tool = Tool {
                 "properties": {
                     "item_id": { "type": "string" },
                     "content": { "type": "string" },
-                    "author": { "type": "string" }
+                    "author": { "type": "string", "description": "Ignored with an agent credential: the comment carries the credential's name" },
+                    "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }
                 },
                 "required": ["item_id", "content"]
             })
@@ -271,10 +297,15 @@ pub static ADD_COMMENT: Tool = Tool {
 };
 
 fn add_comment(client: &TackClient, args: &Value) -> Result<Value, String> {
+    if client.acts_as_agent() {
+        return changes::add_comment(client, args);
+    }
     let item_id = require_id(args, "item_id")?;
     let content = require_str(args, "content")?;
     let body = json!({ "content": content, "author": opt_str(args, "author") });
-    call(client.post(&format!("/items/{item_id}/comments"), &body))
+    let mut comment = call(client.post(&format!("/items/{item_id}/comments"), &body))?;
+    fence_field(&mut comment, "content", &card_fence_id());
+    Ok(comment)
 }
 
 /// Read-modify-write an item with an `If-Match` precondition, so the two MCP
@@ -294,5 +325,7 @@ fn add_comment(client: &TackClient, args: &Value) -> Result<Value, String> {
 /// because nothing here swallows or rewrites the error.
 fn write_item(client: &TackClient, id: &str, body: &Value) -> Result<Value, String> {
     let (_, etag) = call(client.get_with_etag(&format!("/items/{id}")))?;
-    call(client.patch_if_match(&format!("/items/{id}"), body, etag.as_deref()))
+    let mut written = call(client.patch_if_match(&format!("/items/{id}"), body, etag.as_deref()))?;
+    fence_field(&mut written, "description", &card_fence_id());
+    Ok(written)
 }

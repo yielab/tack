@@ -127,6 +127,14 @@ pub static CREATE_EXECUTION: Tool = Tool {
 };
 
 fn create_execution(client: &TackClient, args: &Value) -> Result<Value, String> {
+    if client.acts_as_agent() {
+        return Err(
+            "create_execution: an agent does not start a run directly. Say who does the \
+                    item (update_item with who_does_it, or a who_does_it operation in propose); \
+                    the project starts it by itself when a person has allowed that"
+                .into(),
+        );
+    }
     let item_id = require_str(args, "item_id")?;
     let selector = execution::selector_from_flags(
         opt_str(args, "runner_id").as_deref(),
