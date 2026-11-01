@@ -708,6 +708,16 @@ fn check_automation(
             )),
         }
     }
+    if let Some(status) = auto.on_start_status.as_deref() {
+        match in_workflow(status) {
+            Some(found) => auto.on_start_status = Some(found),
+            None => problems.push(format!(
+                "automation.on_start_status \"{}\" is not a status of the workflow ({})",
+                status.trim(),
+                board.workflow.status_names().join(", ")
+            )),
+        }
+    }
     if let Some(autonomy) = auto.autonomy.as_mut() {
         if let Some(level) = autonomy.level.as_deref() {
             autonomy.level = Some(lowered_level(
@@ -945,6 +955,7 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
             .map(|p| p.name.clone()),
         default_model: project.default_model.clone(),
         on_finish_status: project.on_finish_status.clone(),
+        on_start_status: project.on_start_status.clone(),
         definition_of_done: project.definition_of_done.clone(),
         autonomy: parts.autonomy.clone(),
         auto_start: Some(parts.auto_start.clone()),

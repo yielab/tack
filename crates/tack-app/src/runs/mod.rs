@@ -8,6 +8,7 @@ pub mod enroll;
 pub mod expire_decisions;
 pub mod heartbeat;
 pub mod mark_decision_viewed;
+pub mod move_on_start;
 pub mod observe_recovery;
 pub mod refresh;
 pub mod report_events;

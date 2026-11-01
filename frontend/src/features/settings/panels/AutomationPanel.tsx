@@ -329,6 +329,18 @@ const AutomationPanel: Component = () => {
     </>
   );
 
+  /** What happens to the item when a run starts. */
+  const startFold = () => (
+    <Fold id="automation-run-start" title="When a run starts" summary={p()?.on_start_status ? `Moves the item to ${p()!.on_start_status}` : 'Does not move the item'}>
+      <Select
+        label="Move the item to"
+        value={p()?.on_start_status ?? ''}
+        onChange={(e) => void save({ on_start_status: e.currentTarget.value || null })}
+        options={[{ value: '', label: 'Do not move' }, ...statuses().map((s) => ({ value: s.name, label: s.name }))]}
+      />
+    </Fold>
+  );
+
   /** What happens to the item when a run finishes. */
   const finishFold = () => (
     <Fold id="automation-finish" title="When a run finishes" summary={p()?.on_finish_status ? `Moves the item to ${p()!.on_finish_status}` : 'Does not move the item'}>
@@ -370,6 +382,7 @@ const AutomationPanel: Component = () => {
             saveProject={save}
             agent={agentFold()}
             workspace={workspaceFolds()}
+            runStart={startFold()}
             finish={finishFold()}
           />
         )}

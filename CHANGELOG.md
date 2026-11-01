@@ -18,6 +18,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 - Propose items from a file: on an item, pick a `tack-plan.json` and the same list a run proposes opens, so you can tick, edit, give each item a type, role and who does it, and create the ones you choose. A file that does not fit names the entry and why. A run's proposal rows now show each item's type, role, who does it and what it waits on.
 - The Overview has a **Runs** row once a project has run anything: a bar of this week's runs by outcome, the items that need you now, and a link to Factory metrics; tokens per team is shown disabled with the reason, since the Overview does not load the attempts they are counted from.
 - `GET /api/executions?project_id=` lists every open run of a project (queued, running, waiting on a person) and those that ended in the last 24 hours, one row per run, and every row of `GET /api/executions` now carries `latest_hop` (role, started or finished, verdict and cycle of the newest attempt's latest hop, null for an agent that reports none); the tokens counted so far are `limit.used`. An unknown project is a 404.
+- **When a run starts** sits beside **When a run finishes** in Settings → Automation: the column an item moves to when a run on it starts (`on_start_status`, also in a project file). A new project starts with the first in-progress column of its workflow; a project that exists keeps **Do not move**; an item already there or in a done column stays where it is, and a repeated start report moves it only once.
 
 ### Changed
 
