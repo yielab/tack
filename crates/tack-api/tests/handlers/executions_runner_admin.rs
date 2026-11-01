@@ -2903,3 +2903,346 @@ async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_d
     assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
     assert_eq!(err["error"]["details"]["field"], "delivers");
 }
+
+/// A request on `item_id` (queued) under its own idempotency key, stamped created at `at`.
+async fn queued_request_at(
+    app: &axum::Router,
+    repo: &Repository,
+    item_id: &str,
+    key: &str,
+    at: &str,
+) -> String {
+    let (status, created) = snd(
+        app,
+        "POST",
+        "/executions",
+        create_body(item_id).replace("same-key", key),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let id = created["request_id"].as_str().unwrap().to_owned();
+    seed::execution_request_created_at(repo, &id, at).await;
+    id
+}
+
+/// The request ids a project's call lists, in the order it lists them.
+async fn project_run_ids(app: &axum::Router, project_id: &str) -> Vec<String> {
+    let (status, body) = snd(
+        app,
+        "GET",
+        &format!("/executions?project_id={project_id}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["data"]
+        .as_array()
+        .expect("data array")
+        .iter()
+        .map(|row| row["request_id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// One call lists a project's open runs (queued, running, waiting on a person, needing the
+/// operator) and those that ended in the last 24 hours, newest first, and nothing of another
+/// project or of a run that ended earlier.
+#[tokio::test]
+async fn a_projects_runs_are_its_open_ones_and_those_that_ended_in_the_last_day() {
+    let (app, repo, item_id) = setup().await;
+    let project = project_of(&repo, &item_id).await;
+    let now = Utc::now();
+    let at = |hours: i64| (now - Duration::hours(hours)).to_rfc3339();
+
+    let queued = queued_request_at(&app, &repo, &item_id, "queued", &at(9)).await;
+    let running = queued_request_at(&app, &repo, &item_id, "running", &at(8)).await;
+    seed::execution_request_state(&repo, &running, ExecutionState::Running).await;
+    let waiting = queued_request_at(&app, &repo, &item_id, "waiting", &at(7)).await;
+    seed::execution_request_state(&repo, &waiting, ExecutionState::WaitingDecision).await;
+    let needs = queued_request_at(&app, &repo, &item_id, "needs", &at(6)).await;
+    seed::execution_request_state(&repo, &needs, ExecutionState::NeedsOperator).await;
+    // Created long ago and still going: open however old.
+    let old_open = queued_request_at(&app, &repo, &item_id, "old-open", &at(24 * 9)).await;
+    seed::execution_request_state(&repo, &old_open, ExecutionState::Running).await;
+
+    // Ended inside the day, whatever the way it ended, and created before the window.
+    let mut ended_recently = Vec::new();
+    for (n, state) in [
+        ExecutionState::Succeeded,
+        ExecutionState::Failed,
+        ExecutionState::Cancelled,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = queued_request_at(
+            &app,
+            &repo,
+            &item_id,
+            &format!("recent-{n}"),
+            &at(30 + n as i64),
+        )
+        .await;
+        seed::execution_request_state(&repo, &id, state).await;
+        seed::execution_request_updated_at(&repo, &id, &at(23)).await;
+        ended_recently.push(id);
+    }
+    // Ended just outside the day.
+    let ended_earlier = queued_request_at(&app, &repo, &item_id, "earlier", &at(26)).await;
+    seed::execution_request_state(&repo, &ended_earlier, ExecutionState::Succeeded).await;
+    seed::execution_request_updated_at(&repo, &ended_earlier, &at(25)).await;
+
+    // Another project's runs, open and ended recently, never show.
+    let other_workspace = create_test_workspace(&repo).await;
+    let other_project = tack_test_support::make_project(&repo, other_workspace).await;
+    let other_item = tack_test_support::make_item(&repo, &other_project).await;
+    seed::execution_request(
+        &repo,
+        "other-open",
+        &other_item.id.to_string(),
+        "runner-active",
+        &at(1),
+    )
+    .await;
+
+    let listed = project_run_ids(&app, &project).await;
+    assert_eq!(
+        listed,
+        vec![
+            needs.clone(),
+            waiting.clone(),
+            running.clone(),
+            queued.clone(),
+            ended_recently[0].clone(),
+            ended_recently[1].clone(),
+            ended_recently[2].clone(),
+            old_open.clone(),
+        ],
+        "open runs and the ones ended within 24 hours, newest created first"
+    );
+    assert!(!listed.contains(&ended_earlier));
+
+    let (_, body) = snd(
+        &app,
+        "GET",
+        &format!("/executions?project_id={project}"),
+        String::new(),
+    )
+    .await;
+    let states: std::collections::HashMap<&str, &str> = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| {
+            (
+                row["request_id"].as_str().unwrap(),
+                row["state"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(states[queued.as_str()], "queued");
+    assert_eq!(states[running.as_str()], "running");
+    assert_eq!(states[waiting.as_str()], "waiting_decision");
+    assert_eq!(states[needs.as_str()], "needs_operator");
+    assert_eq!(states[ended_recently[0].as_str()], "succeeded");
+
+    // The other project's own call lists its run only.
+    assert_eq!(
+        project_run_ids(&app, &other_project.id.to_string()).await,
+        vec!["other-open".to_owned()]
+    );
+}
+
+#[tokio::test]
+async fn an_unknown_project_is_not_found_and_the_other_filters_keep_working() {
+    let (app, repo, item_id) = setup().await;
+    let (status, body) = snd(
+        &app,
+        "GET",
+        &format!("/executions?project_id={}", Uuid::new_v4()),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
+    assert_eq!(body["error"]["code"], "not_found");
+    assert_eq!(body["error"]["details"]["resource"], "project");
+
+    // `item_ids` wins over `project_id`, so a batch read is unchanged by the new filter.
+    let at = Utc::now().to_rfc3339();
+    let request = queued_request_at(&app, &repo, &item_id, "k", &at).await;
+    let (status, body) = snd(
+        &app,
+        "GET",
+        &format!(
+            "/executions?item_ids={item_id}&project_id={}",
+            Uuid::new_v4()
+        ),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["data"][0]["request_id"], request);
+}
+
+/// The step a docket run is in comes with its row, from the newest attempt's latest hop event;
+/// a run that reports no hops, or whose newest attempt has not reached one, says null, and the
+/// tokens counted so far come with the same row.
+#[tokio::test]
+async fn a_run_lists_the_hop_its_newest_attempt_is_in() {
+    let (app, repo, item_id) = setup().await;
+    let project = project_of(&repo, &item_id).await;
+    let now = Utc::now();
+    let at = now.to_rfc3339();
+    let seed_attempt =
+        |id: &'static str, request_id: String, number: i64, usage: Option<String>| {
+            let repo = repo.clone();
+            let at = at.clone();
+            async move {
+                seed::execution_attempt_numbered(
+                    &repo,
+                    seed::AttemptSeed {
+                        id,
+                        request_id: &request_id,
+                        runner_id: "runner-active",
+                        state: ExecutionState::Running,
+                        at: &at,
+                        usage: usage.as_deref(),
+                        actual_execution: None,
+                    },
+                    number,
+                )
+                .await;
+            }
+        };
+    let hop = |attempt: &'static str, sequence: i64, kind: &'static str, text: &'static str| {
+        let repo = repo.clone();
+        let at = at.clone();
+        async move { seed::execution_event_text(&repo, attempt, kind, sequence, text, &at).await }
+    };
+
+    // Started, after a first hop that ended: the second hop is the step.
+    let started = queued_request_at(&app, &repo, &item_id, "started", &at).await;
+    seed::execution_request_state(&repo, &started, ExecutionState::Running).await;
+    seed_attempt("att-started", started.clone(), 1, None).await;
+    hop(
+        "att-started",
+        1,
+        "agent.hop_started",
+        "Lead (local/local-model) started",
+    )
+    .await;
+    hop(
+        "att-started",
+        2,
+        "agent.hop_finished",
+        "Lead (local/local-model): approved, 120 tokens in, 30 out",
+    )
+    .await;
+    hop(
+        "att-started",
+        3,
+        "agent.hop_started",
+        "Reviewer (anthropic/claude-sonnet-4-6) started",
+    )
+    .await;
+    // Not a hop, so it never hides the hop before it.
+    hop(
+        "att-started",
+        4,
+        "agent.untracked",
+        "notes.txt was left out",
+    )
+    .await;
+
+    // Finished with a verdict and a cycle, as the runner words it for docket's reviewer.
+    let finished = queued_request_at(&app, &repo, &item_id, "finished", &at).await;
+    seed::execution_request_state(&repo, &finished, ExecutionState::WaitingDecision).await;
+    seed_attempt("att-finished", finished.clone(), 1, None).await;
+    hop(
+        "att-finished",
+        1,
+        "agent.hop_finished",
+        "Reviewer (anthropic/claude-sonnet-4-6): REQUEST-CHANGES, cycle 1, 1000 tokens in, 200 out",
+    )
+    .await;
+
+    // A single agent's run: events, but no hop.
+    let single = queued_request_at(&app, &repo, &item_id, "single", &at).await;
+    seed::execution_request_state(&repo, &single, ExecutionState::Running).await;
+    seed_attempt(
+        "att-single",
+        single.clone(),
+        1,
+        Some(json!({"tokens_in": {"value": 48_000, "source": "measured"}, "tokens_out": {"value": 210, "source": "measured"}}).to_string()),
+    )
+    .await;
+    hop("att-single", 1, "agent.message", "Reading the repository").await;
+
+    // The first attempt reported hops; the newest has not reached one yet.
+    let retried = queued_request_at(&app, &repo, &item_id, "retried", &at).await;
+    seed::execution_request_state(&repo, &retried, ExecutionState::Running).await;
+    seed_attempt("att-retried-1", retried.clone(), 1, None).await;
+    hop(
+        "att-retried-1",
+        1,
+        "agent.hop_finished",
+        "Lead (local/local-model): approved",
+    )
+    .await;
+    seed_attempt("att-retried-2", retried.clone(), 2, None).await;
+
+    // No attempt at all: still queued.
+    let queued = queued_request_at(&app, &repo, &item_id, "queued", &at).await;
+
+    let (status, body) = snd(
+        &app,
+        "GET",
+        &format!("/executions?project_id={project}"),
+        String::new(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows: std::collections::HashMap<&str, &Value> = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| (row["request_id"].as_str().unwrap(), row))
+        .collect();
+    assert_eq!(
+        rows[started.as_str()]["latest_hop"],
+        json!({"role": "Reviewer", "kind": "started", "verdict": null, "cycle": null})
+    );
+    assert_eq!(
+        rows[finished.as_str()]["latest_hop"],
+        json!({"role": "Reviewer", "kind": "finished", "verdict": "REQUEST-CHANGES", "cycle": 1})
+    );
+    for (label, id) in [
+        ("single agent", &single),
+        ("newest attempt", &retried),
+        ("queued", &queued),
+    ] {
+        assert_eq!(rows[id.as_str()]["latest_hop"], Value::Null, "{label}");
+        assert!(
+            rows[id.as_str()].get("latest_hop").is_some(),
+            "{label}: the key is present"
+        );
+    }
+    // The tokens of the current attempt are on the same row.
+    assert_eq!(rows[single.as_str()]["limit"]["used"], json!(48_210));
+    assert_eq!(rows[queued.as_str()]["limit"]["used"], Value::Null);
+
+    // The other read shapes carry the field too.
+    let (_, one_item) = snd(
+        &app,
+        "GET",
+        &format!("/executions?item_id={item_id}"),
+        String::new(),
+    )
+    .await;
+    let carried = one_item["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["request_id"] == started.as_str())
+        .unwrap();
+    assert_eq!(carried["latest_hop"]["role"], "Reviewer");
+}

@@ -16,12 +16,15 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tack_db::queries::execution_attempts::{AttemptWithOutcomes, OpenAttemptRow};
-use tack_db::queries::{agent_profiles, budgets, execution_attempts, execution_requests};
+use tack_db::queries::{
+    agent_profiles, budgets, execution_attempts, execution_events, execution_requests,
+};
 use tack_db::repo::execution::state as execution_state;
 use tack_db::{
     Repository, StoreError,
     repo::execution::{AttemptListingRow, RunnerListingRow},
 };
+use tack_protocol::event_kind;
 use tack_protocol::execution::{ExecutionRequestId, ExecutionState, RecoveryKey, StableErrorCode};
 use tack_protocol::usage_provenance::{ModelProvenance, UsageEconomics, derive_attempt_facts};
 use utoipa::ToSchema;
@@ -257,6 +260,76 @@ pub struct ExecutionSummary {
     /// The agent the run asked for (`claude-code`, `codex`, `opencode`, `docket`); null when it
     /// left the choice to the computer.
     pub requested_harness_kind: Option<String>,
+    /// The latest hop the run's newest attempt reported; null when the agent reports no hops
+    /// (every agent but docket) or the attempt has not reached its first one.
+    pub latest_hop: Option<LatestHop>,
+}
+
+/// Whether a hop's latest event says it began or ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HopKind {
+    Started,
+    Finished,
+}
+
+/// The step of a docket run an attempt is in, read from the text of its latest hop event so a
+/// screen finds the step on the team's list without fetching the events.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+pub struct LatestHop {
+    /// The role as the event names it (its first letter is upper case); match it to a team's
+    /// steps without regard to case.
+    pub role: String,
+    pub kind: HopKind,
+    /// How the hop ended, in the event's words (`done` when it reported no verdict); null for a
+    /// hop that has started.
+    pub verdict: Option<String>,
+    /// The cycle a finished hop names; null when it names none (the first pass is not named).
+    pub cycle: Option<u64>,
+}
+
+impl LatestHop {
+    /// Reads the line the runner writes for a hop: `Role (model) started`, and for a finished one
+    /// `Role (model): verdict[, cycle N][, gate G][, N tokens in ...]`. `None` for a line of
+    /// another shape, so an event this reader does not know is not guessed at.
+    fn from_event(kind: &str, text: &str) -> Option<Self> {
+        let (role, rest) = text.trim().split_once(" (")?;
+        if role.is_empty() {
+            return None;
+        }
+        if kind == event_kind::AGENT_HOP_STARTED {
+            rest.strip_suffix(") started")?;
+            return Some(Self {
+                role: role.to_owned(),
+                kind: HopKind::Started,
+                verdict: None,
+                cycle: None,
+            });
+        }
+        if kind != event_kind::AGENT_HOP_FINISHED {
+            return None;
+        }
+        let (_model, parts) = rest.split_once("): ")?;
+        let parts: Vec<&str> = parts.split(", ").collect();
+        let cycle_of = |part: &str| part.strip_prefix("cycle ")?.parse::<u64>().ok();
+        let is_trailer = |part: &str| {
+            cycle_of(part).is_some()
+                || part.starts_with("gate ")
+                || part.split_once(" tokens in").is_some_and(|(count, tail)| {
+                    count.parse::<u64>().is_ok() && (tail.is_empty() || tail.starts_with(" ("))
+                })
+        };
+        // A failed hop's error is free text and may hold ", ": the verdict runs up to the first
+        // part that is one of the line's own trailers.
+        let end = parts.iter().position(|part| is_trailer(part));
+        let verdict = parts[..end.unwrap_or(parts.len())].join(", ");
+        Some(Self {
+            role: role.to_owned(),
+            kind: HopKind::Finished,
+            verdict: Some(verdict).filter(|v| !v.is_empty()),
+            cycle: parts.iter().find_map(|part| cycle_of(part)),
+        })
+    }
 }
 
 /// One run that holds a slot of a full computer a queued request waits for.
@@ -301,17 +374,23 @@ pub struct ExecutionListResponse {
     pub data: Vec<ExecutionSummary>,
 }
 
-/// Query parameters for `GET /api/executions`. Three read shapes, in
+/// Query parameters for `GET /api/executions`. Four read shapes, in
 /// precedence order: `item_ids` (comma-separated) asks for the single
 /// latest execution per item, for a batch of items — the shape a
 /// Board/Sprint screen with many cards needs, one request regardless of
-/// how many cards are on screen, and wins over `item_id`/`limit` when
-/// present; else `item_id` scopes every request for one item; else the
-/// unscoped, install-wide list, bounded by `limit`.
+/// how many cards are on screen, and wins over `project_id`/`item_id`/
+/// `limit` when present; else `project_id` asks for the runs a project is
+/// working on now and those it ended in the last day, unbounded by `limit`;
+/// else `item_id` scopes every request for one item; else the unscoped,
+/// install-wide list, bounded by `limit`.
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct ListExecutionsQuery {
     pub item_id: Option<Uuid>,
+    /// Every open run of the project (queued, running, waiting on a person) and those that ended
+    /// in the last 24 hours, one row per run. An unknown project is a 404. Takes precedence over
+    /// `item_id`/`limit`; `item_ids` takes precedence over it.
+    pub project_id: Option<Uuid>,
     /// Comma-separated item ids — returns exactly one row per id, its own
     /// most recent execution. Takes precedence over `item_id`/`limit` when
     /// present.
@@ -845,14 +924,18 @@ pub(crate) async fn resolve_profile(
         .map_err(refused)
 }
 
+/// How long a run that has ended stays in a project's list.
+const ENDED_RUNS_LISTED_FOR: chrono::Duration = chrono::Duration::hours(24);
+
 #[utoipa::path(
     get,
     path = "/api/executions",
     tag = "execution-operator",
     params(ListExecutionsQuery),
     responses(
-        (status = 200, description = "Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit`", body = ExecutionListResponse),
+        (status = 200, description = "Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else `project_id` present: every run of the project that is not over, and those that ended in the last 24 hours. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit`", body = ExecutionListResponse),
         (status = 400, description = "invalid_request (a malformed `item_ids` entry, or more ids than the route's cap)", body = RunnerV1ErrorEnvelope),
+        (status = 404, description = "not_found (`project_id` names no project)", body = RunnerV1ErrorEnvelope),
     ),
 )]
 pub async fn list_executions(
@@ -867,9 +950,35 @@ pub async fn list_executions(
             json!({"field": "item_ids", "value": bad_value}),
         )
     })?;
+    let now = state.clock.now();
     let rows = if let Some(item_ids) = item_ids {
         let item_ids: Vec<String> = item_ids.iter().map(Uuid::to_string).collect();
         state.repo.list_latest_executions_for_items(&item_ids).await
+    } else if let Some(project_id) = query.project_id {
+        match state.repo.get_project(project_id).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return Err(error(
+                    StatusCode::NOT_FOUND,
+                    StableErrorCode::NotFound,
+                    "Project does not exist",
+                    json!({"resource": "project"}),
+                ));
+            }
+            Err(failure) => {
+                tracing::error!(error = %failure, "Could not load project");
+                return Err(error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not load project",
+                    json!({}),
+                ));
+            }
+        }
+        state
+            .repo
+            .list_project_executions(&project_id.to_string(), now - ENDED_RUNS_LISTED_FOR)
+            .await
     } else {
         let limit = query.effective_limit();
         let item_id = query.item_id.map(|id| id.to_string());
@@ -884,7 +993,6 @@ pub async fn list_executions(
             json!({}),
         )
     })?;
-    let now = state.clock.now();
     let runners = queued_runners(
         &state.repo,
         rows.iter().any(|row| row.state == ExecutionState::Queued),
@@ -909,6 +1017,25 @@ pub async fn list_executions(
                 json!({}),
             )
         })?;
+    // One query for every listed run's newest attempt, never one per run.
+    let mut hops: std::collections::HashMap<String, LatestHop> =
+        execution_events::latest_hops_of_requests(&state.repo, &ids)
+            .await
+            .map_err(|failure| {
+                tracing::error!(error = %failure, "Could not read the runs' latest hops");
+                error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    StableErrorCode::InternalError,
+                    "Could not read the runs' latest hops",
+                    json!({}),
+                )
+            })?
+            .into_iter()
+            .filter_map(|hop| {
+                let found = LatestHop::from_event(&hop.kind, hop.text.as_deref()?)?;
+                Some((hop.request_id, found))
+            })
+            .collect();
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| {
@@ -925,6 +1052,7 @@ pub async fn list_executions(
                     (None, Vec::new())
                 };
             ExecutionSummary {
+                latest_hop: hops.remove(&row.id),
                 limit: limits
                     .remove(&row.id)
                     .unwrap_or_else(|| limit_source(&Value::Null, None, None)),
@@ -1961,6 +2089,59 @@ pub async fn get_item_agent_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The lines are the ones the runner writes for docket's hop events.
+    #[test]
+    fn a_hop_is_read_from_the_line_the_runner_wrote() {
+        let started =
+            LatestHop::from_event("agent.hop_started", "Implementer (local/planned) started")
+                .expect("started");
+        assert_eq!(
+            (
+                started.role.as_str(),
+                started.kind,
+                started.verdict,
+                started.cycle
+            ),
+            ("Implementer", HopKind::Started, None, None)
+        );
+        let read = |text: &str| LatestHop::from_event("agent.hop_finished", text).expect(text);
+        let hop = read(
+            "Reviewer (anthropic/claude-sonnet-4-6): REQUEST-CHANGES, cycle 1, 1000 tokens in, 200 out",
+        );
+        assert_eq!(hop.kind, HopKind::Finished);
+        assert_eq!(hop.verdict.as_deref(), Some("REQUEST-CHANGES"));
+        assert_eq!(hop.cycle, Some(1));
+        // The first pass names no cycle; the gate and the cache figure are trailers too.
+        let hop = read(
+            "Lead (local/m): approved, gate tests, 900 tokens in (300 read from cache), 50 out",
+        );
+        assert_eq!(
+            (hop.verdict.as_deref(), hop.cycle),
+            (Some("approved"), None)
+        );
+        // A failed hop's error may hold the separator; it stays whole.
+        let hop = read("Lead (local/m): failed: no tool, no answer, cycle 2");
+        assert_eq!(hop.verdict.as_deref(), Some("failed: no tool, no answer"));
+        assert_eq!(hop.cycle, Some(2));
+        assert_eq!(
+            read("Lead (no model named): done").verdict.as_deref(),
+            Some("done")
+        );
+    }
+
+    #[test]
+    fn a_line_of_another_shape_is_not_a_hop() {
+        for (kind, text) in [
+            ("agent.hop_started", "Lead started"),
+            ("agent.hop_started", "Lead (m) is going"),
+            ("agent.hop_finished", "Lead (m) approved"),
+            ("agent.hop_finished", " (m): approved"),
+            ("agent.message", "Lead (m) started"),
+        ] {
+            assert_eq!(LatestHop::from_event(kind, text), None, "{kind}: {text}");
+        }
+    }
 
     // (stored snapshot, agent, tokens, source, enforced_by, the sentence every screen prints)
     #[test]

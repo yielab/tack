@@ -274,12 +274,19 @@ pub struct AttemptSeed<'a> {
 
 /// Plants an attempt number 1 with fencing token 1.
 pub async fn execution_attempt(repo: &Repository, attempt: AttemptSeed<'_>) {
+    execution_attempt_numbered(repo, attempt, 1).await;
+}
+
+/// Plants an attempt of the given number, its fencing token the same number.
+pub async fn execution_attempt_numbered(repo: &Repository, attempt: AttemptSeed<'_>, number: i64) {
     sqlx::query(
-        "INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at,usage,actual_execution) VALUES (?,?,1,?,1,?,?,?,?,?,?,?)",
+        "INSERT INTO execution_attempts (id,request_id,attempt_number,runner_id,fencing_token,state,lease_issued_at,lease_expires_at,created_at,updated_at,usage,actual_execution) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(attempt.id)
     .bind(attempt.request_id)
+    .bind(number)
     .bind(attempt.runner_id)
+    .bind(number)
     .bind(state::text(attempt.state))
     .bind(attempt.at)
     .bind(attempt.at)
@@ -335,6 +342,16 @@ pub async fn execution_request_created_at(repo: &Repository, request_id: &str, a
         .execute(repo.pool())
         .await
         .expect("seed execution_requests created_at");
+}
+
+/// Stamps an `execution_requests` row as last updated at `at`, which is when a finished one ended.
+pub async fn execution_request_updated_at(repo: &Repository, request_id: &str, at: &str) {
+    sqlx::query("UPDATE execution_requests SET updated_at = ? WHERE id = ?")
+        .bind(at)
+        .bind(request_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed execution_requests updated_at");
 }
 
 /// Stores the reason a poll gave for a request waiting.
@@ -986,6 +1003,33 @@ pub async fn execution_event_of_kind(
     .execute(repo.pool())
     .await
     .expect("seed execution_events of a kind");
+}
+
+/// Plants a timeline event of `kind` on `attempt_id` at `sequence`, its payload `{"text": text}`
+/// as the runner reports a line of progress.
+pub async fn execution_event_text(
+    repo: &Repository,
+    attempt_id: &str,
+    kind: &str,
+    sequence: i64,
+    text: &str,
+    at: &str,
+) {
+    sqlx::query(
+        "INSERT INTO execution_events(id,attempt_id,event_id,sequence,source,kind,payload,occurred_at,created_at) \
+         VALUES(?,?,?,?,'runner',?,?,?,?)",
+    )
+    .bind(format!("row-{attempt_id}-{sequence}"))
+    .bind(attempt_id)
+    .bind(format!("evt-{attempt_id}-{sequence}"))
+    .bind(sequence)
+    .bind(kind)
+    .bind(serde_json::json!({ "text": text }).to_string())
+    .bind(at)
+    .bind(at)
+    .execute(repo.pool())
+    .await
+    .expect("seed execution_events with text");
 }
 
 /// Removes one `execution_events` row.
