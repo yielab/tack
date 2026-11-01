@@ -3,6 +3,7 @@ import { Badge, EmptyState, Modal } from '../ui';
 import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound, type ArtifactRecord } from '../execution';
 import DiffView from './DiffView';
 import { inDesktop } from './desktop';
+import { truncateMiddle } from '../ui/truncateMiddle';
 
 export interface ArtifactDownloadPanelProps {
   requestId: string;
@@ -136,8 +137,16 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
   return (
     <>
       <tr data-testid="artifact-row">
-        <th scope="row" class="min-w-0 px-3 py-2 text-left text-sm font-semibold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
-          {props.artifact.name}
+        {/* A name breaks at its separators, never inside a word (`overflow-wrap: anywhere` let the
+            table squeeze the column until `changes.patch` broke in two); a very long one keeps its
+            head and its extension, with the whole name on hover. */}
+        <th
+          scope="row"
+          title={props.artifact.name}
+          class="min-w-0 px-3 py-2 text-left text-sm font-semibold"
+          style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'break-word', 'word-break': 'normal' }}
+        >
+          {truncateMiddle(props.artifact.name, 32, 12)}
           <Show when={!props.artifact.content_verified}>
             <span class="ml-2 align-middle"><Badge tone="warning">Not verified yet</Badge></span>
           </Show>
