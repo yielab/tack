@@ -3,7 +3,7 @@ import { useSearchParams } from '@solidjs/router';
 import { Button, type ButtonVariant } from '../ui';
 import RunWithAgentModal from './RunWithAgentModal';
 import { useExecutionStore } from '../state/executionContext';
-import { describeExecutionState, type StateTone } from './shared';
+import { describeExecutionState, isTerminalStateString, type StateTone } from './shared';
 import type { RunnerCapabilities } from '../execution';
 
 // Execution chip (Board card): a pill with a leading dot — soft fill, ink
@@ -115,6 +115,9 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
 
   const asking = () => store.requestsForItem(props.itemId)[0]?.summary?.state === 'waiting_decision';
 
+  // A run that is alive (queued, running, waiting for an answer) is the run: the labelled trigger offers no second one.
+  const alive = () => store.requestsForItem(props.itemId).some((r) => r.status === 'ready' && r.summary !== undefined && !isTerminalStateString(r.summary.state));
+
   const openExecutionTab = (e: MouseEvent) => {
     e.stopPropagation();
     // A run that waits for an answer opens on that run, where its question is already open.
@@ -170,7 +173,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
             <path d="M2 1.2v7.6a.5.5 0 0 0 .76.43l6.1-3.8a.5.5 0 0 0 0-.86l-6.1-3.8A.5.5 0 0 0 2 1.2z" />
           </svg>
         </button>
-      ) : (
+      ) : alive() ? null : (
         <Button
           size={(props.variant ?? 'primary') === 'primary' ? 'md' : 'sm'}
           variant={props.variant ?? 'primary'}

@@ -382,12 +382,12 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(c.querySelector('[data-testid="now-who"]')!.textContent).toBe('Would go to Code agent · team saas-code');
   });
 
-  it('a queued run says Queued and has no filled button, only another computer and no Run again', async () => {
+  it('a queued run says Queued and has no filled button, a Stop, another computer and no Run again', async () => {
     const c = mount([{ ...RUN, state: 'queued' }], () => {}, []);
     await settle();
     expect(banner(c)).toBe('Queued');
     expect(filled(panel(c))).toEqual([]);
-    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run on another computer']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Stop', 'Run on another computer']);
   });
 
   it('a running run says Running; Follow live and Stop are secondary and nothing is filled', async () => {
@@ -461,6 +461,7 @@ describe('primaryNowAction', () => {
     [{ kind: 'running', asking: true }, 'answer'],
     [{ kind: 'review' }, 'review'],
     [{ kind: 'failed' }, 'why'],
+    [{ kind: 'failed', cancelled: true }, 'again'],
     [{ kind: 'done' }, 'again'],
     [{ kind: 'merged' }, 'again'],
   ] as const)('%j chooses %s', (input, expected) => {

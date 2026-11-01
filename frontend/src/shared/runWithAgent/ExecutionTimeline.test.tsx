@@ -184,7 +184,7 @@ describe('ExecutionTimeline', () => {
   });
 
   it('Run again is disabled, with its reason, on a screen that does not know the task', async () => {
-    const c = mount('item-1');
+    const c = mount('item-solo');
     await flush();
     await flush();
     const again = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Run again') as HTMLButtonElement;
@@ -253,16 +253,21 @@ describe('ExecutionTimeline', () => {
     expect(status.querySelector('[data-testid="run-status-words"]')!.textContent).toBe('Needs operator');
   });
 
-  it('a run with no attempt offers Run again beside its empty line, a run with one offers it in its verdict', async () => {
-    const empty = mount('item-1', { itemTitle: 'T', projectId: 'p1' });
+  it('a task with a run that is alive offers no Run again anywhere, not beside an empty line and not in a verdict', async () => {
+    const live = mount('item-1', { itemTitle: 'T', projectId: 'p1' });
     for (let i = 0; i < 6; i++) await flush();
-    const none = await pick(empty, 'Run 3');
-    expect([...none.querySelectorAll('button')].some((b) => b.textContent === 'Run again')).toBe(true);
-    const running = await pick(empty, 'Run 1');
-    const verdict = running.querySelector('[data-testid="run-verdict"]')!;
-    expect([...verdict.querySelectorAll('button')].some((b) => b.textContent === 'Run again')).toBe(true);
-    // Once, not twice: the toolbar above the runs no longer carries its own.
-    expect([...empty.querySelectorAll('button')].filter((b) => b.textContent === 'Run again')).toHaveLength(1);
+    await pick(live, 'Run 3');
+    await pick(live, 'Run 1');
+    expect([...live.querySelectorAll('button')].filter((b) => b.textContent === 'Run again')).toHaveLength(0);
+  });
+
+  it('Stop, never Cancel, is the one word for ending a run that is alive', async () => {
+    const c = mount('item-1');
+    await flush();
+    await flush();
+    const row = await pick(c, 'Run 1');
+    expect([...row.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Cancel');
+    expect([...row.querySelectorAll('button')].map((b) => b.textContent)).toContain('Stop');
   });
 
   it('an unrecognised lifecycle state renders its raw value with a visible caveat, never throwing', async () => {
@@ -285,12 +290,12 @@ describe('ExecutionTimeline', () => {
     expect(opRow.textContent).toContain('No attempts yet.');
   });
 
-  it('Cancel is offered for a non-terminal request and calls the store cancel path', async () => {
+  it('Stop is offered for a non-terminal request and calls the store cancel path', async () => {
     const c = mount('item-1');
     await flush();
     await flush();
     const runningRow = await pick(c, 'Run 1');
-    const cancelBtn = [...runningRow.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!;
+    const cancelBtn = [...runningRow.querySelectorAll('button')].find((b) => b.textContent === 'Stop')!;
     cancelBtn.click();
     await flush();
     await flush();

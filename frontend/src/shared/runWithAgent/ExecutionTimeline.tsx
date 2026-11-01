@@ -186,7 +186,7 @@ const RequestRow: Component<{
     setBusy(true);
     try {
       await store.cancel(s.request_id);
-      toast.success('Cancellation requested.');
+      toast.success('Stop requested.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to request cancellation.');
     } finally {
@@ -234,8 +234,11 @@ const RequestRow: Component<{
   // Starting another run of the task: the verdict offers it as its action once nothing else is.
   const [again, setAgain] = createSignal(false);
   const canRerun = () => !!props.itemTitle && !!props.projectId;
+  // Another run is offered only when none of the task's runs is alive (queued, running or waiting for an answer).
+  const taskHasLiveRun = () =>
+    store.requestsForItem(props.itemId).some((r) => r.status === 'ready' && r.summary !== undefined && !isTerminalStateString(r.summary.state));
   const runAgain = (variant: 'primary' | 'secondary') => (
-    <>
+    <Show when={!taskHasLiveRun()}>
       <Button
         size="sm"
         variant={variant}
@@ -255,7 +258,7 @@ const RequestRow: Component<{
           onCreated={props.onCreated}
         />
       </Show>
-    </>
+    </Show>
   );
 
   // Lazy first load: fetch attempts once per request the moment its row is
@@ -406,9 +409,10 @@ const RequestRow: Component<{
       </Show>
 
       <div class="flex flex-wrap items-center gap-2">
-        <Show when={canCancel()}>
+        {/* The Now panel above already has Stop for the newest run: the same button twice would only compete. */}
+        <Show when={canCancel() && !props.nowShown}>
           <Button size="sm" variant="secondary" onClick={cancel} disabled={busy()} loading={busy()}>
-            Cancel
+            Stop
           </Button>
         </Show>
         <Show when={canReconcile()}>
