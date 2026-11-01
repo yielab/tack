@@ -45,7 +45,7 @@ const Tabs: Component<TabsProps> = (props) => {
     <div class={props.class}>
       <div
         role="tablist"
-        class="flex border-b"
+        class="flex overflow-x-auto border-b"
         style={{ 'border-color': 'var(--color-border-light)' }}
         onKeyDown={onKey}
       >
@@ -61,7 +61,7 @@ const Tabs: Component<TabsProps> = (props) => {
                 aria-selected={selected() ? 'true' : 'false'}
                 tabindex={selected() ? 0 : -1}
                 onClick={() => props.onChange(tab.id)}
-                class="-mb-px border-b-[3px] px-1 pb-2.5 pt-1 mr-4 text-sm transition-colors focus:outline-none focus-visible:ring-2"
+                class="-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2.5 pt-1 mr-4 text-sm transition-colors focus:outline-none focus-visible:ring-2"
                 style={{
                   'border-color': selected()
                     ? 'var(--color-primary-600)'
