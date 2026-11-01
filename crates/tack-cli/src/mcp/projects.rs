@@ -2,6 +2,7 @@
 
 use serde_json::{Value, json};
 
+use super::changes;
 use super::projection::{project_list, project_summary};
 use super::tool::{Kind, Spec, Tool, call, opt_str, require_id, require_str};
 use crate::client::TackClient;
@@ -90,7 +91,9 @@ pub static CREATE_OUTLINE: Tool = Tool {
              depends_on (an exact title works too). Order does not matter. \
              Use dry_run first to see what would be created and any warnings. \
              The file may also carry fields, profiles, roles, sprints and \
-             automation, as in Tack's project file (Settings → Data → File format).",
+             automation, as in Tack's project file (Settings → Data → File format). With \
+             an agent credential this proposes a change set: pass project_id, and no \
+             assignee, estimate or tags, project file parts or dry_run. A reason may be given.",
         input_schema: || {
             json!({
                 "type": "object",
@@ -132,7 +135,8 @@ pub static CREATE_OUTLINE: Tool = Tool {
                     "roles": { "type": "array", "description": "Roles and the profile each one uses" },
                     "sprints": { "type": "array", "description": "Sprints" },
                     "automation": { "type": "object", "description": "The project's automation settings" },
-                    "dry_run": { "type": "boolean", "description": "Check and report without writing" }
+                    "dry_run": { "type": "boolean", "description": "Check and report without writing" },
+                    "reason": { "type": "string", "description": "Why, for the person who reads the change set; used when you hold an agent credential" }
                 },
                 "required": ["items"]
             })
@@ -143,6 +147,9 @@ pub static CREATE_OUTLINE: Tool = Tool {
 };
 
 fn create_outline(client: &TackClient, args: &Value) -> Result<Value, String> {
+    if client.acts_as_agent() {
+        return changes::create_outline(client, args);
+    }
     if !args.get("items").is_some_and(Value::is_array) {
         return Err("missing required argument: items (an array)".into());
     }

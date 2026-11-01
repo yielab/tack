@@ -53,17 +53,20 @@ An agent that uses Tack on its own, for example through `tack mcp`, should not h
 | It may | What that lets the agent do |
 |---|---|
 | **Read** | See the project, its items, comments, dependencies and roles, and the list of teams. |
-| **Act** | Create items and change them, add comments, add and remove dependencies. |
-| **Propose**, **Converse** | Shown but off: nothing in Tack takes proposals or threads from an agent yet. |
+| **Propose** | Propose a change set: a list of changes to the board, kept for a person to apply. |
+| **Act** | Everything **Propose** does, and lets the changes the project's *Agents on the board* setting allows apply at once. |
+| **Converse** | Shown but off: nothing in Tack takes threads from an agent yet. |
 
 The secret, which starts with `tack_agent_`, is shown once when you issue or rotate a credential, with a **Copy** button; Tack keeps only a hash of it and cannot show it again. The agent sends it the way the operator's token is sent, as `Authorization: Bearer <secret>`; for `tack mcp`, set `TACK_API_TOKEN` to the secret in the agent's configuration.
+
+An agent changes the board only through change sets: it cannot create or edit an item, write a comment or add a dependency by calling those routes, which answer `403` and name the change-set route. Through `tack mcp`, the tools that create, update, move and comment build a change set for it. The project's *Agents on the board* setting decides which changes apply at once and which wait for a person; the stricter of that and the credential's scopes wins.
 
 What a credential cannot do, whatever its scopes:
 
 - It sees only the projects you named; the project list it receives holds only those, and a request for another project answers `403` naming the scope it lacks.
 - It cannot answer a run's questions. Resolving a decision needs the second secret described above, which no credential holds or can reach.
 - It cannot start runs, change settings, delete anything, import, back up or restore, or issue credentials. Those answer `403` with a pointer to the operator's token.
-- It cannot sign as someone else. A comment an agent writes carries the credential's name as its author, whatever author the agent sent, and the items and links it creates or changes show the same name.
+- It cannot sign as someone else. A comment an agent writes carries the credential's name as its author, whatever author the agent sent, and the items and links its change sets create or change show the same name.
 
 A credential expires 90 days after it is issued or rotated. **Rotate** gives it a new secret and 90 more days, and the old secret stops working at once. **Revoke** ends it for good; what it already wrote stays, signed with its name. An expired, revoked or unknown secret answers `401`, and the list shows when each credential was last used.
 
