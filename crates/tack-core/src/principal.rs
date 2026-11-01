@@ -160,6 +160,15 @@ impl Principal {
         }
     }
 
+    /// A runner holding a runner credential: it acts through its own protocol, so no scope.
+    pub fn runner(runner_id: impl Into<String>) -> Principal {
+        Principal {
+            kind: PrincipalKind::Runner,
+            id: runner_id.into(),
+            scopes: Vec::new(),
+        }
+    }
+
     /// Tack itself, or a route that needs no caller (health, the schema): no scope.
     pub fn system() -> Principal {
         Principal {
@@ -167,6 +176,25 @@ impl Principal {
             id: "tack".into(),
             scopes: Vec::new(),
         }
+    }
+
+    /// The principal a recorded [`label`](Principal::label) names, for a fact that keeps only
+    /// who caused it (a change set's proposer): the kind and id, and no scopes, since nothing
+    /// is asked of it any more. `None` when the text is not `<kind>:<id>` of a known kind.
+    pub fn from_label(label: &str) -> Option<Principal> {
+        let (kind, id) = label.split_once(':')?;
+        let kind = match kind {
+            "operator" => PrincipalKind::Operator,
+            "agent" => PrincipalKind::Agent,
+            "runner" => PrincipalKind::Runner,
+            "system" => PrincipalKind::System,
+            _ => return None,
+        };
+        Some(Principal {
+            kind,
+            id: id.to_owned(),
+            scopes: Vec::new(),
+        })
     }
 
     /// The operator (a person with the token) or Tack itself decides without scopes.
@@ -312,6 +340,21 @@ mod tests {
             assert!(operator.may_everywhere(capability));
         }
         assert_eq!(operator.label(), "operator:local");
+    }
+
+    #[test]
+    fn a_label_names_the_principal_it_was_made_from() {
+        for principal in [
+            Principal::operator("token:ab12"),
+            Principal::agent("cred-1", Vec::new()),
+            Principal::runner("runner-1"),
+            Principal::system(),
+        ] {
+            let named = Principal::from_label(&principal.label()).expect("a label of a kind");
+            assert_eq!((named.kind, named.id), (principal.kind, principal.id));
+        }
+        assert_eq!(Principal::from_label("thread:7"), None);
+        assert_eq!(Principal::from_label("operator"), None);
     }
 
     #[test]

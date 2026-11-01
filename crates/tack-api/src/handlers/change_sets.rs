@@ -12,13 +12,13 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use tack_app::change_sets::{self, Application, Mode, Proposal};
+use tack_app::events::{DomainEvent, Fact};
 use tack_core::change_set::{ChangeSet, OpState, Operation, Origin};
 use tack_core::principal::Principal;
 
 use crate::error::{ApiError, ApiResult};
 use crate::extract::{Json, Path, Query};
 use crate::handlers::items::after_update;
-use crate::handlers::websocket::{self, BoardEvent};
 use crate::router::AppState;
 
 /// What proposes a change set.
@@ -85,12 +85,16 @@ pub struct ListParams {
     pub limit: Option<u32>,
 }
 
-/// Tells the board's listeners what the operations at `applied` did, and runs what follows a
-/// move the way the person's own route does.
-async fn announce(state: &AppState, set: &ChangeSet, applied: &[usize]) {
+/// Tells the board's listeners what the operations at `applied` did, as the change set's
+/// proposer did them, and runs what follows a move the way the person's own route does.
+pub(crate) async fn announce(state: &AppState, set: &ChangeSet, applied: &[usize]) {
     let Ok(Some(project)) = state.repo.get_project(set.project).await else {
         return;
     };
+    let principal = Principal::from_label(&set.principal).unwrap_or_else(|| {
+        tracing::warn!(change_set = %set.id, principal = %set.principal, "events: the proposer's label names no principal");
+        Principal::system()
+    });
     for &index in applied {
         let Some(op) = set.ops.get(index) else {
             continue;
@@ -104,26 +108,32 @@ async fn announce(state: &AppState, set: &ChangeSet, applied: &[usize]) {
         };
         let item = snapshot.item;
         match (&op.operation, &result.moved_from) {
-            (Operation::Create(_), _) => websocket::broadcast_event(
-                state,
-                BoardEvent::ItemCreated {
-                    project_id: set.project,
+            (Operation::Create(_), _) => state.events().emit(DomainEvent::new(
+                set.project,
+                &principal,
+                Fact::ItemCreated {
                     item_id,
                     status: item.status.clone(),
                 },
-            ),
+            )),
             (Operation::Move { .. }, Some(from)) => {
-                after_update(state, &project, &item, from, set.origin == Origin::Mcp).await;
+                after_update(
+                    state,
+                    &principal,
+                    &project,
+                    &item,
+                    from,
+                    set.origin == Origin::Mcp,
+                )
+                .await;
             }
-            _ => websocket::broadcast_event(
-                state,
-                BoardEvent::ItemUpdated {
-                    project_id: set.project,
-                    item_id,
-                    old_status: Some(item.status.clone()),
-                    new_status: item.status.clone(),
-                },
-            ),
+            _ => state.events().emit(DomainEvent::item_changed(
+                set.project,
+                &principal,
+                item_id,
+                &item.status,
+                &item.status,
+            )),
         }
     }
 }

@@ -35,6 +35,7 @@ pub mod background;
 pub mod change_sets;
 pub mod due_soon;
 mod error;
+pub mod events;
 pub mod github_sync;
 pub mod local_runner;
 pub mod loop_config;

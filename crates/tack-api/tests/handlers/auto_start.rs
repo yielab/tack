@@ -37,6 +37,7 @@ async fn board() -> Board {
         },
         workspace_id: workspace,
         broadcast_tx: tx,
+        event_bus: Default::default(),
         webhook: None,
         local_runner: None,
         tasks: Default::default(),

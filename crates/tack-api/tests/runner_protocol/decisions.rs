@@ -209,6 +209,40 @@ async fn resolve_pending_decision_matches_operator_answer() {
     assert!(row.resolved_by.is_some());
 }
 
+/// The answer is announced once, by the person who gave it; its replay announces nothing.
+#[tokio::test]
+async fn an_answer_is_announced_once_with_the_operator_and_its_replay_is_not() {
+    let (repo, clock, item_id) = setup().await;
+    let attempt_id = claim_running_attempt(&repo, &clock, &item_id, "announced").await;
+    seed_decision(&repo, &clock, &attempt_id, "dec-1", two_options(), None).await;
+    let events = Arc::new(tack_app::events::RecordedEvents::default());
+    let app = decisions::routes(
+        decisions::DecisionOperatorState::with_clock(repo.clone(), Arc::new(clock.clone()))
+            .with_decision_token(Some(TEST_DECISION_TOKEN.to_string()))
+            .with_events(events.clone()),
+    );
+    let answer = json!({"answer": {"option_id": "allow_once", "text": null}});
+
+    for _ in 0..2 {
+        let (status, _) = common::send_post_strict(
+            &app,
+            &resolve_uri(&attempt_id, "dec-1"),
+            answer.clone(),
+            OPERATOR,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    let heard = events.events();
+    assert_eq!(heard.len(), 1, "{heard:?}");
+    assert!(matches!(
+        &heard[0].fact,
+        tack_app::events::Fact::DecisionResolved { decision_id, .. } if decision_id == "dec-1"
+    ));
+    assert_eq!(heard[0].principal.label(), "operator:local");
+}
+
 // ---------------------------------------------------------------------
 // 2/3. Replay / idempotency conflict.
 // ---------------------------------------------------------------------

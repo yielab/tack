@@ -1,12 +1,14 @@
 //! The ports `tack-app` calls back into, over the API's own state: the prill the board runs, the
 //! artifact store and the board's event channel (`tack_app::ports`), and the GitHub the board
-//! is configured with.
+//! is configured with. An event goes to the in-process bus every consumer subscribes to, and,
+//! when it has a message the open boards understand, to the WebSocket as that message.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tack_app::events::{DomainEvent, Fact};
 use tack_app::github_sync::GitHub;
-use tack_app::ports::{Artifacts, BoardEvents, Ports, Verifier, VerifierError};
+use tack_app::ports::{Artifacts, DomainEvents, Ports, Verifier, VerifierError};
 use tokio::io::AsyncReadExt;
 use uuid::Uuid;
 
@@ -44,23 +46,9 @@ impl AppState {
         }
     }
 
-    /// Tell the open boards that an item moved.
-    pub(crate) fn broadcast_item_moved(
-        &self,
-        project_id: Uuid,
-        item_id: Uuid,
-        old_status: String,
-        new_status: String,
-    ) {
-        websocket::broadcast_event(
-            self,
-            BoardEvent::ItemUpdated {
-                project_id,
-                item_id,
-                old_status: Some(old_status),
-                new_status,
-            },
-        );
+    /// The board's event channel, over this state's bus and WebSocket.
+    pub fn events(&self) -> Arc<dyn DomainEvents> {
+        Arc::new(Adapter(self.clone()))
     }
 
     /// The stored files of the attempts this board holds.
@@ -100,9 +88,46 @@ impl Artifacts for Adapter {
     }
 }
 
-impl BoardEvents for Adapter {
-    fn item_moved(&self, project_id: Uuid, item_id: Uuid, old_status: String, new_status: String) {
-        self.0
-            .broadcast_item_moved(project_id, item_id, old_status, new_status);
+impl DomainEvents for Adapter {
+    fn emit(&self, event: DomainEvent) {
+        if let Some(message) = board_message(&event) {
+            websocket::broadcast_event(&self.0, message);
+        }
+        self.0.event_bus.emit(event);
     }
+}
+
+/// What the open boards are told of an event: the message they have always understood, or
+/// nothing for an event they have no message for (a run, a decision).
+fn board_message(event: &DomainEvent) -> Option<BoardEvent> {
+    let project_id = event.project_id;
+    Some(match &event.fact {
+        Fact::ItemCreated { item_id, status } => BoardEvent::ItemCreated {
+            project_id,
+            item_id: *item_id,
+            status: status.clone(),
+        },
+        Fact::ItemUpdated { item_id, status } => BoardEvent::ItemUpdated {
+            project_id,
+            item_id: *item_id,
+            old_status: Some(status.clone()),
+            new_status: status.clone(),
+        },
+        Fact::ItemMoved { item_id, from, to } => BoardEvent::ItemUpdated {
+            project_id,
+            item_id: *item_id,
+            old_status: Some(from.clone()),
+            new_status: to.clone(),
+        },
+        Fact::ItemDeleted { item_id } => BoardEvent::ItemDeleted {
+            project_id,
+            item_id: *item_id,
+        },
+        Fact::RunStarted { .. }
+        | Fact::RunFinished { .. }
+        | Fact::RunFailed { .. }
+        | Fact::RunWaiting { .. }
+        | Fact::DecisionOpened { .. }
+        | Fact::DecisionResolved { .. } => return None,
+    })
 }

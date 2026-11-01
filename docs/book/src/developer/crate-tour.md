@@ -328,7 +328,11 @@ Two sibling background loops, each a `tick()` plus a `spawn()`. Retention purges
 
 ### `ports.rs`
 
-Three small traits are how `tack-app` calls back into things that still live in `tack-api`: `Verifier` (prill's attestation check and the outcome of a pull request, failing with `VerifierError`), `Artifacts` (the bytes of a stored file) and `BoardEvents` (an item moved). `Ports` bundles them with `github_sync::GitHub`, which holds the GitHub API root and token and makes the GitHub calls, and with the embedded runner, which resolves secret references. `tack-api` builds a `Ports` over its `AppState` (`ports.rs` there). A port stays a trait only where its implementor names an HTTP type `tack-app` may not.
+Three small traits are how `tack-app` calls back into things that still live in `tack-api`: `Verifier` (prill's attestation check and the outcome of a pull request, failing with `VerifierError`), `Artifacts` (the bytes of a stored file) and `DomainEvents` (the board's event channel: `emit` takes a `DomainEvent`). `Ports` bundles them with `github_sync::GitHub`, which holds the GitHub API root and token and makes the GitHub calls, and with the embedded runner, which resolves secret references. `tack-api` builds a `Ports` over its `AppState` (`ports.rs` there). A port stays a trait only where its implementor names an HTTP type `tack-app` may not.
+
+### `events.rs`
+
+What happened on a board, as values: a `DomainEvent` is a `Fact` (an item created, updated, moved or deleted; a run started, finished, failed or waiting on a person; a decision opened or resolved), the project it happened in, and the `Principal` that caused it (a runner and Tack itself are principals too). The place where a fact becomes true emits it once: the item routes and the change-set announcement in `tack-api`, and `runs/announce.rs` for what a runner reports, which the handler calls with the outcome of the use case so that a replayed report, an already-asked question or an already-given answer announces nothing. `EventBus` is the in-process implementation every consumer subscribes to, and `RecordedEvents` is the one a test reads. `tack-api`'s `ports.rs` emits each event to the bus and, for the item events, to the WebSocket as the message the open boards have always understood; a run or a decision has no such message and is not sent to the browser.
 
 ### `scheduler_wiring.rs` and `model_policy_wiring.rs`
 
@@ -412,13 +416,13 @@ pub async fn update_item(
 
 Handlers return `ApiResult<Json<T>>`, which is `Result<Json<T>, ApiError>`. The `ApiError` type implements `IntoResponse`, so Axum converts errors to JSON automatically.
 
-**`websocket.rs`** is somewhat different from other handler files — see the Architecture Overview for a full walkthrough of the connection lifecycle. The key public API it exposes to other handlers is:
+**`websocket.rs`** is somewhat different from other handler files — see the Architecture Overview for a full walkthrough of the connection lifecycle. The key public API it exposes is:
 
 ```rust
 pub fn broadcast_event(state: &AppState, event: BoardEvent) { ... }
 ```
 
-Any handler that mutates data calls this after a successful write.
+A handler that mutates an item does not call it: it emits a `DomainEvent` through `state.events()`, and the adapter in `ports.rs` maps the item events onto `BoardEvent`. `broadcast_event` is called directly only for a refresh nudge that is not a domain fact.
 
 ---
 
