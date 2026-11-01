@@ -334,6 +334,7 @@ describe('PlanPanel', () => {
     const labelOf = () => Array.from(container.querySelectorAll('button')).map((b) => b.textContent).find((t) => /^Create \d+ /.test(t ?? ''));
 
     expect(labelOf()).toBe('Create 3 items');
+    expect(container.querySelector('[data-testid="plan-create"]')?.textContent).toBe('Create 3 items');
     boxes()[0].click();
     await settle();
     expect(labelOf()).toBe('Create 2 items');

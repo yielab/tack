@@ -140,6 +140,7 @@ describe('Board ItemCard', () => {
     for (const state of ['failed', 'succeeded']) {
       expect((await mount(makeItem(), undefined, { run: run(state) })).querySelector(trigger), state).toBeTruthy();
     }
+    expect((await mount(makeItem())).querySelector(`[data-testid="card-run"]${trigger}`)).toBeTruthy();
     expect((await mount(makeItem())).querySelector(trigger)).toBeTruthy();
   });
 

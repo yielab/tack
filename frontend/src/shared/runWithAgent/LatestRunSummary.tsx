@@ -312,7 +312,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       {label}
     </Button>
   );
-  const openPrimary = (label: string) => <Button size="md" onClick={() => props.onOpen()}>{label}</Button>;
+  const openPrimary = (label: string) => <Button size="md" data-testid="now-primary" onClick={() => props.onOpen()}>{label}</Button>;
   const primary = () =>
     primaryNowAction({ hasRun: !!latest(), kind: kind(), asking: asking(), askingBehind: !!askingBehind() });
   const runAgain = (variant: 'primary' | 'ghost') => (
@@ -321,6 +321,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       itemTitle={props.itemTitle ?? ''}
       projectId={props.projectId ?? ''}
       variant={variant}
+      testId={variant === 'primary' ? 'now-primary' : undefined}
       onCreated={props.onCreated}
     />
   );
@@ -342,6 +343,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               itemId={props.itemId}
               itemTitle={props.itemTitle ?? ''}
               projectId={props.projectId ?? ''}
+              testId="now-primary"
               onCreated={props.onCreated}
             />
           </div>
@@ -518,6 +520,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                   return (
                     <Button
                       size="md"
+                      data-testid="now-primary"
                       title={b.question ?? undefined}
                       onClick={() => window.location.assign(itemHref(b, `?tab=execution&run=${encodeURIComponent(b.request_id)}`))}
                     >

@@ -178,6 +178,7 @@ export const ItemCard: Component<{
               itemTitle={props.item.title}
               projectId={props.item.project_id}
               compact
+              testId="card-run"
             />
           </Show>
         </div>
