@@ -6,6 +6,10 @@ import { ProjectContext, type ProjectContextValue } from '../state/projectContex
 import Sidebar from './Sidebar';
 import { flush } from '../../test/flush';
 
+const settle = async () => {
+  for (let i = 0; i < 8; i += 1) await flush();
+};
+
 const projectValue: ProjectContextValue = {
   projectId: () => undefined,
   project: (() => null) as unknown as Resource<null>,
@@ -51,21 +55,21 @@ afterEach(() => {
 });
 
 describe('Sidebar: Waiting for you', () => {
-  it('counts the runs that wait for an answer and links to the first, on its Execution tab', async () => {
+  it('counts the runs that wait for an answer and opens a row for each, on its Execution tab', async () => {
     const c = mount([
       run('req-2', 'item-b', 'waiting_decision', '2026-10-31T11:00:00Z'),
       run('req-1', 'item-a', 'waiting_decision', '2026-10-31T10:00:00Z'),
       run('req-0', 'item-c', 'running', '2026-10-31T09:00:00Z'),
     ]);
+    await settle();
+    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('2');
+    c.querySelector<HTMLButtonElement>('#waiting-toggle')!.click();
     await flush();
-    await flush();
-    const link = [...c.querySelectorAll('a')].find((a) => a.textContent?.includes('Waiting for you'))!;
-    expect(link).toBeTruthy();
-    expect(link.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('2');
-    const href = new URL(link.getAttribute('href')!, 'http://x');
+    const links = [...c.querySelectorAll('[data-testid="waiting-group-ask"] a')];
+    expect(links.map((a) => new URL(a.getAttribute('href')!, 'http://x').searchParams.get('run'))).toEqual(['req-2', 'req-1']);
+    const href = new URL(links[0].getAttribute('href')!, 'http://x');
     expect(href.searchParams.get('item')).toBe('item-b');
     expect(href.searchParams.get('tab')).toBe('execution');
-    expect(href.searchParams.get('run')).toBe('req-2');
   });
 
   it('a run that has a newer run after it no longer counts', async () => {
@@ -73,16 +77,15 @@ describe('Sidebar: Waiting for you', () => {
       run('req-2', 'item-a', 'succeeded', '2026-10-31T11:00:00Z'),
       run('req-1', 'item-a', 'waiting_decision', '2026-10-31T10:00:00Z'),
     ]);
-    await flush();
-    await flush();
-    expect(c.textContent).not.toContain('Waiting for you');
+    await settle();
+    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('0');
   });
 
-  it('shows no row when no run waits', async () => {
+  it('stays in the sidebar with a 0 when no run waits', async () => {
     const c = mount([run('req-1', 'item-a', 'running', '2026-10-31T10:00:00Z')]);
-    await flush();
-    await flush();
-    expect(c.textContent).not.toContain('Waiting for you');
-    expect(c.querySelector('[data-testid="waiting-count"]')).toBeNull();
+    await settle();
+    expect(c.textContent).toContain('Waiting for you');
+    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('0');
+    expect(c.querySelector<HTMLButtonElement>('#waiting-toggle')!.title).toContain('Nothing is waiting for you');
   });
 });

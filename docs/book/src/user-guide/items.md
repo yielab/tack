@@ -165,9 +165,15 @@ The record of every time an agent was handed this item. Its tab carries the late
 **Merge** shows whenever a run could be merged. When it cannot run it stays disabled and says why
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
-When an agent has stopped to ask you something, the sidebar shows **Waiting for you** with how many
-runs are asking. Press it to open the first one on its Execution tab, with the question open; the row
-is not there when nothing waits. A card on the board whose run is asking opens that run the same way.
+Everything that waits on you is in one place. **Waiting for you** is always in the sidebar, and the top
+bar shows the same count; with nothing to do it reads 0, and hovering it says so. Press either to open the
+list, in three groups: **Questions to answer**, **Ready for review**, and **Failed since you last looked**
+(runs that ended in failure after the last time you opened the list in this browser). Each row has the
+run's state, the item's title, its project and how long ago it happened, and one button for what to do
+next: **Answer the question**, **Review and merge** or **See why it failed**. The button opens that run on
+its Execution tab, over the page you are on. The decision token is asked for in the list, once for the
+browser session, and the run's own field does not ask again. A card on the board whose run is asking opens
+that run the same way.
 
 While a run is going, the item follows it: its status, who it is assigned to and the other details beside
 it change when the run does, with no reload, and stop being checked once the run has ended.
