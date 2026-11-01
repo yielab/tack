@@ -29,6 +29,22 @@ async fn setup(
     String,
     tokio::sync::broadcast::Receiver<tack_api::handlers::websocket::BoardEvent>,
 ) {
+    let (app, repo, item, events, _bus) = setup_with_bus(storage_root, github_base).await;
+    (app, repo, item, events)
+}
+
+/// [`setup`], and the board's domain-event bus for a test to subscribe to.
+pub(crate) async fn setup_with_bus(
+    storage_root: &std::path::Path,
+    github_base: Option<&str>,
+) -> (
+    axum::Router,
+    Repository,
+    String,
+    tokio::sync::broadcast::Receiver<tack_api::handlers::websocket::BoardEvent>,
+    tack_app::events::EventBus,
+) {
+    let bus = tack_app::events::EventBus::default();
     let repo = setup_test_db().await;
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, events) = tokio::sync::broadcast::channel(16);
@@ -48,6 +64,7 @@ async fn setup(
         },
         workspace_id,
         broadcast_tx: tx,
+        event_bus: bus.clone(),
         webhook: None,
         local_runner: None,
         tasks: Default::default(),
@@ -94,7 +111,7 @@ async fn setup(
         )
         .await
         .expect("item");
-    (app, repo, item.id.to_string(), events)
+    (app, repo, item.id.to_string(), events, bus)
 }
 
 pub(crate) fn operator_headers() -> Vec<(&'static str, &'static str)> {

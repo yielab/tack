@@ -7,6 +7,7 @@ mod logs;
 mod support;
 
 mod agent_credential;
+mod announce;
 mod background;
 mod cancel_run;
 mod change_sets;

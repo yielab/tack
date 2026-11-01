@@ -29,9 +29,11 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
+use tack_app::ports::DomainEvents;
 use tack_app::runs::resolve_decision::ResolveOutcome;
 use tack_app::{AppError, runs};
 use tack_core::decision::DecisionResolvedBy;
+use tack_core::principal::Principal;
 use tack_db::Repository;
 use tack_protocol::Clock;
 use tack_protocol::execution::{AttemptId, StableErrorCode};
@@ -60,6 +62,8 @@ pub struct DecisionOperatorState {
     /// is ever compared against an unset token. See
     /// [`require_decision_token`].
     pub decision_token: Option<String>,
+    /// Where an answer is announced; `None` for a state built without the shared API state.
+    pub events: Option<Arc<dyn DomainEvents>>,
 }
 
 impl DecisionOperatorState {
@@ -71,7 +75,14 @@ impl DecisionOperatorState {
             repo,
             clock,
             decision_token: None,
+            events: None,
         }
+    }
+
+    /// Hands the board's event channel to the resolve route.
+    pub fn with_events(mut self, events: Arc<dyn DomainEvents>) -> Self {
+        self.events = Some(events);
+        self
     }
 
     /// Builder, mirroring `runner_protocol::RunnerProtocolState::with_artifact_storage_root`'s
@@ -314,7 +325,7 @@ pub async fn resolve_decision(
     })?;
     let answer = validate_answer(&value)?;
 
-    let resolved_by = DecisionResolvedBy::operator(principal_id);
+    let resolved_by = DecisionResolvedBy::operator(principal_id.clone());
     let outcome = runs::resolve_decision::resolve_decision(
         &state.repo,
         state.clock.now(),
@@ -333,6 +344,20 @@ pub async fn resolve_decision(
         );
         internal_error()
     })?;
+
+    if let Some(events) = &state.events {
+        let by = Principal::from_label(&principal_id)
+            .unwrap_or_else(|| Principal::operator(&principal_id));
+        runs::announce::decision_resolved(
+            &state.repo,
+            events.as_ref(),
+            &by,
+            &attempt_id,
+            &decision_id,
+            &outcome,
+        )
+        .await;
+    }
 
     match outcome {
         ResolveOutcome::NotFound => {

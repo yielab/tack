@@ -107,7 +107,8 @@ Tack/
 │   │   │   ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
 │   │   │   │   retention.rs, observability.rs   # Ticks: tick() is one pass, run() the loop
 │   │   │   ├── autonomy.rs, merge.rs   # The merge ceiling and the merge itself
-│   │   │   ├── ports.rs        # Verifier, Artifacts, BoardEvents: what tack-app needs back from tack-api
+│   │   │   ├── ports.rs        # Verifier, Artifacts, DomainEvents: what tack-app needs back from tack-api
+│   │   │   ├── events.rs       # DomainEvent and Fact; the in-process EventBus; RecordedEvents for tests
 │   │   │   ├── scheduler_wiring.rs, model_policy_wiring.rs   # Live callers of tack-orch
 │   │   │   ├── local_runner/   # The embedded runner as the rest of Tack sees it
 │   │   │   └── error.rs        # AppError

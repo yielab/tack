@@ -80,7 +80,28 @@ async fn the_same_decision_again_is_a_replay_and_other_content_conflicts_without
 
     let first = open(&world, &run.attempt_id, run.fence, "dec-reuse", "Allow A?").await;
     let replay = open(&world, &run.attempt_id, run.fence, "dec-reuse", "Allow A?").await;
-    assert_eq!(replay, first, "an exact replay returns the stored decision");
+    let (
+        DecisionCreated::Created {
+            state,
+            created_at,
+            fresh: false,
+            parked: false,
+        },
+        DecisionCreated::Created {
+            state: first_state,
+            created_at: first_created_at,
+            fresh: true,
+            parked: true,
+        },
+    ) = (replay, first)
+    else {
+        panic!("the first call stores and parks, the replay only returns the stored decision");
+    };
+    assert_eq!(
+        (state, created_at),
+        (first_state, first_created_at),
+        "an exact replay returns the stored decision"
+    );
 
     let conflict = open(&world, &run.attempt_id, run.fence, "dec-reuse", "Allow B?").await;
     assert_eq!(conflict, DecisionCreated::IdempotencyConflict);

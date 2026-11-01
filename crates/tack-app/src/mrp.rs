@@ -1,20 +1,23 @@
 //! What an accepted merge-readiness pack does to its item.
 
 use tack_core::models::UpdateItem;
+use tack_core::principal::Principal;
 use tack_core::workflow::{StatusMapEvent, StatusMapPolicy};
 use tack_db::Repository;
 use tack_db::queries::execution_requests::{self, RequestItemPolicy};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 
 use crate::AppError;
-use crate::ports::BoardEvents;
+use crate::events::DomainEvent;
+use crate::ports::DomainEvents;
 
 /// Moves the request's item to the first Done status when the request's
-/// `status_map_policy_id` is `done_on_mrp_accepted`; any other policy leaves it. The open boards
-/// are told through `events` when the item moved.
+/// `status_map_policy_id` is `done_on_mrp_accepted`; any other policy leaves it. `events` is
+/// told, as caused by `principal`, when the item moved.
 pub async fn apply_accepted_checked(
     repo: &Repository,
-    events: &dyn BoardEvents,
+    events: &dyn DomainEvents,
+    principal: &Principal,
     request_id: &str,
 ) -> Result<(), AppError> {
     let row = execution_requests::item_and_status_map_policy(repo, request_id).await?;
@@ -53,7 +56,13 @@ pub async fn apply_accepted_checked(
     {
         AtomicItemUpdateOutcome::Updated {
             item, old_status, ..
-        } => events.item_moved(item.project_id, item.id, old_status, item.status.clone()),
+        } => events.emit(DomainEvent::item_changed(
+            item.project_id,
+            principal,
+            item.id,
+            &old_status,
+            &item.status,
+        )),
         outcome => {
             tracing::warn!(request_id, %item_id, target, ?outcome, "mrp accepted: transition refused, item untouched");
         }
@@ -63,8 +72,13 @@ pub async fn apply_accepted_checked(
 
 /// [`apply_accepted_checked`] for the merge, which has already merged: a failure to read the
 /// store is logged, never undoes the merge.
-pub async fn apply_accepted(repo: &Repository, events: &dyn BoardEvents, request_id: &str) {
-    if let Err(error) = apply_accepted_checked(repo, events, request_id).await {
+pub async fn apply_accepted(
+    repo: &Repository,
+    events: &dyn DomainEvents,
+    principal: &Principal,
+    request_id: &str,
+) {
+    if let Err(error) = apply_accepted_checked(repo, events, principal, request_id).await {
         tracing::warn!(request_id, %error, "mrp accepted: could not move the item");
     }
 }

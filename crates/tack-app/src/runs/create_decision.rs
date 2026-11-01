@@ -33,6 +33,10 @@ pub enum DecisionCreated {
         /// The decision's own state, as stored.
         state: String,
         created_at: String,
+        /// This call stored the decision; false when an earlier identical call had.
+        fresh: bool,
+        /// This call parked the attempt on a decision: it was not already waiting on one.
+        parked: bool,
     },
     /// The fence is not the attempt's current one, or its lease has ended.
     Stale,
@@ -81,6 +85,7 @@ pub async fn create_decision(
         return Ok(DecisionCreated::Ineligible { state: lease.state });
     }
 
+    let was_waiting = lease.state == ExecutionState::WaitingDecision;
     let row_id = format!("dec_row_{}", Uuid::new_v4());
     let written = repo
         .create_execution_decision(
@@ -137,8 +142,12 @@ pub async fn create_decision(
     {
         return Ok(DecisionCreated::IdempotencyConflict);
     }
+    // The row is ours only when this call's insert was the one that stored it.
+    let fresh = stored.id == row_id;
     Ok(DecisionCreated::Created {
         state: stored.state,
         created_at: stored.created_at,
+        fresh,
+        parked: fresh && !was_waiting,
     })
 }

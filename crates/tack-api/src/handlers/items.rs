@@ -9,8 +9,10 @@ use uuid::Uuid;
 use validator::Validate;
 
 use tack_app::change_sets::{self, Mode, Proposal};
+use tack_app::events::{DomainEvent, Fact};
 use tack_core::change_set::{CreateOp, ItemRef, Operation, Origin};
 use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
+use tack_core::principal::Principal;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_protocol::execution::StableErrorCode;
 
@@ -107,15 +109,14 @@ pub async fn create_item(
         .record_item_writer(item.id, &principal.label(), true)
         .await?;
 
-    // Broadcast WebSocket event
-    websocket::broadcast_event(
-        &state,
-        BoardEvent::ItemCreated {
-            project_id,
+    state.events().emit(DomainEvent::new(
+        project_id,
+        &principal,
+        Fact::ItemCreated {
             item_id: item.id,
             status: item.status.clone(),
         },
-    );
+    ));
 
     if let Some(wh) = &state.webhook {
         wh.fire(
@@ -274,7 +275,7 @@ pub async fn update_item(
         .await?;
 
     let over_mcp = from_mcp.is_some_and(|axum::Extension(mark)| mark.0);
-    after_update(&state, &project, &item, &old_status, over_mcp).await;
+    after_update(&state, &principal, &project, &item, &old_status, over_mcp).await;
 
     let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
     response.headers_mut().insert(
@@ -285,27 +286,25 @@ pub async fn update_item(
 }
 
 /// Everything that follows a saved change to an item, the person's route and a change set's
-/// alike: the board's WebSocket and the webhook hear of it, a finished child may finish its
+/// alike: the board's event channel (and with it the WebSocket) and the webhook hear of it, a finished child may finish its
 /// parent, a closed recurring task makes the next one, a linked GitHub issue follows, and
 /// into Done the finished run is merged when the project asks for it. `over_mcp` says the
 /// change came over MCP, which the merge holds back for a person.
 pub(crate) async fn after_update(
     state: &AppState,
+    principal: &Principal,
     project: &tack_core::models::Project,
     item: &ItemCard,
     old_status: &str,
     over_mcp: bool,
 ) {
-    // Broadcast WebSocket event
-    websocket::broadcast_event(
-        state,
-        BoardEvent::ItemUpdated {
-            project_id: item.project_id,
-            item_id: item.id,
-            old_status: Some(old_status.to_owned()),
-            new_status: item.status.clone(),
-        },
-    );
+    state.events().emit(DomainEvent::item_changed(
+        item.project_id,
+        principal,
+        item.id,
+        old_status,
+        &item.status,
+    ));
 
     if let Some(wh) = &state.webhook {
         wh.fire(
@@ -323,7 +322,7 @@ pub(crate) async fn after_update(
     propagate_parent_completion(state, item, old_status).await;
 
     // A recurring task that was just closed makes the next one.
-    create_next_recurrence(state, &project.workflow, item, old_status).await;
+    create_next_recurrence(state, principal, &project.workflow, item, old_status).await;
 
     // Push the open/closed state back to a linked GitHub issue.
     maybe_sync_github(state, item, old_status).await;
@@ -359,6 +358,7 @@ pub(crate) async fn after_update(
 /// and note it on the closed one. Errors are ignored: the close has already happened.
 async fn create_next_recurrence(
     state: &AppState,
+    principal: &Principal,
     workflow: &tack_core::workflow::WorkflowConfig,
     item: &Item,
     old_status: &str,
@@ -411,14 +411,14 @@ async fn create_next_recurrence(
             tack_core::models::CommentType::System,
         )
         .await;
-    websocket::broadcast_event(
-        state,
-        BoardEvent::ItemCreated {
-            project_id: next.project_id,
+    state.events().emit(DomainEvent::new(
+        next.project_id,
+        principal,
+        Fact::ItemCreated {
             item_id: next.id,
             status: next.status.clone(),
         },
-    );
+    ));
 }
 
 /// Best-effort, fire-and-forget GitHub push: when a linked item crosses the
@@ -489,6 +489,7 @@ pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, o
 )]
 pub async fn delete_item(
     State(state): State<AppState>,
+    axum::Extension(principal): axum::Extension<Principal>,
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get item before deleting to get project_id for event
@@ -503,14 +504,11 @@ pub async fn delete_item(
         return Err(ApiError::NotFound(format!("Item {id} not found")));
     }
 
-    // Broadcast WebSocket event
-    websocket::broadcast_event(
-        &state,
-        BoardEvent::ItemDeleted {
-            project_id: item.project_id,
-            item_id: id,
-        },
-    );
+    state.events().emit(DomainEvent::new(
+        item.project_id,
+        &principal,
+        Fact::ItemDeleted { item_id: id },
+    ));
 
     if let Some(wh) = &state.webhook {
         wh.fire(
@@ -817,6 +815,9 @@ pub async fn create_subtasks_from_plan(
         other => other.into(),
     })?;
 
+    crate::handlers::change_sets::announce(&state, &proposed.change_set, &proposed.applied_now)
+        .await;
+
     let created = proposed
         .change_set
         .ops
@@ -832,7 +833,8 @@ pub async fn create_subtasks_from_plan(
         })
         .collect();
 
-    // Broadcast WebSocket event
+    // The parent's card is the one the open boards refresh to show its new children; the
+    // children themselves were announced above.
     websocket::broadcast_event(
         &state,
         BoardEvent::ItemUpdated {

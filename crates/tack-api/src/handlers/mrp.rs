@@ -160,6 +160,7 @@ pub async fn mark_viewed(
 )]
 pub async fn review_mrp(
     State(state): State<AppState>,
+    axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
     Path((request_id, attempt_number)): Path<(String, i64)>,
     Json(input): Json<MrpReviewRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -187,7 +188,8 @@ pub async fn review_mrp(
     if input.verdict == MrpVerdict::Accept {
         tack_app::mrp::apply_accepted_checked(
             &state.repo,
-            state.ports().events.as_ref(),
+            state.events().as_ref(),
+            &principal,
             &request_id,
         )
         .await?;
