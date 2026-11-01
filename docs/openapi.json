@@ -4099,6 +4099,49 @@
         }
       }
     },
+    "/api/projects/{id}/auto-start": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "GET /api/projects/{id}/auto-start",
+        "operationId": "get_auto_start",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Project ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether the project starts tasks by itself and why each waiting task is not started yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoStartState"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{id}/autonomy": {
       "get": {
         "tags": [
@@ -8685,6 +8728,33 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "AutoStartState": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "waiting"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the project starts tasks by itself."
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The status a task waits in to be started; `null` when none is chosen."
+          },
+          "waiting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WaitingTask"
+            },
+            "description": "The tasks in that status the next pass would not start, most urgent first. Empty when\nauto-start is off."
           }
         }
       },
@@ -16118,6 +16188,40 @@
           "started_at": {
             "type": "string",
             "description": "When the run started, or was taken by the computer if it has not started (RFC 3339)."
+          }
+        }
+      },
+      "WaitingReason": {
+        "type": "object",
+        "description": "Why one task is not started.",
+        "required": [
+          "code",
+          "text"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "`open_request`, `blocked`, `no_profile`, `no_machine`, `wip`, `budget` or `max_open`."
+          },
+          "text": {
+            "type": "string",
+            "description": "The reason in a sentence, with the way out where there is one."
+          }
+        }
+      },
+      "WaitingTask": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "why"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "why": {
+            "$ref": "#/components/schemas/WaitingReason"
           }
         }
       },

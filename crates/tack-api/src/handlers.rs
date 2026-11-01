@@ -1,6 +1,7 @@
 pub mod agent_credentials;
 pub mod attachments;
 pub mod attempt_lists;
+pub mod auto_start;
 pub mod autonomy;
 pub mod backup;
 pub mod boards_multi;

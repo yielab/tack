@@ -43,14 +43,20 @@ const ATTEMPT = {
 
 let runs: unknown[] = [];
 let autoStart = false;
+/** Why auto-start has not started the item, as the server answers it; null lists nothing. */
+let oneRunner = false;
+let waitingReason: { code: string; text: string } | null = null;
 
 function jsonOf(url: string): unknown {
   if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: ITEM, roles: [], dependencies: [] };
   if (url.includes('/dependencies')) return [];
   if (url.includes('/sprints')) return [];
   if (url.includes('/agent-profiles')) return { protocol_version: 1, data: [PROFILE] };
-  if (url.includes('/runners')) return { protocol_version: 1, data: [] };
+  if (url.includes('/runners')) return { protocol_version: 1, data: oneRunner ? [{ runner_id: 'r1', state: 'active', online: true }] : [] };
   if (url.endsWith('/autonomy')) return { level: 'L3' };
+  if (url.endsWith('/auto-start')) {
+    return { enabled: autoStart, status: 'To Do', waiting: waitingReason ? [{ item_id: ITEM.id, why: waitingReason }] : [] };
+  }
   if (url.includes('/projects/')) return { id: 'p1', auto_start_enabled: autoStart, auto_start_status: 'To Do', default_profile_id: 'prof-1' };
   if (url.includes('/events') || url.includes('/artifacts')) return { protocol_version: 1, data: [] };
   if (url.includes('/attempts')) return { protocol_version: 1, data: runs.length > 0 ? [ATTEMPT] : [] };
@@ -167,6 +173,31 @@ describe('ItemBody', () => {
       ran.dispose();
     } finally {
       autoStart = false;
+    }
+  });
+
+  it('says on the item why auto-start has not started it, in the Now panel and the Automation line, and says nothing when nothing holds it back', async () => {
+    autoStart = true;
+    oneRunner = true;
+    waitingReason = { code: 'wip', text: 'In Progress is full (5 of 5): move something on to make room' };
+    try {
+      const held = await mount('drawer');
+      expect(held.container.querySelector('[data-testid="now-waiting"]')?.textContent).toBe(
+        'Waiting to start: In Progress is full (5 of 5): move something on to make room',
+      );
+      expect(held.container.querySelector('[data-testid="automation-row"]')!.textContent).toContain(
+        'Waiting to start: In Progress is full (5 of 5): move something on to make room',
+      );
+      held.dispose();
+      waitingReason = null;
+      const free = await mount('drawer');
+      expect(free.container.querySelector('[data-testid="now-waiting"]')).toBeNull();
+      expect(free.container.querySelector('[data-testid="automation-row"]')!.textContent).not.toContain('Waiting to start');
+      free.dispose();
+    } finally {
+      autoStart = false;
+      oneRunner = false;
+      waitingReason = null;
     }
   });
 

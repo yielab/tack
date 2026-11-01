@@ -217,6 +217,13 @@ hold:
 - The first In progress column has room under its work-in-progress limit.
 - Fewer than the cap of runs are open in the project.
 
+A task that waits in the status because one of these does not hold says so, on the board card and on the task
+itself, as "Waiting to start:" and the reason: "In Progress is full (5 of 5): move something on to make
+room", "Blocked by 2 unfinished tasks", "3 runs are already open, the most this project allows", "This
+project's token limit is reached", "No one is chosen to do it", "No computer can run it" or "It already has a
+run open". When the reason has a way out, the sentence says it. A task that nothing holds back shows no
+line, and it starts at the next look.
+
 A task that starts moves to the first In progress status, and its activity says "Started by itself: it
 reached To Do with the role Content", or, for a task with no role, "Started by itself: it reached To Do with
 no role, and goes to the team saas-content" (or to the agent, such as Codex, when the profile names no team).

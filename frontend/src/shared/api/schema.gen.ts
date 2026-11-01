@@ -1244,6 +1244,23 @@ export interface paths {
         patch: operations["update_project"];
         trace?: never;
     };
+    "/api/projects/{id}/auto-start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/projects/{id}/auto-start */
+        get: operations["get_auto_start"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{id}/autonomy": {
         parameters: {
             query?: never;
@@ -3544,6 +3561,17 @@ export interface components {
              */
             usage_economics: components["schemas"]["UsageEconomics"];
             workspace_id?: string | null;
+        };
+        AutoStartState: {
+            /** @description Whether the project starts tasks by itself. */
+            enabled: boolean;
+            /** @description The status a task waits in to be started; `null` when none is chosen. */
+            status?: string | null;
+            /**
+             * @description The tasks in that status the next pass would not start, most urgent first. Empty when
+             *     auto-start is off.
+             */
+            waiting: components["schemas"]["WaitingTask"][];
         };
         AutonomySettings: {
             /** @description PEM public key the signed pack is checked against. */
@@ -6194,6 +6222,18 @@ export interface components {
             runs_at_a_time: number;
             /** @description When the run started, or was taken by the computer if it has not started (RFC 3339). */
             started_at: string;
+        };
+        /** @description Why one task is not started. */
+        WaitingReason: {
+            /** @description `open_request`, `blocked`, `no_profile`, `no_machine`, `wip`, `budget` or `max_open`. */
+            code: string;
+            /** @description The reason in a sentence, with the way out where there is one. */
+            text: string;
+        };
+        WaitingTask: {
+            /** Format: uuid */
+            item_id: string;
+            why: components["schemas"]["WaitingReason"];
         };
         /**
          * @description What a waiting task waits for.
@@ -9153,6 +9193,38 @@ export interface operations {
                 };
             };
             /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_auto_start: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether the project starts tasks by itself and why each waiting task is not started yet */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoStartState"];
+                };
+            };
+            /** @description No such project */
             404: {
                 headers: {
                     [name: string]: unknown;

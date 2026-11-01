@@ -28,6 +28,19 @@ describe('a task with nowhere to run', () => {
   });
 });
 
+describe('a task auto-start has not started yet', () => {
+  it('says why, right after when it starts', () => {
+    expect(automationSentence({ ...base, waiting: 'In Progress is full (5 of 5): move something on to make room' })).toBe(
+      'Starts by itself when it reaches To Do · Waiting to start: In Progress is full (5 of 5): move something on to make room · Team saas-content · Merge L4',
+    );
+  });
+  it('says nothing when nothing holds it back, and gives way to the reasons it is by hand', () => {
+    expect(automationSentence({ ...base, waiting: null })).toBe('Starts by itself when it reaches To Do · Team saas-content · Merge L4');
+    expect(automationSentence({ ...base, starts: false, waiting: 'x' })).toBe("By hand: this project doesn't start tasks by itself");
+    expect(automationSentence({ ...base, noPlace: 'no computer', waiting: 'x' })).not.toContain('Waiting to start');
+  });
+});
+
 describe('who does it', () => {
   it('names the profile and where the choice came from', () => {
     expect(automationSentence({ ...base, who: 'Content writer (chosen on this task)' })).toBe(
