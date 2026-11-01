@@ -94,7 +94,7 @@ function mockFetch(): typeof fetch {
   }) as typeof fetch;
 }
 
-function mount(itemId = 'item-1', extra: { itemTitle?: string; projectId?: string; layout?: 'drawer' | 'page'; runId?: string; onRunChange?: (id: string | undefined) => void } = {}) {
+function mount(itemId = 'item-1', extra: { itemTitle?: string; projectId?: string; layout?: 'drawer' | 'page'; runId?: string; onRunChange?: (id: string | undefined) => void; nowShown?: boolean } = {}) {
   cancelCalls = [];
   requeueBody = undefined;
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch());
@@ -205,6 +205,19 @@ describe('ExecutionTimeline', () => {
     const since = (await pick(c, 'Run 1')).querySelector('[data-testid="run-waiting"]')!;
     expect(since.textContent).toContain(`Waiting: ${NO_RUNNER}`);
     expect(since.textContent).toContain('5m ago');
+  });
+
+  it('with the Now panel on screen, the latest run leaves out the state, the reason and the limit Now already says, and an older run keeps them', async () => {
+    const c = mount('item-wait', { nowShown: true });
+    await flush();
+    await flush();
+    const latest = shownRun(c);
+    expect(latest.querySelector('[data-testid="run-failure-reason"]')).toBeNull();
+    expect(latest.querySelector('[data-testid="run-limit"]')).toBeNull();
+    expect(latest.querySelector('[role="status"]')).toBeNull();
+    // Now speaks for the newest run only: an older one is still said in full.
+    const older = await pick(c, 'Run 2');
+    expect(older.querySelector('[data-testid="run-waiting"]')).not.toBeNull();
   });
 
   it("a run shows one status, its attempt's: a leased request whose attempt runs reads Running", async () => {

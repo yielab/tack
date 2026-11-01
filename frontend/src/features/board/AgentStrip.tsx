@@ -13,7 +13,12 @@ export const RUN_STATE_WORDS: Record<RunStateName, string> = {
   cancelled: 'Cancelled',
 };
 
-const WAITING_NOTE = 'Runs that need you plus runs ready for review. Failed runs are counted under Failed.';
+/** The strip's first counter. It is not the sidebar's "Waiting for you" (which also counts failures
+ *  since you last looked), so it has its own words. */
+export const YOUR_TURN = 'Your turn';
+
+const WAITING_NOTE =
+  'Runs that need you plus runs ready for review. Failed runs are counted under Failed. The sidebar\'s Waiting for you also counts failures you have not looked at yet.';
 
 const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateName }> = [
   { filter: 'queued', state: 'queued' },
@@ -25,7 +30,7 @@ const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateNa
 
 /**
  * One row under the board title that counts the board's runs by state. Each counter
- * is a toggle that narrows the board to the cards in that state; "Waiting for you"
+ * is a toggle that narrows the board to the cards in that state; "Your turn"
  * comes first and is accented, because it is what the person has to act on. Hidden
  * when the project has never run anything.
  */
@@ -87,7 +92,7 @@ const AgentStrip: Component<{
         class="flex flex-wrap items-center gap-2"
         style={{ padding: '0 22px 10px' }}
       >
-        {counter('waiting', () => waitingCount(props.counts), 'Waiting for you', undefined, WAITING_NOTE)}
+        {counter('waiting', () => waitingCount(props.counts), YOUR_TURN, undefined, WAITING_NOTE)}
         <For each={COUNTERS}>
           {(entry) => (
             counter(entry.filter, () => props.counts[entry.state], RUN_STATE_WORDS[entry.state], entry.state)
@@ -120,8 +125,8 @@ export const RunMiniBar: Component<{
         role="group"
         aria-label={`Runs in this column: ${summary()}`}
         data-testid="run-mini-bar"
-        class="flex flex-none items-stretch gap-px overflow-hidden rounded-pill"
-        style={{ width: '56px', height: '8px' }}
+        class="flex w-full items-stretch gap-px overflow-hidden rounded-pill"
+        style={{ height: '6px' }}
       >
         <For each={segments()}>
           {(segment) => {

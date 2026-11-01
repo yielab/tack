@@ -191,7 +191,7 @@ describe('MrpPanel', () => {
       expect(marks).toEqual([
         ['passed', '✓', 'Passed'],
         ['failed', '✗', 'Failed'],
-        ['manual', '◐', 'Needs a person'],
+        ['manual', '', 'Needs you — Needs a person'],
         ['skipped', '–', 'Skipped'],
       ]);
     });
@@ -227,6 +227,24 @@ describe('MrpPanel', () => {
       expect(items[0].textContent).toContain('Ticked by a person');
       expect(items[1].textContent).toContain('Verifier');
       expect(items[3].textContent).toContain('The verifier did not run it');
+    });
+
+    it('says a check and a next step in plain words and keeps the raw values under How we know', async () => {
+      mockFetch({
+        ...pack([row('m1', 'manual', { kind: 'manual', note: 'needs_human' })]),
+        next_steps: [
+          { code: 'criterion_manual', severity: 'review', path: 'm1' },
+          { code: 'stage_degraded', severity: 'warning', path: 'anti_tautology' },
+        ],
+      });
+      const el = mount();
+      await flush();
+      const first = el.querySelector('[data-testid="mrp-criterion"]')!;
+      expect(first.querySelector('p:nth-of-type(2)')!.textContent).toBe('A person checks it · from the verifier · waits for a person to decide');
+      expect(first.querySelector('details')!.textContent).toContain('manual · Verifier · needs_human');
+      const steps = [...el.querySelectorAll('[data-testid="mrp-next-step"]')].map((li) => li.textContent);
+      expect(steps).toEqual(['Needs a look A criterion needs a person to check it.', 'Warning A verifier stage ran in a reduced way. (anti tautology)']);
+      expect(steps.join()).not.toMatch(/criterion_manual|stage_degraded|anti_tautology/);
     });
 
     it('says the number in one sentence', () => {

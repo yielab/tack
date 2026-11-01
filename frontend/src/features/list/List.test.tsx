@@ -234,7 +234,7 @@ describe('List filter', () => {
       ],
     });
     expect([...runBox(c).options].map((o) => o.textContent)).toEqual([
-      'Any run state', 'Waiting for you', 'Queued', 'Running', 'Needs you', 'Ready for review', 'Failed',
+      'Any run state', 'Your turn', 'Queued', 'Running', 'Needs you', 'Ready for review', 'Failed',
     ]);
 
     await choose(runBox(c), 'failed');

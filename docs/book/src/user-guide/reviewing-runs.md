@@ -17,8 +17,9 @@ reads from the top down, in the same order every time: the verdict first, then w
 1. **The verdict.** The run's state, the verifier's recommendation and risk as two chips when a verifier
    ran, the tokens it used against its limit, how long it took, and whether it was merged ("Not merged: no
    branch was pushed", or "Works in a folder: nothing to merge" for a team that has no repository). One
-   button is filled, for what to do next: **Accept** while the run waits for your verdict (**Reject…** asks
-   for a note, which is optional), **Merge** once it is accepted, **Run again** when nothing else is left.
+   button is filled, for what to do next: **Accept** while the run waits for your verdict (when the verifier
+   left a pack, a reason is required and is saved with the verdict on the checks; without a pack,
+   **Reject…** asks for a note, which is optional), **Merge** once it is accepted, **Run again** when nothing else is left.
    Under it, **Why it stopped** for a run that did not finish and **What the agent concluded**, the agent's
    report as written.
 2. **Needs you**, only while the agent waits for an answer: the question, the options and the decision
@@ -118,8 +119,9 @@ A section the verifier did not run says **Not run**. That is not a pass: nothing
 
 To record your verdict, write a reason, then choose **Accept** or **Reject**. Both stay disabled until the
 reason has text, and the line "Write a reason to enable Accept and Reject" says so. The first review is
-final; a second one is refused. This verdict belongs to the pack. It is separate from the Accept and Reject
-buttons on the attempt card, which clear **Needs your review**.
+final; a second one is refused. While the run waits for your verdict, this is the one block at the top of
+the run, and the one reason is saved with the run's verdict (which clears **Needs your review**) and with
+the pack. Once it is given, **Your review** shows it here.
 
 If you started the run from the command line with `--status-map-policy done_on_mrp_accepted`, accepting the
 pack also moves the task to its workflow's first Done status; see [CLI](cli.md#runs).
@@ -140,10 +142,9 @@ long it ran. The full **Usage** panel is under **Technical**. It leads with toke
 - **The models** the run used, and, where it matters, whether the agent named the model that answered or
   Tack only knows the one you requested.
 - **Model calls** and how long the run took.
-- **Cost**, in two cases. When the agent reports an estimate, as Claude Code does, the panel shows
-  "≈ $x.xx (estimated)" and says it is the agent's own estimate at list price, not your bill. When the agent
-  reports none, the panel says **Cost: Not measured**. Tack never shows `$0.00` for a figure it does not
-  have, because zero would claim the run was free.
+
+The panel shows no dollar figure: limits and reports are in tokens. The factory metrics, below, price tokens
+from your own rate card.
 
 If an agent does not report tokens, the panel says **Tokens: Not measured**. The task's summary of its latest
 run gives the counted tokens, with what the cache served beside them, and the run's token limit with who

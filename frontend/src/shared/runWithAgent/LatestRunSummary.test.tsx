@@ -83,7 +83,7 @@ describe('LatestRunSummary', () => {
     expect(panel.textContent).toContain('Finished — needs your review');
     expect(panel.querySelector('[data-testid="latest-run-said"]')!.textContent).toContain('I created test.md');
     expect(panel.querySelector('[data-testid="latest-run-usage"]')!.textContent).toBe(
-      '289 710 tokens (+ 791 447 read from cache, not counted) · ≈ $1.34 (estimated) · 6 model calls · claude-sonnet-5-5',
+      '289 710 tokens (+ 791 447 read from cache, not counted) · 6 model calls · claude-sonnet-5-5',
     );
     const open = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Review and merge')!;
     open.click();
@@ -354,12 +354,12 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(c.querySelector('[data-testid="now-who"]')!.textContent).toBe('Would go to Code agent · team saas-code');
   });
 
-  it('a queued run says Queued and has no filled button, only another computer and a quiet Run again', async () => {
+  it('a queued run says Queued and has no filled button, only another computer and no Run again', async () => {
     const c = mount([{ ...RUN, state: 'queued' }], () => {}, []);
     await settle();
     expect(banner(c)).toBe('Queued');
     expect(filled(panel(c))).toEqual([]);
-    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run on another computer', 'Run again']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run on another computer']);
   });
 
   it('a running run says Running; Follow live and Stop are secondary and nothing is filled', async () => {
@@ -367,7 +367,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     await settle();
     expect(banner(c)).toBe('Running');
     expect(filled(panel(c))).toEqual([]);
-    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Follow live', 'Stop', 'Run again']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Follow live', 'Stop']);
   });
 
   it('a run that needs you says Needs you with the docket words, and Answer the question is the filled button', async () => {

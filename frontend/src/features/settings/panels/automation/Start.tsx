@@ -2,7 +2,7 @@ import { type Accessor, type Component, For, Show } from 'solid-js';
 import { HelpHint, Switch } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { Project, UpdateProject, Role } from '../../../../shared/types';
-import { Block, Heading, Note, inputClass, inputStyle } from './parts';
+import { Block, Heading, Note, inputStyle } from './parts';
 
 interface Props {
   project: Accessor<Project | undefined>;
@@ -44,7 +44,7 @@ const Start: Component<Props> = (props) => {
         <Note testid="start-reason">{NO_PROFILE_REASON}</Note>
       </Show>
       <div class="flex flex-wrap items-center gap-3 text-sm" style={{ color: 'var(--color-text-primary)' }}>
-        <label class="flex items-center gap-2">
+        <label class="flex items-center gap-2 whitespace-nowrap">
           When a task reaches
           <select
             aria-label="Start status"
@@ -56,13 +56,13 @@ const Start: Component<Props> = (props) => {
             <For each={props.statuses()}>{(s) => <option value={s.name} selected={s.name === status()}>{s.name}</option>}</For>
           </select>
         </label>
-        <label class="flex items-center gap-2">
+        <label class="flex items-center gap-2 whitespace-nowrap">
           Keep at most
           <input
             type="number"
             min="1"
             aria-label="Runs open at once"
-            class={`${inputClass} w-20`}
+            class="w-20 rounded-full border px-3.5 py-2 text-sm"
             style={inputStyle}
             disabled={!hasProfile()}
             value={props.project()?.auto_start_max_open ?? 1}

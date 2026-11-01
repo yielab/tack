@@ -78,18 +78,20 @@ export function useAutomation(item: () => Item) {
     const from = onTask ? choiceSource({ onTask: true, role: null }) : choiceSource({ onTask: false, role: withRoleProfile?.name ?? null });
     return { d, profileId, profile, onTask, from };
   };
-  const sentence = () => {
+  /** `whoShownAbove`: the idle Now panel already says who would do it ("Would go to …"), so the
+   *  sentence leaves out who and the team and says each once. */
+  const sentence = (whoShownAbove = false) => {
     const c = chosen();
     if (!c) return null;
     const { d, profileId, profile, from } = c;
     return automationSentence({
       startsAt: d.project.auto_start_status ?? 'its first status',
       starts: !!d.project.auto_start_enabled,
-      team: teamOf(profile),
+      team: whoShownAbove ? null : teamOf(profile),
       merge: d.autonomy?.level ?? null,
       roleWithoutProfile: d.roles.find((r) => !r.agent_profile_id)?.name ?? null,
       hasProfile: !!profileId,
-      who: profile && from ? `${profile.name} (${from})` : null,
+      who: !whoShownAbove && profile && from ? `${profile.name} (${from})` : null,
       noPlace: profile && d.runners ? noPlaceToRun(d.runners, profile.fleet_id) : null,
     });
   };
@@ -119,7 +121,7 @@ export const WhoWouldDoIt: Component<{ automation: Automation }> = (props) => (
 );
 
 /** What happens to this task without you: one muted line with its help, and the choice of who does it. It sits at the foot of the Now panel, under a hairline. */
-const AutomationRow: Component<{ item: Item; automation?: Automation }> = (props) => {
+const AutomationRow: Component<{ item: Item; automation?: Automation; whoShownAbove?: () => boolean }> = (props) => {
   const automation = props.automation ?? useAutomation(() => props.item);
   const { resource, refetch, chosen, sentence } = automation;
   const choose = async (profileId: string | null) => {
@@ -137,7 +139,7 @@ const AutomationRow: Component<{ item: Item; automation?: Automation }> = (props
       <Show when={resource.error}>
         {(error) => <LoadError what="what happens to this task without you" error={error()} onRetry={() => void refetch()} />}
       </Show>
-      <Show when={sentence()}>
+      <Show when={sentence(props.whoShownAbove?.() ?? false)}>
         {(text) => (
           <div
             data-testid="automation-row"

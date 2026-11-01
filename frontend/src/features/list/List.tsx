@@ -49,7 +49,7 @@ const priorityLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
 /** The run states a filter can ask for, in the words the board uses. */
 const RUN_FILTERS: { value: RunFilter; label: string }[] = [
-  { value: 'waiting', label: 'Waiting for you' },
+  { value: 'waiting', label: 'Your turn' },
   { value: 'queued', label: RUN_STATE_LABEL.queued },
   { value: 'running', label: RUN_STATE_LABEL.running },
   { value: 'needs', label: RUN_STATE_LABEL.needs },

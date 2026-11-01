@@ -185,8 +185,10 @@
   --run-needs-ink: var(--color-warning-600);
   --run-needs-soft: var(--color-warning-100);
   --run-needs-line: color-mix(in srgb, var(--run-needs-ink) 30%, transparent);
-  --run-review-ink: var(--color-accent2-ink);
-  --run-review-soft: var(--color-accent2-soft);
+  /* Review is violet, not the palette's accent2: in the harbor palette accent2 is coral, which reads as
+     the error red of Failed and the Bug chip. Violet is used by no other state. 6.7:1 ink on soft. */
+  --run-review-ink: #5b3fa0;
+  --run-review-soft: #efeafa;
   --run-review-line: color-mix(in srgb, var(--run-review-ink) 30%, transparent);
   --run-done-ink: var(--color-success-600);
   --run-done-soft: var(--color-success-100);
@@ -305,6 +307,8 @@
   --color-warning-100: rgb(251 191 36 / 0.13);
   --color-danger-600: #f87171;
   --color-danger-100: rgb(248 113 113 / 0.13);
+  --run-review-ink: #c4b5fd;
+  --run-review-soft: rgb(196 181 253 / 0.14);
 
   --color-bg-overlay: rgb(5 10 8 / 0.6);
   --color-text-inverse: #0c1714;
@@ -725,6 +729,8 @@
     --color-warning-100: rgb(251 191 36 / 0.13);
     --color-danger-600: #f87171;
     --color-danger-100: rgb(248 113 113 / 0.13);
+    --run-review-ink: #c4b5fd;
+    --run-review-soft: rgb(196 181 253 / 0.14);
     --color-bg-overlay: rgb(5 10 8 / 0.6);
     --color-text-inverse: #0c1714;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
