@@ -1,5 +1,5 @@
 import { type Component, For, type JSX, Show, createResource, createSignal } from 'solid-js';
-import { Badge, EmptyState, Modal } from '../ui';
+import { Badge, Modal } from '../ui';
 import { artifactsApi, isArtifactContentNotVerified, isArtifactNotFound, type ArtifactRecord } from '../execution';
 import DiffView from './DiffView';
 import { inDesktop } from './desktop';
@@ -204,7 +204,7 @@ const ArtifactRow: Component<{ requestId: string; attemptNumber: number; artifac
  * typed by an operator.
  */
 const ArtifactDownloadPanel: Component<ArtifactDownloadPanelProps> = (props) => (
-  <Show when={props.artifacts.length > 0} fallback={<EmptyState title="No artifacts yet" />}>
+  <Show when={props.artifacts.length > 0} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>No artifacts yet</p>}>
     <div class="max-w-full overflow-x-auto">
       <table data-testid="artifact-table" class="w-full text-left" style={{ 'table-layout': 'auto' }}>
         <thead class="sr-only">
