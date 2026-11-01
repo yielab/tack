@@ -123,6 +123,7 @@ describe('LatestRunSummary', () => {
     const card = c.querySelector('[data-testid="latest-run"]')!;
     expect(card.getAttribute('data-state')).toBe('review');
     expect(buttons(card)).toContain('Review and merge');
+    expect(card.querySelector('[data-testid="now-primary"]')?.textContent).toBe('Review and merge');
     expect(buttons(card)).not.toContain('Accept');
     expect(buttons(card)).not.toContain('Reject…');
     expect(card.querySelector('[data-testid="review-actions"]')).toBeNull();
@@ -377,6 +378,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(c.querySelector('[data-testid="latest-run"]')).toBeNull();
     expect(c.querySelector('[data-testid="now-idle"]')).not.toBeNull();
     expect(filled(panel(c))).toEqual(['Run with agent']);
+    expect(c.querySelector('[data-testid="now-primary"]')?.textContent).toBe('Run with agent');
     expect(c.querySelector('[data-testid="now-who"]')!.textContent).toBe('Would go to Code agent · team saas-code');
   });
 
@@ -401,6 +403,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     await settle();
     expect(banner(c)).toBe('Needs youNeeds a person');
     expect(filled(panel(c))).toEqual(['Answer the question']);
+    expect(c.querySelector('[data-testid="now-primary"]')?.textContent).toBe('Answer the question');
   });
 
   it('a run ready for review says so, and Review and merge is the only filled button; Accept is secondary', async () => {
