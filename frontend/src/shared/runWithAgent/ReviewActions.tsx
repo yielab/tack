@@ -3,6 +3,8 @@ import { Button, type ButtonVariant } from '../ui';
 import { attemptsApi, type AttemptSummary } from '../execution';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import { relativeTimeFromIso } from './shared';
+import { Field } from '../ui';
+import type { Mrp } from './MrpPanel';
 
 export interface ReviewActionsProps {
   requestId: string;
@@ -13,6 +15,9 @@ export interface ReviewActionsProps {
   onReviewed?: (review: AttemptSummary['review']) => void;
   /** How Accept is drawn; a screen whose one filled button is elsewhere passes `secondary`. */
   acceptVariant?: ButtonVariant;
+  /** The run's pack. While it is on screen and not yet reviewed, one reason is required and is saved
+   *  both on the pack's checks and with the run's verdict; without a pack the note is optional. */
+  mrp?: Mrp;
 }
 
 /** Accept, or Reject… with an optional note, on one attempt; the verdict once it is given. */
@@ -21,11 +26,19 @@ const ReviewActions: Component<ReviewActionsProps> = (props) => {
   const [note, setNote] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  // A pack that has no verdict yet is reviewed with the run: the reason is required, as the pack's review demands.
+  const withPack = () => !!props.mrp && !!props.mrp.pack() && !props.mrp.review()?.verdict;
+  const reason = () => props.mrp?.reason().trim() ?? '';
   const submit = async (verdict: 'accepted' | 'rejected') => {
     setBusy(true);
     setError(null);
     try {
-      const n = verdict === 'rejected' ? note().trim() : '';
+      if (withPack()) {
+        await props.mrp!.submit(verdict === 'accepted' ? 'accept' : 'reject');
+        // The pack's review reports its own failure as a toast and leaves no verdict; stop there.
+        if (!props.mrp!.review()?.verdict) return;
+      }
+      const n = verdict === 'rejected' ? (withPack() ? reason() : note().trim()) : '';
       await attemptsApi.review(props.requestId, props.attemptNumber, { verdict, ...(n ? { note: n } : {}) });
       const list = await attemptsApi.list(props.requestId);
       const mine = list.data.data.find((a) => a.attempt_number === props.attemptNumber);
@@ -48,16 +61,36 @@ const ReviewActions: Component<ReviewActionsProps> = (props) => {
       }
     >
       <div data-testid="review-actions" class="flex flex-wrap items-center gap-2">
+        <Show when={withPack()}>
+          <div class="w-full">
+            <Field
+              label="Reason"
+              value={props.mrp!.reason()}
+              onInput={(e) => props.mrp!.setReason(e.currentTarget.value)}
+              required
+            />
+          </div>
+        </Show>
         <Show
-          when={rejecting()}
+          when={rejecting() && !withPack()}
           fallback={
             <>
-              <Button size="sm" variant={props.acceptVariant} disabled={busy()} onClick={() => void submit('accepted')}>
+              <Button size="sm" variant={props.acceptVariant} disabled={busy() || (withPack() && !reason())} onClick={() => void submit('accepted')}>
                 Accept
               </Button>
-              <Button size="sm" variant="secondary" disabled={busy()} onClick={() => setRejecting(true)}>
-                Reject…
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy() || (withPack() && !reason())}
+                onClick={() => (withPack() ? void submit('rejected') : setRejecting(true))}
+              >
+                {withPack() ? 'Reject' : 'Reject…'}
               </Button>
+              <Show when={withPack() && !reason()}>
+                <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Write a reason to enable Accept and Reject.
+                </span>
+              </Show>
             </>
           }
         >

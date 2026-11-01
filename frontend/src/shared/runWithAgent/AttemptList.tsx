@@ -471,8 +471,8 @@ const AttemptRow: Component<{
           </p>
         </Show>
 
-        {/* The review banner: the verdict, with its optional note, is asked for here and nowhere
-            else on this tab. */}
+        {/* The review banner: the verdict is asked for here and nowhere else on this tab. With a
+            pack on screen the reason is required (the pack's review needs one); without, the note is optional. */}
         <Show when={needsVerdict(props.attempt)}>
           <section
             data-testid="review-banner"
@@ -482,13 +482,19 @@ const AttemptRow: Component<{
             <Show when={!review()}>
               <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
               <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                Accept it, or reject it with a note saying why. The note is optional.
+                <Show
+                  when={mrp.pack() && !mrp.review()?.verdict}
+                  fallback="Accept it, or reject it. When you reject, a note saying why is optional."
+                >
+                  Accept it, or reject it. A reason is required: it is saved with your verdict and with the checks below.
+                </Show>
               </p>
             </Show>
             <ReviewActions
               requestId={props.requestId}
               attemptNumber={props.attempt.attempt_number}
               review={review()}
+              mrp={mrp}
               onReviewed={(r) => {
                 setFresh(r);
                 props.onReviewed?.();
@@ -530,7 +536,7 @@ const AttemptRow: Component<{
 
       <Show when={terminal() || mrp.pack()}>
         <RunSection id="checks" title="Checks" summary={checksSummary(checks())}>
-          <MrpPanel mrp={mrp} doneWhen={doneWhen()} />
+          <MrpPanel mrp={mrp} doneWhen={doneWhen()} verdictAbove={needsVerdict(props.attempt) && !review()} />
         </RunSection>
       </Show>
 
