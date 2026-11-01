@@ -112,8 +112,10 @@ describe('ItemDetailDrawer', () => {
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog).toBeTruthy();
     // Title input populated from the fetched item.
-    const title = document.querySelector<HTMLInputElement>('input[aria-label="Item title"]');
+    const title = document.querySelector<HTMLTextAreaElement>('[aria-label="Item title"]');
     expect(title?.value).toBe('My item');
+    // The full title is the tooltip, for a title that wraps and clamps on screen.
+    expect(title?.title).toBe('My item');
     // It fetched the item by id.
     expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/items/item-1'))).toBe(true);
 
@@ -156,7 +158,7 @@ describe('ItemDetailDrawer', () => {
     await flush();
 
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(document.querySelector<HTMLInputElement>('input[aria-label="Item title"]')?.value).toBe('My item');
+    expect(document.querySelector<HTMLTextAreaElement>('[aria-label="Item title"]')?.value).toBe('My item');
     expect(document.querySelector('section[aria-label="Properties"]')).toBeTruthy();
 
     dispose();
