@@ -1,6 +1,6 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, type RunStateName } from '../../shared/ui';
-import { filterOf, totalRuns, waitingCount, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
+import { filterOf, totalRuns, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
 
 /** The words for each state, as the board prints them next to a count. */
 export const RUN_STATE_WORDS: Record<RunStateName, string> = {
@@ -13,12 +13,12 @@ export const RUN_STATE_WORDS: Record<RunStateName, string> = {
   cancelled: 'Cancelled',
 };
 
-/** The strip's first counter. It is not the sidebar's "Waiting for you" (which also counts failures
- *  since you last looked), so it has its own words. */
-export const YOUR_TURN = 'Your turn';
-
-const WAITING_NOTE =
-  'Runs that need you plus runs ready for review. Failed runs are counted under Failed. The sidebar\'s Waiting for you also counts failures you have not looked at yet.';
+/** What each state means, said once where its counter is: the same meaning on every surface. */
+const STATE_NOTE: Partial<Record<RunStateName, string>> = {
+  needs: 'The run asks you a question and waits for your answer.',
+  review: 'The run finished and its work waits for you to look at it.',
+  failed: 'The run ended badly.',
+};
 
 const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateName }> = [
   { filter: 'queued', state: 'queued' },
@@ -29,9 +29,9 @@ const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateNa
 ];
 
 /**
- * One row under the board title that counts the board's runs by state. Each counter
- * is a toggle that narrows the board to the cards in that state; "Your turn"
- * comes first and is accented, because it is what the person has to act on. Hidden
+ * One row under the board title that counts the board's runs by state, one chip per state. Each
+ * counter is a toggle that narrows the board to the cards in that state. Needs you and Ready for
+ * review are accented while they are above zero, because they are what the person acts on. Hidden
  * when the project has never run anything.
  */
 const AgentStrip: Component<{
@@ -43,7 +43,7 @@ const AgentStrip: Component<{
     const on = () => props.active.has(filter);
     // A counter at zero has nothing to narrow to, unless it is already narrowing the board.
     const unusable = () => count() === 0 && !on();
-    const accented = filter === 'waiting';
+    const accented = filter === 'needs' || filter === 'review';
     return (
       <button
         type="button"
@@ -92,10 +92,9 @@ const AgentStrip: Component<{
         class="flex flex-wrap items-center gap-2"
         style={{ padding: '0 22px 10px' }}
       >
-        {counter('waiting', () => waitingCount(props.counts), YOUR_TURN, undefined, WAITING_NOTE)}
         <For each={COUNTERS}>
           {(entry) => (
-            counter(entry.filter, () => props.counts[entry.state], RUN_STATE_WORDS[entry.state], entry.state)
+            counter(entry.filter, () => props.counts[entry.state], RUN_STATE_WORDS[entry.state], entry.state, STATE_NOTE[entry.state])
           )}
         </For>
       </div>

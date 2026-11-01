@@ -95,7 +95,8 @@ function loader<T>(read: () => Promise<T>): Loaded<T> {
 }
 
 const COUNTERS: Array<{ filter: FlowFilter; label: string; state?: RunStateName; count: (f: Flow) => number; note?: string }> = [
-  { filter: 'waiting', label: 'Needs you', state: 'needs', count: (f) => f.counts.needs, note: 'Runs that ask you something plus runs ready for review.' },
+  { filter: 'needs', label: 'Needs you', state: 'needs', count: (f) => f.counts.needs, note: 'The run asks you a question and waits for your answer.' },
+  { filter: 'review', label: 'Ready for review', state: 'review', count: (f) => f.counts.review, note: 'The run finished and its work waits for you to look at it.' },
   { filter: 'running', label: 'Running', state: 'running', count: (f) => f.counts.running },
   { filter: 'queued', label: 'Queued', state: 'queued', count: (f) => f.counts.queued },
   { filter: 'nobody', label: 'Nobody will take it', count: (f) => f.counts.nobody, note: 'Tasks that go to no lane, so nothing will start them.' },
@@ -115,7 +116,7 @@ const Summary: Component<{
           const count = () => c.count(props.flow);
           const on = () => props.active.has(c.filter);
           const unusable = () => count() === 0 && !on();
-          const warn = () => (c.filter === 'waiting' || c.filter === 'nobody') && count() > 0;
+          const warn = () => (c.filter === 'needs' || c.filter === 'review' || c.filter === 'nobody') && count() > 0;
           return (
             <button
               type="button"

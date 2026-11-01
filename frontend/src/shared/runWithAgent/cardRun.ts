@@ -93,14 +93,39 @@ export function passesFilters(run: CardRun | undefined, filters: ReadonlySet<Run
 export type RunCounts = Record<RunStateName, number>;
 
 export function countRuns(runs: Iterable<CardRun | undefined>): RunCounts {
+  return countStates([...runs].map((run) => run?.state));
+}
+
+/** Runs counted by state, from any list of states: the one place a count over run states is made. */
+export function countStates(states: Iterable<RunStateName | undefined>): RunCounts {
   const counts: RunCounts = { queued: 0, running: 0, needs: 0, review: 0, done: 0, failed: 0, cancelled: 0 };
-  for (const run of runs) if (run) counts[run.state] += 1;
+  for (const state of states) if (state) counts[state] += 1;
   return counts;
 }
 
-/** What waits for a person: runs that ask something plus runs to review. Failed runs are counted under Failed. */
-export function waitingCount(counts: RunCounts): number {
-  return counts.needs + counts.review;
+/**
+ * The three counts a person acts on, with one meaning each wherever they are shown (the board's
+ * strip, Flow's summary, the sidebar's list): Needs you is a run that asks a person something,
+ * Ready for review is a finished run whose work waits to be looked at, and Failed is a run that
+ * ended badly. A run is in exactly one of them, never two.
+ */
+export interface RunTally {
+  needsYou: number;
+  review: number;
+  failed: number;
+}
+
+export function runTally(counts: Pick<RunCounts, 'needs' | 'review' | 'failed'>): RunTally {
+  return { needsYou: counts.needs, review: counts.review, failed: counts.failed };
+}
+
+/** The tally in the states' own words: "1 needs you, 2 ready for review"; empty when nothing waits. */
+export function tallySentence(tally: RunTally): string {
+  const parts: string[] = [];
+  if (tally.needsYou > 0) parts.push(`${tally.needsYou} ${tally.needsYou === 1 ? 'needs' : 'need'} you`);
+  if (tally.review > 0) parts.push(`${tally.review} ready for review`);
+  if (tally.failed > 0) parts.push(`${tally.failed} failed`);
+  return parts.join(', ');
 }
 
 /** How many runs of any state there are: the strip is hidden when a project has never run anything. */

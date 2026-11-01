@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardRun, countRuns, passesFilters, showsPriority, waitingCount, totalRuns, type RunFilter } from './cardRun';
+import { cardRun, countRuns, passesFilters, showsPriority, totalRuns, runTally, tallySentence, countStates, type RunFilter } from './cardRun';
 
 const at = (state: string, cancelled: string | null = null) =>
   cardRun({ request_id: 'r', state, cancellation_requested_at: cancelled }, false);
@@ -35,10 +35,13 @@ describe('cardRun', () => {
 describe('counts and filters', () => {
   const runs = [at('running'), at('running'), at('waiting_decision'), cardRun(undefined, true), at('failed'), at('succeeded'), undefined];
 
-  it('counts every state, and what waits for a person is needs plus review', () => {
+  it('counts every state; Needs you, Ready for review and Failed are three separate counts', () => {
     const counts = countRuns(runs);
     expect(counts).toMatchObject({ running: 2, needs: 1, review: 1, failed: 1, done: 1, queued: 0 });
-    expect(waitingCount(counts)).toBe(2);
+    expect(runTally(counts)).toEqual({ needsYou: 1, review: 1, failed: 1 });
+    expect(tallySentence(runTally(counts))).toBe('1 needs you, 1 ready for review, 1 failed');
+    expect(tallySentence(runTally(countStates([])))).toBe('');
+    expect(tallySentence(runTally(countStates(['needs', 'needs', 'review'])))).toBe('2 need you, 1 ready for review');
     expect(totalRuns(counts)).toBe(6);
     expect(totalRuns(countRuns([undefined]))).toBe(0);
   });

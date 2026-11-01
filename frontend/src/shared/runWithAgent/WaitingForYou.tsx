@@ -10,6 +10,7 @@ import {
   revealWaiting,
   rows,
   waitingCount,
+  waitingTally,
   useWaiting,
   waitingOpen,
   type WaitingRow,
@@ -17,6 +18,13 @@ import {
 import { sessionDecisionToken } from '../state/decisionSession';
 import { DecisionTokenField } from './DecisionInbox';
 import { relativeTimeFromIso } from './shared';
+import { tallySentence } from './cardRun';
+
+/** What the count is made of, in the states' own words; the sentence alone when nothing waits. */
+const breakdown = (): string => {
+  const parts = tallySentence(waitingTally());
+  return parts ? `${waitingSentence(waitingCount())}: ${parts}` : waitingSentence(waitingCount());
+};
 
 /** The sentence the count stands for, read aloud and shown on hover. */
 export function waitingSentence(count: number): string {
@@ -108,7 +116,7 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
         onClick={toggle}
         aria-expanded={waitingOpen()}
         aria-controls="waiting-panel"
-        title={waitingCount() === 0 ? `${waitingSentence(0)}. ${MEANING}` : MEANING}
+        title={waitingCount() === 0 ? `${waitingSentence(0)}. ${MEANING}` : `${breakdown()}. ${MEANING}`}
         style={{
           width: '100%',
           display: 'flex',
@@ -201,7 +209,7 @@ export const WaitingBadge: Component = () => {
       data-testid="waiting-badge"
       onClick={reveal}
       aria-label={waitingSentence(waitingCount())}
-      title={waitingSentence(waitingCount())}
+      title={breakdown()}
       class="inline-flex items-center gap-1.5"
       style={{
         padding: '5px 10px',

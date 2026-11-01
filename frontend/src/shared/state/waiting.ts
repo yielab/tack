@@ -3,6 +3,7 @@ import { request } from '../api/client';
 import { attemptsApi, executionsApi, type ExecutionSummary } from '../execution';
 import type { ItemDetail } from '../types';
 import type { RunStateName } from '../ui/RunState';
+import { countStates, runTally } from '../runWithAgent/cardRun';
 
 // Everything that waits on a person, from the runs and items the app already loads: one read of the
 // runs every few seconds, then one read of an item for each run that could be a row, only when that
@@ -122,6 +123,10 @@ export function rows(): WaitingRow[] {
 }
 
 export const waitingCount = () => rows().length;
+
+/** The same three counts as the board's strip and Flow's summary: a question is Needs you, a run to review is Ready for review. */
+export const waitingTally = () =>
+  runTally(countStates(rows().map((r) => WAITING_GROUPS.find((g) => g.id === r.group)?.state)));
 export const waitingOpen = open;
 /** Counts up each time something outside the sidebar asks it to show itself (the narrow layout hides it). */
 export const sidebarRequests = sidebarAsks;
