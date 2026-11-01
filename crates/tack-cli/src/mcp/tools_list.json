@@ -1,0 +1,464 @@
+[
+  {
+    "description": "List all projects.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_projects"
+  },
+  {
+    "description": "Read how far Tack may merge a project's changes on its own: level, domains, required verification stages, budgets. Read-only.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "description": "Project UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_autonomy"
+  },
+  {
+    "description": "List items in a project, optionally filtered.",
+    "inputSchema": {
+      "properties": {
+        "assignee": {
+          "description": "Filter by assignee",
+          "type": "string"
+        },
+        "item_type": {
+          "description": "Filter by item type",
+          "type": "string"
+        },
+        "project_id": {
+          "description": "Project UUID",
+          "type": "string"
+        },
+        "status": {
+          "description": "Filter by status column name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id"
+      ],
+      "type": "object"
+    },
+    "name": "list_items"
+  },
+  {
+    "description": "Get one item with full detail, roles, and dependencies.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "description": "Item UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "get_item"
+  },
+  {
+    "description": "Full-text search items, globally or within a project.",
+    "inputSchema": {
+      "properties": {
+        "project_id": {
+          "description": "Optional; omit to search all projects",
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "name": "search_items"
+  },
+  {
+    "description": "Create an item in a project. To create many items, or a project with its items, use create_outline: one call instead of one per item.",
+    "inputSchema": {
+      "properties": {
+        "assignee": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "due_date": {
+          "description": "YYYY-MM-DD or an RFC3339 timestamp",
+          "type": "string"
+        },
+        "item_type": {
+          "description": "task (default), epic, feature, bug, subtask, requirement",
+          "type": "string"
+        },
+        "parent_id": {
+          "type": "string"
+        },
+        "priority": {
+          "description": "critical, high, medium (default), low",
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "create_item"
+  },
+  {
+    "description": "Create an empty project. Returns its id and its workflow's status names.",
+    "inputSchema": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project_type": {
+          "description": "custom (default), software, web, mobile, construction, personal, homework, maintenance, legal, research, event — sets the workflow and vocabulary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "create_project"
+  },
+  {
+    "description": "Create many items in one call, with their hierarchy and dependencies: in a new project (pass project) or an existing one (pass project_id). Every item is checked before anything is written, and every problem is reported at once; nothing is written unless all of it can be. Give an item a ref and name it from other items' parent or depends_on (an exact title works too). Order does not matter. Use dry_run first to see what would be created and any warnings. The file may also carry fields, profiles, roles, sprints and automation, as in Tack's project file (Settings → Data → File format).",
+    "inputSchema": {
+      "properties": {
+        "automation": {
+          "description": "The project's automation settings",
+          "type": "object"
+        },
+        "dry_run": {
+          "description": "Check and report without writing",
+          "type": "boolean"
+        },
+        "fields": {
+          "description": "Custom fields the project's items carry",
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "properties": {
+              "assignee": {
+                "type": "string"
+              },
+              "depends_on": {
+                "description": "Refs or titles of items that must finish first",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "type": "string"
+              },
+              "due_date": {
+                "description": "YYYY-MM-DD",
+                "type": "string"
+              },
+              "estimate": {
+                "type": "number"
+              },
+              "parent": {
+                "description": "Parent's ref or title; with project_id, also an existing item's id",
+                "type": "string"
+              },
+              "priority": {
+                "description": "critical, high, medium (default), low, none",
+                "type": "string"
+              },
+              "ref": {
+                "description": "A name for this item, unique in the outline",
+                "type": "string"
+              },
+              "status": {
+                "description": "A workflow status (any case); default the first one",
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "description": "epic, feature, task (default), subtask, bug, requirement, or a custom word",
+                "type": "string"
+              }
+            },
+            "required": [
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "profiles": {
+          "description": "Agent profiles the project uses",
+          "type": "array"
+        },
+        "project": {
+          "description": "Create this project: {name, project_type?, description?}; project_type as in create_project",
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project_type": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
+        "project_id": {
+          "description": "Add to this project (mutually exclusive with project)",
+          "type": "string"
+        },
+        "roles": {
+          "description": "Roles and the profile each one uses",
+          "type": "array"
+        },
+        "sprints": {
+          "description": "Sprints",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "name": "create_outline"
+  },
+  {
+    "description": "Update fields on an item. Status changes are validated against the workflow.",
+    "inputSchema": {
+      "properties": {
+        "assignee": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "due_date": {
+          "description": "RFC3339 timestamp",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "name": "update_item"
+  },
+  {
+    "description": "Move an item to a new status (validated transition + WIP limits).",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "description": "Target status column name (case-sensitive)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "type": "object"
+    },
+    "name": "move_item"
+  },
+  {
+    "description": "Add a comment to an item.",
+    "inputSchema": {
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "add_comment"
+  },
+  {
+    "description": "List runner fleets.",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_fleets"
+  },
+  {
+    "description": "List agent profiles (instructions, tool policy, limits).",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_agent_profiles"
+  },
+  {
+    "description": "List execution requests (newest first).",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "list_executions"
+  },
+  {
+    "description": "Get one execution request's current lifecycle state. A state of needs_operator or lost is an ambiguous outcome, not just another in-progress value — surface it distinctly to the user rather than treating it like queued/running.",
+    "inputSchema": {
+      "properties": {
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_execution"
+  },
+  {
+    "description": "Request cancellation of an execution. Recorded as a request only — the execution is not made falsely terminal; call get_execution afterward to see the actual outcome once the runner reports it.",
+    "inputSchema": {
+      "properties": {
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "name": "cancel_execution"
+  },
+  {
+    "description": "Starts a run that asks the person before every action. Creates (or idempotently replays, if idempotency_key repeats) an execution request that assigns a Tack item to a coding-harness runner or fleet. At most one of runner_id/fleet_id; omitted, the server picks the agent profile (the item's role, else the project's default), its agent and where it runs. Use list_fleets/list_agent_profiles first to discover valid ids.",
+    "inputSchema": {
+      "properties": {
+        "agent_profile_id": {
+          "description": "Omit to use the item's role profile, else the project default",
+          "type": "string"
+        },
+        "budgets": {
+          "description": "Default: {}. tokens: omit to use the profile's limit, null for no limit, or a positive number",
+          "type": "object"
+        },
+        "fleet_id": {
+          "description": "Fleet id (at most one of runner_id/fleet_id)",
+          "type": "string"
+        },
+        "harness": {
+          "description": "Requested harness kind, e.g. codex, claude-code. Omit to use the profile's agent, else the project's default agent",
+          "type": "string"
+        },
+        "idempotency_key": {
+          "description": "Defaults to a fresh key each call; pass a stable value to safely retry the exact same request",
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "metadata": {
+          "description": "Default: {}",
+          "type": "object"
+        },
+        "model": {
+          "description": "The model to run, passed to the agent as given. Omit to use the project's default for its default agent, else the agent's own choice",
+          "type": "string"
+        },
+        "runner_id": {
+          "description": "Exact runner id (at most one of runner_id/fleet_id)",
+          "type": "string"
+        },
+        "status_map_policy_id": {
+          "description": "Moves the item to its first Done status: done_on_success when the attempt succeeds, done_on_mrp_accepted when its MRP is accepted. Omit to leave the status untouched",
+          "enum": [
+            "done_on_success",
+            "done_on_mrp_accepted"
+          ],
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Omit to use the profile's time limit",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "item_id"
+      ],
+      "type": "object"
+    },
+    "name": "create_execution"
+  }
+]
