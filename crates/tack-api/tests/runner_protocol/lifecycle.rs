@@ -793,6 +793,36 @@ async fn accept_is_idempotent_and_start_transitions_to_running() {
     assert_eq!(fx.request_state(&request_id).await, "running");
 }
 
+/// The report that starts the run moves the item to the project's `on_start_status`; the same
+/// report again does not, so a person who has moved the item since keeps their choice.
+#[tokio::test]
+async fn starting_a_run_moves_its_item_once() {
+    let fx = Fixture::new().await;
+    let item_id = Uuid::parse_str(&fx.item_id).unwrap();
+    let status_of = || async { fx.repo.get_item(item_id).await.unwrap().unwrap().status };
+    let (_, attempt_id, fencing_token) = fx.enqueue_and_claim("on-start", "claim-on-start").await;
+    fx.accept(&attempt_id, fencing_token).await;
+    assert_eq!(status_of().await, "To Do");
+
+    let (status, started) = fx.start(&attempt_id, fencing_token, "pid-1").await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+    assert_eq!(status_of().await, "In Progress");
+
+    tack_test_support::update_item(
+        &fx.repo,
+        item_id,
+        tack_core::models::UpdateItem {
+            status: Some("To Do".to_string()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let (status, replayed) = fx.start(&attempt_id, fencing_token, "pid-1").await;
+    assert_eq!(status, StatusCode::OK, "{replayed}");
+    assert_eq!(replayed["replayed"], true);
+    assert_eq!(status_of().await, "To Do");
+}
+
 /// A heartbeat that names a state the lifecycle does not have is refused as an invalid request,
 /// not accepted and echoed back.
 #[tokio::test]

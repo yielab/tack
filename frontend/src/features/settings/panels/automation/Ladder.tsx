@@ -21,6 +21,8 @@ interface Props {
   agent: JSX.Element;
   /** Where the code is and how the agent works on it. */
   workspace: JSX.Element;
+  /** What happens to the item when a run starts. */
+  runStart: JSX.Element;
   /** What happens to the item when a run finishes. */
   finish: JSX.Element;
 }
@@ -93,9 +95,9 @@ const Ladder: Component<Props> = (props) => {
             />
             {props.workspace}
           </Section>
-          <Section id="automation-when" title="When" lead="When a task starts by itself, and what happens to it when a run finishes.">
+          <Section id="automation-when" title="When" lead="When a task starts by itself, and what happens to it when a run starts and when it finishes.">
             <Start project={props.project} roles={roleList} statuses={props.statuses} save={props.saveProject} />
-            {/* The status a run moves its item to when it starts belongs here, between starting and finishing. */}
+            {props.runStart}
             {props.finish}
           </Section>
           <Section id="automation-merge" title="Merge" lead="How much Tack may merge by itself, and what it needs to do so.">

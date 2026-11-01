@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
 use tack_db::Repository;
-use tack_test_support::{create_test_workspace, setup_test_db};
+use tack_test_support::{create_test_workspace, seed, setup_test_db};
 use tower::ServiceExt;
 
 const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
@@ -69,6 +69,8 @@ async fn setup(
         )
         .await
         .expect("project");
+    // These tests follow the moves a review and a finished run make; the run's start moves nothing.
+    seed::project_on_start_status(&repo, &project.id.to_string(), None).await;
     let item = repo
         .create_item(
             project.id,

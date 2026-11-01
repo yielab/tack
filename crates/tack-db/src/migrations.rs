@@ -159,6 +159,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("095_profile_delivers", &MIGRATION_095[..]),
         ordinary("096_planner_researcher_write_plan", &MIGRATION_096[..]),
         ordinary("097_plan_instructions_name_no_file", &MIGRATION_097[..]),
+        ordinary("098_project_on_start_status", &MIGRATION_098[..]),
     ]
 }
 
@@ -1914,3 +1915,7 @@ const MIGRATION_097: [&str; 2] = [
         SET instructions = 'Investigate the question. Do not modify project files; proposing work is the one exception. Write your findings as the result, with sources. When the findings lead to work, propose it as the Planner does: a plan `{"v":"1","subtasks":[{"title","description","acceptance":["…"],"depends_on":[index…],"estimate":"S|M|L","type":"…","role":"…","team":"…","parent":index}]}`. Each entry has a `title`, a `description` of what to do, its `acceptance` criteria, `depends_on` (the indexes of the entries that must finish first) and an `estimate`; `type` (the item type it becomes), `role` (the project role that does it), `team` (the team that does it) and `parent` (the index of an earlier entry this one belongs under) are optional.'
         WHERE builtin = 1 AND kind = 'researcher' AND instructions = 'Investigate the question. Do not modify project files; the only file you may write is `tack-plan.json`. Write your findings as the result, with sources. When the findings lead to work, write `tack-plan.json` at the workspace root as the Planner does.'"##,
 ];
+
+// 098: a project may move an item when a run starts, as it may when one finishes; NULL leaves the item where
+// it is, which is what every project that exists keeps.
+const MIGRATION_098: [&str; 1] = ["ALTER TABLE projects ADD COLUMN on_start_status TEXT"];

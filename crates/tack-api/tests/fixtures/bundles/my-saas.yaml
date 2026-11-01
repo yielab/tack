@@ -109,6 +109,7 @@ automation:
   default_harness: docket
   default_profile: My SaaS implementer
   default_model: null             # the agent's own default
+  on_start_status: En curso
   on_finish_status: En revisión
   definition_of_done: >
     Every change passes `npm run check` (lint, types, tests) from the repository root.

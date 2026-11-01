@@ -20,7 +20,7 @@ sections in the order you set them up, with an index beside them that stays in v
 1. **Who.** The default agent and its model and profile, the profile each role works with, and where the
    code is and how the agent works on it.
 2. **When.** Let a task start a run by itself when it reaches a status, and say what happens to the task
-   when a run finishes.
+   when a run starts and when it finishes.
 3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
 4. **Limits.** How many tokens a day, how many automatic merges a day and how many waiting items the
    project allows, and the limit for a run whose profile sets none.
@@ -55,6 +55,7 @@ When
       When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
       (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
        controls disabled)
+   When a run starts (folded)
    When a run finishes (folded)
 
 Merge
@@ -377,6 +378,14 @@ computer". Push is set up on the runner by an administrator; see
 [After a succeeded attempt](../admin-guide/runners.md#after-a-succeeded-attempt). If the project has push on
 and the runner does not, the run records "push skipped" instead of failing. The work is not lost either way:
 in the first mode it is on the local branch.
+
+### When a run starts
+
+**Move the item to** is the column a task moves to the moment a run on it starts, so the board stops saying
+the task waits while an agent works on it. A new project starts with the first in-progress column of its
+workflow; **Do not move** leaves the task where it is, and is what a project that existed before this
+setting keeps. A task already in that column, or in a done column, does not move: running done work again
+does not reopen it.
 
 ### When a run finishes
 

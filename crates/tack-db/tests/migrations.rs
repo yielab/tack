@@ -15,6 +15,8 @@ mod factory_loop_tables;
 mod item_recurrence;
 #[path = "migrations/item_source_migration.rs"]
 mod item_source_migration;
+#[path = "migrations/on_start_status.rs"]
+mod on_start_status;
 #[path = "migrations/one_model_string.rs"]
 mod one_model_string;
 #[path = "migrations/plan_instructions_name_no_file.rs"]

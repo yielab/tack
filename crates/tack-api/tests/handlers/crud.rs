@@ -229,11 +229,13 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(body["workspace_mode"], "local_branch");
     assert_eq!(body["push_after_run"], false);
     assert!(body["repository"].is_null());
+    // A new project starts with the workflow's first in-progress status.
+    assert_eq!(body["on_start_status"], "In Progress");
 
     let patch = json!({
         "repository": "/tmp/x", "code_origin": "folder", "workspace_mode": "in_place",
         "default_branch": "main", "push_after_run": true, "default_harness": "codex",
-        "on_finish_status": "review", "definition_of_done": "tests pass",
+        "on_finish_status": "review", "on_start_status": "doing", "definition_of_done": "tests pass",
     });
     let (status, _) = common::send(&app, "PATCH", &uri, patch, &[]).await;
     assert_eq!(status, StatusCode::OK);
@@ -245,6 +247,7 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(body["push_after_run"], true);
     assert_eq!(body["default_harness"], "codex");
     assert_eq!(body["on_finish_status"], "review");
+    assert_eq!(body["on_start_status"], "doing");
     assert_eq!(body["definition_of_done"], "tests pass");
 
     // Absent leaves untouched; null clears.
@@ -253,6 +256,13 @@ async fn automation_settings_round_trip_and_clear() {
     let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
     assert!(body["default_branch"].is_null());
     assert_eq!(body["repository"], "/tmp/x");
+    assert_eq!(body["on_start_status"], "doing");
+
+    let (status, _) =
+        common::send(&app, "PATCH", &uri, json!({"on_start_status": null}), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
+    assert!(body["on_start_status"].is_null());
 
     // The combination is validated: a relative path for a folder, a non-URL for url.
     for patch in [
