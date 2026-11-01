@@ -23,6 +23,54 @@ import {
 // rather than taking a manually typed id — every assertion below finds a
 // decision/artifact through its listed row, never by typing an id.
 
+/** Finishes an attempt the runner way: a Succeeded completion. The Checks and Files sections belong to a finished run. */
+async function completeAttempt(
+  request: import('@playwright/test').APIRequestContext,
+  runnerId: string,
+  credential: string,
+  attemptId: string,
+  fencingToken: number,
+  modelId: string,
+): Promise<void> {
+  const completion = await request.post(`${API}/runner/v1/attempts/${attemptId}/completion`, {
+    headers: { authorization: `Bearer ${credential}` },
+    data: {
+      protocol_version: 1,
+      runner_id: runnerId,
+      attempt_id: attemptId,
+      fencing_token: fencingToken,
+      completion_id: `completion-${Date.now()}`,
+      terminal_state: 'succeeded',
+      terminal_reason: { code: 'completed', message: 'Harness exited successfully' },
+      actual_execution: {
+        harness_kind: 'claude-code',
+        harness_version: '2.0.0',
+        model: modelId,
+        model_source: 'reported',
+        capability_snapshot: {
+          cancel: { support: 'supported', reason: null },
+          resume: { support: 'unsupported', reason: 'no resumable session contract' },
+          decisions: { support: 'supported', reason: null },
+          artifacts: { support: 'supported', reason: null },
+          usage: { support: 'advisory', reason: 'usage may be absent' },
+        },
+        workspace_id: `ws-${attemptId}`,
+        base_revision: '0'.repeat(40),
+        started_at: new Date(Date.now() - 60_000).toISOString(),
+        ended_at: new Date().toISOString(),
+      },
+      usage: {
+        tokens_in: { value: null, source: 'not_measured' },
+        tokens_out: { value: null, source: 'not_measured' },
+        duration_ms: { value: null, source: 'not_measured' },
+        cost_usd: { value: null, source: 'not_measured' },
+      },
+      final_event_checkpoint: null,
+    },
+  });
+  expect(completion.ok(), `completion failed: ${completion.status()} ${await completion.text()}`).toBeTruthy();
+}
+
 test.describe('Execution tab — real attempts/decisions/artifacts against the production router', () => {
   test('a claimed attempt renders honestly, decisions/artifacts are discovered as empty before anything is raised, and a real raised decision refuses to resolve without a token', async ({
     page,
@@ -61,7 +109,9 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const drawer2 = page.getByRole('dialog');
     await drawer2.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer2.getByRole('heading', { name: 'Run 1' })).toBeVisible();
-    await expect(drawer2.getByText(runnerId)).toBeVisible();
+    // The ids live in the Technical fold, closed until asked for.
+    await drawer2.locator('[data-section="technical"] > summary').click();
+    await expect(drawer2.getByTitle(runnerId)).toBeVisible();
     // Right after a claim the run shows one status, its attempt's: Starting.
     // (The task's own last-run summary, above the tabs, says it too.)
     await expect(drawer2.getByRole('tabpanel').getByText('Starting', { exact: true })).toHaveCount(1);
@@ -71,13 +121,12 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await expect(drawer2.getByTestId('attempt-working')).toBeVisible();
     await expect(drawer2.getByText('$0.00')).toHaveCount(0);
 
-    await drawer2.getByRole('button', { name: /Show questions & files/ }).click();
     await expect(drawer2.getByText('No events reported yet')).toBeVisible();
     // Discovered honestly through the real list routes — nothing raised
     // yet, never a fake empty state conflated with a typed id that simply
     // hasn't been entered.
-    await expect(drawer2.getByText('No decisions raised yet')).toBeVisible();
-    await expect(drawer2.getByText('No artifacts yet')).toBeVisible();
+    await expect(drawer2.getByText('The agent has asked nothing yet')).toBeVisible();
+    // (There is no "No artifacts yet" line to read: a run lists its files only once it has finished.)
 
     await acceptAndStartAttempt(request, runnerId, credential, attemptId, fencingToken);
     const decisionId = `dec-${Date.now()}`;
@@ -90,7 +139,6 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer3 = page.getByRole('dialog');
     await drawer3.getByRole('tab', { name: 'Execution' }).click();
-    await drawer3.getByRole('button', { name: /Show questions & files/ }).click();
 
     // The real decision the runner just raised — found through the list,
     // no id typed anywhere.
@@ -140,12 +188,10 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
-    await drawer.getByRole('button', { name: /Show questions & files/ }).click();
 
     // Both discovered through their real list routes — no id typed
     // anywhere, never a manual-entry fallback.
     await expect(drawer.getByText('e2e: allow this action?')).toBeVisible();
-    await expect(drawer.getByText(`${artifactId}.txt`)).toBeVisible();
 
     // Enter the deployment's real decision token (this file's own
     // `playwright.config.ts` addition configures `TACK_EXECUTION_DECISION_TOKEN`
@@ -158,7 +204,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await drawer.getByText('Allow once', { exact: true }).click();
     await drawer.getByRole('button', { name: 'Resolve' }).click();
     // Toast — Portal-rendered outside the dialog subtree, page-wide assert.
-    await expect(page.getByText('Decision resolved.')).toBeVisible();
+    await expect(page.getByText('Answer sent.')).toBeVisible();
     // The list refetches after a successful resolve — the row's own badge
     // flips from Pending to Resolved without a page reload, proving the
     // resolve genuinely landed server-side (the strongest UI-observable
@@ -177,6 +223,14 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     expect(replay.ok(), `replay resolve failed: ${replay.status()}`).toBeTruthy();
     const replayBody = await replay.json();
     expect(replayBody.replayed).toBe(true);
+
+    // The run's files are listed once the run has finished, so the runner ends
+    // the attempt and the tab is read again.
+    await completeAttempt(request, runnerId, credential, attemptId, fencingToken, modelId);
+    await page.reload();
+    await waitForApp(page);
+    await drawer.getByRole('tab', { name: 'Execution' }).click();
+    await expect(drawer.getByText(`${artifactId}.txt`)).toBeVisible();
 
     // Download the REAL artifact from its listed row — a genuine browser
     // download event, verified byte-for-byte against what the runner
@@ -227,7 +281,6 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
-    await drawer.getByRole('button', { name: /Show questions & files/ }).click();
     await expect(drawer.getByText('e2e: allow this action?')).toBeVisible();
 
     // Typed but never saved (no click on "Save") — this is the token
@@ -311,16 +364,17 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
       data: raw,
     });
     expect(upload.ok(), `pack upload failed: ${upload.status()}`).toBeTruthy();
+    // The pack is read on a finished run: the Checks section only exists once the attempt ended.
+    await completeAttempt(request, runnerId, credential, attemptId, fencingToken, modelId);
 
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await drawer.getByRole('button', { name: /Show questions & files/ }).click();
 
     await expect(drawer.getByTestId('mrp-criterion')).toHaveCount(pack.criteria.length);
     await drawer.getByLabel('Reason').fill('Every criterion passed.');
-    await drawer.getByRole('button', { name: 'Accept' }).click();
+    await drawer.locator('form').getByRole('button', { name: 'Accept' }).click();
     await expect(drawer.getByTestId('mrp-review')).toContainText('Accepted');
     await expect(drawer.getByTestId('mrp-review')).toContainText('Every criterion passed.');
   });
@@ -339,48 +393,14 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     expect(lease?.requestId).toBe(requestId);
     const { attemptId, fencingToken } = lease!;
     await acceptAndStartAttempt(request, runnerId, credential, attemptId, fencingToken);
-    const completion = await request.post(`${API}/runner/v1/attempts/${attemptId}/completion`, {
-      headers: { authorization: `Bearer ${credential}` },
-      data: {
-        protocol_version: 1,
-        runner_id: runnerId,
-        attempt_id: attemptId,
-        fencing_token: fencingToken,
-        completion_id: `f1b-completion-${Date.now()}`,
-        terminal_state: 'succeeded',
-        terminal_reason: { code: 'completed', message: 'Harness exited successfully' },
-        actual_execution: {
-          harness_kind: 'claude-code',
-          harness_version: '2.0.0',
-          model: modelId,
-          model_source: 'reported',
-          capability_snapshot: {
-            cancel: { support: 'supported', reason: null },
-            resume: { support: 'unsupported', reason: 'no resumable session contract' },
-            decisions: { support: 'supported', reason: null },
-            artifacts: { support: 'supported', reason: null },
-            usage: { support: 'advisory', reason: 'usage may be absent' },
-          },
-          workspace_id: `ws-${attemptId}`,
-          base_revision: '0'.repeat(40),
-          started_at: new Date(Date.now() - 60_000).toISOString(),
-          ended_at: new Date().toISOString(),
-        },
-        usage: {
-          tokens_in: { value: null, source: 'not_measured' },
-          tokens_out: { value: null, source: 'not_measured' },
-          duration_ms: { value: null, source: 'not_measured' },
-          cost_usd: { value: null, source: 'not_measured' },
-        },
-        final_event_checkpoint: null,
-      },
-    });
-    expect(completion.ok(), `completion failed: ${completion.status()} ${await completion.text()}`).toBeTruthy();
+    await completeAttempt(request, runnerId, credential, attemptId, fencingToken, modelId);
 
     await page.goto(`/projects/${projectId}/board?item=${itemId}`);
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
+    // What the agent got sits in the Technical fold, closed until asked for.
+    await drawer.locator('[data-section="technical"] > summary').click();
     const got = drawer.getByTestId('agent-got');
     await expect(got).toBeVisible();
     await expect(got).toContainText('What the agent got');

@@ -505,10 +505,6 @@ test.describe.serial('tutorial screenshots', () => {
     // machine's real staged paths (agent-assets.spec.ts documents the same
     // trade for attempt.png). The Artifacts section alone shows the result
     // without them.
-    await page
-      .getByRole('button', { name: 'Show questions & files' })
-      .first()
-      .click();
     await page.waitForTimeout(1200);
     const artifactsHeading = page.getByRole('heading', {
       name: 'Files from this run',
@@ -650,7 +646,6 @@ test.describe('workflow gif', () => {
     await page.getByRole('button', { name: 'Accept', exact: true }).first().click();
     await expect(page.getByText(/^Accepted/).first()).toBeVisible();
     await page.waitForTimeout(2000);
-    await page.getByRole('button', { name: 'Show questions & files' }).first().click();
     const files = page.getByRole('heading', { name: 'Files from this run', exact: true });
     await expect(files).toBeVisible();
     await files.scrollIntoViewIfNeeded();

@@ -502,7 +502,7 @@ test('item detail Execution tab (with a real request) has no accessibility viola
   if ((await picker.count()) > 0) {
     await picker.selectOption(`exact_runner:${runnerId}`);
   }
-  await modal.getByRole('button', { name: profileName, exact: true }).click();
+  await modal.getByRole('radio', { name: profileName, exact: true }).check();
   // The fixture's codex needs a model named and lists none, so the model is
   // typed by hand ("Other…"); without one the dialog has no Run button.
   // With no model named, "Advanced for this run" is already open on the model.
@@ -543,7 +543,6 @@ test('item detail Execution tab — expanded attempt detail (events/decisions/ar
   await drawer.getByRole('tab', { name: 'Execution' }).click();
   await expect(drawer.getByRole('heading', { name: 'Run 1' })).toBeVisible();
 
-  await drawer.getByRole('button', { name: /Show questions & files/ }).click();
   await expect(drawer.getByText('No events reported yet')).toBeVisible();
 
   const violations = await scan(page);

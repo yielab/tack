@@ -86,7 +86,7 @@ test('Board: "Run with agent" opens the shared modal, and required-field reasons
   await expect(dialog.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('link', { name: "Choose where this project's code is →" })).toBeVisible();
   await expect(dialog.getByText('Select where this runs.')).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Implementer', pressed: true })).toBeVisible();
+  await expect(dialog.getByRole('radio', { name: 'Implementer', checked: true })).toBeVisible();
   await expect(dialog.getByText('Choose a profile.')).toHaveCount(0);
 
   // Escape closes it — the same keyboard path every other modal in this app
@@ -164,7 +164,7 @@ test('item-detail: submitting a run creates the request and it appears in the Ex
   await expect(modal).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
-  await modal.getByRole('button', { name: profileName, exact: true }).click();
+  await modal.getByRole('radio', { name: profileName, exact: true }).check();
 
   // An explicit model choice, typed by hand: the fixture's codex needs a model
   // named and lists none, so "Another model…" is the way to name one.
@@ -248,7 +248,7 @@ test('the run form submits the project\'s configured model default, byte for byt
   await expect(modal.getByText('Project default — opaque/model-alpha')).toBeVisible();
   await selectTargetIfPickerShows(modal, runnerName);
 
-  await modal.getByRole('button', { name: profileName, exact: true }).click();
+  await modal.getByRole('radio', { name: profileName, exact: true }).check();
 
   await modal.getByRole('button', { name: 'Start run', exact: true }).click();
   await expect(modal).toBeHidden();
@@ -307,7 +307,7 @@ test('run flow: with no model chosen Run is replaced by one sentence, the fix li
     const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
     await expect(modal).toBeVisible();
     await selectTargetIfPickerShows(modal, runnerName);
-    await modal.getByRole('button', { name: profileName, exact: true }).click();
+    await modal.getByRole('radio', { name: profileName, exact: true }).check();
     return modal;
   };
 
@@ -348,6 +348,6 @@ test('Board: the run dialog opens with the role\'s profile on an item with a rol
   await page.getByRole('dialog').getByRole('button', { name: 'Run with agent' }).click();
 
   const modal = page.getByRole('dialog', { name: /^Run with agent:/ });
-  await expect(modal.getByRole('button', { name: profileName, exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(modal.getByRole('radio', { name: profileName, exact: true })).toBeChecked();
   await expect(modal.getByTestId('profile-source')).toHaveText('Chosen by the role Content');
 });
