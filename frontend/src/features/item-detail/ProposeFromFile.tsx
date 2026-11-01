@@ -82,10 +82,8 @@ export interface ProposeFromFileProps {
 const ProposeFromFile: Component<ProposeFromFileProps> = (props) => {
   const [plan, setPlan] = createSignal<PlanEntry[] | null>(null);
   const [problem, setProblem] = createSignal<string | null>(null);
-  const pick = async (input: HTMLInputElement) => {
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
+  const [dragging, setDragging] = createSignal(false);
+  const read = async (file: File) => {
     setPlan(null);
     setProblem(null);
     try {
@@ -96,9 +94,20 @@ const ProposeFromFile: Component<ProposeFromFileProps> = (props) => {
       setProblem('The file could not be read.');
     }
   };
+  const pick = (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) void read(file);
+  };
+  const drop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const file = e.dataTransfer?.files[0];
+    if (file) void read(file);
+  };
 
   return (
-    <section class="space-y-2" aria-label="Propose items from a file">
+    <section class="min-w-0 space-y-2" aria-label="Propose items from a file">
       <Show when={props.onClose}>
         <div class="flex justify-end">
           <Button size="sm" variant="ghost" onClick={() => props.onClose?.()}>
@@ -106,18 +115,36 @@ const ProposeFromFile: Component<ProposeFromFileProps> = (props) => {
           </Button>
         </div>
       </Show>
-      <label class="block text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-        <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Propose items from a file</span>
-        <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          Choose a tack-plan.json. Nothing is created until you press Create selected.
-        </span>
-        <input
-          type="file"
-          accept=".json,application/json"
-          class="mt-1 text-sm"
-          onChange={(e) => void pick(e.currentTarget)}
-        />
-      </label>
+      {/* The drop zone is the file button's box: a file dropped anywhere in it is read as if it were picked. */}
+      <div
+        class="rounded-item p-2 text-sm"
+        style={{
+          border: dragging() ? '1px dashed var(--color-accent-line)' : '1px dashed var(--color-border-light)',
+          'background-color': dragging() ? 'var(--color-accent-soft)' : 'transparent',
+        }}
+        onDragOver={(e) => {
+          // Without this the browser keeps the file and the drop never fires.
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={drop}
+      >
+        <label class="block text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+          <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Propose items from a file</span>
+          <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            Choose a tack-plan.json, or drop one here. Nothing is created until you confirm the items below.
+          </span>
+          <input
+            type="file"
+            accept=".json,application/json"
+            class="mt-1 text-sm"
+            onChange={(e) => pick(e.currentTarget)}
+          />
+        </label>
+      </div>
       <Show when={problem()}>
         {(text) => (
           <p class="text-sm" role="alert" style={{ color: 'var(--color-danger-600)' }}>

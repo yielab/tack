@@ -1,4 +1,4 @@
-import { type Component, For, Show, createResource, createSignal } from 'solid-js';
+import { type Component, type JSX, For, Show, createResource, createSignal } from 'solid-js';
 import { Button } from '../ui';
 import { agentProfilesApi, artifactsApi } from '../execution';
 import type { AgentProfileSummary } from '../execution/api';
@@ -58,6 +58,12 @@ const inputStyle = {
   background: 'transparent',
 } as const;
 
+const chipStyle = {
+  border: '1px solid var(--color-border-light)',
+  color: 'var(--color-text-primary)',
+  'background-color': 'var(--color-bg-subtle)',
+} as const;
+
 const toRow = (e: PlanEntry): Row => ({
   title: e.title,
   description: e.description ?? '',
@@ -71,29 +77,39 @@ const toRow = (e: PlanEntry): Row => ({
   selected: true,
 });
 
+/**
+ * The entry an entry is nested under, or null for the top level. Only an earlier entry counts, so a
+ * parent that points forward or at itself cannot hide an entry or loop the tree.
+ */
+function parentOf(rs: Row[], i: number): number | null {
+  const p = rs[i].parent;
+  return p !== null && p < i ? p : null;
+}
+
+/** The entries directly under `parent` (null for the top level), in the order they are listed. */
+const childrenOf = (rs: Row[], parent: number | null): number[] => rs.flatMap((_, j) => (parentOf(rs, j) === parent ? [j] : []));
+
+/** The entries an entry waits on that are in the list; never itself. */
+const waitsOn = (rs: Row[], i: number): number[] => rs[i].depends_on.filter((d) => d !== i && d < rs.length);
+
 /** Whether every entry above an entry is ticked, so it can be sent under them. */
 function ancestorsTicked(rs: Row[], i: number): boolean {
-  const p = rs[i].parent;
+  const p = parentOf(rs, i);
   return p === null || (rs[p].selected && ancestorsTicked(rs, p));
 }
 
 /** Unticks an entry and every entry nested under it. */
 function unticked(rs: Row[], i: number): Row[] {
   const off = new Set<number>([i]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    rs.forEach((r, j) => {
-      if (!off.has(j) && r.parent !== null && off.has(r.parent)) {
-        off.add(j);
-        grew = true;
-      }
-    });
-  }
+  // A parent is always earlier than its children, so one pass in order reaches every descendant.
+  rs.forEach((_, j) => {
+    const p = parentOf(rs, j);
+    if (p !== null && off.has(p)) off.add(j);
+  });
   return rs.map((r, j) => (off.has(j) ? { ...r, selected: false } : r));
 }
 
-const depthOf = (rs: Row[], i: number): number => (rs[i].parent === null ? 0 : 1 + depthOf(rs, rs[i].parent!));
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** An option list that still shows a value the project does not have, so the file's own word stays visible. */
 function withCurrent(options: Array<{ value: string; label: string }>, current: string | null) {
@@ -105,7 +121,7 @@ const EMPTY_OFFER: Offer = { types: getItemTypeList(undefined), roles: [], profi
 
 /**
  * The plan a Planner or a team proposed, or a file the person picked: tick, edit, set each entry's
- * type, role and who does it, and create the chosen ones. Nothing is created until "Create selected".
+ * type, role and who does it, and create the chosen ones. Nothing is created until the create button is pressed.
  */
 const PlanPanel: Component<PlanPanelProps> = (props) => {
   const fromFile = () => 'file' in props;
@@ -157,11 +173,21 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...change } : r)));
   const setTicked = (i: number, on: boolean) =>
     setRows((rs) => (on ? rs.map((r, j) => (j === i ? { ...r, selected: true } : r)) : unticked(rs, i)));
+  const selectAll = (on: boolean) => setRows((rs) => rs.map((r) => ({ ...r, selected: on })));
   const toggleWait = (i: number, other: number, checked: boolean) =>
     patch(i, {
       depends_on: checked ? [...rows()[i].depends_on, other] : rows()[i].depends_on.filter((d) => d !== other),
     });
   const chosen = () => rows().filter((r) => r.selected).length;
+  const titleOf = (j: number) => rows()[j].title.trim() || 'Untitled item';
+  const nestedCount = () => rows().filter((_, i) => parentOf(rows(), i) !== null).length;
+  const dependencyCount = () => rows().reduce((n, _, i) => n + waitsOn(rows(), i).length, 0);
+  const summary = () => {
+    const parts = [plural(rows().length, 'item', 'items')];
+    if (nestedCount() > 0) parts.push(plural(nestedCount(), 'sub-item', 'sub-items'));
+    if (dependencyCount() > 0) parts.push(plural(dependencyCount(), 'dependency', 'dependencies'));
+    return parts.join(' · ');
+  };
 
   const create = async () => {
     setBusy(true);
@@ -173,8 +199,9 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
       rows().forEach((r, i) => {
         if (r.selected) sentAt.set(i, sentAt.size);
       });
-      const subtasks = rows().flatMap((r) =>
-        r.selected
+      const subtasks = rows().flatMap((r, i) => {
+        const p = parentOf(rows(), i);
+        return r.selected
           ? [
               {
                 title: r.title,
@@ -184,11 +211,11 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
                 type: r.type,
                 role: r.role,
                 team: r.team,
-                parent: r.parent !== null && sentAt.has(r.parent) ? sentAt.get(r.parent)! : null,
+                parent: p !== null && sentAt.has(p) ? sentAt.get(p)! : null,
               },
             ]
-          : [],
-      );
+          : [];
+      });
       const body: CreateBody = fromFile() ? { subtasks } : { artifact_id: (props as { artifactId: string }).artifactId, subtasks };
       const res: CreateResponse = await api.items.createSubtasksFromPlan(props.itemId, body);
       setCreated(res.created);
@@ -214,9 +241,169 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
     return `${who} ${n} ${n === 1 ? 'item' : 'items'}`;
   };
 
+  /** One entry's card; the entries nested under it are listed beneath it by `branch`. */
+  const entry = (i: number) => {
+    const r = () => rows()[i];
+    const others = () => rows().map((_, j) => j).filter((j) => j !== i && !waitsOn(rows(), i).includes(j));
+    return (
+      <div data-testid="plan-row" class="min-w-0 space-y-2 rounded-item p-2" style={{ border: '1px solid var(--color-border-light)' }}>
+        <label class="flex min-w-0 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={r().selected}
+            disabled={!ancestorsTicked(rows(), i)}
+            aria-label={`Create ${r().title}`}
+            onChange={(e) => setTicked(i, e.currentTarget.checked)}
+          />
+          <input
+            class="min-w-0 flex-1 rounded px-2 py-1"
+            style={inputStyle}
+            aria-label="Title"
+            value={r().title}
+            onInput={(e) => patch(i, { title: e.currentTarget.value })}
+          />
+        </label>
+        <input
+          class="w-full min-w-0 rounded px-2 py-1 text-sm"
+          style={inputStyle}
+          aria-label="Description"
+          value={r().description}
+          onInput={(e) => patch(i, { description: e.currentTarget.value })}
+        />
+        <textarea
+          class="w-full min-w-0 rounded px-2 py-1 text-sm"
+          style={inputStyle}
+          aria-label="Acceptance criteria, one per line"
+          rows={Math.max(2, r().acceptance.length)}
+          value={r().acceptance.join('\n')}
+          onInput={(e) => patch(i, { acceptance: e.currentTarget.value.split('\n') })}
+        />
+        <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+          <select
+            aria-label="Type"
+            class="max-w-full rounded px-2 py-1 text-xs"
+            style={inputStyle}
+            onChange={(e) => patch(i, { type: e.currentTarget.value || null })}
+          >
+            <option value="" selected={!r().type}>
+              Default
+            </option>
+            <For each={withCurrent(ctx().types, r().type)}>
+              {(t) => (
+                <option value={t.value} selected={r().type === t.value}>
+                  {t.label}
+                </option>
+              )}
+            </For>
+          </select>
+          <select
+            aria-label="Role"
+            class="max-w-full rounded px-2 py-1 text-xs"
+            style={inputStyle}
+            onChange={(e) => patch(i, { role: e.currentTarget.value || null })}
+          >
+            <option value="" selected={!r().role}>
+              No role
+            </option>
+            <For each={withCurrent(ctx().roles, r().role)}>
+              {(role) => (
+                <option value={role.value} selected={r().role === role.value}>
+                  {role.label}
+                </option>
+              )}
+            </For>
+          </select>
+          {/* The profile reads as a chip: the picker keeps its own border inside the pill. */}
+          <span class="inline-flex max-w-full items-center rounded-full px-1" style={chipStyle}>
+            <WhoDoesIt
+              label="Who does it"
+              value={r().team}
+              profiles={ctx().profiles}
+              teams={ctx().teams}
+              onChange={(team) => patch(i, { team })}
+            />
+          </span>
+          <Show when={r().estimate}>
+            {(estimate) => (
+              <span style={{ color: 'var(--color-text-tertiary)' }}>{estimate()}</span>
+            )}
+          </Show>
+        </div>
+        <fieldset class="min-w-0 space-y-1">
+          <legend class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Waits on
+          </legend>
+          <ul class="flex min-w-0 flex-wrap items-center gap-1 text-xs">
+            <For each={waitsOn(rows(), i)}>
+              {(j) => (
+                <li
+                  class="flex max-w-full items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1"
+                  style={chipStyle}
+                >
+                  <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>
+                    {titleOf(j)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Stop waiting on ${titleOf(j)}`}
+                    class="grid h-4 w-4 shrink-0 place-items-center rounded-full leading-none focus-visible:ring-2"
+                    style={{ color: 'var(--color-text-secondary)', '--tw-ring-color': 'var(--color-focus-ring)' }}
+                    onClick={() => toggleWait(i, j, false)}
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                </li>
+              )}
+            </For>
+            <Show when={others().length > 0}>
+              <li>
+                <select
+                  aria-label={`Add a wait for ${r().title.trim() || 'this item'}`}
+                  class="max-w-full rounded px-2 py-0.5 text-xs"
+                  style={inputStyle}
+                  onChange={(e) => {
+                    // The menu is a way to add one more wait, so it goes back to its first line after each pick.
+                    const v = e.currentTarget.value;
+                    e.currentTarget.value = '';
+                    if (v !== '') toggleWait(i, Number(v), true);
+                  }}
+                >
+                  <option value="">Add an item…</option>
+                  <For each={others()}>{(j) => <option value={j}>{titleOf(j)}</option>}</For>
+                </select>
+              </li>
+            </Show>
+          </ul>
+        </fieldset>
+      </div>
+    );
+  };
+
+  /**
+   * The entries nested under `parent` (null for the top level), each followed by its own. The guide
+   * line is the left border of the nested list, so the depth is the list's structure, not a margin.
+   */
+  const branch = (parent: number | null): JSX.Element => (
+    <ul
+      aria-label={parent === null ? 'Proposed items' : `Sub-items of ${titleOf(parent)}`}
+      class={parent === null ? 'space-y-2' : 'ml-3 mt-2 space-y-2 pl-3'}
+      style={parent === null ? undefined : { 'border-left': '1px solid var(--color-border-medium)' }}
+    >
+      {/* Keyed by position: a patch replaces the row's object, and the row's DOM (and focus) stays. */}
+      <For each={childrenOf(rows(), parent)}>
+        {(i) => (
+          <li class="min-w-0">
+            {entry(i)}
+            <Show when={childrenOf(rows(), i).length > 0}>{branch(i)}</Show>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+
   return (
     <Show when={(fromFile() || loaded()) && (rows().length > 0 || error())}>
-      <section data-testid="plan-panel" class="space-y-2">
+      <section data-testid="plan-panel" class="min-w-0 space-y-2">
         <Show
           when={created()}
           fallback={
@@ -224,118 +411,22 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
               <h4 class="text-base" style={{ color: 'var(--color-text-primary)' }}>
                 {title()}
               </h4>
-              {/* Keyed by position: a patch replaces the row's object, and the row's DOM (and focus) stays. */}
-              <For each={rows().map((_, n) => n)}>
-                {(i) => {
-                  const r = () => rows()[i];
-                  return (
-                  <div
-                    data-testid="plan-row"
-                    class="space-y-1 rounded-[12px] p-2"
-                    style={{ border: '1px solid var(--color-border-light)', 'margin-left': `${depthOf(rows(), i) * 1.5}rem` }}
-                  >
-                    <label class="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={r().selected}
-                        disabled={!ancestorsTicked(rows(), i)}
-                        aria-label={`Create ${r().title}`}
-                        onChange={(e) => setTicked(i, e.currentTarget.checked)}
-                      />
-                      <input
-                        class="flex-1 rounded px-2 py-1"
-                        style={inputStyle}
-                        aria-label="Title"
-                        value={r().title}
-                        onInput={(e) => patch(i, { title: e.currentTarget.value })}
-                      />
-                    </label>
-                    <input
-                      class="w-full rounded px-2 py-1 text-sm"
-                      style={inputStyle}
-                      aria-label="Description"
-                      value={r().description}
-                      onInput={(e) => patch(i, { description: e.currentTarget.value })}
-                    />
-                    <textarea
-                      class="w-full rounded px-2 py-1 text-sm"
-                      style={inputStyle}
-                      aria-label="Acceptance criteria, one per line"
-                      rows={Math.max(2, r().acceptance.length)}
-                      value={r().acceptance.join('\n')}
-                      onInput={(e) => patch(i, { acceptance: e.currentTarget.value.split('\n') })}
-                    />
-                    <div class="flex flex-wrap items-center gap-2 text-sm">
-                      <select
-                        aria-label="Type"
-                        class="rounded px-2 py-1 text-sm"
-                        style={inputStyle}
-                        onChange={(e) => patch(i, { type: e.currentTarget.value || null })}
-                      >
-                        <option value="" selected={!r().type}>
-                          Default
-                        </option>
-                        <For each={withCurrent(ctx().types, r().type)}>
-                          {(t) => (
-                            <option value={t.value} selected={r().type === t.value}>
-                              {t.label}
-                            </option>
-                          )}
-                        </For>
-                      </select>
-                      <select
-                        aria-label="Role"
-                        class="rounded px-2 py-1 text-sm"
-                        style={inputStyle}
-                        onChange={(e) => patch(i, { role: e.currentTarget.value || null })}
-                      >
-                        <option value="" selected={!r().role}>
-                          No role
-                        </option>
-                        <For each={withCurrent(ctx().roles, r().role)}>
-                          {(role) => (
-                            <option value={role.value} selected={r().role === role.value}>
-                              {role.label}
-                            </option>
-                          )}
-                        </For>
-                      </select>
-                      <WhoDoesIt
-                        label="Who does it"
-                        value={r().team}
-                        profiles={ctx().profiles}
-                        teams={ctx().teams}
-                        onChange={(team) => patch(i, { team })}
-                      />
-                    </div>
-                    <fieldset class="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                      <legend class="mr-1">Waits on</legend>
-                      <For each={rows().map((_, n) => n)}>
-                        {(j) => (
-                          <Show when={j !== i}>
-                            <label class="flex items-center gap-1">
-                              <input
-                                type="checkbox"
-                                aria-label={`Waits on ${j + 1}`}
-                                title={rows()[j].title}
-                                checked={r().depends_on.includes(j)}
-                                onChange={(e) => toggleWait(i, j, e.currentTarget.checked)}
-                              />
-                              {j + 1}
-                            </label>
-                          </Show>
-                        )}
-                      </For>
-                    </fieldset>
-                    <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                      {r().estimate}
-                    </p>
-                  </div>
-                  );
-                }}
-              </For>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                  {summary()}
+                </p>
+                <div class="flex items-center gap-1">
+                  <Button size="sm" variant="ghost" disabled={chosen() === rows().length} onClick={() => selectAll(true)}>
+                    Select all
+                  </Button>
+                  <Button size="sm" variant="ghost" disabled={chosen() === 0} onClick={() => selectAll(false)}>
+                    Select none
+                  </Button>
+                </div>
+              </div>
+              {branch(null)}
               <Button size="sm" disabled={busy() || chosen() === 0} onClick={() => void create()}>
-                Create selected
+                {`Create ${plural(chosen(), 'item', 'items')}`}
               </Button>
             </>
           }
