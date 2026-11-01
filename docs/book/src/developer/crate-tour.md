@@ -185,6 +185,14 @@ Change sets, the one way an agent changes a board (ADR 0034). `ChangeSet` is a l
 
 ---
 
+### `digest.rs`
+
+The digest (ADR 0034, decision 6): what a reader should know about some projects before it asks for detail. `digest(&DigestInput)` is pure, bounded and byte-stable. The caller hands in plain rows (`ProjectFacts` per project, `TeamTaskFact`s, and the instant they were read at, since nothing in it reads a clock) and gets a `Digest`: per project the items per status, what waits on a person and since when (`WaitKind`: a run's decision, a run that needs the operator, finished work nobody reviewed), the blocked chains (each open item that blocks others and is not blocked itself, with how many items wait for it and how deep the chain goes), the tasks no team will pick up and why (auto-start's own explanation), the stale items (in progress and unchanged for 14 days), the runs that failed since `since`, the tokens against the day's limit and the change sets with operations still waiting; and, for the whole answer, each team's running work and queue. Every list is a `Section` (`total`, at most 8 `rows`, `more`), at most 20 projects and 20 teams are described, and every text is clipped, so a very large board still answers in well under 512 KiB. Every list is sorted by a total order and the maps are ordered ones, so the same rows give the same bytes; `digest/my-saas.expected.json` holds the answer for the fixture board and a test compares to it byte for byte, also with every input list reversed.
+
+`tack_db::queries::digest` holds the narrow questions behind it (open items, runs waiting, items awaiting review, failed runs since, titles, open team tasks), `tack_app::digest::read` assembles them for the projects it is given, and `GET /api/digest?projects=<ids>&since=<rfc3339>` in `tack-api` chooses the projects from the caller's scopes: an omitted `projects` is every project the caller may read, naming one it may not read is a `403` that names the `read` scope, and the tasks teams hold that the board did not start are shown only to a caller that may read every project and did not narrow the list. `since` defaults to the last 24 hours.
+
+---
+
 ### `recurrence.rs` and `rate_card.rs`
 
 `recurrence::next_due` computes when the next copy of a repeating task is due, and `clone_for_next` builds it. `rate_card` prices a model's tokens against the operator's card, returning nothing for a model the card does not list.

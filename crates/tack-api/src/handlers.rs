@@ -11,6 +11,7 @@ pub mod comments;
 pub mod custom_fields;
 pub mod decisions;
 pub mod dependencies;
+pub mod digest;
 pub mod executions;
 pub mod export;
 pub mod import_github;

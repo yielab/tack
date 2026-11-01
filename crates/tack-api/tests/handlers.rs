@@ -33,6 +33,8 @@ mod crud;
 mod custom_fields;
 #[path = "handlers/debug_and_relations.rs"]
 mod debug_and_relations;
+#[path = "handlers/digest.rs"]
+mod digest;
 #[path = "handlers/domain_events.rs"]
 mod domain_events;
 #[path = "handlers/executions_runner_admin.rs"]
