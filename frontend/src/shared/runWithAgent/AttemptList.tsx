@@ -488,10 +488,15 @@ const AttemptRow: Component<{
               <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
               <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 <Show
-                  when={mrp.pack() && !mrp.review()?.verdict}
-                  fallback="Accept it, or reject it. When you reject, a note saying why is optional."
+                  when={!(mrp.pack() && mrp.review()?.verdict)}
+                  fallback="You already reviewed the pack. Save that verdict on the run to finish."
                 >
-                  Accept it, or reject it. A reason is required: it is saved with your verdict and with the checks below.
+                  <Show
+                    when={mrp.pack()}
+                    fallback="Accept it, or reject it. When you reject, a note saying why is optional."
+                  >
+                    Accept it, or reject it. A reason is required: it is saved with your verdict and with the checks below.
+                  </Show>
                 </Show>
               </p>
             </Show>
