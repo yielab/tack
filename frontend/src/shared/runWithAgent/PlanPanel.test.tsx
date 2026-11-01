@@ -126,7 +126,7 @@ describe('PlanPanel', () => {
     const boxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"][aria-label^="Create"]');
     expect(boxes.length).toBe(3);
     boxes[1].click();
-    clickButton(container, 'Create selected');
+    clickButton(container, 'Create 2 items');
     await settle();
 
     expect(posts.length).toBe(1);
@@ -185,7 +185,7 @@ describe('PlanPanel', () => {
     who.dispatchEvent(new Event('change'));
     await settle();
 
-    clickButton(container, 'Create selected');
+    clickButton(container, 'Create 3 items');
     await settle();
     const sent = posts[0].body.subtasks[0];
     expect(sent.type).toBe('bug');
@@ -229,11 +229,143 @@ describe('PlanPanel', () => {
     );
     const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
     await settle();
-    clickButton(container, 'Create selected');
+    clickButton(container, 'Create 3 items');
     await settle();
 
     expect(container.textContent).toContain('Add the settings table: the project has no role "QA", so it has none.');
     expect(container.textContent).toContain('Expose settings over the API: the project has no type "spike", so it took the parent\'s type.');
     expect(container.textContent).toContain('Settings page in the frontend: no single profile names the team "saas-research", so nobody is set to do it.');
+  });
+
+  it('a_sub_item_is_nested_under_its_parent_and_a_deeper_one_under_that', async () => {
+    const deep = {
+      v: '1',
+      subtasks: [
+        { title: 'Plan', description: '', acceptance: [], depends_on: [] },
+        { title: 'Table', description: '', acceptance: [], depends_on: [], parent: 0 },
+        { title: 'Page', description: '', acceptance: [], depends_on: [0] },
+        { title: 'Migration', description: '', acceptance: [], depends_on: [], parent: 1 },
+      ],
+    };
+    routeFetch(deep, {}, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+
+    const outer = container.querySelector<HTMLUListElement>('ul[aria-label="Proposed items"]')!;
+    // The top level holds Plan and Page; Table sits in a list inside Plan's item, Migration inside Table's.
+    const top = Array.from(outer.children);
+    expect(top.length).toBe(2);
+    const plan = top[0];
+    const planSub = plan.querySelector<HTMLUListElement>(':scope > ul')!;
+    expect(planSub.getAttribute('aria-label')).toBe('Sub-items of Plan');
+    expect(planSub.parentElement).toBe(plan);
+    const tableSub = planSub.querySelector<HTMLUListElement>(':scope > li > ul')!;
+    expect(tableSub.getAttribute('aria-label')).toBe('Sub-items of Table');
+    expect(tableSub.querySelector('input[aria-label="Title"]')).not.toBeNull();
+    expect(top[1].querySelector('ul[aria-label^="Sub-items"]')).toBeNull();
+  });
+
+  it('the_header_counts_items_sub_items_and_dependencies_singular_and_plural', async () => {
+    routeFetch(PLAN, {}, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    // PLAN has three items and two dependencies (the third waits on both others).
+    expect(container.textContent).toContain('3 items · 2 dependencies');
+    expect(container.textContent).not.toContain('sub-item');
+
+    const one = mount({ itemId: 'item_1', file: [{ title: 'Only', description: '', acceptance: [], depends_on: [] }] });
+    await settle();
+    expect(one.textContent).toContain('1 item');
+    expect(one.textContent).not.toContain('items ·');
+    expect(one.textContent).not.toContain('dependenc');
+
+    const many = mount({
+      itemId: 'item_1',
+      file: [
+        { title: 'A', description: '', acceptance: [], depends_on: [] },
+        { title: 'B', description: '', acceptance: [], depends_on: [], parent: 0 },
+        { title: 'C', description: '', acceptance: [], depends_on: [], parent: 0 },
+        { title: 'D', description: '', acceptance: [], depends_on: [0, 1] },
+      ],
+    });
+    await settle();
+    expect(many.textContent).toContain('4 items · 2 sub-items · 2 dependencies');
+  });
+
+  it('the_header_names_one_sub_item_and_one_dependency_in_the_singular', async () => {
+    const nested = {
+      v: '1',
+      subtasks: [
+        { title: 'Plan', description: '', acceptance: [], depends_on: [] },
+        { title: 'Table', description: '', acceptance: [], depends_on: [], parent: 0 },
+        { title: 'Page', description: '', acceptance: [], depends_on: [0] },
+      ],
+    };
+    routeFetch(nested, {}, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    expect(container.textContent).toContain('3 items · 1 sub-item · 1 dependency');
+  });
+
+  it('select_none_unticks_every_item_and_select_all_ticks_them_back', async () => {
+    routeFetch(PLAN, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    const boxes = () => Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"][aria-label^="Create"]'));
+
+    clickButton(container, 'Select none');
+    await settle();
+    expect(boxes().map((b) => b.checked)).toEqual([false, false, false]);
+    expect(Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Select none')!.disabled).toBe(true);
+    expect(Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Create 0 items')!.disabled).toBe(true);
+
+    clickButton(container, 'Select all');
+    await settle();
+    expect(boxes().map((b) => b.checked)).toEqual([true, true, true]);
+    expect(Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Select all')!.disabled).toBe(true);
+  });
+
+  it('the_create_button_names_the_number_ticked', async () => {
+    routeFetch(PLAN, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    const boxes = () => Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"][aria-label^="Create"]'));
+    // The create button is the only button whose text starts with a count.
+    const labelOf = () => Array.from(container.querySelectorAll('button')).map((b) => b.textContent).find((t) => /^Create \d+ /.test(t ?? ''));
+
+    expect(labelOf()).toBe('Create 3 items');
+    boxes()[0].click();
+    await settle();
+    expect(labelOf()).toBe('Create 2 items');
+    boxes()[1].click();
+    await settle();
+    expect(labelOf()).toBe('Create 1 item');
+  });
+
+  it('waits_on_shows_titles_as_chips_and_a_menu_adds_one_back', async () => {
+    const posts: Array<{ url: string; body: any }> = [];
+    routeFetch(PLAN, { created: [] }, posts);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+
+    const third = container.querySelectorAll<HTMLElement>('[data-testid="plan-row"]')[2];
+    const chips = () => Array.from(third.querySelectorAll('fieldset > ul > li > span')).map((s) => s.textContent);
+    expect(chips()).toEqual(['Add the settings table', 'Expose settings over the API']);
+
+    third.querySelector<HTMLButtonElement>('button[aria-label="Stop waiting on Expose settings over the API"]')!.click();
+    await settle();
+    expect(chips()).toEqual(['Add the settings table']);
+
+    const menu = third.querySelector<HTMLSelectElement>('select[aria-label="Add a wait for Settings page in the frontend"]')!;
+    expect(Array.from(menu.options).map((o) => o.textContent)).toEqual(['Add an item…', 'Expose settings over the API']);
+    menu.value = '1';
+    menu.dispatchEvent(new Event('change'));
+    await settle();
+    expect(chips()).toEqual(['Add the settings table', 'Expose settings over the API']);
+    expect(menu.value).toBe('');
+
+    clickButton(container, 'Create 3 items');
+    await settle();
+    expect(posts[0].body.subtasks[2].depends_on).toEqual([0, 1]);
   });
 });
