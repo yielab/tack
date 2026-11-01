@@ -370,3 +370,19 @@ fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_wri
         );
     }
 }
+
+#[test]
+fn a_409_to_a_cancel_is_a_finished_task_unless_docket_says_the_run_refused() {
+    use tack_protocol::execution::CancelObservation::{AlreadyTerminal, Ambiguous, ProcessStopped};
+    let ended = json!({"ok": false, "error": "task t is done; nothing to cancel", "code": "already_terminal"});
+    let refused = json!({"ok": false, "error": "the run did not stop", "code": "not_cancellable"});
+    let older = json!({"ok": false, "error": "task t is done; nothing to cancel"});
+    assert_eq!(
+        super::cancel_observation(200, &json!({"ok": true})),
+        ProcessStopped
+    );
+    assert_eq!(super::cancel_observation(409, &ended), AlreadyTerminal);
+    assert_eq!(super::cancel_observation(409, &older), AlreadyTerminal);
+    assert_eq!(super::cancel_observation(409, &refused), Ambiguous);
+    assert_eq!(super::cancel_observation(500, &ended), Ambiguous);
+}

@@ -38,6 +38,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- Cancelling a docket run reads docket's answer to the cancel: a `409` with `code: "not_cancellable"` (the run refused to stop) leaves the run for an operator, and any other `409` still means the task had already ended. Docket now cancels a task it has accepted but no run has claimed, which used to answer `409` and send the run to the operator.
 - Saving an item's "Done when" checklist while another write was in flight (the runner polling, an auto-start tick) could fail with "Internal server error" (`database is locked`) instead of waiting for it: the save now takes the write lock when it begins, like every other read-then-write.
 - The accept panel of a run's proposed items no longer marks a role the project has as "(not in this project)": it asked for the project of an item in the wrong place of the answer, so it never loaded the project's roles or types; and a run made by a team says "The team <name> proposes" instead of "The Planner proposes".
 - A task that would start by itself but has nowhere to run says so on its Automation row ("By hand: it would start when it reaches Backlog, but 2 computers could run it and its profile names no group of computers to choose from") instead of promising it starts; the board had always skipped it silently.

@@ -6,7 +6,7 @@
       "id": "saas-notes-lead",
       "role": "lead",
       "model": {
-        "value": "anthropic/claude-haiku-4-5",
+        "value": "anthropic/claude-haiku-5-5",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-lead",
@@ -31,14 +31,18 @@
             "entries"
           ],
           "query": true
-        }
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
       }
     },
     {
       "id": "saas-notes-reviewer",
       "role": "reviewer",
       "model": {
-        "value": "anthropic/claude-sonnet-4-6",
+        "value": "anthropic/claude-sonnet-5-5",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-reviewer",
@@ -63,14 +67,18 @@
             "entries"
           ],
           "query": true
-        }
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
       }
     },
     {
       "id": "saas-notes-analyst",
       "role": "analyst",
       "model": {
-        "value": "anthropic/claude-haiku-4-5",
+        "value": "anthropic/claude-haiku-5-5",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-analyst",
@@ -103,14 +111,18 @@
             "entries"
           ],
           "query": true
-        }
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
       }
     },
     {
       "id": "saas-notes-writer",
       "role": "writer",
       "model": {
-        "value": "anthropic/claude-haiku-4-5",
+        "value": "anthropic/claude-haiku-5-5",
         "source": "policy"
       },
       "workspace": "/scratch/home/.docket/state/workspaces/projects/saas-notes-writer",
@@ -139,7 +151,11 @@
             "entries"
           ],
           "query": true
-        }
+        },
+        "notComputed": [
+          "mcp",
+          "service"
+        ]
       }
     }
   ],
@@ -274,7 +290,10 @@
     "mode": "none",
     "scope": "global"
   },
-  "budgetUnpriced": [],
+  "budgetUnpriced": [
+    "anthropic/claude-haiku-5-5",
+    "anthropic/claude-sonnet-5-5"
+  ],
   "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
   "configDigest": "47a1b2a9254590b2a4072945c6749176cd70f3ca098dd54170ffd7e63c9022cc",
   "drift": "no",

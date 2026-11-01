@@ -17,7 +17,7 @@
   "startedAt": "2026-01-01T00:00:00Z",
   "completedAt": "2026-01-01T00:00:00Z",
   "claimedAt": "2026-01-01T00:00:00Z",
-  "reason": "lead hop failed: no output cap is known for claude-haiku-4-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-4-5 --max-tokens N",
+  "reason": "lead hop failed: no output cap is known for claude-haiku-5-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-5-5 --max-tokens N",
   "pendingApprovalIndex": null,
   "hops": [
     {
@@ -26,7 +26,7 @@
       "ok": false,
       "output": "",
       "costUsd": 0.0,
-      "error": "no output cap is known for claude-haiku-4-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-4-5 --max-tokens N",
+      "error": "no output cap is known for claude-haiku-5-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-5-5 --max-tokens N",
       "attempts": 1,
       "stepId": "lead",
       "artifact": {
@@ -49,7 +49,7 @@
         "lastTs": "2026-01-01T00:00:00Z"
       },
       "repoFiles": null,
-      "model": "anthropic/claude-haiku-4-5",
+      "model": "anthropic/claude-haiku-5-5",
       "provider": "anthropic",
       "promptManifest": {
         "layers": [
@@ -70,7 +70,7 @@
             "tokens": 28
           }
         ],
-        "model": "anthropic/claude-haiku-4-5",
+        "model": "anthropic/claude-haiku-5-5",
         "family": "anthropic",
         "class": "any",
         "profile": "hosted"
@@ -94,7 +94,7 @@
     "cacheWrite": 0,
     "output": 0,
     "byModel": {
-      "anthropic/claude-haiku-4-5": {
+      "anthropic/claude-haiku-5-5": {
         "input": 0,
         "cached": 0,
         "cacheWrite": 0,

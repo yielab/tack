@@ -1383,9 +1383,8 @@ impl HarnessAdapter for DocketAdapter {
                 .cancel_task(&info.pod, &info.task, "cancelled from Tack")
                 .await
             {
-                Ok(reply) if reply.status == 200 => CancelObservation::ProcessStopped,
-                Ok(reply) if reply.status == 409 => CancelObservation::AlreadyTerminal,
-                _ => CancelObservation::Ambiguous,
+                Ok(reply) => cancel_observation(reply.status, &reply.body),
+                Err(_) => CancelObservation::Ambiguous,
             }
         };
         Ok(CancellationEvidence {
@@ -1792,6 +1791,17 @@ impl DocketAdapter {
                 }
             }
         }
+    }
+}
+
+/// What docket's answer to a cancel says happened. A `409` is a task that already ended unless it
+/// carries `code: "not_cancellable"` (a run that refused to stop), which nobody can call settled.
+fn cancel_observation(status: u16, body: &Value) -> CancelObservation {
+    match status {
+        200 => CancelObservation::ProcessStopped,
+        409 if body["code"] == json!("not_cancellable") => CancelObservation::Ambiguous,
+        409 => CancelObservation::AlreadyTerminal,
+        _ => CancelObservation::Ambiguous,
     }
 }
 
