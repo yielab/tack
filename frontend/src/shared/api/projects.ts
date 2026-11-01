@@ -1,5 +1,9 @@
 import { request } from './client';
 import type { Project, CreateProject, UpdateProject } from '../types';
+import type { components } from './schema.gen';
+
+/** `GET /projects/{id}/auto-start`: whether the project starts tasks by itself, and why each waiting one is not started yet. */
+export type AutoStartState = components['schemas']['AutoStartState'];
 
 export interface FolderCheck {
   exists: boolean;
@@ -16,6 +20,8 @@ export const projects = {
   list: () => request<Project[]>('/projects'),
 
   get: (id: string) => request<Project>(`/projects/${id}`),
+
+  autoStart: (id: string) => request<AutoStartState>(`/projects/${id}/auto-start`),
 
   create: (data: CreateProject) =>
     request<{ id: string }>('/projects', {

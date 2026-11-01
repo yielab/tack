@@ -15,6 +15,7 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
+import { useAutoStart, type WaitingReason } from '../../shared/state/autoStart';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
 import { Avatar, AvatarStack, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
@@ -47,6 +48,8 @@ export const ItemCard: Component<{
   notStarted?: boolean;
   /** Show the priority even when it is the project's default. */
   alwaysPriority?: boolean;
+  /** Why auto-start has not started this task, when it would have. */
+  waiting?: WaitingReason | null;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isHovered, setIsHovered] = createSignal(false);
@@ -183,6 +186,20 @@ export const ItemCard: Component<{
           </Show>
         </div>
       </div>
+      <Show when={props.waiting}>
+        {(why) => (
+          <p
+            data-testid="card-waiting"
+            title={`Waiting to start: ${why().text}`}
+            style={{
+              margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)',
+              'overflow-wrap': 'anywhere',
+            }}
+          >
+            Waiting to start: {why().text}
+          </p>
+        )}
+      </Show>
       <div
         data-testid="card-meta"
         style={{ display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '6px 8px', 'font-size': '0.75rem' }}
@@ -255,6 +272,7 @@ const BoardColumnView: Component<{
   /** Whether work has started in this column: false for a "to do" status. */
   started: boolean;
   runOf: (item: Item) => CardRun | undefined;
+  waitingOf: (item: Item) => WaitingReason | null;
   filters: ReadonlySet<RunFilter>;
   onToggleFilter: (filter: RunFilter) => void;
   alwaysPriority: boolean;
@@ -359,6 +377,7 @@ const BoardColumnView: Component<{
               onEdit={props.onEditItem}
               onMove={props.onMoveItem}
               run={props.runOf(item())}
+              waiting={props.waitingOf(item())}
               notStarted={!props.started}
               alwaysPriority={props.alwaysPriority}
             />
@@ -434,6 +453,8 @@ const Board: Component = () => {
     return newest;
   });
   const runOf = (item: Item): CardRun | undefined => cardRun(newestRuns().get(item.id), item.needs_review === true);
+  const autoStart = useAutoStart(projectId);
+  const waitingOf = (item: Item): WaitingReason | null => autoStart.waiting(item.id);
 
   const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
   const toggleRunFilter = (filter: RunFilter) =>
@@ -672,6 +693,7 @@ const Board: Component = () => {
                   onEditItem={handleEditItem}
                   started={categoryOf(entry().id) !== 'todo'}
                   runOf={runOf}
+                  waitingOf={waitingOf}
                   filters={runFilters()}
                   onToggleFilter={toggleRunFilter}
                   alwaysPriority={alwaysPriority()}

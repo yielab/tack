@@ -31,7 +31,7 @@ function makeItem(p: Partial<Item> = {}): Item {
 
 const STATUSES = ['To Do', 'Doing', 'Done'];
 
-type CardProps = { run?: CardRun; notStarted?: boolean; alwaysPriority?: boolean };
+type CardProps = { run?: CardRun; notStarted?: boolean; alwaysPriority?: boolean; waiting?: { code: string; text: string } | null };
 
 async function mount(item: Item, onMove: (id: string, status: string) => void = () => {}, extra: CardProps = {}) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(
@@ -67,6 +67,19 @@ const run = (state: string, needsReview = false) =>
   cardRun({ request_id: 'req-1', state, cancellation_requested_at: null }, needsReview);
 
 describe('Board ItemCard', () => {
+  it('a_waiting_card_says_why_auto_start_has_not_started_it_and_a_free_card_says_nothing', async () => {
+    const text = 'In Progress is full (5 of 5): move something on to make room';
+    const held = await mount(makeItem(), undefined, { waiting: { code: 'wip', text } });
+    const line = held.querySelector('[data-testid="card-waiting"]')!;
+    expect(line.textContent).toBe(`Waiting to start: ${text}`);
+    expect(line.getAttribute('title')).toBe(`Waiting to start: ${text}`);
+    const free = await mount(makeItem(), undefined, { waiting: null });
+    expect(free.querySelector('[data-testid="card-waiting"]')).toBeNull();
+    const unknown = await mount(makeItem());
+    expect(unknown.querySelector('[data-testid="card-waiting"]')).toBeNull();
+  });
+
+
   it('a_card_shows_ready_for_review_when_its_run_left_something_to_review', async () => {
     const flagged = await mount(makeItem({ needs_review: true }), undefined, { run: cardRun(undefined, true) });
     expect(flagged.querySelector('[data-testid="card-meta"]')?.textContent).toContain('Ready for review');

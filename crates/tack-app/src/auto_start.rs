@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use tack_core::auto_start::{Candidate, Limits, pick};
+use tack_core::auto_start::{Candidate, Facts, Limits, Why, WipColumn, pick, why};
 use tack_core::dependency::{DependencyEdge, DependencyGraph};
 use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
 use tack_core::run_defaults::Source;
@@ -81,20 +81,29 @@ pub async fn tick(
     Ok(outcome)
 }
 
-/// The tasks of one project to start now. How many runs it started.
-async fn project_tick(
+/// What `pick` is given for one project, and the numbers its sentences quote.
+struct Plan {
+    /// The first in-progress status, where a started task goes.
+    started: String,
+    candidates: Vec<Candidate>,
+    limits: Limits,
+    facts: Facts,
+}
+
+/// The tasks waiting in the project's start status with someone to do them, and the limits they
+/// meet. `None` when nothing waits or the workflow has no in-progress status.
+async fn plan(
     repo: &Repository,
     clock: &dyn Clock,
-    ports: &Ports,
     project: &Project,
-) -> Result<usize, AppError> {
+) -> Result<Option<Plan>, AppError> {
     let Some(waiting_in) = project.auto_start_status.as_deref() else {
-        return Ok(0);
+        return Ok(None);
     };
     let project_id = project.id.to_string();
     let rows = queries::items::waiting_with_someone_to_do_it(repo, &project_id, waiting_in).await?;
     if rows.is_empty() {
-        return Ok(0);
+        return Ok(None);
     }
     let Some(started) = project
         .workflow
@@ -104,17 +113,22 @@ async fn project_tick(
         .min_by_key(|status| status.order)
     else {
         tracing::debug!(project_id = %project.id, "auto-start: the workflow has no in-progress status");
-        return Ok(0);
+        return Ok(None);
     };
-    let wip_room = match started.wip_limit {
+    let wip = match started.wip_limit {
         Some(limit) => {
             let taken = repo
                 .count_items_by_status(project.id, &started.name)
                 .await?;
-            Some(limit.saturating_sub(usize::try_from(taken).unwrap_or(usize::MAX)))
+            Some(WipColumn {
+                name: started.name.clone(),
+                taken: usize::try_from(taken).unwrap_or(usize::MAX),
+                limit,
+            })
         }
         None => None,
     };
+    let wip_room = wip.as_ref().map(|c| c.limit.saturating_sub(c.taken));
     let open = queries::execution_requests::items_with_an_open_request(repo, &project_id).await?;
     let budget_reached = crate::scheduler_wiring::budget_reached(repo, &project_id, clock.now())
         .await?
@@ -185,6 +199,52 @@ async fn project_tick(
         budget_reached,
         wip_room,
     };
+    let facts = Facts {
+        wip,
+        max_open: limits.max_open,
+        open_now: limits.open_now,
+    };
+    Ok(Some(Plan {
+        started: started.name.clone(),
+        candidates,
+        limits,
+        facts,
+    }))
+}
+
+/// The waiting tasks of a project that the next pass would not start, most urgent first, each
+/// with why. Nothing is started or written.
+pub async fn explain(
+    repo: &Repository,
+    clock: &dyn Clock,
+    project: &Project,
+) -> Result<Vec<(Uuid, Why)>, AppError> {
+    let Some(plan) = plan(repo, clock, project).await? else {
+        return Ok(Vec::new());
+    };
+    let (_, skipped) = pick(&plan.candidates, &plan.limits);
+    Ok(skipped
+        .into_iter()
+        .map(|(item_id, skip)| (item_id, why(&skip, &plan.facts)))
+        .collect())
+}
+
+/// The tasks of one project to start now. How many runs it started.
+async fn project_tick(
+    repo: &Repository,
+    clock: &dyn Clock,
+    ports: &Ports,
+    project: &Project,
+) -> Result<usize, AppError> {
+    let Some(Plan {
+        started,
+        candidates,
+        limits,
+        ..
+    }) = plan(repo, clock, project).await?
+    else {
+        return Ok(0);
+    };
     let (picked, skipped) = pick(&candidates, &limits);
     for (item_id, why) in skipped {
         tracing::debug!(%item_id, ?why, "auto-start: skipped");
@@ -192,7 +252,7 @@ async fn project_tick(
     let mut count = 0;
     for item_id in picked {
         if let Some(candidate) = candidates.iter().find(|c| c.item_id == item_id)
-            && start(repo, clock, ports, project, candidate, &started.name).await
+            && start(repo, clock, ports, project, candidate, &started).await
         {
             count += 1;
         }
