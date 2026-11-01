@@ -1,7 +1,7 @@
 # Phase 85: a manager works through the board
 
-**Status: PROPOSED 2026-11-01; ADR 0034 holds the decisions.** Waits on the maintainer's acceptance
-and the two questions in ADR 0034 "Open for the maintainer". Starts after Phase 84's cards S (a
+**Status: ACCEPTED 2026-11-01; ADR 0034 holds the decisions,** both of its questions answered yes (the
+Create rung exists, off by default; a credential may name every project). Starts after Phase 84's cards S (a
 project's runs with their step), I (the accept panel as a tree) and J (one inbox) are in `develop`.
 docket's six asks (ADR 0034 "What this asks of docket") block no card: each is read when present and
 said on screen when absent. Tack edits nothing in docket's repository.

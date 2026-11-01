@@ -79,12 +79,13 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   that starts can move its item, the Table view removed (the List sorts, filters and edits in place), and a new
   work view, Orchestration: Flow (a lane per team with its own steps) and Map (roles → profiles → teams →
   members). Front end except N (`on_start_status`) and S (`GET /api/executions?project_id=` with `latest_hop`).
-- **Proposed 2026-11-01:** Phase 85 (`docs/plans/phase-85.md`, ADR 0034, proposed) — a manager is a profile
+- **Accepted 2026-11-01, no card started:** Phase 85 (`docs/plans/phase-85.md`, ADR 0034) — a manager is a profile
   that works through the board, with no "manager" type in the code: every caller a principal (agent credentials
   with scopes, amends ADR 0004), change sets as an agent's only write path with an "Agents on the board" rung,
   team activity (incl. work the board did not start), a computed digest, threads where each message is a turn
-  (`features.converse`: continues or replays), triggers on domain events. Waits on Phase 84's S, I, J and on
-  two open questions (the Create rung; "every project" credentials). Six docket asks, all pulls, none blocking.
+  (`features.converse`: continues or replays), triggers on domain events. The Create rung exists (off by
+  default, capped; amends ADR 0032 d4) and a credential may name every project. Waits on Phase 84's S, I, J.
+  Six docket asks, all pulls, none blocking.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.

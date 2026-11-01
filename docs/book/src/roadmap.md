@@ -51,7 +51,7 @@ own steps, what waits on a person and what no team will take (Flow), and who doe
 members (Map). Cards A, B, C, E, D, F, G, H, I, J, K, T, N, S, O1, O2 and M, in nine rounds.
 
 **[Phase 85](https://github.com/yielab/tack/blob/develop/docs/plans/phase-85.md) — a manager works
-through the board.** Proposed 2026-11-01 (ADR 0034); waits on acceptance and on Phase 84's cards S, I
+through the board.** Accepted 2026-11-01 (ADR 0034); no card started; waits on Phase 84's cards S, I
 and J. A profile becomes a manager by being given general parts, none of them called "manager": a
 credential with scopes (every caller a principal), change sets as an agent's only way to change the
 board with one more rung saying how far it may go, a team's activity including the work the board did
