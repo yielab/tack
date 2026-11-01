@@ -126,6 +126,23 @@ impl Client {
         self.send(Method::GET, &["health"], &[], None).await
     }
 
+    /// Waits until `GET /health` answers, up to `within`; each ask is cut at two seconds so a
+    /// daemon that accepts and does not answer cannot hold the wait past its end.
+    pub async fn wait_until_healthy(&self, within: Duration) {
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            if let Ok(Ok(reply)) = tokio::time::timeout(Duration::from_secs(2), self.health()).await
+                && reply.status == 200
+            {
+                return;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    }
+
     /// `GET /pods`.
     pub async fn pods(&self) -> Result<Reply, String> {
         self.send(Method::GET, &["pods"], &[], None).await

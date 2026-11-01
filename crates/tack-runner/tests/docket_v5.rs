@@ -3687,6 +3687,44 @@ async fn reconcile_reads_the_task_state() {
 }
 
 #[tokio::test]
+async fn recovery_waits_once_for_a_docket_it_cannot_reach_and_then_says_it_cannot_tell() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a free port");
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let scene = scene();
+    let adapter = DocketAdapter::new(
+        DocketConfig {
+            base_url: Some(base_url),
+            token_file: None,
+            ..DocketConfig::default()
+        },
+        scene.state.clone(),
+    )
+    .with_recovery_wait(std::time::Duration::from_millis(600));
+    let mut journal = tack_runner::client::AttemptJournal::prepared(
+        &spec(&scene, "attempt-1", 1).work.lease,
+        spec(&scene, "attempt-1", 1).workspace.journal(),
+    );
+    journal.process_id = Some(format!("{POD}/task-1"));
+
+    let started = std::time::Instant::now();
+    assert_eq!(
+        adapter.reconcile(&journal).await.unwrap(),
+        RecoveryObservation::Ambiguous
+    );
+    assert!(started.elapsed() >= std::time::Duration::from_millis(600));
+    let second = std::time::Instant::now();
+    assert_eq!(
+        adapter.reconcile(&journal).await.unwrap(),
+        RecoveryObservation::Ambiguous
+    );
+    assert!(
+        second.elapsed() < std::time::Duration::from_millis(500),
+        "the second record does not wait again"
+    );
+}
+
+#[tokio::test]
 async fn every_request_carries_the_bearer_token() {
     let fake = pods_fake().await;
     let scene = scene();
