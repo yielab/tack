@@ -8,7 +8,7 @@ import { teamOf } from '../../shared/execution/api';
 import { agentName } from '../../shared/execution/agents';
 import type { TeamEntry, TeamReport, TeamStep } from '../../shared/execution/teams';
 import { agentKindOf } from '../../shared/runWithAgent/ProfilePicker';
-import { cardRun, passesFilters, type CardRun, type RunFilter } from '../../shared/runWithAgent/cardRun';
+import { cardRun, countStates, passesFilters, type CardRun, type RunFilter } from '../../shared/runWithAgent/cardRun';
 import type { components } from '../../shared/api/schema.gen';
 import type { Dependency, Item } from '../../shared/types';
 
@@ -134,7 +134,7 @@ export function blockersOf(itemId: string, edges: readonly Dependency[]): string
 
 // ── Stations: where in a team's own process a run is ────────────────────────────────────────────
 
-export type StationKey = 'up-next' | 'working' | 'needs-you' | 'done' | `step-${number}`;
+export type StationKey = 'up-next' | 'working' | 'needs-you' | 'review' | 'done' | `step-${number}`;
 
 export const stepStation = (index: number): StationKey => `step-${index}`;
 
@@ -148,16 +148,17 @@ export function stepIndexOf(steps: readonly TeamStep[], hop: Pick<LatestHop, 'ro
 
 /**
  * The station a task stands at. Nothing running puts it at Up next (a queued run still waits for its
- * turn); a run that asks or has finished work to look at is at Needs you; one that has ended is in
- * Done. A running run is at the step its newest hop names; with no hop, or a hop no step has, it is at
+ * turn); a run that asks is at Needs you and one with finished work to look at is at Ready for
+ * review (never the same station); one that has ended is in Done. A running run is at the step its newest hop names; with no hop, or a hop no step has, it is at
  * the single Working station, which is also all a team that reports no steps has.
  */
 export function stationFor(run: CardRun | undefined, hop: LatestHop | null | undefined, steps: readonly TeamStep[]): StationKey {
   if (!run || run.state === 'queued') return 'up-next';
   switch (run.state) {
     case 'needs':
-    case 'review':
       return 'needs-you';
+    case 'review':
+      return 'review';
     case 'done':
     case 'failed':
     case 'cancelled':
@@ -195,6 +196,8 @@ export function stationLabel(key: StationKey, steps: readonly TeamStep[]): strin
       return 'working';
     case 'needs-you':
       return 'needs you';
+    case 'review':
+      return 'ready for review';
     case 'done':
       return 'done today';
     default:
@@ -287,7 +290,7 @@ export interface FlowLane {
   stations: FlowStation[];
   tokens: FlowToken[];
   urgency: Urgency;
-  counts: { needs: number; running: number; queued: number };
+  counts: { needs: number; review: number; running: number; queued: number };
   /** The tokens the lane's runs have counted. */
   tokensToday: number;
   merge: MergeRung | null;
@@ -314,7 +317,7 @@ export interface Flow {
   lanes: FlowLane[];
   nobody: NobodyEntry[];
   unused: UnusedTeam[];
-  counts: { needs: number; running: number; queued: number; nobody: number };
+  counts: { needs: number; review: number; running: number; queued: number; nobody: number };
   /** The runs open now: queued, running or waiting for a person. */
   open: number;
 }
@@ -426,7 +429,7 @@ export function buildFlow(input: FlowInput): Flow {
       stations: [],
       tokens: [],
       urgency: 'idle',
-      counts: { needs: 0, running: 0, queued: 0 },
+      counts: { needs: 0, review: 0, running: 0, queued: 0 },
       tokensToday: 0,
       merge: mergeRung(input.autonomy?.level, team ? input.autonomy?.teams.find((l) => l.name === team) : undefined, report?.works_in),
     });
@@ -517,14 +520,13 @@ export function buildFlow(input: FlowInput): Flow {
       stations.push({ key: 'working', label: 'Working', tokens: loose, step: null, check: null });
     }
     stations.push({ key: 'needs-you', label: 'Needs you', tokens: by('needs-you'), step: null, check: null });
+    // A run to review is not a question: it stands at its own station, which shows only when it has one.
+    if (by('review').length > 0) stations.push({ key: 'review', label: 'Ready for review', tokens: by('review'), step: null, check: null });
     stations.push({ key: 'done', label: 'Done today', tokens: by('done'), step: null, check: null });
     lane.stations = stations;
-    lane.counts = {
-      needs: mine.filter((t) => t.run?.state === 'needs' || t.run?.state === 'review').length,
-      running: mine.filter((t) => t.run?.state === 'running').length,
-      queued: mine.filter((t) => t.run?.state === 'queued').length,
-    };
-    lane.urgency = lane.counts.needs > 0 ? 'needs' : lane.counts.running > 0 || lane.counts.queued > 0 ? 'running' : 'idle';
+    const counted = countStates(mine.map((t) => t.run?.state));
+    lane.counts = { needs: counted.needs, review: counted.review, running: counted.running, queued: counted.queued };
+    lane.urgency = lane.counts.needs > 0 || lane.counts.review > 0 ? 'needs' : lane.counts.running > 0 || lane.counts.queued > 0 ? 'running' : 'idle';
   }
 
   // Tokens counted by every run in the window, not only each task's newest.
@@ -563,14 +565,16 @@ export function buildFlow(input: FlowInput): Flow {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const all = tokens;
+  const totals = countStates(all.map((t) => t.run?.state));
   return {
     lanes: ordered,
     nobody,
     unused,
     counts: {
-      needs: all.filter((t) => t.run?.state === 'needs' || t.run?.state === 'review').length,
-      running: all.filter((t) => t.run?.state === 'running').length,
-      queued: all.filter((t) => t.run?.state === 'queued').length,
+      needs: totals.needs,
+      review: totals.review,
+      running: totals.running,
+      queued: totals.queued,
       nobody: nobody.length,
     },
     open: all.filter((t) => t.inFlight).length,
@@ -583,7 +587,7 @@ export function buildFlow(input: FlowInput): Flow {
 export function laneQueue(lane: Pick<FlowLane, 'report' | 'counts'>): { running: number; waiting: number; reported: boolean } {
   const queue = lane.report?.queue;
   if (queue) return { running: queue.running, waiting: queue.waiting, reported: true };
-  return { running: lane.counts.running, waiting: lane.counts.queued + lane.counts.needs, reported: false };
+  return { running: lane.counts.running, waiting: lane.counts.queued + lane.counts.needs + lane.counts.review, reported: false };
 }
 
 /** The ids of the tasks whose roles and blockers the view has to read: those a run holds or ended, and those it may start. */
@@ -598,8 +602,8 @@ export function candidateIds(items: readonly Item[], runs: readonly ExecutionSum
 
 // ── The summary row ─────────────────────────────────────────────────────────────────────────────
 
-/** What a counter in the summary row filters to. Three of them are the board's own filters. */
-export type FlowFilter = Extract<RunFilter, 'waiting' | 'running' | 'queued'> | 'nobody';
+/** What a counter in the summary row filters to. Four of them are the board's own filters. */
+export type FlowFilter = Extract<RunFilter, 'needs' | 'review' | 'running' | 'queued'> | 'nobody';
 
 export function tokenPasses(token: FlowToken, filters: ReadonlySet<FlowFilter>): boolean {
   const runFilters = new Set([...filters].filter((f): f is Exclude<FlowFilter, 'nobody'> => f !== 'nobody'));
