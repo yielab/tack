@@ -4,6 +4,7 @@ pub mod brief;
 pub mod change_set;
 pub mod decision;
 pub mod dependency;
+pub mod digest;
 pub mod error;
 pub mod models;
 pub mod outline;
