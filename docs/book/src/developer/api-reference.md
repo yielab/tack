@@ -1381,13 +1381,15 @@ the Merge button. Merges the
 | Param | In | Type | Required | Description |
 |---|---|---|---|---|
 | `item_id` | query | `string` | no |  |
+| `project_id` | query | `string` | no | Every open run of the project (queued, running, waiting on a person) and those that ended |
 | `item_ids` | query | `string` | no | Comma-separated item ids — returns exactly one row per id, its own |
 | `limit` | query | `integer` | no |  |
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit` | `ExecutionListResponse` |
+| 200 | Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else `project_id` present: every run of the project that is not over, and those that ended in the last 24 hours. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit` | `ExecutionListResponse` |
 | 400 | invalid_request (a malformed `item_ids` entry, or more ids than the route's cap) | `RunnerV1ErrorEnvelope` |
+| 404 | not_found (`project_id` names no project) | `RunnerV1ErrorEnvelope` |
 
 #### `POST /api/executions`
 

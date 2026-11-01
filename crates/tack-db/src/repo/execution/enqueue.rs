@@ -628,6 +628,30 @@ impl Repository {
         rows.into_iter().map(listing_row).collect()
     }
 
+    /// Backs the `project_id` shape of `GET /api/executions`: every request of the project's items
+    /// that has not reached a terminal state (queued, held by a runner, waiting on a person or
+    /// needing the operator) and every one that ended at or after `ended_since`, newest first. A
+    /// terminal request's `updated_at` is when it ended: nothing writes to it afterwards.
+    #[instrument(skip(self))]
+    pub async fn list_project_executions(
+        &self,
+        project_id: &str,
+        ended_since: DateTime<Utc>,
+    ) -> Result<Vec<ExecutionListingRow>, StoreError> {
+        let rows = sqlx::query(state::sql(
+            "SELECT r.id, r.item_id, r.state, r.cancellation_requested_at, r.created_at, r.waiting_reason, r.waiting_since, r.selector_kind, r.selector_id, r.agent_profile_id, r.requested_harness_kind \
+             FROM execution_requests r JOIN items i ON i.id = r.item_id \
+             WHERE i.project_id = ? \
+               AND (r.state NOT IN ({terminal}) OR julianday(r.updated_at) >= julianday(?)) \
+             ORDER BY r.created_at DESC, r.id DESC",
+        ))
+        .bind(project_id)
+        .bind(ended_since.to_rfc3339())
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter().map(listing_row).collect()
+    }
+
     /// Backs the `item_ids` batch shape of `GET /api/executions` — exactly
     /// one row per id in `item_ids` that has at least one execution
     /// request (an id with none is simply absent, never padded with a

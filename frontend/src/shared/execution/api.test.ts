@@ -68,6 +68,40 @@ describe('executionsApi', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/executions');
   });
 
+  it('listByProject(projectId) calls GET /api/executions?project_id={id} and returns each run with its latest_hop', async () => {
+    const rows = [
+      {
+        request_id: 'r1',
+        item_id: 'i1',
+        state: 'running',
+        cancellation_requested_at: null,
+        created_at: '2026-11-01T10:00:00Z',
+        limit: { tokens: null, source: 'none', enforced_by: 'measured', sentence: 'No limit', used: 48210 },
+        latest_hop: { role: 'Reviewer', kind: 'finished', verdict: 'REQUEST-CHANGES', cycle: 1 },
+      },
+      { request_id: 'r2', item_id: 'i2', state: 'queued', cancellation_requested_at: null, created_at: '2026-11-01T11:00:00Z', latest_hop: null },
+    ];
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(jsonResponse({ protocol_version: 1, data: rows }));
+    const { data } = await executionsApi.listByProject('proj/1');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions?project_id=proj%2F1');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method ?? 'GET').toBe('GET');
+    expect(data.data[0].latest_hop).toEqual({ role: 'Reviewer', kind: 'finished', verdict: 'REQUEST-CHANGES', cycle: 1 });
+    expect(data.data[0].limit?.used).toBe(48210);
+    expect(data.data[1].latest_hop).toBeNull();
+  });
+
+  it('listByProject() surfaces an unknown project as a 404 ApiError', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse(
+        { error: { code: 'not_found', message: 'Project does not exist', retryable: false, details: { resource: 'project' } } },
+        { status: 404 },
+      ),
+    );
+    await expect(executionsApi.listByProject('nope')).rejects.toBeInstanceOf(ApiError);
+  });
+
   it('list() preserves response headers, not just the parsed body', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       jsonResponse(
