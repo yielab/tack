@@ -83,3 +83,16 @@ export function memberReachText(member: TeamMember): string[] {
 /** The one sentence a team whose proposals are kept for all its tasks together is owed. */
 export const SHARED_PROPOSALS_TEXT =
   "This team's proposals are kept for all its tasks together: a name used in one task cannot be used again in another until the team's proposal list is recreated.";
+
+/** What the team's report says of proposing, read from the one field both the card and Compare use:
+ *  each member's `can_propose`. `roles` are the members that can; `not_reported` when the report does not say. */
+export function teamProposes(report: TeamReport | null | undefined): { state: 'can' | 'cannot' | 'not_reported'; roles: string[] } {
+  const members = report?.members;
+  if (!members || members.length === 0) return { state: 'not_reported', roles: [] };
+  const roles = members.filter((m) => m.can_propose === true).map((m) => m.role);
+  if (roles.length > 0) return { state: 'can', roles };
+  return members.every((m) => m.can_propose === false) ? { state: 'cannot', roles: [] } : { state: 'not_reported', roles: [] };
+}
+
+/** A name the agent reported as it is written, without the backticks a sentence may wrap it in. */
+export const plainName = (text: string): string => text.replaceAll('`', '');

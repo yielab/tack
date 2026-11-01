@@ -416,6 +416,17 @@ describe('buildCompare: the teams side by side', () => {
   const row = (key: string) => compare.rows.find((r) => r.key === key)!;
   const at = (key: string, name: string) => row(key).cells[compare.teams.findIndex((t) => t.name === name)];
 
+  it('reads_who_can_propose_from_the_members_as_the_team_card_does', () => {
+    expect(at('proposes', 'saas-notes')).toEqual({ kind: 'list', items: ['Lead'] });
+    const quiet = buildCompare({
+      flow,
+      teams: [team('q', {}, { members: [{ role: 'Lead', model: 'm', can_propose: false }] })],
+      profiles,
+      autonomy: null,
+    });
+    expect(quiet.rows.find((r) => r.key === 'proposes')!.cells[0]).toEqual({ kind: 'text', text: 'No member proposes items' });
+  });
+
   it('has_the_teams_as_columns_by_name_and_the_asked_rows_in_order', () => {
     expect(compare.teams.map((t) => t.name)).toEqual(['bare', 'gone', 'saas-notes']);
     expect(compare.rows.map((r) => r.label)).toEqual([

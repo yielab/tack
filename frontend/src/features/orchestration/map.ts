@@ -12,6 +12,7 @@ import {
   memberReachText,
   networkText,
   stepText,
+  teamProposes,
   type TeamEntry,
   type TeamMember,
   type TeamReport,
@@ -590,7 +591,7 @@ export function profileTokenLimit(profile: Pick<AgentProfileSummary, 'limits'>):
 }
 
 /** "Lead, Reviewer" for the members for which `pick` holds; none when every one says no; unsaid otherwise. */
-function memberFact(report: TeamReport | null | undefined, fact: 'writes_project' | 'can_propose', none: string): CompareCell {
+function memberFact(report: TeamReport | null | undefined, fact: 'writes_project', none: string): CompareCell {
   const members = report?.members;
   if (!members) return missing('The team did not report its members.');
   if (members.length === 0) return text('No members');
@@ -655,7 +656,19 @@ export function buildCompare(input: CompareInput): CompareModel {
       (e) =>
         cell(e, (r) => (r.steps ? (r.steps.length > 0 ? list(r.steps.map(stepText)) : text('Reports no steps')) : null), 'The team did not report its steps.'),
     ],
-    ['proposes', 'Can propose', (e) => (e.report ? memberFact(e.report, 'can_propose', 'No member proposes items') : missing(noReport))],
+    [
+      'proposes',
+      'Can propose',
+      (e) => {
+        if (!e.report) return missing(noReport);
+        // The same reading the team's card on the Agents page makes: each member's own `can_propose`.
+        if (e.report.members?.length === 0) return text('No members');
+        const said = teamProposes(e.report);
+        if (said.state === 'can') return list(said.roles);
+        if (said.state === 'cannot') return text('No member proposes items');
+        return missing(e.report.members ? 'The team did not say this of its members.' : 'The team did not report its members.');
+      },
+    ],
     [
       'merge',
       'Merge rung',

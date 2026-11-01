@@ -346,6 +346,16 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
                 <ul aria-label={`Members of ${lane().name}`} class="flex flex-wrap items-center" data-testid="flow-members">
                   <For each={list()}>{(member) => <MemberMark member={member} />}</For>
                 </ul>
+                <Show when={list().some((m) => m.writes_project === true || m.can_propose === true)}>
+                  <span
+                    data-testid="flow-members-legend"
+                    class="text-caption"
+                    style={FAINT}
+                    title="A ring around a member means it changes the project; a dot on it means it can propose items."
+                  >
+                    ring: changes the project · dot: can propose
+                  </span>
+                </Show>
               </Show>
             )}
           </Show>
