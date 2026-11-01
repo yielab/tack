@@ -8,6 +8,7 @@
   "idempotencyKey": "capture-attempt-3",
   "baseRef": "main",
   "pipeline": "no-such-pipeline",
+  "rev": 14,
   "status": "failed",
   "startedAt": "2026-01-01T00:00:00Z",
   "completedAt": "2026-01-01T00:00:00Z",

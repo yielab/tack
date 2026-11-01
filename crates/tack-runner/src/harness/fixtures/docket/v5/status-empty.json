@@ -1,5 +1,12 @@
 {
   "apiVersion": "6",
+  "features": [
+    "taskCurrent",
+    "taskCursor",
+    "podMemory",
+    "readScope",
+    "conversation"
+  ],
   "timestamp": "2026-01-01T00:00:00Z",
   "channels": [],
   "agents": [],
