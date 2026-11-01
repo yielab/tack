@@ -249,6 +249,9 @@ pub struct DocketAdapter {
     live: Mutex<HashMap<String, Live>>,
     /// Where the activity reader is in each team's tasks and trace.
     activity: Mutex<HashMap<String, activity::TeamCursor>>,
+    /// How long recovery waits for an unreachable docket, and whether it already has.
+    recovery_wait: Duration,
+    recovery_waited: tokio::sync::OnceCell<()>,
 }
 
 impl DocketAdapter {
@@ -261,7 +264,16 @@ impl DocketAdapter {
             ensured: Mutex::new(HashSet::new()),
             live: Mutex::new(HashMap::new()),
             activity: Mutex::new(HashMap::new()),
+            recovery_wait: RECOVERY_WAIT,
+            recovery_waited: tokio::sync::OnceCell::new(),
         }
+    }
+
+    /// The same adapter that waits `within` for a docket it cannot reach when it recovers a task.
+    #[must_use]
+    pub fn with_recovery_wait(mut self, within: Duration) -> Self {
+        self.recovery_wait = within;
+        self
     }
 
     /// Where one kind of progress for an attempt is kept: `cursor` for the trace, `since` for the
@@ -1442,14 +1454,14 @@ impl HarnessAdapter for DocketAdapter {
         if task.starts_with("rejected-") {
             return Ok(RecoveryObservation::ProcessStopped);
         }
-        // A docket restarting beside this runner is out of reach for a few seconds, and the
-        // task it holds is intact; an answer that is not a task is never retried.
+        // A docket restarting beside this runner is out of reach for a few seconds, and the task it
+        // holds is intact: the first record to find it unreachable waits for the daemon for all of
+        // them, then every record reads once. An answer that is not a task is never waited for.
         let mut reply = self.client.task(pod, task).await;
-        for _ in 1..RECOVERY_READ_TRIES {
-            if reply.is_ok() {
-                break;
-            }
-            tokio::time::sleep(RECOVERY_READ_PAUSE).await;
+        if reply.is_err() {
+            self.recovery_waited
+                .get_or_init(|| self.client.wait_until_healthy(self.recovery_wait))
+                .await;
             reply = self.client.task(pod, task).await;
         }
         Ok(match reply {
@@ -1513,10 +1525,9 @@ impl HarnessAdapter for DocketAdapter {
     }
 }
 
-/// How many times recovery asks docket for a task it cannot reach, and how long it waits between
-/// asks: long enough for a daemon that restarts with the runner.
-const RECOVERY_READ_TRIES: usize = 6;
-const RECOVERY_READ_PAUSE: Duration = Duration::from_secs(2);
+/// How long recovery waits, once, for a docket it cannot reach: long enough for a daemon that
+/// restarts beside the runner, the same wait the runner gives a docket it starts itself.
+const RECOVERY_WAIT: Duration = Duration::from_secs(30);
 
 /// Where Tack is in docket's trace of one task: the cursor docket gave, the model the last
 /// implementer hop was served by, and how many finished hops have reached the timeline.
