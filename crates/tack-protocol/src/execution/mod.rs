@@ -5,6 +5,7 @@
 //! protocol and is the seam consumed by the API, database, and runner
 //! layers.
 
+mod activity;
 mod capabilities;
 mod lifecycle;
 mod messages;
@@ -12,6 +13,7 @@ mod types;
 
 // `CapabilityLimits` is exported here since it's the type of the public
 // field `RunnerCapabilities::limits`, so downstream crates can name it.
+pub use activity::{ActivityState, ActivityTask, CurrentStep, FinishedStep, TeamActivity, WaitsOn};
 pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
     EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
@@ -23,15 +25,15 @@ pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,
 };
 pub use messages::{
-    ActiveAttempt, ArtifactContentResponse, ArtifactGrant, ArtifactManifestEntry,
-    ArtifactManifestRequest, ArtifactManifestResponse, ArtifactUpload, AttemptTransitionRequest,
-    AttemptTransitionResponse, CancelObservation, CancellationObservationRequest,
-    CancellationObservationResponse, ClaimGranted, ClaimIdle, ClaimLease, ClaimRequest,
-    ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer, DecisionCreateRequest,
-    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
-    DecisionRecommendation, DecisionUpdate, EnrollmentRequest, EnrollmentResponse,
-    EventBatchRequest, EventBatchResponse, EventRecord, HeartbeatRequest, HeartbeatResponse,
-    LeaseResult, RefreshRequest, RefreshResponse,
+    ActiveAttempt, ActivityReport, ActivityResponse, ArtifactContentResponse, ArtifactGrant,
+    ArtifactManifestEntry, ArtifactManifestRequest, ArtifactManifestResponse, ArtifactUpload,
+    AttemptTransitionRequest, AttemptTransitionResponse, CancelObservation,
+    CancellationObservationRequest, CancellationObservationResponse, ClaimGranted, ClaimIdle,
+    ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer,
+    DecisionCreateRequest, DecisionCreateResponse, DecisionOption, DecisionPollRequest,
+    DecisionPollResponse, DecisionRecommendation, DecisionUpdate, EnrollmentRequest,
+    EnrollmentResponse, EventBatchRequest, EventBatchResponse, EventRecord, HeartbeatRequest,
+    HeartbeatResponse, LeaseResult, RefreshRequest, RefreshResponse,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

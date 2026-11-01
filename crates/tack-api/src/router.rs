@@ -363,6 +363,7 @@ pub fn build_router(state: AppState) -> Router {
             get(briefs::list_brief_versions),
         )
         .route("/teams", get(teams::list_teams))
+        .route("/teams/{id}/activity", get(teams::team_activity))
         .route(
             "/projects/{id}/autonomy",
             get(autonomy::get_autonomy).put(autonomy::put_autonomy),

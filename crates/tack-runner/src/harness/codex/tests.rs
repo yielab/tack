@@ -125,6 +125,15 @@ fn codex_declares_what_it_does_not_enforce() {
             .contains("tack-plan.json"),
         "{proposals:?}"
     );
+    let activity = declared.activity.expect("reports activity");
+    assert_eq!(activity.support, CapabilitySupport::Unsupported);
+    assert!(
+        activity
+            .reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty()),
+        "an unsupported capability says why: {activity:?}"
+    );
     assert_eq!(declared.usage.support, CapabilitySupport::Advisory);
     assert_eq!(declared.decisions.support, CapabilitySupport::Supported);
     assert_eq!(

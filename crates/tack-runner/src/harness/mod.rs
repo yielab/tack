@@ -32,7 +32,7 @@ use std::{collections::BTreeMap, path::Path, sync::Arc};
 use async_trait::async_trait;
 use tack_protocol::execution::{
     CapabilitySupport, ExecutionRequestSnapshot, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind,
+    HarnessKind as DomainHarnessKind, TeamActivity,
 };
 use thiserror::Error;
 
@@ -226,6 +226,13 @@ pub trait HarnessProbe: Send + Sync {
     /// descriptor whose `reports_process_groups` is true — a lying
     /// capability is caught here, before any attempt starts.
     fn declared_capabilities(&self) -> FeatureCapabilities;
+
+    /// What this harness's teams are doing: the tasks that changed since the last call, work the
+    /// board did not start included. `None` for a harness that holds no team, which says so in its
+    /// `activity` capability; an empty list is a team with nothing new.
+    async fn activity(&self) -> Option<Vec<TeamActivity>> {
+        None
+    }
 }
 
 /// A probe rejected at registration, before it can back a claimed attempt.
@@ -402,7 +409,7 @@ fn install<G: local_process::HarnessGrammar>(
 /// Implements [`HarnessAdapter`] itself, so `RunnerEngine::new(...)` is a
 /// complete, multi-harness runner with no `engine.rs` changes: adding a
 /// harness means registering it here, never a new engine type parameter.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct AdapterRegistry {
     adapters: BTreeMap<String, Arc<dyn HarnessAdapter>>,
     probes: BTreeMap<String, Arc<dyn HarnessProbe>>,
@@ -486,6 +493,18 @@ impl AdapterRegistry {
             reports.push(probe.probe().await);
         }
         reports
+    }
+
+    /// What each harness's teams did since the last call, by kind; a harness with nothing to
+    /// say is left out.
+    pub async fn activity(&self) -> Vec<(DomainHarnessKind, Vec<TeamActivity>)> {
+        let mut report = Vec::new();
+        for probe in self.probes.values() {
+            if let Some(teams) = probe.activity().await.filter(|teams| !teams.is_empty()) {
+                report.push((probe.harness_kind(), teams));
+            }
+        }
+        report
     }
 
     /// Each probed harness's declared per-feature support, by kind.

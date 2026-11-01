@@ -501,6 +501,10 @@ impl HarnessGrammar for CodexGrammar {
                  reads it after the run; a run whose workspace has no work tree has no file to \
                  read, and proposes nothing",
             )),
+            activity: Some(capability(
+                CapabilitySupport::Unsupported,
+                "codex runs one agent in one work tree; it holds no team and no work of its own to report",
+            )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "the tool list (the request's, else the profile's for codex) is enforced as codex's sandbox mode (a write-capable \

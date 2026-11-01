@@ -103,6 +103,15 @@ fn opencode_declares_decisions_supported_over_acp() {
             .contains("tack-plan.json"),
         "{proposals:?}"
     );
+    let activity = declared.activity.expect("reports activity");
+    assert_eq!(activity.support, CapabilitySupport::Unsupported);
+    assert!(
+        activity
+            .reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty()),
+        "an unsupported capability says why: {activity:?}"
+    );
     let reason = declared.decisions.reason.as_deref().unwrap_or_default();
     assert!(reason.contains("acp"), "{reason}");
     assert!(reason.contains("session/request_permission"), "{reason}");

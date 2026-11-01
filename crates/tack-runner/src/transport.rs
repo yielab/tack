@@ -47,8 +47,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tack_protocol::execution as wire;
 use tack_protocol::execution::{
-    ClaimGranted, ClaimResponse, ExecutionState, ProtocolErrorEnvelope, ProtocolVersion,
-    RecoveryObservationRequest, RecoveryObservationResponse, RunnerCapabilities, StableErrorCode,
+    ActivityReport, ActivityResponse, ClaimGranted, ClaimResponse, ExecutionState, HarnessKind,
+    ProtocolErrorEnvelope, ProtocolVersion, RecoveryObservationRequest,
+    RecoveryObservationResponse, RunnerCapabilities, StableErrorCode, TeamActivity,
 };
 use tokio::task::JoinSet;
 
@@ -191,6 +192,26 @@ impl HttpPullProtocol {
 
     fn url(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
+    }
+
+    /// `POST /activity`: what a harness's teams are doing. Replayable: the board replaces what
+    /// it holds for each task, so a repeated report changes nothing.
+    pub async fn report_activity(
+        &self,
+        session: &RunnerSession,
+        report: ActivityReport,
+    ) -> Result<ActivityResponse, ProtocolClientError> {
+        let value = self
+            .send_json(
+                Method::POST,
+                "/activity",
+                Some(session.credential()),
+                &report,
+                Idempotency::Replayable,
+                None,
+            )
+            .await?;
+        typed(&value)
     }
 
     /// One JSON exchange, with the two-condition retry discipline documented
@@ -1068,6 +1089,15 @@ fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), RunnerError> {
 /// or an agent added after it started reaches the board without a restart.
 pub const CAPABILITY_REPROBE_INTERVAL: Duration = Duration::from_secs(300);
 
+/// How often the runner asks its harnesses what their teams are doing and sends what changed.
+pub const ACTIVITY_INTERVAL: Duration = Duration::from_secs(15);
+
+/// What the teams of each harness did since the last read.
+pub type TeamActivityBatch = Vec<(HarnessKind, Vec<TeamActivity>)>;
+
+/// The most batches kept for the board while it does not answer; the oldest go first.
+const ACTIVITY_UNSENT_MAX: usize = 100;
+
 /// The production [`RunnerProtocolClient`]: enroll (or resume), replay
 /// unresolved journal records, then claim and heartbeat until shutdown.
 pub struct HttpRunnerClient<A, W, C> {
@@ -1079,6 +1109,13 @@ pub struct HttpRunnerClient<A, W, C> {
     sequence: AtomicU64,
     /// How often the one ticker heartbeats every lease held.
     renewal_interval: Duration,
+    /// How often, and how, the harnesses are probed again; `None` reports once.
+    /// How often, and how, the teams' activity is read; `None` reports none.
+    #[allow(clippy::type_complexity)] // an interval and one boxed async reader
+    activity: Option<(
+        Duration,
+        Box<dyn Fn() -> Pin<Box<dyn Future<Output = TeamActivityBatch> + Send>> + Send + Sync>,
+    )>,
     /// How often, and how, the harnesses are probed again; `None` reports once.
     #[allow(clippy::type_complexity)] // an interval and one boxed async probe
     reprobe: Option<(
@@ -1108,6 +1145,7 @@ where
             capabilities,
             sequence: AtomicU64::new(0),
             renewal_interval: LEASE_RENEWAL_INTERVAL,
+            activity: None,
             reprobe: None,
         }
     }
@@ -1121,6 +1159,17 @@ where
         Fut: Future<Output = RunnerCapabilities> + Send + 'static,
     {
         self.reprobe = Some((interval, Box::new(move || Box::pin(probe()))));
+        self
+    }
+
+    /// Reads what the teams are doing every `interval` and sends what changed.
+    #[must_use]
+    pub fn with_activity<F, Fut>(mut self, interval: Duration, read: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = TeamActivityBatch> + Send + 'static,
+    {
+        self.activity = Some((interval, Box::new(move || Box::pin(read()))));
         self
     }
 
@@ -1179,6 +1228,32 @@ where
         match self.engine.refresh(session, request).await {
             Ok(_) => *last = fresh,
             Err(error) => tracing::warn!(%error, "the new capability report could not be sent"),
+        }
+    }
+
+    /// Reads the teams' activity and sends it with whatever an earlier tick could not send. A
+    /// batch the board did not take is kept for the next tick.
+    async fn send_activity(&self, session: &RunnerSession, unsent: &mut TeamActivityBatch) {
+        let Some((_, read)) = &self.activity else {
+            return;
+        };
+        unsent.extend(read().await);
+        if unsent.len() > ACTIVITY_UNSENT_MAX {
+            unsent.drain(..unsent.len() - ACTIVITY_UNSENT_MAX);
+        }
+        for (harness_kind, teams) in std::mem::take(unsent) {
+            let report = ActivityReport {
+                protocol_version: ProtocolVersion::v1(),
+                runner_id: session.runner_id.clone(),
+                report_id: self.next_id("activity"),
+                sent_at: self.now(),
+                harness_kind: harness_kind.clone(),
+                teams: teams.clone(),
+            };
+            if let Err(error) = self.protocol.report_activity(session, report).await {
+                tracing::warn!(%error, "the teams' activity could not be sent");
+                unsent.push((harness_kind, teams));
+            }
         }
     }
 
@@ -1337,6 +1412,12 @@ where
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
             ticker
         });
+        let mut activity_ticker = self.activity.as_ref().map(|(interval, _)| {
+            let mut ticker = tokio::time::interval(*interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            ticker
+        });
+        let mut unsent = TeamActivityBatch::new();
         let mut last_sent = self.capability_report();
         loop {
             if shutdown.is_requested() {
@@ -1366,6 +1447,12 @@ where
                         tracing::warn!(%error, "heartbeat failed");
                     }
                 }
+                () = async {
+                    match activity_ticker.as_mut() {
+                        Some(ticker) => { ticker.tick().await; }
+                        None => std::future::pending().await,
+                    }
+                } => self.send_activity(&session, &mut unsent).await,
                 () = async {
                     match reprobe_ticker.as_mut() {
                         Some(ticker) => { ticker.tick().await; }

@@ -90,6 +90,9 @@ pub async fn build_runtime_with_active(
         &config.docket,
         &config.process,
     );
+    // The adapters that run attempts are also the ones that remember where each team's tasks
+    // were last read, so the activity is read through these and not through a fresh discovery.
+    let activity_adapters = adapters.clone();
     // What this runner reports is probed here and again by the client later
     // (a team added after start), so one function decides how it is built.
     let probe = {
@@ -169,7 +172,11 @@ pub async fn build_runtime_with_active(
     .with_board_url(board_url(&config.api_base_url))
     .with_active(active);
     let client = HttpRunnerClient::new(protocol, engine, config.clone(), SystemClock, capabilities)
-        .with_reprobe(crate::client::transport::CAPABILITY_REPROBE_INTERVAL, probe);
+        .with_reprobe(crate::client::transport::CAPABILITY_REPROBE_INTERVAL, probe)
+        .with_activity(crate::client::transport::ACTIVITY_INTERVAL, move || {
+            let adapters = activity_adapters.clone();
+            async move { adapters.activity().await }
+        });
 
     Ok(RunnerRuntime::new(
         client,
@@ -352,6 +359,12 @@ async fn report_capabilities<C: Clock>(
                 Some("usage is reported only when a harness emits it"),
             ),
             proposals: None,
+            activity: Some(feature(
+                tack_protocol::execution::CapabilitySupport::Advisory,
+                Some(
+                    "reported only by a harness that holds teams; see each harness's own activity capability",
+                ),
+            )),
             additional: BTreeMap::new(),
         },
         limits: CapabilityLimits {
