@@ -34,6 +34,7 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
 use tack_app::AppError;
+use tack_app::runs;
 use tack_app::runs::complete::{Completed, CompletionReport};
 use tack_app::runs::create_decision::{DecisionCreated, DecisionRequest};
 use tack_app::runs::enroll::{Enrolled, Enrollment};
@@ -44,6 +45,7 @@ use tack_app::runs::report_events::{EventReport, EventsReported};
 use tack_app::runs::submit_artifacts::{
     ArtifactManifest, ContentUpload, ManifestSubmission, ManifestSubmitted, UploadChecked,
 };
+use tack_core::principal::Principal;
 use tack_db::StoreError;
 use tack_db::repo::execution::state as execution_state;
 use tack_db::repo::team_activity::TeamTaskReport;
@@ -1220,20 +1222,20 @@ async fn transition_attempt(
     // after a person has put it elsewhere.
     if matches!(phase, AttemptTransitionPhase::Running)
         && matches!(result, AttemptTransitionResult::Applied(_))
-        && let Some(moved) =
-            tack_app::runs::move_on_start::move_item(&state.repo, attempt_id.as_str()).await
-        && let Some(app) = state.app.as_ref()
     {
-        // The board learns about the move the same way as from an edit.
-        crate::handlers::websocket::broadcast_event(
-            app,
-            crate::handlers::websocket::BoardEvent::ItemUpdated {
-                project_id: moved.project_id,
-                item_id: moved.item_id,
-                old_status: Some(moved.old_status),
-                new_status: moved.new_status,
-            },
-        );
+        let moved =
+            tack_app::runs::move_on_start::move_item(&state.repo, attempt_id.as_str()).await;
+        if let Some(app) = state.app.as_ref() {
+            // The board learns about the move the same way as from an edit.
+            runs::announce::run_started(
+                &state.repo,
+                app.events().as_ref(),
+                &Principal::runner(principal.runner_id.as_str()),
+                &attempt_id,
+                moved.as_ref(),
+            )
+            .await;
+        }
     }
 
     match result {
@@ -1456,10 +1458,23 @@ pub async fn create_decision(
         internal_error("Could not record decision")
     })?;
 
+    if let Some(app) = state.app.as_ref() {
+        runs::announce::decision_opened(
+            &state.repo,
+            app.events().as_ref(),
+            &Principal::runner(principal.runner_id.as_str()),
+            &attempt_id,
+            &decision_id,
+            &created,
+        )
+        .await;
+    }
+
     match created {
         DecisionCreated::Created {
             state: decision_state,
             created_at,
+            ..
         } => message_json(&DecisionCreateResponse {
             protocol_version: ProtocolVersion::v1(),
             decision_id,
@@ -1933,18 +1948,17 @@ pub async fn submit_completion(
         internal_error("Could not record completion")
     })?;
 
-    if let Completed::Committed { item_moved, .. } = &completed {
-        if let (Some(app), Some(moved)) = (state.app.as_ref(), item_moved) {
+    if let Completed::Committed { .. } = &completed {
+        if let Some(app) = state.app.as_ref() {
             // The board learns about the move the same way as from an edit.
-            crate::handlers::websocket::broadcast_event(
-                app,
-                crate::handlers::websocket::BoardEvent::ItemUpdated {
-                    project_id: moved.project_id,
-                    item_id: moved.item_id,
-                    old_status: Some(moved.old_status.clone()),
-                    new_status: moved.new_status.clone(),
-                },
-            );
+            runs::announce::run_ended(
+                &state.repo,
+                app.events().as_ref(),
+                &Principal::runner(principal.runner_id.as_str()),
+                &attempt_id,
+                &completed,
+            )
+            .await;
         }
         if let Some(app) = state.app.clone() {
             // The pack goes to prill's store; the runner does not wait for it, and a failure

@@ -1,16 +1,16 @@
 //! The ports in `tack_app::ports` stand in for the HTTP layer: a use case or a loop pass runs
 //! against fakes of them, with a real store and no router.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use async_trait::async_trait;
+use tack_app::events::RecordedEvents;
 use tack_app::github_sync::GitHub;
 use tack_app::loop_config::{LoopConfig, MIN_BACKUP_INTERVAL_SECS};
-use tack_app::ports::{Artifacts, BoardEvents, Ports, Verifier, VerifierError};
+use tack_app::ports::{Artifacts, Ports, Verifier, VerifierError};
 use tack_app::{auto_start, merge};
 use tack_protocol::SystemClock;
 use tack_test_support::setup_test_db;
-use uuid::Uuid;
 
 struct NoVerifier;
 
@@ -34,18 +34,6 @@ struct NoArtifacts;
 impl Artifacts for NoArtifacts {
     async fn read(&self, _reference: &str) -> Option<Vec<u8>> {
         None
-    }
-}
-
-#[derive(Default)]
-struct RecordedEvents(Mutex<Vec<(Uuid, Uuid, String, String)>>);
-
-impl BoardEvents for RecordedEvents {
-    fn item_moved(&self, project_id: Uuid, item_id: Uuid, old_status: String, new_status: String) {
-        self.0
-            .lock()
-            .unwrap()
-            .push((project_id, item_id, old_status, new_status));
     }
 }
 
@@ -84,7 +72,7 @@ async fn an_auto_start_pass_over_fake_ports_with_nothing_to_start_says_nothing()
         .expect("a pass over an empty board");
 
     assert_eq!(outcome.started, 0);
-    assert!(events.0.lock().unwrap().is_empty());
+    assert!(events.events().is_empty());
 }
 
 #[test]

@@ -45,6 +45,7 @@ async fn setup(storage_root: &std::path::Path) -> (axum::Router, Repository, Str
         },
         workspace_id,
         broadcast_tx: tx,
+        event_bus: Default::default(),
         webhook: None,
         local_runner: None,
         tasks: Default::default(),

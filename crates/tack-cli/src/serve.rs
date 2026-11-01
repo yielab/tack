@@ -64,6 +64,7 @@ pub async fn run(
         config,
         workspace_id,
         broadcast_tx,
+        event_bus: Default::default(),
         webhook,
         local_runner,
         tasks: TaskTracker::new(),
