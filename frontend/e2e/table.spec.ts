@@ -1,18 +1,18 @@
 import { test, expect } from '@playwright/test';
 import { API, getOrCreateProject, waitForApp } from './helpers';
 
-// User journey for the Table view (editable grid). Text-based selectors keep the
+// User journey for the List's filter and in-place edit. Text-based selectors keep the
 // test resilient to styling refactors — only a real regression breaks it.
 
-test('table view lists items and filters them', async ({ page, request }) => {
+test('list view lists items and filters them', async ({ page, request }) => {
   const projectId = await getOrCreateProject(request);
-  const title = `Table item ${Date.now()}`;
+  const title = `List item ${Date.now()}`;
   const res = await request.post(`${API}/projects/${projectId}/items`, {
     data: { title, item_type: 'task' },
   });
   expect(res.ok()).toBeTruthy();
 
-  await page.goto(`/projects/${projectId}/table`);
+  await page.goto(`/projects/${projectId}/list`);
   await waitForApp(page);
 
   // The created item surfaces as a row.
@@ -26,7 +26,7 @@ test('table view lists items and filters them', async ({ page, request }) => {
   await expect(page.getByText(title, { exact: false })).toBeVisible();
 });
 
-test('table inline title edit persists', async ({ page, request }) => {
+test('list inline title edit persists', async ({ page, request }) => {
   const projectId = await getOrCreateProject(request);
   const title = `Editable ${Date.now()}`;
   const res = await request.post(`${API}/projects/${projectId}/items`, {
@@ -34,13 +34,13 @@ test('table inline title edit persists', async ({ page, request }) => {
   });
   expect(res.ok()).toBeTruthy();
 
-  await page.goto(`/projects/${projectId}/table`);
+  await page.goto(`/projects/${projectId}/list`);
   await waitForApp(page);
 
-  // Click the title cell to enter edit mode, change it, and commit with Enter.
-  // Scope the editor to the table so we don't grab the top-bar search box.
-  await page.getByRole('button', { name: title, exact: false }).first().click();
-  const editor = page.locator('table').getByRole('textbox').first();
+  // Press the title's edit button (the title itself opens the item), change it, and commit with Enter.
+  // Name the editor by its row so we don't grab the top-bar search box.
+  await page.getByRole('button', { name: `Edit title of ${title}` }).click();
+  const editor = page.getByRole('textbox', { name: `Title of ${title}` });
   const newTitle = `${title} (edited)`;
   await editor.fill(newTitle);
   await editor.press('Enter');

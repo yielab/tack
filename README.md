@@ -105,7 +105,7 @@ one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/
 
 ## Features
 
-- **Project management.** Board, list, table, calendar and timeline views; Scrum, Kanban
+- **Project management.** Board, list, calendar and timeline views; Scrum, Kanban
   or phases; dependencies; and your own names for *Task* or *Sprint*. All of it works
   without an agent.
 - **Agent runs.** Progress shows on the task while the agent works. With *Ask before each

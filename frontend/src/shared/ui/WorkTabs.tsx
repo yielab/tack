@@ -8,7 +8,6 @@ import { useVocab } from '../vocab/useVocab';
 const TABS: { lens: Lens; label: string; vocab?: string }[] = [
   { lens: 'board',    label: 'Board' },
   { lens: 'list',     label: 'List' },
-  { lens: 'table',    label: 'Table' },
   { lens: 'calendar', label: 'Calendar' },
   { lens: 'timeline', label: 'Timeline' },
   { lens: 'sprint',   label: 'Sprint', vocab: 'sprint' },
@@ -23,7 +22,6 @@ export default function WorkTabs() {
   const activeLens = (): Lens => {
     const p = location.pathname;
     if (p.includes('/list'))     return 'list';
-    if (p.includes('/table'))    return 'table';
     if (p.includes('/calendar')) return 'calendar';
     if (p.includes('/timeline')) return 'timeline';
     if (p.includes('/sprint'))   return 'sprint';

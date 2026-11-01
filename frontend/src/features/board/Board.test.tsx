@@ -7,7 +7,7 @@ import { ProjectContext, type ProjectContextValue } from '../../shared/state/pro
 import { ProjectItemsProvider } from '../../shared/state/projectItemsContext';
 import ToastContainer from '../../shared/ui/ToastContainer';
 import Board, { ItemCard } from './Board';
-import { cardRun, type CardRun } from './boardRuns';
+import { cardRun, type CardRun } from '../../shared/runWithAgent/cardRun';
 import type { Item } from '../../shared/types';
 import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];

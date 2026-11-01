@@ -10,7 +10,7 @@ Every piece of work in Tack — a task, bug, feature, building, work order, or w
 
 The drawer opens whenever the address carries `?item=<id>`. You open it by:
 
-- Clicking a card on the Board, a row in the List or Table, or a search result.
+- Clicking a card on the Board, a row in the List, or a search result.
 - Opening a link such as `http://localhost:3210/projects/<project>/board?item=<id>`, or running `tack open <item-id>`, which prints that link.
 
 Because the open item is part of the address, an item link can be shared — paste it to a teammate and the same drawer opens for them. Press `Esc` or use the close control to dismiss the drawer; focus returns to where you were.
@@ -141,7 +141,7 @@ The closed task's activity says "Created the next one, due 2026-11-30" with the 
 
 A **role** says what kind of work a task is for, such as Content or Developer. A project's roles are created under **Settings → Roles**, and each role can be given an agent profile in [Automation](automation.md#teams). On a task, the **Fields** tab lists the project's roles with a checkbox for each; ticking one gives the task that role. A task with no role is never started by itself, but you can always run it by hand.
 
-The **Automation** line at the foot of the Now panel says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board, list and table. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
+The **Automation** line at the foot of the Now panel says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board and the list. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
 
 ---
 

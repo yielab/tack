@@ -1,6 +1,6 @@
 # Views
 
-Tack has six **work tabs** — Board, List, Table, Calendar, Timeline and Sprint (the last takes your
+Tack has five **work tabs** — Board, List, Calendar, Timeline and Sprint (the last takes your
 project's word for a sprint) — all showing the same items. An item created in one appears at once
 in the others. Two more screens, **Overview** and **Factory metrics**, are in the sidebar and show
 project statistics.
@@ -23,7 +23,7 @@ Kanban columns driven by the project's workflow statuses.
 - **Click a card** to open the item drawer (tabs Overview, Activity, Execution, Dependencies, Files and Fields; see [Working with Items](items.md)).
 - **A card reads top to bottom.** The title comes first. Under it one line says where the card's latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Done**, **Failed** or **Cancelled**; press it to open the task's Execution tab, or the run's question when it is asking one), then the team that ran it, then the priority, then the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** above the board to show it on every card (this browser remembers the choice). A card whose run **needs you** or **failed** has a coloured bar on its left edge, and so does one whose run is going in a column no work has started in, so the board does not look idle. The card's short id shows when you hover it and at the top of its **Move to…** menu. The ▶ button, **Run with agent**, is hidden while a run is going and comes back when it ends.
 - **Which cards need you.** Under the board title, when the project has run anything, a row counts the runs: **Waiting for you** (runs that need you plus runs ready for review; failed runs are counted under **Failed**), then **Queued**, **Running**, **Needs you**, **Ready for review** and **Failed**. Press a count to show only those cards, and again to show all. Each column header has a small bar of its cards' states, with a segment for each; pressing a segment filters the same way, and the column's count then reads "2 of 5".
-- **More on a card.** **Repeats** means closing the task creates the next one. Two more show what Tack did without you: **Started by itself** and **Merged by itself**. The List shows the same badges, and the Table shows them in its Review column. See [Automating a Project](automation.md).
+- **More on a card.** **Repeats** means closing the task creates the next one. Two more show what Tack did without you: **Started by itself** and **Merged by itself**. The List shows the same badges in its Details column. See [Automating a Project](automation.md).
 - **Add an item** with the **Add item** button in a column header (it starts in that status), the **+ New** button in the top bar, or the `n` key (first column).
 - Press `r` to refresh the board. Changes made in another browser tab or by another person appear without refreshing.
 - An empty project shows a three-step checklist until the first item exists.
@@ -32,26 +32,19 @@ Kanban columns driven by the project's workflow statuses.
 
 ## List
 
-Every item as a row, children indented under their parent.
+Every item as a row, children indented under their parent, with a header row to sort by and the
+controls to filter, edit and rearrange the columns.
 
-- Rows are ordered by creation date within each level. A parent with children shows how many it has; use the arrow to expand or collapse it, or **Expand all** and **Collapse all** in the header.
-- Each row shows the type, title, priority, status, tags and the badges the Board shows. Click the title to open the item drawer.
+- Rows are ordered by creation date within each level until you sort. A parent with children shows how many it has; use the arrow to expand or collapse it, or **Expand all** and **Collapse all** in the header.
+- Each row shows the title, priority, status, assignee, due date, where the item's latest run is, and the badges the Board shows. Click the title to open the item drawer.
 - **New Item** in the header adds an item at the top level. On a row, **+** (shown on hover or keyboard focus) adds a child under it and the bin deletes it after a confirmation.
 - When every child of an item reaches a Done status, the parent moves to Done too, and so on up the hierarchy.
-- The List does not filter or sort, and a row cannot be dragged under another parent. Use the [Table](#table) to sort and filter.
-
----
-
-## Table
-
-A dense spreadsheet view of every item — title, type, status, priority, assignee, due date and a
-Review column that flags runs waiting for you.
-
-- **Click a column header** to sort by it; click again to reverse.
-- **Filter…** matches as you type against the title, assignee and status.
-- **Inline edit:** click an editable cell (title, status, priority, assignee, due date) to change it in place; the edit saves at once.
-- **Columns** shows or hides columns, and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser.
-- Best for scanning or triaging a large backlog where the card layout is too tall.
+- **Sort.** Press a column header to sort by it, again to reverse, and a third time to go back to creation order. Priority sorts Critical, High, Medium, Low, None; **Run** puts what needs you first, then what is going, then what is over, and items with no run last. Sorting reorders the rows within each parent, so a child never leaves its parent.
+- **Filter.** **Filter…** matches as you type against the title, assignee and status, and the run-state list beside it keeps only items whose latest run is in that state (**Waiting for you**, **Queued**, **Running**, **Needs you**, **Ready for review** or **Failed**). A parent that holds a match stays in view, open, so the match is never shown without where it belongs; **Clear filter** brings every row back.
+- **Run.** The Run column says where the item's latest run is, in the same words and symbols as the Board (**Queued**, **Running**, **Needs you**, **Ready for review**, **Done**, **Failed**, **Cancelled**); an item that has never run shows a dash.
+- **Edit in place.** Press a status, priority, assignee or due date to change it where it is, and the title's pencil to rename it (the title itself opens the item). Enter or leaving the field saves, Escape puts the value back, and the keyboard returns to the cell.
+- **Columns** shows or hides columns (the title stays: rows are named and nested by it), and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser. **Type** is hidden until you show it, because each row already carries a type tile.
+- A row cannot be dragged under another parent.
 
 ---
 
