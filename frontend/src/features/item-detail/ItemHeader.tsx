@@ -1,4 +1,4 @@
-import { type Component, type JSX, createSignal, createEffect, onMount, For, Show } from 'solid-js';
+import { type Component, type JSX, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
 import { TypeBadge, typeKey } from '../../shared/ui';
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
@@ -23,13 +23,26 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
   // Title is locally mirrored so it commits on blur / Enter, not every keypress.
   const [title, setTitle] = createSignal(props.item.title);
   createEffect(() => setTitle(props.item.title));
+  // A pasted title can carry line breaks; a title is one line, so they become spaces on commit.
   const commitTitle = () => {
-    const next = title().trim();
+    const next = title().replace(/\s*\n\s*/g, ' ').trim();
     if (next && next !== props.item.title) props.onPatch({ title: next });
   };
 
-  let titleInput: HTMLInputElement | undefined;
-  onMount(() => { if (props.focusTitle) titleInput?.focus({ preventScroll: true }); });
+  // The title wraps, which an input cannot do: the field grows with its text to three
+  // lines (see max-height below) and scrolls inside itself past that.
+  let titleInput: HTMLTextAreaElement | undefined;
+  const fitTitle = () => {
+    if (!titleInput) return;
+    titleInput.style.height = 'auto';
+    titleInput.style.height = `${titleInput.scrollHeight}px`;
+  };
+  createEffect(() => { title(); fitTitle(); });
+  onMount(() => {
+    if (props.focusTitle) titleInput?.focus({ preventScroll: true });
+    window.addEventListener('resize', fitTitle);
+  });
+  onCleanup(() => window.removeEventListener('resize', fitTitle));
 
   const statuses = () => workflow()?.statuses ?? [];
 
@@ -50,18 +63,25 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
       </div>
 
       {/* Title */}
-      <input
+      <textarea
         ref={titleInput}
+        rows={1}
         value={title()}
+        title={props.item.title}
         onInput={(e) => setTitle(e.currentTarget.value)}
         onBlur={commitTitle}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
+          // Enter commits the title, as it did when the title was a single-line input.
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
         }}
-        class="font-heading -mx-2 w-[calc(100%+1rem)] rounded-item border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
+        class="font-heading -mx-2 w-[calc(100%+1rem)] resize-none wrap-anywhere overflow-y-auto rounded-item border-2 border-transparent px-2 py-1 text-[1.875rem] leading-tight transition-colors hover:border-[var(--color-border-light)] focus:outline-none focus-visible:ring-2"
         style={{
           'background-color': 'transparent',
           color: 'var(--color-text-primary)',
+          'max-height': 'calc(3 * 1.25em + 0.5rem)',
           '--tw-ring-color': 'var(--color-focus-ring)',
         }}
         aria-label="Item title"

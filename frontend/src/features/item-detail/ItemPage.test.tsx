@@ -95,7 +95,7 @@ describe('ItemPage', () => {
     expect(crumb.textContent).toContain('Items');
     expect(crumb.textContent).toContain('ABCDEF');
 
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Item title"]')?.value).toBe('My item');
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Item title"]')?.value).toBe('My item');
     const properties = container.querySelector('aside section[aria-label="Properties"]')!;
     expect(properties.textContent).toContain('Assignee');
     expect(properties.textContent).toContain('1 item'); // what it blocks
