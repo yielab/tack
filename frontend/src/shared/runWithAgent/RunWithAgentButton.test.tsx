@@ -92,7 +92,8 @@ describe('RunWithAgentButton', () => {
     const c = mount({ compact: true });
     const trigger = c.querySelector('button[aria-label="Run with agent: Fix login bug"]');
     expect(trigger).toBeTruthy();
-    expect(trigger?.textContent).toBe('▶');
+    expect(trigger?.textContent).toBe('');
+    expect(trigger?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
     expect(c.querySelector('[aria-haspopup="menu"]')).toBeNull();
   });
 
