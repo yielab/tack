@@ -5,6 +5,8 @@ import { ExecutionStoreProvider } from '../state/executionContext';
 import LatestRunSummary, { primaryNowAction, type LatestRunSummaryProps } from './LatestRunSummary';
 import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
+// The files the mocked run left; a test that wants a pack puts one here.
+let artifacts: unknown[] = [];
 
 const ATTEMPT = {
   attempt_id: 'att-1', request_id: 'req-1', attempt_number: 1, runner_id: 'runner-1', fencing_token: 1,
@@ -30,7 +32,7 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/decisions')) return new Response(JSON.stringify({ protocol_version: 1, data: decisions }), { status: 200 });
-    if (url.includes('/artifacts')) return new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 });
+    if (url.includes('/artifacts')) return new Response(JSON.stringify({ protocol_version: 1, data: artifacts }), { status: 200 });
     if (url.includes('/events')) return new Response(JSON.stringify({ protocol_version: 1, data: events }), { status: 200 });
     if (url.includes('/attempts')) return new Response(JSON.stringify({ protocol_version: 1, data: attempts }), { status: 200 });
     if (url.includes('/executions')) return new Response(JSON.stringify({ protocol_version: 1, data: executions }), { status: 200 });
@@ -61,6 +63,7 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
 }
 
 afterEach(() => {
+  artifacts = [];
   while (disposers.length) disposers.pop()!();
   vi.restoreAllMocks();
 });
@@ -110,6 +113,30 @@ describe('LatestRunSummary', () => {
     expect(buttons(card)).toContain('Review and merge');
     expect(buttons(card)).not.toContain('Accept');
     expect(buttons(card)).not.toContain('Reject…');
+  });
+
+  it('a run with a pack to review offers no Accept or Reject… here: the one way in is Review and merge', async () => {
+    artifacts = [{ artifact_id: 'a3', kind: 'mrp', name: 'pack.json', media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-10-08T12:02:00Z' }];
+    const onOpen = vi.fn();
+    const c = mount([RUN], onOpen);
+    for (let i = 0; i < 6; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.getAttribute('data-state')).toBe('review');
+    expect(buttons(card)).toContain('Review and merge');
+    expect(card.querySelector('[data-testid="now-primary"]')?.textContent).toBe('Review and merge');
+    expect(buttons(card)).not.toContain('Accept');
+    expect(buttons(card)).not.toContain('Reject…');
+    expect(card.querySelector('[data-testid="review-actions"]')).toBeNull();
+    [...card.querySelectorAll('button')].find((b) => b.textContent === 'Review and merge')!.click();
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('a run with no pack keeps its inline Accept and Reject…, with stable ids', async () => {
+    const c = mount([RUN]);
+    for (let i = 0; i < 6; i++) await flush();
+    const card = c.querySelector('[data-testid="latest-run"]')!;
+    expect(card.querySelector('[data-testid="review-accept"]')?.textContent).toBe('Accept');
+    expect(card.querySelector('[data-testid="review-reject"]')?.textContent).toBe('Reject…');
   });
 
   it('a run that changed no file shows the answer as what it delivered and offers Accept, not Merge', async () => {
@@ -351,6 +378,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(c.querySelector('[data-testid="latest-run"]')).toBeNull();
     expect(c.querySelector('[data-testid="now-idle"]')).not.toBeNull();
     expect(filled(panel(c))).toEqual(['Run with agent']);
+    expect(c.querySelector('[data-testid="now-primary"]')?.textContent).toBe('Run with agent');
     expect(c.querySelector('[data-testid="now-who"]')!.textContent).toBe('Would go to Code agent · team saas-code');
   });
 
@@ -375,6 +403,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     await settle();
     expect(banner(c)).toBe('Needs youNeeds a person');
     expect(filled(panel(c))).toEqual(['Answer the question']);
+    expect(c.querySelector('[data-testid="now-primary"]')?.textContent).toBe('Answer the question');
   });
 
   it('a run ready for review says so, and Review and merge is the only filled button; Accept is secondary', async () => {

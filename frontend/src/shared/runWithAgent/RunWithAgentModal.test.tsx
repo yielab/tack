@@ -1356,6 +1356,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     expect(footer.classList.contains('sticky')).toBe(true);
     expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Start run']);
     expect(footer.querySelector('[data-testid="run-footer-limit"]')!.textContent).toBeTruthy();
+    expect(footer.querySelector('[data-testid="run-start"]')!.textContent).toBe('Start run');
     // The field itself is still under Advanced for this run.
     expect(field('Token limit').value).toBe('300000');
     (footer.querySelector('button') as HTMLButtonElement).click();

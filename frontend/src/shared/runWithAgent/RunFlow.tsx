@@ -458,7 +458,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             <Show
               when={modelBlocked()}
               fallback={
-                <Button type="submit" loading={props.submitting()} disabled={!props.canSubmit()}>
+                <Button type="submit" data-testid="run-start" loading={props.submitting()} disabled={!props.canSubmit()}>
                   Start run
                 </Button>
               }

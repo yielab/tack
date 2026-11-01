@@ -334,6 +334,26 @@ describe('AttemptList', () => {
     expect([...plain.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(false);
   });
 
+  it('with the Now panel on screen the run holds no second button for the question; without it, it keeps its own', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
+    );
+    const mountNow = (attempts: AttemptSummary[], nowShown: boolean) => {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts} nowShown={nowShown} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      return container;
+    };
+    const opens = (c: HTMLElement) => [...c.querySelectorAll('button')].filter((b) => b.textContent === 'Open the question').length;
+    const waiting = [attempt({ state: 'waiting_decision', ended_at: null })];
+    const ended = [attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } })];
+    expect(opens(mountNow(waiting, true))).toBe(0);
+    expect(opens(mountNow(ended, true))).toBe(0);
+    expect(opens(mountNow(waiting, false))).toBe(1);
+    expect(opens(mountNow(ended, false))).toBe(1);
+  });
+
   it('an attempt that starts to wait for an answer while the page is open shows its question by itself', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
@@ -922,6 +942,97 @@ describe('AttemptList', () => {
       await settle();
       const calls = spy.mock.calls.map(([u, init]) => [String(u), (init as RequestInit | undefined)?.body] as const);
       expect(calls.find(([u]) => u.endsWith('/mrp/review'))?.[1]).toBe(JSON.stringify({ verdict: 'accept', reason: 'looks right' }));
+    });
+
+    /** The pack and the run each keep a verdict: the calls are recorded, and the run's review can be made to fail. */
+    function routeReviews(opts: { packReview?: unknown; runReviewFails?: { value: boolean } } = {}) {
+      const calls: Array<{ url: string; body: unknown }> = [];
+      const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        const url = String(input);
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        if (init?.method === 'POST') calls.push({ url, body });
+        if (url.endsWith('/artifacts')) return json({ protocol_version: 1, data: FILES });
+        if (url.endsWith('/content')) return Promise.resolve(new Response(PATCH));
+        if (url.endsWith('/mrp')) return json({ pack: ready, review: opts.packReview ?? null });
+        if (url.endsWith('/mrp/viewed')) return json({});
+        if (url.endsWith('/mrp/review')) {
+          return json({ attempt_id: 'att_1', artifact_id: 'a3', verdict: body.verdict, reason: body.reason, viewed_at: null, reviewed_at: '2026-08-06T12:07:00Z', reviewed_by: 'me' });
+        }
+        if (url.endsWith('/attempts/1/review')) {
+          return opts.runReviewFails?.value ? json({ error: { status: 500, message: 'The run could not be reached' } }, 500) : json({});
+        }
+        if (url.endsWith('/attempts')) {
+          return json({ protocol_version: 1, data: [{ ...FINISHED(), review: { verdict: calls.at(-1)?.body && (calls.at(-1)!.body as { verdict: string }).verdict, note: null, reviewed_at: '2026-08-06T12:07:00Z' } }] });
+        }
+        if (url.endsWith('/decisions')) return json({ protocol_version: 1, data: [] });
+        if (url.endsWith('/events')) return json({ protocol_version: 1, data: [] });
+        return json({ error: { status: 404, message: 'none' } }, 404);
+      });
+      return calls;
+    }
+    const type = (input: HTMLInputElement, text: string) => {
+      input.value = text;
+      input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    };
+    const runReviewCalls = (calls: Array<{ url: string; body: unknown }>) => calls.filter((c) => c.url.endsWith('/attempts/1/review'));
+
+    it('the reason is saved on the run\'s verdict for Accept and for Reject, and the buttons carry stable ids', async () => {
+      for (const [testid, verdict] of [['review-accept', 'accepted'], ['review-reject', 'rejected']] as const) {
+        const calls = routeReviews();
+        const c = mountFull(FINISHED());
+        await settle();
+        type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'checked by hand');
+        c.querySelector<HTMLButtonElement>(`[data-testid="${testid}"]`)!.click();
+        await settle();
+        expect(calls.find((x) => x.url.endsWith('/mrp/review'))?.body).toEqual({ verdict: verdict === 'accepted' ? 'accept' : 'reject', reason: 'checked by hand' });
+        expect(runReviewCalls(calls).map((x) => x.body)).toEqual([{ verdict, note: 'checked by hand' }]);
+        disposers.pop()!();
+        document.body.innerHTML = '';
+        vi.restoreAllMocks();
+      }
+    });
+
+    it('when the pack is reviewed and the run is not, one action saves the pack\'s verdict on the run, and says so again if it fails', async () => {
+      const packReview = { attempt_id: 'att_1', artifact_id: 'a3', verdict: 'accept', reason: 'checked by hand', viewed_at: null, reviewed_at: '2026-08-06T12:07:00Z', reviewed_by: 'me' };
+      const fails = { value: true };
+      const calls = routeReviews({ packReview, runReviewFails: fails });
+      const c = mountFull(FINISHED());
+      await settle();
+      const banner = c.querySelector('[data-testid="review-banner"]')!;
+      expect(banner.textContent).toContain('You already reviewed the pack');
+      // Neither a new Reject nor a new reason is offered: only the pack's verdict is saved on the run.
+      expect(banner.querySelector('[data-testid="review-reject"]')).toBeNull();
+      expect(banner.querySelector('[data-testid="review-reason"]')).toBeNull();
+      expect(banner.textContent).toContain('The pack was accepted');
+      const save = () => [...banner.querySelectorAll('button')].filter((b) => b.textContent === 'Save the verdict on the run');
+      expect(save()).toHaveLength(1);
+      save()[0].click();
+      await settle();
+      expect(banner.textContent).toContain('The run could not be reached');
+      expect(save()).toHaveLength(1);
+      fails.value = false;
+      save()[0].click();
+      await settle();
+      expect(runReviewCalls(calls).map((x) => x.body)).toEqual([
+        { verdict: 'accepted', note: 'checked by hand' },
+        { verdict: 'accepted', note: 'checked by hand' },
+      ]);
+      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(false);
+    });
+
+    it('a run whose first attempt review fails after the pack was reviewed offers the save, not a new Reject', async () => {
+      const fails = { value: true };
+      const calls = routeReviews({ runReviewFails: fails });
+      const c = mountFull(FINISHED());
+      await settle();
+      type(c.querySelector<HTMLInputElement>('[data-testid="review-reason"]')!, 'looks right');
+      c.querySelector<HTMLButtonElement>('[data-testid="review-accept"]')!.click();
+      await settle();
+      expect(calls.some((x) => x.url.endsWith('/mrp/review'))).toBe(true);
+      const banner = c.querySelector('[data-testid="review-banner"]')!;
+      expect([...banner.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Save the verdict on the run']);
+      expect(banner.textContent).toContain('The run could not be reached');
     });
 
     it('a folder team says it works in a folder, with nothing to merge, in the verdict', async () => {

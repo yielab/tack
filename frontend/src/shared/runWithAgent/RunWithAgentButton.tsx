@@ -70,6 +70,8 @@ export interface RunWithAgentButtonProps {
    *  when starting a run is what to do next. */
   variant?: ButtonVariant;
   capabilities?: () => RunnerCapabilities[];
+  /** A stable `data-testid` for the trigger itself, so a script finds it by what it is and not by its words. */
+  testId?: string;
 }
 
 /**
@@ -142,6 +144,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
       {props.compact ? (
         <button
           type="button"
+          data-testid={props.testId}
           aria-label={`Run with agent: ${props.itemTitle}`}
           title="Run with agent"
           onClick={(e) => {
@@ -171,6 +174,7 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
         <Button
           size={(props.variant ?? 'primary') === 'primary' ? 'md' : 'sm'}
           variant={props.variant ?? 'primary'}
+          data-testid={props.testId}
           onClick={(e) => {
             e.stopPropagation();
             setOpen(true);
