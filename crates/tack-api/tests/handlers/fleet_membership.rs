@@ -42,6 +42,7 @@ async fn router_for(repo: Repository, workspace_id: Uuid) -> axum::Router {
         },
         workspace_id,
         broadcast_tx: tx,
+        event_bus: Default::default(),
         webhook: None,
         local_runner: None,
         tasks: Default::default(),

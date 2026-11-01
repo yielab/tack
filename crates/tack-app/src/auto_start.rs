@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use tack_core::auto_start::{Candidate, Facts, Limits, Why, WipColumn, pick, why};
 use tack_core::dependency::{DependencyEdge, DependencyGraph};
 use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
+use tack_core::principal::Principal;
 use tack_core::run_defaults::Source;
 use tack_core::workflow::StatusCategory;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
@@ -19,6 +20,7 @@ use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::background::{Loops, Start};
+use crate::events::DomainEvent;
 use crate::ports::Ports;
 use crate::runs::start_run::{
     PermissionRequest, RunRequest, default_selector, resolve_profile, start_run,
@@ -353,12 +355,13 @@ async fn start(
             return true;
         }
     };
-    ports.events.item_moved(
+    ports.events.emit(DomainEvent::item_changed(
         item.project_id,
+        &Principal::system(),
         item.id,
-        old_status.clone(),
-        item.status.clone(),
-    );
+        &old_status,
+        &item.status,
+    ));
     let role = match &resolved.source {
         Source::Role(name) => Some(name.clone()),
         _ => repo

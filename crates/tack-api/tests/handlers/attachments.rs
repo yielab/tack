@@ -253,6 +253,7 @@ async fn app_at(storage_dir: &Path) -> (Router, Repository, Uuid) {
         },
         workspace_id,
         broadcast_tx: tx,
+        event_bus: Default::default(),
         webhook: None,
         local_runner: None,
         tasks: Default::default(),

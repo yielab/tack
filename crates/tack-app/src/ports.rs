@@ -1,7 +1,7 @@
 //! What the loops and the merge need from the part of Tack that still serves HTTP, as small
 //! ports: the prill that checks a signature and receives a pull request ([`Verifier`]), the
 //! stored files of an attempt ([`Artifacts`]) and the board's live event channel
-//! ([`BoardEvents`]). `tack-api` implements each over its own state; a port stays a trait only
+//! ([`DomainEvents`]). `tack-api` implements each over its own state; a port stays a trait only
 //! where its implementor names an HTTP type this crate may not (`ArtifactStorage`'s body
 //! stream, the WebSocket channel, the prill process the API runs) and a test can stand a fake
 //! in its place. The GitHub calls are [`crate::github_sync::GitHub`], the embedded runner's
@@ -10,8 +10,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use uuid::Uuid;
 
+use crate::events::DomainEvent;
 use crate::github_sync::GitHub;
 use crate::local_runner::LocalRunnerControl;
 
@@ -54,10 +54,11 @@ pub trait Artifacts: Send + Sync {
     async fn read(&self, reference: &str) -> Option<Vec<u8>>;
 }
 
-/// The board's live event channel.
-pub trait BoardEvents: Send + Sync {
-    /// Tell the open boards that an item moved.
-    fn item_moved(&self, project_id: Uuid, item_id: Uuid, old_status: String, new_status: String);
+/// The board's event channel: where every consumer, the open boards among them, hears what
+/// happened (see [`crate::events`]).
+pub trait DomainEvents: Send + Sync {
+    /// Tell every listener that `event` became true. It never blocks and never fails.
+    fn emit(&self, event: DomainEvent);
 }
 
 /// Everything a tick or a merge reaches outside the store, built once per pass by the caller.
@@ -69,5 +70,5 @@ pub struct Ports {
     pub runner: Option<Arc<dyn LocalRunnerControl>>,
     pub verifier: Arc<dyn Verifier>,
     pub artifacts: Arc<dyn Artifacts>,
-    pub events: Arc<dyn BoardEvents>,
+    pub events: Arc<dyn DomainEvents>,
 }

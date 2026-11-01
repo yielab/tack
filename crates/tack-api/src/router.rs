@@ -43,6 +43,9 @@ pub struct AppState {
     pub workspace_id: Uuid,
     /// Broadcast channel for real-time WebSocket updates
     pub broadcast_tx: broadcast::Sender<websocket::BoardEvent>,
+    /// Where the board's domain events go for every consumer that subscribes (see
+    /// [`AppState::events`]); `broadcast_tx` carries only the browser's share of them.
+    pub event_bus: tack_app::events::EventBus,
     /// Optional outbound webhook client (None when TACK_WEBHOOK_URL is unset)
     pub webhook: Option<WebhookClient>,
     /// Seam to an embedded runner living in the same process — see
@@ -158,7 +161,8 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
     let decision_clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let decision_state =
         decisions::DecisionOperatorState::with_clock(state.repo.clone(), decision_clock)
-            .with_decision_token(state.config.execution_decision_token.clone());
+            .with_decision_token(state.config.execution_decision_token.clone())
+            .with_events(state.events());
     let artifact_download_state = runner_protocol::artifact_download::ArtifactDownloadState {
         repo: state.repo.clone(),
         artifact_storage: Arc::new(runner_protocol::artifact_storage::ArtifactStorage::new(

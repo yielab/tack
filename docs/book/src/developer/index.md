@@ -80,7 +80,7 @@ of linking against it. `scripts/arch-facts.sh` prints the crate, route, migratio
 - `tack-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions: planning and runs policy. You can run every test in it without a database process.
 - `tack-orch` is pure too: the runner scheduler and the model-policy resolver over plain values, with no database, no clock and no HTTP. See [Crate Tour](crate-tour.md#tack-orch).
 - `tack-db` is the only crate that names `sqlx`. Commands are `Repository` methods, read models are functions in `queries/`, and every call fails with `StoreError`, so no SQL driver type crosses its edge. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables.
-- `tack-app` is the application layer. It holds the use cases of a run (`runs/`) and every background tick (`tick()` is one pass, which tests call; `spawn()` hands it to the loop helper `tack serve` runs). It names `reqwest`, never `axum` or `sqlx`, and reaches back into what still lives in `tack-api` through three small traits in `tack_app::ports` (`Verifier`, `Artifacts`, `BoardEvents`).
+- `tack-app` is the application layer. It holds the use cases of a run (`runs/`) and every background tick (`tick()` is one pass, which tests call; `spawn()` hands it to the loop helper `tack serve` runs). It names `reqwest`, never `axum` or `sqlx`, and reaches back into what still lives in `tack-api` through three small traits in `tack_app::ports` (`Verifier`, `Artifacts`, `DomainEvents`).
 - `tack-api` is the only crate that names `axum`: HTTP concerns (status codes, request extraction, CORS) live here, and a handler extracts, calls a `tack-app` use case or a `tack-db` method, maps the error and responds. It names `tack-db` because `AppState.repo` is the `Repository` and `ApiError` wraps `StoreError`.
 - `tack-cli` is the single `tack` binary and the composition root: `serve.rs` builds the `Repository`, hands it to the server and spawns the ticks. It also depends on `tack-runner` so that `--with-runner` and `tack runner doctor` can use the runner's code. Its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
 - `tack-runner` is a separate binary entirely. It depends on `tack-protocol` and `tack-core` for the shared types, and never on `tack-db` or `tack-api`; it speaks the runner-v1 protocol to `tack-api` over loopback or the network, the same way a remote runner would.
@@ -128,7 +128,7 @@ Handler: update_item (tack-api/src/handlers/items.rs)
     │  3. Calls repo.update_item_atomically(id, input, &workflow, expected_version), which
     │     inside one transaction calls workflow.validate_transition(old, new) and
     │     workflow.check_wip_limit(new, count)  ← both pure, no I/O in tack-core
-    │  4. Calls broadcast_event(ItemUpdated { ... })  ← fires WebSocket event
+    │  4. Calls state.events().emit(ItemMoved/ItemUpdated { ... })  ← the bus, and the WebSocket event
     │  5. Calls propagate_parent_completion(...)  ← best-effort: completes the parent when every sibling is done
     │  6. Calls create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
     │  7. Calls maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
@@ -202,7 +202,7 @@ On WebSocket connection (GET /api/projects/{id}/boards/live):
   tokio::select! on both tasks — whichever ends first, the other is aborted
 ```
 
-The broadcast channel is the pub/sub backbone. Every handler that modifies data calls `broadcast_event()`; every WebSocket connection subscribes to the channel and filters events by `project_id` before forwarding them to the client.
+The broadcast channel is the pub/sub backbone. Every handler that modifies an item emits a domain event, and the adapter in `tack-api/src/ports.rs` sends the browser's share of it through `broadcast_event()`; every WebSocket connection subscribes to the channel and filters events by `project_id` before forwarding them to the client.
 
 **Important properties:**
 
@@ -260,7 +260,8 @@ The broadcast channel is the pub/sub backbone. Every handler that modifies data 
 │   │       ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
 │   │       │   retention.rs, observability.rs  Ticks: tick() is one pass, spawn() starts the loop
 │   │       ├── autonomy.rs, merge.rs  Gathering merge facts and merging
-│   │       ├── ports.rs     The Verifier, Artifacts and BoardEvents traits: what tack-app needs back from tack-api
+│   │       ├── ports.rs     The Verifier, Artifacts and DomainEvents traits: what tack-app needs back from tack-api
+│   │       ├── events.rs    DomainEvent, Fact, the in-process EventBus and the RecordedEvents a test reads
 │   │       ├── scheduler_wiring.rs, model_policy_wiring.rs  The live callers of tack-orch
 │   │       ├── local_runner/ The embedded runner as the rest of Tack sees it
 │   │       └── error.rs     AppError
