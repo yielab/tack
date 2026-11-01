@@ -996,6 +996,16 @@
             }
           },
           {
+            "name": "project_id",
+            "in": "query",
+            "description": "Every open run of the project (queued, running, waiting on a person) and those that ended\nin the last 24 hours, one row per run. An unknown project is a 404. Takes precedence over\n`item_id`/`limit`; `item_ids` takes precedence over it.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
             "name": "item_ids",
             "in": "query",
             "description": "Comma-separated item ids — returns exactly one row per id, its own\nmost recent execution. Takes precedence over `item_id`/`limit` when\npresent.",
@@ -1018,7 +1028,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit`",
+            "description": "Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else `project_id` present: every run of the project that is not over, and those that ended in the last 24 hours. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1029,6 +1039,16 @@
           },
           "400": {
             "description": "invalid_request (a malformed `item_ids` entry, or more ids than the route's cap)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (`project_id` names no project)",
             "content": {
               "application/json": {
                 "schema": {
@@ -10405,6 +10425,17 @@
           "item_id": {
             "type": "string"
           },
+          "latest_hop": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LatestHop",
+                "description": "The latest hop the run's newest attempt reported; null when the agent reports no hops\n(every agent but docket) or the attempt has not reached its first one."
+              }
+            ]
+          },
           "limit": {
             "$ref": "#/components/schemas/RunLimit",
             "description": "The run's token limit and who applies it."
@@ -10787,6 +10818,14 @@
         "propertyNames": {
           "type": "string"
         }
+      },
+      "HopKind": {
+        "type": "string",
+        "description": "Whether a hop's latest event says it began or ended.",
+        "enum": [
+          "started",
+          "finished"
+        ]
       },
       "HumanMinutes": {
         "type": "object",
@@ -11252,6 +11291,39 @@
             }
           }
         ]
+      },
+      "LatestHop": {
+        "type": "object",
+        "description": "The step of a docket run an attempt is in, read from the text of its latest hop event so a\nscreen finds the step on the team's list without fetching the events.",
+        "required": [
+          "role",
+          "kind"
+        ],
+        "properties": {
+          "cycle": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The cycle a finished hop names; null when it names none (the first pass is not named).",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/HopKind"
+          },
+          "role": {
+            "type": "string",
+            "description": "The role as the event names it (its first letter is upper case); match it to a team's\nsteps without regard to case."
+          },
+          "verdict": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How the hop ended, in the event's words (`done` when it reported no verdict); null for a\nhop that has started."
+          }
+        }
       },
       "LinearImportRequest": {
         "type": "object",
