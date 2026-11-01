@@ -5,6 +5,7 @@ import { toast } from '../ui/toast';
 import type { RunRecordSet, RunStep, RunStepPrompt } from '../execution';
 import { inProject } from './attemptFormat';
 import EventTimeline from './EventTimeline';
+import { plainLine } from './plainWords';
 import { groupByTool, type RunLog, type ToolGroup } from './runLog';
 
 /** The report is clipped to this many lines until "Read full report". */
@@ -286,7 +287,12 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
       <div class="space-y-1">
         <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h5>
         <ul class="list-disc space-y-0.5 pl-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          <For each={items}>{(item) => <li class="break-words">{item}</li>}</For>
+          <For each={items}>
+            {(item) => {
+              const said = plainLine(item);
+              return <li class="break-words" title={said.raw}>{said.text}</li>;
+            }}
+          </For>
         </ul>
       </div>
     </Show>
@@ -302,7 +308,10 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
           {(m) => <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{m()}</span>}
         </Show>
         <Show when={step().verdict}>
-          {(v) => <Badge tone="neutral">Verdict: {v()}</Badge>}
+          {(v) => {
+            const said = plainLine(v());
+            return <span title={said.raw}><Badge tone="neutral">Verdict: {said.text}</Badge></span>;
+          }}
         </Show>
       </div>
       {list('The agent assumed', step().assumptions)}
@@ -347,12 +356,13 @@ export const TeamRecords: Component<{ sets: RunRecordSet[] }> = (props) => (
         return (
           <div data-testid="record-set" class="space-y-1.5">
             <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{set.set}</h5>
-            <div class="max-w-full overflow-x-auto rounded-item" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-              <table class="w-full text-left text-xs">
+            <div class="max-w-full overflow-x-auto rounded-item" tabindex="0" role="region" aria-label={`Rows of ${set.set}`} style={{ 'background-color': 'var(--color-bg-panel)' }}>
+              {/* Columns keep a width a word fits in and the table scrolls sideways, rather than cutting words mid-way. */}
+              <table class="text-left text-xs" style={{ 'min-width': '100%', width: 'max-content', 'max-width': 'none' }}>
                 <thead>
                   <tr>
                     <For each={columns()}>
-                      {(c) => <th class="px-3 py-1.5 font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c}</th>}
+                      {(c) => <th class="whitespace-nowrap px-3 py-1.5 align-bottom font-semibold" style={{ color: 'var(--color-text-secondary)' }}>{c}</th>}
                     </For>
                   </tr>
                 </thead>
@@ -361,7 +371,11 @@ export const TeamRecords: Component<{ sets: RunRecordSet[] }> = (props) => (
                     {(row) => (
                       <tr>
                         <For each={columns()}>
-                          {(c) => <td class="break-words px-3 py-1.5" style={{ color: 'var(--color-text-primary)' }}>{cellText(row[c])}</td>}
+                          {(c) => (
+                            <td class="px-3 py-1.5 align-top" style={{ color: 'var(--color-text-primary)', 'min-width': '9rem', 'max-width': '24rem', 'overflow-wrap': 'break-word', 'word-break': 'normal' }}>
+                              {cellText(row[c])}
+                            </td>
+                          )}
                         </For>
                       </tr>
                     )}

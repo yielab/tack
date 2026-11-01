@@ -16,6 +16,7 @@ import {
 import { saveSessionDecisionToken, sessionDecisionToken } from '../state/decisionSession';
 import RadioRow from './RadioRow';
 import { isTerminalAttemptState } from './attemptFormat';
+import { truncateMiddle } from '../ui/truncateMiddle';
 
 /** How often a question asked after the page opened is looked for, while the attempt is not over. */
 const LIVE_RELOAD_MS = 3000;
@@ -40,6 +41,9 @@ export interface DecisionInboxProps {
   /** Only the questions already answered or expired, as a history: no token field (the questions
    *  that wait have their own place), and one muted line when the agent has asked nothing at all. */
   settledOnly?: boolean;
+  /** A heading for the list, drawn only when there is something to list: an agent that asked nothing gets one grey line, not a heading over nothing. */
+  heading?: string;
+  headingRef?: (el: HTMLHeadingElement) => void;
 }
 
 /** Shared resolve call + user-facing toast — one place maps every distinct
@@ -75,6 +79,21 @@ async function resolveAndNotify(
       toast.error(err instanceof Error ? err.message : 'Could not send the answer.');
     }
     throw err;
+  }
+}
+
+/** Whether a prompt is the whole text the agent was given (its card fenced in `<<<card-text id=…>>>`, or simply long) and not the question put to the person. */
+export function looksLikeDispatchPrompt(prompt: string): boolean {
+  return /<<<[\w-]+\s+id=/.test(prompt) || prompt.length > 500 || prompt.split('\n').length > 10;
+}
+
+/** Copies text and says so; a refused clipboard says what the text was. */
+async function copyId(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success('Decision id copied.');
+  } catch {
+    toast.error(`Couldn't copy the decision id: ${text}`);
   }
 }
 
@@ -151,6 +170,11 @@ const DecisionRow: Component<{
     const text = metadata().call;
     return typeof text === 'string' && text.trim() !== '' ? text : null;
   };
+  // What needs approving, said first. The text the agent was given (a whole card, fenced) is not the
+  // question: it waits in a closed fold, and the question is the call, or the line that says an approval is asked.
+  const prompt = () => props.decision.prompt ?? '';
+  const dispatch = () => looksLikeDispatchPrompt(prompt());
+  const headline = () => (dispatch() ? 'The agent asks for your approval to go on.' : props.decision.prompt);
 
   onMount(() => {
     if (isPending() && !props.decision.viewed_at) props.onView(props.decision.decision_id);
@@ -199,8 +223,19 @@ const DecisionRow: Component<{
         <Show when={!isPending() && !isExpired() && !isResolved()}>
           <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
         </Show>
-        <span class="ml-auto text-micro" style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-          {props.decision.decision_id}
+        <span class="ml-auto flex min-w-0 items-center gap-1.5 text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
+          <span data-testid="decision-id" title={props.decision.decision_id} style={{ 'font-family': 'var(--font-mono)' }}>
+            {truncateMiddle(props.decision.decision_id ?? '')}
+          </span>
+          <button
+            type="button"
+            aria-label="Copy the decision id"
+            class="min-h-6 min-w-6 flex-none px-1 font-semibold hover:underline"
+            style={{ color: 'var(--color-accent-ink)' }}
+            onClick={() => void copyId(props.decision.decision_id)}
+          >
+            Copy
+          </button>
         </span>
       </div>
 
@@ -209,13 +244,17 @@ const DecisionRow: Component<{
           This action leaves the team
         </h4>
       </Show>
-      <p class="text-sm font-semibold" style={{ color: isPending() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>
-        {props.decision.prompt}
-      </p>
-
-      {/* The action as it would be made, uncut. Tack keeps it only while this question is
-          open; it is erased when the question is answered or expires. */}
-      <Show when={isPending() && call()}>
+      {/* What needs approving comes first: the action as it would be made, uncut (Tack keeps it only
+          while this question is open; it is erased when the question is answered or expires), or the
+          question itself. */}
+      <Show
+        when={isPending() && call()}
+        fallback={
+          <p data-testid="decision-headline" class="text-sm font-semibold" style={{ color: isPending() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)' }}>
+            {headline()}
+          </p>
+        }
+      >
         <div class="space-y-1">
           <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             Exactly what happens if you approve:
@@ -237,6 +276,25 @@ const DecisionRow: Component<{
             {call()}
           </pre>
         </div>
+      </Show>
+      <Show when={dispatch()}>
+        <details data-testid="decision-given" class="min-w-0">
+          <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent was given</summary>
+          <pre
+            tabindex="0"
+            aria-label="What the agent was given"
+            class="mt-2 overflow-auto whitespace-pre-wrap break-words rounded-item p-3 text-xs"
+            style={{
+              'font-family': 'var(--font-mono)',
+              'line-height': '1.5',
+              'max-height': '20em',
+              'background-color': 'var(--color-bg-panel)',
+              color: 'var(--color-text-primary)',
+            }}
+          >
+            {prompt()}
+          </pre>
+        </details>
       </Show>
 
       <Show when={isResolved()}>
@@ -417,6 +475,11 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
       </Show>
       <Show when={!firstLoad() && !decisions.error && !props.pendingOnly && !props.settledOnly && shown().length === 0}>
         <EmptyState title="The agent has asked nothing yet" />
+      </Show>
+      <Show when={props.heading && shown().length > 0}>
+        <h5 ref={props.headingRef} tabIndex={-1} class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {props.heading}
+        </h5>
       </Show>
       <Show when={props.settledOnly && askedNothing()}>
         <p data-testid="asked-nothing" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>

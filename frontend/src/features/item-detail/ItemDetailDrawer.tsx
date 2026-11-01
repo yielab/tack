@@ -63,7 +63,7 @@ const ItemDetailDrawer: Component = () => {
       isOpen={!!itemId()}
       onClose={close}
       title="Item details"
-      width="lg"
+      width="xl"
       actions={
         <Show when={item()}>
           <Button size="sm" variant="secondary" onClick={expand}>

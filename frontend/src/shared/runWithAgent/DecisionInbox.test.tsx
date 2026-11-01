@@ -462,6 +462,52 @@ describe('DecisionInbox — the consultation pack', () => {
     });
   });
 
+  describe('what is being approved comes first', () => {
+    const DISPATCH = '<<<card-text id=abc123>>>\nFix the importer\nLong description of the work\n<<</card-text>>>\nWhen done, write the summary.';
+
+    it('an approval puts the call first and the dispatch prompt in a closed fold below it', async () => {
+      mockFetch(
+        [{ ...PENDING_WITH_OPTIONS, kind: 'approval', prompt: DISPATCH, metadata: { outward: true, call: 'send_email --to ana@example.com' } }],
+        () => new Response('unused'),
+      );
+      const c = mount();
+      await flush();
+      await flush();
+      const call = c.querySelector('[data-testid="decision-call"]') as HTMLElement;
+      const fold = c.querySelector('[data-testid="decision-given"]') as HTMLDetailsElement;
+      expect(call.textContent).toBe('send_email --to ana@example.com');
+      expect(fold.open).toBe(false);
+      expect(fold.textContent).toContain('What the agent was given');
+      expect(fold.textContent).toContain('<<<card-text id=abc123>>>');
+      expect(call.compareDocumentPosition(fold) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('a plain question stays the headline and has no fold', async () => {
+      mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+      expect(c.querySelector('[data-testid="decision-headline"]')!.textContent).toContain('rm -rf node_modules');
+      expect(c.querySelector('[data-testid="decision-given"]')).toBeNull();
+    });
+
+    it('a long id is cut in the middle, whole in its title and in what Copy copies', async () => {
+      const id = 'dec_6174f3a1b2c4d5e6f7a8b9c0d1e23d6f';
+      const write = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText: write }, configurable: true });
+      mockFetch([{ ...PENDING_WITH_OPTIONS, decision_id: id }], () => new Response('unused'));
+      const c = mount();
+      await flush();
+      await flush();
+      const shown = c.querySelector('[data-testid="decision-id"]') as HTMLElement;
+      expect(shown.textContent).toBe('dec_6174…3d6f');
+      expect(shown.title).toBe(id);
+      (c.querySelector('button[aria-label="Copy the decision id"]') as HTMLButtonElement).click();
+      await flush();
+      expect(write).toHaveBeenCalledWith(id);
+    });
+  });
+
   describe('while the attempt is not over', () => {
     afterEach(() => vi.useRealTimers());
 

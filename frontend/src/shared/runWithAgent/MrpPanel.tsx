@@ -29,7 +29,8 @@ export interface CheckItem {
   title: string;
   status: MrpCriterionStatus;
   kind: string;
-  source: 'Done when' | 'Verifier';
+  /** `Done when`: a line the item's own list has for a person to check. `Agent`: any other check, the ones the agent brings. */
+  source: 'Done when' | 'Agent';
   evidence: string | null;
   note: string | null;
   fromPack: boolean;
@@ -53,7 +54,7 @@ export function buildChecks(pack: MrpPack | undefined, doneWhen: AcceptanceCrite
       title: own?.title?.trim() || c.id,
       status: ticked ? 'passed' : c.status,
       kind: c.kind,
-      source: own ? 'Done when' : 'Verifier',
+      source: own?.kind === 'manual' ? 'Done when' : 'Agent',
       evidence: c.evidence_ref,
       note: c.note ?? (ticked ? 'Ticked by a person' : null),
       fromPack: true,
@@ -68,7 +69,7 @@ export function buildChecks(pack: MrpPack | undefined, doneWhen: AcceptanceCrite
       title: own.title.trim() || own.id,
       status: manual ? (ticked ? 'passed' : 'manual') : 'skipped',
       kind: own.kind,
-      source: 'Done when',
+      source: manual ? 'Done when' : 'Agent',
       evidence: null,
       note: ticked ? 'Ticked by a person' : manual ? null : 'The verifier did not run it',
       fromPack: false,
@@ -256,8 +257,8 @@ const KIND_WORDS: Record<string, string> = {
   manual: 'A person checks it',
 };
 const SOURCE_WORDS: Record<CheckItem['source'], string> = {
-  'Done when': 'from the Done when list',
-  Verifier: 'from the verifier',
+  'Done when': "from the item's Done when",
+  Agent: "from the agent's checks",
 };
 /** The verifier's own notes that are codes, in words. Any other note is already a sentence. */
 const NOTE_WORDS: Record<string, string> = {

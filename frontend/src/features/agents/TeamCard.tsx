@@ -4,7 +4,9 @@ import {
   agentName,
   memberReachText,
   networkText,
+  plainName,
   queueText,
+  teamProposes,
   SHARED_PROPOSALS_TEXT,
   stepText,
   type AgentCapabilityLine,
@@ -146,6 +148,16 @@ const TeamCard: Component<TeamCardProps> = (props) => {
   const entry = () => props.entry;
   const agent = () => (entry().harness ? agentName(entry().harness!) : 'any computer');
   const report = () => entry().report ?? undefined;
+  // What the team's own report says of proposing (each member's `can_propose`, as Compare reads it);
+  // the agent's general ability is the fallback only where the report names no member, and then it
+  // carries no more than the agent said.
+  const proposal = (): { state: 'can' | 'cannot'; text: string; reason: string | null } | false => {
+    const said = teamProposes(report());
+    if (said.state === 'can') return { state: 'can', text: `Can propose items: ${said.roles.join(', ')}`, reason: props.proposes.state === 'can' ? props.proposes.reason : null };
+    if (said.state === 'cannot') return { state: 'cannot', text: 'No member proposes items', reason: props.proposes.state === 'cannot' ? props.proposes.reason : null };
+    if (props.proposes.state === 'not_reported') return false;
+    return { state: props.proposes.state, text: props.proposes.state === 'can' ? 'Can propose items' : 'Cannot propose items', reason: props.proposes.reason };
+  };
 
   return (
     <li id={`team-${entry().name}`} class="flex min-w-0 flex-col gap-2.5 rounded-xl bg-app px-4 py-3.5" data-testid={`team-card-${entry().name}`}>
@@ -234,7 +246,7 @@ const TeamCard: Component<TeamCardProps> = (props) => {
           <Part id="records" label="Keeps" agent={agent()} value={report()?.records}>
             {(sets) => (
               <ul class="flex flex-col gap-1">
-                <For each={sets} fallback={<DisabledLine>No record sets reported</DisabledLine>}>
+                <For each={sets} fallback={<DisabledLine>Keeps no record sets</DisabledLine>}>
                   {(set) => (
                     <li class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-small" style={{ 'overflow-wrap': 'anywhere' }}>
                       <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{set.name}</span>
@@ -270,15 +282,15 @@ const TeamCard: Component<TeamCardProps> = (props) => {
           <Rule id="network" label="Network" agent={agent()} value={report()?.network}>
             {(network) => networkText(network)}
           </Rule>
-          <Rule id="proposals" label="Proposes" agent={agent()} value={props.proposes.state !== 'not_reported' && props.proposes}>
+          <Rule id="proposals" label="Proposes" agent={agent()} value={proposal()}>
             {(line) => (
               <span
                 aria-disabled={line.state === 'can' ? undefined : 'true'}
                 style={{ color: line.state === 'can' ? undefined : 'var(--color-text-tertiary)' }}
               >
-                {line.state === 'can' ? 'Can propose items' : 'Cannot propose items'}
+                {line.text}
                 <Show when={line.reason}>
-                  <span style={{ color: 'var(--color-text-tertiary)' }}> · {line.reason}</span>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}> · {plainName(line.reason!)}</span>
                 </Show>
               </span>
             )}

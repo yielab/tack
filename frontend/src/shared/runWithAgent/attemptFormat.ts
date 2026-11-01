@@ -16,6 +16,7 @@
 // (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
 // same guarantee; this file is the frontend half.
 
+import { plainVerdict } from './plainWords';
 import { isFolderRun } from '../execution/attempts';
 import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
 import type { Measurement } from '../execution/types';
@@ -380,6 +381,8 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
       whyStopped = "The agent changed the repository's git configuration; nothing was pushed";
     }
   }
+  // A reason the verifier or harness wrote for itself is said plainly; the raw text stays in the run's Technical fold.
+  if (whyStopped !== null) whyStopped = plainVerdict(whyStopped) ?? whyStopped;
   let badge: AttemptOutcome['badge'] = null;
   if (state === 'failed' && reason.code === 'needs_human') {
     badge = { label: 'Needs a person', tone: 'warning' };

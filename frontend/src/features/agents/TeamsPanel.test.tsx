@@ -278,14 +278,28 @@ describe('TeamsPanel', () => {
     }
   });
 
-  it('says why a team cannot propose when the agent reports the reason', async () => {
-    mockApi([FULL_TEAM]);
+  it('says why a team cannot propose when the agent reports the reason, reading the members as Compare does', async () => {
+    const quiet = { ...FULL_TEAM, report: { ...FULL_TEAM.report, members: FULL_TEAM.report.members.map((m) => ({ ...m, can_propose: false })) } };
+    mockApi([quiet]);
     const c = mount([runner([{ ...DOCKET, features: { proposals: { support: 'unsupported', reason: 'this team keeps no proposals record' } } }])]);
     await flush();
     await flush();
     const line = row(card(c, 'saas-code'), 'proposals');
-    expect(line.textContent).toContain('Cannot propose items');
+    expect(line.textContent).toContain('No member proposes items');
     expect(line.textContent).toContain('this team keeps no proposals record');
+  });
+
+  it('names the members that propose, strips backticks from a reason and says an empty record list keeps none', async () => {
+    const withReason = { ...FULL_TEAM, report: { ...FULL_TEAM.report, records: [] } };
+    mockApi([withReason]);
+    const c = mount([runner([{ ...DOCKET, features: { proposals: { support: 'supported', reason: 'through `tack_proposals` records' } } }])]);
+    await flush();
+    await flush();
+    const line = row(card(c, 'saas-code'), 'proposals');
+    expect(line.textContent).toContain('Can propose items: Lead');
+    expect(line.textContent).toContain('through tack_proposals records');
+    expect(line.textContent).not.toContain('`');
+    expect(row(card(c, 'saas-code'), 'records').textContent).toContain('Keeps no record sets');
   });
 
   it('lists a profile with no team under its agent as One agent', async () => {

@@ -125,7 +125,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
   );
 
   return (
-    <div class="space-y-6">
+    <div class="min-w-0 max-w-full space-y-6">
       <ItemHeader
         item={props.item}
         onPatch={props.editor.patch}

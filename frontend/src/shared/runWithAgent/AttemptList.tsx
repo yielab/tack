@@ -634,15 +634,14 @@ const AttemptRow: Component<{
               workspace={folder()}
             />
             <section>
-              <h5 ref={questionsHeading} tabIndex={-1} class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                Questions from the agent
-              </h5>
               <DecisionInbox
                 requestId={props.requestId}
                 attemptNumber={props.attempt.attempt_number}
                 attemptId={props.attempt.attempt_id}
                 attemptState={props.attempt.state}
                 settledOnly
+                heading="Questions from the agent"
+                headingRef={(el) => (questionsHeading = el)}
               />
             </section>
           </div>

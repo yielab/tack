@@ -111,14 +111,19 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [acceptanceCount] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
     (id) => api.briefs.get(id).then(
-      (brief) => brief.acceptance?.length ?? 0,
-      (error) => (error instanceof ApiError && error.status === 404 ? 0 : undefined),
+      (brief) => {
+        // The item's own Done when list is its manual lines; every other check is one the agent brings.
+        const all = brief.acceptance ?? [];
+        const doneWhen = all.filter((c) => c.kind === 'manual').length;
+        return { doneWhen, agent: all.length - doneWhen };
+      },
+      (error) => (error instanceof ApiError && error.status === 404 ? { doneWhen: 0, agent: 0 } : undefined),
     ),
   );
   const checkedCard = (): boolean | undefined => {
     if (acceptanceCount.loading) return undefined;
     const n = acceptanceCount();
-    return n === undefined ? undefined : n > 0;
+    return n === undefined ? undefined : n.doneWhen + n.agent > 0;
   };
   const [agentContext] = createResource(
     () => (props.isOpen ? { id: props.itemId, profileId: form.agentProfileId } : undefined),
