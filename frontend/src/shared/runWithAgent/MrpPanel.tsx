@@ -8,6 +8,8 @@ import type { AttemptMerge } from '../execution/attempts';
 import { LEVEL_MEANING } from '../help/texts';
 
 export interface MrpPanelProps {
+  /** The run's verdict is asked for at the top of the run, so this panel only shows it once given. */
+  verdictAbove?: boolean;
   mrp: Mrp;
   /** The item's "Done when" list: its ticks and the criteria the verifier did not name sit in the same checklist. */
   doneWhen?: AcceptanceCriterion[] | null;
@@ -396,6 +398,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
               </div>
             </details>
 
+            <Show when={!props.verdictAbove || mrp().review()?.verdict}>
             <Section title="Your review">
               <Show
                 when={mrp().review()?.verdict}
@@ -442,6 +445,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                 </p>
               </Show>
             </Section>
+            </Show>
           </>
         )}
       </Show>
