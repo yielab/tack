@@ -156,7 +156,9 @@ describe('ItemPage', () => {
     expect(accepts).toHaveLength(1);
     expect(container.querySelector('[data-testid="review-banner"]')?.contains(accepts[0])).toBe(true);
     // The run card keeps its state and its link to the report.
-    expect(container.querySelector('[data-testid="latest-run"]')?.textContent).toContain('See what it did');
+    expect(container.querySelector('[data-testid="latest-run"]')?.textContent).toContain('Review and merge');
+    // The Execution tab carries the run's state as a dot with its own label.
+    expect(container.querySelector('[role="tab"][aria-selected="true"] [role="img"]')?.getAttribute('aria-label')).toBe('Ready for review — Needs your review');
     // The side column of the tab holds the ids.
     expect(container.querySelector('[data-testid="execution-side"] [data-testid="attempt-ids"]')).not.toBeNull();
     dispose();

@@ -1,6 +1,6 @@
 import { type Component, type JSX, createSignal, createMemo, onMount, onCleanup, Show } from 'solid-js';
 import { useSearchParams } from '@solidjs/router';
-import { Button } from '../ui';
+import { Button, type ButtonVariant } from '../ui';
 import RunWithAgentModal from './RunWithAgentModal';
 import { useExecutionStore } from '../state/executionContext';
 import { describeExecutionState, type StateTone } from './shared';
@@ -66,6 +66,9 @@ export interface RunWithAgentButtonProps {
    *  switches item-detail to via `onCreated`. */
   showStateChip?: boolean;
   onCreated?: (requestId: string) => void;
+  /** How the labelled trigger is drawn; the item's Now panel makes it the one filled button only
+   *  when starting a run is what to do next. */
+  variant?: ButtonVariant;
   capabilities?: () => RunnerCapabilities[];
 }
 
@@ -166,8 +169,8 @@ const RunWithAgentButton: Component<RunWithAgentButtonProps> = (props) => {
         </button>
       ) : (
         <Button
-          size="sm"
-          variant="primary"
+          size={(props.variant ?? 'primary') === 'primary' ? 'md' : 'sm'}
+          variant={props.variant ?? 'primary'}
           onClick={(e) => {
             e.stopPropagation();
             setOpen(true);

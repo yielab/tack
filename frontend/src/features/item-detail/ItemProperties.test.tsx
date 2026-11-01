@@ -98,4 +98,23 @@ describe('ItemProperties', () => {
     expect(onPatch).toHaveBeenLastCalledWith({ recurrence: null });
     dispose();
   });
+
+  it('in the drawer the properties are a list of label and value, each label tied to its control', () => {
+    const { container, dispose } = mount(vi.fn(), { assignee: 'Ana' }, 'grid');
+    const list = container.querySelector('section[aria-label="Properties"] dl')!;
+    expect(list).not.toBeNull();
+    const terms = [...list.querySelectorAll('dt')].map((t) => t.textContent?.trim());
+    expect(terms).toEqual(['Priority', 'Due date', 'Assignee', 'Estimate (story points)', 'Sprint', 'Repeats', 'Last update', 'Tags', 'Blocks']);
+    expect(labelled(container, 'input', 'Assignee').closest('dd')).not.toBeNull();
+    // The Automation line is the Now panel's, not a property.
+    expect(container.querySelector('[data-testid="automation-row"]')).toBeNull();
+    dispose();
+  });
+
+  it('on the page the fields keep their stacked form, with no list', () => {
+    const { container, dispose } = mount(vi.fn(), {}, 'list');
+    expect(container.querySelector('dl')).toBeNull();
+    expect(labelled(container, 'select', 'Priority')).toBeTruthy();
+    dispose();
+  });
 });

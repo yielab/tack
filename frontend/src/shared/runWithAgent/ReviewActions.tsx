@@ -1,5 +1,5 @@
 import { type Component, Show, createSignal } from 'solid-js';
-import { Button } from '../ui';
+import { Button, type ButtonVariant } from '../ui';
 import { attemptsApi, type AttemptSummary } from '../execution';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import { relativeTimeFromIso } from './shared';
@@ -11,6 +11,8 @@ export interface ReviewActionsProps {
   review: AttemptSummary['review'] | undefined;
   /** Called with the saved verdict as the server now reports it. */
   onReviewed?: (review: AttemptSummary['review']) => void;
+  /** How Accept is drawn; a screen whose one filled button is elsewhere passes `secondary`. */
+  acceptVariant?: ButtonVariant;
 }
 
 /** Accept, or Reject… with an optional note, on one attempt; the verdict once it is given. */
@@ -50,7 +52,7 @@ const ReviewActions: Component<ReviewActionsProps> = (props) => {
           when={rejecting()}
           fallback={
             <>
-              <Button size="sm" disabled={busy()} onClick={() => void submit('accepted')}>
+              <Button size="sm" variant={props.acceptVariant} disabled={busy()} onClick={() => void submit('accepted')}>
                 Accept
               </Button>
               <Button size="sm" variant="secondary" disabled={busy()} onClick={() => setRejecting(true)}>
