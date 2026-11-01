@@ -152,8 +152,10 @@ The record of every time an agent was handed this item. Its tab carries the late
 - **Running** shows the team's steps when it reports them, the agent's last steps, the tokens it has used against its limit, **Follow live**
   and **Stop**.
 - **Ready for review** shows the opening of the agent's report, how long it took, how many steps
-  it took and how many files it changed, with **Accept**, **Reject…** (which asks for an optional
-  reason), with **Review and merge** as the filled button, which opens the Execution tab. A run that changed no file shows the agent's answer as what it
+  it took and how many files it changed, with **Review and merge** as the filled button, which opens the
+  Execution tab. When the run left no merge-readiness pack, the panel also holds **Accept** and **Reject…**
+  (which asks for an optional reason); when it left one, the verdict and its reason are given only on the
+  Execution tab, together with the pack's review. A run that changed no file shows the agent's answer as what it
   delivered and offers **Accept**, not **Merge**.
 - **Needs you** puts the question first, with its answers already open: choose one and press
   **Resolve** without leaving the panel, or press **Answer the question**. A question the agent asks after the page was opened appears

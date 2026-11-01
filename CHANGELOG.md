@@ -58,6 +58,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A run that has a merge-readiness pack saves the one reason on the run's verdict for Accept as well as for Reject (it used to be dropped from the run and kept only on the pack); if the pack's review is saved and the run's is not, the review block offers **Save the verdict on the run** with the pack's verdict and reason instead of letting you reject a run whose pack you accepted. On the Overview, the Now panel no longer accepts or rejects a run whose pack is unreviewed (which left the pack open and the task where it was): it offers **Review and merge**, which opens the Execution tab.
 - On an item, who would do the task is said once: by the idle Now panel before a run ("Would go to …"), and by the Automation line only after one.
 - A run's Usage and the task's latest-run line no longer show a dollar cost or "Cost: Not measured" (the data is kept; limits and reports are in tokens), and **Always show priority on cards** moved from the board header to Settings → Display & accessibility (same stored choice).
 - Settings → Automation: the ladder says **Blocked by 3 things** instead of "Held off by 3", the Merge block is titled **Autonomy level** (it sat under a section also called Merge), the sentence "Keep at most [n] runs open" stays on one line, a team's fix starts a sentence with a capital, and the sections are as wide as the ladder.

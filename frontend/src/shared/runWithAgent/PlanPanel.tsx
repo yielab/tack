@@ -425,7 +425,7 @@ const PlanPanel: Component<PlanPanelProps> = (props) => {
                 </div>
               </div>
               {branch(null)}
-              <Button size="sm" disabled={busy() || chosen() === 0} onClick={() => void create()}>
+              <Button size="sm" data-testid="plan-create" disabled={busy() || chosen() === 0} onClick={() => void create()}>
                 {`Create ${plural(chosen(), 'item', 'items')}`}
               </Button>
             </>
