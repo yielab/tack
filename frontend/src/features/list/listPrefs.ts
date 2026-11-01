@@ -62,6 +62,15 @@ export function loadHiddenColumns(): Set<ColumnKey> {
   return new Set(DEFAULT_HIDDEN);
 }
 
+/** Whether this browser has a column choice of its own; without one, empty columns stay out of the way. */
+export function hasColumnChoice(): boolean {
+  try {
+    return localStorage.getItem(COLS_KEY) !== null || localStorage.getItem(OLD_COLS_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function saveHiddenColumns(hidden: ReadonlySet<ColumnKey>): void {
   try { localStorage.setItem(COLS_KEY, JSON.stringify([...hidden])); } catch { /* a convenience, not state */ }
 }

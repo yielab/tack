@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortItems, filterItems, matchesQuery, buildTree, pruneTree, visibleRows, editPatch, currentRaw, runRank, type ItemNode } from './listRows';
+import { sortItems, filterItems, matchesQuery, buildTree, pruneTree, visibleRows, editPatch, currentRaw, runRank, emptyColumns, type ItemNode } from './listRows';
 import type { CardRun } from '../../shared/runWithAgent/cardRun';
 import type { Item, ItemType, Priority } from '../../shared/types';
 
@@ -210,5 +210,20 @@ describe('editPatch', () => {
   it('reads a due date as the day it falls on', () => {
     expect(currentRaw(item, 'due_date')).toBe('2026-03-01');
     expect(currentRaw(makeItem({ id: 'n' }), 'due_date')).toBe('');
+  });
+});
+
+describe('emptyColumns', () => {
+  it('names the columns no item has a value in, and none before there are items', () => {
+    expect(emptyColumns([])).toEqual([]);
+    expect(emptyColumns([makeItem({ id: 'a' })])).toEqual(['assignee', 'due_date', 'run', 'details']);
+  });
+
+  it('drops a column as soon as one item has a value in it', () => {
+    const items = [
+      makeItem({ id: 'a', assignee: 'Kim' }),
+      makeItem({ id: 'b', due_date: '2026-03-01T00:00:00Z', tags: ['x'] }),
+    ];
+    expect(emptyColumns(items, (i) => (i.id === 'a' ? ({ state: 'running' } as CardRun) : undefined))).toEqual([]);
   });
 });

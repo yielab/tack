@@ -31,6 +31,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 
+- The List gives the title the free width and lets it wrap to two lines instead of cutting it at about twenty characters, and, until you choose columns yourself, leaves out the ones no item has a value in (Assignee, Due, Run, Details); they stay in the Columns menu.
 - A step's verdict, what the agent assumed and asked, and why a run stopped read as plain sentences where they were verifier codes (a check that only a person can make, a file the task needs, the team's level ceiling, an approval nobody is asked for); the raw line is the tooltip.
 - A run's checks name their true source ("from the item's Done when" or "from the agent's checks"), and the Run dialog counts each apart: "2 Done when · 2 agent checks", where it counted all four as Done when.
 - In Orchestration, a member is drawn under its team and a line with no open task appears only when you point at or focus a box; a team that no role of the project reaches is dashed too, with the fix. Compare and the team card read who can propose from the same field of the team's report, and a Flow lane says what the ring and the dot on a member mean.
