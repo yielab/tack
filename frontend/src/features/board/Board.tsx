@@ -284,7 +284,6 @@ const BoardColumnView: Component<{
         <span style={{ 'font-size': '0.75rem', 'font-weight': 500, 'flex-shrink': 0, color: 'var(--color-text-tertiary)' }}>
           {shown().length === props.column.items.length ? props.column.items.length : `${shown().length} of ${props.column.items.length}`}
         </span>
-        <RunMiniBar counts={runCounts()} active={props.filters} onToggle={props.onToggleFilter} />
         <Show when={props.column.wip_limit != null}>
           <WipChip count={props.column.items.length} limit={props.column.wip_limit!} />
         </Show>
@@ -306,6 +305,10 @@ const BoardColumnView: Component<{
           <IconPlus size={13} />
           Add item
         </button>
+      </div>
+      {/* The runs of the column sit under its name as a thin line, so the name keeps its width. */}
+      <div style={{ padding: '0 8px 2px' }}>
+        <RunMiniBar counts={runCounts()} active={props.filters} onToggle={props.onToggleFilter} />
       </div>
       {/* The column's own scroll: focusable, so the keyboard can scroll it, and
           it keeps the wheel to itself instead of passing it to the board. */}
