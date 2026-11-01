@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("accept.request.json", 0x7c41_cf4c_5a0c_50a0),
     ("accept.response.json", 0x9e9d_72b5_565a_783d),
+    ("activity.request.json", 0x432c_7083_b6c6_7815),
+    ("activity.response.json", 0x9aad_76d5_d417_b0d9),
     ("artifact.request.json", 0x40c1_0d30_32db_290f),
     ("artifact.response.json", 0x103d_f88e_44d9_900d),
     ("cancellation.request.json", 0x083e_61d8_a5b4_f80a),
@@ -47,7 +49,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("heartbeat.response.json", 0x63a2_31d5_7dd3_20e3),
     ("lifecycle-transitions.json", 0x6545_6c76_7dc0_93a4),
     ("limits.json", 0xed78_5be0_4be8_ed98),
-    ("protocol.json", 0xe879_2dbb_331d_2996),
+    ("protocol.json", 0x8e43_773b_7a04_cf1b),
     ("recovery-observation.request.json", 0xa853_654b_7c9c_3f01),
     ("recovery-observation.response.json", 0x01d2_022b_e95f_3987),
     ("refresh.request.json", 0xc418_5ef4_fc72_fcc8),
@@ -110,7 +112,7 @@ pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
 #[test]
 fn every_json_fixture_parses_and_value_round_trips_without_loss() {
     let paths = fixture_paths();
-    assert_eq!(paths.len(), 48, "the frozen fixture manifest changed");
+    assert_eq!(paths.len(), 50, "the frozen fixture manifest changed");
 
     for path in paths {
         let name = fixture_name(&path);

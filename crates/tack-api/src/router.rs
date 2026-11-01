@@ -360,6 +360,7 @@ pub fn build_router(state: AppState) -> Router {
             get(briefs::list_brief_versions),
         )
         .route("/teams", get(teams::list_teams))
+        .route("/teams/{id}/activity", get(teams::team_activity))
         .route(
             "/agent-credentials",
             get(agent_credentials::list_credentials).post(agent_credentials::issue_credential),

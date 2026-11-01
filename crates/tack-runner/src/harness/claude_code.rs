@@ -440,6 +440,10 @@ impl HarnessGrammar for ClaudeCodeGrammar {
                  reads it after the run; a run whose workspace has no work tree has no file to \
                  read, and proposes nothing",
             )),
+            activity: Some(capability(
+                CapabilitySupport::Unsupported,
+                "Claude Code runs one agent in one work tree; it holds no team and no work of its own to report",
+            )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "the tool list is enforced through --tools; `network: false` leaves WebFetch and \

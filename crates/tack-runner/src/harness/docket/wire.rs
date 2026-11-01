@@ -31,6 +31,13 @@ pub(super) struct Agent {
     pub model: Option<String>,
 }
 
+/// `GET /health`: the features this docket answers to; an older one sends none.
+#[derive(Debug, Deserialize)]
+pub(super) struct HealthAnswer {
+    #[serde(default)]
+    pub features: Vec<String>,
+}
+
 /// `GET /pods`.
 #[derive(Debug, Deserialize)]
 pub(super) struct PodList {

@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use tack_core::models::{CreateItem, CreateProject, ProjectType};
 use tack_db::queries::{
     agent_runners, execution_artifacts, execution_attempts, execution_completion_replays,
-    execution_decisions, execution_events, execution_requests,
+    execution_decisions, execution_events, execution_requests, team_activity,
 };
 use tack_db::{
     Repository,
@@ -845,6 +845,65 @@ async fn a_heartbeat_naming_an_unknown_state_is_invalid() {
     assert_eq!(body["error"]["code"], "invalid_request");
     let (status, body) = fx.post("/heartbeat", beat("leased")).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+/// `POST /activity` replaces each task it names and nothing else, so the same report twice leaves
+/// the same rows; a report in another runner's name is refused.
+#[tokio::test]
+async fn a_team_activity_report_replaces_the_tasks_it_names_and_is_idempotent() {
+    let fx = Fixture::new().await;
+    let report = |report_id: &str, runner: &str, steps: Value| {
+        json!({
+            "protocol_version": 1, "runner_id": runner, "report_id": report_id,
+            "sent_at": fx.clock.now().to_rfc3339(), "harness_kind": "docket",
+            "teams": [{"team": "saas-dev", "tasks": [
+                {"ref": "task-1", "state": "running",
+                 "current_step": {"name": "implementer"}, "finished_steps": steps},
+                {"ref": "task-2", "on_board": "item-1", "state": "waiting", "waits_on": "approval"},
+            ]}],
+        })
+        .to_string()
+    };
+    let step = json!([{"name": "lead", "verdict": "approve", "summary": "Planned."}]);
+
+    let (status, body) = fx
+        .post("/activity", report("a1", RUNNER_ID, step.clone()))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["tasks_recorded"], 2);
+    let (status, _) = fx
+        .post("/activity", report("a1", RUNNER_ID, step.clone()))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let held = || async {
+        let tasks = team_activity::team_tasks(&fx.repo, "saas-dev", Some("docket"))
+            .await
+            .unwrap();
+        let steps = team_activity::team_task_steps(&fx.repo, "docket", "saas-dev")
+            .await
+            .unwrap();
+        (tasks, steps)
+    };
+    let (tasks, steps) = held().await;
+    assert_eq!(tasks.len(), 2);
+    assert_eq!(steps.len(), 1, "the same report twice keeps one step");
+    let waiting = tasks.iter().find(|task| task.task_ref == "task-2").unwrap();
+    assert_eq!(
+        (waiting.on_board.as_deref(), waiting.waits_on.as_deref()),
+        (Some("item-1"), Some("approval"))
+    );
+
+    // A later report of the task replaces its steps whole.
+    let (status, _) = fx
+        .post("/activity", report("a2", RUNNER_ID, json!([])))
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(held().await.1.is_empty());
+
+    let (status, body) = fx
+        .post("/activity", report("a3", "runner-other", json!([])))
+        .await;
+    assert_ne!(status, StatusCode::OK, "{body}");
 }
 
 // ---------------------------------------------------------------------
