@@ -160,6 +160,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("096_planner_researcher_write_plan", &MIGRATION_096[..]),
         ordinary("097_plan_instructions_name_no_file", &MIGRATION_097[..]),
         ordinary("098_project_on_start_status", &MIGRATION_098[..]),
+        ordinary("099_agent_credentials", &MIGRATION_099[..]),
     ]
 }
 
@@ -1919,3 +1920,25 @@ const MIGRATION_097: [&str; 2] = [
 // 098: a project may move an item when a run starts, as it may when one finishes; NULL leaves the item where
 // it is, which is what every project that exists keeps.
 const MIGRATION_098: [&str; 1] = ["ALTER TABLE projects ADD COLUMN on_start_status TEXT"];
+
+// 099: an agent holds a credential with scopes (ADR 0034, decision 2). Only the hash of the secret is
+// stored; `scopes` is a JSON list of {all_projects, projects, capabilities}. A name is unique among the
+// credentials not revoked. Items, comments and dependencies record who wrote them as a principal label
+// (`operator:...`, `agent:<credential id>`); rows written before this stay NULL.
+const MIGRATION_099: [&str; 6] = [
+    "CREATE TABLE agent_credentials (
+        id TEXT PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        secret_hash TEXT NOT NULL UNIQUE,
+        scopes TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_used_at TEXT,
+        revoked_at TEXT
+    )",
+    "CREATE UNIQUE INDEX idx_agent_credentials_name ON agent_credentials(name) WHERE revoked_at IS NULL",
+    "ALTER TABLE items ADD COLUMN created_by TEXT",
+    "ALTER TABLE items ADD COLUMN updated_by TEXT",
+    "ALTER TABLE comments ADD COLUMN principal TEXT",
+    "ALTER TABLE dependencies ADD COLUMN created_by TEXT",
+];

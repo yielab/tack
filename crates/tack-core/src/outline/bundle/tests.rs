@@ -416,6 +416,7 @@ fn the_export_numbers_items_parents_first_and_leaves_ids_and_dates_out() {
         source_item_id: parent.id,
         target_item_id: child.id,
         dependency_type: DependencyType::Blocks,
+        created_by: None,
         created_at: now,
     };
     let (roles, fields, item_roles, values, dependencies) = (

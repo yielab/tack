@@ -1,5 +1,7 @@
 use crate::extract::{Json, Path};
+use axum::Extension;
 use axum::extract::State;
+use tack_core::principal::{Capability, Principal, may, missing_scope};
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -24,10 +26,25 @@ use crate::router::AppState;
 )]
 pub async fn create_dependency(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(item_id): Path<Uuid>,
     Json(input): Json<CreateDependency>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let dep = state.repo.create_dependency(item_id, input).await?;
+    // The middleware checked the source item's project; the other end must be one the caller
+    // may change too, or a credential could hang its own item on a project it cannot touch.
+    if !principal.is_operator()
+        && let Some(target) = state.repo.get_item(input.target_item_id).await?
+        && !may(&principal, target.project_id, Capability::Act)
+    {
+        return Err(ApiError::Forbidden(missing_scope(
+            target.project_id,
+            Capability::Act,
+        )));
+    }
+    let dep = state
+        .repo
+        .create_dependency_by(item_id, input, Some(&principal.label()))
+        .await?;
     Ok(Json(serde_json::to_value(dep).unwrap()))
 }
 

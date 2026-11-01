@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/api/agent-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/agent-credentials */
+        get: operations["list_credentials"];
+        put?: never;
+        /** POST /api/agent-credentials */
+        post: operations["issue_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-credentials/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/agent-credentials/{id}/revoke */
+        post: operations["revoke_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-credentials/{id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/agent-credentials/{id}/rotate */
+        post: operations["rotate_credential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent-profiles": {
         parameters: {
             query?: never;
@@ -3067,6 +3119,22 @@ export interface components {
             profile_source?: string | null;
             text: string;
         };
+        /** @description An agent credential as Tack shows it: never the secret, never its hash. */
+        AgentCredential: {
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            last_used_at?: string | null;
+            /** @description What a comment or a change of this credential's is signed with. */
+            name: string;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            scopes: components["schemas"]["Scope"][];
+        };
         AgentProfileListResponse: {
             data: components["schemas"]["AgentProfileSummary"][];
             /** Format: int32 */
@@ -3509,6 +3577,11 @@ export interface components {
             /** @example cancellation_requested */
             state: string;
         };
+        /**
+         * @description What a principal may do inside a project.
+         * @enum {string}
+         */
+        Capability: "read" | "propose" | "act" | "converse";
         /** @enum {string} */
         CodeOrigin: "folder" | "new_folder" | "url" | "none";
         Comment: {
@@ -3521,6 +3594,11 @@ export interface components {
             id: string;
             /** Format: uuid */
             item_id: string;
+            /**
+             * @description The principal that wrote it (`operator:...`, `agent:<credential id>`); `None` for a comment
+             *     written before callers were recorded, or by Tack itself.
+             */
+            principal?: string | null;
             /** Format: date-time */
             updated_at: string;
         };
@@ -3867,6 +3945,11 @@ export interface components {
             /** @description The team that no profile, or more than one, names; the item's run settings name no profile. */
             unresolved_team?: string | null;
         };
+        /**
+         * @description What a credential is in now: only an active one authenticates.
+         * @enum {string}
+         */
+        CredentialState: "active" | "expired" | "revoked";
         CustomFieldDefinition: {
             /** Format: date-time */
             created_at: string;
@@ -3966,6 +4049,11 @@ export interface components {
         Dependency: {
             /** Format: date-time */
             created_at: string;
+            /**
+             * @description Who made the link: `operator`, or the name of the agent credential; `None` when it was not
+             *     recorded.
+             */
+            created_by?: string | null;
             dependency_type: components["schemas"]["DependencyType"];
             /** Format: uuid */
             id: string;
@@ -4308,6 +4396,19 @@ export interface components {
              */
             start_viewed_at: number;
         };
+        /** @description What issues a credential. */
+        IssueCredential: {
+            /** @description What the agent's comments and changes are signed with. */
+            name: string;
+            /** @description The projects and capabilities the credential holds. */
+            scopes: components["schemas"]["Scope"][];
+        };
+        /** @description A credential together with its secret, which is shown this once and never again. */
+        IssuedCredential: {
+            credential: components["schemas"]["AgentCredential"];
+            /** @description `tack_agent_...`; Tack keeps only its hash. */
+            secret: string;
+        };
         Item: {
             assignee?: string | null;
             /** Format: date-time */
@@ -4402,6 +4503,11 @@ export interface components {
          *     item and never written back, which is why they are not part of the aggregate.
          */
         ItemCard: components["schemas"]["Item"] & {
+            /**
+             * @description Who created the item through the API: `operator`, or the name of the agent credential.
+             *     `None` for an item made before callers were recorded, or by Tack itself.
+             */
+            created_by?: string | null;
             /** @description Why the task's last merge did not happen, while it has not; `None` once merged or never tried. */
             merge_note?: string | null;
             /** @description How the newest merged attempt was merged: `button`, `done` or `auto`; `None` when nothing merged. */
@@ -4415,6 +4521,8 @@ export interface components {
             started_by?: string | null;
             /** @description The docket team named by the newest request's resolved profile, else `None`. */
             team?: string | null;
+            /** @description Who last changed the item through the API, in the same words as `created_by`. */
+            updated_by?: string | null;
         };
         /**
          * @description Detail envelope for `GET /api/items/{id}` — the item plus its assigned roles
@@ -5099,6 +5207,17 @@ export interface components {
             description?: string | null;
             name: string;
         };
+        /** @description A set of projects times a set of capabilities. */
+        Scope: {
+            /**
+             * @description True: every project, including the ones made after the scope was granted. `projects`
+             *     is then ignored.
+             */
+            all_projects?: boolean;
+            capabilities: components["schemas"]["Capability"][];
+            /** @description The projects the scope names when `all_projects` is false. */
+            projects?: string[];
+        };
         /** @description What one section of the file will do, for the preview. */
         SectionSummary: {
             created: number;
@@ -5629,6 +5748,132 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_credentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every credential, the newest first; never a secret */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"][];
+                };
+            };
+        };
+    };
+    issue_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueCredential"];
+            };
+        };
+        responses: {
+            /** @description Issued; the secret is in this answer only */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedCredential"];
+                };
+            };
+            /** @description The name or a scope is refused */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Another credential not revoked has that name */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    revoke_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Credential ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked for good */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            /** @description No such credential */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    rotate_credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Credential ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A new secret, valid ninety days; the old one stops working */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssuedCredential"];
+                };
+            };
+            /** @description No such credential, or it was revoked */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     list_profiles: {
         parameters: {
             query?: never;

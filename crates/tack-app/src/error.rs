@@ -13,6 +13,9 @@ pub enum AppError {
     NotFound,
     #[error("conflict: {0}")]
     Conflict(String),
+    /// A value the caller sent that the rule refuses, in words a person can act on.
+    #[error("{0}")]
+    Invalid(String),
     #[error("invalid transition from '{from}' to '{to}'")]
     InvalidTransition { from: String, to: String },
     /// A runner presented a fence older than the one the attempt holds.
@@ -35,6 +38,7 @@ impl AppError {
             AppError::Refused(refusal) => refusal.code,
             AppError::NotFound => StableErrorCode::NotFound,
             AppError::Conflict(_) => StableErrorCode::Conflict,
+            AppError::Invalid(_) => StableErrorCode::InvalidRequest,
             AppError::InvalidTransition { .. } => StableErrorCode::InvalidTransition,
             AppError::StaleLease { .. } => StableErrorCode::StaleLease,
             AppError::Store(failure) => failure.code(),

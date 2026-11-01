@@ -76,6 +76,7 @@ fn expected_version_from_if_match(
 )]
 pub async fn create_item(
     State(state): State<AppState>,
+    axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -93,12 +94,16 @@ pub async fn create_item(
     let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
 
     // A new task has no run history yet, so its card is the bare item.
-    let item = ItemCard::from(
+    let mut item = ItemCard::from(
         state
             .repo
             .create_item(project_id, &initial_status, input)
             .await?,
     );
+    (item.created_by, item.updated_by) = state
+        .repo
+        .record_item_writer(item.id, &principal.label(), true)
+        .await?;
 
     // Broadcast WebSocket event
     websocket::broadcast_event(
@@ -213,6 +218,7 @@ pub async fn get_item(State(state): State<AppState>, Path(id): Path<Uuid>) -> Ap
 )]
 pub async fn update_item(
     State(state): State<AppState>,
+    axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
     from_mcp: Option<axum::Extension<crate::middleware::FromMcp>>,
@@ -239,7 +245,7 @@ pub async fn update_item(
         .await?
         .ok_or_else(|| ApiError::NotFound("Project not found".into()))?;
 
-    let (item, version, old_status) = match state
+    let (mut item, version, old_status) = match state
         .repo
         .update_item_atomically(id, input, &project.workflow, expected_version)
         .await?
@@ -259,6 +265,11 @@ pub async fn update_item(
         }
         AtomicItemUpdateOutcome::Rejected(error) => return Err(error.into()),
     };
+
+    (item.created_by, item.updated_by) = state
+        .repo
+        .record_item_writer(item.id, &principal.label(), false)
+        .await?;
 
     // Broadcast WebSocket event
     websocket::broadcast_event(

@@ -1,5 +1,6 @@
 //! The use cases of an execution run, one file per verb.
 
+pub mod agent_credential;
 pub mod cancel_run;
 pub mod claim;
 pub mod complete;

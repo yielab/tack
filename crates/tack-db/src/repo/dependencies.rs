@@ -9,6 +9,7 @@ use tack_core::dependency::{DependencyEdge, DependencyGraph};
 use tack_core::models::{CreateDependency, Dependency, DependencyType};
 
 use super::Repository;
+use super::agent_credentials::writer_name;
 
 impl Repository {
     #[instrument(skip(self))]
@@ -16,6 +17,17 @@ impl Repository {
         &self,
         source_item_id: Uuid,
         input: CreateDependency,
+    ) -> Result<Dependency, DependencyError> {
+        self.create_dependency_by(source_item_id, input, None).await
+    }
+
+    /// [`Repository::create_dependency`] recording who made the link (a principal label).
+    #[instrument(skip(self))]
+    pub async fn create_dependency_by(
+        &self,
+        source_item_id: Uuid,
+        input: CreateDependency,
+        writer: Option<&str>,
     ) -> Result<Dependency, DependencyError> {
         self.require_item(source_item_id).await?;
         self.require_item(input.target_item_id).await?;
@@ -42,6 +54,7 @@ impl Repository {
             source_item_id,
             input.target_item_id,
             &input.dependency_type,
+            writer,
         )
         .await
         .map_err(DependencyError::Db)
@@ -52,12 +65,14 @@ impl Repository {
         &self,
         item_id: Uuid,
     ) -> Result<Vec<Dependency>, StoreError> {
-        let rows = sqlx::query_as::<_, DepRow>(
-            "SELECT id, source_item_id, target_item_id, dependency_type, created_at
+        let rows = sqlx::query_as::<_, DepRow>(concat!(
+            "SELECT id, source_item_id, target_item_id, dependency_type, ",
+            writer_name!("created_by"),
+            " AS created_by, created_at
              FROM dependencies
              WHERE source_item_id = ? OR target_item_id = ?
-             ORDER BY created_at",
-        )
+             ORDER BY created_at"
+        ))
         .bind(item_id.to_string())
         .bind(item_id.to_string())
         .fetch_all(self.pool())
@@ -84,13 +99,15 @@ impl Repository {
         &self,
         project_id: Uuid,
     ) -> Result<Vec<Dependency>, StoreError> {
-        let rows = sqlx::query_as::<_, DepRow>(
-            "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
+        let rows = sqlx::query_as::<_, DepRow>(concat!(
+            "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, ",
+            writer_name!("d.created_by"),
+            " AS created_by, d.created_at
              FROM dependencies d
              JOIN items i ON d.source_item_id = i.id
              WHERE i.project_id = ?
-             ORDER BY d.created_at",
-        )
+             ORDER BY d.created_at"
+        ))
         .bind(project_id.to_string())
         .fetch_all(self.pool())
         .await?;
@@ -115,8 +132,9 @@ impl Repository {
             return Ok(Vec::new());
         }
         let placeholders = item_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let created_by = writer_name!("created_by");
         let query = format!(
-            "SELECT id, source_item_id, target_item_id, dependency_type, created_at
+            "SELECT id, source_item_id, target_item_id, dependency_type, {created_by} AS created_by, created_at
              FROM dependencies
              WHERE source_item_id IN ({placeholders}) OR target_item_id IN ({placeholders})
              ORDER BY created_at"
@@ -138,7 +156,7 @@ impl Repository {
         item_id: Uuid,
     ) -> Result<Vec<DependencyEdge>, StoreError> {
         let rows = sqlx::query_as::<_, DepRow>(
-            "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, d.created_at
+            "SELECT d.id, d.source_item_id, d.target_item_id, d.dependency_type, NULL AS created_by, d.created_at
              FROM dependencies d
              JOIN items s ON d.source_item_id = s.id
              JOIN items t ON d.target_item_id = t.id
@@ -175,6 +193,7 @@ struct DepRow {
     source_item_id: String,
     target_item_id: String,
     dependency_type: String,
+    created_by: Option<String>,
     created_at: String,
 }
 
@@ -186,6 +205,7 @@ impl DepRow {
             source_item_id: decode::uuid(TABLE, "source_item_id", &self.source_item_id)?,
             target_item_id: decode::uuid(TABLE, "target_item_id", &self.target_item_id)?,
             dependency_type: parse_dep_type(&self.dependency_type)?,
+            created_by: self.created_by,
             created_at: decode::instant(TABLE, "created_at", &self.created_at)?,
         })
     }
@@ -203,19 +223,21 @@ pub(crate) async fn insert_dependency(
     source_item_id: Uuid,
     target_item_id: Uuid,
     dependency_type: &DependencyType,
+    writer: Option<&str>,
 ) -> Result<Dependency, StoreError> {
     let id = Uuid::new_v4();
     let now = Utc::now();
     let dep_type_str = dependency_type.to_string();
 
     sqlx::query(
-        "INSERT INTO dependencies (id, source_item_id, target_item_id, dependency_type, created_at)
-         VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO dependencies (id, source_item_id, target_item_id, dependency_type, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(id.to_string())
     .bind(source_item_id.to_string())
     .bind(target_item_id.to_string())
     .bind(&dep_type_str)
+    .bind(writer)
     .bind(now.to_rfc3339())
     .execute(&mut *conn)
     .await?;
@@ -228,11 +250,21 @@ pub(crate) async fn insert_dependency(
         "Dependency created"
     );
 
+    let created_by: Option<String> = sqlx::query_scalar(concat!(
+        "SELECT ",
+        writer_name!("created_by"),
+        " FROM dependencies WHERE id = ?"
+    ))
+    .bind(id.to_string())
+    .fetch_one(&mut *conn)
+    .await?;
+
     Ok(Dependency {
         id,
         source_item_id,
         target_item_id,
         dependency_type: dependency_type.clone(),
+        created_by,
         created_at: now,
     })
 }

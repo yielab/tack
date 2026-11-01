@@ -72,8 +72,21 @@ fn repository_rejected(message: &str) -> Response {
     responses((status = 200, description = "All projects in the workspace", body = Vec<Project>)),
 )]
 #[instrument(skip(state))]
-pub async fn list_projects(State(state): State<AppState>) -> ApiResult<Json<serde_json::Value>> {
-    let projects = state.repo.list_projects(state.workspace_id).await?;
+pub async fn list_projects(
+    State(state): State<AppState>,
+    axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let mut projects = state.repo.list_projects(state.workspace_id).await?;
+    // An agent sees only the projects its scopes let it read.
+    if !principal.is_operator() {
+        projects.retain(|project| {
+            tack_core::principal::may(
+                &principal,
+                project.id,
+                tack_core::principal::Capability::Read,
+            )
+        });
+    }
     Ok(Json(serde_json::to_value(projects).unwrap()))
 }
 

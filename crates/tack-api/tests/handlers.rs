@@ -7,6 +7,8 @@
 //! routes, runner-fleet membership, optimistic item-version concurrency, and
 //! outline and CSV imports.
 
+#[path = "handlers/agent_credentials.rs"]
+mod agent_credentials;
 #[path = "handlers/attachments.rs"]
 mod attachments;
 #[path = "handlers/attempt_lists.rs"]
