@@ -12,7 +12,7 @@ import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
 import type { UpdateProject } from '../../../shared/types';
-import { Heading, Note, SECTION } from './automation/parts';
+import { BLOCK, BLOCK_STYLE, Heading, Note } from './automation/parts';
 import Ladder from './automation/Ladder';
 
 
@@ -34,12 +34,12 @@ function checkSentence(r: FolderCheck): string {
 
 /** A settings section folded into one line until opened: the heading, then what it is set to. */
 const Fold = (props: { id?: string; title: string; summary: string; help?: FieldHelp; children: JSX.Element }) => (
-  <details id={props.id} class={SECTION}>
+  <details id={props.id} class={BLOCK} style={BLOCK_STYLE}>
     <summary class="min-h-6 cursor-pointer">
       {/* The summary itself stays `display: list-item`: a flex summary loses its disclosure marker. */}
       <span class="inline-flex flex-wrap items-center gap-2 align-middle">
         <Heading>{props.title}</Heading>
-        <span class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>{props.summary}</span>
+        <span class="text-caption" style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}>{props.summary}</span>
       </span>
     </summary>
     <div class="mt-2.5 flex flex-col gap-2.5">
@@ -75,9 +75,9 @@ const Pill = (props: { active: boolean; title?: string; onClick: () => void; chi
 );
 
 /**
- * Project automation: where the code is, how the agent works on it, what
- * happens when a run finishes, and the default agent. Every field saves on
- * change (`PATCH /projects/{id}`); a failure is a toast.
+ * Project automation: the ladder of how far Tack goes on its own, then who works
+ * on the project, when a task starts and finishes, how much Tack merges and the
+ * limits. Every field saves on change (`PATCH /projects/{id}`); a failure is a toast.
  */
 const AutomationPanel: Component = () => {
   const { project, projectId, refetch, workflow } = useProject();
@@ -151,8 +151,79 @@ const AutomationPanel: Component = () => {
       ? 'No code yet'
       : mode() === 'in_place' ? 'In the folder, directly' : mode() === 'clone' ? 'A fresh clone per run' : 'On a new branch of your repo';
 
-  return (
-    <div class="flex max-w-xl flex-col gap-4">
+  /** Agent, model and default profile. */
+  const agentFold = () => (
+    <Fold title="Agent" summary={p()?.default_harness ? agentLabel(p()!.default_harness!) : 'No default agent'}>
+      <FieldShell label="Agent" help={HELP.sandbox}>
+        <div class="flex flex-wrap gap-2">
+          <Show when={runnerList.error}>
+            {(error) => <LoadError what="the runners" error={error()} onRetry={() => void refetchRunners()} />}
+          </Show>
+          <For each={harnesses()} fallback={<Show when={!runnerList.error}><Note>No runner reports an agent yet.</Note></Show>}>
+            {(h) => (
+              <Pill active={p()?.default_harness === h} onClick={() => { void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
+                {agentLabel(h)}
+              </Pill>
+            )}
+          </For>
+        </div>
+        <Show when={p()?.default_harness ? agentSafety(defaultHarnessReports()) : null}>
+          {(safety) => (
+            <p
+              class="mt-1.5 text-xs"
+              data-testid="default-agent-safety"
+              style={{ color: safety().tone === 'blocked' ? 'var(--color-danger-600)' : 'var(--color-text-secondary)' }}
+            >
+              {safety().text}
+            </p>
+          )}
+        </Show>
+      </FieldShell>
+      <Show
+        when={p()?.default_harness}
+        keyed
+        fallback={
+          <FieldShell label="Model" help={HELP.model}>
+            <Note>Choose an agent first</Note>
+          </FieldShell>
+        }
+      >
+        {(harness) => (
+          <ModelField
+            agentLabel={agentLabel(harness)}
+            reports={defaultHarnessReports()}
+            value={savedModel() ?? ''}
+            onChange={(model) => void save({ default_model: model.trim() || null })}
+          />
+        )}
+      </Show>
+      <FieldShell label="Default profile" help={HELP.profile}>
+        <div class="flex flex-wrap gap-2">
+          <Show when={profileList.error}>
+            {(error) => <LoadError what="the agent profiles" error={error()} onRetry={() => void refetchProfiles()} />}
+          </Show>
+          <For each={profiles()} fallback={<Show when={!profileList.error}><Note>No agent profiles yet.</Note></Show>}>
+            {(pr) => (
+              <Pill
+                active={p()?.default_profile_id === pr.agent_profile_id}
+                title={(pr as { summary?: string }).summary}
+                onClick={() => void save({ default_profile_id: p()?.default_profile_id === pr.agent_profile_id ? null : pr.agent_profile_id })}
+              >
+                {pr.name}
+              </Pill>
+            )}
+          </For>
+        </div>
+        <Note>
+          <a href="/agents#profiles" class="underline">Manage profiles</a>
+        </Note>
+      </FieldShell>
+    </Fold>
+  );
+
+  /** Where the code is and how the agent works on it. */
+  const workspaceFolds = () => (
+    <>
       <Fold id="automation-where" title="Where the code is" summary={whereSummary()}>
         <div class="flex flex-col gap-2">
           <Radio name="code-origin" checked={origin() === 'folder' || origin() === 'new_folder'} onChange={() => void save({ code_origin: 'folder' })}>
@@ -255,97 +326,37 @@ const AutomationPanel: Component = () => {
           </Show>
         </Show>
       </Fold>
+    </>
+  );
 
-      <Fold title="When a run finishes" summary={p()?.on_finish_status ? `Moves the item to ${p()!.on_finish_status}` : 'Does not move the item'}>
-        <Select
-          label="Move the item to"
-          value={p()?.on_finish_status ?? ''}
-          onChange={(e) => void save({ on_finish_status: e.currentTarget.value || null })}
-          options={[{ value: '', label: 'Do not move' }, ...statuses().map((s) => ({ value: s.name, label: s.name }))]}
+  /** What happens to the item when a run finishes. */
+  const finishFold = () => (
+    <Fold id="automation-finish" title="When a run finishes" summary={p()?.on_finish_status ? `Moves the item to ${p()!.on_finish_status}` : 'Does not move the item'}>
+      <Select
+        label="Move the item to"
+        value={p()?.on_finish_status ?? ''}
+        onChange={(e) => void save({ on_finish_status: e.currentTarget.value || null })}
+        options={[{ value: '', label: 'Do not move' }, ...statuses().map((s) => ({ value: s.name, label: s.name }))]}
+      />
+      <FieldShell label="Definition of done" help={HELP.definitionOfDone}>
+        <textarea
+          aria-label="Definition of done"
+          rows={3}
+          value={p()?.definition_of_done ?? ''}
+          onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
+          class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
+          style={{
+            'background-color': 'var(--color-bg-base)',
+            color: 'var(--color-text-primary)',
+            'border-color': 'var(--color-border-medium)',
+          }}
         />
-        <FieldShell label="Definition of done" help={HELP.definitionOfDone}>
-          <textarea
-            aria-label="Definition of done"
-            rows={3}
-            value={p()?.definition_of_done ?? ''}
-            onBlur={(e) => void save({ definition_of_done: e.currentTarget.value.trim() || null })}
-            class="w-full resize-none rounded-item border px-3.5 py-2 text-sm"
-            style={{
-              'background-color': 'var(--color-bg-base)',
-              color: 'var(--color-text-primary)',
-              'border-color': 'var(--color-border-medium)',
-            }}
-          />
-        </FieldShell>
-      </Fold>
+      </FieldShell>
+    </Fold>
+  );
 
-      <Fold title="Agent" summary={p()?.default_harness ? agentLabel(p()!.default_harness!) : 'No default agent'}>
-        <FieldShell label="Agent" help={HELP.sandbox}>
-          <div class="flex flex-wrap gap-2">
-            <Show when={runnerList.error}>
-              {(error) => <LoadError what="the runners" error={error()} onRetry={() => void refetchRunners()} />}
-            </Show>
-            <For each={harnesses()} fallback={<Show when={!runnerList.error}><Note>No runner reports an agent yet.</Note></Show>}>
-              {(h) => (
-                <Pill active={p()?.default_harness === h} onClick={() => { void save({ default_harness: p()?.default_harness === h ? null : h, default_model: null }); }}>
-                  {agentLabel(h)}
-                </Pill>
-              )}
-            </For>
-          </div>
-          <Show when={p()?.default_harness ? agentSafety(defaultHarnessReports()) : null}>
-            {(safety) => (
-              <p
-                class="mt-1.5 text-xs"
-                data-testid="default-agent-safety"
-                style={{ color: safety().tone === 'blocked' ? 'var(--color-danger-600)' : 'var(--color-text-secondary)' }}
-              >
-                {safety().text}
-              </p>
-            )}
-          </Show>
-        </FieldShell>
-        <Show
-          when={p()?.default_harness}
-          keyed
-          fallback={
-            <FieldShell label="Model" help={HELP.model}>
-              <Note>Choose an agent first</Note>
-            </FieldShell>
-          }
-        >
-          {(harness) => (
-            <ModelField
-              agentLabel={agentLabel(harness)}
-              reports={defaultHarnessReports()}
-              value={savedModel() ?? ''}
-              onChange={(model) => void save({ default_model: model.trim() || null })}
-            />
-          )}
-        </Show>
-        <FieldShell label="Default profile" help={HELP.profile}>
-          <div class="flex flex-wrap gap-2">
-            <Show when={profileList.error}>
-              {(error) => <LoadError what="the agent profiles" error={error()} onRetry={() => void refetchProfiles()} />}
-            </Show>
-            <For each={profiles()} fallback={<Show when={!profileList.error}><Note>No agent profiles yet.</Note></Show>}>
-              {(pr) => (
-                <Pill
-                  active={p()?.default_profile_id === pr.agent_profile_id}
-                  title={(pr as { summary?: string }).summary}
-                  onClick={() => void save({ default_profile_id: p()?.default_profile_id === pr.agent_profile_id ? null : pr.agent_profile_id })}
-                >
-                  {pr.name}
-                </Pill>
-              )}
-            </For>
-          </div>
-          <Note>
-            <a href="/agents#profiles" class="underline">Manage profiles</a>
-          </Note>
-        </FieldShell>
-      </Fold>
-
+  return (
+    <div class="flex max-w-3xl flex-col gap-4">
       <Show when={profileList.error}>
         {(error) => <LoadError what="the agent profiles the roles choose from" error={error()} onRetry={() => void refetchProfiles()} />}
       </Show>
@@ -357,6 +368,9 @@ const AutomationPanel: Component = () => {
             statuses={statuses}
             profiles={() => profiles() ?? []}
             saveProject={save}
+            agent={agentFold()}
+            workspace={workspaceFolds()}
+            finish={finishFold()}
           />
         )}
       </Show>

@@ -290,7 +290,7 @@ describe('Settings panels', () => {
       return JSON.parse((calls[calls.length - 1][1] as RequestInit).body as string);
     };
     const folder = container.querySelector<HTMLInputElement>('input[aria-label="Folder"]')!;
-    const select = container.querySelector<HTMLSelectElement>('select')!;
+    const select = container.querySelector<HTMLSelectElement>('#automation-finish select')!;
     const push = byText('label', 'Push the branch when a run finishes').querySelector('input')!;
     const install = container.querySelector<HTMLInputElement>('input[aria-label="Install command"]')!;
     const rows: [string, () => void, object][] = [
@@ -427,12 +427,12 @@ describe('Settings panels', () => {
     const rung = (c: HTMLElement, name: string) => c.querySelector<HTMLElement>(`[data-testid="rung-${name}"]`)!;
     const ROLE = { id: 'role-1', project_id: 'p1', name: 'Content', color: '#fff', icon: null, created_at: '', agent_profile_id: null };
 
-    it('renders_the_four_rungs_in_order', async () => {
+    it('renders_the_ladder_first_and_then_teams_start_and_merge_in_order', async () => {
       const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const order = Array.from(container.querySelectorAll('[data-testid^="rung-"]')).map((e) => e.getAttribute('data-testid'));
-      expect(order).toEqual(['rung-teams', 'rung-start', 'rung-merge', 'rung-ceiling']);
+      expect(order).toEqual(['rung-ceiling', 'rung-teams', 'rung-start', 'rung-merge']);
     });
 
     it('the_start_switch_is_disabled_with_its_reason_while_no_role_has_a_profile', async () => {
@@ -619,6 +619,150 @@ describe('Settings panels', () => {
       expect(Array.from(ceiling.querySelectorAll('[data-testid="ceiling-blocker"]')).map((e) => e.textContent)).toEqual([
         "✗ The project has no public key to check the verifier's signature against",
       ]);
+    });
+  });
+
+  describe('The ladder graphic', () => {
+    const ladder = (c: HTMLElement) => c.querySelector<HTMLElement>('[data-testid="rung-ceiling"]')!;
+    const rungs = (c: HTMLElement) => Array.from(ladder(c).querySelectorAll<HTMLElement>('[data-testid="ladder-rung"]'));
+    const POLLING = 'GitHub polling is off on this board, so Tack cannot read CI or merge';
+    const KEY = "The project has no public key to check the verifier's signature against";
+    const TEAM = 'The team saas-code runs attended: its tasks stay at L3. Fix: Turn on lights-out in the team file';
+    const blocked = () => {
+      autonomy.ceiling = 'L3';
+      autonomy.teams = [{ name: 'saas-code', profile: 'Implementer', caps_at: 'L3', fix: 'Turn on lights-out in the team file' }];
+      autonomy.automatic_merge_blocked_by = [POLLING, KEY, TEAM];
+    };
+
+    it('fills_the_current_rung_marks_the_ceiling_and_says_what_holds_the_rungs_above', async () => {
+      blocked();
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rungs(container).map((r) => [r.dataset.level, r.dataset.state])).toEqual([
+        ['L3', 'current'],
+        ['L4', 'held'],
+        ['L5', 'held'],
+      ]);
+      expect(rungs(container)[0].getAttribute('aria-current')).toBe('step');
+      expect(rungs(container)[0].textContent).toContain('Ceiling');
+      expect(rungs(container).map((r) => r.querySelector('[data-testid="ladder-status"]')!.textContent)).toEqual([
+        'Set here',
+        'Held off by 3',
+        'Held off by 3',
+      ]);
+      expect(container.querySelectorAll('[data-testid="ladder-ceiling-mark"]')).toHaveLength(1);
+    });
+
+    it('offers_a_rung_the_ceiling_allows_and_holds_a_set_level_above_the_ceiling', async () => {
+      autonomy.ceiling = 'L4';
+      const open = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rungs(open.container).map((r) => r.dataset.state)).toEqual(['current', 'open', 'held']);
+      expect(rungs(open.container)[1].textContent).toContain('Available');
+      open.dispose();
+      open.container.remove();
+      autonomy.level = 'L5';
+      const above = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(rungs(above.container)[2].querySelector('[data-testid="ladder-status"]')!.textContent).toBe('Set here, held at L4');
+    });
+
+    it('gives_each_blocker_its_fix_as_a_link', async () => {
+      blocked();
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const links = Array.from(ladder(container).querySelectorAll('a')).map((a) => a.textContent);
+      expect(links).toEqual(['Run saas-code lights-out', 'Turn on GitHub polling', 'Add the public key']);
+      const href = (text: string) => Array.from(ladder(container).querySelectorAll('a')).find((a) => a.textContent === text)!.getAttribute('href');
+      expect(href('Turn on GitHub polling')).toContain('admin-guide/runners.html');
+      expect(href('Run saas-code lights-out')).toContain('admin-guide/runners.html#docket-teams');
+      expect(href('Add the public key')).toBe('#automation-public-key');
+    });
+
+    it('the_public_key_link_moves_focus_to_the_key_field', async () => {
+      blocked();
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      Array.from(ladder(container).querySelectorAll('a')).find((a) => a.textContent === 'Add the public key')!.click();
+      expect(document.activeElement).toBe(container.querySelector('textarea[aria-label="Public key"]'));
+    });
+
+    it('describes_itself_with_the_sentences_the_ceiling_used_to_print', async () => {
+      blocked();
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const description = ladder(container)
+        .getAttribute('aria-describedby')!
+        .split(' ')
+        .map((id) => document.getElementById(id)!.textContent)
+        .join('\n');
+      expect(description).toBe(
+        [
+          'This project can reach L3.',
+          '✗ The team saas-code keeps its tasks at L3. Turn on lights-out in the team file',
+          `✗ ${POLLING}`,
+          `✗ ${KEY}`,
+        ].join('\n'),
+      );
+      expect(ladder(container).getAttribute('aria-labelledby')).toBeTruthy();
+    });
+  });
+
+  describe('The sections', () => {
+    const sectionIds = ['automation-who', 'automation-when', 'automation-merge', 'automation-limits'];
+    const section = (c: HTMLElement, id: string) => c.querySelector<HTMLElement>(`section[data-testid="${id}"]`)!;
+
+    it('come_in_the_order_a_person_sets_them_up_after_the_ladder', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const all = Array.from(container.querySelectorAll('[data-testid="ladder"] section')).map((e) => e.getAttribute('data-testid'));
+      expect(all).toEqual(['rung-ceiling', ...sectionIds]);
+      expect(sectionIds.map((id) => section(container, id).querySelector('h2')!.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits']);
+    });
+
+    it('have_a_section_index_that_links_to_each', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('[data-testid="section-index"] a'));
+      expect(links.map((a) => a.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits']);
+      expect(links.map((a) => a.getAttribute('href'))).toEqual(sectionIds.map((id) => `#${id}`));
+      expect(container.querySelector('[data-testid="section-index"]')!.className).toContain('lg:sticky');
+    });
+
+    it('put_every_field_under_the_section_it_belongs_to', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const has = (id: string, selector: string) => section(container, id).querySelector(selector) !== null;
+      expect(has('automation-who', '#automation-teams')).toBe(true);
+      expect(has('automation-who', 'input[aria-label="Folder"]')).toBe(true);
+      expect(has('automation-who', 'textarea[aria-label="Definition of done"]')).toBe(false);
+      expect(has('automation-when', '[data-testid="rung-start"]')).toBe(true);
+      expect(has('automation-when', '#automation-finish')).toBe(true);
+      expect(has('automation-merge', 'input[name="autonomy-level"]')).toBe(true);
+      expect(has('automation-merge', 'textarea[aria-label="Public key"]')).toBe(true);
+      expect(has('automation-merge', 'input[aria-label="Tokens per day"]')).toBe(false);
+      for (const label of ['Tokens per day', 'Automatic merges per day', 'Items waiting at once', 'Provisional tokens per run']) {
+        expect(has('automation-limits', `input[aria-label="${label}"]`), label).toBe(true);
+      }
+    });
+
+    it('write_the_default_run_limit_as_a_number_with_its_source', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const line = section(container, 'automation-limits').querySelector('[data-testid="provisional-default"]')!.textContent;
+      expect(line).toContain('2 000 000 tokens');
+      expect(line).toContain('SWE-Effi');
+      expect(container.textContent).not.toMatch(/USD|\$/);
     });
   });
 
