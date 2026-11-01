@@ -176,7 +176,7 @@ describe('ItemBody', () => {
     }
   });
 
-  it('says on the item why auto-start has not started it, in the Now panel and the Automation line, and says nothing when nothing holds it back', async () => {
+  it('says on the item why auto-start has not started it, once, and says nothing when nothing holds it back', async () => {
     autoStart = true;
     oneRunner = true;
     waitingReason = { code: 'wip', text: 'In Progress is full (5 of 5): move something on to make room' };
@@ -185,9 +185,8 @@ describe('ItemBody', () => {
       expect(held.container.querySelector('[data-testid="now-waiting"]')?.textContent).toBe(
         'Waiting to start: In Progress is full (5 of 5): move something on to make room',
       );
-      expect(held.container.querySelector('[data-testid="automation-row"]')!.textContent).toContain(
-        'Waiting to start: In Progress is full (5 of 5): move something on to make room',
-      );
+      // The idle Now panel says it, so the Automation line under it does not say it twice.
+      expect(held.container.querySelector('[data-testid="automation-row"]')!.textContent).not.toContain('Waiting to start');
       held.dispose();
       waitingReason = null;
       const free = await mount('drawer');
