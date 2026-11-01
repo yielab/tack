@@ -338,6 +338,7 @@ fn synthetic_project() -> Project {
         auto_start_max_open: 3,
         prepare_command: None,
         auto_start_disabled_reason: None,
+        agents_on_board: Default::default(),
     }
 }
 

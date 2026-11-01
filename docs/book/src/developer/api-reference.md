@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (103 paths, 142 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (108 paths, 148 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -448,6 +448,107 @@ credentials/{id}/rotate
 |---|---|---|
 | 200 | A new secret, valid ninety days; the old one stops working | `IssuedCredential` |
 | 404 | No such credential, or it was revoked | `ErrorEnvelope` |
+
+---
+
+## Change Sets
+
+What an agent proposes to change on a board: operations checked whole, applied in one transaction, and decided one by one by the project's rung.
+
+#### `GET /api/change-sets/{id}`
+
+sets/{id}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Change set ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The change set with each operation's state and result | `ChangeSet` |
+| 404 | Not found | `ErrorEnvelope` |
+
+#### `POST /api/change-sets/{id}/apply`
+
+sets/{id}/apply
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Change set ID |
+
+**Request body:** `ApplyChangeSet`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Applied in one transaction | `ChangeSet` |
+| 400 | Refused whole, with every reason; the change set is as it was | `ErrorEnvelope` |
+| 404 | Not found | `ErrorEnvelope` |
+| 409 | An operation chosen is not waiting | `ErrorEnvelope` |
+
+#### `PATCH /api/change-sets/{id}/operations/{index}`
+
+sets/{id}/operations/{index}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Change set ID |
+| `index` | path | `integer` | yes | Position of the operation |
+
+**Request body:** `EditOperation`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The operation is replaced; it is checked when applied | `ChangeSet` |
+| 404 | Not found | `ErrorEnvelope` |
+| 409 | The operation is not waiting, or the edit changes its kind | `ErrorEnvelope` |
+
+#### `POST /api/change-sets/{id}/reject`
+
+sets/{id}/reject
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Change set ID |
+
+**Request body:** `RejectChangeSet`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | What waited is turned down | `ChangeSet` |
+| 404 | Not found | `ErrorEnvelope` |
+| 409 | Nothing waits in it | `ErrorEnvelope` |
+
+#### `GET /api/projects/{project_id}/change-sets`
+
+sets
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `project_id` | path | `string` | yes | Project ID |
+| `status` | path | `['string', 'null']` | yes | Comma-separated statuses: `waiting`, `applied`, `rejected`, `partly`. Absent lists all. |
+| `limit` | path | `['integer', 'null']` | yes | At most this many, the newest first (default 100, at most 500). |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The project's change sets, the newest first | `ChangeSet`[] |
+| 400 | A status that is not one | `ErrorEnvelope` |
+
+#### `POST /api/projects/{project_id}/change-sets`
+
+sets
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `project_id` | path | `string` | yes | Project ID |
+
+**Request body:** `ProposeChangeSet`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Kept; what the project's rung allows has applied, the rest waits | `ProposedChangeSet` |
+| 400 | Refused whole, with every reason; nothing was kept | `ErrorEnvelope` |
+| 403 | The credential lacks the scope `propose` | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
 
 ---
 

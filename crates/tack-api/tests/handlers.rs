@@ -23,6 +23,8 @@ mod boards_multi;
 mod briefs;
 #[path = "handlers/bundle.rs"]
 mod bundle;
+#[path = "handlers/change_sets.rs"]
+mod change_sets;
 #[path = "handlers/crud.rs"]
 mod crud;
 #[path = "handlers/custom_fields.rs"]

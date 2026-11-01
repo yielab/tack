@@ -24,9 +24,9 @@ use crate::error::ApiError;
 use crate::handlers::spa;
 use crate::handlers::{
     agent_credentials, attachments, attempt_lists, autonomy, backup, boards_multi, briefs,
-    comments, custom_fields, decisions, dependencies, executions, export, import_github,
-    import_linear, items, local_runner, metrics, mrp, outline, projects, roles, runner_admin,
-    runner_protocol, settings, sprints, teams, templates, websocket,
+    change_sets, comments, custom_fields, decisions, dependencies, executions, export,
+    import_github, import_linear, items, local_runner, metrics, mrp, outline, projects, roles,
+    runner_admin, runner_protocol, settings, sprints, teams, templates, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -110,6 +110,30 @@ fn local_runner_routes() -> Router<AppState> {
             post(local_runner::init_local_runner_folder),
         )
         .route("/local-runner/test-run", post(local_runner::post_test_run))
+}
+
+/// What an agent proposes to change on a board: a project's change sets, and the person's
+/// decisions on one. Merged into `api` before `require_token`, like every other `/api/*`
+/// route; `agent_access` says which of them an agent credential may call.
+fn change_set_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/projects/{project_id}/change-sets",
+            get(change_sets::list_change_sets).post(change_sets::propose_change_set),
+        )
+        .route("/change-sets/{id}", get(change_sets::get_change_set))
+        .route(
+            "/change-sets/{id}/apply",
+            post(change_sets::apply_change_set),
+        )
+        .route(
+            "/change-sets/{id}/reject",
+            post(change_sets::reject_change_set),
+        )
+        .route(
+            "/change-sets/{id}/operations/{index}",
+            patch(change_sets::edit_operation),
+        )
 }
 
 /// Mounts the operator execution/fleet API (`/api/executions`,
@@ -480,6 +504,7 @@ pub fn build_router(state: AppState) -> Router {
         // `require_token` below. See `operator_execution_routes`'s doc
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
+        .merge(change_set_routes())
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .layer(middleware::from_fn(read_client))
         // Outside the token check, so a wrong host or a foreign page is

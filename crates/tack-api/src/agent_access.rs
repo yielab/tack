@@ -16,8 +16,13 @@ use crate::router::AppState;
 pub enum Access {
     /// The path names a project.
     Project(Uuid, Capability),
+    /// The path names a project and the call proposes a change set: `propose`, which `act`
+    /// includes (a credential that may change the board directly may also ask a person to).
+    Proposal(Uuid),
     /// The path names an item; its project decides.
     Item(Uuid, Capability),
+    /// The path names a change set; its project decides.
+    ChangeSet(Uuid, Capability),
     /// Not about one project (the list of teams): the capability on at least one.
     Anywhere(Capability),
     /// About every project (the global search): the capability on every one.
@@ -58,6 +63,13 @@ pub fn classify(method: &Method, path: &str) -> Access {
         (["projects", project, "items"], false) if method == Method::POST => {
             id(project).map(|p| Access::Project(p, Act))
         }
+        (["projects", project, "change-sets"], true) => {
+            id(project).map(|p| Access::Project(p, Read))
+        }
+        (["projects", project, "change-sets"], false) if method == Method::POST => {
+            id(project).map(Access::Proposal)
+        }
+        (["change-sets", change_set], true) => id(change_set).map(|c| Access::ChangeSet(c, Read)),
         (["items", item], true) => id(item).map(|i| Access::Item(i, Read)),
         (["items", item], false) if method == Method::PATCH => {
             id(item).map(|i| Access::Item(i, Act))
@@ -129,6 +141,27 @@ pub async fn authorize(
                 Err(refusal(missing_scope(project, capability)))
             }
         }
+        Access::Proposal(project) => {
+            if may(principal, project, Capability::Propose)
+                || may(principal, project, Capability::Act)
+            {
+                Ok(())
+            } else {
+                Err(refusal(missing_scope(project, Capability::Propose)))
+            }
+        }
+        Access::ChangeSet(set, capability) => {
+            let project = state.repo.get_change_set(set).await?.map(|set| set.project);
+            match project {
+                Some(project) if may(principal, project, capability) => Ok(()),
+                Some(project) => Err(refusal(missing_scope(project, capability))),
+                // As for an item: the answer does not tell a missing change set from one in a
+                // project the credential cannot see.
+                None => Err(refusal(format!(
+                    "This credential lacks the scope `{capability}` on the project of that change set."
+                ))),
+            }
+        }
         Access::Item(item, capability) => {
             let project = state.repo.get_item(item).await?.map(|item| item.project_id);
             match project {
@@ -184,6 +217,37 @@ mod tests {
             ),
             Access::Item(item, Capability::Act)
         );
+    }
+
+    #[test]
+    fn an_agent_proposes_with_propose_and_reads_change_sets_with_read() {
+        let (project, p) = some();
+        let (set, c) = some();
+        assert_eq!(
+            classify(&Method::POST, &format!("/api/projects/{p}/change-sets")),
+            Access::Proposal(project)
+        );
+        assert_eq!(
+            classify(&Method::GET, &format!("/api/projects/{p}/change-sets")),
+            Access::Project(project, Capability::Read)
+        );
+        assert_eq!(
+            classify(&Method::GET, &format!("/api/change-sets/{c}")),
+            Access::ChangeSet(set, Capability::Read)
+        );
+        // Deciding is the person's.
+        for path in [
+            format!("/api/change-sets/{c}/apply"),
+            format!("/api/change-sets/{c}/reject"),
+            format!("/api/change-sets/{c}/operations/0"),
+        ] {
+            assert_eq!(
+                classify(&Method::POST, &path),
+                Access::OperatorOnly,
+                "{path}"
+            );
+            assert_eq!(classify(&Method::PATCH, &path), Access::OperatorOnly);
+        }
     }
 
     #[test]

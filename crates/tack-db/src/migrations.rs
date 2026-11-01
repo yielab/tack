@@ -162,6 +162,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("098_project_on_start_status", &MIGRATION_098[..]),
         ordinary("099_agent_credentials", &MIGRATION_099[..]),
         ordinary("100_team_activity", &MIGRATION_100[..]),
+        ordinary("101_change_sets", &MIGRATION_101[..]),
     ]
 }
 
@@ -1972,4 +1973,34 @@ const MIGRATION_100: [&str; 3] = [
         FOREIGN KEY (harness, team, task_ref) REFERENCES team_tasks (harness, team, task_ref) ON DELETE CASCADE
     )"##,
     "CREATE INDEX idx_team_tasks_reported ON team_tasks (reported_at)",
+];
+
+// 101: what an agent proposes to change on a board (ADR 0034, decisions 3 and 4). A change set is one row
+// with its operations as JSON, each with its own state; the same idempotency key on a project is the same
+// change set. `auto_creates` counts the creates the project's rung let through at once, for the daily cap.
+// The project's rung is a level and two caps on creates; every project starts at `propose` with no creates.
+const MIGRATION_101: [&str; 6] = [
+    r##"CREATE TABLE change_sets (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        principal TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        origin_ref TEXT,
+        reason TEXT NOT NULL,
+        idempotency_key TEXT,
+        anchor_item_id TEXT,
+        artifact_id TEXT,
+        ops TEXT NOT NULL,
+        status TEXT NOT NULL,
+        auto_creates INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        rejection TEXT
+    )"##,
+    "CREATE UNIQUE INDEX idx_change_sets_key ON change_sets(project_id, idempotency_key) WHERE idempotency_key IS NOT NULL",
+    "CREATE INDEX idx_change_sets_project ON change_sets(project_id, status, created_at)",
+    "ALTER TABLE projects ADD COLUMN agents_on_board TEXT NOT NULL DEFAULT 'propose'",
+    "ALTER TABLE projects ADD COLUMN agents_create_per_set INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN agents_create_per_day INTEGER NOT NULL DEFAULT 0",
 ];
