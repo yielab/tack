@@ -1,6 +1,7 @@
 import type { Item, WorkflowStatus } from '../../shared/types';
 import type { ExecutionSummary } from '../../shared/execution';
 import { typeKey } from '../../shared/ui/TypeBadge';
+import { cardRun } from '../../shared/runWithAgent/cardRun';
 
 export interface DashboardStats {
   totalItems: number;
@@ -98,32 +99,11 @@ export interface RunStats {
 export const TOKENS_BY_TEAM_UNAVAILABLE =
   'Tokens are counted per attempt, and this page does not load attempts, so they cannot be added up by team.';
 
-/**
- * The state of an item's latest run, in the board's own terms (`features/board/boardRuns.ts`
- * `cardRun`). A feature may not import another feature, so the mapping is kept in step here.
- * An item flagged for review with no run loaded still reads as ready for review.
- */
+/** The state of an item's latest run, in the board's own words; queued counts with running. */
 function outcomeOf(summary: ExecutionSummary | undefined, needsReview: boolean): RunOutcome | undefined {
-  if (!summary) return needsReview ? 'review' : undefined;
-  switch (summary.state) {
-    case 'queued':
-    case 'leased':
-    case 'preparing':
-    case 'running':
-      return 'running';
-    case 'waiting_decision':
-    case 'needs_operator':
-      return 'needs';
-    case 'succeeded':
-      return needsReview ? 'review' : 'done';
-    case 'failed':
-    case 'lost':
-      return 'failed';
-    case 'cancelled':
-      return 'cancelled';
-    default:
-      return undefined;
-  }
+  const run = cardRun(summary, needsReview);
+  if (!run) return undefined;
+  return run.state === 'queued' ? 'running' : run.state;
 }
 
 /**
