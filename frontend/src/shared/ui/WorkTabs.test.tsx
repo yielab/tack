@@ -6,10 +6,10 @@ import { mountProjectView, unmountProjectViews } from '../../test/mountProjectVi
 afterEach(unmountProjectViews);
 
 describe('WorkTabs', () => {
-  it('offers_Board_List_Calendar_Timeline_and_Sprint_and_no_Table', async () => {
+  it('offers_Board_Orchestration_List_Calendar_Timeline_and_Sprint_and_no_Table', async () => {
     const c = await mountProjectView(() => <WorkTabs />, 'list', { items: [] });
     const tabs = [...c.querySelectorAll<HTMLAnchorElement>('a')];
-    expect(tabs.map((a) => a.textContent)).toEqual(['Board', 'List', 'Calendar', 'Timeline', 'Sprint']);
+    expect(tabs.map((a) => a.textContent)).toEqual(['Board', 'Orchestration', 'List', 'Calendar', 'Timeline', 'Sprint']);
     expect(tabs.map((a) => a.getAttribute('href'))).not.toContain('/projects/p1/table');
   });
 

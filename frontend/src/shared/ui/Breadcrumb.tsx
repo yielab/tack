@@ -9,7 +9,7 @@ import { shortItemId } from '../shortItemId';
 // Work lenses (rendered under "Work"). `sprint` matches the singular `/sprint`
 // route and is relabelled via the project vocabulary.
 const LENS_LABELS: Record<string, string> = {
-  board: 'Board', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprints',
+  board: 'Board', orchestration: 'Orchestration', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprints',
 };
 const DEST_LABELS: Record<string, string> = {
   overview: 'Overview', settings: 'Settings',
@@ -23,7 +23,8 @@ export default function Breadcrumb() {
   const section = (): string | null => {
     const p = location.pathname;
     const lens = Object.keys(LENS_LABELS).find(l => p.endsWith(`/${l}`) || p.includes(`/${l}/`));
-    if (lens) return lens === 'sprint' ? t('sprint') : LENS_LABELS[lens];
+    if (lens === 'sprint' || lens === 'orchestration') return t(lens);
+    if (lens) return LENS_LABELS[lens];
     const dest = Object.keys(DEST_LABELS).find(d => p.endsWith(`/${d}`));
     if (dest) return DEST_LABELS[dest];
     return null;

@@ -73,6 +73,17 @@ export const IconBoard = stroke(
   </>,
 );
 
+/** Lanes with a token on each: who is doing what, and where it has got to. */
+export const IconOrchestration = stroke(
+  <>
+    <path d="M2 4.5h12M2 8h12M2 11.5h12" stroke-linecap="round" stroke-width="1" />
+    <circle cx="5" cy="4.5" r="1.7" fill="currentColor" />
+    <circle cx="10" cy="8" r="1.7" fill="currentColor" />
+    <circle cx="7" cy="11.5" r="1.7" fill="currentColor" />
+  </>,
+  { width: 1.6 },
+);
+
 export const IconList = stroke(
   <path d="M5 4h9M5 8h9M5 12h9M2 4h.01M2 8h.01M2 12h.01" stroke-linecap="round" />,
 );

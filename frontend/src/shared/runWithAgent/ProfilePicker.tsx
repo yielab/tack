@@ -28,7 +28,7 @@ export const MAKE_A_PROFILE = 'Make a profile for it on the Agents page';
 const noProfileText = (n: number) => (n === 1 ? '1 team has no profile yet' : `${n} teams have no profile yet`);
 
 /** The agent a profile runs on: its team's agent, else the one its tool policy names, else none. */
-function agentKindOf(profile: AgentProfileSummary, teams: readonly TeamEntry[]): string {
+export function agentKindOf(profile: AgentProfileSummary, teams: readonly TeamEntry[]): string {
   const team = teamOf(profile);
   if (team) return teams.find((t) => t.name === team)?.harness ?? 'docket';
   const policy = profile.tool_policy as { agent?: unknown; tools?: Record<string, unknown> } | null | undefined;

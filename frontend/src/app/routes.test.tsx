@@ -13,7 +13,7 @@ afterEach(() => {
 describe('routes', () => {
   it('sends_the_old_Table_address_to_the_List_and_keeps_the_open_item', async () => {
     const workRoutes = routes.find((r) => r.path === '/projects/:id')!.children as { path: string }[];
-    expect(workRoutes.map((r) => r.path)).toEqual(['/board', '/list', '/table', '/calendar', '/timeline', '/sprint']);
+    expect(workRoutes.map((r) => r.path)).toEqual(['/board', '/orchestration', '/list', '/table', '/calendar', '/timeline', '/sprint']);
 
     // Only the redirecting child is mounted here, under a stand-in for the work layout.
     const redirect = (workRoutes.find((r) => r.path === '/table') as unknown as { component: () => unknown }).component;
