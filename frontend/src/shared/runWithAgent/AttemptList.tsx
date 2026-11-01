@@ -218,7 +218,7 @@ const AttemptRow: Component<{
 
   // The files the run left: listed once for the sections that read them.
   const [artifacts, { refetch: refetchArtifacts }] = createResource(
-    () => (terminal() ? `${props.requestId}:${n()}` : undefined),
+    () => `${props.requestId}:${n()}:${terminal()}`,
     () => artifactsApi.list(props.requestId, n()),
   );
   // A failed list is said as one (below); what it feeds is simply not offered meanwhile.
@@ -511,7 +511,7 @@ const AttemptRow: Component<{
         </Show>
       </section>
 
-      <Show when={terminal() && artifacts.error}>
+      <Show when={artifacts.error}>
         <LoadError what="the files from this run" error={artifacts.error} onRetry={() => void refetchArtifacts()} />
       </Show>
 
@@ -528,11 +528,13 @@ const AttemptRow: Component<{
         </RunSection>
       </Show>
 
-      <Show when={terminal()}>
+      <Show when={terminal() || mrp.pack()}>
         <RunSection id="checks" title="Checks" summary={checksSummary(checks())}>
           <MrpPanel mrp={mrp} doneWhen={doneWhen()} />
         </RunSection>
+      </Show>
 
+      <Show when={terminal()}>
         <RunSection id="changes" title="Changes" summary={changesSummary()}>
           <div data-testid="attempt-tools" class="flex flex-wrap items-center gap-2">
             <Show when={patchHasChanges()}>
@@ -629,13 +631,11 @@ const AttemptRow: Component<{
         </details>
       </RunSection>
 
-      <Show when={terminal()}>
-        <RunSection id="files" title="Files from this run" summary={`${listed().length} ${listed().length === 1 ? 'file' : 'files'}.`}>
-          <Show when={!artifacts.loading} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Loading the files…</p>}>
-            <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} artifacts={listed()} />
-          </Show>
-        </RunSection>
-      </Show>
+      <RunSection id="files" title="Files from this run" summary={`${listed().length} ${listed().length === 1 ? 'file' : 'files'}.`}>
+        <Show when={!artifacts.loading} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Loading the files…</p>}>
+          <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} artifacts={listed()} />
+        </Show>
+      </RunSection>
 
       <SideSlot page={props.page} target={props.sideTarget}>
         <div data-testid="attempt-side" class="min-w-0 space-y-4">
