@@ -1442,7 +1442,17 @@ impl HarnessAdapter for DocketAdapter {
         if task.starts_with("rejected-") {
             return Ok(RecoveryObservation::ProcessStopped);
         }
-        Ok(match self.client.task(pod, task).await {
+        // A docket restarting beside this runner is out of reach for a few seconds, and the
+        // task it holds is intact; an answer that is not a task is never retried.
+        let mut reply = self.client.task(pod, task).await;
+        for _ in 1..RECOVERY_READ_TRIES {
+            if reply.is_ok() {
+                break;
+            }
+            tokio::time::sleep(RECOVERY_READ_PAUSE).await;
+            reply = self.client.task(pod, task).await;
+        }
+        Ok(match reply {
             Ok(reply) if reply.status == 200 => match reply.read::<TaskView>() {
                 Ok(view) if terminal(&view.status) => RecoveryObservation::ProcessStopped,
                 Ok(_) => RecoveryObservation::ProcessRunning,
@@ -1502,6 +1512,11 @@ impl HarnessAdapter for DocketAdapter {
             .await)
     }
 }
+
+/// How many times recovery asks docket for a task it cannot reach, and how long it waits between
+/// asks: long enough for a daemon that restarts with the runner.
+const RECOVERY_READ_TRIES: usize = 6;
+const RECOVERY_READ_PAUSE: Duration = Duration::from_secs(2);
 
 /// Where Tack is in docket's trace of one task: the cursor docket gave, the model the last
 /// implementer hop was served by, and how many finished hops have reached the timeline.
