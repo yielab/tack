@@ -16,6 +16,14 @@ describe('destinations shared by the sidebar and the command palette', () => {
     expect(PROJECT_DESTINATIONS.find((d) => d.id === 'project-settings')!.path('p1')).toBe('/projects/p1/settings');
   });
 
+  it('lists the work views Board, List, Calendar, Timeline and Sprint, and no Table', () => {
+    const ids = PROJECT_DESTINATIONS.map((d) => d.id);
+    expect(ids.slice(0, 5)).toEqual(['board', 'list', 'calendar', 'timeline', 'sprint']);
+    expect(ids).not.toContain('table');
+    expect(PROJECT_DESTINATIONS.map((d) => d.label((k) => k))).not.toContain('Table');
+    expect(PROJECT_DESTINATIONS.map((d) => d.path('p1'))).not.toContain('/projects/p1/table');
+  });
+
   it('names the sprint view from the project vocabulary', () => {
     expect(label(PROJECT_DESTINATIONS, 'sprint', (k) => (k === 'sprint' ? 'Cycle' : k))).toBe('Cycle');
   });

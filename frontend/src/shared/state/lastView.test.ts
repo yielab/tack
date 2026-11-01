@@ -38,6 +38,11 @@ describe('getLastLens', () => {
     }
   });
 
+  it('opens the List for a Table remembered from before the Table was folded into it', () => {
+    localStorage.setItem('tack_last_lens', 'table');
+    expect(getLastLens()).toBe('list');
+  });
+
   it('returns "board" when the stored value is not a valid lens', () => {
     localStorage.setItem('tack_last_lens', 'invalid_lens');
     expect(getLastLens()).toBe('board');

@@ -55,6 +55,8 @@ interface Served {
   sprints?: Sprint[];
   /** Dependencies by the id of the item they are listed for. */
   dependencies?: Record<string, Dependency[]>;
+  /** Each item's newest run, answered to the batched `?item_ids=` read. */
+  executions?: Array<{ request_id: string; item_id: string; state: string; created_at?: string; cancellation_requested_at?: string | null }>;
 }
 
 /**
@@ -72,6 +74,12 @@ export async function mountProjectView(view: () => JSX.Element, segment: string,
       return json({ data: served.items, total: served.items.length, page: 1, per_page: 200 });
     }
     if (url.endsWith('/sprints')) return json(served.sprints ?? []);
+    if (url.includes('/executions?') && served.executions) {
+      return json({
+        protocol_version: 1,
+        data: served.executions.map((e) => ({ created_at: '2026-01-02T00:00:00Z', cancellation_requested_at: null, ...e })),
+      });
+    }
     const dependencies = /\/items\/([^/]+)\/dependencies$/.exec(url);
     if (dependencies) return json(served.dependencies?.[dependencies[1]] ?? []);
     return json({ protocol_version: 1, data: [] });

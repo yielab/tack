@@ -7,7 +7,7 @@ cost, and read the project's Factory metrics page.
 ## What happens when a run finishes
 
 A run that left changes marks the task **Needs your review**. This is a flag on the task, separate from your
-board columns. Board, list and table all show it. It clears when you press **Accept** or **Reject** on the
+board columns. The board and the list show it. It clears when you press **Accept** or **Reject** on the
 attempt. If the project chose a column for finished runs (under **Settings → Automation**, see
 [When a run finishes](automation.md#when-a-run-finishes)), the task also moves there.
 
@@ -45,8 +45,8 @@ uncommitted when there were any. A failed run leads with why it failed.
 
 ### What you see on the board
 
-After a run, the task's card on the board carries these marks. List and table carry the review, merge and
-automation badges; the state chip is on the board only.
+After a run, the task's card on the board carries these marks. The list carries the merge and automation
+badges and shows the run's state in its own column.
 
 | Badge | Meaning |
 |---|---|

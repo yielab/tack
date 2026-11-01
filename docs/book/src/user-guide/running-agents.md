@@ -12,7 +12,7 @@ always runs and an agent executor that stays off until you turn it on. Everythin
 
 | Works without an agent | Needs an agent on this computer |
 |---|---|
-| Board, list, table, calendar, timeline and dashboard views | The **Run with agent** button on a task |
+| Board, list, calendar, timeline and dashboard views | The **Run with agent** button on a task |
 | Creating, moving, commenting on and searching tasks | An agent such as Claude Code or Codex working on your code |
 | The CLI and `tack mcp` for all of the above | A task that starts by itself ([Automating a Project](automation.md)) |
 | Webhooks, GitHub sync and backups | |
