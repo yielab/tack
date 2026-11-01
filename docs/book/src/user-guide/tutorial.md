@@ -175,8 +175,7 @@ and the run reads **Finished — no changes recorded**, and **What the agent con
 
 <img src="../screenshots/tutorial/14-execution-succeeded.png" width="98%" alt="The finished run in the Execution tab: Run 1 'Finished — no changes recorded', a 'This run is waiting for your verdict' banner with Accept and Reject…, the agent and runner, 'The agent ended without changing any files. What it said is below.' with a Copy path button, What the agent concluded showing the opening of the announcement with a Read full report link, What the agent did as a timeline of three steps (Install skipped, agent.model_call, The run ended), What the agent got (Sandboxed with bwrap, no environment variables, the project's folder), a collapsed Usage line reading about 3 000 tokens counted and 0% of its limit, the request and attempt ids with Copy, a Raw log button, and Show questions & files; the board card behind carries a Finished chip.">
 
-**Show questions & files** expands the run's full record. **Files from this run** are
-what it produced, each one click from viewing or downloading: the agent's own run log (the
+**Files from this run** is a table of what it produced, each file one click from viewing or downloading: the agent's own run log (the
 announcement is in it), and the record of the change — `changes.patch` (empty here: this agent
 only wrote text), `files.json`, the `brief.json` it was given, and the `evidence.json` manifest
 that ties them together:

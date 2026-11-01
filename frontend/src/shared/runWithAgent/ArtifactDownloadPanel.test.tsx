@@ -22,10 +22,13 @@ const UNVERIFIED: ArtifactRecord = {
   content_verified: false,
 };
 
+/** The files the panel is given: the screen around it lists them, so `mockFetch` only keeps them for `mount`. */
+let listed: ArtifactRecord[] = [];
+
 function mount() {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <ArtifactDownloadPanel requestId="exec_1" attemptNumber={2} />, container);
+  const dispose = render(() => <ArtifactDownloadPanel requestId="exec_1" attemptNumber={2} artifacts={listed} />, container);
   disposers.push(() => {
     dispose();
     container.remove();
@@ -33,25 +36,14 @@ function mount() {
   return container;
 }
 
-function jsonOk(body: unknown) {
-  return new Response(JSON.stringify(body), { status: 200 });
-}
-
 function jsonError(status: number, code: string, message: string) {
   return new Response(JSON.stringify({ error: { status, message, code } }), { status });
 }
 
-/** Routes a mocked `fetch` by URL shape: the list call
- *  (`.../artifacts`) vs. a per-artifact content download
- *  (`.../artifacts/{id}/content`) — the two GETs this panel makes. */
+/** Answers a per-artifact content download (`.../artifacts/{id}/content`), the one GET this panel makes. */
 function mockFetch(list: ArtifactRecord[], download: () => Response) {
-  return vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-    const url = String(input);
-    if (url.endsWith('/artifacts')) {
-      return Promise.resolve(jsonOk({ protocol_version: 1, data: list }));
-    }
-    return Promise.resolve(download());
-  });
+  listed = list;
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(() => Promise.resolve(download()));
 }
 
 afterEach(() => {
@@ -60,11 +52,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const downloadButton = (c: HTMLElement) =>
-  [...c.querySelectorAll('button')].find((b) => b.textContent === 'Download') as HTMLButtonElement;
+// The actions are icon buttons: their names are their labels.
+const named = (c: HTMLElement, label: string) =>
+  [...c.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === label) as HTMLButtonElement;
+const downloadButton = (c: HTMLElement) => named(c, 'Download');
 
 describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', () => {
-  it('renders every listed artifact as a real row with a Download button, no id field anywhere', async () => {
+  it('renders every listed artifact as one row of a table with View and Download, no id field anywhere', async () => {
     mockFetch([VERIFIED, UNVERIFIED], () => new Response('bytes'));
     const c = mount();
     await flush();
@@ -73,7 +67,13 @@ describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', 
     expect(c.querySelector('input')).toBeNull();
     expect(c.textContent).toContain('patch.diff');
     expect(c.textContent).toContain('log.txt');
-    expect([...c.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['View', 'Download', 'View', 'Download']);
+    expect([...c.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual(['View', 'Download', 'View', 'Download']);
+    // One compact table, not a card per file: the name heads its row, then kind and size.
+    const rows = [...c.querySelectorAll('[data-testid="artifact-table"] tbody tr[data-testid="artifact-row"]')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('th')?.textContent).toBe('patch.diff');
+    expect(rows[0].textContent).toContain('diff');
+    expect(rows[0].textContent).toContain('1.2 KB');
   });
 
   it('an unverified artifact is visibly marked distinct from a verified one', async () => {
@@ -83,9 +83,9 @@ describe('ArtifactDownloadPanel — discovers artifacts, never asks for an id', 
     await flush();
 
     expect(c.textContent).toContain('Not verified yet');
-    const rows = [...c.querySelectorAll('li')];
-    const unverifiedRow = rows.find((li) => li.textContent?.includes('log.txt'));
-    const verifiedRow = rows.find((li) => li.textContent?.includes('patch.diff'));
+    const rows = [...c.querySelectorAll('tr')];
+    const unverifiedRow = rows.find((tr) => tr.textContent?.includes('log.txt'));
+    const verifiedRow = rows.find((tr) => tr.textContent?.includes('patch.diff'));
     expect(unverifiedRow?.textContent).toContain('Not verified yet');
     expect(verifiedRow?.textContent).not.toContain('Not verified yet');
   });
@@ -121,7 +121,7 @@ describe('ArtifactDownloadPanel — every download outcome is a distinct, visibl
     const c = mount();
     await flush();
     await flush();
-    [...c.querySelectorAll('button')].find((b) => b.textContent === 'View')!.click();
+    named(c, 'View').click();
     await flush();
     await flush();
     expect(document.body.textContent).toContain('patch.diff');

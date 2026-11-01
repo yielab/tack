@@ -498,4 +498,36 @@ describe('DecisionInbox — the consultation pack', () => {
       expect(none.textContent).toBe('');
     });
   });
+
+  describe('as a history', () => {
+    it('shows only the questions already settled, without the token field or a form to answer', async () => {
+      mockFetch([RESOLVED, EXPIRED, PENDING_WITH_OPTIONS], () => jsonOk({}));
+      const c = mount({ settledOnly: true });
+      await flush();
+      await flush();
+      expect(c.querySelectorAll('li').length).toBe(2);
+      expect(c.textContent).toContain('Resolved');
+      expect(c.textContent).toContain('Expired');
+      expect(c.textContent).not.toContain('Pending');
+      expect(c.textContent).not.toContain('Your decision token');
+      expect(c.querySelector('form')).toBeNull();
+    });
+
+    it('says in one muted line that the agent asked nothing, and does not say it when a question waits', async () => {
+      mockFetch([], () => jsonOk({}));
+      const none = mount({ settledOnly: true });
+      await flush();
+      await flush();
+      expect(none.querySelector('[data-testid="asked-nothing"]')!.textContent).toBe('The agent has asked nothing yet');
+      expect(none.textContent).not.toContain('Your decision token');
+      disposers.pop()!();
+      vi.restoreAllMocks();
+      mockFetch([PENDING_WITH_OPTIONS], () => jsonOk({}));
+      const waiting = mount({ settledOnly: true });
+      await flush();
+      await flush();
+      expect(waiting.querySelector('[data-testid="asked-nothing"]')).toBeNull();
+      expect(waiting.textContent).toBe('');
+    });
+  });
 });

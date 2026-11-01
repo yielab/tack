@@ -11,18 +11,30 @@ board columns. Board, list and table all show it. It clears when you press **Acc
 attempt. If the project chose a column for finished runs (under **Settings → Automation**, see
 [When a run finishes](automation.md#when-a-run-finishes)), the task also moves there.
 
-Open the task and go to its **Execution** tab. Chips pick the run, and the run you picked leads with the
-outcome and the tools to check it:
+Open the task and go to its **Execution** tab. Chips pick the run, each with its state; the run you picked
+reads from the top down, in the same order every time: the verdict first, then why, then the raw detail.
 
-- **Accept** and **Reject…**, in a banner above the run while it waits for you; **Reject…** asks for a note,
-  which is optional.
-- **Open diff** shows what changed.
-- **Open folder** (or **Copy path**, when you are not in the desktop app) shows where the work is on this
-  computer.
-- **Copy branch** copies the branch name, when the agent worked on a branch.
-- **What the agent concluded**, the agent's report as written, and **Why it stopped**.
-- **What the agent did**, by tool or as a timeline.
-- **Raw log**, beside the run's ids, opens the full log.
+1. **The verdict.** The run's state, the verifier's recommendation and risk as two chips when a verifier
+   ran, the tokens it used against its limit, how long it took, and whether it was merged ("Not merged: no
+   branch was pushed", or "Works in a folder: nothing to merge" for a team that has no repository). One
+   button is filled, for what to do next: **Accept** while the run waits for your verdict (**Reject…** asks
+   for a note, which is optional), **Merge** once it is accepted, **Run again** when nothing else is left.
+   Under it, **Why it stopped** for a run that did not finish and **What the agent concluded**, the agent's
+   report as written.
+2. **Needs you**, only while the agent waits for an answer: the question, the options and the decision
+   token field. A run that asked nothing has no such field.
+3. **Checks.** The criteria as a checklist: ✓ passed, ✗ failed, ◐ needs a person, with the kind of check
+   and its evidence beneath. The task's **Done when** ticks and the verifier's criteria are one list, each
+   saying where it comes from. The verify command and its output are folded.
+4. **Changes.** How many files changed and how many lines were added and removed. **Open diff** shows what
+   changed; **Open folder** (or **Copy path**, when you are not in the desktop app) shows where the work is
+   on this computer; **Copy branch** copies the branch name, when the agent worked on a branch.
+5. **Steps.** The team's steps as a track, one node for each with its role, model and verdict. Under it,
+   **Activity** (folded) has **What the agent did**, by tool or as a timeline, and the questions the agent
+   asked.
+6. **Files from this run**, one row for each with **View** and **Download**.
+7. **Technical** (folded): the request, attempt and runner ids, what the agent got and read, the usage in
+   full, the **Raw log** and whether the verifier signed its pack.
 
 **Succeeded** is green only when the changes were captured. It is amber when a run that was not meant to
 change files changed nothing, or when the changes could not be read. A run is meant to change files when its
@@ -79,22 +91,25 @@ When the run's branch was pushed and its pull request is open, press **Merge** o
 
 ## Reviewing a merge-readiness pack
 
-When a verifier checks an attempt, it leaves a merge-readiness pack. Open **Show questions &
-files** on the attempt and the pack appears under **Merge-readiness pack**.
+When a verifier checks an attempt, it leaves a merge-readiness pack. Its parts are spread through the run,
+each where it is read: the recommendation and risk in the verdict, the criteria and the rest of what the
+verifier ran under **Checks**, and whether it was signed under **Technical**.
 
 <img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a succeeded attempt: Recommendation merge, Risk low, three reasons, a criteria table with every criterion passed and its evidence file, the verify command with exit code 0, mutation score, static analysis counts, a blind judge's verdicts, and Your review with a required reason before Accept or Reject.">
 
-From top to bottom it shows:
+It shows:
 
-1. The verifier's **recommendation** and the **risk** level with its reasons.
+1. The verifier's **recommendation** and the **risk** level, in the verdict; the risk's reasons are under
+   **Checks**.
 2. Whether the change was merged and by whom: "Merged by you", or "Merged by Tack" with the level and
-   domain, or "Not merged:" with the reason.
-3. **Next steps**, when the verifier lists what to fix.
-4. **Criteria**: one row per criterion from the task's brief, with its status and evidence.
-5. **Verify**: the check command with its exit code and output.
-6. **Mutation** and **Static analysis**: what the verifier measured.
-7. **Judge**: a verdict on each criterion, where a judge ran.
-8. **Your review**.
+   domain, or "Not merged:" with the reason, also in the verdict.
+3. Under **Checks**, one line for each criterion from the task's brief, with its status and evidence, joined
+   to the task's **Done when** list.
+4. **Next steps**, when the verifier lists what to fix.
+5. **Verify**: the check command with its exit code and output, folded.
+6. **What else the verifier ran**, folded: **Mutation** and **Static analysis**, what the verifier
+   measured, and **Judge**, a verdict on each criterion, where a judge ran.
+7. **Your review**.
 
 A section the verifier did not run says **Not run**. That is not a pass: nothing was checked.
 
@@ -113,7 +128,8 @@ see [Sending a rejected change back to the agent](merging.md#sending-a-rejected-
 
 ## Usage and cost
 
-Each finished attempt has a **Usage** panel. It leads with tokens, because that is what the agent measured:
+The verdict gives the tokens a finished attempt counted, as a bar against its limit when it has one, and how
+long it ran. The full **Usage** panel is under **Technical**. It leads with tokens, because that is what the agent measured:
 
 - **The tokens counted**, the figure every limit uses, with the tokens in and out beside it, and the part
   of the input that was read from the agent's cache (not counted) or written to it. Hover a figure for the

@@ -2,7 +2,9 @@ import { type Component, For, Show, createEffect, createResource, onCleanup } fr
 import { agentName } from '../execution/agents';
 import { agentProfilesApi, attemptsApi, teamOf, type AgentProfileSummary, type ExecutionSummary } from '../execution';
 import { teamsApi, type TeamEntry } from '../execution/teams';
-import type { TeamStepReport } from '../execution/types';
+import type { RunStep, TeamStepReport } from '../execution/types';
+import { formatTokenCount } from './attemptFormat';
+import { classWords, roleWords } from './AgentWork';
 import { matchSteps } from './teamSteps';
 
 type EventLike = { kind: string; payload: unknown };
@@ -16,6 +18,8 @@ export interface TeamStepsProps {
   events: readonly EventLike[];
   /** The run has ended: a step still running stopped there. */
   ended?: boolean;
+  /** The hops the run made, once it has ended: each step shows the model and verdict of its role's last hop. */
+  hops?: readonly RunStep[];
 }
 
 const KIND_WORDS: Record<TeamStepReport['kind'], string | null> = {
@@ -44,6 +48,40 @@ function reportedSteps(profiles: AgentProfileSummary[], teams: TeamEntry[], prof
 }
 
 const LABEL = { done: 'Done', running: 'Running', waiting: 'Waiting' } as const;
+
+/** What a hop shows under its step: the model, the verdict, and the size of the prompts it read. */
+function hopFacts(hop: RunStep | undefined): string[] {
+  if (!hop) return [];
+  const promptTokens = hop.prompts.reduce((sum, p) => sum + (p.tokens ?? 0), 0);
+  return [
+    classWords(hop.model, hop.class),
+    hop.verdict ? `Verdict: ${hop.verdict}` : null,
+    promptTokens > 0 ? `${formatTokenCount(promptTokens)} prompt tokens` : null,
+  ].filter((x): x is string => !!x);
+}
+
+/** One node of the track: a bar in the state's colour over the step's words, so the state is also said. */
+const TrackNode: Component<{ name: string; state?: keyof typeof LABEL | null; stopped?: boolean; lines: string[]; step?: string }> = (props) => (
+  <li
+    data-step={props.step}
+    data-state={props.state ?? undefined}
+    class="min-w-0 break-words text-xs"
+    style={{ flex: '1 1 9rem', 'max-width': '16rem', color: 'var(--color-text-secondary)' }}
+  >
+    <span
+      aria-hidden="true"
+      class="mb-1.5 block h-1 rounded-full"
+      style={{ 'background-color': props.state ? MARK_COLOR[props.state] : 'var(--color-border-light)' }}
+    />
+    <div class="flex flex-wrap items-baseline gap-x-1.5">
+      <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{props.name}</span>
+      <Show when={props.state}>
+        {(state) => <span style={{ color: 'var(--color-text-tertiary)' }}>{props.stopped ? 'Stopped here' : LABEL[state()]}</span>}
+      </Show>
+    </div>
+    <For each={props.lines}>{(line) => <p class="mt-0.5">{line}</p>}</For>
+  </li>
+);
 const MARK_COLOR = {
   done: 'var(--color-success-600)',
   running: 'var(--color-primary-600)',
@@ -82,41 +120,40 @@ const TeamStepsLine: Component<TeamStepsProps> = (props) => {
       <Show
         when={shown()}
         fallback={
-          <Show when={agent()}>
-            {(kind) => (
-              <p data-testid="team-steps-unreported" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                {agentName(kind())} does not report its steps in advance
-              </p>
-            )}
+          <Show
+            when={(props.hops ?? []).length > 0}
+            fallback={
+              <Show when={agent()}>
+                {(kind) => (
+                  <p data-testid="team-steps-unreported" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {agentName(kind())} does not report its steps in advance
+                  </p>
+                )}
+              </Show>
+            }
+          >
+            <ol data-testid="run-hops" aria-label="The steps the run made" class="flex flex-wrap gap-x-3 gap-y-3">
+              <For each={props.hops}>
+                {(hop, i) => <TrackNode name={roleWords(hop.role, i() + 1)} lines={hopFacts(hop)} />}
+              </For>
+            </ol>
           </Show>
         }
       >
         {(steps) => (
-          <ol data-testid="team-steps" aria-label="The team's steps" class="flex flex-wrap gap-2">
+          <ol data-testid="team-steps" aria-label="The team's steps" class="flex flex-wrap gap-x-3 gap-y-3">
             <For each={steps()}>
               {(step) => {
                 const words = () => [step.role ? capitalised(step.role) : KIND_WORDS[step.kind], step.check].filter((w): w is string => !!w);
-                const stopped = () => step.state === 'running' && props.ended;
+                const hop = () => (step.role ? [...(props.hops ?? [])].reverse().find((h) => h.role?.toLowerCase() === step.role!.toLowerCase()) : undefined);
                 return (
-                  <li
-                    data-step={step.name}
-                    data-state={step.state ?? undefined}
-                    class="min-w-0 max-w-full rounded-item px-3 py-2 text-xs break-words"
-                    style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)' }}
-                  >
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <Show when={step.state}>
-                        {(state) => <span aria-hidden="true" class="h-2 w-2 flex-none rounded-full" style={{ 'background-color': MARK_COLOR[state()] }} />}
-                      </Show>
-                      <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{step.name}</span>
-                      <Show when={step.state}>
-                        {(state) => <span style={{ color: 'var(--color-text-tertiary)' }}>{stopped() ? 'Stopped here' : LABEL[state()]}</span>}
-                      </Show>
-                    </div>
-                    <Show when={words().length > 0}>
-                      <p class="mt-0.5">{words().join(' · ')}</p>
-                    </Show>
-                  </li>
+                  <TrackNode
+                    step={step.name}
+                    name={step.name}
+                    state={step.state}
+                    stopped={step.state === 'running' && props.ended}
+                    lines={[...(words().length > 0 ? [words().join(' · ')] : []), ...hopFacts(hop())]}
+                  />
                 );
               }}
             </For>
@@ -138,6 +175,7 @@ export const AttemptTeamSteps: Component<{
   live: boolean;
   profileId?: string | null;
   agentKind?: string | null;
+  hops?: readonly RunStep[];
 }> = (props) => {
   const [events, { refetch }] = createResource(
     () => `${props.requestId}:${props.attemptNumber}:${props.live}`,
@@ -154,6 +192,7 @@ export const AttemptTeamSteps: Component<{
       agentKind={props.agentKind}
       events={events.state === 'errored' ? [] : (events.latest ?? [])}
       ended={!props.live}
+      hops={props.hops}
     />
   );
 };
