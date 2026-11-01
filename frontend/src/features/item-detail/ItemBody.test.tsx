@@ -42,6 +42,7 @@ const ATTEMPT = {
 };
 
 let runs: unknown[] = [];
+let autoStart = false;
 
 function jsonOf(url: string): unknown {
   if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: ITEM, roles: [], dependencies: [] };
@@ -50,7 +51,7 @@ function jsonOf(url: string): unknown {
   if (url.includes('/agent-profiles')) return { protocol_version: 1, data: [PROFILE] };
   if (url.includes('/runners')) return { protocol_version: 1, data: [] };
   if (url.endsWith('/autonomy')) return { level: 'L3' };
-  if (url.includes('/projects/')) return { id: 'p1', auto_start_enabled: false, default_profile_id: 'prof-1' };
+  if (url.includes('/projects/')) return { id: 'p1', auto_start_enabled: autoStart, auto_start_status: 'To Do', default_profile_id: 'prof-1' };
   if (url.includes('/events') || url.includes('/artifacts')) return { protocol_version: 1, data: [] };
   if (url.includes('/attempts')) return { protocol_version: 1, data: runs.length > 0 ? [ATTEMPT] : [] };
   if (url.includes('/executions')) return { protocol_version: 1, data: runs };
@@ -147,6 +148,26 @@ describe('ItemBody', () => {
     expect(row.textContent).toContain("By hand: this project doesn't start tasks by itself");
     expect(row.querySelector('button[aria-label="Help: Automation"]')).not.toBeNull();
     dispose();
+  });
+
+  it('who would do the task is said once: by the idle Now panel before a run, by the Automation line (its team) after one', async () => {
+    autoStart = true;
+    try {
+      const idle = await mount('drawer');
+      expect(idle.container.querySelector('[data-testid="now-who"]')?.textContent).toBe('Would go to Code agent · team saas-code');
+      const row = idle.container.querySelector('[data-testid="automation-row"]')!.textContent!;
+      expect(row).toContain('it would start when it reaches To Do');
+      expect(row).not.toContain('Goes to');
+      expect(row).not.toContain('· Team saas-code');
+      idle.dispose();
+      runs = [RUN];
+      const ran = await mount('drawer');
+      expect(ran.container.querySelector('[data-testid="now-who"]')).toBeNull();
+      expect(ran.container.querySelector('[data-testid="automation-row"]')!.textContent).toContain('· Team saas-code');
+      ran.dispose();
+    } finally {
+      autoStart = false;
+    }
   });
 
   it('Propose items from a file is in the ⋯ menu, not on the screen until chosen, and opens on the Execution tab', async () => {

@@ -56,7 +56,7 @@ const Tabs: Component<TabsProps> = (props) => {
   const fade = () => {
     const { start, end } = more();
     if (!start && !end) return undefined;
-    return `linear-gradient(to right, ${start ? 'transparent 0, #000 28px' : '#000 0'}, ${end ? '#000 calc(100% - 28px), transparent 100%' : '#000 100%'})`;
+    return `linear-gradient(to right, ${start ? 'transparent 0, black 28px' : 'black 0'}, ${end ? 'black calc(100% - 28px), transparent 100%' : 'black 100%'})`;
   };
 
   const onKey = (e: KeyboardEvent) => {

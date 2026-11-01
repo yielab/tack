@@ -115,7 +115,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
       reviewInTab={props.tab === 'execution'}
       onState={setRunState}
       idle={<WhoWouldDoIt automation={automation} />}
-      footer={<AutomationRow item={props.item} automation={automation} />}
+      footer={<AutomationRow item={props.item} automation={automation} whoShownAbove={() => !runState()} />}
     />
   );
   const propose = (

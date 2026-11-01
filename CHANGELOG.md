@@ -56,6 +56,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- On an item, who would do the task is said once: by the idle Now panel before a run ("Would go to …"), and by the Automation line only after one.
 - A run's Usage and the task's latest-run line no longer show a dollar cost or "Cost: Not measured" (the data is kept; limits and reports are in tokens), and **Always show priority on cards** moved from the board header to Settings → Display & accessibility (same stored choice).
 - Settings → Automation: the ladder says **Blocked by 3 things** instead of "Held off by 3", the Merge block is titled **Autonomy level** (it sat under a section also called Merge), the sentence "Keep at most [n] runs open" stays on one line, a team's fix starts a sentence with a capital, and the sections are as wide as the ladder.
 - A tab list that does not fit (the item drawer) fades at the edge that has more tabs, and keeps the selected tab in view.
