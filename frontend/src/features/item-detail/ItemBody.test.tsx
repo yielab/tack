@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
-import { Show, type Resource } from 'solid-js';
+import { createSignal, Show, type Resource } from 'solid-js';
 import { MemoryRouter, Route } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../../shared/state/projectContext';
 import { ExecutionStoreProvider } from '../../shared/state/executionContext';
@@ -77,9 +77,10 @@ afterEach(() => {
 
 function Body(props: { layout: 'drawer' | 'page' }) {
   const editor = useItemEditor(() => ITEM.id);
+  const [tab, setTab] = createSignal('details');
   return (
     <Show when={editor.item()}>
-      {(it) => <ItemBody item={it()} editor={editor} layout={props.layout} tab="details" onTabChange={() => {}} />}
+      {(it) => <ItemBody item={it()} editor={editor} layout={props.layout} tab={tab()} onTabChange={setTab} />}
     </Show>
   );
 }
@@ -148,7 +149,7 @@ describe('ItemBody', () => {
     dispose();
   });
 
-  it('Propose items from a file is in the ⋯ menu, not on the screen until chosen', async () => {
+  it('Propose items from a file is in the ⋯ menu, not on the screen until chosen, and opens on the Execution tab', async () => {
     const { container, dispose } = await mount('drawer');
     expect(container.querySelector('section[aria-label="Propose items from a file"]')).toBeNull();
     container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')!.click();
@@ -157,6 +158,7 @@ describe('ItemBody', () => {
     entry.click();
     await flush();
     expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Execution');
     const section = container.querySelector('section[aria-label="Propose items from a file"]')!;
     expect(section.querySelector('input[type="file"]')).not.toBeNull();
     [...section.querySelectorAll('button')].find((b) => b.textContent === 'Close')!.click();
