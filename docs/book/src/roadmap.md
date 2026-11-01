@@ -43,7 +43,9 @@ fifteenth fails, because its lead step repeats itself; nothing in it is a card.
 
 **[Phase 84](https://github.com/yielab/tack/blob/develop/docs/plans/phase-84.md) — the screen says
 what needs you first, and a project shows its teams at work.** Accepted 2026-11-01 (ADR 0033), from an
-audit of the live suite's screenshots; no card started. One run-state language on every screen; the
+audit of the live suite's screenshots; every card is in `develop` (2026-11-01), the live suite passes its 20
+tests against docket `9cdd6253` on the local model, and two design audits of its screenshots led to a polish
+pass and a review pass, merged. What is left is the second audit's list of fixes. One run-state language on every screen; the
 item, the run, the run dialog, Automation and Agents ordered by what to do now, with the rest one fold
 away; a run that starts can move its item; the Table view removed and its sorting, filter and in-place
 editing moved to the List; and a new work view, Orchestration, with one lane per team showing the team's
@@ -51,8 +53,8 @@ own steps, what waits on a person and what no team will take (Flow), and who doe
 members (Map). Cards A, B, C, E, D, F, G, H, I, J, K, T, N, S, O1, O2 and M, in nine rounds.
 
 **[Phase 85](https://github.com/yielab/tack/blob/develop/docs/plans/phase-85.md) — a manager works
-through the board.** Accepted 2026-11-01 (ADR 0034); no card started; waits on Phase 84's cards S, I
-and J. A profile becomes a manager by being given general parts, none of them called "manager": a
+through the board.** Accepted 2026-11-01 (ADR 0034); cards P, M, A and C are in `develop` (2026-11-01), E
+and D are being built, the rest follow. A profile becomes a manager by being given general parts, none of them called "manager": a
 credential with scopes (every caller a principal), change sets as an agent's only way to change the
 board with one more rung saying how far it may go, a team's activity including the work the board did
 not start, a computed digest, a thread where each message is a turn, and triggers on events. It
