@@ -2,9 +2,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
-import AttemptList from './AttemptList';
+import AttemptList, { attemptRunState } from './AttemptList';
 import type { AttemptSummary } from '../execution';
 import { flush } from '../../test/flush';
+import ready from '../../../../docs/contracts/mrp-v1/fixtures/ready.json';
+import { decisionTokenStore } from '../execution';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(() => Promise.resolve()) }));
 const disposers: Array<() => void> = [];
@@ -61,23 +63,25 @@ afterEach(() => {
 });
 
 describe('AttemptList', () => {
-  it('a refresh that brings the same attempt changed keeps its details open', async () => {
+  it('a refresh that brings the same attempt changed keeps what was opened open', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
-    const [attempts, setAttempts] = createSignal([attempt({ state: 'running', ended_at: null })]);
+    // A finished run keeps its activity folded; opening it is the person's doing.
+    const [attempts, setAttempts] = createSignal([attempt({ state: 'succeeded' })]);
     const container = document.createElement('div');
     document.body.appendChild(container);
     const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts()} />, container);
     disposers.push(() => { dispose(); container.remove(); });
-    const toggle = () => Array.from(container.querySelectorAll('button')).find((b) => /questions|Hide details/.test(b.textContent ?? ''))!;
-    toggle().click();
+    const activity = () => container.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement;
+    expect(activity().open).toBe(false);
+    activity().open = true;
+    activity().dispatchEvent(new Event('toggle'));
     await flush();
-    expect(toggle().textContent).toBe('Hide details');
 
-    setAttempts([attempt({ state: 'running', ended_at: null, event_checkpoint: 'chk:2', updated_at: '2026-08-06T12:06:00Z' })]);
+    setAttempts([attempt({ state: 'succeeded', event_checkpoint: 'chk:2', updated_at: '2026-08-06T12:06:00Z' })]);
     await flush();
-    expect(toggle().textContent).toBe('Hide details');
+    expect(activity().open).toBe(true);
   });
 
   it('several attempts are chips, newest first; the newest shows, and a chip picks another', async () => {
@@ -102,7 +106,7 @@ describe('AttemptList', () => {
     expect(c.querySelector('[data-testid="attempt-chips"]')).toBeNull();
   });
 
-  it('the review banner holds Accept and Reject… once, with an optional note, above the run', async () => {
+  it('the review banner holds Accept and Reject… once, with an optional note, in the verdict that opens the run', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
@@ -111,8 +115,10 @@ describe('AttemptList', () => {
     expect(banner.textContent).toContain('waiting for your verdict');
     expect(c.querySelectorAll('[data-testid="review-actions"]')).toHaveLength(1);
     expect(banner.contains(c.querySelector('[data-testid="review-actions"]'))).toBe(true);
-    // The banner comes before everything else in the run.
-    expect(c.querySelector('[data-testid="attempt"]')!.firstElementChild).toBe(banner);
+    // The verdict comes before everything else in the run, and holds the banner.
+    const verdict = c.querySelector('[data-testid="attempt"]')!.firstElementChild!;
+    expect(verdict.getAttribute('data-testid')).toBe('run-verdict');
+    expect(verdict.contains(banner)).toBe(true);
     (Array.from(banner.querySelectorAll('button')).find((b) => b.textContent === 'Reject…') as HTMLButtonElement).click();
     await flush();
     expect(banner.querySelector('input[aria-label="Why it is rejected (optional)"]')).not.toBeNull();
@@ -293,21 +299,18 @@ describe('AttemptList', () => {
     expect(c.textContent).toContain('opaque/model-beta');
   });
 
-  it('decisions and artifacts are collapsed by default and expand on demand', async () => {
+  it('the questions are a muted line in the activity fold, and the files a table of their own section', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
     const c = mount([attempt()]);
-    expect(c.textContent).not.toContain('Questions from the agent');
-    expect(c.textContent).not.toContain('Files from this run');
-
-    const toggle = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Show questions & files')!;
-    toggle.click();
     await flush();
     await flush();
-
-    expect(c.textContent).toContain('Questions from the agent');
-    expect(c.textContent).toContain('Files from this run');
+    const activity = c.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement;
+    expect(activity.open).toBe(false);
+    expect(activity.textContent).toContain('Questions from the agent');
+    expect(activity.querySelector('[data-testid="asked-nothing"]')!.textContent).toBe('The agent has asked nothing yet');
+    expect(c.querySelector('[data-section="files"]')!.textContent).toContain('No artifacts yet');
   });
 
   it('an attempt that needs a person says so in words and has a button that opens its question', async () => {
@@ -315,9 +318,10 @@ describe('AttemptList', () => {
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
     const asking = mount([attempt({ state: 'waiting_decision', ended_at: null })]);
-    // It waits for an answer, so its questions are open already.
+    // It waits for an answer, so the question has its own section and the activity is open already.
     await flush();
-    expect(asking.textContent).toContain('Files from this run');
+    expect(asking.querySelector('[data-section="needs"]')).not.toBeNull();
+    expect((asking.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement).open).toBe(true);
     expect([...asking.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(true);
 
     const ended = mount([attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } })]);
@@ -329,7 +333,7 @@ describe('AttemptList', () => {
     expect([...plain.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(false);
   });
 
-  it('an attempt that starts to wait for an answer while the page is open opens its questions by itself', async () => {
+  it('an attempt that starts to wait for an answer while the page is open shows its question by itself', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, data: [] }), { status: 200 })),
     );
@@ -339,10 +343,10 @@ describe('AttemptList', () => {
     const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts()} />, container);
     disposers.push(() => { dispose(); container.remove(); });
     await flush();
-    expect(container.textContent).not.toContain('Files from this run');
+    expect(container.querySelector('[data-section="needs"]')).toBeNull();
     setAttempts([attempt({ state: 'waiting_decision', ended_at: null })]);
     await flush();
-    expect(container.textContent).toContain('Files from this run');
+    expect(container.querySelector('[data-section="needs"]')).not.toBeNull();
   });
 
   it('a failed list of the files is said as one and Try again asks again', async () => {
@@ -641,7 +645,7 @@ describe('AttemptList', () => {
       const spy = mockExecution();
       const c = mount([attempt()]);
       expect(c.querySelector('[data-testid="agent-read"]')).toBeNull();
-      const details = c.querySelector('details') as HTMLDetailsElement;
+      const details = c.querySelector('[data-testid="agent-got"] details') as HTMLDetailsElement;
       details.open = true;
       details.dispatchEvent(new Event('toggle'));
       await flush();
@@ -738,6 +742,228 @@ describe('AttemptList', () => {
       const drawer = mount([attempt()]);
       expect(drawer.querySelector('[data-testid="agent-got"]')).not.toBeNull();
       expect(drawer.querySelector('[data-testid="attempt-ids"]')).not.toBeNull();
+    });
+  });
+
+  describe('a run reads top-down', () => {
+    const art = (artifact_id: string, kind: string, name: string, size_bytes = 10) => ({
+      artifact_id, kind, name, media_type: null, size_bytes, content_verified: true, created_at: '2026-08-06T12:05:00Z',
+    });
+    const PENDING = {
+      decision_id: 'dec_1', kind: 'tool_approval', prompt: 'Run `rm -rf build`?', options: [{ option_id: 'allow', label: 'Approve' }, { option_id: 'deny', label: 'Deny' }],
+      recommendation: null, metadata: {}, viewed_at: null, state: 'pending', answer: null, resolved_at: null, resolved_by: null,
+      created_at: '2026-08-06T12:00:00Z', updated_at: '2026-08-06T12:00:00Z',
+    };
+    const PATCH = 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1,2 @@\n-old\n+added a\n+added b\n';
+    function route(opts: { artifacts?: unknown[]; decisions?: unknown[]; brief?: unknown } = {}) {
+      const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status }));
+      return vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/artifacts')) return json({ protocol_version: 1, data: opts.artifacts ?? [] });
+        if (url.endsWith('/content')) return Promise.resolve(new Response(PATCH));
+        if (url.endsWith('/mrp')) return json({ pack: ready, review: null });
+        if (url.endsWith('/mrp/viewed')) return json({});
+        if (url.endsWith('/decisions')) return json({ protocol_version: 1, data: opts.decisions ?? [] });
+        if (url.endsWith('/events')) return json({ protocol_version: 1, data: [] });
+        if (url.endsWith('/brief')) return opts.brief ? json(opts.brief) : json({ error: { status: 404, message: 'none' } }, 404);
+        return json({});
+      });
+    }
+    const settle = async () => { for (let i = 0; i < 6; i++) await flush(); };
+    const sections = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="run-section"]')].map((el) => el.getAttribute('data-section'));
+    const FINISHED = () => attempt({
+      terminal_reason: { workspace_kept_at: '/w/1', result: 'Done.', steps: [{ role: 'lead', model: 'm-1', class: 'strong', verdict: 'approved', prompts: [], assumptions: [], questions: [] }] },
+      counted_tokens: 100,
+      usage_economics: {
+        model_token_cost_usd_estimated: { value: null, source: 'not_measured' },
+        runner_time_cost: { wall_clock_ms: 65_000, cost_usd_estimated: { value: null, source: 'not_measured' } },
+      },
+      merge: { enabled: true, reason: null },
+    });
+    const FILES = [art('a1', 'patch', 'changes.patch'), art('a2', 'log', 'run.log'), art('a3', 'mrp', 'pack.json')];
+    const limit = { tokens: 200, source: 'run', enforced_by: 'measured', sentence: 'This run stops at 200 tokens.', used: 100 } as const;
+    function mountFull(a: AttemptSummary, extra: { itemId?: string } = {}) {
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[a]} limit={limit} {...extra} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      return container;
+    }
+
+    it('a finished run is verdict, checks, changes, steps, files, technical, in that order, and none is lost', async () => {
+      route({ artifacts: FILES });
+      const c = mountFull(FINISHED());
+      await settle();
+      expect(c.querySelector('[data-testid="attempt"]')!.firstElementChild!.getAttribute('data-testid')).toBe('run-verdict');
+      expect(sections(c)).toEqual(['checks', 'changes', 'steps', 'files', 'technical']);
+      // What moved behind a fold or into a table is still there.
+      for (const id of ['agent-concluded', 'attempt-tools', 'agent-did', 'run-steps', 'agent-got', 'attempt-usage-fold', 'attempt-ids', 'mrp-signature', 'review-banner']) {
+        expect(c.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
+      }
+      expect(c.querySelector('[data-testid="run-activity"]')!.textContent).toContain('Questions from the agent');
+      // The raw level is the last, folded.
+      expect((c.querySelector('[data-section="technical"]') as HTMLDetailsElement).open).toBe(false);
+    });
+
+    it('a run that waits for an answer puts the question right after the verdict', async () => {
+      route({ decisions: [PENDING] });
+      const c = mountFull(attempt({ state: 'waiting_decision', ended_at: null }));
+      await settle();
+      expect(sections(c)).toEqual(['needs', 'steps', 'technical']);
+      expect(c.querySelector('[data-section="needs"]')!.textContent).toContain('Run `rm -rf build`?');
+    });
+
+    it('the decision token is asked for inside Needs you only, never on a run that asked nothing', async () => {
+      decisionTokenStore.set(null);
+      route({ decisions: [] });
+      const quiet = mountFull(FINISHED());
+      await settle();
+      expect(quiet.textContent).not.toContain('Your decision token');
+      disposers.pop()!();
+      document.body.innerHTML = '';
+
+      route({ decisions: [PENDING] });
+      const asking = mountFull(attempt({ state: 'waiting_decision', ended_at: null }));
+      await settle();
+      const needs = asking.querySelector('[data-section="needs"]')!;
+      expect(needs.textContent).toContain('Your decision token');
+      expect(asking.textContent!.match(/Your decision token/g)).toHaveLength(1);
+      expect(needs.querySelectorAll('input[type="password"]')).toHaveLength(1);
+    });
+
+    it('a question already answered is history in the activity fold, not asked again', async () => {
+      route({ decisions: [{ ...PENDING, state: 'resolved', answer: { option_id: 'allow', text: null } }] });
+      const c = mountFull(FINISHED());
+      await settle();
+      expect(c.querySelector('[data-section="needs"]')).toBeNull();
+      const activity = c.querySelector('[data-testid="run-activity"]')!;
+      expect(activity.textContent).toContain('Run `rm -rf build`?');
+      expect(activity.textContent).not.toContain('Your decision token');
+      expect(activity.querySelector('[data-testid="asked-nothing"]')).toBeNull();
+    });
+
+    it('the verdict says what the verifier thinks, what it cost and for how long, and that nothing is merged', async () => {
+      route({ artifacts: FILES });
+      const c = mountFull(FINISHED());
+      await settle();
+      const verdict = c.querySelector('[data-testid="run-verdict"]')!;
+      const chips = [...verdict.querySelectorAll('[data-testid="mrp-verdict"] span')].map((b) => b.textContent);
+      expect(chips).toEqual([`Recommendation: ${ready.recommendation.decision}`, `Risk: ${ready.risk.tier}`]);
+      expect(verdict.querySelector('[role="meter"]')!.getAttribute('aria-label')).toBe('Used 100 of 200 tokens');
+      expect(verdict.querySelector('[data-testid="verdict-duration"]')!.textContent).toBe('1m 5s');
+      const merge = verdict.querySelector('[data-testid="verdict-merge"]')!;
+      expect(merge.textContent).toContain('Not merged');
+      expect([...merge.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Merge']);
+    });
+
+    it('without a limit the tokens are said in words, not drawn as a meter', async () => {
+      route();
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[FINISHED()]} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      await settle();
+      expect(container.querySelector('[data-testid="verdict-tokens"]')!.textContent).toBe('100 tokens counted');
+      expect(container.querySelector('[data-testid="run-verdict"] [role="meter"]')).toBeNull();
+    });
+
+    it('one button is filled: the verdict first, then the merge, then another run', async () => {
+      route({ artifacts: FILES });
+      const filled = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="run-verdict"] button')]
+        .filter((b) => (b as HTMLElement).style.backgroundColor.includes('primary')).map((b) => b.textContent);
+      const againButton = (variant: 'primary' | 'secondary') => (
+        <button type="button" style={{ 'background-color': variant === 'primary' ? 'var(--color-primary-600)' : 'transparent' }}>Run again</button>
+      );
+      const mountWith = (a: AttemptSummary) => {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        const dispose = render(() => <AttemptList requestId="exec_1" attempts={[a]} runAgain={againButton} />, container);
+        disposers.push(() => { dispose(); container.remove(); });
+        return container;
+      };
+      const review = mountWith(FINISHED());
+      await settle();
+      expect(filled(review)).toEqual(['Accept']);
+      const decided = mountWith({ ...FINISHED(), review: { verdict: 'accepted', note: null, reviewed_at: '2026-08-06T12:06:00Z' } });
+      await settle();
+      expect(filled(decided)).toEqual(['Merge']);
+      const failed = mountWith(attempt({ state: 'failed', terminal_reason: { code: 'timeout' } }));
+      await settle();
+      expect(filled(failed)).toEqual(['Run again']);
+    });
+
+    it('a folder team says it works in a folder, with nothing to merge, in the verdict', async () => {
+      route();
+      const c = mountFull(attempt({ terminal_reason: { outside_repository: true, summary: 'Wrote three notes.' }, merge: { enabled: false, reason: 'no branch was pushed' } }));
+      await settle();
+      const line = c.querySelector('[data-testid="run-verdict"] [data-testid="run-folder"]')!;
+      expect(line.textContent).toBe('Works in a folder: nothing to merge');
+      expect(c.querySelector('[data-testid="merge-button"]')).toBeNull();
+      expect(c.querySelector('[data-testid="review-banner"]')).toBeNull();
+      // A run in a repository says nothing of the kind.
+      disposers.pop()!();
+      document.body.innerHTML = '';
+      expect(mountFull(FINISHED()).querySelector('[data-testid="run-folder"]')).toBeNull();
+    });
+
+    it('a run that left no branch says why it is not merged', async () => {
+      route();
+      const c = mountFull(attempt({ terminal_reason: { result: 'Answered.' }, merge: { enabled: false, reason: 'no branch was pushed' } }));
+      await settle();
+      expect(c.querySelector('[data-testid="verdict-merge"]')!.textContent).toBe('Not merged: no branch was pushed');
+    });
+
+    it('the changes count their files and their lines', async () => {
+      route({ artifacts: FILES });
+      const c = mountFull(FINISHED());
+      await settle();
+      expect(c.querySelector('[data-section="changes"]')!.textContent).toContain('1 file changed · +2 −1');
+    });
+
+    it('the files are one table, a row each, with View and Download as icon buttons', async () => {
+      route({ artifacts: FILES });
+      const c = mountFull(FINISHED());
+      await settle();
+      const files = c.querySelector('[data-section="files"]')!;
+      expect(files.textContent).toContain('3 files.');
+      const rows = [...files.querySelectorAll('tr[data-testid="artifact-row"]')];
+      expect(rows.map((r) => r.querySelector('th')!.textContent)).toEqual(['changes.patch', 'run.log', 'pack.json']);
+      expect(files.querySelectorAll('button[aria-label="View"]')).toHaveLength(3);
+      expect(files.querySelectorAll('button[aria-label="Download"]')).toHaveLength(3);
+    });
+
+    it('the Done when list and the verifier criteria are one checklist, with the number in a sentence', async () => {
+      route({ artifacts: FILES, brief: { item_id: 'item-1', acceptance: [{ kind: 'manual', id: 'extra', title: 'Reads well', text: 'x', checked: true }], constraints: [] } });
+      const c = mountFull(FINISHED(), { itemId: 'item-1' });
+      await settle();
+      const checks = c.querySelector('[data-section="checks"]')!;
+      const total = ready.criteria.length + 1;
+      expect(checks.textContent).toMatch(new RegExp(`of ${total} checks passed`));
+      expect(checks.querySelectorAll('[data-testid="checks-list"] > li')).toHaveLength(total);
+      expect(checks.textContent).toContain('Reads well');
+      expect(checks.querySelector('[data-testid="done-when-check"]')!.textContent).toContain('Done when');
+    });
+
+    it('the technical fold holds the ids, the runner, the raw log and the signature', async () => {
+      route({ artifacts: FILES });
+      const c = mountFull(FINISHED());
+      await settle();
+      const technical = c.querySelector('[data-section="technical"]')!;
+      for (const text of ['exec_1', 'att_1', 'runner_1', 'Raw log', 'Not signed']) expect(technical.textContent).toContain(text);
+    });
+
+    it('names a run in the one run-state language', () => {
+      expect(attemptRunState(attempt({ state: 'running', ended_at: null }))).toEqual({ state: 'running' });
+      expect(attemptRunState(attempt({ state: 'waiting_decision', ended_at: null }))).toEqual({ state: 'needs', docket: 'Needs a person' });
+      expect(attemptRunState(attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } }))).toEqual({ state: 'needs', docket: 'Needs a person' });
+      expect(attemptRunState(attempt({ state: 'failed' }))).toEqual({ state: 'failed' });
+      expect(attemptRunState(attempt({ state: 'cancelled' }))).toEqual({ state: 'cancelled' });
+      expect(attemptRunState(FINISHED())).toEqual({ state: 'review', docket: 'Needs your review' });
+      expect(attemptRunState({ ...FINISHED(), review: { verdict: 'accepted', note: null, reviewed_at: 'x' } })).toEqual({ state: 'done' });
+      // A run that only answered still wants a verdict; once given, it is done with nothing recorded.
+      expect(attemptRunState(attempt({ terminal_reason: { result: 'Answered.' } }))).toEqual({ state: 'review', docket: 'Needs your review' });
+      expect(attemptRunState(attempt({ terminal_reason: { result: 'Answered.' }, review: { verdict: 'accepted', note: null, reviewed_at: 'x' } }))).toEqual({ state: 'done', docket: 'no changes recorded' });
+      expect(attemptRunState(attempt({ terminal_reason: { outside_repository: true } }))).toEqual({ state: 'done' });
     });
   });
 });

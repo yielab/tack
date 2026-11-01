@@ -1,9 +1,9 @@
-import { type Component, For, Show, createEffect, createMemo, createResource, createSignal, on } from 'solid-js';
-import { Badge, Button, LoadError, Modal } from '../ui';
+import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js';
+import { Badge, Button, LoadError, Modal, type DocketRunWord, type RunStateName } from '../ui';
 import { toast } from '../ui/toast';
 import { truncateMiddle } from '../ui/truncateMiddle';
 import { api } from '../api';
-import { artifactsApi, attemptsApi, readRunRecords, readRunSteps, type AttemptSummary } from '../execution';
+import { artifactsApi, attemptsApi, isFolderRun, readRunRecords, readRunSteps, type AttemptSummary } from '../execution';
 import type { RunLimit } from '../execution/api';
 import { ITEM_UPDATED_EVENT } from '../state/itemEvents';
 import {
@@ -19,6 +19,7 @@ import {
   needsVerdict,
   isTerminalAttemptState,
   limitShare,
+  patchStats,
   readAttemptUsage,
   formatTokenGroups,
 } from './attemptFormat';
@@ -30,13 +31,16 @@ import { inDesktop } from './desktop';
 import { parseRunLog } from './runLog';
 import DiffView from './DiffView';
 import DecisionInbox from './DecisionInbox';
-import MrpPanel from './MrpPanel';
+import MrpPanel, { MergeState, MrpVerdict, SignatureState, buildChecks, checksSummary, createMrp } from './MrpPanel';
 import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import PlanPanel from './PlanPanel';
 import RunChips from './RunChips';
+import RunSection from './RunSection';
+import UsageMeter from './UsageMeter';
 import { needsAPerson } from './RerunAtL3';
 import { AgentConcluded, AgentDid, SideSlot, StepsRan, TeamRecords } from './AgentWork';
+import { AttemptTeamSteps } from './TeamSteps';
 import { describeExecutionState, describePullRequestState, relativeTimeFromIso } from './shared';
 
 export interface AttemptListProps {
@@ -48,6 +52,12 @@ export interface AttemptListProps {
   onReviewed?: () => void;
   /** The run's token limit, whose share the folded usage shows. */
   limit?: RunLimit;
+  /** The profile and agent the run was made with: the step track reads its team from them. */
+  profileId?: string | null;
+  agentKind?: string | null;
+  /** The run's "Run again", drawn by the caller (it knows the task); given how filled to draw it,
+   *  since only one button of the verdict is filled. */
+  runAgain?: (variant: 'primary' | 'secondary') => JSX.Element;
   /** `page`: what the agent got, its usage and the ids go to `sideTarget`, the page's side
    *  column. `drawer` (the default): one column, in that same order. */
   layout?: 'drawer' | 'page';
@@ -63,30 +73,24 @@ async function copyText(text: string, what: string) {
   }
 }
 
-/** The pack panel, shown only when the attempt's artifacts include a
- *  merge-readiness pack (kind `mrp`). */
-const MrpSlot: Component<{ requestId: string; attemptNumber: number; merge?: AttemptSummary['merge'] }> = (props) => {
-  const [artifacts, { refetch }] = createResource(
-    () => `${props.requestId}:${props.attemptNumber}`,
-    () => artifactsApi.list(props.requestId, props.attemptNumber),
-  );
-  return (
-    <Show
-      when={!artifacts.error}
-      fallback={<LoadError what="the merge-readiness pack" error={artifacts.error} onRetry={() => void refetch()} />}
-    >
-      <Show when={(artifacts() ?? []).some((a) => a.kind === 'mrp')}>
-        <section>
-          <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
-            Merge-readiness pack
-          </h4>
-          <MrpPanel requestId={props.requestId} attemptNumber={props.attemptNumber} merge={props.merge} />
-        </section>
-      </Show>
-    </Show>
-  );
-};
-
+/**
+ * An attempt in the one language every screen uses for where a run is. The docket words stay as the
+ * banner's second line: a run that waits for a person, one that ended because it needed one, one that
+ * wants a verdict, one that changed nothing.
+ */
+export function attemptRunState(
+  attempt: AttemptSummary,
+  review: AttemptSummary['review'] | undefined = attempt.review,
+): { state: RunStateName; docket?: DocketRunWord } {
+  if (attempt.state === 'waiting_decision') return { state: 'needs', docket: 'Needs a person' };
+  if (!isTerminalAttemptState(attempt.state)) return { state: 'running' };
+  if (attempt.state === 'cancelled') return { state: 'cancelled' };
+  if (attempt.state !== 'succeeded') return needsAPerson(attempt) ? { state: 'needs', docket: 'Needs a person' } : { state: 'failed' };
+  if (attempt.merge?.merged || attempt.pull_request?.state === 'merged') return { state: 'done' };
+  if (needsVerdict(attempt) && !review) return { state: 'review', docket: 'Needs your review' };
+  // A folder team has no repository to change, so having changed nothing there is not news.
+  return changedNoFile(attempt) && !isFolderRun(attempt.terminal_reason) ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
+}
 
 /** What the agent was given: its sandbox, the names of its environment variables, where it
  *  worked, and (collapsed) the exact prompt it read. */
@@ -153,31 +157,77 @@ const IdRow: Component<{ label: string; value: string }> = (props) => (
   </div>
 );
 
-/** What the run left to look at: its diff, its folder and branch; what the agent concluded and
- *  did; and, beside the run, what the agent got, what it used and the ids with the raw log. */
-const AttemptTools: Component<{
+/** How long the attempt ran: the runner's own clock, else the span between its two timestamps. */
+function durationOf(attempt: AttemptSummary, wallClockMs: number | null): string | null {
+  if (wallClockMs !== null) return formatWallClock(wallClockMs, true);
+  const from = attempt.started_at ? Date.parse(attempt.started_at) : NaN;
+  const to = attempt.ended_at ? Date.parse(attempt.ended_at) : NaN;
+  return Number.isNaN(from) || Number.isNaN(to) ? null : formatWallClock(Math.max(0, to - from), true);
+}
+
+/**
+ * One attempt, top-down: the verdict (what it is, what the verifier thinks, what it cost, whether it
+ * merged, and the one thing to do now), then what needs the person, the checks it passed, the
+ * changes it made, the steps it took, the files it left, and last, behind a fold, the ids and the
+ * raw log. Every section that has nothing to say is still there to say so.
+ */
+const AttemptRow: Component<{
   requestId: string;
   attempt: AttemptSummary;
   itemId?: string;
+  numbered: boolean;
   limit?: RunLimit;
-  /** This is the run's newest attempt, the one the limit's live count belongs to. */
   latest: boolean;
   page: boolean;
   sideTarget?: HTMLElement;
+  profileId?: string | null;
+  agentKind?: string | null;
+  runAgain?: (variant: 'primary' | 'secondary') => JSX.Element;
+  onReviewed?: () => void;
 }> = (props) => {
   const n = () => props.attempt.attempt_number;
   const terminal = () => isTerminalAttemptState(props.attempt.state);
+  const asking = () => props.attempt.state === 'waiting_decision';
+  // The agent stopped to ask a person, or ended because it needed one: the question is one press away.
+  const personNeeded = () => asking() || needsAPerson(props.attempt);
   const reason = () => (props.attempt.terminal_reason ?? {}) as { workspace_kept_at?: unknown; result?: unknown };
+  const stateInfo = () => describeExecutionState(props.attempt.state);
+  const outcome = () => describeAttemptOutcome(props.attempt.state, props.attempt.terminal_reason);
+  const harnessKind = () => (props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind ?? null;
+  const folderTeam = () => isFolderRun(props.attempt.terminal_reason);
+
+  // The verdict as last read from the server: the prop's until a review is
+  // submitted here, then the refetched attempt's.
+  const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
+  const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
+  const status = () => describeAttemptStatus(props.attempt, review());
+  // The merge state as last read: the prop's until a merge is pressed here, then the refetched attempt's.
+  const [freshMerge, setFreshMerge] = createSignal<AttemptSummary['merge'] | undefined>(undefined);
+  const merge = () => freshMerge() ?? props.attempt.merge;
+  const showMerge = () => terminal() && !!merge() && !merge()!.merged && !changedNoFile(props.attempt) && !folderTeam();
+  const refreshMerge = async () => {
+    try {
+      const list = await attemptsApi.list(props.requestId);
+      setFreshMerge(list.data.data.find((a) => a.attempt_number === props.attempt.attempt_number)?.merge);
+    } catch {
+      /* the next load shows it */
+    }
+    props.onReviewed?.();
+    window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
+  };
+
+  // The files the run left: listed once for the sections that read them.
   const [artifacts, { refetch: refetchArtifacts }] = createResource(
     () => (terminal() ? `${props.requestId}:${n()}` : undefined),
     () => artifactsApi.list(props.requestId, n()),
   );
-  // A failed list is said as one (below); the buttons it feeds are simply not offered meanwhile.
+  // A failed list is said as one (below); what it feeds is simply not offered meanwhile.
   const listed = () => (artifacts.error ? [] : (artifacts() ?? []));
   const patch = () => listed().find((a) => a.kind === 'patch');
   const log = () => listed().find((a) => a.kind === 'log' || (a.name ?? '').endsWith('.log'));
   const plan = () => listed().find((a) => a.kind === 'plan');
   const evidence = () => listed().find((a) => a.kind === 'evidence');
+  const patchHasChanges = () => (patch()?.size_bytes ?? 0) > 0;
   const [branch] = createResource(evidence, async (e) => {
     try {
       const parsed = JSON.parse(await (await artifactsApi.download(props.requestId, n(), e.artifact_id)).text()) as {
@@ -191,6 +241,17 @@ const AttemptTools: Component<{
       return null;
     }
   });
+  // The patch is read as soon as there is one: the Changes section counts its files and lines, and the diff opens on it.
+  const [patchText] = createResource(
+    () => (patchHasChanges() ? patch() : undefined),
+    async (p) => {
+      try {
+        return await (await artifactsApi.download(props.requestId, n(), p.artifact_id)).text();
+      } catch {
+        return null;
+      }
+    },
+  );
   // The project's repository: where a run in the user's own folder leaves its change, and the
   // root the desktop app checks a folder against before it opens one.
   const [project] = createResource(
@@ -227,10 +288,6 @@ const AttemptTools: Component<{
     }
   });
   const [diffOpen, setDiffOpen] = createSignal(false);
-  const [diffText] = createResource(
-    () => (diffOpen() ? patch() : undefined),
-    async (p) => (await artifactsApi.download(props.requestId, n(), p.artifact_id)).text(),
-  );
   const [logOpen, setLogOpen] = createSignal(false);
   const canOpen = () => inDesktop() && repository() !== null;
   const openFolder = async (path: string) => {
@@ -241,299 +298,383 @@ const AttemptTools: Component<{
       toast.error(`Couldn't open ${path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
-  const patchHasChanges = () => (patch()?.size_bytes ?? 0) > 0;
 
-  // What the run used, in one line for the fold: the tokens counted against a limit and, when
-  // the run has one, the share of it.
+  // What the verifier made of it, and what the item asked for: the pack is read when the run left one.
+  const mrp = createMrp(() => (listed().some((a) => a.kind === 'mrp') ? { requestId: props.requestId, attemptNumber: n() } : undefined));
+  const [brief] = createResource(
+    () => (terminal() ? props.itemId : undefined),
+    async (id) => {
+      try {
+        return await api.briefs.get(id);
+      } catch {
+        return null;
+      }
+    },
+  );
+  const doneWhen = () => (brief.error ? null : (brief()?.acceptance ?? null));
+  const checks = () => buildChecks(mrp.pack(), doneWhen());
+
+  // What the run used, in one line for the verdict and the fold: the tokens counted against a
+  // limit and, when the run has one, the share of it.
+  const usage = () => readAttemptUsage(props.attempt);
+  const counted = () => usage().counted ?? (props.latest ? props.limit?.used ?? null : null);
+  const tokensText = () => {
+    const u = usage();
+    if (u.counted !== null) return `${formatTokenGroups(u.counted)} tokens counted`;
+    if (u.tokensIn !== null || u.tokensOut !== null) {
+      return `${u.tokensIn === null ? '?' : formatTokenCount(u.tokensIn)} in · ${u.tokensOut === null ? '?' : formatTokenCount(u.tokensOut)} out`;
+    }
+    return `Tokens: ${NOT_MEASURED_TEXT}`;
+  };
   const usageLine = () => {
-    const u = readAttemptUsage(props.attempt);
-    let tokens: string;
-    if (u.counted !== null) tokens = `${formatTokenGroups(u.counted)} tokens counted`;
-    else if (u.tokensIn !== null || u.tokensOut !== null) {
-      tokens = `${u.tokensIn === null ? '?' : formatTokenCount(u.tokensIn)} in · ${u.tokensOut === null ? '?' : formatTokenCount(u.tokensOut)} out`;
-    } else tokens = `Tokens: ${NOT_MEASURED_TEXT}`;
-    const used = u.counted ?? (props.latest ? props.limit?.used ?? null : null);
-    const share = limitShare(used, props.limit?.tokens);
-    return share === null ? tokens : `${tokens} · ${share}% of its limit`;
+    const share = limitShare(counted(), props.limit?.tokens);
+    return share === null ? tokensText() : `${tokensText()} · ${share}% of its limit`;
+  };
+  const duration = () => durationOf(props.attempt, usage().wallClockMs);
+
+  // An attempt that waits for an answer opens its activity by itself, also when it starts to wait while the page is open.
+  const [activityOpen, setActivityOpen] = createSignal(!terminal() || asking());
+  createEffect(() => {
+    if (asking()) setActivityOpen(true);
+  });
+  let needsHeading: HTMLHeadingElement | undefined;
+  let questionsHeading: HTMLHeadingElement | undefined;
+  const openQuestion = () => {
+    setActivityOpen(true);
+    const target = needsHeading ?? questionsHeading;
+    target?.focus();
+    target?.scrollIntoView?.({ block: 'center' });
+  };
+
+  // One filled button: answering what waits comes first, then the verdict, then the merge, then another run.
+  const primary = (): 'answer' | 'review' | 'merge' | 'again' | null => {
+    if (asking()) return 'answer';
+    if (needsVerdict(props.attempt) && !review()) return 'review';
+    if (showMerge() && merge()!.enabled) return 'merge';
+    return terminal() ? 'again' : null;
+  };
+
+  const changesSummary = () => {
+    const text = patchText();
+    if (patchHasChanges()) {
+      if (text) {
+        const { files, added, removed } = patchStats(text);
+        return `${files} ${files === 1 ? 'file' : 'files'} changed · +${added} −${removed}`;
+      }
+      return patchText.loading ? 'Reading the changes…' : 'The changes could not be read.';
+    }
+    return folderTeam() ? 'It worked in a folder: no repository changes.' : 'This run changed no files.';
   };
 
   return (
-    <>
+    <li data-testid="attempt" class="min-w-0 space-y-4 rounded-item p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
+      <section data-testid="run-verdict" aria-label="Verdict" class="min-w-0 space-y-3">
+        <div class="flex flex-wrap items-center gap-2">
+          {/* A run with one attempt shows its status in the run's own heading. */}
+          <Show when={props.numbered}>
+            <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
+              Attempt {props.attempt.attempt_number}
+            </span>
+            <Badge tone={status().tone}>{status().label}</Badge>
+          </Show>
+          <Show when={!stateInfo().known}>
+            <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+              (unrecognised state)
+            </span>
+          </Show>
+          <Show when={props.attempt.pull_request}>
+            {(pr) => {
+              const prState = () => describePullRequestState(pr().state);
+              return (
+                <a
+                  href={pr().url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="flex items-center gap-2"
+                >
+                  <span class="text-xs" style={{ color: 'var(--color-primary-600)' }}>
+                    PR #{pr().number}
+                  </span>
+                  <Badge tone={prState().tone}>{prState().label}</Badge>
+                </a>
+              );
+            }}
+          </Show>
+          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
+            started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
+          </span>
+        </div>
+
+        <Show when={outcome().whyStopped}>
+          {(why) => (
+            <p class="text-sm" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+              <strong>Why it stopped:</strong> {why()}
+            </p>
+          )}
+        </Show>
+        <Show when={outcome().badge?.detail}>
+          {(detail) => (
+            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {detail()}
+            </p>
+          )}
+        </Show>
+
+        <Show when={mrp.pack()}>{(pack) => <MrpVerdict pack={pack()} />}</Show>
+
+        <Show when={terminal()}>
+          <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <Show
+              when={props.limit?.tokens != null && counted() !== null}
+              fallback={<span data-testid="verdict-tokens">{tokensText()}</span>}
+            >
+              <div class="min-w-0" style={{ flex: '1 1 8rem' }}>
+                <UsageMeter testId="verdict-meter" used={counted()!} limit={props.limit!.tokens!} />
+              </div>
+            </Show>
+            <Show when={duration()}>
+              {(text) => <span data-testid="verdict-duration">{text()}</span>}
+            </Show>
+          </div>
+
+          <div data-testid="verdict-merge" class="min-w-0 space-y-1 text-sm">
+            <Show when={folderTeam()}>
+              <p data-testid="run-folder" class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                Works in a folder: nothing to merge
+              </p>
+            </Show>
+            <Show when={!folderTeam()}>
+              <Show when={merge()?.merged || (!showMerge() && props.attempt.state === 'succeeded' && merge())}>
+                <MergeState merge={merge()!} />
+              </Show>
+              <Show when={showMerge()}>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>Not merged</span>
+                  <MergeButton
+                    attemptId={props.attempt.attempt_id}
+                    merge={merge()!}
+                    variant={primary() === 'merge' ? 'primary' : 'secondary'}
+                    onMerged={() => void refreshMerge()}
+                  />
+                </div>
+              </Show>
+            </Show>
+          </div>
+        </Show>
+
+        <Show when={!terminal()}>
+          <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+            {asking()
+              ? 'The agent is waiting for your answer — see Needs you below.'
+              : 'The agent is working. Its steps appear in the timeline as it takes them; the tokens it used appear here when it finishes.'}
+          </p>
+        </Show>
+
+        {/* The review banner: the verdict, with its optional note, is asked for here and nowhere
+            else on this tab. */}
+        <Show when={needsVerdict(props.attempt)}>
+          <section
+            data-testid="review-banner"
+            class="space-y-2 rounded-item px-4 py-3"
+            style={{ 'background-color': review() ? 'var(--color-bg-panel)' : 'var(--color-warning-100)' }}
+          >
+            <Show when={!review()}>
+              <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
+              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                Accept it, or reject it with a note saying why. The note is optional.
+              </p>
+            </Show>
+            <ReviewActions
+              requestId={props.requestId}
+              attemptNumber={props.attempt.attempt_number}
+              review={review()}
+              onReviewed={(r) => {
+                setFresh(r);
+                props.onReviewed?.();
+              }}
+            />
+          </section>
+        </Show>
+
+        <div data-testid="verdict-actions" class="flex flex-wrap items-center gap-2">
+          <Show when={personNeeded()}>
+            <Button size="sm" variant={primary() === 'answer' ? 'primary' : 'secondary'} onClick={openQuestion}>
+              Open the question
+            </Button>
+          </Show>
+          {props.runAgain?.(primary() === 'again' ? 'primary' : 'secondary')}
+        </div>
+
+        <Show when={terminal()}>
+          <AgentConcluded result={result()} workspace={folder()} />
+        </Show>
+      </section>
+
       <Show when={terminal() && artifacts.error}>
         <LoadError what="the files from this run" error={artifacts.error} onRetry={() => void refetchArtifacts()} />
       </Show>
-      <Show when={terminal()}>
-        <div data-testid="attempt-tools" class="flex flex-wrap items-center gap-2">
-          <Show when={patchHasChanges()}>
-            <Button size="sm" variant="secondary" onClick={() => setDiffOpen(true)}>Open diff</Button>
-          </Show>
-          <Show when={patch() && folder()}>
-            {(path) => (
-              <Button size="sm" variant="secondary" title={path()} onClick={() => void openFolder(path())}>
-                {canOpen() ? 'Open folder' : 'Copy path'}
-              </Button>
-            )}
-          </Show>
-          <Show when={branch()}>
-            {(b) => (
-              <Button size="sm" variant="secondary" onClick={() => void copyText(b(), 'Branch')}>Copy branch</Button>
-            )}
-          </Show>
-        </div>
-        <AgentConcluded result={result()} workspace={folder()} />
-      </Show>
-      <AgentDid
-        requestId={props.requestId}
-        attemptNumber={n()}
-        log={steps()}
-        reading={steps.loading}
-        terminal={terminal()}
-        workspace={folder()}
-      />
-      <Show when={(runSteps() ?? []).length > 0}>
-        <StepsRan steps={runSteps()!} />
-      </Show>
-      <Show when={records().length > 0}>
-        <TeamRecords sets={records()} />
-      </Show>
-      <Show when={terminal()}>
-        <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
-        <Show when={plan() && props.itemId}>
-          {(itemId) => (
-            <PlanPanel
-              requestId={props.requestId}
-              attemptNumber={n()}
-              artifactId={plan()!.artifact_id}
-              itemId={itemId()}
-              team={(props.attempt.actual_execution as { team?: string } | null)?.team}
-            />
-          )}
-        </Show>
-        <Modal isOpen={diffOpen()} onClose={() => setDiffOpen(false)} title="Changes" size="xl">
-          <Show when={diffText()} fallback={<p class="text-sm">Loading the diff…</p>}>
-            {(t) => <DiffView patch={t()} />}
-          </Show>
-        </Modal>
-      </Show>
-      <SideSlot page={props.page} target={props.sideTarget}>
-        <div data-testid="attempt-side" class="space-y-4">
-          <Show when={terminal()}>
-            <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-            <details data-testid="attempt-usage-fold" class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
-              <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
-              </summary>
-              <div class="mt-2">
-                <UsagePanel attempt={props.attempt} />
-              </div>
-            </details>
-          </Show>
-          <section data-testid="attempt-ids" class="space-y-1.5 text-xs">
-            <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Ids</h4>
-            <dl class="space-y-1">
-              <IdRow label="Request" value={props.requestId} />
-              <IdRow label="Attempt" value={props.attempt.attempt_id} />
-            </dl>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={!log()}
-              title={log() ? undefined : terminal() ? 'This run left no log' : 'The log is written when the run ends'}
-              onClick={() => setLogOpen(true)}
-            >
-              Raw log
-            </Button>
-          </section>
-        </div>
-      </SideSlot>
-    </>
-  );
-};
 
-const AttemptRow: Component<{
-  requestId: string;
-  attempt: AttemptSummary;
-  itemId?: string;
-  numbered: boolean;
-  limit?: RunLimit;
-  latest: boolean;
-  page: boolean;
-  sideTarget?: HTMLElement;
-  onReviewed?: () => void;
-}> = (props) => {
-  // An attempt that waits for an answer opens its questions by itself, also when it starts to wait while the page is open.
-  const waiting = () => props.attempt.state === 'waiting_decision';
-  const [expanded, setExpanded] = createSignal(waiting());
-  createEffect(on(waiting, (w) => { if (w) setExpanded(true); }, { defer: true }));
-  // The agent stopped to ask a person, or ended because it needed one: the question is one press away.
-  const personNeeded = () => props.attempt.state === 'waiting_decision' || needsAPerson(props.attempt);
-  let questions: HTMLHeadingElement | undefined;
-  const openQuestion = () => {
-    setExpanded(true);
-    questions?.focus();
-    questions?.scrollIntoView?.({ block: 'center' });
-  };
-  const stateInfo = () => describeExecutionState(props.attempt.state);
-  const outcome = () => describeAttemptOutcome(props.attempt.state, props.attempt.terminal_reason);
-  const harnessKind = () => (props.attempt.actual_execution as { harness_kind?: string } | null)?.harness_kind ?? null;
-  // The verdict as last read from the server: the prop's until a review is
-  // submitted here, then the refetched attempt's.
-  const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
-  const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
-  const status = () => describeAttemptStatus(props.attempt, review());
-  const showMerge = () => terminal() && !!merge() && !merge()!.merged && !changedNoFile(props.attempt);
-  const terminal = () => isTerminalAttemptState(props.attempt.state);
-  // The merge state as last read: the prop's until a merge is pressed here, then the refetched attempt's.
-  const [freshMerge, setFreshMerge] = createSignal<AttemptSummary['merge'] | undefined>(undefined);
-  const merge = () => freshMerge() ?? props.attempt.merge;
-  const refreshMerge = async () => {
-    try {
-      const list = await attemptsApi.list(props.requestId);
-      setFreshMerge(list.data.data.find((a) => a.attempt_number === props.attempt.attempt_number)?.merge);
-    } catch {
-      /* the next load shows it */
-    }
-    props.onReviewed?.();
-    window.dispatchEvent(new CustomEvent(ITEM_UPDATED_EVENT));
-  };
-  return (
-    <li data-testid="attempt" class="space-y-4 rounded-item p-4" style={{ 'background-color': 'var(--color-bg-app)', 'box-shadow': 'var(--shadow-sm)' }}>
-      {/* The review banner sits above the run: the verdict, with its optional note, is asked
-          for here and nowhere else on this tab. */}
-      <Show when={needsVerdict(props.attempt)}>
-        <section
-          data-testid="review-banner"
-          class="space-y-2 rounded-item px-4 py-3"
-          style={{ 'background-color': review() ? 'var(--color-bg-panel)' : 'var(--color-warning-100)' }}
-        >
-          <Show when={!review()}>
-            <p class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>This run is waiting for your verdict</p>
-            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-              Accept it, or reject it with a note saying why. The note is optional.
-            </p>
-          </Show>
-          <ReviewActions
+      <Show when={asking()}>
+        <RunSection id="needs" title="Needs you" summary="The agent is waiting for your answer." headingRef={(el) => (needsHeading = el)}>
+          <DecisionInbox
             requestId={props.requestId}
             attemptNumber={props.attempt.attempt_number}
-            review={review()}
-            onReviewed={(r) => {
-              setFresh(r);
-              props.onReviewed?.();
-            }}
+            attemptId={props.attempt.attempt_id}
+            attemptState={props.attempt.state}
+            pendingOnly
+            onResolved={() => props.onReviewed?.()}
           />
-        </section>
+        </RunSection>
       </Show>
 
-      <div class="flex flex-wrap items-center gap-2">
-        {/* A run with one attempt shows its status in the run's own heading. */}
-        <Show when={props.numbered}>
-          <span class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>
-            Attempt {props.attempt.attempt_number}
-          </span>
-          <Badge tone={status().tone}>{status().label}</Badge>
+      <Show when={terminal()}>
+        <RunSection id="checks" title="Checks" summary={checksSummary(checks())}>
+          <MrpPanel mrp={mrp} doneWhen={doneWhen()} />
+        </RunSection>
+
+        <RunSection id="changes" title="Changes" summary={changesSummary()}>
+          <div data-testid="attempt-tools" class="flex flex-wrap items-center gap-2">
+            <Show when={patchHasChanges()}>
+              <Button size="sm" variant="secondary" onClick={() => setDiffOpen(true)}>Open diff</Button>
+            </Show>
+            <Show when={patch() && folder()}>
+              {(path) => (
+                <Button size="sm" variant="secondary" title={path()} onClick={() => void openFolder(path())}>
+                  {canOpen() ? 'Open folder' : 'Copy path'}
+                </Button>
+              )}
+            </Show>
+            <Show when={branch()}>
+              {(b) => (
+                <Button size="sm" variant="secondary" onClick={() => void copyText(b(), 'Branch')}>Copy branch</Button>
+              )}
+            </Show>
+          </div>
+          <Show when={plan() && props.itemId}>
+            {(itemId) => (
+              <PlanPanel
+                requestId={props.requestId}
+                attemptNumber={n()}
+                artifactId={plan()!.artifact_id}
+                itemId={itemId()}
+                team={(props.attempt.actual_execution as { team?: string } | null)?.team}
+              />
+            )}
+          </Show>
+          <Modal isOpen={diffOpen()} onClose={() => setDiffOpen(false)} title="Changes" size="xl">
+            <Show when={patchText()} fallback={<p class="text-sm">{patchText.loading ? 'Loading the diff…' : 'The diff could not be read.'}</p>}>
+              {(t) => <DiffView patch={t()} />}
+            </Show>
+          </Modal>
+        </RunSection>
+      </Show>
+
+      <RunSection
+        id="steps"
+        title="Steps"
+        summary={
+          (runSteps() ?? []).length > 0
+            ? `${runSteps()!.length} ${runSteps()!.length === 1 ? 'step' : 'steps'} ran.`
+            : terminal()
+              ? 'No steps were reported for this run.'
+              : 'Steps appear as the team takes them.'
+        }
+      >
+        <Show when={props.profileId || props.agentKind || (runSteps() ?? []).length > 0}>
+          <AttemptTeamSteps
+            requestId={props.requestId}
+            attemptNumber={n()}
+            live={!terminal()}
+            profileId={props.profileId}
+            agentKind={props.agentKind}
+            hops={runSteps()}
+          />
         </Show>
-        <Show when={!stateInfo().known}>
-          <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            (unrecognised state)
-          </span>
+        <Show when={(runSteps() ?? []).length > 0}>
+          <StepsRan steps={runSteps()!} />
         </Show>
-        <Show when={props.attempt.pull_request}>
-          {(pr) => {
-            const prState = () => describePullRequestState(pr().state);
-            return (
-              <a
-                href={pr().url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="flex items-center gap-2"
-              >
-                <span class="text-xs" style={{ color: 'var(--color-primary-600)' }}>
-                  PR #{pr().number}
-                </span>
-                <Badge tone={prState().tone}>{prState().label}</Badge>
-              </a>
-            );
-          }}
+        <Show when={records().length > 0}>
+          <TeamRecords sets={records()} />
         </Show>
-        <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          <Show when={harnessKind()}>{(kind) => `${harnessName(kind())} · `}</Show>
-          started {relativeTimeFromIso(props.attempt.started_at ?? props.attempt.lease_issued_at)}
-        </span>
-        <span class="ml-auto max-w-[14rem] truncate text-micro" title={`Runner ${props.attempt.runner_id}`} style={{ 'font-family': 'var(--font-mono)', color: 'var(--color-text-tertiary)' }}>
-          {props.attempt.runner_id}
-        </span>
-      </div>
-
-      <Show when={outcome().whyStopped}>
-        {(why) => (
-          <p class="text-sm" style={{ color: 'var(--color-text-primary)' }}>
-            <strong>Why it stopped:</strong> {why()}
-          </p>
-        )}
-      </Show>
-      <Show when={personNeeded()}>
-        <Button size="sm" variant="secondary" onClick={openQuestion}>
-          Open the question
-        </Button>
-      </Show>
-      <Show when={outcome().badge?.detail}>
-        {(detail) => (
-          <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            {detail()}
-          </p>
-        )}
-      </Show>
-
-      <Show when={showMerge()}>
-        <MergeButton attemptId={props.attempt.attempt_id} merge={merge()!} onMerged={() => void refreshMerge()} />
-      </Show>
-
-      <Show when={!terminal()}>
-        <p data-testid="attempt-working" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          {props.attempt.state === 'waiting_decision'
-            ? 'The agent is waiting for your answer — see Questions from the agent below.'
-            : 'The agent is working. Its steps appear in the timeline as it takes them; the tokens it used appear here when it finishes.'}
-        </p>
-      </Show>
-
-      <AttemptTools
-        requestId={props.requestId}
-        attempt={props.attempt}
-        itemId={props.itemId}
-        limit={props.limit}
-        latest={props.latest}
-        page={props.page}
-        sideTarget={props.sideTarget}
-      />
-
-      <Button size="sm" variant="ghost" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded()}>
-        {expanded() ? 'Hide details' : 'Show questions & files'}
-      </Button>
-
-      <Show when={expanded()}>
-        <div class="space-y-5 border-t pt-4" style={{ 'border-color': 'var(--color-border-light)' }}>
-          <section>
-            <h4 ref={questions} tabIndex={-1} class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
-              Questions from the agent
-            </h4>
-            <DecisionInbox
+        <details
+          data-testid="run-activity"
+          open={activityOpen()}
+          onToggle={(e) => setActivityOpen(e.currentTarget.open)}
+          class="min-w-0"
+        >
+          <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Activity</summary>
+          <div class="mt-3 min-w-0 space-y-4">
+            <AgentDid
               requestId={props.requestId}
-              attemptNumber={props.attempt.attempt_number}
-              attemptId={props.attempt.attempt_id}
-              attemptState={props.attempt.state}
+              attemptNumber={n()}
+              log={steps()}
+              reading={steps.loading}
+              terminal={terminal()}
+              workspace={folder()}
             />
-          </section>
+            <section>
+              <h5 ref={questionsHeading} tabIndex={-1} class="mb-1.5 text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                Questions from the agent
+              </h5>
+              <DecisionInbox
+                requestId={props.requestId}
+                attemptNumber={props.attempt.attempt_number}
+                attemptId={props.attempt.attempt_id}
+                attemptState={props.attempt.state}
+                settledOnly
+              />
+            </section>
+          </div>
+        </details>
+      </RunSection>
 
-          <section>
-            <h4 class="mb-2 text-base" style={{ color: 'var(--color-text-primary)' }}>
-              Files from this run
-            </h4>
-            <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={props.attempt.attempt_number} />
-          </section>
-
-          <MrpSlot requestId={props.requestId} attemptNumber={props.attempt.attempt_number} merge={merge()} />
-        </div>
+      <Show when={terminal()}>
+        <RunSection id="files" title="Files from this run" summary={`${listed().length} ${listed().length === 1 ? 'file' : 'files'}.`}>
+          <Show when={!artifacts.loading} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Loading the files…</p>}>
+            <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} artifacts={listed()} />
+          </Show>
+        </RunSection>
       </Show>
+
+      <SideSlot page={props.page} target={props.sideTarget}>
+        <div data-testid="attempt-side" class="min-w-0 space-y-4">
+          <RunSection id="technical" title="Technical" fold>
+            <Show when={terminal()}>
+              <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
+              <details data-testid="attempt-usage-fold" class="rounded-item px-4 py-3" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+                <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
+                </summary>
+                <div class="mt-2">
+                  <UsagePanel attempt={props.attempt} />
+                </div>
+              </details>
+            </Show>
+            <section data-testid="attempt-ids" class="space-y-1.5 text-xs">
+              <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Ids</h4>
+              <dl class="space-y-1">
+                <IdRow label="Request" value={props.requestId} />
+                <IdRow label="Attempt" value={props.attempt.attempt_id} />
+                <IdRow label="Runner" value={props.attempt.runner_id} />
+              </dl>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!log()}
+                title={log() ? undefined : terminal() ? 'This run left no log' : 'The log is written when the run ends'}
+                onClick={() => setLogOpen(true)}
+              >
+                Raw log
+              </Button>
+            </section>
+            <Show when={mrp.pack()}>{(pack) => <SignatureState signature={pack().signature} />}</Show>
+            <Show when={terminal()}>
+              <ArtifactView requestId={props.requestId} attemptNumber={n()} artifact={logOpen() ? log() : undefined} onClose={() => setLogOpen(false)} />
+            </Show>
+          </RunSection>
+        </div>
+      </SideSlot>
     </li>
   );
 };
@@ -649,9 +790,8 @@ const UsagePanel: Component<{ attempt: AttemptSummary }> = (props) => {
 /**
  * The attempts made against one execution request, reading real data from
  * `store.ts#attemptsFor`/`loadAttempts`. A run with several attempts offers chips to pick
- * one, the newest by default, and shows only the one picked. The row exposes model
- * provenance, usage and the run's timeline, and (on demand, to avoid an eager fetch for
- * every attempt) its decision inbox and artifact download action.
+ * one, the newest by default, and shows only the one picked, read top-down: verdict, what needs
+ * the person, checks, changes, steps, files, and the technical detail behind a fold.
  */
 const AttemptList: Component<AttemptListProps> = (props) => {
   const newest = createMemo(() =>
@@ -694,6 +834,9 @@ const AttemptList: Component<AttemptListProps> = (props) => {
                   latest={attempt().attempt_id === newest()?.attempt_id}
                   page={props.layout === 'page'}
                   sideTarget={props.sideTarget}
+                  profileId={props.profileId}
+                  agentKind={props.agentKind}
+                  runAgain={props.runAgain}
                   onReviewed={props.onReviewed}
                 />
               )}

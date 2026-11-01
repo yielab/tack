@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import TeamStepsLine from './TeamSteps';
+import type { RunStep } from '../execution';
 import { flush } from '../../test/flush';
 
 const disposers: Array<() => void> = [];
@@ -20,7 +21,7 @@ const STEPS = [
 
 const PROFILE = { agent_profile_id: 'ap_dev', name: 'Dev', instructions: '', tool_policy: { docket: { team: 'my-saas-dev' } }, limits: null };
 
-function mount(opts: { steps?: unknown[] | null; events: () => Ev[]; agentKind?: string | null; profileId?: string | null; ended?: boolean }) {
+function mount(opts: { steps?: unknown[] | null; events: () => Ev[]; agentKind?: string | null; profileId?: string | null; ended?: boolean; hops?: RunStep[] }) {
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/agent-profiles')) return new Response(JSON.stringify({ protocol_version: 1, data: [PROFILE] }), { status: 200 });
@@ -41,6 +42,7 @@ function mount(opts: { steps?: unknown[] | null; events: () => Ev[]; agentKind?:
         agentKind={opts.agentKind === undefined ? 'docket' : opts.agentKind}
         events={opts.events()}
         ended={opts.ended}
+        hops={opts.hops}
       />
     ),
     container,
@@ -133,5 +135,52 @@ describe('TeamSteps', () => {
     await settle();
     expect(step(c, 'write').textContent).toContain('Stopped here');
     expect(step(c, 'write').textContent).not.toContain('Running');
+  });
+
+  describe('the step track', () => {
+    const hop = (over: Partial<RunStep>): RunStep => ({
+      role: null, model: null, class: null, family: null, verdict: null, ok: null, summary: null, prompts: [], assumptions: [], questions: [], ...over,
+    });
+
+    it('is one node per step, in order, each saying its state in words and not by its bar alone', async () => {
+      const c = mount({ steps: STEPS, events: () => [started('Lead'), finished('Lead'), started('Reviewer')] });
+      await settle();
+      const nodes = [...c.querySelectorAll('[data-testid="team-steps"] > li')];
+      expect(nodes).toHaveLength(5);
+      expect(nodes.map((li) => li.querySelector('span[aria-hidden="true"]')?.tagName)).toEqual(Array(5).fill('SPAN'));
+      expect(step(c, 'write').textContent).toContain('Done');
+      expect(step(c, 'review').textContent).toContain('Running');
+      expect(step(c, 'tests').textContent).not.toMatch(/Done|Running|Waiting/);
+    });
+
+    it('shows the role, the model, the verdict and the size of the prompts on each step its role ran', async () => {
+      const hops = [
+        hop({ role: 'lead', model: 'model-x', class: 'strong', verdict: 'ready', prompts: [
+          { layer: 'task', name: 'build', version: '1', sha256: 'a', scope: 'shipped', tokens: 1200 },
+          { layer: 'hop', name: 'lead', version: '1', sha256: 'b', scope: 'shipped', tokens: 300 },
+        ] }),
+        hop({ role: 'reviewer', model: 'model-y', verdict: 'approved' }),
+      ];
+      const c = mount({ steps: STEPS, events: () => [started('Lead'), finished('Lead'), started('Reviewer'), finished('Reviewer')], hops });
+      await settle();
+      const write = step(c, 'write').textContent!;
+      expect(write).toContain('Lead');
+      expect(write).toContain('model-x · a strong model');
+      expect(write).toContain('Verdict: ready');
+      expect(write).toContain('1.5K prompt tokens');
+      expect(step(c, 'review').textContent).toContain('model-y');
+      expect(step(c, 'review').textContent).toContain('Verdict: approved');
+      // A step nobody with a role does has no hop to show.
+      expect(step(c, 'tests').textContent).not.toContain('Verdict');
+    });
+
+    it('draws the hops themselves when the team reports no steps in advance', async () => {
+      const hops = [hop({ role: 'lead', model: 'model-x', verdict: 'ready' }), hop({ role: null, model: 'model-z' })];
+      const c = mount({ steps: null, events: () => [], hops });
+      await settle();
+      expect(c.querySelector('[data-testid="team-steps-unreported"]')).toBeNull();
+      const nodes = [...c.querySelectorAll('[data-testid="run-hops"] > li')];
+      expect(nodes.map((n) => n.textContent)).toEqual(['Lead' + 'model-x' + 'Verdict: ready', 'Step 2' + 'model-z']);
+    });
   });
 });

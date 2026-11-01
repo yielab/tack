@@ -5,15 +5,30 @@ import notReady from '../../../../docs/contracts/mrp-v1/fixtures/not-ready.json'
 import manualOnly from '../../../../docs/contracts/mrp-v1/fixtures/manual-only.json';
 import verifierFailed from '../../../../docs/contracts/mrp-v1/fixtures/verifier-failed.json';
 import signed from '../../../../docs/contracts/mrp-v1/fixtures/signed-with-next-steps.json';
-import MrpPanel from './MrpPanel';
+import { Show } from 'solid-js';
+import MrpPanel, { MergeState, MrpVerdict, SignatureState, buildChecks, checksSummary, createMrp } from './MrpPanel';
+import type { AcceptanceCriterion } from '../api/briefs';
 import type { AttemptMerge } from '../execution/attempts';
 import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 
-function mount(merge?: AttemptMerge) {
+/** The pieces of a run's screen that read one pack, side by side: the verdict's chips, the Checks body, and the Technical signature. */
+const Pack = (props: { merge?: AttemptMerge; doneWhen?: AcceptanceCriterion[] }) => {
+  const mrp = createMrp(() => ({ requestId: 'exec_1', attemptNumber: 2 }));
+  return (
+    <>
+      <Show when={mrp.pack()}>{(pack) => <MrpVerdict pack={pack()} />}</Show>
+      <Show when={props.merge}>{(m) => <MergeState merge={m()} />}</Show>
+      <MrpPanel mrp={mrp} doneWhen={props.doneWhen} />
+      <Show when={mrp.pack()}>{(pack) => <SignatureState signature={pack().signature} />}</Show>
+    </>
+  );
+};
+
+function mount(merge?: AttemptMerge, doneWhen?: AcceptanceCriterion[]) {
   const container = document.createElement('div');
   document.body.appendChild(container);
-  const dispose = render(() => <MrpPanel requestId="exec_1" attemptNumber={2} merge={merge} />, container);
+  const dispose = render(() => <Pack merge={merge} doneWhen={doneWhen} />, container);
   disposers.push(() => {
     dispose();
     container.remove();
@@ -159,5 +174,86 @@ describe('MrpPanel', () => {
     expect(steps[0].textContent).toContain('The suite failed');
     expect(steps[0].textContent).toContain('cargo test');
     expect(steps[1].textContent).toContain('src/a.rs:4');
+  });
+
+  describe('the checklist', () => {
+    const pack = (criteria: unknown[]) => ({ ...ready, criteria });
+    const row = (id: string, status: string, extra: object = {}) => ({ id, kind: 'command', status, evidence_ref: null, note: null, ...extra });
+
+    it('marks each state with its own glyph and its words, never by colour alone', async () => {
+      mockFetch(pack([row('a', 'passed'), row('b', 'failed'), row('c', 'manual'), row('d', 'skipped')]));
+      const el = mount();
+      await flush();
+      const marks = [...el.querySelectorAll('[data-testid="mrp-criterion"]')].map((li) => {
+        const mark = li.querySelector('[role="img"]')!;
+        return [li.getAttribute('data-status'), mark.textContent, mark.getAttribute('aria-label')];
+      });
+      expect(marks).toEqual([
+        ['passed', '✓', 'Passed'],
+        ['failed', '✗', 'Failed'],
+        ['manual', '◐', 'Needs a person'],
+        ['skipped', '–', 'Skipped'],
+      ]);
+    });
+
+    it('names the kind and the source as secondary text, and the evidence when there is some', async () => {
+      mockFetch(pack([row('a', 'passed', { evidence_ref: 'ev/a.txt' }), row('b', 'failed')]));
+      const el = mount();
+      await flush();
+      const [first, second] = [...el.querySelectorAll('[data-testid="mrp-criterion"]')];
+      expect(first.textContent).toContain('command · Verifier');
+      expect(first.textContent).toContain('Evidence: ev/a.txt');
+      expect(second.textContent).not.toContain('Evidence');
+    });
+
+    it('puts the Done when ticks and the verifier criteria in one list, each naming its source', async () => {
+      mockFetch(pack([row('c1', 'manual'), row('c2', 'passed')]));
+      const doneWhen: AcceptanceCriterion[] = [
+        { kind: 'manual', id: 'c1', title: 'Reads well', text: 'x', checked: true },
+        { kind: 'manual', id: 'c3', title: 'Looks right', text: 'y' },
+        { kind: 'command', id: 'c4', title: 'Builds', run: 'make', expect_exit: 0 },
+      ];
+      const el = mount(undefined, doneWhen);
+      await flush();
+      const items = [...el.querySelectorAll('[data-testid="checks-list"] > li')];
+      expect(items.map((li) => [li.querySelector('p')!.textContent, li.getAttribute('data-status')])).toEqual([
+        // A criterion the verifier reports under an id the list has takes the list's title, and a ticked one passes.
+        ['Reads well', 'passed'],
+        ['c2', 'passed'],
+        ['Looks right', 'manual'],
+        ['Builds', 'skipped'],
+      ]);
+      expect(items[0].textContent).toContain('Done when');
+      expect(items[0].textContent).toContain('Ticked by a person');
+      expect(items[1].textContent).toContain('Verifier');
+      expect(items[3].textContent).toContain('The verifier did not run it');
+    });
+
+    it('says the number in one sentence', () => {
+      expect(checksSummary([])).toBe('No checks were recorded for this run.');
+      const items = buildChecks(pack([row('a', 'passed'), row('b', 'failed'), row('c', 'manual')]) as never, null);
+      expect(checksSummary(items)).toBe('1 of 3 checks passed · 1 failed · 1 need a person');
+    });
+  });
+
+  it('shows the recommendation and the risk as two chips, with the verifier\'s sentence', async () => {
+    mockFetch({ ...ready, recommendation: { decision: 'review', rationale: 'One criterion needs a person.' }, risk: { tier: 'high', reasons: ['touches auth'] } });
+    const el = mount();
+    await flush();
+    const chips = [...el.querySelectorAll('[data-testid="mrp-verdict"] span')].map((b) => b.textContent);
+    expect(chips).toEqual(['Recommendation: review', 'Risk: high']);
+    expect(el.querySelector('[data-testid="mrp-verdict"]')!.textContent).toContain('One criterion needs a person.');
+    // The reasons for the risk belong to the checks, not to the chips.
+    expect(el.textContent).toContain('touches auth');
+  });
+
+  it('folds the verify command and its output', async () => {
+    mockFetch({ ...ready, verify: { command: 'cargo test', exit_code: 0, output_tail: 'ok', duration_s: 3 } });
+    const el = mount();
+    await flush();
+    const fold = el.querySelector('[data-testid="mrp-verify"]') as HTMLDetailsElement;
+    expect(fold.open).toBe(false);
+    expect(fold.querySelector('summary')!.textContent).toContain('cargo test');
+    expect(fold.querySelector('pre')!.textContent).toBe('ok');
   });
 });
