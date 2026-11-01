@@ -289,7 +289,7 @@ When Tack acts without you, it tells you in three places.
 
 Hover a badge for a one-sentence explanation.
 
-**The task's Automation row**, in the task drawer under the run button, says what happens to this task
+**The task's Automation row**, the last line of the Now panel in the task drawer, says what happens to this task
 without you:
 
 - "Starts by itself when it reaches To Do · Team saas-content · Merge L3", when the project starts tasks by

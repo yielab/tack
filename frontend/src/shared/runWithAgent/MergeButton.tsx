@@ -1,5 +1,5 @@
 import { type Component, Show, createSignal } from 'solid-js';
-import { Button } from '../ui';
+import { Button, type ButtonVariant } from '../ui';
 import { toast } from '../ui/toast';
 import { ApiError } from '../api/client';
 import { attemptsApi, type AttemptMerge } from '../execution/attempts';
@@ -9,6 +9,8 @@ export interface MergeButtonProps {
   merge: AttemptMerge;
   /** Called after a merge went through, so the caller reads the attempt again. */
   onMerged?: () => void;
+  /** How Merge is drawn; a screen whose one filled button is elsewhere passes `secondary`. */
+  variant?: ButtonVariant;
 }
 
 /**
@@ -39,7 +41,7 @@ const MergeButton: Component<MergeButtonProps> = (props) => {
   const note = () => refusal() ?? props.merge.reason ?? null;
   return (
     <div class="flex flex-wrap items-center gap-2" data-testid="merge-button">
-      <Button type="button" size="sm" disabled={!props.merge.enabled || busy()} loading={busy()} onClick={() => void press()}>
+      <Button type="button" size="sm" variant={props.variant} disabled={!props.merge.enabled || busy()} loading={busy()} onClick={() => void press()}>
         Merge
       </Button>
       <Show when={note()}>

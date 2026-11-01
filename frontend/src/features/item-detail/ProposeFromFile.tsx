@@ -1,4 +1,5 @@
 import { type Component, Show, createSignal } from 'solid-js';
+import { Button } from '../../shared/ui';
 import PlanPanel, { type PlanEntry } from '../../shared/runWithAgent/PlanPanel';
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -71,8 +72,14 @@ export function checkPlanFile(text: string): { entries: PlanEntry[] } | { error:
   return { entries };
 }
 
-/** The item page's "Propose items from a file": the person picks a tack-plan.json; the same panel opens. */
-const ProposeFromFile: Component<{ itemId: string }> = (props) => {
+export interface ProposeFromFileProps {
+  itemId: string;
+  /** With it, the section has a Close button. */
+  onClose?: () => void;
+}
+
+/** "Propose items from a file", opened from the item's "⋯" menu: the person picks a tack-plan.json; the same panel opens. */
+const ProposeFromFile: Component<ProposeFromFileProps> = (props) => {
   const [plan, setPlan] = createSignal<PlanEntry[] | null>(null);
   const [problem, setProblem] = createSignal<string | null>(null);
   const pick = async (input: HTMLInputElement) => {
@@ -92,6 +99,13 @@ const ProposeFromFile: Component<{ itemId: string }> = (props) => {
 
   return (
     <section class="space-y-2" aria-label="Propose items from a file">
+      <Show when={props.onClose}>
+        <div class="flex justify-end">
+          <Button size="sm" variant="ghost" onClick={() => props.onClose?.()}>
+            Close
+          </Button>
+        </div>
+      </Show>
       <label class="block text-sm" style={{ color: 'var(--color-text-secondary)' }}>
         <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Propose items from a file</span>
         <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>

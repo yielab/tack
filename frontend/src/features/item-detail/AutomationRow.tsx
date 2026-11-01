@@ -1,7 +1,7 @@
 import { type Component, Show, createResource } from 'solid-js';
 import { api } from '../../shared/api';
 import { request } from '../../shared/api/client';
-import { agentProfilesApi, runnersApi } from '../../shared/execution';
+import { agentProfilesApi, runnersApi, teamOf } from '../../shared/execution';
 import { noPlaceToRun } from '../../shared/runWithAgent/shared';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
 import { toast } from '../../shared/ui/toast';
@@ -50,16 +50,17 @@ export function withProfile(settings: RunSettings | null | undefined, profileId:
   return Object.keys(next).length > 0 ? next : null;
 }
 
-/** The drawer's Automation row: what happens to this task without you. */
-const AutomationRow: Component<{ item: Item }> = (props) => {
+/** What the Automation row and the idle Now panel both read for a task: the project, its roles, the
+ *  profiles, the merge level and the computers, loaded once and shared by whoever shows them. */
+export function useAutomation(item: () => Item) {
   const [resource, { refetch }] = createResource(
-    () => props.item.id,
+    () => item().id,
     async (id) => {
       const [project, detail, profiles, autonomy, runners] = await Promise.all([
-        api.projects.get(props.item.project_id),
+        api.projects.get(item().project_id),
         request<{ roles?: Role[]; item?: { run_settings?: RunSettings | null } }>(`/items/${id}`),
         agentProfilesApi.list().then((r) => r.data.data ?? []),
-        api.autonomy.get(props.item.project_id),
+        api.autonomy.get(item().project_id),
         // Where it runs is a hint on the sentence, never a reason to hide it.
         runnersApi.list().then((r) => (Array.isArray(r.data.data) ? r.data.data : null)).catch(() => null),
       ]);
@@ -81,11 +82,10 @@ const AutomationRow: Component<{ item: Item }> = (props) => {
     const c = chosen();
     if (!c) return null;
     const { d, profileId, profile, from } = c;
-    const team = (profile?.tool_policy as { docket?: { team?: string } } | undefined)?.docket?.team ?? null;
     return automationSentence({
       startsAt: d.project.auto_start_status ?? 'its first status',
       starts: !!d.project.auto_start_enabled,
-      team,
+      team: teamOf(profile),
       merge: d.autonomy?.level ?? null,
       roleWithoutProfile: d.roles.find((r) => !r.agent_profile_id)?.name ?? null,
       hasProfile: !!profileId,
@@ -93,6 +93,35 @@ const AutomationRow: Component<{ item: Item }> = (props) => {
       noPlace: profile && d.runners ? noPlaceToRun(d.runners, profile.fleet_id) : null,
     });
   };
+  return { resource, refetch, chosen, sentence, item };
+}
+
+export type Automation = ReturnType<typeof useAutomation>;
+
+/** Who would do a task that has not run, as the Now panel says it: the profile and its team, or why nobody is chosen. */
+export function whoWouldDoIt(automation: Automation): string | null {
+  const c = automation.chosen();
+  if (!c) return null;
+  if (!c.profile) return 'No profile is chosen yet: you pick the agent when you run it';
+  const team = teamOf(c.profile);
+  return team ? `${c.profile.name} · team ${team}` : c.profile.name;
+}
+
+/** Under the Run button of a task with no run: who would do it. */
+export const WhoWouldDoIt: Component<{ automation: Automation }> = (props) => (
+  <Show when={whoWouldDoIt(props.automation)}>
+    {(text) => (
+      <p data-testid="now-who" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+        Would go to {text()}
+      </p>
+    )}
+  </Show>
+);
+
+/** What happens to this task without you: one muted line with its help, and the choice of who does it. It sits at the foot of the Now panel, under a hairline. */
+const AutomationRow: Component<{ item: Item; automation?: Automation }> = (props) => {
+  const automation = props.automation ?? useAutomation(() => props.item);
+  const { resource, refetch, chosen, sentence } = automation;
   const choose = async (profileId: string | null) => {
     const c = chosen();
     if (!c) return;
@@ -110,10 +139,14 @@ const AutomationRow: Component<{ item: Item }> = (props) => {
       </Show>
       <Show when={sentence()}>
         {(text) => (
-          <div data-testid="automation-row" class="flex flex-col gap-1.5 px-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            <div class="flex items-center gap-2">
-              <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Automation</span>
-              <span>{text()}</span>
+          <div
+            data-testid="automation-row"
+            class="flex min-w-0 flex-col gap-1.5 border-t pt-2.5 text-xs"
+            style={{ color: 'var(--color-text-secondary)', 'border-color': 'var(--color-border-light)' }}
+          >
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span class="font-semibold">Automation</span>
+              <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>{text()}</span>
               <HelpHint label="Automation" help={HELP.automationRow} />
             </div>
             <Show when={(chosen()?.d.profiles.length ?? 0) > 0}>

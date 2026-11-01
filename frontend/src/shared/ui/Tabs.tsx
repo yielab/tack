@@ -5,6 +5,8 @@ export interface TabItem {
   label: string;
   /** Shown beside the label when the number is already loaded. */
   count?: number;
+  /** A small graphic after the label (a run's state dot). It carries its own accessible label. */
+  adornment?: JSX.Element;
 }
 
 export interface TabsProps {
@@ -72,6 +74,9 @@ const Tabs: Component<TabsProps> = (props) => {
                 }}
               >
                 {tab.label}
+                <Show when={tab.adornment}>
+                  <span class="ml-1.5 inline-flex align-middle">{tab.adornment}</span>
+                </Show>
                 <Show when={tab.count !== undefined}>
                   <span
                     class="ml-1.5 rounded-full px-1.5 py-px text-micro font-bold"
