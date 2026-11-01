@@ -153,7 +153,26 @@ export const ItemCard: Component<{
             onMove={(status) => props.onMove(props.item.id, status)}
             itemRef={shortId(props.item.id)}
           />
-          <Show when={!props.run?.live}>
+          {/* The action follows the state: a run waiting for review is reviewed, not started again;
+              a live run has its own link in the meta line. */}
+          <Show when={props.run?.state === 'review'}>
+            <button
+              type="button"
+              data-testid="card-review"
+              aria-label={`Review the run: ${props.item.title}`}
+              title="Review and merge"
+              onClick={openExecutionTab}
+              class="focus:outline-none focus-visible:ring-2"
+              style={{
+                width: '24px', height: '24px', 'border-radius': '50%', border: 'none', padding: 0, 'flex-shrink': 0,
+                display: 'grid', 'place-items': 'center', cursor: 'pointer',
+                background: 'var(--run-review-soft)', color: 'var(--run-review-ink)',
+              }}
+            >
+              <RunState state="review" size="dot" />
+            </button>
+          </Show>
+          <Show when={!props.run?.live && props.run?.state !== 'review'}>
             <RunWithAgentButton
               itemId={props.item.id}
               itemTitle={props.item.title}

@@ -354,12 +354,12 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(c.querySelector('[data-testid="now-who"]')!.textContent).toBe('Would go to Code agent · team saas-code');
   });
 
-  it('a queued run says Queued and has no filled button, only another computer and a quiet Run again', async () => {
+  it('a queued run says Queued and has no filled button, only another computer and no Run again', async () => {
     const c = mount([{ ...RUN, state: 'queued' }], () => {}, []);
     await settle();
     expect(banner(c)).toBe('Queued');
     expect(filled(panel(c))).toEqual([]);
-    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run on another computer', 'Run again']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run on another computer']);
   });
 
   it('a running run says Running; Follow live and Stop are secondary and nothing is filled', async () => {
@@ -367,7 +367,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     await settle();
     expect(banner(c)).toBe('Running');
     expect(filled(panel(c))).toEqual([]);
-    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Follow live', 'Stop', 'Run again']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Follow live', 'Stop']);
   });
 
   it('a run that needs you says Needs you with the docket words, and Answer the question is the filled button', async () => {

@@ -143,6 +143,14 @@ describe('Board ItemCard', () => {
     expect((await mount(makeItem())).querySelector(trigger)).toBeTruthy();
   });
 
+  it('a_card_ready_for_review_offers_to_review_not_to_run', async () => {
+    const c = await mount(makeItem({ needs_review: true }), undefined, { run: cardRun(undefined, true) });
+    expect(c.querySelector('[aria-label="Run with agent: Fix login bug"]')).toBeNull();
+    const review = c.querySelector<HTMLButtonElement>('[data-testid="card-review"]');
+    expect(review?.getAttribute('aria-label')).toBe('Review the run: Fix login bug');
+    expect(review?.title).toBe('Review and merge');
+  });
+
   it('the_short_id_is_on_the_cards_hover_and_in_its_menu', async () => {
     const c = await mount(makeItem({ id: 'abcdef12-0000' }));
     const card = c.querySelector('[data-item-id]')!;
