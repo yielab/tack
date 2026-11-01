@@ -213,11 +213,43 @@ describe('ExecutionTimeline', () => {
     await flush();
     await pick(c, 'Run 2');
     const row = shownRun(c);
-    const badges = [...row.querySelectorAll('span')].map((s) => s.textContent);
-    expect(badges).toContain('Running');
+    // The run's one state is the banner, in the language every screen uses; its words are announced.
+    const status = row.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('Running');
+    expect(status.querySelector('svg')).not.toBeNull();
     expect(row.textContent).not.toContain('Starting');
     expect(row.textContent).not.toContain('Leased');
     expect(row.querySelector('[data-testid="attempt-working"]')).not.toBeNull();
+  });
+
+  it('a state the screen has no icon for keeps its raw words instead of borrowing another state', async () => {
+    const c = mount('item-1');
+    await flush();
+    await flush();
+    const status = shownRun(c).querySelector('[role="status"]')!;
+    expect(status.textContent).toContain('some_future_state');
+    expect(status.querySelector('svg')).toBeNull();
+  });
+
+  it('a request that needs an operator reads Needs you, with its own words under the banner', async () => {
+    const c = mount('item-1');
+    await flush();
+    await flush();
+    const status = (await pick(c, 'Run 3')).querySelector('[role="status"]')!;
+    expect(status.textContent).toContain('Needs you');
+    expect(status.querySelector('[data-testid="run-status-words"]')!.textContent).toBe('Needs operator');
+  });
+
+  it('a run with no attempt offers Run again beside its empty line, a run with one offers it in its verdict', async () => {
+    const empty = mount('item-1', { itemTitle: 'T', projectId: 'p1' });
+    for (let i = 0; i < 6; i++) await flush();
+    const none = await pick(empty, 'Run 3');
+    expect([...none.querySelectorAll('button')].some((b) => b.textContent === 'Run again')).toBe(true);
+    const running = await pick(empty, 'Run 1');
+    const verdict = running.querySelector('[data-testid="run-verdict"]')!;
+    expect([...verdict.querySelectorAll('button')].some((b) => b.textContent === 'Run again')).toBe(true);
+    // Once, not twice: the toolbar above the runs no longer carries its own.
+    expect([...empty.querySelectorAll('button')].filter((b) => b.textContent === 'Run again')).toHaveLength(1);
   });
 
   it('an unrecognised lifecycle state renders its raw value with a visible caveat, never throwing', async () => {

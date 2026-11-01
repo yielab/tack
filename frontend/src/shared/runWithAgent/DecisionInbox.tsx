@@ -37,6 +37,9 @@ export interface DecisionInboxProps {
   attemptState?: string;
   /** Only the questions still waiting for an answer, and nothing at all when there is none. */
   pendingOnly?: boolean;
+  /** Only the questions already answered or expired, as a history: no token field (the questions
+   *  that wait have their own place), and one muted line when the agent has asked nothing at all. */
+  settledOnly?: boolean;
 }
 
 /** Shared resolve call + user-facing toast — one place maps every distinct
@@ -327,8 +330,10 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
   );
   const shown = () => {
     const all = decisions.error ? [] : (decisions.latest ?? []);
-    return props.pendingOnly ? all.filter((d) => d.state === 'pending') : all;
+    if (props.pendingOnly) return all.filter((d) => d.state === 'pending');
+    return props.settledOnly ? all.filter((d) => d.state !== 'pending') : all;
   };
+  const askedNothing = () => !firstLoad() && !decisions.error && (decisions.latest ?? []).length === 0;
   const firstLoad = () => decisions.loading && decisions.latest === undefined;
 
   createEffect(() => {
@@ -361,7 +366,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
 
   return (
     <div class="space-y-3">
-      <Show when={firstLoad() && !props.pendingOnly}>
+      <Show when={firstLoad() && !props.pendingOnly && !props.settledOnly}>
         <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
           Loading decisions…
         </p>
@@ -369,8 +374,13 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
       <Show when={decisions.error}>
         <LoadError what="the questions" error={decisions.error} onRetry={() => void refetch()} />
       </Show>
-      <Show when={!firstLoad() && !decisions.error && !props.pendingOnly && shown().length === 0}>
+      <Show when={!firstLoad() && !decisions.error && !props.pendingOnly && !props.settledOnly && shown().length === 0}>
         <EmptyState title="The agent has asked nothing yet" />
+      </Show>
+      <Show when={props.settledOnly && askedNothing()}>
+        <p data-testid="asked-nothing" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+          The agent has asked nothing yet
+        </p>
       </Show>
       <Show when={shown().length > 0}>
         <ul class="space-y-2">
@@ -382,7 +392,7 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
         </ul>
       </Show>
 
-      <Show when={!props.pendingOnly || shown().length > 0}>
+      <Show when={!props.settledOnly && (!props.pendingOnly || shown().length > 0)}>
         <div
           class="flex flex-wrap items-end gap-2 rounded-item px-4 py-3"
           style={{ 'background-color': 'var(--color-bg-panel)' }}

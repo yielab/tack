@@ -24,7 +24,8 @@ export interface RunStateProps {
   size?: RunStateSize;
 }
 
-const LABEL: Record<RunStateName, string> = {
+/** The words each state is shown under. */
+export const RUN_STATE_LABEL: Record<RunStateName, string> = {
   queued: 'Queued',
   running: 'Running',
   needs: 'Needs you',
@@ -102,7 +103,7 @@ export function runStateView(props: Pick<RunStateProps, 'state' | 'docket'>): { 
  */
 const RunState: Component<RunStateProps> = (props) => {
   const view = () => runStateView(props);
-  const text = () => (view().word ? `${LABEL[view().state]} — ${view().word}` : LABEL[view().state]);
+  const text = () => (view().word ? `${RUN_STATE_LABEL[view().state]} — ${view().word}` : RUN_STATE_LABEL[view().state]);
   const ink = () => `var(--run-${view().state}-ink)`;
 
   return (
@@ -129,7 +130,7 @@ const RunState: Component<RunStateProps> = (props) => {
         >
           <span class="mt-px inline-flex flex-none items-center">{GLYPH[view().state](16)}</span>
           <div class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>
-            <p class="text-sm font-semibold">{LABEL[view().state]}</p>
+            <p class="text-sm font-semibold">{RUN_STATE_LABEL[view().state]}</p>
             <Show when={view().word}>
               {(word) => <p class="text-xs">{word()}</p>}
             </Show>
@@ -147,7 +148,7 @@ const RunState: Component<RunStateProps> = (props) => {
           }}
         >
           {GLYPH[view().state](13)}
-          {LABEL[view().state]}
+          {RUN_STATE_LABEL[view().state]}
         </span>
       </Match>
     </Switch>

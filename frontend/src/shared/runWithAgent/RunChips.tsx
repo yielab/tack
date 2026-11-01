@@ -16,7 +16,7 @@ export interface RunChip {
  * The run-state glyph a chip shows. Tone alone cannot tell Queued from
  * Cancelled, so the words decide first; the tone settles the rest.
  */
-function chipState(tone: StateTone, words: string): RunStateName {
+export function chipState(tone: StateTone, words: string): RunStateName {
   if (/needs your review|no changes recorded/i.test(words)) return 'review';
   if (/needs a person|needs operator/i.test(words)) return 'needs';
   if (/cancel/i.test(words)) return 'cancelled';
