@@ -18,12 +18,15 @@ const KEYS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', Arro
 
 const MUTED = { color: 'var(--color-text-secondary)' } as const;
 
+/** The fix as a short line that fits a box; the whole of it is the link's accessible name and title. */
+const fixShort = (fix: MapFix): string => (fix.to === 'automation-teams' ? 'Fix: set it in Teams' : 'Fix: Agents → profiles');
+
 const fixHref = (fix: MapFix, projectId: string): string =>
   fix.to === 'automation-teams' ? `/projects/${projectId}/settings?tab=automation` : '/agents';
 
 /** The sentence a screen reader hears for a node: what it is, what it says of itself and what it opens. */
 function nodeWords(node: MapNode): string {
-  const parts = [`${node.kind === 'agent' ? 'Agent' : node.kind[0].toUpperCase() + node.kind.slice(1)} ${node.label}`];
+  const parts = [`${node.kind === 'agent' ? 'Agent' : node.kind[0].toUpperCase() + node.kind.slice(1)} ${node.label}${node.group ? ` of ${node.group}` : ''}`];
   if (node.sub) parts.push(node.sub);
   if (node.isDefault) parts.push("the project's default profile");
   if (node.dashed && node.reason) parts.push(node.reason);
@@ -87,7 +90,7 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
       <div class="flex min-w-0 flex-col gap-1">
         <h3 id="map-title" class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>Who can do what</h3>
         <p class="text-small" data-testid="map-summary" style={MUTED}>
-          {`${counts().roles} ${counts().roles === 1 ? 'role' : 'roles'} lead to ${counts().profiles} ${counts().profiles === 1 ? 'profile' : 'profiles'}, which run on ${counts().teams} ${counts().teams === 1 ? 'team or agent' : 'teams and agents'}. A line is as wide as the open tasks routed along it. Press a box or a column title to see it in Flow.`}
+          {`${counts().roles} ${counts().roles === 1 ? 'role' : 'roles'} lead to ${counts().profiles} ${counts().profiles === 1 ? 'profile' : 'profiles'}, which run on ${counts().teams} ${counts().teams === 1 ? 'team or agent' : 'teams and agents'}. A line is as wide as the open tasks routed along it, and a line with none appears when you point at or focus a box. Press a box or a column title to see it in Flow.`}
         </p>
         <p class="text-caption" style={{ color: 'var(--color-text-tertiary)' }}>
           A dashed box has nothing behind it: a role with no profile, or a team no profile names.
@@ -115,6 +118,7 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
             <g aria-hidden="true" data-testid="map-links" fill="none" stroke-linecap="butt">
               <For each={model().links}>
                 {(link) => (
+                  <Show when={link.tasks > 0 || linked(link)}>
                   <path
                     data-testid="map-link"
                     data-link={link.id}
@@ -122,8 +126,9 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                     d={linkPath(model(), link)}
                     stroke="var(--color-text-tertiary)"
                     stroke-width={link.width}
-                    stroke-opacity={linked(link) ? 0.95 : link.tasks > 0 ? 0.5 : 0.35}
+                    stroke-opacity={linked(link) ? 0.95 : 0.5}
                   />
+                  </Show>
                 )}
               </For>
             </g>
@@ -189,7 +194,7 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                     onMouseEnter={() => setPointed(node.id)}
                     onMouseLeave={() => setPointed(null)}
                   >
-                    <title>{`${node.label}${node.sub ? ` · ${node.sub}` : ''}`}</title>
+                    <title>{`${node.group ? `${node.group} · ` : ''}${node.label}${node.sub ? ` · ${node.sub}` : ''}${node.dashed && node.reason ? `. ${node.reason}` : ''}`}</title>
                     <rect
                       x={node.x}
                       y={node.y}
@@ -202,7 +207,7 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                       stroke-dasharray={node.dashed ? '6 4' : undefined}
                     />
                     <text x={node.x + 10} y={node.y + 20} font-size="13" font-weight="700" fill="var(--color-text-primary)">
-                      {clip(node.label, 21)}
+                      {clip(node.group ? `${node.group} · ${node.label}` : node.label, 21)}
                     </text>
                     <Show when={node.sub}>
                       <text x={node.x + 10} y={node.y + 37} font-size="11" fill="var(--color-text-secondary)">
@@ -220,13 +225,15 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                       <a
                         href={fixHref(fix(), props.projectId)}
                         data-testid="map-fix"
+                        aria-label={`Fix: ${fix().text}`}
                         onClick={(e) => {
                           e.preventDefault();
                           go(fixHref(fix(), props.projectId));
                         }}
                       >
                         <text x={node.x + 10} y={node.y + 54} font-size="11" font-weight="600" fill="var(--color-accent-ink)" style={{ 'text-decoration': 'underline' }}>
-                          {`Fix: ${fix().text}`}
+                          <title>{`Fix: ${fix().text}`}</title>
+                          {fixShort(fix())}
                         </text>
                       </a>
                     )}

@@ -268,6 +268,22 @@ describe('buildMap: what is dashed, marked or unrouted', () => {
     expect(node(model, 'team:saas-notes').dashed).toBe(false);
   });
 
+  it('draws_a_team_that_only_a_profile_the_project_does_not_use_names_dashed_with_the_fix_in_the_Teams_settings', () => {
+    const unused = buildMap({
+      ...world().input,
+      teams: [...world().input.teams, team('elsewhere', { profiles: [{ agent_profile_id: 'far', name: 'far' }] } as Partial<TeamEntry>)],
+    });
+    const elsewhere = node(unused, 'team:elsewhere');
+    expect(elsewhere.dashed).toBe(true);
+    expect(elsewhere.fix).toEqual({ to: 'automation-teams', text: 'Settings → Automation → Teams' });
+    expect(elsewhere.reason).toContain('no role of this project uses it');
+  });
+
+  it('puts_a_member_under_its_team', () => {
+    expect(node(model, 'member:team:saas-notes:Lead').group).toBe('saas-notes');
+    expect(node(model, 'team:saas-notes').group).toBeNull();
+  });
+
   it('marks_the_default_profile_and_only_it', () => {
     expect(model.nodes.filter((n) => n.isDefault).map((n) => n.id)).toEqual(['profile:solo']);
     expect(node(model, 'profile:solo').sub).toContain('Default');
