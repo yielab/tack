@@ -81,6 +81,21 @@ export interface ExecutionSummary {
   agent_profile_id?: string | null;
   /** The agent the run asked for; null when it left that to the computer. */
   requested_harness_kind?: string | null;
+  /** The hop the run's newest attempt is in; null when its agent reports no hops (every agent but
+   *  docket) or the attempt has not reached its first one. Absent on a server that predates it. */
+  latest_hop?: LatestHop | null;
+}
+
+/** The latest hop event of a run's newest attempt, read by the server from its text. Match `role`
+ *  to a team's steps without regard to case, as `teamSteps.ts` does for the Execution tab. */
+export interface LatestHop {
+  /** The role as the event names it, its first letter upper case. */
+  role: string;
+  kind: 'started' | 'finished';
+  /** How a finished hop ended, in the event's words; null for one that has started. */
+  verdict: string | null;
+  /** The cycle a finished hop names; null when it names none (the first pass is not named). */
+  cycle: number | null;
 }
 
 /** One run that holds a slot of a full computer a queued request waits for. */
@@ -216,6 +231,12 @@ export const executionsApi = {
     const qs = params.toString();
     return requestWithHeaders<ExecutionListResult>(qs ? `/executions?${qs}` : '/executions');
   },
+  /** `GET /executions?project_id=`: every open run of the project (queued, running, waiting on a
+   *  person) and those that ended in the last 24 hours, one row per run, each with the step it is in
+   *  (`latest_hop`) and the tokens counted so far (`limit.used`). Unbounded by `limit`; an unknown
+   *  project is a 404. */
+  listByProject: (projectId: string) =>
+    requestWithHeaders<ExecutionListResult>(`/executions?project_id=${encodeURIComponent(projectId)}`),
   /** `GET /executions/{id}` is its own envelope — it carries `protocol_version`
    *  beside the summary fields, where the list carries it once around `data`.
    *  Projected to exactly `ExecutionSummary` here so a row and a single fetch

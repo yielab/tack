@@ -4113,6 +4113,7 @@ export interface components {
             cancellation_requested_at?: string | null;
             created_at: string;
             item_id: string;
+            latest_hop?: null | components["schemas"]["LatestHop"];
             /** @description The run's token limit and who applies it. */
             limit: components["schemas"]["RunLimit"];
             request_id: string;
@@ -4270,6 +4271,11 @@ export interface components {
         HashMap: {
             [key: string]: string;
         };
+        /**
+         * @description Whether a hop's latest event says it began or ended.
+         * @enum {string}
+         */
+        HopKind: "started" | "finished";
         /**
          * @description Median and p90 of a human wait, in minutes. The start of each wait is
          *     `viewed_at` when a human opened it, else `created_at`; the counts say which.
@@ -4436,6 +4442,28 @@ export interface components {
         ItemSource: "manual" | "github" | "linear" | "json_import" | "csv_import" | "unknown" | "plan" | "outline";
         ItemType: "epic" | "feature" | "task" | "subtask" | "bug" | "requirement" | {
             custom: string;
+        };
+        /**
+         * @description The step of a docket run an attempt is in, read from the text of its latest hop event so a
+         *     screen finds the step on the team's list without fetching the events.
+         */
+        LatestHop: {
+            /**
+             * Format: int64
+             * @description The cycle a finished hop names; null when it names none (the first pass is not named).
+             */
+            cycle?: number | null;
+            kind: components["schemas"]["HopKind"];
+            /**
+             * @description The role as the event names it (its first letter is upper case); match it to a team's
+             *     steps without regard to case.
+             */
+            role: string;
+            /**
+             * @description How the hop ended, in the event's words (`done` when it reported no verdict); null for a
+             *     hop that has started.
+             */
+            verdict?: string | null;
         };
         LinearImportRequest: {
             /** @description Linear personal API key (create at https://linear.app/settings/api). */
@@ -6308,6 +6336,12 @@ export interface operations {
             query?: {
                 item_id?: string;
                 /**
+                 * @description Every open run of the project (queued, running, waiting on a person) and those that ended
+                 *     in the last 24 hours, one row per run. An unknown project is a 404. Takes precedence over
+                 *     `item_id`/`limit`; `item_ids` takes precedence over it.
+                 */
+                project_id?: string;
+                /**
                  * @description Comma-separated item ids — returns exactly one row per id, its own
                  *     most recent execution. Takes precedence over `item_id`/`limit` when
                  *     present.
@@ -6322,7 +6356,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit` */
+            /** @description Execution requests, newest first. `item_ids` present: exactly one row per id that has at least one execution, the batch's own most recent one. Else `project_id` present: every run of the project that is not over, and those that ended in the last 24 hours. Else scoped to one item when `item_id` is given, otherwise every request the install has recorded up to `limit` */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6333,6 +6367,15 @@ export interface operations {
             };
             /** @description invalid_request (a malformed `item_ids` entry, or more ids than the route's cap) */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description not_found (`project_id` names no project) */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
