@@ -18,6 +18,7 @@ const TemplateCreator = lazy(() => import('../features/templates/TemplateCreator
 const ProjectSettings = lazy(() => import('../features/settings/ProjectSettings'));
 const GlobalSettings  = lazy(() => import('../features/settings/GlobalSettings'));
 const ItemPage      = lazy(() => import('../features/item-detail/ItemPage'));
+const ChangeSets    = lazy(() => import('../features/changesets/ChangeSetsPage'));
 const Agents        = lazy(() => import('../features/agents/AgentsPage'));
 
 /** Each route draws inside its own boundary, so one that fails leaves the shell and the rest of the app standing. */
@@ -46,6 +47,7 @@ export const routes: RouteDefinition[] = [
   { path: '/projects/:id/overview',   component: guarded(Dashboard) },
   { path: '/projects/:id/factory',    component: guarded(FactoryMetrics) },
   { path: '/projects/:id/settings',   component: guarded(ProjectSettings) },
+  { path: '/projects/:id/change-sets', component: guarded(ChangeSets) },
 
   // An item on a page of its own (the drawer's "Expand")
   { path: '/projects/:id/items/:itemId', component: guarded(ItemPage) },

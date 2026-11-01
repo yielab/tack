@@ -14,14 +14,32 @@ const projects = [{ id: 'p1', name: 'Fabulada' }] as unknown as Project[];
 
 interface Scenario {
   runs: Array<{ id: string; item: string; state: string; created: string; ended?: string; needsReview?: boolean; title?: string }>;
+  /** The change sets the project p1 answers for `status=waiting,partly`. */
+  changeSets?: Array<{ id: string; waiting: number; by?: string; reason?: string; created: string }>;
 }
 
 /** The three reads the inbox makes: the runs, an item for each, and a finished run's attempts. */
-function mockApi({ runs }: Scenario) {
+function mockApi({ runs, changeSets }: Scenario) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     const ok = (body: unknown) =>
       new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (url.endsWith('/projects')) return ok(projects);
+    if (url.includes('/projects/p1/change-sets')) {
+      return ok(
+        (changeSets ?? []).map((c) => ({
+          id: c.id,
+          project: 'p1',
+          created_at: c.created,
+          origin: 'mcp',
+          principal: 'agent:c1',
+          principal_name: c.by ?? null,
+          reason: c.reason ?? 'Because',
+          status: 'waiting',
+          ops: Array.from({ length: c.waiting + 1 }, (_, i) => ({ operation: { op: 'priority', item: 'x', priority: 'high' }, state: i === 0 ? 'applied' : 'waiting' })),
+        })),
+      );
+    }
     const attempts = /\/executions\/([^/]+)\/attempts/.exec(url);
     if (attempts) {
       const r = runs.find((x) => x.id === attempts[1]);
@@ -262,5 +280,44 @@ describe('Waiting for you', () => {
     toggle(c).click();
     await flush();
     expect(c.querySelector('input[type="password"]')).toBeNull();
+  });
+
+  it('counts the change sets that wait with the runs, lists them in a fourth group and opens the change sets page', async () => {
+    mockApi({
+      runs: [{ id: 'q', item: 'a', state: 'waiting_decision', created: minutesAgo(3), title: 'Pick a chart library' }],
+      changeSets: [
+        { id: 'cs1', waiting: 3, by: 'Planner credential', reason: 'Billing goes first', created: minutesAgo(20) },
+        { id: 'cs2', waiting: 1, created: minutesAgo(10) },
+      ],
+    });
+    const c = mount();
+    await settle();
+
+    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('3');
+    expect(badge(c).getAttribute('aria-label')).toBe('3 things are waiting for you');
+    expect(toggle(c).title).toContain('2 change sets to apply');
+    toggle(c).click();
+    await flush();
+
+    const rows = [...c.querySelectorAll('[data-testid="waiting-group-changes"] [data-testid="waiting-changeset"]')];
+    expect(rows).toHaveLength(2);
+    // Oldest first; an operation already decided does not count.
+    expect(rows[0].textContent).toContain('Planner credential proposes 3 changes');
+    expect(rows[0].textContent).toContain('Fabulada');
+    expect(rows[1].textContent).toContain('An agent proposes 1 change');
+    expect(rows[0].querySelector('[role="img"]')!.getAttribute('aria-label')).toBe('Needs you');
+    const open = rows[0].querySelector('a')!;
+    expect(open.textContent).toBe('Review the changes');
+    expect(open.getAttribute('href')).toBe('/projects/p1/change-sets?open=cs1');
+  });
+
+  it('shows no group for change sets when none wait', async () => {
+    mockApi({ runs: [], changeSets: [] });
+    const c = mount();
+    await settle();
+    toggle(c).click();
+    await flush();
+    expect(c.querySelector('[data-testid="waiting-group-changes"]')).toBeNull();
+    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('0');
   });
 });

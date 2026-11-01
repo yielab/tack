@@ -25,7 +25,7 @@ interface LayoutProps {
 
 const VIEW_LABELS: Record<string, string> = {
   board: 'Board', orchestration: 'Orchestration', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
-  overview: 'Overview', factory: 'Factory metrics', settings: 'Settings',
+  overview: 'Overview', factory: 'Factory metrics', 'change-sets': 'Change sets', settings: 'Settings',
 };
 
 // Views whose document-title label comes from the project vocabulary.

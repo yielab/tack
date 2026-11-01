@@ -12,7 +12,8 @@ import {
 import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from './destinations';
 import KbdHint from './KbdHint';
 import WaitingForYou from '../runWithAgent/WaitingForYou';
-import { sidebarRequests } from '../state/waiting';
+import { sidebarRequests, waitingChangeSetsOf } from '../state/waiting';
+import { changeSetsOffReason } from '../state/changeSets';
 import { useVocab } from '../vocab/useVocab';
 
 type Glyph = Component<IconProps>;
@@ -52,6 +53,31 @@ const NavButton: Component<{
     </A>
   );
 };
+
+/** A nav row that cannot be followed: it stays in the list and says why. */
+const OffRow: Component<{ icon: Glyph; label: string; reason: string; testid: string }> = (p) => (
+  <span
+    data-testid={p.testid}
+    aria-disabled="true"
+    title={p.reason}
+    style={{
+      width: '100%',
+      display: 'flex',
+      'align-items': 'center',
+      gap: '10px',
+      padding: '7px 12px',
+      'font-size': '0.875rem',
+      'font-weight': 500,
+      'margin-bottom': '2px',
+      cursor: 'not-allowed',
+      color: 'var(--color-text-tertiary)',
+    }}
+  >
+    <p.icon size={16} />
+    <span style={{ flex: 1, 'text-align': 'left' }}>{p.label}</span>
+    <span class="sr-only">{`. ${p.reason}`}</span>
+  </span>
+);
 
 const SectionLabel: Component<{ label: string }> = (p) => (
   <div style={{ padding: '6px 10px 4px' }}>
@@ -184,7 +210,20 @@ const Sidebar: Component = () => {
           </div>
 
           <For each={PROJECT_DESTINATIONS}>
-            {(d) => <NavButton href={d.path(currentProjectId() ?? '')} icon={d.icon} label={d.label(t)} onClick={close} />}
+            {(d) => {
+              const off = () =>
+                d.id === 'change-sets'
+                  ? changeSetsOffReason(projects()?.find((x) => x.id === currentProjectId()), waitingChangeSetsOf(currentProjectId() ?? ''))
+                  : null;
+              return (
+                <Show
+                  when={!off()}
+                  fallback={<OffRow testid={`nav-${d.id}-off`} icon={d.icon} label={d.label(t)} reason={off()!} />}
+                >
+                  <NavButton href={d.path(currentProjectId() ?? '')} icon={d.icon} label={d.label(t)} onClick={close} />
+                </Show>
+              );
+            }}
           </For>
 
           <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '10px 10px' }} />

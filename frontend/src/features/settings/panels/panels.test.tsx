@@ -448,7 +448,7 @@ describe('Settings panels', () => {
       await flush();
       await flush();
       const order = Array.from(container.querySelectorAll('[data-testid^="rung-"]')).map((e) => e.getAttribute('data-testid'));
-      expect(order).toEqual(['rung-ceiling', 'rung-teams', 'rung-start', 'rung-merge']);
+      expect(order).toEqual(['rung-ceiling', 'rung-teams', 'rung-start', 'rung-merge', 'rung-agents']);
     });
 
     it('the_start_switch_is_disabled_with_its_reason_while_no_role_has_a_profile', async () => {
@@ -741,7 +741,7 @@ describe('Settings panels', () => {
   });
 
   describe('The sections', () => {
-    const sectionIds = ['automation-who', 'automation-when', 'automation-merge', 'automation-limits'];
+    const sectionIds = ['automation-who', 'automation-when', 'automation-merge', 'automation-limits', 'automation-agents'];
     const section = (c: HTMLElement, id: string) => c.querySelector<HTMLElement>(`section[data-testid="${id}"]`)!;
 
     it('come_in_the_order_a_person_sets_them_up_after_the_ladder', async () => {
@@ -750,7 +750,7 @@ describe('Settings panels', () => {
       await flush();
       const all = Array.from(container.querySelectorAll('[data-testid="ladder"] section')).map((e) => e.getAttribute('data-testid'));
       expect(all).toEqual(['rung-ceiling', ...sectionIds]);
-      expect(sectionIds.map((id) => section(container, id).querySelector('h2')!.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits']);
+      expect(sectionIds.map((id) => section(container, id).querySelector('h2')!.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits', 'Agents']);
     });
 
     it('have_a_section_index_that_links_to_each', async () => {
@@ -758,7 +758,7 @@ describe('Settings panels', () => {
       await flush();
       await flush();
       const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('[data-testid="section-index"] a'));
-      expect(links.map((a) => a.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits']);
+      expect(links.map((a) => a.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits', 'Agents']);
       expect(links.map((a) => a.getAttribute('href'))).toEqual(sectionIds.map((id) => `#${id}`));
       expect(container.querySelector('[data-testid="section-index"]')!.className).toContain('lg:sticky');
     });
@@ -790,6 +790,78 @@ describe('Settings panels', () => {
       expect(line).toContain('2 000 000 tokens');
       expect(line).toContain('SWE-Effi');
       expect(container.textContent).not.toMatch(/USD|\$/);
+    });
+  });
+
+  describe('Agents on the board', () => {
+    const rungs = (c: HTMLElement) => Array.from(c.querySelectorAll<HTMLElement>('[data-testid="agents-rung"]'));
+    const withSetting = (setting: unknown) => {
+      (PROJECT as unknown as Record<string, unknown>).agents_on_board = setting;
+    };
+    afterEach(() => withSetting(undefined));
+
+    it('shows_the_four_levels_as_rungs_with_the_current_one_marked_and_a_line_each', async () => {
+      withSetting({ level: 'act', creates_per_change_set: 0, creates_per_day: 0 });
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const section = container.querySelector<HTMLElement>('section[data-testid="automation-agents"]')!;
+      expect(section.querySelector('h2')!.textContent).toBe('Agents');
+      expect(rungs(container).map((r) => r.getAttribute('data-level'))).toEqual(['read', 'propose', 'act', 'create']);
+      expect(rungs(container).map((r) => r.getAttribute('data-state'))).toEqual(['open', 'open', 'current', 'open']);
+      expect(rungs(container)[2].querySelector('[data-testid="agents-rung-mark"]')!.textContent).toBe('Set here');
+      expect(rungs(container)[1].textContent).toContain('Changes wait for you to apply them.');
+      expect(rungs(container)[2].textContent).toContain('Everything but new items applies by itself');
+      expect(rungs(container)[2].querySelector<HTMLInputElement>('input')!.checked).toBe(true);
+    });
+
+    it('saves_the_chosen_level_with_the_caps_it_already_had', async () => {
+      withSetting({ level: 'propose', creates_per_change_set: 5, creates_per_day: 20 });
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      rungs(container)[3].querySelector<HTMLInputElement>('input')!.click();
+      await flush();
+      expect(lastModelPatch()).toEqual({ agents_on_board: { level: 'create', creates_per_change_set: 5, creates_per_day: 20 } });
+    });
+
+    it('keeps_the_caps_off_until_create_and_says_they_start_at_zero', async () => {
+      withSetting({ level: 'act', creates_per_change_set: 0, creates_per_day: 0 });
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(withInput(container, 'New items per change set').disabled).toBe(true);
+      expect(withInput(container, 'New items per day').disabled).toBe(true);
+      expect(withInput(container, 'New items per day').value).toBe('0');
+      expect(container.querySelector('[data-testid="agents-caps-note"]')!.textContent).toContain('Create is off by default');
+    });
+
+    it('saves_each_cap_at_create_and_holds_it_inside_what_the_server_accepts', async () => {
+      withSetting({ level: 'create', creates_per_change_set: 0, creates_per_day: 0 });
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      const perSet = withInput(container, 'New items per change set');
+      expect(perSet.disabled).toBe(false);
+      perSet.value = '4';
+      perSet.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(lastModelPatch()).toEqual({ agents_on_board: { level: 'create', creates_per_change_set: 4, creates_per_day: 0 } });
+      const perDay = withInput(container, 'New items per day');
+      perDay.value = '999999';
+      perDay.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      expect(lastModelPatch().agents_on_board.creates_per_day).toBe(10000);
+      expect(container.querySelector('[data-testid="agents-caps-note"]')!.textContent).toContain('behaves like Act');
+    });
+
+    it('says_the_stricter_of_the_rung_and_the_credential_wins', async () => {
+      const { container } = mount(() => <AutomationPanel />);
+      await flush();
+      await flush();
+      expect(container.querySelector('[data-testid="agents-credential-wins"]')!.textContent).toContain('The stricter of this rung and an agent');
+      // A project saved before the setting existed reads as the default rung, Propose.
+      expect(rungs(container).map((r) => r.getAttribute('data-state'))).toEqual(['open', 'current', 'open', 'open']);
     });
   });
 
