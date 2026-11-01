@@ -94,9 +94,10 @@ Two-pane sprint planning. The tab and the words below follow your project's [voc
 Read-only project statistics, in the sidebar.
 
 - Tiles for the total number of items, how many are completed, the completion rate and what was completed in the last 7 and 30 days.
+- Once the project has run anything, a **Runs** row: a bar of the runs started in the last 7 days by outcome, with the count of each in words beside it; the number of items that need you now (a question to answer, or a run ready for review); and a link to **Factory metrics**. Each item counts once, by its latest run. **Tokens per team** is shown disabled, with the reason, because this page does not load the attempts the tokens are counted from.
 - A breakdown by workflow status, by priority and by item type, as bars.
 - Progress in story points (or your project's word for them), when items carry estimates.
-- Everything is computed from the items when you open the page.
+- Everything is computed when you open the page, from the items and each item's latest run.
 
 ---
 

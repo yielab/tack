@@ -1,8 +1,9 @@
-import { createResource, For, Show, createMemo } from 'solid-js';
-import { useParams, useNavigate } from '@solidjs/router';
+import { createEffect, createResource, For, Show, createMemo, onCleanup } from 'solid-js';
+import { A, useParams, useNavigate } from '@solidjs/router';
 import { api } from '../../shared/api';
 import { useProject } from '../../shared/state/projectContext';
-import { computeDashboardStats } from './computeStats';
+import { useExecutionStore } from '../../shared/state/executionContext';
+import { computeDashboardStats, computeRunStats, TOKENS_BY_TEAM_UNAVAILABLE, type RunOutcome, type RunStats } from './computeStats';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { Button, EmptyState, Skeleton } from '../../shared/ui';
 import { IconOverview } from '../../shared/ui/icons';
@@ -12,6 +13,16 @@ import type { JSX } from 'solid-js';
 import type { Priority } from '../../shared/types';
 import Card from '../../shared/ui/Card';
 
+/** The runs bar's segments, in the order the board lists its states. Colours are the run-state tokens. */
+const RUN_OUTCOMES: ReadonlyArray<{ id: RunOutcome; label: string }> = [
+  { id: 'done', label: 'Done' },
+  { id: 'review', label: 'Ready for review' },
+  { id: 'needs', label: 'Needs you' },
+  { id: 'running', label: 'Queued or running' },
+  { id: 'failed', label: 'Failed' },
+  { id: 'cancelled', label: 'Cancelled' },
+];
+
 export default function Dashboard() {
   const params = useParams();
   const projectId = params.id!;
@@ -20,10 +31,27 @@ export default function Dashboard() {
   const { project } = useProject();
   const { t } = useVocab();
   const [items] = createResource(() => api.items.list(projectId));
+  const executions = useExecutionStore();
+
+  // The runs row reads each item's latest run through the store the board fills, so the
+  // project's runs come in one batched request, the same one the board's cards use.
+  createEffect(() => {
+    const stops = (items() ?? []).map((item) => executions.watchItem(item.id));
+    onCleanup(() => stops.forEach((stop) => stop()));
+  });
 
   // Computed statistics (pure aggregation in computeStats.ts).
   const stats = createMemo(() =>
     computeDashboardStats(items() || [], project()?.workflow?.statuses || [], new Date()),
+  );
+
+  // The store holds every run any view has loaded, so only this project's items count.
+  const runStats = createMemo(() =>
+    computeRunStats(
+      items() || [],
+      [...executions.requests().values()].flatMap((record) => (record.summary ? [record.summary] : [])),
+      new Date(),
+    ),
   );
 
   const getStatusCategoryColor = (category: string) => {
@@ -94,6 +122,11 @@ export default function Dashboard() {
             {stats().throughput7} <span class="text-lg text-content-subtle">/ {stats().throughput30}</span>
           </StatTile>
         </div>
+
+        {/* Runs: hidden until the project has run anything, so a board that never ran has no empty row. */}
+        <Show when={runStats().withRuns > 0}>
+          <RunsRow stats={runStats()} projectId={projectId} />
+        </Show>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
           {/* Status Distribution */}
@@ -176,10 +209,97 @@ function typeBarColor(key: string): string {
   return fg === 'var(--color-text-secondary)' ? 'var(--color-text-tertiary)' : fg;
 }
 
-function StatTile(props: { label: string; accent?: boolean; sub?: JSX.Element; children: JSX.Element }) {
+/**
+ * The runs row: this week's runs as one bar with the count of each outcome in words beside it, what
+ * needs a person now, and tokens per team. That last tile is disabled with its reason, since the
+ * figure cannot be made from what this page loads. Factory metrics is linked from here, not merged in.
+ */
+function RunsRow(props: { stats: RunStats; projectId: string }) {
+  const week = () => props.stats.week;
+  const weekTotal = () => RUN_OUTCOMES.reduce((sum, outcome) => sum + week()[outcome.id], 0);
+  // The bar is a graphic, so its counts are spelled out for a screen reader.
+  const barLabel = () =>
+    weekTotal() === 0
+      ? 'Runs started in the last 7 days: none.'
+      : `Runs started in the last 7 days: ${RUN_OUTCOMES.filter((o) => week()[o.id] > 0)
+          .map((o) => `${week()[o.id]} ${o.label.toLowerCase()}`)
+          .join(', ')}.`;
+
+  return (
+    <section aria-labelledby="runs-heading" class="flex flex-col gap-2.5">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 id="runs-heading" class="text-lg text-content">Runs</h2>
+        <A
+          href={`/projects/${props.projectId}/factory`}
+          class="text-small font-semibold hover:underline focus:outline-none focus-visible:ring-2"
+          style={{ color: 'var(--color-accent-ink)' }}
+        >
+          Factory metrics
+        </A>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div
+          class="rounded-card px-5 py-4 flex flex-col gap-3 min-w-0 md:col-span-2 lg:col-span-2"
+          style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
+        >
+          <p class="text-xs font-bold" style={{ color: 'var(--color-text-secondary)' }}>
+            Runs started in the last 7 days
+          </p>
+          <div role="img" aria-label={barLabel()} class="flex h-2 w-full overflow-hidden rounded-full bg-app">
+            <For each={RUN_OUTCOMES}>
+              {(outcome) => (
+                <Show when={week()[outcome.id] > 0}>
+                  <div class="h-full" style={{ flex: week()[outcome.id], background: `var(--run-${outcome.id}-ink)` }} />
+                </Show>
+              )}
+            </For>
+          </div>
+          <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-small sm:grid-cols-3">
+            <For each={RUN_OUTCOMES}>
+              {(outcome) => (
+                <li class="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    class="h-2.5 w-2.5 flex-none rounded-full"
+                    style={{ background: `var(--run-${outcome.id}-ink)` }}
+                  />
+                  <span class="min-w-0 text-content" style={{ 'overflow-wrap': 'anywhere' }}>
+                    {outcome.label}
+                  </span>
+                  <span class="ml-auto text-content-muted">{week()[outcome.id]}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+          <p class="text-xs text-content-subtle">Each item counts once, by its latest run.</p>
+        </div>
+
+        <StatTile label="Needs you" sub="Questions to answer and runs ready for review, now">
+          {props.stats.needYou}
+        </StatTile>
+        <StatTile label="Tokens per team" unavailable sub={TOKENS_BY_TEAM_UNAVAILABLE}>
+          —
+        </StatTile>
+      </div>
+    </section>
+  );
+}
+
+function StatTile(props: {
+  label: string;
+  accent?: boolean;
+  /** A figure this page cannot make: the tile is shown disabled, and its `sub` says why. */
+  unavailable?: boolean;
+  sub?: JSX.Element;
+  children: JSX.Element;
+}) {
   return (
     <div
-      class="rounded-card px-5 py-[18px] flex flex-col gap-1.5"
+      class="rounded-card px-5 py-[18px] flex flex-col gap-1.5 min-w-0"
+      role={props.unavailable ? 'group' : undefined}
+      aria-label={props.unavailable ? props.label : undefined}
+      aria-disabled={props.unavailable ? 'true' : undefined}
       style={props.accent
         ? { 'background-color': 'var(--color-primary-600)', color: 'var(--color-on-accent)' }
         : { 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
@@ -190,11 +310,17 @@ function StatTile(props: { label: string; accent?: boolean; sub?: JSX.Element; c
       >
         {props.label}
       </p>
-      <p class="font-heading leading-none" style={{ 'font-size': '2.5rem' }}>
+      <p
+        class="font-heading leading-none"
+        style={{
+          'font-size': '2.5rem',
+          color: props.unavailable ? 'var(--color-text-tertiary)' : undefined,
+        }}
+      >
         {props.children}
       </p>
       <Show when={props.sub}>
-        <p class="text-xs text-content-subtle">{props.sub}</p>
+        <p class="text-xs text-content-subtle" style={{ 'overflow-wrap': 'anywhere' }}>{props.sub}</p>
       </Show>
     </div>
   );
