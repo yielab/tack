@@ -8,6 +8,8 @@ use tracing::instrument;
 use uuid::Uuid;
 use validator::Validate;
 
+use tack_app::change_sets::{self, Mode, Proposal};
+use tack_core::change_set::{CreateOp, ItemRef, Operation, Origin};
 use tack_core::models::{CreateItem, Item, ItemCard, ItemFilter, UpdateItem};
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_protocol::execution::StableErrorCode;
@@ -271,13 +273,36 @@ pub async fn update_item(
         .record_item_writer(item.id, &principal.label(), false)
         .await?;
 
+    let over_mcp = from_mcp.is_some_and(|axum::Extension(mark)| mark.0);
+    after_update(&state, &project, &item, &old_status, over_mcp).await;
+
+    let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
+    response.headers_mut().insert(
+        header::ETAG,
+        HeaderValue::from_str(&item_etag(id, version)).expect("etag is ascii"),
+    );
+    Ok(response)
+}
+
+/// Everything that follows a saved change to an item, the person's route and a change set's
+/// alike: the board's WebSocket and the webhook hear of it, a finished child may finish its
+/// parent, a closed recurring task makes the next one, a linked GitHub issue follows, and
+/// into Done the finished run is merged when the project asks for it. `over_mcp` says the
+/// change came over MCP, which the merge holds back for a person.
+pub(crate) async fn after_update(
+    state: &AppState,
+    project: &tack_core::models::Project,
+    item: &ItemCard,
+    old_status: &str,
+    over_mcp: bool,
+) {
     // Broadcast WebSocket event
     websocket::broadcast_event(
-        &state,
+        state,
         BoardEvent::ItemUpdated {
             project_id: item.project_id,
             item_id: item.id,
-            old_status: Some(old_status.clone()),
+            old_status: Some(old_status.to_owned()),
             new_status: item.status.clone(),
         },
     );
@@ -289,28 +314,27 @@ pub async fn update_item(
                 "event": "item.updated",
                 "timestamp": Utc::now().to_rfc3339(),
                 "project_id": item.project_id,
-                "item": &item,
+                "item": item,
             }),
         );
     }
 
     // Auto-propagate parent status when all siblings reach Done
-    propagate_parent_completion(&state, &item, &old_status).await;
+    propagate_parent_completion(state, item, old_status).await;
 
     // A recurring task that was just closed makes the next one.
-    create_next_recurrence(&state, &project.workflow, &item, &old_status).await;
+    create_next_recurrence(state, &project.workflow, item, old_status).await;
 
     // Push the open/closed state back to a linked GitHub issue.
-    maybe_sync_github(&state, &item, &old_status).await;
+    maybe_sync_github(state, item, old_status).await;
 
     // Into Done: merge the finished run when the project asks for it.
     if item.status != old_status
         && project.workflow.is_done_status(&item.status)
-        && !project.workflow.is_done_status(&old_status)
+        && !project.workflow.is_done_status(old_status)
     {
         // In the background: the move answers at once, and the merge (or why it
         // did not happen) lands on the item's activity.
-        let over_mcp = from_mcp.is_some_and(|axum::Extension(mark)| mark.0);
         let (app, item_id, project_id) = (
             state.clone(),
             item.id.to_string(),
@@ -328,13 +352,6 @@ pub async fn update_item(
             .await;
         });
     }
-
-    let mut response = Json(serde_json::to_value(item).unwrap()).into_response();
-    response.headers_mut().insert(
-        header::ETAG,
-        HeaderValue::from_str(&item_etag(id, version)).expect("etag is ascii"),
-    );
-    Ok(response)
 }
 
 /// When a task with a `recurrence` enters Done from a status that was not Done and
@@ -718,11 +735,6 @@ fn check_plan_links(subtasks: &[CreateSubtaskFromPlan]) -> Result<(), ApiError> 
     Ok(())
 }
 
-/// A name from the plan, or `None` when it is absent or blank.
-fn named(value: &Option<String>) -> Option<&str> {
-    value.as_deref().map(str::trim).filter(|v| !v.is_empty())
-}
-
 #[instrument(skip(state, input))]
 #[utoipa::path(
     post,
@@ -740,6 +752,7 @@ fn named(value: &Option<String>) -> Option<&str> {
 )]
 pub async fn create_subtasks_from_plan(
     State(state): State<AppState>,
+    axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
     Path(id): Path<Uuid>,
     Json(input): Json<CreateSubtasksFromPlanRequest>,
 ) -> ApiResult<Json<CreateSubtasksFromPlanResponse>> {
@@ -761,177 +774,63 @@ pub async fn create_subtasks_from_plan(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Item {id} not found")))?;
 
-    // Get project to find initial status from workflow
-    let project = state
-        .repo
-        .get_project(parent.project_id)
-        .await?
-        .ok_or_else(|| ApiError::NotFound(format!("Project {} not found", parent.project_id)))?;
-
-    let initial_status = project.workflow.initial_status().map_err(ApiError::Core)?;
-    let roles = state.repo.list_roles(parent.project_id).await?;
-    // Team name -> the profiles whose tool policy names it.
-    let mut profiles_by_team: std::collections::HashMap<String, Vec<String>> = Default::default();
-    let mut profile_ids: std::collections::HashSet<String> = Default::default();
-    for profile in tack_db::queries::agent_profiles::profiles_by_name(&state.repo).await? {
-        profile_ids.insert(profile.id.clone());
-        let policy: serde_json::Value =
-            serde_json::from_str(&profile.tool_policy).unwrap_or_default();
-        if let Some(team) = policy["docket"]["team"].as_str() {
-            profiles_by_team
-                .entry(team.to_owned())
-                .or_default()
-                .push(profile.id);
+    // The entries are a change set of creates under the parent, applied at once: the one path
+    // every change to the board goes through.
+    let operations = input
+        .subtasks
+        .iter()
+        .map(|entry| {
+            Operation::Create(CreateOp {
+                title: entry.title.clone(),
+                description: entry.description.clone(),
+                acceptance: entry.acceptance.clone(),
+                depends_on: entry.depends_on.iter().map(|&i| ItemRef::New(i)).collect(),
+                item_type: entry.item_type.clone(),
+                role: entry.role.clone(),
+                team: entry.team.clone(),
+                profile_id: entry.profile_id.clone(),
+                parent: Some(entry.parent.map_or(ItemRef::Existing(id), ItemRef::New)),
+            })
+        })
+        .collect();
+    let proposed = change_sets::propose(
+        &state.repo,
+        &tack_protocol::SystemClock,
+        Proposal {
+            project: parent.project_id,
+            principal: &principal,
+            origin: Origin::Run,
+            origin_ref: input.artifact_id.clone(),
+            reason: format!("The plan for \"{}\" was accepted", parent.title),
+            idempotency_key: None,
+            anchor: Some(id),
+            artifact_id: input.artifact_id.clone(),
+            operations,
+            mode: Mode::Now,
+        },
+    )
+    .await
+    .map_err(|error| match error {
+        tack_app::AppError::NotFound => {
+            ApiError::NotFound(format!("Project {} not found", parent.project_id))
         }
-    }
+        other => other.into(),
+    })?;
 
-    let mut created: Vec<CreatedSubtask> = Vec::new();
-
-    // Create each subtask, in list order
-    for subtask_input in &input.subtasks {
-        let mut unknown_type = None;
-        let item_type = match named(&subtask_input.item_type) {
-            None => parent.item_type.clone(),
-            Some(wanted) => match tack_core::outline::parse_item_type(wanted) {
-                Some(found)
-                    if !matches!(found, tack_core::models::ItemType::Custom(_))
-                        && project.vocabulary.contains_key(&found.to_string()) =>
-                {
-                    found
-                }
-                _ => {
-                    unknown_type = Some(wanted.to_owned());
-                    parent.item_type.clone()
-                }
-            },
-        };
-        let parent_id = subtask_input
-            .parent
-            .map_or(id, |index| created[index as usize].id);
-
-        // Create the item
-        let item = state
-            .repo
-            .create_item_with_source(
-                parent.project_id,
-                &initial_status,
-                CreateItem {
-                    title: subtask_input.title.clone(),
-                    description: subtask_input.description.clone(),
-                    item_type: Some(item_type),
-                    parent_id: Some(parent_id),
-                    source_artifact_id: input.artifact_id.clone(),
-                    ..Default::default()
-                },
-                tack_core::models::ItemSource::Plan,
-            )
-            .await?;
-
-        // Create brief with manual acceptance criteria
-        if !subtask_input.acceptance.is_empty() {
-            let mut acceptance = Vec::new();
-            for (i, text) in subtask_input.acceptance.iter().enumerate() {
-                let title = if text.len() > 60 {
-                    text[..60].to_string()
-                } else {
-                    text.clone()
-                };
-                acceptance.push(tack_core::models::AcceptanceCriterion::Manual {
-                    id: format!("m{}", i + 1),
-                    title,
-                    text: text.clone(),
-                    checked: false,
-                });
-            }
-
-            state
-                .repo
-                .upsert_item_brief(
-                    item.id,
-                    tack_core::models::UpsertItemBrief {
-                        acceptance,
-                        constraints: Vec::new(),
-                        definition_of_done: None,
-                        risk: None,
-                    },
-                )
-                .await?;
-        }
-
-        let mut unknown_role = None;
-        if let Some(wanted) = named(&subtask_input.role) {
-            match roles.iter().find(|r| r.name.eq_ignore_ascii_case(wanted)) {
-                Some(role) => state.repo.assign_role_to_item(item.id, role.id).await?,
-                None => unknown_role = Some(wanted.to_owned()),
-            }
-        }
-
-        // A profile named by id wins over the team; an id no profile has is reported, and the
-        // team, if any, is still tried.
-        let mut unknown_profile = None;
-        let mut chosen = None;
-        if let Some(wanted) = named(&subtask_input.profile_id) {
-            if profile_ids.contains(wanted) {
-                chosen = Some(wanted.to_owned());
-            } else {
-                unknown_profile = Some(wanted.to_owned());
-            }
-        }
-        let mut unresolved_team = None;
-        if chosen.is_none()
-            && let Some(wanted) = named(&subtask_input.team)
-        {
-            match profiles_by_team.get(wanted).map(Vec::as_slice) {
-                Some([profile_id]) => chosen = Some(profile_id.clone()),
-                _ => unresolved_team = Some(wanted.to_owned()),
-            }
-        }
-        if let Some(profile_id) = chosen {
-            let settings = tack_core::models::RunSettings {
-                agent_profile_id: Some(profile_id),
-                ..Default::default()
-            };
-            state
-                .repo
-                .update_item_atomically(
-                    item.id,
-                    UpdateItem {
-                        run_settings: Some(Some(settings)),
-                        ..UpdateItem::default()
-                    },
-                    &project.workflow,
-                    None,
-                )
-                .await?;
-        }
-
-        created.push(CreatedSubtask {
-            id: item.id,
-            title: item.title,
-            unknown_role,
-            unknown_type,
-            unresolved_team,
-            unknown_profile,
-        });
-    }
-
-    // Each entry is blocked by the entries it depends on.
-    for (idx, subtask_input) in input.subtasks.iter().enumerate() {
-        let blockers: std::collections::BTreeSet<u32> =
-            subtask_input.depends_on.iter().copied().collect();
-        for blocker in blockers {
-            state
-                .repo
-                .create_dependency(
-                    created[blocker as usize].id,
-                    tack_core::models::CreateDependency {
-                        target_item_id: created[idx].id,
-                        dependency_type: tack_core::models::DependencyType::Blocks,
-                    },
-                )
-                .await?;
-        }
-    }
+    let created = proposed
+        .change_set
+        .ops
+        .into_iter()
+        .filter_map(|op| op.result)
+        .map(|result| CreatedSubtask {
+            id: result.item.unwrap_or_default(),
+            title: result.title.unwrap_or_default(),
+            unknown_role: result.unknown_role,
+            unknown_type: result.unknown_type,
+            unresolved_team: result.unresolved_team,
+            unknown_profile: result.unknown_profile,
+        })
+        .collect();
 
     // Broadcast WebSocket event
     websocket::broadcast_event(

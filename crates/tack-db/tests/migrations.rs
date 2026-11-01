@@ -11,6 +11,8 @@ mod automation_tables;
 mod autonomy;
 #[path = "migrations/bridge_tables_dropped.rs"]
 mod bridge_tables_dropped;
+#[path = "migrations/change_sets.rs"]
+mod change_sets;
 #[path = "migrations/factory_loop_tables.rs"]
 mod factory_loop_tables;
 #[path = "migrations/item_recurrence.rs"]

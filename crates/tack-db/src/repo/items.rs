@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use tack_core::CoreError;
 use tack_core::models::{
-    CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, ItemType, UpdateItem,
+    CreateItem, DependencyType, Item, ItemCard, ItemFilter, ItemSource, ItemType, RunSettings,
+    UpdateItem,
 };
 use tack_core::outline::{PlannedParent, ResolvedOutline};
 use tack_core::workflow::{StatusCategory, StatusGate};
@@ -709,7 +710,7 @@ fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<Str
 
 /// The one `INSERT` every item-creating path shares, on whatever connection
 /// the caller holds — a pooled one, or a transaction's.
-async fn insert_item(
+pub(crate) async fn insert_item(
     conn: &mut SqliteConnection,
     project_id: Uuid,
     initial_status: &str,
@@ -814,6 +815,19 @@ impl Repository {
             .await?;
         Ok(())
     }
+}
+
+/// An item's run settings as stored, on the connection the caller holds.
+pub(crate) async fn run_settings_in(
+    conn: &mut SqliteConnection,
+    id: Uuid,
+) -> Result<Option<RunSettings>, StoreError> {
+    let stored: Option<Option<String>> =
+        sqlx::query_scalar("SELECT run_settings FROM items WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(&mut *conn)
+            .await?;
+    decode::optional_json("items", "run_settings", stored.flatten().as_deref())
 }
 
 /// The body of [`Repository::update_item_atomically`] over a transaction the caller opened with

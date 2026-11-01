@@ -179,6 +179,12 @@ The merge policy as one pure function. `Level` (`L3 < L4 < L5`), `Facts` (the tr
 
 ---
 
+### `change_set.rs`
+
+Change sets, the one way an agent changes a board (ADR 0034). `ChangeSet` is a list of `Operation`s (`create`, `who_does_it`, `priority`, `move`, `depend`, `comment`, `due`), each with its own `OpState` and, once applied, an `OpResult`. An operation names an item by an `ItemRef`: the position of a `create` earlier in the same set (a number in the JSON) or an id the board already has. `validate` walks the operations in the order they would apply (creates, then the rest, then the dependencies the creates ask for) against a `BoardView` the caller read from the store, with the workflow's own `admit_move` for statuses, transitions and WIP limits and the dependency graph for loops, and answers either how each operation resolves or every `Problem` at once. `decide` takes the project's `AgentsOnBoard` rung and the `ceiling_of` the credential's scopes and answers `Apply` or `Wait` per operation; an operation that needs a create that waits waits with it. `status_of` derives a set's status from its operations. All of it is pure.
+
+---
+
 ### `recurrence.rs` and `rate_card.rs`
 
 `recurrence::next_due` computes when the next copy of a repeating task is due, and `clone_for_next` builds it. `rate_card` prices a model's tokens against the operator's card, returning nothing for a model the card does not list.
@@ -303,6 +309,10 @@ checks it against a list, and the agent refuses one it does not know when the ru
 ### `runs/`
 
 One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, `submit_artifacts`, `report_events` and the rest of the runner-v1 operations. A use case is `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, <args>) -> Result<T, AppError>`: the caller reads the clock once at the edge, and the use case takes plain values and holds the rule a handler used to hold (idempotency keys, fencing checks, `validate_transition`). A handler in `tack-api` extracts, calls the use case, maps the error and responds. A test of a rule calls the use case directly on `setup_test_db()`, with no router.
+
+### `change_sets.rs`
+
+`propose` reads the board into a `BoardView`, validates the whole set (a set that fails is refused with every reason and kept nowhere), keeps it under its idempotency key (the same key on a project answers the first change set again), lets `decide` pick the operations that apply now and applies them with `Repository::apply_change_set`: one `BEGIN IMMEDIATE` transaction that re-reads the set, writes every operation through the same row-level functions the person's routes use (`insert_item`, `update_item_in` with the workflow as gate, `insert_dependency`) and records each operation's state and result, so a failure anywhere leaves nothing. `apply` (a person, all or some operations, with edits), `reject` and `edit_operation` finish the lifecycle. `Mode::Now` is a person's own plan: everything applies at once and the rung does not count it. A plan accepted from a run (`POST /api/items/{id}/subtasks-from-plan`) is a set of creates proposed in that mode, so the plan flow and an agent's proposal share one write path. The handlers in `tack-api` announce what changed to the WebSocket and run `after_update` for a move, as `update_item` does.
 
 ### `AppError`
 

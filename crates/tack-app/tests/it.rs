@@ -9,6 +9,7 @@ mod support;
 mod agent_credential;
 mod background;
 mod cancel_run;
+mod change_sets;
 mod claim;
 mod complete;
 mod create_decision;
