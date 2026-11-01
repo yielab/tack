@@ -11,7 +11,7 @@ and parent-auto-completion still apply** and the live board updates over WebSock
 `tack mcp` is a stdio sidecar: a subcommand the agent's client spawns, speaking newline-delimited
 JSON-RPC 2.0 over stdin and stdout, and reaching `tack serve` over HTTP with the same blocking
 `reqwest` client as every other CLI command. It adds no server-side attack surface. The protocol
-layer is hand-rolled (`crates/tack-cli/src/mcp.rs`), so no MCP SDK is linked into the CLI. The
+layer is hand-rolled (`crates/tack-cli/src/mcp.rs` and `mcp/`), so no MCP SDK is linked into the CLI. The
 server offers no HTTP or SSE MCP endpoint.
 
 ## Usage
@@ -128,6 +128,20 @@ create` (admin-ish setup, in the same spirit as
 `tack execution reconcile` (an operator's explicit, audited recovery decision
 after reviewing an ambiguous `needs_operator` state — not something an agent
 should be able to trigger on its own say-so).
+
+### How the tools are built
+
+Each tool is declared once, as one `Tool { name, spec, kind, handler }` value in the module of its
+domain under `crates/tack-cli/src/mcp/`: `items`, `projects`, `runs` (executions) or `fleet`
+(fleets and agent profiles). `spec` is the description and input schema `tools/list` advertises,
+`kind` is `Read` or `Write`, and `handler` is the function that validates the arguments and calls
+the API. `tools/list` and `tools/call` both read the table `TOOLS` in `mcp/tool.rs`, so a tool is
+listed exactly when it can be called. To add a tool, write its `Tool` and handler in its domain's
+module and add one line to `TOOLS`, which also fixes where it appears in `tools/list`; then add
+its row to the table above. Compact rows and the fence around card text live in
+`mcp/projection.rs`, and the fence itself is `tack_protocol::execution::fence_card_text`, the one
+every run is given. `mcp/tools_list.json` is what `tools/list` answers; a test compares the two,
+so a change to a tool's name, order or schema is made there on purpose.
 
 ## Security
 
