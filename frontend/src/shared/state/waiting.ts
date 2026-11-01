@@ -1,5 +1,7 @@
 import { createSignal, getOwner, onCleanup } from 'solid-js';
 import { request } from '../api/client';
+import { changeSets } from '../api/changeSets';
+import type { Project } from '../types';
 import { attemptsApi, executionsApi, type ExecutionSummary } from '../execution';
 import type { ItemDetail } from '../types';
 import type { RunStateName } from '../ui/RunState';
@@ -113,6 +115,7 @@ const [lookedAt, setLookedAt] = createSignal(Date.now());
 const [viewingSince, setViewingSince] = createSignal<number | null>(null);
 const [open, setOpen] = createSignal(false);
 const [sidebarAsks, setSidebarAsks] = createSignal(0);
+const [changeSetRows, setChangeSetRows] = createSignal<ChangeSetRow[]>([]);
 
 const since = () => viewingSince() ?? lookedAt();
 
@@ -122,7 +125,27 @@ export function rows(): WaitingRow[] {
   return WAITING_GROUPS.flatMap((g) => all.filter((r) => r.group === g.id));
 }
 
-export const waitingCount = () => rows().length;
+/** A change set that waits for a person: some of its operations are not decided. */
+export interface ChangeSetRow {
+  id: string;
+  projectId: string;
+  /** How many of its operations wait. */
+  operations: number;
+  /** The proposer's name when it is an agent credential. */
+  proposer: string | null;
+  reason: string;
+  /** When it was proposed. */
+  at: string;
+}
+
+/** The change sets waiting, oldest first: what an agent proposed that nobody has applied or turned down. */
+export const waitingChangeSets = (): ChangeSetRow[] => changeSetRows();
+
+/** How many change sets wait in one project. */
+export const waitingChangeSetsOf = (projectId: string): number => changeSetRows().filter((r) => r.projectId === projectId).length;
+
+/** Everything that waits on a person: runs to answer or review, failures, and change sets to apply. */
+export const waitingCount = () => rows().length + changeSetRows().length;
 
 /** The same three counts as the board's strip and Flow's summary: a question is Needs you, a run to review is Ready for review. */
 export const waitingTally = () =>
@@ -222,6 +245,49 @@ async function enrich(live: () => boolean): Promise<void> {
   if (more.length > 0) setItems((prev) => ({ ...prev, ...Object.fromEntries(more) }));
 }
 
+/** The change sets are read this many ticks apart: they change far less often than a run does. */
+const CHANGE_SET_EVERY = 5;
+const WAITING_STATES = ['waiting', 'partly'] as const;
+
+/** Reads every project's change sets that wait; a project that fails to answer keeps what it showed. */
+async function readChangeSets(live: () => boolean): Promise<void> {
+  try {
+    const projects = await request<Project[]>('/projects');
+    if (!Array.isArray(projects)) return;
+    const perProject = await Promise.all(
+      projects.map((p) =>
+        changeSets
+          .list(p.id, [...WAITING_STATES], 50)
+          .then((list) => ({ id: p.id, list: Array.isArray(list) ? list : [] }))
+          .catch(() => ({ id: p.id, list: null })),
+      ),
+    );
+    if (!live()) return;
+    const kept = changeSetRows().filter((r) => perProject.some((p) => p.id === r.projectId && p.list === null));
+    const fresh: ChangeSetRow[] = perProject.flatMap((p) =>
+      (p.list ?? []).map((cs) => ({
+        id: cs.id,
+        projectId: cs.project ?? p.id,
+        operations: cs.ops.filter((o) => (o.state ?? 'waiting') === 'waiting').length,
+        proposer: cs.principal_name ?? null,
+        reason: cs.reason,
+        at: cs.created_at,
+      })),
+    );
+    setChangeSetRows([...kept, ...fresh].sort((a, b) => a.at.localeCompare(b.at)));
+  } catch {
+    /* keep what is on screen: the next reading tries again */
+  }
+}
+
+let ticks = 0;
+
+/** Read the change sets again now, after one was applied or turned down. */
+export async function refreshChangeSets(): Promise<void> {
+  const mine = reading;
+  await readChangeSets(() => mine === reading);
+}
+
 let watchers = 0;
 let timer: ReturnType<typeof setInterval> | undefined;
 // Each time the reading starts afresh it gets a new object, so a read still in flight from the
@@ -239,6 +305,7 @@ async function tick(): Promise<void> {
     if (!live()) return;
     setRuns(res.data.data ?? []);
     await enrich(live);
+    if (ticks++ % CHANGE_SET_EVERY === 0) await readChangeSets(live);
   } catch {
     /* keep what is on screen: the next tick tries again */
   } finally {
@@ -255,6 +322,7 @@ export function useWaiting(): void {
   if (watchers === 0) {
     reading = {};
     ticking = false;
+    ticks = 0;
     const stored = readLooked();
     setLookedAt(stored ?? Date.now());
     if (stored === null) writeLooked(lookedAt());
@@ -273,6 +341,7 @@ export function useWaiting(): void {
         setRuns([]);
         setItems({});
         setEndedAt({});
+        setChangeSetRows([]);
       }
     });
   }

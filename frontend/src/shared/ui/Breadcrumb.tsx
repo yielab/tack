@@ -12,7 +12,7 @@ const LENS_LABELS: Record<string, string> = {
   board: 'Board', orchestration: 'Orchestration', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprints',
 };
 const DEST_LABELS: Record<string, string> = {
-  overview: 'Overview', settings: 'Settings',
+  overview: 'Overview', 'change-sets': 'Change sets', settings: 'Settings',
 };
 
 export default function Breadcrumb() {

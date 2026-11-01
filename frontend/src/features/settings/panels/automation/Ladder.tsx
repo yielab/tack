@@ -9,6 +9,7 @@ import Start from './Start';
 import Merge from './Merge';
 import Limits from './Limits';
 import Rungs from './Rungs';
+import AgentsOnBoard from './AgentsOnBoard';
 import { Section, inputStyle } from './parts';
 
 interface Props {
@@ -33,11 +34,12 @@ const SECTIONS = [
   { id: 'automation-when', label: 'When' },
   { id: 'automation-merge', label: 'Merge' },
   { id: 'automation-limits', label: 'Limits' },
+  { id: 'automation-agents', label: 'Agents' },
 ] as const;
 
 /**
- * The ladder graphic, then the four sections in the order a person sets them up: Who, When,
- * Merge, Limits. It owns what several of them share: the project's roles and its autonomy settings.
+ * The ladder graphic, then the five sections in the order a person sets them up: Who, When,
+ * Merge, Limits, Agents. It owns what several of them share: the project's roles and its autonomy settings.
  */
 const Ladder: Component<Props> = (props) => {
   const [roles, { refetch: refetchRoles }] = createResource(() => props.projectId, (id) => api.roles.list(id));
@@ -105,6 +107,9 @@ const Ladder: Component<Props> = (props) => {
           </Section>
           <Section id="automation-limits" title="Limits" lead="What the project may spend and queue, in tokens.">
             <Limits settings={settings} save={saveAutonomy} />
+          </Section>
+          <Section id="automation-agents" title="Agents" lead="How far an agent may go on this board.">
+            <AgentsOnBoard project={props.project} save={props.saveProject} />
           </Section>
         </div>
       </div>

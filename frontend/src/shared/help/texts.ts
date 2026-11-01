@@ -20,6 +20,7 @@ export const HELP = {
   acceptanceCriteria: { text: 'One sentence per thing that must be true when this is done. The agent reads them; a person checks them.', href: BOOK.items },
   ladderTeams: { text: 'Each role works with an agent profile, and the profile names the team that runs it. A task takes the profile of its role; one with no role takes the project default.', href: BOOK.automation },
   ladderStart: { text: 'When a task reaches the status you choose, Tack starts a run by itself, up to the number you set. It needs a profile to run with.', href: BOOK.automation },
+  ladderAgents: { text: 'How far an agent may go on this board: read only, propose changes for you to apply, apply some by itself, or create items too. The stricter of this rung and the agent\'s own credential wins.', href: BOOK.automation },
   ladderCeiling: { text: 'The most Tack can merge by itself here. A team that needs a person during a run keeps its tasks at L3 until it is fixed.', href: BOOK.automation },
   startedByItself: { text: 'Tack started this run on its own, because the task reached the status the project chose.', href: BOOK.automation },
   teamBadge: { text: 'The team that ran this task, named by the profile the run used.', href: BOOK.automation },

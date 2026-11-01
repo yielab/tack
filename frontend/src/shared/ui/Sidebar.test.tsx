@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import type { Resource } from 'solid-js';
-import { MemoryRouter, Route } from '@solidjs/router';
+import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import { ProjectContext, type ProjectContextValue } from '../state/projectContext';
 import Sidebar from './Sidebar';
 import { flush } from '../../test/flush';
@@ -87,5 +87,72 @@ describe('Sidebar: Waiting for you', () => {
     expect(c.textContent).toContain('Waiting for you');
     expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('0');
     expect(c.querySelector<HTMLButtonElement>('#waiting-toggle')!.title).toContain('Nothing is waiting for you');
+  });
+});
+
+/** The sidebar inside project p1, whose rung is `level`, with `waiting` change sets waiting in it. */
+function mountInProject(level: string, waiting: number) {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
+    const url = String(input);
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    if (url.includes('/executions')) return json({ protocol_version: 1, data: [] });
+    if (url.includes('/change-sets')) {
+      return json(
+        Array.from({ length: waiting }, (_, i) => ({
+          id: `cs${i}`, project: 'p1', created_at: '2026-10-31T10:00:00Z', origin: 'mcp', principal: 'agent:c1', reason: 'r', status: 'waiting',
+          ops: [{ operation: { op: 'priority', item: 'x', priority: 'high' }, state: 'waiting' }],
+        })),
+      );
+    }
+    if (url.endsWith('/projects')) {
+      return json([{ id: 'p1', name: 'My SaaS', agents_on_board: { level, creates_per_change_set: 0, creates_per_day: 0 } }]);
+    }
+    return json({});
+  }) as typeof fetch);
+  const history = createMemoryHistory();
+  history.set({ value: '/projects/p1/board' });
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const dispose = render(
+    () => (
+      <ProjectContext.Provider value={projectValue}>
+        <MemoryRouter history={history}>
+          <Route path="/projects/:id/board" component={Sidebar} />
+        </MemoryRouter>
+      </ProjectContext.Provider>
+    ),
+    container,
+  );
+  disposers.push(() => {
+    dispose();
+    container.remove();
+  });
+  return container;
+}
+
+describe('Sidebar: Change sets', () => {
+  it('links to the page when the project lets agents propose', async () => {
+    const c = mountInProject('propose', 0);
+    await settle();
+    const link = [...c.querySelectorAll('a')].find((a) => a.textContent === 'Change sets')!;
+    expect(link.getAttribute('href')).toBe('/projects/p1/change-sets');
+    expect(c.querySelector('[data-testid="nav-change-sets-off"]')).toBeNull();
+  });
+
+  it('shows the entry off, with its reason, when agents may only read and nothing waits', async () => {
+    const c = mountInProject('read', 0);
+    await settle();
+    const off = c.querySelector('[data-testid="nav-change-sets-off"]')!;
+    expect(off.getAttribute('aria-disabled')).toBe('true');
+    expect(off.textContent).toContain('Change sets');
+    expect(off.getAttribute('title')).toContain('Agents may only read in this project');
+    expect([...c.querySelectorAll('a')].some((a) => a.textContent === 'Change sets')).toBe(false);
+  });
+
+  it('turns the entry on at Read when a change set waits', async () => {
+    const c = mountInProject('read', 1);
+    await settle();
+    expect([...c.querySelectorAll('a')].some((a) => a.textContent === 'Change sets')).toBe(true);
+    expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('1');
   });
 });
