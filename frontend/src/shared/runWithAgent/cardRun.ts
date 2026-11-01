@@ -1,7 +1,7 @@
-import type { DocketRunWord, RunStateName } from '../../shared/ui';
-import type { ExecutionSummary } from '../../shared/execution';
+import type { DocketRunWord, RunStateName } from '../ui';
+import type { ExecutionSummary } from '../execution';
 
-// What the board says about each card's newest run, in the one run-state
+// What the board and the list say about each item's newest run, in the one run-state
 // language, and the counts and filters built from it. Kept apart from the
 // components so the mapping can be tested without mounting a board.
 
@@ -130,4 +130,14 @@ export function setAlwaysPriority(on: boolean): void {
   } catch {
     /* ignore — a convenience, not state */
   }
+}
+
+/** Each item's newest run, from the summaries the execution store holds. */
+export function newestRunByItem(summaries: Iterable<ExecutionSummary>): Map<string, ExecutionSummary> {
+  const newest = new Map<string, ExecutionSummary>();
+  for (const summary of summaries) {
+    const prior = newest.get(summary.item_id);
+    if (!prior || summary.created_at > prior.created_at) newest.set(summary.item_id, summary);
+  }
+  return newest;
 }

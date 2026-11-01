@@ -9,7 +9,7 @@ import { shortItemId } from '../shortItemId';
 // Work lenses (rendered under "Work"). `sprint` matches the singular `/sprint`
 // route and is relabelled via the project vocabulary.
 const LENS_LABELS: Record<string, string> = {
-  board: 'Board', list: 'List', table: 'Table', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprints',
+  board: 'Board', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprints',
 };
 const DEST_LABELS: Record<string, string> = {
   overview: 'Overview', settings: 'Settings',

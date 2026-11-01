@@ -303,7 +303,7 @@ project's start status, Tack starts it on its next look, so a repeating task can
 
 When Tack acts without you, it tells you in three places.
 
-**Badges** on the board, list and table:
+**Badges** on the board and the list:
 
 | Badge | Meaning |
 |---|---|

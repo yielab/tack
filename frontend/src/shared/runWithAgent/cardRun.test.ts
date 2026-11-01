@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardRun, countRuns, passesFilters, showsPriority, waitingCount, totalRuns, type RunFilter } from './boardRuns';
+import { cardRun, countRuns, passesFilters, showsPriority, waitingCount, totalRuns, type RunFilter } from './cardRun';
 
 const at = (state: string, cancelled: string | null = null) =>
   cardRun({ request_id: 'r', state, cancellation_requested_at: cancelled }, false);

@@ -1,6 +1,6 @@
 import type { Component } from 'solid-js';
 import {
-  IconBoard, IconList, IconTable, IconCalendar, IconTimeline, IconSprint,
+  IconBoard, IconList, IconCalendar, IconTimeline, IconSprint,
   IconOverview, IconProjects, IconTemplates, IconAgent, IconSettings, type IconProps,
 } from './icons';
 
@@ -25,7 +25,6 @@ export interface Destination {
 export const PROJECT_DESTINATIONS: Destination[] = [
   { id: 'board', label: () => 'Board', icon: IconBoard, path: (p) => `/projects/${p}/board` },
   { id: 'list', label: () => 'List', icon: IconList, path: (p) => `/projects/${p}/list` },
-  { id: 'table', label: () => 'Table', icon: IconTable, path: (p) => `/projects/${p}/table` },
   { id: 'calendar', label: () => 'Calendar', icon: IconCalendar, path: (p) => `/projects/${p}/calendar` },
   { id: 'timeline', label: () => 'Timeline', icon: IconTimeline, path: (p) => `/projects/${p}/timeline` },
   { id: 'sprint', label: (t) => t('sprint'), icon: IconSprint, path: (p) => `/projects/${p}/sprint` },

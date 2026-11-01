@@ -1,5 +1,5 @@
 import { lazy, type Component } from 'solid-js';
-import { useLocation } from '@solidjs/router';
+import { Navigate, useLocation, useParams } from '@solidjs/router';
 import type { RouteDefinition } from '@solidjs/router';
 import { Button, BrandMark, RouteBoundary } from '../shared/ui';
 import WorkLayout from './WorkLayout';
@@ -7,7 +7,6 @@ import WorkLayout from './WorkLayout';
 const Projects      = lazy(() => import('../features/projects/Projects'));
 const Board         = lazy(() => import('../features/board/Board'));
 const List          = lazy(() => import('../features/list/List'));
-const Table         = lazy(() => import('../features/table/Table'));
 const Dashboard     = lazy(() => import('../features/dashboard/Dashboard'));
 const FactoryMetrics = lazy(() => import('../features/dashboard/FactoryMetrics'));
 const Sprints       = lazy(() => import('../features/sprints/Sprints'));
@@ -27,6 +26,13 @@ const guarded = (Page: Component): Component => (props) => (
   </RouteBoundary>
 );
 
+/** The Table view became the List; a link or bookmark to it opens the List. */
+function RedirectToList() {
+  const params = useParams();
+  const location = useLocation();
+  return <Navigate href={`/projects/${params.id}/list${location.search}`} />;
+}
+
 export const routes: RouteDefinition[] = [
   { path: '/',         component: guarded(Projects) },
   { path: '/projects', component: guarded(Projects) },
@@ -43,14 +49,14 @@ export const routes: RouteDefinition[] = [
   // An item on a page of its own (the drawer's "Expand")
   { path: '/projects/:id/items/:itemId', component: guarded(ItemPage) },
 
-  // Work surface — all 5 lenses wrapped in WorkLayout
+  // Work surface — all the lenses wrapped in WorkLayout
   {
     path: '/projects/:id',
     component: guarded(WorkLayout),
     children: [
       { path: '/board',    component: guarded(Board) },
       { path: '/list',     component: guarded(List) },
-      { path: '/table',    component: guarded(Table) },
+      { path: '/table',    component: RedirectToList },
       { path: '/calendar', component: guarded(Calendar) },
       { path: '/timeline', component: guarded(Timeline) },
       { path: '/sprint',   component: guarded(Sprints) },

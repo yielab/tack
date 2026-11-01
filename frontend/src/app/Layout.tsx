@@ -24,7 +24,7 @@ interface LayoutProps {
 }
 
 const VIEW_LABELS: Record<string, string> = {
-  board: 'Board', list: 'List', table: 'Table', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
+  board: 'Board', list: 'List', calendar: 'Calendar', timeline: 'Timeline', sprint: 'Sprint',
   overview: 'Overview', factory: 'Factory metrics', settings: 'Settings',
 };
 

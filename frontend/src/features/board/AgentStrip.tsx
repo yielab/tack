@@ -1,6 +1,6 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, type RunStateName } from '../../shared/ui';
-import { filterOf, totalRuns, waitingCount, type RunCounts, type RunFilter } from './boardRuns';
+import { filterOf, totalRuns, waitingCount, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
 
 /** The words for each state, as the board prints them next to a count. */
 export const RUN_STATE_WORDS: Record<RunStateName, string> = {
