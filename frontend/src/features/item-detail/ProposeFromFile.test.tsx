@@ -93,7 +93,7 @@ describe('ProposeFromFile', () => {
     expect(container.textContent).toContain('This file proposes 2 items');
     expect(posts.length).toBe(0);
 
-    Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Create selected')!.click();
+    Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Create 2 items')!.click();
     await settle();
 
     expect(posts.length).toBe(1);
@@ -102,4 +102,46 @@ describe('ProposeFromFile', () => {
     expect(posts[0].body.subtasks[1]).toMatchObject({ title: 'Second', depends_on: [0], parent: 0, role: 'Backend' });
     expect(container.textContent).toContain('Created 2 items');
   });
+
+  it('a_dropped_file_opens_the_same_panel', async () => {
+    routeFetch({ created: [] }, []);
+    const container = mount();
+    await drop(container, JSON.stringify(VALID));
+
+    expect(container.querySelector('[data-testid="plan-panel"]')).not.toBeNull();
+    expect(container.textContent).toContain('This file proposes 2 items');
+  });
+
+  it('a_dropped_file_that_does_not_fit_names_the_entry_and_why', async () => {
+    routeFetch({ created: [] }, []);
+    const container = mount();
+    const bad = { v: '1', subtasks: [{ title: 'First', description: '' }, { title: 'Expose', description: '', depends_on: [6] }] };
+    await drop(container, JSON.stringify(bad));
+
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('Entry 2 ("Expose")');
+    expect(alert?.textContent).toContain('"depends_on" names entry 7');
+    expect(container.querySelector('[data-testid="plan-panel"]')).toBeNull();
+  });
+
+  it('the_drop_zone_shows_a_dashed_border_while_a_file_is_over_it', async () => {
+    routeFetch({ created: [] }, []);
+    const container = mount();
+    const zone = container.querySelector<HTMLElement>('input[type="file"]')!.parentElement!.parentElement!;
+    const resting = zone.getAttribute('style');
+    zone.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+    await flush();
+    expect(zone.getAttribute('style')).not.toBe(resting);
+    expect(zone.getAttribute('style')).toContain('dashed');
+  });
 });
+
+/** Drops a file on the drop zone, the way the browser does when a person drags one onto it. */
+async function drop(container: HTMLElement, text: string, name = 'tack-plan.json') {
+  const target = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const file = new File([text], name, { type: 'application/json' });
+  const event = new Event('drop', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'dataTransfer', { value: { files: [file] } });
+  target.dispatchEvent(event);
+  await settle();
+}

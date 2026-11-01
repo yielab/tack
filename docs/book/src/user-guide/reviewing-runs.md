@@ -68,15 +68,18 @@ Planner and the Researcher write one file only, the plan file `tack-plan.json`. 
 changes any other file ends **Failed** with the reason "This run was meant only to write a plan, but it also
 changed:" and the names of the files, so a change nobody asked for is never accepted by default; the changes
 are still there to look at. The
-attempt shows **The Planner proposes N items**, with one row per item. Each row has a checkbox, and its
-title, description and acceptance criteria can be edited. Its **Type** and **Role** can be changed, and
-**Who does it** names the team that will do the item once it is created. **Waits on** names the items it
-must wait for. An item nested under another is unticked when its parent is unticked. Nothing is created
-until you press **Create selected**, so no agent writes to your board on its own.
+attempt shows **The Planner proposes N items**, with one row per item and a line that counts them: items,
+sub-items and dependencies. An item that belongs under another is nested beneath it, and it is unticked when
+its parent is unticked. Each row has a checkbox, and its title, description and acceptance criteria can be
+edited. Its **Type** and **Role** can be changed, and **Who does it** names the team that will do the item
+once it is created. **Waits on** lists the titles of the items it must wait for, each with a × to remove it,
+and a menu to add another. **Select all** and **Select none** tick every item at once. Nothing is created
+until you press the button, which says how many it will create (**Create 3 items**), so no agent writes to
+your board on its own.
 
 To propose items from a file, open the item and choose **Propose items from a file** in its **⋯** menu.
-Choose a `tack-plan.json`. Tack checks it and names the first entry that does not fit, and why. A file that
-fits opens the same list.
+Choose a `tack-plan.json`, or drop it on the section. Tack checks it and names the first entry that does not
+fit, and why. A file that fits opens the same list.
 
 After you create the items, they appear as links. Under them, Tack says what it could not fill: a role or a
 type the project does not have, or a team that no single profile names. Such an item is created without that
