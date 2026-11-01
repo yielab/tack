@@ -809,8 +809,16 @@ describe('AttemptList', () => {
       route({ decisions: [PENDING] });
       const c = mountFull(attempt({ state: 'waiting_decision', ended_at: null }));
       await settle();
-      expect(sections(c)).toEqual(['needs', 'steps', 'technical']);
+      expect(sections(c)).toEqual(['needs', 'steps', 'files', 'technical']);
       expect(c.querySelector('[data-section="needs"]')!.textContent).toContain('Run `rm -rf build`?');
+    });
+
+    it('a run that is still going lists the files it has left so far', async () => {
+      route({ artifacts: [art('a1', 'evidence', 'notes.md')] });
+      const c = mountFull(attempt({ state: 'running', ended_at: null }));
+      await settle();
+      const files = c.querySelector('[data-section="files"]')!;
+      expect(files.textContent).toContain('notes.md');
     });
 
     it('the decision token is asked for inside Needs you only, never on a run that asked nothing', async () => {
