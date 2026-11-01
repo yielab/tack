@@ -559,9 +559,10 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 />
               </Show>
               <Show when={kind() === 'merged' || kind() === 'done'}>{open('See what it did')}</Show>
-              {/* Starting another run stays possible from every state, drawn as the quietest button
-                  when something else is what to do now. */}
-              <Show when={primary() !== 'again'}>{runAgain('ghost')}</Show>
+              {/* Another run is possible from every state that is not in flight, drawn as the quietest
+                  button when something else is what to do now. A queued or running run (or one waiting
+                  for an answer) is the run; a second one beside it would only compete. */}
+              <Show when={primary() !== 'again' && kind() !== 'queued' && kind() !== 'running'}>{runAgain('ghost')}</Show>
             </div>
 
             <Show when={finished() && !noChange() && kind() !== 'failed' && !isMerged() && attempt()?.merge}>
