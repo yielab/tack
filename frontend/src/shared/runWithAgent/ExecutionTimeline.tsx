@@ -26,6 +26,9 @@ export interface ExecutionTimelineProps {
   runId?: string;
   /** Called with the request id of the run a chip picks or a new run starts, so the address can name it. */
   onRunChange?: (requestId: string | undefined) => void;
+  /** The item's Now panel is on screen above this tab. It says the latest run's state, limit and token
+   *  meter, so that run's section leaves them out and keeps only what Now does not say. */
+  nowShown?: boolean;
 }
 
 /**
@@ -116,6 +119,7 @@ const ExecutionTimeline: Component<ExecutionTimelineProps> = (props) => {
                       itemTitle={props.itemTitle}
                       projectId={props.projectId}
                       number={a().number}
+                      nowShown={props.nowShown && a().number === numbered()[0]?.number}
                       layout={props.layout}
                       sideTarget={side()}
                       onCreated={pick}
@@ -153,6 +157,8 @@ const RequestRow: Component<{
   itemTitle?: string;
   projectId?: string;
   number: number;
+  /** Now says this run's state and limit: this section does not say them again. */
+  nowShown?: boolean;
   layout?: 'drawer' | 'page';
   sideTarget?: HTMLElement;
   onCreated: (requestId: string) => void;
@@ -264,7 +270,7 @@ const RequestRow: Component<{
   });
 
   return (
-    <section data-testid="run" class="space-y-4 rounded-card p-5" style={{ 'background-color': 'var(--color-bg-panel)' }}>
+    <section data-testid="run" class="min-w-0 space-y-4 border-t pt-5" style={{ 'border-color': 'var(--color-border-light)' }}>
       <div class="flex flex-wrap items-center gap-2">
         <h3 class="font-heading text-lg" style={{ color: 'var(--color-text-primary)' }}>Run {props.number}</h3>
         <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -286,6 +292,7 @@ const RequestRow: Component<{
 
       {/* The run's one state, announced politely as it changes; the attempt's own words come under it
           when the banner's say less. */}
+      <Show when={!props.nowShown || !status().known}>
       <div role="status" aria-live="polite" class="min-w-0 space-y-1">
         <Show
           when={status().known}
@@ -304,8 +311,9 @@ const RequestRow: Component<{
           </Show>
         </Show>
       </div>
+      </Show>
 
-      <Show when={state() === 'queued' && summary()?.waiting_reason}>
+      <Show when={!props.nowShown && state() === 'queued' && summary()?.waiting_reason}>
         {(why) => (
           <p data-testid="run-waiting" class="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             Waiting: {why()}
@@ -315,7 +323,7 @@ const RequestRow: Component<{
           </p>
         )}
       </Show>
-      <Show when={state() === 'failed' && summary()?.waiting_reason}>
+      <Show when={!props.nowShown && state() === 'failed' && summary()?.waiting_reason}>
         {(why) => (
           <p data-testid="run-failure-reason" class="text-xs" style={{ color: 'var(--color-danger-600)' }}>
             {why()}
@@ -323,7 +331,7 @@ const RequestRow: Component<{
         )}
       </Show>
 
-      <Show when={summary()?.limit}>
+      <Show when={!props.nowShown && summary()?.limit}>
         {(limit) => (
           <RunLimitNote
             limit={limit()}
@@ -337,7 +345,7 @@ const RequestRow: Component<{
         )}
       </Show>
 
-      <Show when={needsAPerson(latestAttempt())}>
+      <Show when={!props.nowShown && needsAPerson(latestAttempt())}>
         <RerunAtL3 attempt={latestAttempt()!} itemId={props.itemId} itemTitle={props.itemTitle} projectId={props.projectId} onCreated={props.onCreated} />
       </Show>
 
@@ -388,6 +396,7 @@ const RequestRow: Component<{
             runAgain={runAgain}
             layout={props.layout}
             sideTarget={props.sideTarget}
+            nowShown={props.nowShown}
             onReviewed={() => {
               const id = summary()?.request_id;
               if (id) void store.loadAttempts(id).catch(() => undefined);

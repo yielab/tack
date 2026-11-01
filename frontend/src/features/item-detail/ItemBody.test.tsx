@@ -131,12 +131,12 @@ describe('ItemBody', () => {
     dispose();
   });
 
-  it('the Execution tab carries the latest run state as a dot with a label, and Run again exists once', async () => {
+  it('the Execution tab carries the latest run state as a dot with a label, and no Run again is offered beside a live run', async () => {
     runs = [RUN];
     const { container, dispose } = await mount('drawer');
     const tab = [...container.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.startsWith('Execution'))!;
     expect(tab.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Running');
-    expect([...container.querySelectorAll('button')].filter((b) => b.textContent === 'Run again')).toHaveLength(1);
+    expect([...container.querySelectorAll('button')].filter((b) => b.textContent === 'Run again')).toHaveLength(0);
     dispose();
   });
 

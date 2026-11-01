@@ -56,6 +56,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- The Execution tab no longer says a run twice when the item's Now panel is above it: the newest run leaves out its state banner, waiting or failure reason, token limit and meter (Now has them), and the run, its attempt and its Usage fold are a heading and a hairline instead of a card inside a card.
 - A board card whose run is ready for review offers **Review and merge** (it opens the Execution tab) instead of the play button, and the item's Now panel no longer offers **Run again** while the run is queued, running or waiting for an answer.
 - **Ready for review** is violet in every palette; in the harbor palette it used the coral accent, the same red as Failed and the Bug chip.
 - On the board, the first counter of the run strip is now called **Your turn** (runs that need you plus runs ready for review) so it no longer reads as a synonym of **Needs you**; the sidebar's **Waiting for you** count uses the same amber as **Needs you** and has its own icon; and a column's run bar sits under its name, so a long column name is no longer cut.
