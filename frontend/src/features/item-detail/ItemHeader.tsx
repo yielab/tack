@@ -1,5 +1,7 @@
 import { type Component, type JSX, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
+import { A } from '@solidjs/router';
 import { TypeBadge, typeKey } from '../../shared/ui';
+import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
 import type { Item, UpdateItem } from '../../shared/types';
@@ -19,6 +21,17 @@ export interface ItemHeaderProps {
 const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const { workflow } = useProject();
   const vocab = useVocab();
+  // The project's items name the parent and the sub-items; without them (a screen with no list loaded) the header names nobody.
+  const projectItems = (() => {
+    try {
+      return useProjectItems().items;
+    } catch {
+      return () => undefined;
+    }
+  })();
+  const parent = () => (props.item.parent_id ? projectItems()?.find((i) => i.id === props.item.parent_id) : undefined);
+  const children = () => projectItems()?.filter((i) => i.parent_id === props.item.id) ?? [];
+  const href = (id: string) => `/projects/${props.item.project_id}/items/${id}`;
 
   // Title is locally mirrored so it commits on blur / Enter, not every keypress.
   const [title, setTitle] = createSignal(props.item.title);
@@ -119,10 +132,32 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         </For>
       </div>
 
-      <Show when={props.item.parent_id}>
-        <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-          Has a parent item (re-parenting arrives with the tree view).
-        </p>
+      <Show when={parent()}>
+        {(p) => (
+          <p data-testid="item-parent" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            Part of:{' '}
+            <A href={href(p().id)} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
+              {p().title}
+            </A>
+          </p>
+        )}
+      </Show>
+      <Show when={children().length > 0}>
+        <div data-testid="item-children" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          <span>Sub-items:</span>
+          <ul class="mt-0.5 flex flex-col gap-0.5">
+            <For each={children()}>
+              {(c) => (
+                <li class="min-w-0">
+                  <A href={href(c.id)} class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>
+                    {c.title}
+                  </A>
+                  <span style={{ color: 'var(--color-text-tertiary)' }}> · {c.status}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
       </Show>
     </div>
   );
