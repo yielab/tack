@@ -14,6 +14,165 @@
     "version": "0.2.0-beta.1"
   },
   "paths": {
+    "/api/agent-credentials": {
+      "get": {
+        "tags": [
+          "agent-credentials"
+        ],
+        "summary": "GET /api/agent-credentials",
+        "operationId": "list_credentials",
+        "responses": {
+          "200": {
+            "description": "Every credential, the newest first; never a secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentCredential"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "agent-credentials"
+        ],
+        "summary": "POST /api/agent-credentials",
+        "operationId": "issue_credential",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueCredential"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Issued; the secret is in this answer only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The name or a scope is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another credential not revoked has that name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-credentials/{id}/revoke": {
+      "post": {
+        "tags": [
+          "agent-credentials"
+        ],
+        "summary": "POST /api/agent-credentials/{id}/revoke",
+        "operationId": "revoke_credential",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Credential ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked for good",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCredential"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-credentials/{id}/rotate": {
+      "post": {
+        "tags": [
+          "agent-credentials"
+        ],
+        "summary": "POST /api/agent-credentials/{id}/rotate",
+        "operationId": "rotate_credential",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Credential ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A new secret, valid ninety days; the old one stops working",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedCredential"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such credential, or it was revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/agent-profiles": {
       "get": {
         "tags": [
@@ -7346,6 +7505,55 @@
           }
         }
       },
+      "AgentCredential": {
+        "type": "object",
+        "description": "An agent credential as Tack shows it: never the secret, never its hash.",
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_used_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string",
+            "description": "What a comment or a change of this credential's is signed with."
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            }
+          }
+        }
+      },
       "AgentProfileListResponse": {
         "type": "object",
         "required": [
@@ -8701,6 +8909,16 @@
           }
         }
       },
+      "Capability": {
+        "type": "string",
+        "description": "What a principal may do inside a project.",
+        "enum": [
+          "read",
+          "propose",
+          "act",
+          "converse"
+        ]
+      },
       "CodeOrigin": {
         "type": "string",
         "enum": [
@@ -8744,6 +8962,13 @@
           "item_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "principal": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The principal that wrote it (`operator:...`, `agent:<credential id>`); `None` for a comment\nwritten before callers were recorded, or by Tack itself."
           },
           "updated_at": {
             "type": "string",
@@ -9776,6 +10001,15 @@
           }
         }
       },
+      "CredentialState": {
+        "type": "string",
+        "description": "What a credential is in now: only an active one authenticates.",
+        "enum": [
+          "active",
+          "expired",
+          "revoked"
+        ]
+      },
       "CustomFieldDefinition": {
         "type": "object",
         "required": [
@@ -10057,6 +10291,13 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "created_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who made the link: `operator`, or the name of the agent credential; `None` when it was not\nrecorded."
           },
           "dependency_type": {
             "$ref": "#/components/schemas/DependencyType"
@@ -10882,6 +11123,44 @@
           }
         }
       },
+      "IssueCredential": {
+        "type": "object",
+        "description": "What issues a credential.",
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What the agent's comments and changes are signed with."
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Scope"
+            },
+            "description": "The projects and capabilities the credential holds."
+          }
+        }
+      },
+      "IssuedCredential": {
+        "type": "object",
+        "description": "A credential together with its secret, which is shown this once and never again.",
+        "required": [
+          "credential",
+          "secret"
+        ],
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/AgentCredential"
+          },
+          "secret": {
+            "type": "string",
+            "description": "`tack_agent_...`; Tack keeps only its hash."
+          }
+        }
+      },
       "Item": {
         "type": "object",
         "required": [
@@ -11154,6 +11433,13 @@
           {
             "type": "object",
             "properties": {
+              "created_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Who created the item through the API: `operator`, or the name of the agent credential.\n`None` for an item made before callers were recorded, or by Tack itself."
+              },
               "merge_note": {
                 "type": [
                   "string",
@@ -11185,6 +11471,13 @@
                   "null"
                 ],
                 "description": "The docket team named by the newest request's resolved profile, else `None`."
+              },
+              "updated_by": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Who last changed the item through the API, in the same words as `created_by`."
               }
             }
           }
@@ -12960,6 +13253,33 @@
           }
         }
       },
+      "Scope": {
+        "type": "object",
+        "description": "A set of projects times a set of capabilities.",
+        "required": [
+          "capabilities"
+        ],
+        "properties": {
+          "all_projects": {
+            "type": "boolean",
+            "description": "True: every project, including the ones made after the scope was granted. `projects`\nis then ignored."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Capability"
+            }
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "The projects the scope names when `all_projects` is false."
+          }
+        }
+      },
       "SectionSummary": {
         "type": "object",
         "description": "What one section of the file will do, for the preview.",
@@ -14492,6 +14812,10 @@
     {
       "name": "roles",
       "description": "Roles / specialties and their assignment to items."
+    },
+    {
+      "name": "agent-credentials",
+      "description": "Keys the operator hands to agents: each holds scopes (projects times what it may do), is stored hashed, expires after 90 days and is revoked here."
     },
     {
       "name": "teams",

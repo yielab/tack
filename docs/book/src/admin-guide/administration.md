@@ -2,7 +2,7 @@
 
 This page is for the person who decides who can reach Tack and how it is protected. After reading it you can set the API token, choose the allowed origins, expose Tack safely on a network, turn on cloud backup and webhooks, and set the log options.
 
-Tack has no identity model: there are no user accounts, no sessions, and no per-user permissions. `assignee` is a free-text label on an item, not an account, and anyone can type any name into it. Every request that authenticates at all authenticates as the same single operator, via one shared token. Tack is built for one operator, or a small team willing to share that one secret, not for telling users apart.
+Tack has no identity model: there are no user accounts, no sessions, and no per-user permissions. `assignee` is a free-text label on an item, not an account, and anyone can type any name into it. Every person who authenticates is the same single operator, via one shared token. Tack is built for one operator, or a small team willing to share that one secret, not for telling users apart. The one other kind of caller is an agent you hand a key to: an [agent credential](#agent-credentials), which is a key for software and not an account for a person.
 
 Tack is local-first by default. It binds to `127.0.0.1`, keeps everything in a single SQLite file, and on that loopback bind it creates a token of its own and requires it. This page covers what you set when you go beyond that: choosing the token, controlling network exposure, enabling cloud backups, wiring up webhooks, and tuning logs. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration.md) for how those are loaded.
 
@@ -45,6 +45,27 @@ The other end of the connection finds the token like this:
 The token value is never written to logs. Use a long, random string and rotate it by restarting with a new value. For what else stands between a web page and your board (the `Host` rule and the cross-site rule), see [What the Agent Can Reach](what-the-agent-can-reach.md#who-can-talk-to-the-board).
 
 ---
+
+## Agent credentials
+
+An agent that uses Tack on its own, for example through `tack mcp`, should not hold the operator's token: with it the agent is you, can read and change every project, and its changes look like yours. Give it a credential instead. Open **Settings**, find **Agent credentials**, give the credential a name, choose the projects it may reach (or **Every project**, which also covers projects made later) and tick what it may do:
+
+| It may | What that lets the agent do |
+|---|---|
+| **Read** | See the project, its items, comments, dependencies and roles, and the list of teams. |
+| **Act** | Create items and change them, add comments, add and remove dependencies. |
+| **Propose**, **Converse** | Shown but off: nothing in Tack takes proposals or threads from an agent yet. |
+
+The secret, which starts with `tack_agent_`, is shown once when you issue or rotate a credential, with a **Copy** button; Tack keeps only a hash of it and cannot show it again. The agent sends it the way the operator's token is sent, as `Authorization: Bearer <secret>`; for `tack mcp`, set `TACK_API_TOKEN` to the secret in the agent's configuration.
+
+What a credential cannot do, whatever its scopes:
+
+- It sees only the projects you named; the project list it receives holds only those, and a request for another project answers `403` naming the scope it lacks.
+- It cannot answer a run's questions. Resolving a decision needs the second secret described above, which no credential holds or can reach.
+- It cannot start runs, change settings, delete anything, import, back up or restore, or issue credentials. Those answer `403` with a pointer to the operator's token.
+- It cannot sign as someone else. A comment an agent writes carries the credential's name as its author, whatever author the agent sent, and the items and links it creates or changes show the same name.
+
+A credential expires 90 days after it is issued or rotated. **Rotate** gives it a new secret and 90 more days, and the old secret stops working at once. **Revoke** ends it for good; what it already wrote stays, signed with its name. An expired, revoked or unknown secret answers `401`, and the list shows when each credential was last used.
 
 ## CORS
 

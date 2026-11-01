@@ -23,10 +23,10 @@ use crate::error::ApiError;
 #[cfg(feature = "embed-spa")]
 use crate::handlers::spa;
 use crate::handlers::{
-    attachments, attempt_lists, autonomy, backup, boards_multi, briefs, comments, custom_fields,
-    decisions, dependencies, executions, export, import_github, import_linear, items, local_runner,
-    metrics, mrp, outline, projects, roles, runner_admin, runner_protocol, settings, sprints,
-    teams, templates, websocket,
+    agent_credentials, attachments, attempt_lists, autonomy, backup, boards_multi, briefs,
+    comments, custom_fields, decisions, dependencies, executions, export, import_github,
+    import_linear, items, local_runner, metrics, mrp, outline, projects, roles, runner_admin,
+    runner_protocol, settings, sprints, teams, templates, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -150,10 +150,7 @@ fn operator_execution_routes(state: &AppState) -> Router<AppState> {
         .merge(runner_protocol::artifact_download::routes(
             artifact_download_state,
         ))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            inject_operator_principal,
-        ))
+        .layer(middleware::from_fn(inject_operator_principal))
         .with_state::<AppState>(())
 }
 
@@ -363,6 +360,18 @@ pub fn build_router(state: AppState) -> Router {
             get(briefs::list_brief_versions),
         )
         .route("/teams", get(teams::list_teams))
+        .route(
+            "/agent-credentials",
+            get(agent_credentials::list_credentials).post(agent_credentials::issue_credential),
+        )
+        .route(
+            "/agent-credentials/{id}/rotate",
+            post(agent_credentials::rotate_credential),
+        )
+        .route(
+            "/agent-credentials/{id}/revoke",
+            post(agent_credentials::revoke_credential),
+        )
         .route(
             "/projects/{id}/autonomy",
             get(autonomy::get_autonomy).put(autonomy::put_autonomy),
