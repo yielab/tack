@@ -37,8 +37,9 @@ accepted the same day) and in `develop`; its cards H, I, K, L, L2, P, N, A, D, B
 M, M2 and Q after, are not open. Agents → Teams lists every team any agent reports and what each
 member can do; a task says who does it and starts by itself without a role; a run's findings reach one
 accept panel from a plan file, a team's `tack_proposals` records or an uploaded file, and a person
-always accepts. The local suite proves it against docket (19 of 20 tests pass; the fifteenth needs the local
-model's lead step, which repeats itself); nothing in it is a card.
+always accepts. The local suite proves it against docket (19 of 20 tests pass on the local model, whose lead step
+repeats itself in the fifteenth; with Claude Haiku 5.5 as the model the fifteenth passes too: one run passed 01 to 18, its
+19th stopped on the suite's own item lookup, and a second run passed 19 and 20, so no single run of all 20 has passed yet); nothing in it is a card.
 
 What is not a card is in "Cancelled" below.
 
