@@ -21,6 +21,7 @@ import { system } from './system';
 import { metrics } from './metrics';
 import { autonomy } from './autonomy';
 import { credentials } from './credentials';
+import { changeSets } from './changeSets';
 
 export const api = {
   projects,
@@ -40,6 +41,7 @@ export const api = {
   metrics,
   autonomy,
   credentials,
+  changeSets,
 };
 
 export { ApiError, tokenStore, request, requestBlob, requestForm, apiUrl } from './client';

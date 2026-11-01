@@ -11,8 +11,10 @@ import {
   rows,
   waitingCount,
   waitingTally,
+  waitingChangeSets,
   useWaiting,
   waitingOpen,
+  type ChangeSetRow,
   type WaitingRow,
 } from '../state/waiting';
 import { sessionDecisionToken } from '../state/decisionSession';
@@ -22,7 +24,13 @@ import { tallySentence } from './cardRun';
 
 /** What the count is made of, in the states' own words; the sentence alone when nothing waits. */
 const breakdown = (): string => {
-  const parts = tallySentence(waitingTally());
+  const changes = waitingChangeSets().length;
+  const parts = [
+    tallySentence(waitingTally()),
+    changes > 0 ? `${changes} ${changes === 1 ? 'change set' : 'change sets'} to apply` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
   return parts ? `${waitingSentence(waitingCount())}: ${parts}` : waitingSentence(waitingCount());
 };
 
@@ -33,7 +41,7 @@ export function waitingSentence(count: number): string {
 }
 
 const MEANING =
-  'Questions an agent is waiting for you to answer, runs ready for your review, and runs that failed since you last looked.';
+  'Questions an agent is waiting for you to answer, runs ready for your review, runs that failed since you last looked, and changes an agent proposed for you to apply.';
 
 const countStyle = (count: number) => ({
   'min-width': '1.25rem',
@@ -97,8 +105,49 @@ const Row: Component<{ row: WaitingRow; project: string | undefined; action: str
   );
 };
 
+/** A change set that waits: who proposed it and why, and the one action that opens it. */
+const ChangeSetItem: Component<{ row: ChangeSetRow; project: string | undefined; onNavigate: () => void }> = (p) => {
+  const what = () => `${p.row.proposer ?? 'An agent'} proposes ${p.row.operations} ${p.row.operations === 1 ? 'change' : 'changes'}`;
+  return (
+    <li data-testid="waiting-changeset" style={{ display: 'flex', gap: '8px', padding: '6px 4px', 'min-width': 0 }}>
+      <span style={{ 'padding-top': '1px' }}>
+        <RunState state="needs" size="dot" />
+      </span>
+      <div style={{ flex: 1, 'min-width': 0 }}>
+        <p
+          title={p.row.reason}
+          style={{ 'font-size': '0.8125rem', 'font-weight': 600, color: 'var(--color-text-primary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}
+        >
+          {what()}
+        </p>
+        <p style={{ 'font-size': '0.75rem', color: 'var(--color-text-tertiary)', 'white-space': 'nowrap', overflow: 'hidden', 'text-overflow': 'ellipsis' }}>
+          {p.project ? `${p.project} · ` : ''}
+          {relativeTimeFromIso(p.row.at)}
+        </p>
+        <A
+          href={`/projects/${p.row.projectId}/change-sets?open=${p.row.id}`}
+          onClick={p.onNavigate}
+          aria-label={`Review the changes: ${what()}`}
+          style={{
+            display: 'inline-block',
+            'margin-top': '4px',
+            padding: '2px 10px',
+            'border-radius': 'var(--radius-pill)',
+            'font-size': '0.75rem',
+            'font-weight': 600,
+            background: 'var(--color-accent-soft)',
+            color: 'var(--color-accent-ink)',
+          }}
+        >
+          Review the changes
+        </A>
+      </div>
+    </li>
+  );
+};
+
 /**
- * The sidebar's inbox: everything that waits on a person, in three groups, with the primary action
+ * The sidebar's inbox: everything that waits on a person, in four groups (the fourth is change sets to apply), with the primary action
  * of each run in its row. It stays in the sidebar when nothing waits, as a 0. Opening it is looking:
  * the next visit counts failures from now.
  */
@@ -190,6 +239,28 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
               </Show>
             )}
           </For>
+          <Show when={waitingChangeSets().length > 0}>
+            <section aria-label="Changes to apply" data-testid="waiting-group-changes">
+              <h3
+                style={{
+                  padding: '6px 6px 2px',
+                  'font-size': '0.625rem',
+                  'font-weight': 700,
+                  'letter-spacing': '.12em',
+                  'text-transform': 'uppercase',
+                  color: 'var(--color-text-tertiary)',
+                  'border-top': '1px solid var(--color-border-light)',
+                }}
+              >
+                Changes to apply
+              </h3>
+              <ul>
+                <For each={waitingChangeSets()}>
+                  {(row) => <ChangeSetItem row={row} project={nameOf(row.projectId)} onNavigate={p.onNavigate} />}
+                </For>
+              </ul>
+            </section>
+          </Show>
         </div>
       </Show>
     </div>

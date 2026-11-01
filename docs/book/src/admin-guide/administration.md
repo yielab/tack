@@ -59,7 +59,7 @@ An agent that uses Tack on its own, for example through `tack mcp`, should not h
 
 The secret, which starts with `tack_agent_`, is shown once when you issue or rotate a credential, with a **Copy** button; Tack keeps only a hash of it and cannot show it again. The agent sends it the way the operator's token is sent, as `Authorization: Bearer <secret>`; for `tack mcp`, set `TACK_API_TOKEN` to the secret in the agent's configuration.
 
-An agent changes the board only through change sets: it cannot create or edit an item, write a comment or add a dependency by calling those routes, which answer `403` and name the change-set route. Through `tack mcp`, the tools that create, update, move and comment build a change set for it. The project's *Agents on the board* setting decides which changes apply at once and which wait for a person; the stricter of that and the credential's scopes wins.
+An agent changes the board only through change sets: it cannot create or edit an item, write a comment or add a dependency by calling those routes, which answer `403` and name the change-set route. Through `tack mcp`, the tools that create, update, move and comment build a change set for it. The project's *Agents on the board* setting decides which changes apply at once and which wait for a person; the stricter of that and the credential's scopes wins. You set it in the project's **Settings → Automation**, under **Agents**, and the changes that wait appear in **Waiting for you** and on the project's **Change sets** page (see [When an agent proposes changes](../user-guide/reviewing-runs.md#when-an-agent-proposes-changes)).
 
 What a credential cannot do, whatever its scopes:
 
