@@ -36,10 +36,34 @@ import {
   withProfile,
   type Flow,
   type FlowFilter,
+  type FlowScope,
   type RoleProfile,
 } from './flow';
+import { buildCompare, buildMap, scopeOfNode } from './map';
 import { FlowUiContext, type FlowUi, type MoveSource } from './context';
 import FlowView from './Flow';
+import MapView from './Map';
+import Compare from './Compare';
+
+const MODE_KEY = 'tack_orchestration_mode';
+type Mode = 'flow' | 'map';
+
+/** The mode left on last time in this browser; Flow when nothing was saved or storage is closed. */
+function readMode(): Mode {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'map' ? 'map' : 'flow';
+  } catch {
+    return 'flow';
+  }
+}
+
+function saveMode(mode: Mode): void {
+  try {
+    localStorage.setItem(MODE_KEY, mode);
+  } catch {
+    /* a convenience, not state */
+  }
+}
 
 /** How many task details are read at once. */
 const DETAIL_PARALLEL = 6;
@@ -132,8 +156,9 @@ const Summary: Component<{
 /**
  * Orchestration, in its Flow mode: which team is doing what, at which step of its own process, what
  * waits on a person and what nobody will take. It reads the project's items, runs, profiles and roles,
- * and the teams any agent reports, and follows the realtime stream. Map will sit beside Flow in the
- * header, where the mode switch is.
+ * and the teams any agent reports, and follows the realtime stream. Map, beside it in the header's
+ * switch, draws the structure behind the lanes and Compare sets the teams side by side; a box of the
+ * Map brings Flow back narrowed to what passes through it.
  */
 const Orchestration: Component = () => {
   const params = useParams();
@@ -268,6 +293,50 @@ const Orchestration: Component = () => {
     });
   });
 
+  const [mode, setModeSignal] = createSignal<Mode>(readMode());
+  // What the Map sent Flow to, by the id of its box, read again from the map each time it changes.
+  const [scopeId, setScopeId] = createSignal<string | null>(null);
+  const setScope = (id: string | null) => setScopeId(id);
+  const setMode = (next: Mode) => {
+    setModeSignal(next);
+    saveMode(next);
+    if (next === 'map') setScope(null);
+  };
+  // A box chosen on the Map opens Flow for this visit only: it does not become the mode left on.
+  const showInFlow = (id: string) => {
+    setScope(id);
+    setModeSignal('flow');
+  };
+
+  const mapModel = createMemo(() => {
+    const f = flow();
+    if (!f) return null;
+    return buildMap({
+      flow: f,
+      roles: (roles.value() ?? []).map((r) => ({ name: r.name, profileId: r.agent_profile_id ?? null })),
+      profiles: profiles.value() ?? [],
+      teams: teams.value() ?? [],
+      defaultProfileId: project()?.default_profile_id ?? null,
+      runners: runners.value() ?? null,
+    });
+  });
+  const scope = createMemo<FlowScope | null>(() => {
+    const id = scopeId();
+    const model = mapModel();
+    return id && model ? scopeOfNode(model, id) : null;
+  });
+  const compareModel = createMemo(() => {
+    const f = flow();
+    if (!f) return null;
+    const a = autonomy.value();
+    return buildCompare({
+      flow: f,
+      teams: teams.value() ?? [],
+      profiles: profiles.value() ?? [],
+      autonomy: a ? { level: a.level, teams: a.teams ?? [], provisionalTokensPerRun: a.budgets?.provisional_tokens_per_run ?? null } : null,
+    });
+  });
+
   const [filters, setFilters] = createSignal<ReadonlySet<FlowFilter>>(new Set());
   const toggleFilter = (filter: FlowFilter) =>
     setFilters((prior) => {
@@ -372,11 +441,29 @@ const Orchestration: Component = () => {
       <section class="flex min-w-0 flex-col gap-4" data-testid="orchestration">
         <div class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2" data-testid="orchestration-header">
           <h2 class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>{t('orchestration')}</h2>
-          {/* The Flow / Map switch sits here. Flow is the only mode so far. */}
-          <div role="group" aria-label="Mode" data-testid="orchestration-mode" class="inline-flex items-center">
-            <span aria-current="true" class="rounded-pill px-3 py-0.5 text-small font-bold" style={{ 'background-color': 'var(--color-accent-soft)', color: 'var(--color-accent-ink)' }}>
-              Flow
-            </span>
+          <div role="group" aria-label="Mode" data-testid="orchestration-mode" class="inline-flex items-center gap-1">
+            <For each={['flow', 'map'] as const}>
+              {(m) => (
+                <button
+                  type="button"
+                  aria-pressed={mode() === m}
+                  data-testid={`orchestration-mode-${m}`}
+                  class="rounded-pill px-3 py-0.5 text-small font-bold focus:outline-none focus-visible:ring-2"
+                  style={{
+                    'background-color': mode() === m ? 'var(--color-accent-soft)' : 'transparent',
+                    color: mode() === m ? 'var(--color-accent-ink)' : 'var(--color-text-secondary)',
+                    border: 0,
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => {
+                    if (m === 'flow') setScope(null);
+                    setMode(m);
+                  }}
+                >
+                  {m === 'flow' ? 'Flow' : 'Map'}
+                </button>
+              )}
+            </For>
           </div>
         </div>
 
@@ -413,10 +500,36 @@ const Orchestration: Component = () => {
             }
           >
             {(f) => (
-              <>
+              <Show
+                when={mode() === 'flow'}
+                fallback={
+                  <Show when={mapModel() && compareModel()}>
+                    <div class="flex min-w-0 flex-col gap-4" data-testid="orchestration-map-mode">
+                      <MapView model={mapModel()!} projectId={projectId()} onSelect={showInFlow} />
+                      <Compare model={compareModel()!} />
+                    </div>
+                  </Show>
+                }
+              >
+                <Show when={scope()}>
+                  {(chosen) => (
+                    <div class="flex min-w-0 flex-wrap items-center gap-2 text-small" data-testid="flow-scope" style={{ color: 'var(--color-text-secondary)' }}>
+                      <span style={{ 'overflow-wrap': 'anywhere' }}>{`Showing what passes through ${chosen().label}.`}</span>
+                      <button
+                        type="button"
+                        data-testid="flow-scope-clear"
+                        class="font-semibold underline focus:outline-none focus-visible:ring-2"
+                        style={{ color: 'var(--color-accent-ink)', background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+                        onClick={() => setScope(null)}
+                      >
+                        Show everything
+                      </button>
+                    </div>
+                  )}
+                </Show>
                 <Summary flow={f()} active={filters()} onToggle={toggleFilter} capacity={capacity()} />
-                <FlowView flow={f()} filters={filters()} dailyLimit={autonomy.value()?.budgets?.tokens_per_day ?? null} />
-              </>
+                <FlowView flow={f()} filters={filters()} scope={scope()} dailyLimit={autonomy.value()?.budgets?.tokens_per_day ?? null} />
+              </Show>
             )}
           </Show>
         </Show>

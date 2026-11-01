@@ -2,7 +2,7 @@ import { type Component, For, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { Button } from '../../shared/ui';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
-import { showsNobody, visibleLanes, type Flow, type FlowFilter, type NobodyEntry, type UnusedTeam } from './flow';
+import { scopedNobody, showsNobody, visibleLanes, type Flow, type FlowFilter, type FlowScope, type NobodyEntry, type UnusedTeam } from './flow';
 import { useFlowUi } from './context';
 import FlowLaneView from './Lane';
 import MoveMenu from './MoveMenu';
@@ -121,23 +121,29 @@ const UnusedRow: Component<{ teams: UnusedTeam[] }> = (props) => (
  * first, then those running, then the idle ones folded to their header), and the teams this project
  * does not use. The filters of the summary row narrow it.
  */
-const FlowView: Component<{ flow: Flow; filters: ReadonlySet<FlowFilter>; dailyLimit: number | null }> = (props) => {
-  const lanes = () => visibleLanes(props.flow, props.filters);
+const FlowView: Component<{ flow: Flow; filters: ReadonlySet<FlowFilter>; scope?: FlowScope | null; dailyLimit: number | null }> = (props) => {
+  const scope = () => props.scope ?? null;
+  const lanes = () => visibleLanes(props.flow, props.filters, scope());
+  const nobody = () => scopedNobody(props.flow, scope());
   const empty = () => props.flow.lanes.length === 0 && props.flow.nobody.length === 0;
+  const nothingInScope = () => !!scope() && lanes().length === 0 && nobody().length === 0 && props.filters.size === 0;
   return (
     <div class="flex min-w-0 flex-col gap-3" data-testid="flow">
-      <Show when={props.flow.nobody.length > 0 && showsNobody(props.filters)}>
-        <NobodyLane entries={props.flow.nobody} />
+      <Show when={nobody().length > 0 && showsNobody(props.filters)}>
+        <NobodyLane entries={nobody()} />
       </Show>
       <Show when={!empty()} fallback={<p class="text-small" style={MUTED}>No lane has anything to show yet: no team has a profile in this project, and no task is ready to start.</p>}>
         <ol aria-label="Lanes" class="flex min-w-0 flex-col gap-3" data-testid="flow-lanes">
           <For each={lanes()}>{(lane) => <FlowLaneView lane={lane} limit={props.dailyLimit} />}</For>
         </ol>
+        <Show when={nothingInScope()}>
+          <p class="text-small" data-testid="flow-scope-empty" style={MUTED}>{`No lane and no task passes through ${scope()!.label}: no task is routed that way yet.`}</p>
+        </Show>
         <Show when={props.filters.size > 0 && lanes().length === 0 && !props.filters.has('nobody')}>
           <p class="text-small" style={MUTED}>No lane has a task in that state.</p>
         </Show>
       </Show>
-      <Show when={props.flow.unused.length > 0}>
+      <Show when={props.flow.unused.length > 0 && !scope()}>
         <UnusedRow teams={props.flow.unused} />
       </Show>
     </div>
