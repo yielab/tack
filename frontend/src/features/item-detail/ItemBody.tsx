@@ -132,7 +132,11 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
         actions={
           <>
             {props.headerActions}
-            <ItemMenu entries={[{ label: 'Propose items from a file', onSelect: () => setProposing(true) }]} />
+            <ItemMenu entries={[{ label: 'Propose items from a file', onSelect: () => {
+                    setProposing(true);
+                    props.onTabChange('execution');
+                  },
+                }]} />
           </>
         }
         focusTitle={page()}
@@ -141,7 +145,6 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
       <div class={page() ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]' : 'space-y-6'}>
         <div class="min-w-0 space-y-6">
           {now}
-          {propose}
           <Tabs tabs={tabs()} active={props.tab} onChange={props.onTabChange}>
             <Show when={props.tab === 'details'}>
               <DetailsTab item={props.item} onDescriptionChange={props.editor.onDescriptionChange} />
@@ -150,6 +153,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
               <ActivityTab itemId={props.item.id} />
             </Show>
             <Show when={props.tab === 'execution'}>
+              {propose}
               <ExecutionTimeline itemId={props.item.id} itemTitle={props.item.title} projectId={props.item.project_id} layout={props.layout} runId={props.run} onRunChange={props.onRunChange} />
             </Show>
             <Show when={props.tab === 'dependencies'}>

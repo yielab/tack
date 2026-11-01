@@ -120,7 +120,7 @@ echo "✓ font-size gate passed"
 # the @theme static block in src/index.css) or a Tailwind scale class.
 #
 # Same RATCHET rule. Test files are excluded.
-ARBITRARY_BASELINE=232
+ARBITRARY_BASELINE=231
 
 ARBITRARY_COUNT=$(grep -rhoE '[a-z0-9]-\[[^]]+\]' src --include='*.tsx' --include='*.ts' \
   --exclude='*.test.tsx' --exclude='*.test.ts' | wc -l | tr -d ' ' || true)
