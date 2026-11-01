@@ -603,6 +603,7 @@ const AttemptRow: Component<{
             profileId={props.profileId}
             agentKind={props.agentKind}
             hops={runSteps()}
+            track={(runSteps() ?? []).length > 0}
           />
         </Show>
         <Show when={(runSteps() ?? []).length > 0}>
