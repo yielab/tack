@@ -27,7 +27,7 @@ import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
   cardRun, countRuns, getAlwaysPriority, passesFilters, setAlwaysPriority, showsPriority,
   type CardRun, type RunFilter,
-} from './boardRuns';
+} from '../../shared/runWithAgent/cardRun';
 
 /** Short, human id for the card header (real ids are UUIDs). */
 function shortId(id: string): string {
