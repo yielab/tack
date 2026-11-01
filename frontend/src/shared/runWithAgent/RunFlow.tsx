@@ -52,8 +52,8 @@ export interface RunFlowProps {
   rows: { runner: Accessor<PrerequisiteState>; harness: Accessor<PrerequisiteState>; profile: Accessor<PrerequisiteState>; model: Accessor<PrerequisiteState> };
   /** Whether the card's brief has an acceptance check; undefined while it loads. Never blocks the run. */
   checkedCard?: Accessor<boolean | undefined>;
-  /** How many acceptance checks ("Done when") the card's brief has; undefined while it loads or when it cannot be read. */
-  acceptanceCount?: Accessor<number | undefined>;
+  /** How many checks the card has: lines of its own Done when list, and checks the agent brings; undefined while it loads or when it cannot be read. */
+  acceptanceCount?: Accessor<{ doneWhen: number; agent: number } | undefined>;
   profilesLoading: Accessor<boolean>;
   profiles: Accessor<AgentProfileSummary[]>;
   /** What the agents of the machines this run may use reported, to say what each can do. */
@@ -164,7 +164,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
   const checksText = () => {
     const n = props.acceptanceCount?.();
     const verifier = !props.verifyConfigured() ? 'no verifier on this runner' : props.form.verify ? 'verifier on' : 'verifier off';
-    return [n === undefined ? null : n === 0 ? 'No Done when' : `${n} Done when`, verifier].filter(Boolean).join(' · ');
+    // Each source is counted apart: the item's own Done when list, and the checks the agent brings.
+    const counted = n === undefined ? [] : [n.doneWhen === 0 ? 'No Done when' : `${n.doneWhen} Done when`, ...(n.agent > 0 ? [`${n.agent} agent ${n.agent === 1 ? 'check' : 'checks'}`] : [])];
+    return [...counted, verifier].join(' · ');
   };
   const limitText = (): string | null => {
     const text = props.form.tokenLimit.trim();

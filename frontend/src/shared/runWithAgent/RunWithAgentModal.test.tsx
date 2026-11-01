@@ -1313,6 +1313,8 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     const brief = { acceptance: [
       { id: 'a1', kind: 'command', title: 'tests pass', run: 'npm test', expect_exit: 0 },
       { id: 'a2', kind: 'command', title: 'lint passes', run: 'npm run lint', expect_exit: 0 },
+      { id: 'a3', kind: 'manual', title: 'Reads well', text: 'x' },
+      { id: 'a4', kind: 'manual', title: 'Looks right', text: 'y' },
     ] };
     mount({}, { runners: [sandboxed], fleets: [], brief, project: { ...PROJECT, prepare_command: 'npm ci' } });
     await flush();
@@ -1322,7 +1324,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     const line = (label: string) => [...section.querySelectorAll('li')].find((li) => li.querySelector('.sr-only')?.textContent === `${label}: `)!;
     expect(line('Works').textContent).toContain('on a new branch of ~/src/app');
     expect(line('Prepares').textContent).toContain('Replaced: npm ci');
-    expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('2 Done when · verifier on');
+    expect(document.querySelector('[data-testid="run-dialog-checks"]')!.textContent).toBe('2 Done when · 2 agent checks · verifier on');
     expect(line('Sandbox').textContent).toContain('Sandboxed: the agent only reaches its workspace');
     expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');
     // Each line has an icon that is hidden from a screen reader, which reads the word instead.

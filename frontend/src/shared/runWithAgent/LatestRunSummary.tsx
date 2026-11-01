@@ -56,13 +56,20 @@ export type RunCardKind = 'queued' | 'running' | 'review' | 'failed' | 'merged' 
  *  Review and merge, See why it failed, Run again); null when nothing needs doing now. */
 export type NowAction = 'run' | 'answer' | 'review' | 'why' | 'again';
 
-export function primaryNowAction(input: { hasRun: boolean; kind: RunCardKind; asking: boolean; askingBehind: boolean }): NowAction | null {
+export function primaryNowAction(input: {
+  hasRun: boolean;
+  kind: RunCardKind;
+  asking: boolean;
+  askingBehind: boolean;
+  /** The run was stopped on purpose: there is nothing to explain, so what to do next is to run it again. */
+  cancelled?: boolean;
+}): NowAction | null {
   if (!input.hasRun) return 'run';
   switch (input.kind) {
     case 'queued': return input.askingBehind ? 'answer' : null;
     case 'running': return input.asking ? 'answer' : null;
     case 'review': return 'review';
-    case 'failed': return 'why';
+    case 'failed': return input.cancelled ? 'again' : 'why';
     case 'merged':
     case 'done': return 'again';
   }
@@ -314,7 +321,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   const openPrimary = (label: string) => <Button size="md" data-testid="now-primary" onClick={() => props.onOpen()}>{label}</Button>;
   const primary = () =>
-    primaryNowAction({ hasRun: !!latest(), kind: kind(), asking: asking(), askingBehind: !!askingBehind() });
+    primaryNowAction({ hasRun: !!latest(), kind: kind(), asking: asking(), askingBehind: !!askingBehind(), cancelled: runState().state === 'cancelled' });
   const runAgain = (variant: 'primary' | 'ghost') => (
     <RunWithAgentButton
       itemId={props.itemId}
@@ -535,6 +542,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
 
               <Show when={kind() === 'running'}>
                 <Show when={!asking()}>{open('Follow live')}</Show>
+              </Show>
+              {/* One word, one place, for stopping a run that is alive: Stop. */}
+              <Show when={kind() === 'running' || kind() === 'queued'}>
                 <Button size="sm" variant="secondary" disabled={stopping() || stopRequested()} loading={stopping()} onClick={() => void stop()}>
                   {stopRequested() ? 'Stopping…' : 'Stop'}
                 </Button>

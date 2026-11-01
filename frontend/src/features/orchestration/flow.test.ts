@@ -202,9 +202,9 @@ describe('stationFor: where a task stands in a team', () => {
     expect(stationFor(running, null, STEPS)).toBe('working');
   });
 
-  it('puts_a_run_that_asks_or_waits_for_review_at_Needs_you', () => {
+  it('puts_a_run_that_asks_at_Needs_you_and_one_to_review_at_Ready_for_review', () => {
     expect(stationFor(cardRun({ request_id: 'r', state: 'waiting_decision', cancellation_requested_at: null }, false), hop('Lead'), STEPS)).toBe('needs-you');
-    expect(stationFor(cardRun({ request_id: 'r', state: 'succeeded', cancellation_requested_at: null }, true), null, STEPS)).toBe('needs-you');
+    expect(stationFor(cardRun({ request_id: 'r', state: 'succeeded', cancellation_requested_at: null }, true), null, STEPS)).toBe('review');
   });
 
   it('puts_ended_runs_in_Done', () => {
@@ -398,7 +398,7 @@ describe('buildFlow: lanes, stations and tokens', () => {
     expect(flow.lanes[0].tokens.map((t) => t.id)).toEqual(['part']);
   });
 
-  it('shows_a_task_that_ended_today_in_Done_and_one_flagged_for_review_at_Needs_you', () => {
+  it('shows_a_task_that_ended_today_in_Done_and_one_flagged_for_review_at_Ready_for_review', () => {
     const flow = flowOf({
       items: [
         item({ id: 'ended', status: 'Done', run_settings: own('notes') }),
@@ -407,8 +407,9 @@ describe('buildFlow: lanes, stations and tokens', () => {
       runs: [run({ item_id: 'ended', agent_profile_id: 'notes', state: 'succeeded' })],
     });
     const stations = Object.fromEntries(flow.lanes[0].tokens.map((t) => [t.id, t.station]));
-    expect(stations).toEqual({ ended: 'done', look: 'needs-you' });
-    expect(flow.counts.needs).toBe(1);
+    expect(stations).toEqual({ ended: 'done', look: 'review' });
+    expect(flow.counts.needs).toBe(0);
+    expect(flow.counts.review).toBe(1);
   });
 
   it('counts_the_tokens_each_lane_has_spent', () => {
@@ -486,7 +487,7 @@ describe('the summary row', () => {
   const set = (...f: FlowFilter[]) => new Set<FlowFilter>(f);
 
   it('counts_needs_you_running_queued_and_nobody', () => {
-    expect(flow.counts).toEqual({ needs: 1, running: 1, queued: 1, nobody: 1 });
+    expect(flow.counts).toEqual({ needs: 1, review: 0, running: 1, queued: 1, nobody: 1 });
     expect(flow.open).toBe(3);
   });
 
@@ -603,7 +604,7 @@ describe('mergeRung', () => {
 
 describe('laneQueue and candidateIds', () => {
   it('uses_the_teams_own_queue_when_it_reported_one_and_the_boards_count_otherwise', () => {
-    const counts = { needs: 1, running: 2, queued: 3 };
+    const counts = { needs: 1, review: 0, running: 2, queued: 3 };
     expect(laneQueue({ report: { queue: { running: 4, waiting: 5 } } as never, counts })).toEqual({ running: 4, waiting: 5, reported: true });
     expect(laneQueue({ report: null, counts })).toEqual({ running: 2, waiting: 4, reported: false });
   });

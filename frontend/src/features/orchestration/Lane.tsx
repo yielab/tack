@@ -3,6 +3,7 @@ import { A } from '@solidjs/router';
 import { Avatar, Badge } from '../../shared/ui';
 import { memberReachText, networkText, queueText, type TeamMember } from '../../shared/execution';
 import { checkText } from '../../shared/runWithAgent/teamSteps';
+import { runTally, tallySentence } from '../../shared/runWithAgent/cardRun';
 import UsageMeter from '../../shared/runWithAgent/UsageMeter';
 import { spaced } from '../../shared/runWithAgent/runLimit';
 import { IconBranch, IconFolder, IconWho } from '../../shared/runWithAgent/runDialogIcons';
@@ -226,7 +227,7 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
         <Show
           when={isDone()}
           fallback={
-            <h4 class="text-micro font-bold uppercase tracking-widest" style={{ 'overflow-wrap': 'anywhere', color: st().key === 'needs-you' && st().tokens.length > 0 ? 'var(--run-needs-ink)' : 'var(--color-text-tertiary)' }}>
+            <h4 class="text-micro font-bold uppercase tracking-widest" style={{ 'overflow-wrap': 'anywhere', color: st().tokens.length > 0 && (st().key === 'needs-you' || st().key === 'review') ? `var(--run-${st().key === 'review' ? 'review' : 'needs'}-ink)` : 'var(--color-text-tertiary)' }}>
               {st().label}
               <span class="tabular-nums" style={{ 'margin-left': '0.4rem' }}>{st().tokens.length}</span>
             </h4>
@@ -294,6 +295,7 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
   const stations = createMemo(() => lane().stations);
   const href = () => (lane().kind === 'team' ? `/agents#team-${encodeURIComponent(lane().name)}` : '/agents');
   const total = () => lane().tokens.length;
+  const tallyText = () => tallySentence(runTally({ needs: lane().counts.needs, review: lane().counts.review, failed: 0 }));
 
   return (
     <li
@@ -334,7 +336,7 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
             </h3>
             <span class="text-caption tabular-nums" style={MUTED} data-testid="flow-lane-count">
               {`${total()} ${total() === 1 ? 'task' : 'tasks'}`}
-              {lane().counts.needs > 0 ? ` · ${lane().counts.needs} need you` : ''}
+              {tallyText() ? ` · ${tallyText()}` : ''}
             </span>
           </div>
           <Facts lane={lane()} />
@@ -344,6 +346,16 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
                 <ul aria-label={`Members of ${lane().name}`} class="flex flex-wrap items-center" data-testid="flow-members">
                   <For each={list()}>{(member) => <MemberMark member={member} />}</For>
                 </ul>
+                <Show when={list().some((m) => m.writes_project === true || m.can_propose === true)}>
+                  <span
+                    data-testid="flow-members-legend"
+                    class="text-caption"
+                    style={FAINT}
+                    title="A ring around a member means it changes the project; a dot on it means it can propose items."
+                  >
+                    ring: changes the project · dot: can propose
+                  </span>
+                </Show>
               </Show>
             )}
           </Show>

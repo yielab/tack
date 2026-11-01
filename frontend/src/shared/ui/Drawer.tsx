@@ -117,7 +117,7 @@ const Drawer: Component<DrawerProps> = (props) => {
             {/* Long values wrap or clip here, never widen the drawer: children may shrink below their
              * content width (flex and grid children default to min-width: auto), and the body clips
              * sideways so an unbroken id cannot push the panel wider than the screen. */}
-            <div class="min-w-0 flex-1 overflow-y-auto overflow-x-clip px-6 py-4 wrap-anywhere [&_*]:min-w-0">
+            <div class="min-w-0 flex-1 overflow-y-auto overflow-x-clip px-4 py-4 sm:px-6 wrap-anywhere [&_*]:min-w-0">
               {props.children}
             </div>
           </div>

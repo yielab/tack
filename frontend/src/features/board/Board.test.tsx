@@ -343,14 +343,14 @@ describe('Board agent strip and column bars', () => {
     summary('r4', 'd', 'failed'),
   ];
 
-  it('the_strip_counts_runs_by_state_and_leads_with_what_waits_for_you', async () => {
+  it('the_strip_counts_runs_by_state_with_one_chip_per_state_and_no_aggregate', async () => {
     const c = await mountBoard(ITEMS, RUNS);
     const strip = c.querySelector('[data-testid="agent-strip"]')!;
     expect(strip.getAttribute('aria-label')).toBe('Agent runs on this board');
     const names = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim());
-    expect(names[0]).toContain('1 Your turn');
-    expect(names[0]).toContain('Failed runs are counted under Failed');
-    expect(names.slice(1)).toEqual(['0 Queued', '2 Running', '1 Needs you', '0 Ready for review', '1 Failed']);
+    expect(names.join(' ')).not.toContain('Your turn');
+    expect(c.querySelector('[data-testid="strip-waiting"]')).toBeNull();
+    expect(names.map((n) => n.split('.')[0])).toEqual(['0 Queued', '2 Running', '1 Needs you', '0 Ready for review', '1 Failed']);
     // A counter with nothing in it says why it cannot be used.
     const queued = strip.querySelector<HTMLButtonElement>('[data-testid="strip-queued"]')!;
     expect(queued.disabled).toBe(true);
@@ -367,11 +367,11 @@ describe('Board agent strip and column bars', () => {
     expect(titles(c)).toEqual(['Alpha', 'Charlie']);
     // The column still says how many cards it holds.
     expect(c.querySelector('section')?.textContent).toContain('2 of 3');
-    c.querySelector<HTMLButtonElement>('[data-testid="strip-waiting"]')!.click();
+    c.querySelector<HTMLButtonElement>('[data-testid="strip-needs"]')!.click();
     await flush();
     expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie']);
     running.click();
-    c.querySelector<HTMLButtonElement>('[data-testid="strip-waiting"]')!.click();
+    c.querySelector<HTMLButtonElement>('[data-testid="strip-needs"]')!.click();
     await flush();
     expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
   });

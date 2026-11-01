@@ -284,7 +284,7 @@ describe('Orchestration: summary row', () => {
   it('counts_the_tasks_and_a_counter_narrows_the_lanes', async () => {
     const c = await mount(threeLanes());
     const count = (f: string) => q(c, `[data-testid="flow-counter-${f}"]`)!.textContent!;
-    expect(count('waiting')).toContain('1');
+    expect(count('needs')).toContain('1');
     expect(count('running')).toContain('1');
     expect(q<HTMLButtonElement>(c, '[data-testid="flow-counter-queued"]')!.disabled).toBe(true);
     expect(q(c, '[data-testid="flow-capacity"]')!.textContent).toBe('2 of 3 runs open in this project · this computer runs 1 at a time');
@@ -295,7 +295,7 @@ describe('Orchestration: summary row', () => {
     expect(q(c, '[data-testid="flow-counter-running"]')!.getAttribute('aria-pressed')).toBe('true');
 
     q<HTMLButtonElement>(c, '[data-testid="flow-counter-running"]')!.click();
-    q<HTMLButtonElement>(c, '[data-testid="flow-counter-waiting"]')!.click();
+    q<HTMLButtonElement>(c, '[data-testid="flow-counter-needs"]')!.click();
     await flush();
     expect(laneNames(c)).toEqual(['saas-notes']);
   });
@@ -690,6 +690,13 @@ describe('Orchestration: Map and Compare', () => {
     await settle();
     expect(q(c, '[data-testid="flow-scope"]')!.textContent).toContain('every team');
     expect(laneNames(c).sort()).toEqual(['idle-team', 'saas-code', 'saas-notes']);
+  });
+
+  it('draws_a_link_with_no_open_task_only_while_one_of_its_boxes_is_pointed_at', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    expect(qa(c, '[data-testid="map-link"]').every((l) => Number(l.getAttribute('data-tasks')) > 0)).toBe(true);
   });
 
   it('writes_the_same_routes_as_text_one_line_for_each_link', async () => {
