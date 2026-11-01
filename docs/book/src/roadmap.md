@@ -37,9 +37,9 @@ accepted the same day) and in `develop`; its cards H, I, K, L, L2, P, N, A, D, B
 M, M2 and Q after, are not open. Agents → Teams lists every team any agent reports and what each
 member can do; a task says who does it and starts by itself without a role; a run's findings reach one
 accept panel from a plan file, a team's `tack_proposals` records or an uploaded file, and a person
-always accepts. The local suite proves it against docket (19 of 20 tests pass on the local model, whose lead step
-repeats itself in the fifteenth; with Claude Haiku 5.5 as the model the fifteenth passes too: one run passed 01 to 18, its
-19th stopped on the suite's own item lookup, and a second run passed 19 and 20, so no single run of all 20 has passed yet); nothing in it is a card.
+always accepts. The local suite proves it against docket: with Claude Haiku 5.5 as the model all 20 tests pass in one run
+(2026-10-31, docket `cdeabac3`, 31 416 tokens counted against the limits); on the local model 19 pass and the
+fifteenth fails, because its lead step repeats itself; nothing in it is a card.
 
 What is not a card is in "Cancelled" below.
 
@@ -146,9 +146,9 @@ state; one wire format and one error model; one UI kit; the `Host` trait split i
 The rule it keeps: CI never needs docket or prill. CI tests Tack's code with the in-process fake
 docket, the fake prill and captured fixtures; everything that talks to the real programs is one
 local command, `onboarding-lab/e2e/docket-prill-e2e.sh`, with a `--check` mode that diffs the
-captures against the programs' contracts. The local suite has fifteen tests; fourteen pass, and
-the fifteenth, the answer that completes a lights-out run, fails when the local model's lead step
-repeats itself, which is the model and not Tack.
+captures against the programs' contracts. The local suite had fifteen tests then; fourteen passed, and
+the fifteenth, the answer that completes a lights-out run, failed when the local model's lead step
+repeated itself, which is the model and not Tack.
 
 ### Phase 80 — a run that waits on a person, and one record for every wait
 
