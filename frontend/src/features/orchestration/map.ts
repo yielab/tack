@@ -61,6 +61,8 @@ export interface MapNode {
   /** Why it is dashed, in a sentence. */
   reason: string | null;
   fix: MapFix | null;
+  /** The team a member belongs to, so a member is read under its team; null for every other kind. */
+  group: string | null;
   /** The profile the project uses when a task says nothing else. */
   isDefault: boolean;
   /** Open tasks that pass through it. */
@@ -220,7 +222,7 @@ export function buildMap(input: MapInput): MapModel {
 
   const nodes: MapNode[] = [];
   const links = new Map<string, MapLink>();
-  const addNode = (n: Omit<MapNode, 'row' | 'x' | 'y'>) => nodes.push({ ...n, row: 0, x: 0, y: 0 });
+  const addNode = (n: Omit<MapNode, 'row' | 'x' | 'y' | 'group'> & { group?: string | null }) => nodes.push({ ...n, group: n.group ?? null, row: 0, x: 0, y: 0 });
   const addLink = (from: string, to: string, tasks: number) => {
     const id = `${from}>${to}`;
     const prior = links.get(id);
@@ -326,7 +328,10 @@ export function buildMap(input: MapInput): MapModel {
   for (const name of [...teamNames].sort((a, b) => a.localeCompare(b))) {
     const entry = teams.find((t) => t.name === name) ?? ({ name, profiles: [], reported: false } as TeamEntry);
     const key = teamLaneKey(name);
-    const noProfile = entry.profiles.length === 0 && !profileOrder.some((p) => teamOf(p) === name);
+    // Dashed when nothing the project can use names the team: a profile elsewhere on the install that
+    // no role of this project reaches does not make the team reachable here.
+    const noProfile = !profileOrder.some((p) => teamOf(p) === name);
+    const namedElsewhere = entry.profiles.map((p) => p.name);
     const stranded = nobodyIds((e) => e.route.reason === 'team_not_reported' && e.route.detail === name);
     addNode({
       id: key,
@@ -335,8 +340,16 @@ export function buildMap(input: MapInput): MapModel {
       label: name,
       sub: runsOn(entry, input.runners),
       dashed: noProfile,
-      reason: noProfile ? `No profile names the team ${name}, so no task can be routed to it.` : null,
-      fix: noProfile ? { to: 'agents-profiles', text: 'Agents → profiles' } : null,
+      reason: !noProfile
+        ? null
+        : namedElsewhere.length > 0
+          ? `${namedElsewhere.join(', ')} ${namedElsewhere.length === 1 ? 'names' : 'name'} the team ${name}, but no role of this project uses ${namedElsewhere.length === 1 ? 'it' : 'them'}, so no task can be routed to it.`
+          : `No profile names the team ${name}, so no task can be routed to it.`,
+      fix: !noProfile
+        ? null
+        : namedElsewhere.length > 0
+          ? { to: 'automation-teams', text: 'Settings → Automation → Teams' }
+          : { to: 'agents-profiles', text: 'Agents → profiles' },
       isDefault: false,
       tasks: open.filter((t) => t.route.lane === key).length,
       stranded: stranded.length,
@@ -375,6 +388,7 @@ export function buildMap(input: MapInput): MapModel {
         column: 'members',
         kind: 'member',
         label: role,
+        group: node.label,
         sub: memberSub(member),
         dashed: false,
         reason: null,

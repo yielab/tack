@@ -692,6 +692,13 @@ describe('Orchestration: Map and Compare', () => {
     expect(laneNames(c).sort()).toEqual(['idle-team', 'saas-code', 'saas-notes']);
   });
 
+  it('draws_a_link_with_no_open_task_only_while_one_of_its_boxes_is_pointed_at', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    expect(qa(c, '[data-testid="map-link"]').every((l) => Number(l.getAttribute('data-tasks')) > 0)).toBe(true);
+  });
+
   it('writes_the_same_routes_as_text_one_line_for_each_link', async () => {
     const c = await mount(mapWorld());
     modeButton(c, 'map').click();
