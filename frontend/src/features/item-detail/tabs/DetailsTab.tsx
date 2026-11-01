@@ -1,6 +1,7 @@
 import { type Component, createResource, createSignal, createEffect, on, For, Show, type JSX } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import RichTextEditor, { sanitizeRichText } from '../../../shared/ui/RichTextEditor';
+import { descriptionToHtml } from '../../../shared/ui/descriptionMarkdown';
 import { api, ApiError } from '../../../shared/api';
 import type {
   AcceptanceCriterion,
@@ -207,6 +208,8 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
     ),
   );
   const edit = () => {
+    // A Markdown description becomes the editor's HTML on its first edit.
+    setHtml(descriptionToHtml(html()));
     setEditing(true);
     queueMicrotask(() => editorBox?.querySelector<HTMLElement>('[role="textbox"]')?.focus());
   };
@@ -438,7 +441,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
               <div
                 class="prose prose-sm dark:prose-invert max-w-none cursor-text"
                 data-testid="description"
-                innerHTML={sanitizeRichText(html())}
+                innerHTML={sanitizeRichText(descriptionToHtml(html()))}
                 onClick={(e) => {
                   if (!(e.target as HTMLElement).closest('a')) edit();
                 }}
