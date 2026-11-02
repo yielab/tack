@@ -68,7 +68,7 @@ answers every new shape, and G measures the real one.
 | T | Threads and turns | Sonnet | `tack-core` a new `thread.rs` (the window of messages a turn reads, the caps, pure); `tack-db` migrations and repos `threads`, `thread_messages`; `tack-app` a turn starts a run of the thread's profile with principal `thread:<id>` and posts its reply; `tack-protocol` `FeatureCapabilities.converse` (`continues`, `replays`); every adapter reports `replays`, docket `continues` when its ask 4 is present; `tack-api` thread routes; MCP `read_thread`, `post_message` | P, E, W |
 | TU | The thread on screen | Sonnet | a new `features/threads/` (panel, message, the change sets and decisions inline using U's and Phase 84 J's components), the sidebar entry, the user guide's new "Talking with a manager" page | T, U |
 | R | Triggers and the preset | Sonnet | `tack-core` a new `trigger.rs` (match, quiet period, daily cap, the rule that a principal's own events never start its runs, pure); `tack-db` migration and repo `triggers`; `tack-app` a `triggers` tick through `Loops::spawn_tick`; `features/settings/panels/automation/` Triggers; `features/agents/` "Add a manager" | E, T |
-| G | The live suite proves it | Sonnet | `onboarding-lab/e2e/` (git-ignored): a manager profile on My SaaS reads the digest, proposes a change set in its thread, the operator applies it, two teams start; records which docket asks it found and whether a lights-out docket manager reaches `tack mcp` (ask 6); `TESTING.md`'s live-suite section | all |
+| G | The live suite proves it | Sonnet | `onboarding-lab/e2e/` (git-ignored): a manager profile on My SaaS reads the digest, proposes a change set in its thread, the operator applies it, two teams start; records which docket features it found, and that a lights-out docket manager reaches Tack through a docket service holding its agent credential, which holds it to change sets; `TESTING.md`'s live-suite section | all |
 
 ---
 
@@ -239,8 +239,12 @@ manager applied does not wake it; the preset produces only general parts.
 
 **Does.** In the git-ignored `onboarding-lab/e2e/`: a manager profile on My SaaS through docket;
 `digest` first; a change set proposed in its thread; applied by the operator; two teams start through
-auto-start; the suite reports which docket asks it found, and whether a lights-out docket manager
-reaches `tack mcp` (ask 6). `TESTING.md` names the new tests.
+auto-start; the suite reports which of docket's `features` it found. It also proves that a lights-out
+docket manager reaches Tack through a docket `kind: service` declaring Tack's HTTP API (`baseUrl:
+http://127.0.0.1:<port>`, `hosts: ["127.0.0.1"]`) that carries the manager's agent credential, never the
+operator's token, and that the credential holds it to change sets: its writes wait in the change-set
+list. It no longer measures whether a lights-out manager reaches `tack mcp`: docket's ADR 0037 does not
+build that (see ADR 0034's note of 2026-11-01). `TESTING.md` names the new tests.
 
 ## Left out, and why
 
