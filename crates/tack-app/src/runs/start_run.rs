@@ -396,6 +396,7 @@ fn answer_pairs<'a>(events: impl Iterator<Item = (&'a str, &'a str)>) -> Vec<Val
             pairs.push(json!({"question": question, "answer": answer}));
         } else if kind == tack_protocol::event_kind::ESCALATION_EXPIRED
             || kind == tack_protocol::event_kind::ESCALATION_DECIDED
+            || kind == tack_protocol::event_kind::ESCALATION_ANSWERED_ELSEWHERE
         {
             asked = None;
         }
@@ -1310,6 +1311,23 @@ mod tests {
                 json!({"question": "Which client?", "answer": "The HTTP one"}),
                 json!({"question": "Retry how many times?", "answer": "Three"}),
             ]
+        );
+    }
+
+    #[test]
+    fn start_run_keeps_no_pair_for_a_question_answered_in_the_agents_own_tool() {
+        // The board closed the question without being told the answer: nothing is invented, and
+        // a later answer line does not go with it.
+        let events = [
+            line("escalation.asked", "docket asked: Which client?"),
+            line("escalation.answered_elsewhere", "answered in docket"),
+            line("escalation.resolved", "a person answered: stray"),
+            line("escalation.asked", "docket asked: Retry how many times?"),
+            line("escalation.resolved", "a person answered: Three"),
+        ];
+        assert_eq!(
+            pairs(&events),
+            vec![json!({"question": "Retry how many times?", "answer": "Three"})]
         );
     }
 
