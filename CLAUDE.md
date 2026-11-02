@@ -101,8 +101,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   says so; docket has no route to resume it) and `hopTimes` (a step says how long it took). Plus the third audit
   of the live suite's screenshots: a refused run reads "Not started" and a reject-review says so, the board sorts
   needs-you first, the item drawer's status is one control that opens the menu, drawer sections fold
-  (`shared/ui/Fold.tsx`), and dependencies were updated except `@axe-core/playwright` (4.14.0 fails 25 accessibility
-  tests until two buttons carry their visible text in their accessible name).
+  (`shared/ui/Fold.tsx`), and dependencies were updated (the desktop app's Tauri crates and Vitest 5 are not taken).
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
