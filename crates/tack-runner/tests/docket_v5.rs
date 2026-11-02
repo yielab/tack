@@ -5285,6 +5285,23 @@ fn reads_of(fake: &FakeDocket, prefix: &str) -> Vec<String> {
         .collect()
 }
 
+/// Every combination of the two features the activity reader uses: `taskCurrent` and
+/// `taskCursor` are independent, and a docket may have either, both or neither.
+const FEATURE_TABLE: [(bool, bool); 4] =
+    [(true, true), (true, false), (false, true), (false, false)];
+
+/// The fake with only these two of the task features, as `/health` lists them.
+async fn pods_fake_with(current: bool, cursor: bool) -> FakeDocket {
+    let fake = pods_fake().await;
+    if !current {
+        fake.without_task_current();
+    }
+    if !cursor {
+        fake.without_task_cursor();
+    }
+    fake
+}
+
 /// A task a person started at the CLI, and one the board started, both running in a step.
 async fn running_pair(fake: &FakeDocket) -> (String, String) {
     fake.script(Script {
@@ -5300,11 +5317,9 @@ async fn running_pair(fake: &FakeDocket) -> (String, String) {
 
 #[tokio::test]
 async fn a_task_started_at_the_cli_is_outside_the_board_with_its_step() {
-    for with_features in [true, false] {
-        let fake = pods_fake().await;
-        if !with_features {
-            fake.without_task_features();
-        }
+    for (current, cursor) in FEATURE_TABLE {
+        let features = format!("current: {current}, cursor: {cursor}");
+        let fake = pods_fake_with(current, cursor).await;
         let (cli, board) = running_pair(&fake).await;
         let scene = scene();
         let adapter = adapter(&fake, &scene);
@@ -5313,7 +5328,7 @@ async fn a_task_started_at_the_cli_is_outside_the_board_with_its_step() {
         let find = |id: &str| tasks.iter().find(|task| task.task_ref == id).expect(id);
 
         let outside = find(&cli);
-        assert_eq!(outside.on_board, None, "features: {with_features}");
+        assert_eq!(outside.on_board, None, "{features}");
         assert_eq!(
             outside.state,
             tack_protocol::execution::ActivityState::Running
@@ -5342,11 +5357,9 @@ async fn a_task_started_at_the_cli_is_outside_the_board_with_its_step() {
 
 #[tokio::test]
 async fn a_finished_step_shows_its_verdict_and_summary() {
-    for with_features in [true, false] {
-        let fake = pods_fake().await;
-        if !with_features {
-            fake.without_task_features();
-        }
+    for (current, cursor) in FEATURE_TABLE {
+        let features = format!("current: {current}, cursor: {cursor}");
+        let fake = pods_fake_with(current, cursor).await;
         let mut finished = hop_finished(
             "reviewer",
             "anthropic/claude-sonnet-4-6",
@@ -5379,11 +5392,7 @@ async fn a_finished_step_shows_its_verdict_and_summary() {
             panic!("one step, got {:?}", task.finished_steps);
         };
         assert_eq!(step.name, "reviewer");
-        assert_eq!(
-            step.verdict.as_deref(),
-            Some("approve"),
-            "features: {with_features}"
-        );
+        assert_eq!(step.verdict.as_deref(), Some("approve"), "{features}");
         assert_eq!(
             step.summary.as_deref(),
             Some("The retry is bounded and tested.")
@@ -5398,11 +5407,9 @@ async fn a_finished_step_shows_its_verdict_and_summary() {
 
 #[tokio::test]
 async fn only_what_changed_is_reported_again_and_the_features_decide_how_it_is_read() {
-    for with_features in [true, false] {
-        let fake = pods_fake().await;
-        if !with_features {
-            fake.without_task_features();
-        }
+    for (current, cursor) in FEATURE_TABLE {
+        let features = format!("current: {current}, cursor: {cursor}");
+        let fake = pods_fake_with(current, cursor).await;
         let (_, board) = running_pair(&fake).await;
         let scene = scene();
         let adapter = adapter(&fake, &scene);
@@ -5410,7 +5417,7 @@ async fn only_what_changed_is_reported_again_and_the_features_decide_how_it_is_r
         assert_eq!(activity_of(&adapter).await.len(), 2);
         assert!(
             activity_of(&adapter).await.is_empty(),
-            "nothing changed since the last read (features: {with_features})"
+            "nothing changed since the last read ({features})"
         );
 
         // The board's task ends, and only it is reported.
@@ -5438,15 +5445,92 @@ async fn only_what_changed_is_reported_again_and_the_features_decide_how_it_is_r
             .filter(|_| true)
             .collect::<Vec<_>>();
         let traces = fake.requests_to("GET", &format!("/traces/{POD}")).len();
-        if with_features {
+        if cursor {
             // The cursor is asked for from the start, then from where the last answer left off.
-            assert_eq!(lists.len(), 3);
-            assert_eq!(lists[0], "updatedSince=0");
-            assert_ne!(lists[1], "updatedSince=0");
-            assert_eq!(traces, 0, "`current` makes the trace unnecessary");
+            assert_eq!(lists.len(), 3, "{features}");
+            assert_eq!(lists[0], "updatedSince=0", "{features}");
+            assert_ne!(lists[1], "updatedSince=0", "{features}");
         } else {
-            assert!(lists.iter().all(String::is_empty), "{lists:?}");
-            assert_eq!(traces, 3, "the step is derived from the trace");
+            assert!(lists.iter().all(String::is_empty), "{features}: {lists:?}");
+        }
+        if current {
+            assert_eq!(
+                traces, 0,
+                "`current` makes the trace unnecessary ({features})"
+            );
+        } else {
+            assert_eq!(traces, 3, "the step is derived from the trace ({features})");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_docket_with_current_and_no_cursor_reads_the_step_from_the_task_and_lists_it_whole() {
+    let fake = pods_fake_with(true, false).await;
+    let (cli, _) = running_pair(&fake).await;
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let tasks = activity_of(&adapter).await;
+    assert_eq!(tasks.len(), 2);
+    let step = tasks
+        .iter()
+        .find(|task| task.task_ref == cli)
+        .and_then(|task| task.current_step.as_ref())
+        .expect("the step it is inside, from `current`");
+    assert_eq!(step.name, "implementer");
+
+    // The list is asked for whole, `updatedSince` is never sent, and no trace is read.
+    assert!(activity_of(&adapter).await.is_empty());
+    let lists = reads_of(&fake, &format!("/tasks/{POD}"));
+    assert!(lists.iter().all(String::is_empty), "{lists:?}");
+    assert_eq!(fake.requests_to("GET", &format!("/traces/{POD}")).len(), 0);
+}
+
+#[tokio::test]
+async fn a_docket_with_the_cursor_and_no_current_reads_the_step_from_the_trace() {
+    let fake = pods_fake_with(false, true).await;
+    let (cli, _) = running_pair(&fake).await;
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+
+    let tasks = activity_of(&adapter).await;
+    let step = tasks
+        .iter()
+        .find(|task| task.task_ref == cli)
+        .and_then(|task| task.current_step.as_ref())
+        .expect("the step it is inside, from the trace");
+    assert_eq!(step.name, "implementer");
+    let lists = reads_of(&fake, &format!("/tasks/{POD}"));
+    assert_eq!(lists, ["updatedSince=0"]);
+    // The task of the list carries `rev` but no `current`.
+    let (_, changed) = ask(&fake, "GET", &format!("/tasks/{POD}?updatedSince=0"), None).await;
+    assert!(changed["tasks"][0]["rev"].is_u64());
+    assert!(changed["tasks"][0].get("current").is_none());
+}
+
+/// The fake lists a feature only when it works, as docket's ADR 0037 asks of docket: Tack uses
+/// `taskCurrent` and `taskCursor`, and the fake serves nothing else (no memory, no read token,
+/// no turn escalation), so it names nothing else, on `/health` or on `/status.json`.
+#[tokio::test]
+async fn the_fake_lists_only_the_features_it_serves() {
+    for (current, cursor) in FEATURE_TABLE {
+        let fake = pods_fake_with(current, cursor).await;
+        let mut expected = Vec::new();
+        if current {
+            expected.push("taskCurrent");
+        }
+        if cursor {
+            expected.push("taskCursor");
+        }
+        for path in ["/health", "/status.json"] {
+            let (status, answer) = ask(&fake, "GET", path, None).await;
+            assert_eq!(status, 200, "{path}");
+            assert_eq!(
+                answer["features"],
+                json!(expected),
+                "{path} (current: {current}, cursor: {cursor})"
+            );
         }
     }
 }
