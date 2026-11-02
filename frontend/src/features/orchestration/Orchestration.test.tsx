@@ -8,6 +8,7 @@ import { ProjectHasRunProvider } from '../../shared/state/projectHasRun';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import WorkTabs from '../../shared/ui/WorkTabs';
 import { flush } from '../../test/flush';
+import { stateRank } from '../../shared/runWithAgent/cardRun';
 import Orchestration from './Orchestration';
 
 type Json = Record<string, unknown>;
@@ -300,6 +301,14 @@ describe('Orchestration: lanes', () => {
 });
 
 describe('Orchestration: summary row', () => {
+  it('reads_the_Work_counters_in_the_order_the_Board_and_the_List_rank_runs_with_Nobody_last', async () => {
+    const c = await mount(threeLanes());
+    const filters = qa(c, '[data-testid="flow-summary"] button').map((b) => b.getAttribute('data-testid')!.replace('flow-counter-', ''));
+    expect(filters).toEqual(['needs', 'review', 'running', 'queued', 'nobody']);
+    const ranks = filters.slice(0, 4).map((f) => stateRank(f as never));
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+  });
+
   it('counts_the_tasks_and_a_counter_narrows_the_lanes', async () => {
     const c = await mount(threeLanes());
     const count = (f: string) => q(c, `[data-testid="flow-counter-${f}"]`)!.textContent!;
