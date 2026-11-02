@@ -163,13 +163,14 @@ pub async fn post(
     }
 }
 
-/// The projects a thread's digest covers: its project, or the ones its credential may read.
-async fn digest_projects(
+/// The projects a thread's (or a trigger's) digest covers: its project, or the ones its
+/// credential may read.
+pub(crate) async fn digest_projects(
     repo: &Repository,
-    thread: &Thread,
+    scope: &ThreadScope,
     home: &Project,
 ) -> Result<(Vec<Project>, bool), AppError> {
-    let Some(credential) = thread.scope.credential() else {
+    let Some(credential) = scope.credential() else {
         return Ok((vec![home.clone()], false));
     };
     let principal = repo
@@ -220,7 +221,7 @@ async fn begin_turn(
         .list_thread_messages(thread.id)
         .await
         .map_err(|e| internal("could not read the messages")(&e))?;
-    let (projects, outside_board) = digest_projects(repo, thread, &home)
+    let (projects, outside_board) = digest_projects(repo, &thread.scope, &home)
         .await
         .map_err(|e| internal("could not tell which projects the thread reaches")(&e))?;
     let digest = crate::digest::read(

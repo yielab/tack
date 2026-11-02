@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (114 paths, 155 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (116 paths, 160 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -203,6 +203,78 @@ POST /api/threads/{id}/messages
 | 403 | The credential lacks the scope `converse` on the thread's project | `ErrorEnvelope` |
 | 404 | Not found | `ErrorEnvelope` |
 | 409 | The thread is closed or at a cap, or its last turn has not answered yet | `ErrorEnvelope` |
+
+---
+
+## Triggers
+
+Rules that wake a profile on an event or a schedule; one run takes every event since the last.
+
+#### `GET /api/triggers`
+
+GET /api/triggers
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `project_id` | path | `['string', 'null']` | yes | Only the triggers whose home is this project. |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Triggers, oldest first | `Trigger`[] |
+
+#### `POST /api/triggers`
+
+POST /api/triggers
+
+**Request body:** `CreateTrigger`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The trigger | `Trigger` |
+| 400 | The trigger, its profile or its credential is not acceptable | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `DELETE /api/triggers/{id}`
+
+DELETE /api/triggers/{id}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Trigger ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 204 | Deleted, with the events it kept | — |
+| 404 | Not found | `ErrorEnvelope` |
+
+#### `GET /api/triggers/{id}`
+
+GET /api/triggers/{id}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Trigger ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The trigger | `Trigger` |
+| 404 | Not found | `ErrorEnvelope` |
+
+#### `PATCH /api/triggers/{id}`
+
+PATCH /api/triggers/{id}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Trigger ID |
+
+**Request body:** `UpdateTrigger`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The trigger, changed | `Trigger` |
+| 400 | The change is not acceptable | `ErrorEnvelope` |
+| 404 | Not found | `ErrorEnvelope` |
 
 ---
 

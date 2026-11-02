@@ -22,6 +22,7 @@ pub mod sprints;
 pub mod team_activity;
 pub mod templates;
 pub mod threads;
+pub mod triggers;
 pub mod workspaces;
 
 use crate::StoreError;
