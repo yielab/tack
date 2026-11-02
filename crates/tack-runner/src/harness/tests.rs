@@ -363,6 +363,7 @@ impl HarnessProbe for FakeProbe {
         FeatureCapabilities {
             proposals: None,
             activity: None,
+            converse: None,
             cancel: CapabilityValue {
                 support: self.cancel_support,
                 reason: Some("fake probe for registry-dispatch tests".to_owned()),
@@ -546,6 +547,7 @@ impl local_process::HarnessGrammar for ConfiguredGrammar {
         tack_protocol::execution::FeatureCapabilities {
             proposals: None,
             activity: None,
+            converse: None,
             cancel: advisory(),
             resume: advisory(),
             decisions: advisory(),

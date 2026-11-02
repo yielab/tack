@@ -50,5 +50,6 @@ pub mod remote_backup;
 pub mod retention;
 pub mod runs;
 pub mod scheduler_wiring;
+pub mod threads;
 
 pub use error::AppError;

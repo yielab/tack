@@ -146,7 +146,7 @@ pub async fn day_room(
 pub async fn review_queue_items(repo: &Repository, project_id: &str) -> Result<i64, StoreError> {
     // The fragment is a constant of this crate; only `project_id` is bound.
     Ok(sqlx::query_scalar(AssertSqlSafe(format!(
-        "SELECT COUNT(*) FROM items WHERE project_id = ? AND completed_at IS NULL AND {}",
+        "SELECT COUNT(*) FROM items WHERE project_id = ? AND hidden = 0 AND completed_at IS NULL AND {}",
         crate::repo::items::needs_review_sql()
     )))
     .bind(project_id)

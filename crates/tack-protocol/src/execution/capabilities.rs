@@ -46,6 +46,13 @@ pub struct FeatureCapabilities {
     /// as unsupported with the reason "this agent does not say".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<CapabilityValue>,
+    /// Whether this harness can hold a conversation across turns: `continues` (the agent keeps
+    /// the context of the earlier turns) or `replays` (each turn is a new run given the
+    /// transcript), as [`ConverseMode`](crate::conversation::ConverseMode) reads it, and why not.
+    /// Absent means the harness did not say: a reader shows it as unsupported with the reason
+    /// "this agent does not say".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub converse: Option<CapabilityValue>,
     #[serde(flatten, default)]
     pub additional: BTreeMap<String, serde_json::Value>,
 }

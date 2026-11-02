@@ -365,6 +365,12 @@ async fn report_capabilities<C: Clock>(
                     "reported only by a harness that holds teams; see each harness's own activity capability",
                 ),
             )),
+            converse: Some(feature(
+                tack_protocol::execution::CapabilitySupport::Advisory,
+                Some(
+                    "every harness converses by replay at least; see each harness's own converse capability",
+                ),
+            )),
             additional: BTreeMap::new(),
         },
         limits: CapabilityLimits {

@@ -54,6 +54,7 @@ impl HarnessGrammar for TestGrammar {
         FeatureCapabilities {
             proposals: None,
             activity: None,
+            converse: None,
             cancel: advisory(),
             resume: advisory(),
             decisions: advisory(),

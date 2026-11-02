@@ -94,7 +94,9 @@ another is given.
 | `list_teams` | read | — | `GET /api/teams` |
 | `list_roles` | read | `project_id`* | `GET /api/projects/{id}/roles` |
 | `get_change_set` | read | `id`* | `GET /api/change-sets/{id}` |
-| `propose` | write | `project_id`*, `reason`*, `operations`*, `idempotency_key` | `POST /api/projects/{id}/change-sets` |
+| `propose` | write | `project_id`*, `reason`*, `operations`*, `idempotency_key`, `thread_id` | `POST /api/projects/{id}/change-sets` |
+| `read_thread` | read | `thread_id`* | `GET /api/threads/{id}` |
+| `post_message` | write | `thread_id`*, `body`*, `refs` | `POST /api/threads/{id}/messages` |
 
 `digest` is the call to make first: a bounded summary of the projects the token may read (items
 per status, what waits on a person, blocked chains, tasks no team will pick up and why, stale
@@ -116,6 +118,16 @@ cannot land is refused with every reason in one error, and nothing is kept. Othe
 waits for a person (change set <id>)`, with each operation's state and the id of the item it made
 or changed; the project's rung decides which. The same `idempotency_key` on a project answers
 the first change set again. `get_change_set` reads one back, with each operation's state.
+
+A thread is a conversation between a person and a profile. `read_thread` returns its title,
+status, the turns it has taken and its latest messages (20 at most, `more` counting the older
+ones), each body fenced as card text. `post_message` writes in it, with `refs` to the items,
+change sets and decisions the message is about; both need the scope `converse` on the thread's
+project, and a thread kept for one credential answers only that credential. A message from an
+agent starts a turn of the thread's profile like a person's does, so the answer says whether a
+turn started (`turn_started`), and the thread takes one turn at a time: a message while the last
+turn has not answered, to a closed thread or past its turn cap is refused with the reason. An agent
+taking a turn gives `propose` the `thread_id` it is told, and the reply then shows the change set.
 
 Every free text these tools return that somebody wrote (a change set's reason and its
 operations' descriptions, acceptance criteria and comments, and the reasons in the digest) is

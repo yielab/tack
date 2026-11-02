@@ -26,7 +26,7 @@ pub async fn open_items(
     let done = serde_json::to_string(done).unwrap_or_else(|_| "[]".into());
     Ok(sqlx::query_as(
         "SELECT id, title, status, updated_at FROM items
-         WHERE project_id = ? AND status NOT IN (SELECT value FROM json_each(?))",
+         WHERE project_id = ? AND hidden = 0 AND status NOT IN (SELECT value FROM json_each(?))",
     )
     .bind(project_id)
     .bind(done)
@@ -71,7 +71,7 @@ pub async fn items_awaiting_review(
         "SELECT id AS item_id, title, 'review' AS kind,
                 COALESCE((SELECT r.updated_at FROM execution_requests r WHERE r.item_id = items.id
                           ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1), updated_at) AS since
-         FROM items WHERE project_id = ? AND completed_at IS NULL AND {}",
+         FROM items WHERE project_id = ? AND hidden = 0 AND completed_at IS NULL AND {}",
         needs_review_sql()
     )))
     .bind(project_id)
@@ -100,7 +100,7 @@ pub async fn failed_runs_since(
         "SELECT r.id AS id, r.item_id AS item_id, i.title AS title, r.updated_at AS failed_at,
                 r.waiting_reason AS reason
          FROM execution_requests r JOIN items i ON i.id = r.item_id
-         WHERE i.project_id = ? AND r.state = {failed}
+         WHERE i.project_id = ? AND i.hidden = 0 AND r.state = {failed}
            AND julianday(r.updated_at) >= julianday(?)",
     ))
     .bind(project_id)

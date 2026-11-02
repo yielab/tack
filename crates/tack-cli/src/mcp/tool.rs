@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use super::{board, changes, fleet, items, projects, runs};
+use super::{board, changes, fleet, items, projects, runs, threads};
 use crate::client::TackClient;
 
 /// Whether a tool changes anything on the board.
@@ -72,6 +72,8 @@ pub static TOOLS: &[&Tool] = &[
     &board::LIST_ROLES,
     &changes::GET_CHANGE_SET,
     &changes::PROPOSE,
+    &threads::READ_THREAD,
+    &threads::POST_MESSAGE,
 ];
 
 /// The `tools` array `tools/list` answers with.
