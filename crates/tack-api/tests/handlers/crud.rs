@@ -1530,12 +1530,22 @@ async fn an_accepted_entry_with_sub_items_keeps_its_own_done_when_lines() {
             .collect()
     };
     for (entry, want) in [
-        (0, vec!["Both child items are done", "Access can be revoked"]),
+        (
+            0,
+            vec!["Both child items are done", "Access can be revoked"],
+        ),
         (1, vec!["A design note lists the roles"]),
         (2, vec!["An owner can share a note"]),
     ] {
         let id = created[entry]["id"].as_str().unwrap();
-        let (status, brief) = common::send(&app, "GET", &format!("/api/items/{id}/brief"), Value::Null, &[]).await;
+        let (status, brief) = common::send(
+            &app,
+            "GET",
+            &format!("/api/items/{id}/brief"),
+            Value::Null,
+            &[],
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "{brief}");
         assert_eq!(texts(&brief), want, "entry {entry}: {brief}");
     }

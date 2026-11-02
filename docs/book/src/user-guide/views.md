@@ -140,7 +140,7 @@ members, which of them change the project, its steps and what checks each, which
 its changes are merged here, the token limit for one run and the tokens counted today. A fact a team did
 not report reads **not reported**, never a guess; hover it, or read on, for why. A row that no team filled is
 one line across the table that says so ("not reported by any of the 3 teams"). A step named like its role
-("lead", run by Lead) is written once. In the Map a box's second line wraps onto a third when it is long, and
+("lead", run by Lead) is written once. In the Map a box's second line wraps onto a further line when it is long, and
 what still does not fit is in its tooltip. Every empty station of a lane reads **None**. What a team delivers
 and the limit for a run come from the profiles that name the team, and a run's limit falls back to the
 project's provisional one when the profile sets none.
