@@ -506,11 +506,10 @@ test.describe.serial('tutorial screenshots', () => {
     // trade for attempt.png). The Artifacts section alone shows the result
     // without them.
     await page.waitForTimeout(1200);
-    const artifactsHeading = page.getByRole('heading', {
-      name: 'Files from this run',
-      exact: true,
-    });
+    // A finished run keeps its files folded; the recording opens them.
+    const artifactsHeading = page.getByRole('button', { name: /^Files from this run/ });
     await expect(artifactsHeading).toBeVisible();
+    if ((await artifactsHeading.getAttribute('aria-expanded')) !== 'true') await artifactsHeading.click();
     const artifactsSection = artifactsHeading.locator('xpath=..');
     await artifactsSection.scrollIntoViewIfNeeded();
     await page.waitForTimeout(400);
@@ -646,8 +645,9 @@ test.describe('workflow gif', () => {
     await page.getByRole('button', { name: 'Accept', exact: true }).first().click();
     await expect(page.getByText(/^Accepted/).first()).toBeVisible();
     await page.waitForTimeout(2000);
-    const files = page.getByRole('heading', { name: 'Files from this run', exact: true });
+    const files = page.getByRole('button', { name: /^Files from this run/ });
     await expect(files).toBeVisible();
+    if ((await files.getAttribute('aria-expanded')) !== 'true') await files.click();
     await files.scrollIntoViewIfNeeded();
     await page.waitForTimeout(3500);
     await page.keyboard.press('Escape');

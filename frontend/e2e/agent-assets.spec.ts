@@ -289,6 +289,9 @@ test('hero gif', async ({ page }) => {
   await page.waitForTimeout(1200);
 
   await page.waitForTimeout(1500);
+  // A finished run keeps its files folded; the recording opens them.
+  const filesFold = page.getByRole('button', { name: /^Files from this run/ }).first();
+  if ((await filesFold.getAttribute('aria-expanded')) !== 'true') await filesFold.click();
   const filesHeading = page.getByText('Files from this run', { exact: true }).first();
   await expect(filesHeading).toBeVisible();
   // End on the files themselves: they sit below the fold of the drawer.

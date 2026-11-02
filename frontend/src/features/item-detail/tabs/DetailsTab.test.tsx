@@ -148,10 +148,21 @@ describe('DetailsTab', () => {
     });
     const { container } = mount();
     await flush();
-    const block = container.querySelector<HTMLDetailsElement>('details')!;
-    expect(block.open).toBe(false);
-    expect(block.querySelector('summary')!.textContent).toContain('For the agent');
-    expect(block.querySelector('summary')!.textContent).toContain('2 checks · 1 limit');
+    const head = container.querySelector<HTMLButtonElement>('[data-fold="for-the-agent"] > button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(head.textContent).toContain('For the agent');
+    expect(head.textContent).toContain('2 checks · 1 limit');
+  });
+
+  it('keeps the GitHub issue link folded, and says in its header whether an issue is linked', async () => {
+    const { container } = mount();
+    await flush();
+    const head = container.querySelector<HTMLButtonElement>('[data-fold="github"] > button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(head.textContent).toContain('GitHub issue');
+    expect(head.textContent).toContain('no GitHub issue linked');
+    head.click();
+    expect(head.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('ticking_a_done_when_line_saves_checked_and_moves_the_progress', async () => {
