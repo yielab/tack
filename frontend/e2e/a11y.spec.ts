@@ -386,8 +386,10 @@ test('agents page — enrolling a runner and viewing the one-time token modal ha
   await openAdvanced(page);
 
   const runnerName = `e2e-runner-${Date.now()}`;
-  await page.getByLabel('Name').fill(runnerName);
-  await page.getByRole('button', { name: 'Enroll', exact: true }).click();
+  // The page can also show the "Add a manager" form, which has a Name field of its own.
+  const enrollForm = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Enroll a runner' }) });
+  await enrollForm.getByLabel('Name').fill(runnerName);
+  await enrollForm.getByRole('button', { name: 'Enroll', exact: true }).click();
 
   await expect(page.getByRole('dialog', { name: 'Runner enrollment token' })).toBeVisible();
   await expect(page.getByText('Shown once')).toBeVisible();
@@ -433,8 +435,10 @@ test('agents page — creating a fleet via the form has no accessibility violati
   await page.getByRole('tab', { name: 'Fleets' }).click();
   await page.getByRole('button', { name: '+ Create fleet' }).click();
   const fleetName = `e2e-fleet-${Date.now()}`;
-  await page.getByLabel('Name').fill(fleetName);
-  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  // Scoped to the fleet form: the page can also show "Add a manager", which has a Name field too.
+  const fleetForm = page.locator('form').filter({ has: page.getByPlaceholder('backend-fleet') });
+  await fleetForm.getByLabel('Name').fill(fleetName);
+  await fleetForm.getByRole('button', { name: 'Create', exact: true }).click();
   await expect(page.getByText(fleetName, { exact: true })).toBeVisible();
 
   const violations = await scan(page);
