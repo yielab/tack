@@ -7883,6 +7883,282 @@
           }
         }
       }
+    },
+    "/api/threads": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "GET /api/threads",
+        "operationId": "list_threads",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "description": "Only the threads whose home is this project.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "open",
+            "in": "path",
+            "description": "Only the open threads.",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Threads, the most recently written first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Thread"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "POST /api/threads",
+        "operationId": "create_thread",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThread"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The thread, open, with no message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The title, the profile or the credential is not acceptable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}": {
+      "get": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "GET /api/threads/{id}",
+        "operationId": "get_thread",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Thread ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread, its messages and its turns",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential lacks the scope `converse` on the thread's project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}/close": {
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "POST /api/threads/{id}/close",
+        "operationId": "close_thread",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Thread ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thread, closed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Thread"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{id}/messages": {
+      "post": {
+        "tags": [
+          "threads"
+        ],
+        "summary": "POST /api/threads/{id}/messages",
+        "operationId": "post_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Thread ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The message is in the thread and its turn has started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostedMessage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The message or its references are not acceptable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential lacks the scope `converse` on the thread's project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The thread is closed or at a cap, or its last turn has not answered yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11006,6 +11282,37 @@
           }
         }
       },
+      "CreateThread": {
+        "type": "object",
+        "description": "What opens a thread.",
+        "required": [
+          "project_id",
+          "profile",
+          "title"
+        ],
+        "properties": {
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "When given, the thread reaches the projects this credential may read, and only that\ncredential (and the operator) may write in it."
+          },
+          "profile": {
+            "type": "string",
+            "description": "The agent profile whose runs are the thread's turns."
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The project the thread's turns run in; with no credential, the only project it reaches."
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
       "CreatedSubtask": {
         "type": "object",
         "required": [
@@ -13009,6 +13316,44 @@
           }
         }
       },
+      "Message": {
+        "type": "object",
+        "required": [
+          "id",
+          "thread",
+          "principal",
+          "body",
+          "refs",
+          "created_at"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "principal": {
+            "type": "string",
+            "description": "Who wrote it, as [`Principal::label`](crate::principal::Principal::label) says:\n`operator:local`, `agent:<credential>`, `thread:<id>` for a reply."
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            }
+          },
+          "thread": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "MetricOp": {
         "type": "string",
         "enum": [
@@ -13768,6 +14113,58 @@
           }
         }
       },
+      "PostMessage": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ref"
+            },
+            "description": "Items, change sets and decisions the message is about."
+          }
+        }
+      },
+      "PostedMessage": {
+        "type": "object",
+        "description": "What posting a message did.",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/Message"
+          },
+          "notice": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Message",
+                "description": "What the thread says about a turn that could not start."
+              }
+            ]
+          },
+          "turn": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Turn",
+                "description": "The turn the message started; absent when it could not start one."
+              }
+            ]
+          }
+        }
+      },
       "Priority": {
         "type": "string",
         "enum": [
@@ -14357,6 +14754,30 @@
           "weekly",
           "monthly",
           "quarterly"
+        ]
+      },
+      "Ref": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RefKind"
+          }
+        }
+      },
+      "RefKind": {
+        "type": "string",
+        "description": "What a message points at.",
+        "enum": [
+          "item",
+          "change_set",
+          "decision"
         ]
       },
       "RejectChangeSet": {
@@ -16477,6 +16898,145 @@
           }
         }
       },
+      "Thread": {
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "profile",
+          "title",
+          "status",
+          "turns",
+          "created_at",
+          "last_message_at"
+        ],
+        "properties": {
+          "closed_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a closed thread closed."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The time of the latest message, or of the thread's creation when it has none."
+          },
+          "profile": {
+            "type": "string",
+            "description": "The agent profile whose runs are the thread's turns."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ThreadScope"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ThreadStatus"
+          },
+          "title": {
+            "type": "string"
+          },
+          "turns": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Turns taken so far.",
+            "minimum": 0
+          }
+        }
+      },
+      "ThreadDetail": {
+        "type": "object",
+        "description": "A thread with everything in it.",
+        "required": [
+          "thread",
+          "messages",
+          "turns"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "description": "Oldest first."
+          },
+          "thread": {
+            "$ref": "#/components/schemas/Thread"
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Turn"
+            },
+            "description": "Oldest first."
+          }
+        }
+      },
+      "ThreadScope": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "One project: its digest, and nothing else.",
+            "required": [
+              "project",
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "project"
+                ]
+              },
+              "project": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The projects a credential reaches. `home` is the one project its turns run in.",
+            "required": [
+              "credential",
+              "home",
+              "kind"
+            ],
+            "properties": {
+              "credential": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "home": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "credential"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Which projects a thread reaches."
+      },
+      "ThreadStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "closed"
+        ]
+      },
       "Tokens": {
         "type": "object",
         "description": "Tokens counted as the project's limits count them: cache reads are not part of them.",
@@ -16545,6 +17105,61 @@
             "type": "string"
           }
         }
+      },
+      "Turn": {
+        "type": "object",
+        "description": "One run of the thread's profile, started by one message.",
+        "required": [
+          "thread",
+          "position",
+          "message",
+          "request_id",
+          "state",
+          "started_at"
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The message that started it."
+          },
+          "position": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 for the first turn.",
+            "minimum": 0
+          },
+          "request_id": {
+            "type": "string",
+            "description": "The run (execution request) it is."
+          },
+          "settled_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TurnState"
+          },
+          "thread": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "TurnState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "replied",
+          "failed"
+        ]
       },
       "Unclaimed": {
         "type": "object",
@@ -17502,6 +18117,10 @@
     {
       "name": "digest",
       "description": "A computed, bounded summary of the projects a caller may read."
+    },
+    {
+      "name": "threads",
+      "description": "Conversations between a person and a profile; each message starts a turn."
     },
     {
       "name": "items",

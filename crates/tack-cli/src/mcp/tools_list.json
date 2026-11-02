@@ -611,6 +611,10 @@
         "reason": {
           "description": "Why, in a sentence a person reads before deciding",
           "type": "string"
+        },
+        "thread_id": {
+          "description": "The conversation thread this proposal answers, when you are taking a turn of one; the reply then shows the change set",
+          "type": "string"
         }
       },
       "required": [
@@ -621,5 +625,65 @@
       "type": "object"
     },
     "name": "propose"
+  },
+  {
+    "description": "Read a conversation thread: its title, status, the turns it has taken, and its latest messages (20 at most; `more` counts the older ones). Needs the scope `converse` on the thread's project.",
+    "inputSchema": {
+      "properties": {
+        "thread_id": {
+          "description": "Thread UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id"
+      ],
+      "type": "object"
+    },
+    "name": "read_thread"
+  },
+  {
+    "description": "Write a message in a conversation thread: a report or an alert for the person. A message from an agent starts a turn of the thread's profile, and the thread takes one turn at a time: it is refused while the last turn has not answered, when the thread is closed, or when it reached its turn cap. Needs the scope `converse` on the thread's project.",
+    "inputSchema": {
+      "properties": {
+        "body": {
+          "description": "The message, at most 4000 characters",
+          "type": "string"
+        },
+        "refs": {
+          "description": "Items, change sets and decisions the message is about",
+          "items": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "item",
+                  "change_set",
+                  "decision"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "thread_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id",
+        "body"
+      ],
+      "type": "object"
+    },
+    "name": "post_message"
   }
 ]

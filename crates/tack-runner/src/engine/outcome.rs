@@ -509,7 +509,10 @@ where
             .files
             .iter()
             .map(|file| file.path.clone())
-            .filter(|path| path != crate::evidence::PLAN_FILE)
+            .filter(|path| {
+                path != crate::evidence::PLAN_FILE
+                    && path != tack_protocol::conversation::REPLY_FILE
+            })
             .collect();
         if others.is_empty() {
             return;
@@ -931,6 +934,7 @@ where
                 capability_snapshot: domain::FeatureCapabilities {
                     proposals: None,
                     activity: None,
+                    converse: None,
                     cancel: unexercised(),
                     resume: unexercised(),
                     decisions: unexercised(),

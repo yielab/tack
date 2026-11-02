@@ -41,7 +41,7 @@ pub async fn statuses_of_project(
     project_id: &str,
 ) -> Result<Vec<ItemStatus>, StoreError> {
     Ok(
-        sqlx::query_as("SELECT id, status FROM items WHERE project_id = ?")
+        sqlx::query_as("SELECT id, status FROM items WHERE project_id = ? AND hidden = 0")
             .bind(project_id)
             .fetch_all(repo.pool())
             .await?,

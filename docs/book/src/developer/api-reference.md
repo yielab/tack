@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (110 paths, 150 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (114 paths, 155 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -127,6 +127,82 @@ GET /api/digest
 | 400 | `projects` or `since` is not what it should be | `ErrorEnvelope` |
 | 403 | The credential lacks the scope `read` on a project it asked for | `ErrorEnvelope` |
 | 404 | A project it asked for does not exist | `ErrorEnvelope` |
+
+---
+
+## Threads
+
+Conversations between a person and a profile; each message starts a turn.
+
+#### `GET /api/threads`
+
+GET /api/threads
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `project_id` | path | `['string', 'null']` | yes | Only the threads whose home is this project. |
+| `open` | path | `boolean` | yes | Only the open threads. |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Threads, the most recently written first | `Thread`[] |
+
+#### `POST /api/threads`
+
+POST /api/threads
+
+**Request body:** `CreateThread`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The thread, open, with no message | `Thread` |
+| 400 | The title, the profile or the credential is not acceptable | `ErrorEnvelope` |
+| 404 | Project not found | `ErrorEnvelope` |
+
+#### `GET /api/threads/{id}`
+
+GET /api/threads/{id}
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Thread ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The thread, its messages and its turns | `ThreadDetail` |
+| 403 | The credential lacks the scope `converse` on the thread's project | `ErrorEnvelope` |
+| 404 | Not found | `ErrorEnvelope` |
+
+#### `POST /api/threads/{id}/close`
+
+POST /api/threads/{id}/close
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Thread ID |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The thread, closed | `Thread` |
+| 404 | Not found | `ErrorEnvelope` |
+
+#### `POST /api/threads/{id}/messages`
+
+POST /api/threads/{id}/messages
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | Thread ID |
+
+**Request body:** `PostMessage`
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The message is in the thread and its turn has started | `PostedMessage` |
+| 400 | The message or its references are not acceptable | `ErrorEnvelope` |
+| 403 | The credential lacks the scope `converse` on the thread's project | `ErrorEnvelope` |
+| 404 | Not found | `ErrorEnvelope` |
+| 409 | The thread is closed or at a cap, or its last turn has not answered yet | `ErrorEnvelope` |
 
 ---
 

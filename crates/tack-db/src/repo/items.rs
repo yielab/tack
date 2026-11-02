@@ -407,12 +407,13 @@ impl Repository {
         project_id: Uuid,
         status: &str,
     ) -> Result<i64, StoreError> {
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
-                .bind(project_id.to_string())
-                .bind(status)
-                .fetch_one(self.pool())
-                .await?;
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ? AND hidden = 0",
+        )
+        .bind(project_id.to_string())
+        .bind(status)
+        .fetch_one(self.pool())
+        .await?;
         Ok(count)
     }
 
@@ -427,7 +428,7 @@ impl Repository {
             "SELECT {columns}
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
-             WHERE i.project_id = ? AND items_fts MATCH ?
+             WHERE i.project_id = ? AND i.hidden = 0 AND items_fts MATCH ?
              ORDER BY rank
              LIMIT 50"
         )))
@@ -451,7 +452,7 @@ impl Repository {
              FROM items i
              JOIN items_fts fts ON i.rowid = fts.rowid
              JOIN projects p ON i.project_id = p.id
-             WHERE p.workspace_id = ? AND items_fts MATCH ?
+             WHERE p.workspace_id = ? AND i.hidden = 0 AND items_fts MATCH ?
              ORDER BY rank
              LIMIT 100"
         )))
@@ -468,7 +469,7 @@ impl Repository {
         let columns = item_columns("");
         let rows = sqlx::query_as::<_, ItemRow>(AssertSqlSafe(format!(
             "SELECT {columns}
-             FROM items WHERE project_id = ? ORDER BY parent_id NULLS FIRST, sort_order ASC"
+             FROM items WHERE project_id = ? AND hidden = 0 ORDER BY parent_id NULLS FIRST, sort_order ASC"
         )))
         .bind(project_id.to_string())
         .fetch_all(self.pool())
@@ -677,7 +678,7 @@ fn parse_item_type(s: &str) -> ItemType {
 /// list/count queries so both stay in lockstep. Returns a clause beginning with
 /// a leading space, e.g. ` WHERE project_id = ? AND status = ?`.
 fn item_filter_clause(project_id: Uuid, filter: &ItemFilter) -> (String, Vec<String>) {
-    let mut clause = String::from(" WHERE project_id = ?");
+    let mut clause = String::from(" WHERE project_id = ? AND hidden = 0");
     let mut binds: Vec<String> = vec![project_id.to_string()];
 
     if let Some(ref status) = filter.status {
@@ -870,12 +871,13 @@ pub(crate) async fn update_item_in(
         });
     }
     let status_category = if let Some(target) = input.status.as_deref() {
-        let occupied: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ?")
-                .bind(&project_id)
-                .bind(target)
-                .fetch_one(&mut **tx)
-                .await?;
+        let occupied: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM items WHERE project_id = ? AND status = ? AND hidden = 0",
+        )
+        .bind(&project_id)
+        .bind(target)
+        .fetch_one(&mut **tx)
+        .await?;
         match gate.admit_move(&old_status, target, occupied as usize) {
             Ok(category) => category,
             Err(error) => return Ok(AtomicItemUpdateOutcome::Rejected(error)),

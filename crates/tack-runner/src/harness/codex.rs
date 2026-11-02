@@ -4,6 +4,7 @@
 //! Vendor findings — what is measured, what is a documented guess, and at
 //! which version — are in `fixtures/codex/README.md`.
 
+use tack_protocol::conversation::ConverseMode;
 use tack_protocol::execution::{
     Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy,
 };
@@ -504,6 +505,10 @@ impl HarnessGrammar for CodexGrammar {
             activity: Some(capability(
                 CapabilitySupport::Unsupported,
                 "codex runs one agent in one work tree; it holds no team and no work of its own to report",
+            )),
+            converse: Some(ConverseMode::Replays.capability(
+                "every turn is a new run given the conversation so far; the agent leaves its \
+                 reply in `tack-reply.md` at the root of its work tree",
             )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,

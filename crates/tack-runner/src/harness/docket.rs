@@ -21,6 +21,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Local, Utc};
 use serde_json::{Value, json};
+use tack_protocol::conversation::ConverseMode;
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
@@ -161,6 +162,10 @@ fn capabilities() -> FeatureCapabilities {
             CapabilitySupport::Supported,
             "the team's task list, with the step each task is in and the steps it finished, \
              including the work its CLI, a routine or another channel gave it",
+        )),
+        converse: Some(ConverseMode::Replays.capability(
+            "every turn is a new task given the conversation so far; docket's own continuing task \
+             (an escalation of kind `turn`, ADR 0037 decision 4) is not used yet",
         )),
         additional: policy_capability(
             CapabilitySupport::Supported,

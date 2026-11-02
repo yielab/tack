@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::Value;
+use tack_protocol::conversation::ConverseMode;
 use tack_protocol::execution::{
     Approvals, CapabilitySupport, FeatureCapabilities, PermissionPolicy, Usage,
 };
@@ -443,6 +444,10 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             activity: Some(capability(
                 CapabilitySupport::Unsupported,
                 "Claude Code runs one agent in one work tree; it holds no team and no work of its own to report",
+            )),
+            converse: Some(ConverseMode::Replays.capability(
+                "every turn is a new run given the conversation so far; the agent leaves its \
+                 reply in `tack-reply.md` at the root of its work tree",
             )),
             additional: policy_capability(
                 CapabilitySupport::Advisory,

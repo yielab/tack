@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 
 use super::projection::{card_fence_id, fence_card_text, fence_field};
-use super::tool::{Kind, Spec, Tool, call, opt_str, require_id, require_str};
+use super::tool::{Kind, Spec, Tool, call, check_id, opt_str, require_id, require_str};
 use crate::client::TackClient;
 
 const OPERATIONS_HELP: &str = "Each operation is an object with an `op`: \
@@ -48,7 +48,8 @@ pub static PROPOSE: Tool = Tool {
                             "required": ["op"]
                         }
                     },
-                    "idempotency_key": { "type": "string", "description": "The same key on a project answers the first change set again" }
+                    "idempotency_key": { "type": "string", "description": "The same key on a project answers the first change set again" },
+                    "thread_id": { "type": "string", "description": "The conversation thread this proposal answers, when you are taking a turn of one; the reply then shows the change set" }
                 },
                 "required": ["project_id", "reason", "operations"]
             })
@@ -66,12 +67,16 @@ fn propose(client: &TackClient, args: &Value) -> Result<Value, String> {
         .and_then(Value::as_array)
         .filter(|operations| !operations.is_empty())
         .ok_or("missing required argument: operations (a non-empty array)")?;
-    submit(
+    let thread = opt_str(args, "thread_id")
+        .map(|id| check_id("thread_id", id))
+        .transpose()?;
+    submit_from(
         client,
         &project_id,
         &reason,
         operations.clone(),
         opt_str(args, "idempotency_key"),
+        thread,
     )
 }
 
@@ -161,9 +166,26 @@ fn submit(
     operations: Vec<Value>,
     key: Option<String>,
 ) -> Result<Value, String> {
+    submit_from(client, project_id, reason, operations, key, None)
+}
+
+/// [`submit`] for a change set a thread's turn makes: its origin is the thread, so the reply
+/// shows it.
+fn submit_from(
+    client: &TackClient,
+    project_id: &str,
+    reason: &str,
+    operations: Vec<Value>,
+    key: Option<String>,
+    thread: Option<String>,
+) -> Result<Value, String> {
     let mut body = json!({ "reason": reason, "operations": operations });
     if let Some(key) = key {
         body["idempotency_key"] = json!(key);
+    }
+    if let Some(thread) = thread {
+        body["origin"] = json!("thread");
+        body["origin_ref"] = json!(thread);
     }
     let proposed = call(client.post(&format!("/projects/{project_id}/change-sets"), &body))?;
     Ok(answer(&proposed))

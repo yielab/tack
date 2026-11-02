@@ -29,6 +29,9 @@ pub enum Access {
     Anywhere(Capability),
     /// About every project (the global search): the capability on every one.
     Everywhere(Capability),
+    /// The path names a thread; its project decides, and a thread kept for one credential is
+    /// that credential's alone.
+    Thread(Uuid, Capability),
     /// The handler filters its answer by the principal's scopes (the project list).
     Filtered,
     /// A direct write to the board: an agent makes the same change by proposing a change set
@@ -81,6 +84,10 @@ pub fn classify(method: &Method, path: &str) -> Access {
         }
         (["projects", project, "change-sets"], false) if method == Method::POST => {
             id(project).map(Access::Proposal)
+        }
+        (["threads", thread], true) => id(thread).map(|t| Access::Thread(t, Capability::Converse)),
+        (["threads", thread, "messages"], false) if method == Method::POST => {
+            id(thread).map(|t| Access::Thread(t, Capability::Converse))
         }
         (["change-sets", change_set], true) => id(change_set).map(|c| Access::ChangeSet(c, Read)),
         (["items", item], true) => id(item).map(|i| Access::Item(i, Read)),
@@ -161,6 +168,29 @@ pub async fn authorize(
                 Ok(())
             } else {
                 Err(refusal(missing_scope(project, Capability::Propose)))
+            }
+        }
+        Access::Thread(thread, capability) => {
+            let found = state.repo.get_thread(thread).await?;
+            // As for an item: the answer does not tell a missing thread from one the credential
+            // cannot reach.
+            let Some(found) = found else {
+                return Err(refusal(format!(
+                    "This credential lacks the scope `{capability}` on the project of that thread."
+                )));
+            };
+            let home = found.scope.home();
+            if let Some(credential) = found.scope.credential()
+                && principal.id != credential.to_string()
+            {
+                return Err(refusal(
+                    "That thread belongs to another credential.".to_owned(),
+                ));
+            }
+            if may(principal, home, capability) {
+                Ok(())
+            } else {
+                Err(refusal(missing_scope(home, capability)))
             }
         }
         Access::ChangeSet(set, capability) => {

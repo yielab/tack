@@ -163,6 +163,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("099_agent_credentials", &MIGRATION_099[..]),
         ordinary("100_team_activity", &MIGRATION_100[..]),
         ordinary("101_change_sets", &MIGRATION_101[..]),
+        ordinary("102_threads", &MIGRATION_102[..]),
     ]
 }
 
@@ -2003,4 +2004,47 @@ const MIGRATION_101: [&str; 6] = [
     "ALTER TABLE projects ADD COLUMN agents_on_board TEXT NOT NULL DEFAULT 'propose'",
     "ALTER TABLE projects ADD COLUMN agents_create_per_set INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN agents_create_per_day INTEGER NOT NULL DEFAULT 0",
+];
+
+// 102: a conversation with a profile (ADR 0034, decision 7). A thread has a home project, where its turns
+// run, and optionally the credential whose projects it reaches. Each turn is a run, which belongs to an
+// item, so a thread keeps one `hidden` item as its anchor; hidden items are on no board, list or digest.
+// A message is numbered in its thread; a turn is the run a message started, until its reply is posted.
+const MIGRATION_102: [&str; 6] = [
+    "ALTER TABLE items ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+    r##"CREATE TABLE threads (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        credential_id TEXT,
+        profile TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        turns INTEGER NOT NULL DEFAULT 0,
+        closed_reason TEXT,
+        anchor_item_id TEXT REFERENCES items(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        last_message_at TEXT NOT NULL
+    )"##,
+    "CREATE INDEX idx_threads_project ON threads(project_id, status, last_message_at)",
+    r##"CREATE TABLE thread_messages (
+        id TEXT PRIMARY KEY NOT NULL,
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        principal TEXT NOT NULL,
+        body TEXT NOT NULL,
+        refs TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        UNIQUE (thread_id, position)
+    )"##,
+    r##"CREATE TABLE thread_turns (
+        thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        message_id TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        settled_at TEXT,
+        PRIMARY KEY (thread_id, position)
+    )"##,
+    "CREATE INDEX idx_thread_turns_state ON thread_turns(state)",
 ];

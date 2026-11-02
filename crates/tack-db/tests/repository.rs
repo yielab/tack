@@ -44,5 +44,7 @@ mod integration;
 mod rate_card;
 #[path = "repository/store_conventions.rs"]
 mod store_conventions;
+#[path = "repository/threads.rs"]
+mod threads;
 #[path = "repository/version_concurrency.rs"]
 mod version_concurrency;
