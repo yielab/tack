@@ -111,3 +111,26 @@ conversation is bound to a task and bounded).
 - **A hierarchy of managers.** Scopes compose; nothing is built for it until it is asked for.
 - **Threads as comments.** A comment belongs to one item and has no turns; a thread spans the
   projects its profile reaches and each message is a turn.
+
+## Note, 2026-11-01: what docket answered (docket's ADR 0037)
+
+The decisions above stand. docket answered "What this asks of docket" in its own ADR 0037 (accepted
+2026-11-01, HTTP API still version 6, every part additive and named in a new `features` list on
+`GET /health` and `GET /status.json` only once it works). Where its answer differs from the asks as
+written, Tack follows docket's shape:
+
+- **Ask 4 has no `POST …/messages`.** A task created with `conversation: {maxTurns}` (one-step pipeline
+  only) ends each turn with an escalation of kind `turn` whose message is the turn's answer. The next
+  turn is the answer to that escalation, through the route every pause already uses:
+  `POST /escalations/<id>` with `optionId: "reply"` and `content: {text}`, or `optionId: "close"` to
+  end it.
+- **`maxTurns` is 1 to 20.** Tack's own cap on a thread's turns is higher, so the day a docket team
+  `continues`, the thread's cap cannot be sent as is.
+- **The cursor (ask 2) is opaque:** a decimal integer in a string today, not the trace cursor's shape.
+  **Pod memory (ask 3) comes wrapped,** `{entries: [...]}`.
+- **Ask 6 is not built, and will not be.** A jailed MCP server cannot reach loopback, and one started
+  outside the jail cannot be held to a host list. A lights-out pod reaches Tack through a docket
+  `kind: service` declaring Tack's HTTP API, with `baseUrl: http://127.0.0.1:<port>` and
+  `hosts: ["127.0.0.1"]`. The call runs in docket's process inside that perimeter. The service carries an
+  **agent credential**, never the operator's token, so the manager's writes are change sets like any
+  agent's.
