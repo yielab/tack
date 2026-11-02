@@ -28,46 +28,17 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 83 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
-and it is not a card.
+Phases 73 to 86 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+and it is not a card. What remains are three dependency cards:
 
-**[Phase 83](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md) — a team is shown
-as it is, a task can go to a team, and what a run finds can become items.** Built 2026-10-31 (ADR 0032,
-accepted the same day) and in `develop`; its cards H, I, K, L, L2, P, N, A, D, B, J, C, E, F and G, with
-M, M2 and Q after, are not open. Agents → Teams lists every team any agent reports and what each
-member can do; a task says who does it and starts by itself without a role; a run's findings reach one
-accept panel from a plan file, a team's `tack_proposals` records or an uploaded file, and a person
-always accepts. The local suite proves it against docket: with Claude Haiku 5.5 as the model all 20 tests pass in one run
-(2026-10-31, docket `cdeabac3`, 31 416 tokens counted against the limits); on the local model 19 pass and the
-fifteenth fails, because its lead step repeats itself; nothing in it is a card.
-
-**[Phase 84](https://github.com/yielab/tack/blob/develop/docs/plans/phase-84.md) — the screen says
-what needs you first, and a project shows its teams at work.** Accepted 2026-11-01 (ADR 0033), from an
-audit of the live suite's screenshots; every card is in `develop` (2026-11-01), the live suite passes its 20
-tests against docket `9cdd6253` on the local model, and two design audits of its screenshots led to a polish
-pass and a review pass, merged. What is left is the second audit's list of fixes. One run-state language on every screen; the
-item, the run, the run dialog, Automation and Agents ordered by what to do now, with the rest one fold
-away; a run that starts can move its item; the Table view removed and its sorting, filter and in-place
-editing moved to the List; and a new work view, Orchestration, with one lane per team showing the team's
-own steps, what waits on a person and what no team will take (Flow), and who does what from roles to
-members (Map). Cards A, B, C, E, D, F, G, H, I, J, K, T, N, S, O1, O2 and M, in nine rounds.
-
-**[Phase 85](https://github.com/yielab/tack/blob/develop/docs/plans/phase-85.md) — a manager works
-through the board.** Accepted 2026-11-01 (ADR 0034); cards P, M, A and C are in `develop` (2026-11-01), E
-and D are being built, the rest follow. A profile becomes a manager by being given general parts, none of them called "manager": a
-credential with scopes (every caller a principal), change sets as an agent's only way to change the
-board with one more rung saying how far it may go, a team's activity including the work the board did
-not start, a computed digest, a thread where each message is a turn, and triggers on events. It
-delegates by saying who does a task, so auto-start and the ladder bound its work as anyone's. Cards P,
-M, E, C, A, D, U, W, T, TU, R and G, in six rounds; six asks of docket, none blocking.
-
-What is not a card is in "Cancelled" below.
-
-**[Phase 86](https://github.com/yielab/tack/blob/develop/docs/plans/phase-86.md) — a person sets a
-task's status, and the agents report its work.** Accepted 2026-11-02; no card started. The six places that
-move a task's status because a run did something are removed, with their settings, and the board shows
-the task's status and its work as two things. Auto-start starts a task once and moves nothing. Cards A,
-B and C.
+- **`@axe-core/playwright` 4.14.0.** It fails 25 accessibility tests on one rule,
+  `label-content-name-mismatch`: the waiting badge in the sidebar and the command palette button
+  carry an accessible name that does not contain their visible text. The card renames both, then
+  takes the update; until then the package stays at 4.13.0.
+- **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
+  Run the desktop workflow on the branch first.
+- **Vitest 5** (4.1 to 5.0.3, with `@vitest/coverage-v8`). It is a major version and its pull request fails the
+  frontend check; the card finds what breaks and takes it on the lowest toolchain it needs.
 
 ## Future, not planned
 
@@ -136,9 +107,57 @@ can come back as a card of its own.
 
 ## Delivered
 
-Phases 73 to 82, newest first. Each plan is under
+Phases 73 to 86, newest first. Each plan is under
 [`docs/closed-cycles/plans/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/plans)
 and each ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr).
+
+### Phase 86 — a person sets a task's status, and the agents report its work
+
+**Plan:** [`phase-86.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-86.md); no ADR (it amends ADR 0033, decision 1).
+
+The six places that moved a task's status because a run did something are removed, with their
+settings. Auto-start starts a task once and moves nothing. The item and its card show **Status**
+(the person's) and **Work** (the agents') as two things. Status rules, where a rule builds a change
+set, are written in the plan and not adopted.
+
+### Phase 85 — a manager works through the board
+
+**ADR:** 0034 (accepted). **Plan:** [`phase-85.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-85.md).
+
+A profile becomes a manager by being given general parts, none of them called "manager": a
+credential with scopes (every caller a principal), change sets as an agent's only way to change the
+board and one more rung saying how far it may go, a team's activity including the work the board did
+not start, a computed digest, a thread where each message is a turn, and triggers on events. It
+delegates by saying who does a task, so auto-start and the ladder bound its work as anyone's. Through
+docket a manager runs at L3 or L4: a docket `send` tool always asks a person, and at L5 an `ask` is
+denied at once. The local suite proves it against docket: with Claude Haiku 5.5 all 27 tests pass in one run
+(2026-11-02, docket `a268257b`).
+
+### Phase 84 — the screen says what needs you first, and a project shows its teams at work
+
+**ADR:** 0033 (accepted). **Plan:** [`phase-84.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-84.md).
+
+One run-state language on every screen; the item, the run, the run dialog, Automation and Agents
+ordered by what to do now, with the rest one fold away; the Table view removed and its sorting,
+filter and in-place editing moved to the List; and a new work view, Orchestration, with one lane per
+team (Flow) and who does what from roles to members (Map). Three audits of the live suite's
+screenshots drove the polish: a run turned away before it started reads **Not started**, a review
+whose verifier says reject says so, each board column puts what needs a person first, the item's
+status is one control, and the drawer's sections fold.
+
+### Phase 83 — a team is shown as it is, a task can go to a team, and what a run finds can become items
+
+**ADR:** 0032 (accepted). **Plan:** [`phase-83.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md).
+
+Agents → Teams lists every team any agent reports and what each member can do; a task says who does
+it and starts by itself without a role; a run's findings reach one accept panel from a plan file, a
+team's `tack_proposals` records or an uploaded file, and a person always accepts.
+
+### docket's Phase 58, taken in Tack
+
+API still 6, every addition negotiated by `features`. A question answered at docket's own command
+line closes in Tack as **Answered in docket**; a team whose budget is spent says so; a paused team
+says so on its card and a task it holds says how to resume it; a step says how long it took.
 
 ### Phase 82 — the task goes to docket as fields, and a run says which prompts made it
 
