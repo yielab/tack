@@ -86,7 +86,8 @@ pub static TEAM_ACTIVITY: Tool = Tool {
         description: "What one team is doing: the tasks it holds, the ones still going first, \
              with each task's state, what it waits on and the step it is in. Work the board did \
              not start (a person or a routine gave it to the team directly) is included, with \
-             `on_board` absent.",
+             `on_board` absent. With an agent credential you see only the tasks of the projects \
+             it may read, and the work the board did not start only if it reads every project.",
         input_schema: || {
             json!({
                 "type": "object",
