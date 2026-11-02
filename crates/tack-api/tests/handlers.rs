@@ -9,6 +9,8 @@
 
 #[path = "handlers/agent_credentials.rs"]
 mod agent_credentials;
+#[path = "handlers/agent_mcp_routes.rs"]
+mod agent_mcp_routes;
 #[path = "handlers/attachments.rs"]
 mod attachments;
 #[path = "handlers/attempt_lists.rs"]

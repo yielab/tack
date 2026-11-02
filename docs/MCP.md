@@ -104,7 +104,8 @@ items, failed runs, tokens against the limits, each team's work, the change sets
 list shows a fixed number of `rows` and says how many are `more`. `team_activity` lists one
 team's tasks (20 at most, with `count` and `more`), the work the board did not start included
 (`on_board` absent), each with its state, what it waits on and the step it is in; the words of
-the steps it finished are left out. `list_teams` gives, per team, its members and what each can
+the steps it finished are left out; an agent credential sees only the tasks of the projects it may read,
+and the work the board did not start only if it reads every project. `list_teams` gives, per team, its members and what each can
 do, whether it runs to the end or asks a person, its queue and the profiles that name it (the
 ids `who_does_it` takes). `list_roles` gives a project's roles and the profile each runs with.
 
