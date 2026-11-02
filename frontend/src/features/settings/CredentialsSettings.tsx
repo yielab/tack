@@ -16,14 +16,12 @@ export const CAPABILITIES: { value: CredentialCapability; label: string; hint: s
     value: 'propose',
     label: 'Propose',
     hint: 'Put changes in front of a person',
-    reason: 'Nothing in Tack takes proposals from an agent yet',
   },
   { value: 'act', label: 'Act', hint: 'Create and change items, comments and dependencies' },
   {
     value: 'converse',
     label: 'Converse',
     hint: 'Talk in a thread about the project',
-    reason: 'Threads do not exist yet',
   },
 ];
 
