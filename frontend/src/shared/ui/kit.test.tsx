@@ -87,6 +87,27 @@ describe('Button', () => {
     expect(c.querySelector('span[id]')).toBeNull();
     expect(c.querySelectorAll('button')).toHaveLength(1);
   });
+
+  it('keeps layout neutral: no wrapper without the prop, a box-less one while no reason shows', () => {
+    const [reason, setReason] = createSignal<string | undefined>(undefined);
+    const plain = mount(() => <Button class="ml-auto w-full">Plain</Button>);
+    expect(plain.querySelector('button')!.parentElement).toBe(plain);
+
+    const c = mount(() => (
+      <Button class="ml-auto w-full" disabled={reason() !== undefined} reason={reason()}>
+        Close
+      </Button>
+    ));
+    const btn = c.querySelector('button')!;
+    // `display: contents`: the span takes no box, so the button's own w-full / ml-auto reach the row.
+    expect(btn.parentElement!.classList.contains('contents')).toBe(true);
+    expect(btn.parentElement!.classList.contains('inline-flex')).toBe(false);
+    setReason('Already closed.');
+    expect(btn.parentElement!.classList.contains('contents')).toBe(false);
+    expect(btn.parentElement!.classList.contains('flex-col')).toBe(true);
+    setReason(undefined);
+    expect(btn.parentElement!.classList.contains('contents')).toBe(true);
+  });
 });
 
 describe('Badge / EmptyState / Field', () => {
