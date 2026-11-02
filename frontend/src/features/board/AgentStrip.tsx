@@ -108,9 +108,10 @@ const AgentStrip: Component<{
 };
 
 /**
- * A column's runs as one stacked bar, a segment per state in proportion to its cards.
- * Each segment is a button that sets the same filter the strip does. The group's
- * label spells the bar out in words, so it is not read by colour or length.
+ * A column's runs as one stacked bar, a segment per state in proportion to its cards, with a legend
+ * under it that names each state in words next to its icon, so the bar is never read by colour alone.
+ * Each segment is a button that sets the same filter the strip does. The group's label spells the
+ * bar out for a screen reader, so the legend is hidden from it.
  */
 export const RunMiniBar: Component<{
   counts: RunCounts;
@@ -120,6 +121,8 @@ export const RunMiniBar: Component<{
   const segments = () =>
     (Object.keys(RUN_STATE_WORDS) as RunStateName[])
       .filter((state) => props.counts[state] > 0)
+      // The same order as the strip above the board: what needs a person first.
+      .sort((a, b) => stateRank(a) - stateRank(b))
       .map((state) => ({ state, count: props.counts[state], filter: filterOf(state) }));
   const summary = () => segments().map((s) => `${s.count} ${RUN_STATE_WORDS[s.state].toLowerCase()}`).join(', ');
 
@@ -163,6 +166,22 @@ export const RunMiniBar: Component<{
           }}
         </For>
       </div>
+      <ul
+        aria-hidden="true"
+        data-testid="run-mini-legend"
+        class="m-0 mt-1 flex list-none flex-wrap items-center gap-x-2 gap-y-0.5 p-0 text-micro"
+        style={{ color: 'var(--color-text-secondary)' }}
+      >
+        <For each={segments()}>
+          {(segment) => (
+            <li class="inline-flex items-center gap-1 whitespace-nowrap">
+              <RunState state={segment.state} size="dot" />
+              <span class="tabular-nums">{segment.count}</span>
+              {RUN_STATE_WORDS[segment.state]}
+            </li>
+          )}
+        </For>
+      </ul>
     </Show>
   );
 };
