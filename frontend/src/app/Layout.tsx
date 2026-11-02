@@ -173,7 +173,19 @@ const LayoutInner: Component<LayoutProps> = (props) => {
         <main id="main" tabindex={-1} class="flex-1 min-h-0 min-w-0 flex flex-col focus:outline-none">
           <Show
             when={fullBleed()}
-            fallback={<div class="flex-1 overflow-auto container mx-auto px-4 py-6 max-w-7xl">{props.children}</div>}
+            fallback={
+              // The page's own scroll: focusable, so a page that overflows and holds
+              // nothing focusable can still be scrolled from the keyboard (the board's
+              // columns do the same).
+              <div
+                role="group"
+                aria-label="Page content"
+                tabindex={0}
+                class="flex-1 overflow-auto container mx-auto px-4 py-6 max-w-7xl"
+              >
+                {props.children}
+              </div>
+            }
           >
             <div class="flex-1 min-h-0 min-w-0 flex flex-col overflow-clip">{props.children}</div>
           </Show>
