@@ -26,6 +26,10 @@ answer from you before it can go on, the question appears right there, and you a
 turn that cannot answer says so under your message and the reason appears as the next message. Nothing is
 lost: write again, or close the thread and start another.
 
+Only your messages start a turn. A manager can also write in the thread on its own, for example to report
+something or to raise an alert; that message simply appears in the thread, in the manager's name, and nothing
+runs because of it. It is there for you to read, and you answer it, or not, when you want.
+
 ## Changes an answer carries
 
 An answer may propose changes to the board: new items, who does an item, a priority, a move, a dependency, a

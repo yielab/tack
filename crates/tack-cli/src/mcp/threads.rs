@@ -61,10 +61,9 @@ pub static POST_MESSAGE: Tool = Tool {
     name: "post_message",
     spec: Spec {
         description: "Write a message in a conversation thread: a report or an alert for the \
-             person. A message from an agent starts a turn of the thread's profile, and the \
-             thread takes one turn at a time: it is refused while the last turn has not answered, \
-             when the thread is closed, or when it reached its turn cap. Needs the scope \
-             `converse` on the thread's project.",
+             person. The message is posted and starts no turn: only a person's \
+             message does. It is refused when the thread is closed or has been idle too long. \
+             Needs the scope `converse` on the thread's project.",
         input_schema: || {
             json!({
                 "type": "object",
