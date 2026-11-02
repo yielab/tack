@@ -257,6 +257,14 @@ describe('MrpPanel', () => {
     });
   });
 
+  it('a reject leads with the verifier\'s reason in plain words', async () => {
+    mockFetch({ ...ready, recommendation: { decision: 'reject', rationale: 'prill: reject — blocking: criterion_failed — impossible' }, risk: { tier: 'low', reasons: [] } });
+    const el = mount();
+    await flush();
+    const text = el.querySelector('[data-testid="mrp-verdict"]')!.textContent!;
+    expect(text).toContain('The verifier recommends rejecting this run: A check failed (impossible)');
+  });
+
   it('shows the recommendation and the risk as two chips, with the verifier\'s sentence', async () => {
     mockFetch({ ...ready, recommendation: { decision: 'review', rationale: 'One criterion needs a person.' }, risk: { tier: 'high', reasons: ['touches auth'] } });
     const el = mount();

@@ -52,6 +52,11 @@ A team that proposes items and ends with proposals Tack cannot use (for example,
 earlier row in the file) is shown as **Finished — proposals could not be used**, not as a plain success, with the
 reason in words and docket's own line on hover.
 
+When the verifier recommends rejecting a run, the run's line on the item says "the verifier says reject" beside "needs your
+review", and the verdict opens with its reason ("The verifier recommends rejecting this run: …"); the run is still yours to
+accept or reject. The questions an agent lists at the end of a step are notes, not a form: Tack cannot send an answer to them, so
+put the answer in the task and run it again. A question the agent stopped to ask is answered under **Needs you**.
+
 The verifier's recommendation, the reasons for its risk and its next steps are written as sentences; the verifier's own
 line is what shows when you hover over one.
 

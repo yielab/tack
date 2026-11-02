@@ -424,12 +424,14 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
     expect(rows[0].textContent).toContain('The brief is current.');
     expect(rows[0].textContent).toContain('The agent asked');
     expect(rows[0].textContent).toContain('Which tone should it use?');
+    expect(rows[0].textContent).toContain('Tack cannot send an answer to these');
     expect(rows[1].textContent).toContain('Implementer');
     expect(rows[1].textContent).toContain('qwen2.5-coder:7b · a small model');
     const chips = [...rows[1].querySelectorAll('[data-testid="step-prompt"]')].map((li) => li.textContent);
     expect(chips).toEqual(['implementer 1.0.0 built in', "task this task's", "house-style 2.0.0 the team's"]);
     expect(rows[1].textContent).not.toContain('The agent assumed');
     expect(rows[1].textContent).not.toContain('The agent asked');
+    expect(rows[1].textContent).not.toContain('Tack cannot send an answer');
   });
 
   it('the prompts a step read are one closed disclosure, and a step with none has no disclosure and no sentence about it', async () => {

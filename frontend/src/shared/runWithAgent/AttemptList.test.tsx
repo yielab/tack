@@ -886,6 +886,19 @@ describe('AttemptList', () => {
       expect([...merge.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Merge']);
     });
 
+    it('a run the verifier says to reject is not announced as a plain success', async () => {
+      const spy = route({ artifacts: FILES });
+      const orig = spy.getMockImplementation()!;
+      spy.mockImplementation((input, init) =>
+        String(input).endsWith('/mrp')
+          ? Promise.resolve(new Response(JSON.stringify({ pack: { ...ready, recommendation: { decision: 'reject', rationale: 'prill: reject' } }, review: null }), { status: 200 }))
+          : orig(input, init),
+      );
+      const c = mountFull(FINISHED());
+      await settle();
+      expect(c.querySelector('[data-testid="run-verdict"]')!.textContent).toContain('The verifier recommends rejecting this run');
+    });
+
     it('a run turned away before it started shows no tokens and no duration', async () => {
       route();
       const container = document.createElement('div');

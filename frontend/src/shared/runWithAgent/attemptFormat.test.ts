@@ -252,8 +252,14 @@ describe('describeAttemptStatus — one status per attempt', () => {
   });
 });
 
-describe('a run that never started', () => {
+describe('a verifier that says reject, and a run that never started', () => {
   const patch = { artifacts: [{ kind: 'patch', size_bytes: 40 }] };
+  it('a reviewable run the verifier says to reject is not announced as a plain success', () => {
+    expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, null, 'reject').label).toBe(
+      'Finished — the verifier says reject, needs your review',
+    );
+    expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, null, 'merge').label).toBe('Finished — needs your review');
+  });
   it('a run turned away before the agent did anything is Not started, neutral, not Failed', () => {
     expect(describeAttemptStatus({ state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'x' } })).toEqual({ label: 'Not started', tone: 'neutral' });
     expect(neverStarted({ state: 'failed', terminal_reason: { message: 'run refused: ceiling L3 (needs approval)' } })).toBe(true);

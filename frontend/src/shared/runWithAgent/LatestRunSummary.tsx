@@ -3,6 +3,7 @@ import { Button, LoadError, RunState, type DocketRunWord, type RunStateName } fr
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
+import { mrpApi } from '../execution/api';
 import type { WaitingBehind } from '../execution/api';
 import { plainLine } from './plainWords';
 import {
@@ -141,7 +142,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const status = (): { label: string; tone: StateTone } => {
     const a = attempt();
     if (kind() === 'merged') return { label: 'Merged', tone: 'success' };
-    if (a) return describeAttemptStatus(a, review());
+    if (a) return describeAttemptStatus(a, review(), recommendation());
     const s = describeExecutionState(latest()?.state ?? 'queued');
     return { label: s.label, tone: s.tone };
   };
@@ -281,6 +282,21 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   // Known to have no pack: only then are Accept and Reject… shown here.
   const inlineReview = () => !hasPack.loading && hasPack() === false;
+  // The verifier's call on a run that has a pack to review: the card says so when it is to reject.
+  const [recommended] = createResource(
+    () => {
+      const a = attempt();
+      return a && kind() === 'review' && hasPack() === true ? { id: a.request_id, n: a.attempt_number } : undefined;
+    },
+    async ({ id, n }) => {
+      try {
+        return (await mrpApi.get(id, n)).pack.recommendation.decision;
+      } catch {
+        return undefined;
+      }
+    },
+  );
+  const recommendation = () => (recommended.error ? undefined : recommended());
 
   // While it runs: its last steps, reloaded every few seconds.
   const live = () => kind() === 'running' && attempt() !== undefined;
