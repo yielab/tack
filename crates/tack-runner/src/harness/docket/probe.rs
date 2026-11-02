@@ -7,8 +7,8 @@ use std::collections::BTreeSet;
 use chrono::Utc;
 use tack_protocol::execution::{
     DocsLinks, HarnessCapability, HarnessKind as DomainHarnessKind, ModelListSource, ModelsReport,
-    SignInReport, SignInState, TeamDecides, TeamMember, TeamNetwork, TeamQueue, TeamRecordSet,
-    TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
+    SignInReport, SignInState, TeamDecides, TeamMember, TeamNetwork, TeamPause, TeamQueue,
+    TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind, TeamViolation, WorksIn,
 };
 
 use super::{
@@ -149,6 +149,23 @@ fn member(member: PodMember) -> TeamMember {
     }
 }
 
+/// Why the team is paused, when it is: the report's word, else the row's. A reason Tack has no
+/// word for is `Other`, and a pause with no reason at all is too.
+fn paused(row: &PodRow, report: &PodReport) -> Option<TeamPause> {
+    let paused = report.paused.or(row.paused)?;
+    if !paused {
+        return None;
+    }
+    let reason = report
+        .paused_reason
+        .as_deref()
+        .or(row.paused_reason.as_deref());
+    Some(match reason {
+        Some("budget") => TeamPause::Budget,
+        _ => TeamPause::Other,
+    })
+}
+
 /// Where the team works: the explicit key when docket sends one, else what `repoConfigDir` says.
 /// Neither is "did not say", which is not the same as a repository.
 fn works_in(row: &PodRow, report: &PodReport) -> Option<WorksIn> {
@@ -213,7 +230,7 @@ fn steps(raw: Vec<serde_json::Value>) -> Option<Vec<TeamStep>> {
 
 /// One team as docket reports it: its profile with the violations, the folders its sandbox reads,
 /// where it works, who is in it, how it decides, what it holds and what it keeps.
-async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
+async fn team(client: &Client, row: &PodRow, pause_listed: bool) -> Result<TeamReport, String> {
     let name = &row.name;
     let reply = client.pod(name).await?;
     if reply.status != 200 {
@@ -225,6 +242,8 @@ async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
         Some((sets, shared)) => (Some(sets), shared),
         None => (None, None),
     };
+    // Said only by a docket that lists `podPause`, and only while the team is paused.
+    let paused = pause_listed.then(|| paused(row, &report)).flatten();
     let mut team = TeamReport {
         name: name.clone(),
         profile: report.profile.name,
@@ -263,6 +282,7 @@ async fn team(client: &Client, row: &PodRow) -> Result<TeamReport, String> {
             .and_then(|pipeline| pipeline.steps)
             .and_then(steps),
         proposals_shared_across_tasks,
+        paused,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson
@@ -279,9 +299,10 @@ pub(super) async fn teams(client: &Client) -> Result<Vec<TeamReport>, String> {
         return Err(reply.error());
     }
     let list: PodList = reply.read()?;
+    let pause_listed = client.has_feature(super::POD_PAUSE).await;
     let mut teams = Vec::new();
     for pod in &list.pods {
-        teams.push(team(client, pod).await?);
+        teams.push(team(client, pod, pause_listed).await?);
     }
     Ok(teams)
 }

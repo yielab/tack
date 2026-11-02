@@ -265,6 +265,24 @@ describe('TeamsPanel', () => {
     expect(card(c, 'unsaid').querySelector('[data-testid="team-proposals-shared"]')).toBeNull();
   });
 
+  it('says a team is paused, why, and how to resume it, only for a team that reports it', async () => {
+    const budget = { ...FULL_TEAM, report: { ...FULL_TEAM.report, paused: 'budget' } };
+    const other = { ...FULL_TEAM, name: 'other', report: { ...FULL_TEAM.report, name: 'other', paused: 'other' } };
+    const running = { ...FULL_TEAM, name: 'running', report: { ...FULL_TEAM.report, name: 'running' } };
+    mockApi([budget, other, running]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const note = card(c, 'saas-code').querySelector('[data-testid="team-paused"]')!;
+    expect(note.textContent).toContain('Paused: budget spent');
+    expect(note.textContent).toContain('Resume it with `docket run --pod saas-code --resume`');
+    const unnamed = card(c, 'other').querySelector('[data-testid="team-paused"]')!;
+    expect(unnamed.textContent).toContain('Paused');
+    expect(unnamed.textContent).not.toContain('budget');
+    expect(unnamed.textContent).toContain('docket run --pod other --resume');
+    expect(card(c, 'running').querySelector('[data-testid="team-paused"]')).toBeNull();
+  });
+
   it('shows a disabled "Not reported by" line for each field the agent did not report', async () => {
     mockApi([EMPTY_TEAM]);
     const c = mount([runner([{ ...DOCKET, features: undefined }])]);

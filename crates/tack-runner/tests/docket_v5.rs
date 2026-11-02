@@ -613,6 +613,100 @@ async fn probe_says_whether_the_proposals_are_shared_across_tasks_only_when_the_
     assert_eq!(shared(&other).await, None);
 }
 
+/// `podPause`: the probe says a team is paused and why, only from a docket that lists the feature.
+#[tokio::test]
+async fn probe_says_a_team_is_paused_and_why_only_from_a_docket_that_lists_podpause() {
+    use tack_protocol::execution::TeamPause;
+    async fn paused(fake: &FakeDocket) -> Option<TeamPause> {
+        let scene = scene();
+        let teams = adapter(fake, &scene).probe().await.teams.expect("teams");
+        teams[0].paused
+    }
+    let fake = pods_fake().await;
+    assert_eq!(paused(&fake).await, None, "a team that runs");
+    fake.pause_pod(POD, "budget");
+    assert_eq!(paused(&fake).await, Some(TeamPause::Budget));
+    fake.pause_pod(POD, "maintenance");
+    assert_eq!(paused(&fake).await, Some(TeamPause::Other));
+    fake.resume_pod(POD);
+    assert_eq!(paused(&fake).await, None, "resumed");
+    let older = pods_fake().await;
+    older.without_pod_pause();
+    older.pause_pod(POD, "budget");
+    assert_eq!(
+        paused(&older).await,
+        None,
+        "a docket before podPause says nothing"
+    );
+}
+
+/// The fake answers `paused` as docket does: a bool on every row and report, `pausedReason` only
+/// while paused.
+#[tokio::test]
+async fn the_fake_answers_paused_on_the_list_and_the_report() {
+    let fake = pods_fake().await;
+    let (_, list) = ask(&fake, "GET", "/pods", None).await;
+    assert_eq!(list["pods"][0]["paused"], json!(false));
+    assert!(list["pods"][0].get("pausedReason").is_none());
+    fake.pause_pod(POD, "budget");
+    for (path, row) in [("/pods", "pods"), (&format!("/pods/{POD}"), "")] {
+        let (_, answer) = ask(&fake, "GET", path, None).await;
+        let object = if row.is_empty() {
+            &answer
+        } else {
+            &answer[row][0]
+        };
+        assert_eq!(object["paused"], json!(true), "{path}");
+        assert_eq!(object["pausedReason"], json!("budget"), "{path}");
+    }
+    fake.resume_pod(POD);
+    let (_, report) = ask(&fake, "GET", &format!("/pods/{POD}"), None).await;
+    assert_eq!(report["paused"], json!(false));
+    assert!(report.get("pausedReason").is_none());
+}
+
+/// A task waiting on a paused team has a running attempt and a task docket holds `pending`: the
+/// timeline says the team is paused and how to resume it, once, and the attempt goes on when the
+/// team does. A docket without `podPause` is not asked, and a team that merely has a queue is not
+/// called paused.
+#[tokio::test]
+async fn a_task_held_by_a_paused_team_says_so_once_and_only_from_a_docket_that_lists_podpause() {
+    const KIND: &str = "agent.team_paused";
+    for listed in [true, false] {
+        let fake = pods_fake().await;
+        if !listed {
+            fake.without_pod_pause();
+        }
+        fake.pause_pod(POD, "budget");
+        let scene = scene();
+        let parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+        let reads = || fake.requests_to("GET", &format!("/pods/{POD}")).len();
+        let before = reads();
+        polls_more(&fake, 2).await;
+        assert!(!parked.waiting.is_finished(), "{listed}");
+        if !listed {
+            assert_eq!(reads(), before, "a docket without podPause is not asked");
+        }
+        fake.resume_pod(POD);
+        let (outcome, lines) = parked.end().await;
+        assert_eq!(outcome.terminal_state, AttemptState::Succeeded, "{listed}");
+        let told: Vec<_> = lines.iter().filter(|(kind, _)| kind == KIND).collect();
+        if listed {
+            assert_eq!(told.len(), 1, "once: {lines:?}");
+            assert!(told[0].1.contains("paused"), "{}", told[0].1);
+            assert!(
+                told[0]
+                    .1
+                    .contains(&format!("docket run --pod {POD} --resume")),
+                "{}",
+                told[0].1
+            );
+        } else {
+            assert!(told.is_empty(), "{lines:?}");
+        }
+    }
+}
+
 #[tokio::test]
 async fn works_in_is_read_from_workspace_kind_and_from_the_config_dir_without_it() {
     use tack_protocol::execution::WorksIn;
@@ -2483,12 +2577,18 @@ async fn failure_kinds_say_why_a_task_ended_and_only_from_a_docket_that_lists_th
             ..Script::default()
         });
         let blocked = scene();
-        let (outcome, _) = run_to_end(&adapter(&fake, &blocked), &spec(&blocked, "attempt-1", 1)).await;
+        let (outcome, _) =
+            run_to_end(&adapter(&fake, &blocked), &spec(&blocked, "attempt-1", 1)).await;
         assert_eq!(outcome.terminal_state, AttemptState::Failed, "{listed}");
         if listed {
             assert_eq!(outcome.terminal_reason["code"], json!("pod_budget"));
-            let message = outcome.terminal_reason["message"].as_str().expect("message");
-            assert!(message.starts_with("The team's budget is spent"), "{message}");
+            let message = outcome.terminal_reason["message"]
+                .as_str()
+                .expect("message");
+            assert!(
+                message.starts_with("The team's budget is spent"),
+                "{message}"
+            );
             assert!(
                 message.contains(&format!("docket run --pod {POD} --resume")),
                 "{message}"
@@ -2511,7 +2611,8 @@ async fn failure_kinds_say_why_a_task_ended_and_only_from_a_docket_that_lists_th
             ..Script::default()
         });
         let failed = scene();
-        let (outcome, _) = run_to_end(&adapter(&fake, &failed), &spec(&failed, "attempt-1", 1)).await;
+        let (outcome, _) =
+            run_to_end(&adapter(&fake, &failed), &spec(&failed, "attempt-1", 1)).await;
         let code = if listed { "hop_failed" } else { "failed" };
         assert_eq!(outcome.terminal_reason["code"], json!(code), "{listed}");
     }
@@ -2735,13 +2836,20 @@ async fn a_cancel_names_tack_as_its_actor_only_to_a_docket_that_lists_settled_cu
             })
             .await;
         let (outcome, _) = parked.end().await;
-        assert_eq!(outcome.terminal_reason["code"], json!("not_answered"), "{listed}");
+        assert_eq!(
+            outcome.terminal_reason["code"],
+            json!("not_answered"),
+            "{listed}"
+        );
         let task = fake.task_ids()[0].clone();
         let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
         let [cancel] = cancels.as_slice() else {
             panic!("one cancel, got {cancels:?}");
         };
-        assert_eq!(cancel.body["reason"], json!("nobody answered before the question expired"));
+        assert_eq!(
+            cancel.body["reason"],
+            json!("nobody answered before the question expired")
+        );
         if listed {
             assert_eq!(cancel.body["actor"], json!("tack"));
         } else {
@@ -4388,9 +4496,11 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
 
 /// The docket of the captures: the committed one, with the scope of a record set, `_role` on a row
 /// and what a member reaches. `before_task_scope()` is the docket before that, of which there is no
-/// capture.
+/// capture. The captures predate `podPause`, so the fake answers without `paused`.
 async fn captured_docket() -> FakeDocket {
-    FakeDocket::start().await
+    let fake = FakeDocket::start().await;
+    fake.without_pod_pause();
+    fake
 }
 
 #[tokio::test]
@@ -4768,7 +4878,7 @@ async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_cap
 
 #[tokio::test]
 async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_captures() {
-    let fake = FakeDocket::start().await;
+    let fake = captured_docket().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set_scoped("saas-notes", "entries", "Things", &["ref", "title"], "pod");
     fake.add_record_set_scoped(
@@ -5627,9 +5737,11 @@ async fn the_fake_lists_only_the_features_it_serves() {
 
 /// The features docket added after `taskCurrent` and `taskCursor`, in the order the fake lists
 /// them, each with the switch that makes the fake a docket before it.
-const LATER_FEATURES: [(&str, fn(&FakeDocket)); 2] = [
+type LaterFeature = (&'static str, fn(&FakeDocket));
+const LATER_FEATURES: [LaterFeature; 3] = [
     ("failureKinds", FakeDocket::without_failure_kinds),
     ("settledCursor", FakeDocket::without_settled_cursor),
+    ("podPause", FakeDocket::without_pod_pause),
 ];
 
 /// Each later feature is dropped from both lists by its own switch and by no other.

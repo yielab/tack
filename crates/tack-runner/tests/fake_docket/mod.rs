@@ -321,6 +321,9 @@ struct Pod {
     /// What `readOnly` answers instead of the capture's: `Some(None)` leaves the key out, as
     /// docket did before it granted the sandbox a toolchain.
     read_only: Option<Option<Vec<String>>>,
+    /// Why the team is paused (`pausedReason`), `None` while it runs. A task posted to a paused
+    /// team stays `pending` until the team is resumed.
+    paused: Option<String>,
 }
 
 struct World {
@@ -373,6 +376,9 @@ struct World {
     /// A docket before `settledCursor`: the features do not list it, and a cancel with an `actor`
     /// is refused with `400`, as a docket that does not know the key may.
     without_settled_cursor: bool,
+    /// A docket before `podPause`: the features do not list it and neither the list nor a report
+    /// carries `paused` or `pausedReason`. A paused team still holds its tasks `pending`.
+    without_pod_pause: bool,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -415,6 +421,7 @@ impl FakeDocket {
             without_task_cursor: false,
             without_failure_kinds: false,
             without_settled_cursor: false,
+            without_pod_pause: false,
             rev: 0,
             next_channel: None,
         }));
@@ -458,6 +465,7 @@ impl FakeDocket {
                     .map(|(requirement, fix)| ((*requirement).to_owned(), (*fix).to_owned()))
                     .collect(),
                 read_only: None,
+                paused: None,
             },
         );
     }
@@ -494,6 +502,42 @@ impl FakeDocket {
     /// takes an `actor`.
     pub fn without_settled_cursor(&self) {
         self.shared.lock().unwrap().without_settled_cursor = true;
+    }
+
+    /// A docket before `podPause`. The fake serves only what Tack reads: `paused` on the rows and
+    /// reports, and a paused team holding its tasks `pending`.
+    pub fn without_pod_pause(&self) {
+        self.shared.lock().unwrap().without_pod_pause = true;
+    }
+
+    /// Pauses the team, as a spent budget does (`reason` is `pausedReason`): the tasks posted to
+    /// it from now on stay `pending`. docket has no route for this; it is the team's own state.
+    pub fn pause_pod(&self, name: &str, reason: &str) {
+        self.shared
+            .lock()
+            .unwrap()
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .paused = Some(reason.to_owned());
+    }
+
+    /// `docket run --pod <name> --resume`, which no HTTP route does: the team runs again and the
+    /// tasks it held start.
+    pub fn resume_pod(&self, name: &str) {
+        let mut world = self.shared.lock().unwrap();
+        let state = &mut *world;
+        state
+            .pods
+            .get_mut(name)
+            .unwrap_or_else(|| panic!("no team {name}"))
+            .paused = None;
+        for index in 0..state.tasks.len() {
+            if state.tasks[index].pod == name && state.tasks[index].status == "pending" {
+                start_task(state, index);
+            }
+        }
+        stamp(state);
     }
 
     /// The next task posted comes from this channel (`cli`, `routine`), as docket records the
@@ -801,10 +845,16 @@ async fn handle(
     };
     let refused_keys = match (method.as_str(), segments.as_slice()) {
         ("POST", ["pods"]) => keyed("POST /pods"),
-        ("POST", ["tasks", _, _, "cancel"]) => keyed("POST /tasks/<pod>/<id>/cancel").or_else(|| {
-            (state.without_settled_cursor && parsed.get("actor").is_some())
-                .then(|| error(400, "the fake: this docket does not know \"actor\" on a cancel"))
-        }),
+        ("POST", ["tasks", _, _, "cancel"]) => {
+            keyed("POST /tasks/<pod>/<id>/cancel").or_else(|| {
+                (state.without_settled_cursor && parsed.get("actor").is_some()).then(|| {
+                    error(
+                        400,
+                        "the fake: this docket does not know \"actor\" on a cancel",
+                    )
+                })
+            })
+        }
         ("POST", ["tasks", _]) => keyed("POST /tasks/<pod>"),
         ("POST", ["escalations", _]) => keyed("POST /escalations/<id>"),
         _ => None,
@@ -858,6 +908,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_settled_cursor {
         listed.push("settledCursor");
+    }
+    if !state.without_pod_pause {
+        listed.push("podPause");
     }
     json!(listed)
 }
@@ -920,6 +973,7 @@ fn pods(state: &World) -> Response {
             } else {
                 entry["workspaceKind"] = json!(workspace_kind(pod));
             }
+            put_paused(state, pod, &mut entry);
             entry["queue"] = json!({
                 "pending": count("pending"), "running": count("running"),
                 "waitingApproval": count("waiting_approval"),
@@ -931,6 +985,18 @@ fn pods(state: &World) -> Response {
         })
         .collect();
     reply(200, json!({"pods": pods}))
+}
+
+/// `paused` (always a bool) and, while paused, `pausedReason`; neither from a docket before
+/// `podPause`.
+fn put_paused(state: &World, pod: &Pod, object: &mut Value) {
+    if state.without_pod_pause {
+        return;
+    }
+    object["paused"] = json!(pod.paused.is_some());
+    if let Some(reason) = &pod.paused {
+        object["pausedReason"] = json!(reason);
+    }
 }
 
 /// `workspaceKind` as docket sends it on a row of the list and on a report.
@@ -992,6 +1058,7 @@ fn pod_report(state: &World, name: &str) -> Response {
         report["blueprint"] = json!(if pod.folder { "routine" } else { "build" });
         report["pipeline"]["steps"] = pipeline_steps();
     }
+    put_paused(state, pod, &mut report);
     let violations: Vec<Value> = pod
         .violations
         .iter()
@@ -1223,6 +1290,7 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             profile: "lights-out".to_owned(),
             violations: Vec::new(),
             read_only: None,
+            paused: None,
         },
     );
     reply(
@@ -1445,17 +1513,11 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
         stamped: (String::new(), 0, false),
     });
     let index = state.tasks.len() - 1;
-    match state.tasks[index].script.gate {
-        Gate::None => finish(state, index),
-        Gate::Consult { .. } | Gate::Wait => {
-            state.tasks[index].status = "waiting_input".to_owned();
-            open_escalation(state, index);
-        }
-        Gate::Approval { .. } | Gate::Outward { .. } => {
-            state.tasks[index].status = "waiting_approval".to_owned();
-            open_escalation(state, index);
-        }
-        Gate::Hold => {}
+    // A paused team claims nothing: the task waits `pending` until the team is resumed.
+    if state.pods[pod].paused.is_some() {
+        state.tasks[index].status = "pending".to_owned();
+    } else {
+        start_task(state, index);
     }
     // A policy that holds the enqueue answers with the escalation it opened.
     let mut answer = if matches!(state.tasks[index].script.gate, Gate::Approval { .. }) {
@@ -1468,6 +1530,23 @@ fn post_task(state: &mut World, pod: &str, body: &Value) -> Response {
     answer["task"] = json!(id);
     answer["project"] = json!(pod);
     reply(201, answer)
+}
+
+/// The team claims the task: it takes the script's gate or runs to its end.
+fn start_task(state: &mut World, index: usize) {
+    state.tasks[index].status = "running".to_owned();
+    match state.tasks[index].script.gate {
+        Gate::None => finish(state, index),
+        Gate::Consult { .. } | Gate::Wait => {
+            state.tasks[index].status = "waiting_input".to_owned();
+            open_escalation(state, index);
+        }
+        Gate::Approval { .. } | Gate::Outward { .. } => {
+            state.tasks[index].status = "waiting_approval".to_owned();
+            open_escalation(state, index);
+        }
+        Gate::Hold => {}
+    }
 }
 
 /// The id docket gives the escalation a task opens.

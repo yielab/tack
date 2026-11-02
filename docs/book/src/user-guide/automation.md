@@ -150,6 +150,8 @@ dashes whose heading says how to get it.
   count ("leads, 2 rows").
 - **Runs to the end by itself** or **Stops to ask a person**, with what to change so that it runs to the end;
   its network; and **Can propose items**, or the reason it cannot.
+- **Paused: budget spent**, when the agent has stopped the team from taking tasks, with the command that
+  resumes it. Tack has no button for it; a run sent to a paused team waits and its timeline says so.
 - **Profiles that use it**, each a link that opens the profile for editing.
 
 A line the agent did not report is one greyed line, "Not reported by Docket", so that "no network" and "the
