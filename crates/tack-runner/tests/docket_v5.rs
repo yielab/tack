@@ -3863,6 +3863,7 @@ fn report(
         features: FeatureCapabilities {
             proposals: None,
             activity: None,
+            converse: None,
             cancel: feature("advisory"),
             resume: feature("unsupported"),
             decisions: feature("supported"),

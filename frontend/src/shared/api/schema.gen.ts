@@ -3251,6 +3251,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/threads */
+        get: operations["list_threads"];
+        put?: never;
+        /** POST /api/threads */
+        post: operations["create_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/threads/{id} */
+        get: operations["get_thread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/threads/{id}/close */
+        post: operations["close_thread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/threads/{id}/messages */
+        post: operations["post_message"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4309,6 +4378,23 @@ export interface components {
         CreateSubtasksFromPlanResponse: {
             created: components["schemas"]["CreatedSubtask"][];
         };
+        /** @description What opens a thread. */
+        CreateThread: {
+            /**
+             * Format: uuid
+             * @description When given, the thread reaches the projects this credential may read, and only that
+             *     credential (and the operator) may write in it.
+             */
+            credential_id?: string | null;
+            /** @description The agent profile whose runs are the thread's turns. */
+            profile: string;
+            /**
+             * Format: uuid
+             * @description The project the thread's turns run in; with no credential, the only project it reaches.
+             */
+            project_id: string;
+            title: string;
+        };
         CreatedSubtask: {
             /** Format: uuid */
             id: string;
@@ -5081,6 +5167,21 @@ export interface components {
             /** Format: int64 */
             done: number;
         };
+        Message: {
+            body: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Who wrote it, as [`Principal::label`](crate::principal::Principal::label) says:
+             *     `operator:local`, `agent:<credential>`, `thread:<id>` for a reply.
+             */
+            principal: string;
+            refs: components["schemas"]["Ref"][];
+            /** Format: uuid */
+            thread: string;
+        };
         /** @enum {string} */
         MetricOp: "lte" | "gte" | "eq";
         /** @description Dollars per million tokens of one model. */
@@ -5330,6 +5431,17 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PostMessage: {
+            body: string;
+            /** @description Items, change sets and decisions the message is about. */
+            refs?: components["schemas"]["Ref"][];
+        };
+        /** @description What posting a message did. */
+        PostedMessage: {
+            message: components["schemas"]["Message"];
+            notice?: null | components["schemas"]["Message"];
+            turn?: null | components["schemas"]["Turn"];
+        };
         /** @enum {string} */
         Priority: "critical" | "high" | "medium" | "low" | "none";
         /** @description What a profile's last successful runs counted, and the limit proposed from them. */
@@ -5523,6 +5635,15 @@ export interface components {
          * @enum {string}
          */
         Recurrence: "weekly" | "monthly" | "quarterly";
+        Ref: {
+            id: string;
+            kind: components["schemas"]["RefKind"];
+        };
+        /**
+         * @description What a message points at.
+         * @enum {string}
+         */
+        RefKind: "item" | "change_set" | "decision";
         RejectChangeSet: {
             /** @description Why the waiting operations are turned down. */
             reason: string;
@@ -6341,6 +6462,53 @@ export interface components {
         TestRun: {
             harness_kind: string;
         };
+        Thread: {
+            /** @description Why a closed thread closed. */
+            closed_reason?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: date-time
+             * @description The time of the latest message, or of the thread's creation when it has none.
+             */
+            last_message_at: string;
+            /** @description The agent profile whose runs are the thread's turns. */
+            profile: string;
+            scope: components["schemas"]["ThreadScope"];
+            status: components["schemas"]["ThreadStatus"];
+            title: string;
+            /**
+             * Format: int32
+             * @description Turns taken so far.
+             */
+            turns: number;
+        };
+        /** @description A thread with everything in it. */
+        ThreadDetail: {
+            /** @description Oldest first. */
+            messages: components["schemas"]["Message"][];
+            thread: components["schemas"]["Thread"];
+            /** @description Oldest first. */
+            turns: components["schemas"]["Turn"][];
+        };
+        /** @description Which projects a thread reaches. */
+        ThreadScope: {
+            /** @enum {string} */
+            kind: "project";
+            /** Format: uuid */
+            project: string;
+        } | {
+            /** Format: uuid */
+            credential: string;
+            /** Format: uuid */
+            home: string;
+            /** @enum {string} */
+            kind: "credential";
+        };
+        /** @enum {string} */
+        ThreadStatus: "open" | "closed";
         /** @description Tokens counted as the project's limits count them: cache reads are not part of them. */
         Tokens: {
             /**
@@ -6372,6 +6540,30 @@ export interface components {
             from: string;
             to: string;
         };
+        /** @description One run of the thread's profile, started by one message. */
+        Turn: {
+            /**
+             * Format: uuid
+             * @description The message that started it.
+             */
+            message: string;
+            /**
+             * Format: int32
+             * @description 1 for the first turn.
+             */
+            position: number;
+            /** @description The run (execution request) it is. */
+            request_id: string;
+            /** Format: date-time */
+            settled_at?: string | null;
+            /** Format: date-time */
+            started_at: string;
+            state: components["schemas"]["TurnState"];
+            /** Format: uuid */
+            thread: string;
+        };
+        /** @enum {string} */
+        TurnState: "pending" | "replied" | "failed";
         Unclaimed: {
             /** @description Whether the project starts tasks by itself; when it does not, no task is waiting for it. */
             auto_start: boolean;
@@ -11340,6 +11532,209 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_threads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Only the threads whose home is this project. */
+                project_id: string | null;
+                /** @description Only the open threads. */
+                open: boolean;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Threads, the most recently written first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Thread"][];
+                };
+            };
+        };
+    };
+    create_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateThread"];
+            };
+        };
+        responses: {
+            /** @description The thread, open, with no message */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Thread"];
+                };
+            };
+            /** @description The title, the profile or the credential is not acceptable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The thread, its messages and its turns */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadDetail"];
+                };
+            };
+            /** @description The credential lacks the scope `converse` on the thread's project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    close_thread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The thread, closed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Thread"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_message: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Thread ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostMessage"];
+            };
+        };
+        responses: {
+            /** @description The message is in the thread and its turn has started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PostedMessage"];
+                };
+            };
+            /** @description The message or its references are not acceptable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The credential lacks the scope `converse` on the thread's project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The thread is closed or at a cap, or its last turn has not answered yet */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
             };
         };
     };

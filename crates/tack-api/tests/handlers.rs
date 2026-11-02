@@ -69,3 +69,5 @@ mod rework;
 mod teams;
 #[path = "handlers/templates.rs"]
 mod templates;
+#[path = "handlers/threads.rs"]
+mod threads;

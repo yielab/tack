@@ -190,6 +190,7 @@ fn capabilities() -> RunnerCapabilities {
         features: FeatureCapabilities {
             proposals: None,
             activity: None,
+            converse: None,
             cancel: capability("advisory"),
             resume: capability("unsupported"),
             decisions: capability("supported"),

@@ -13,6 +13,7 @@ pub mod rate_card;
 pub mod recurrence;
 pub mod rich_text;
 pub mod run_defaults;
+pub mod thread;
 pub mod vocabulary;
 pub mod workflow;
 
