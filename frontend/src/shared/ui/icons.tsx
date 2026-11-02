@@ -192,6 +192,14 @@ export const IconChangeSet = stroke(
   { width: 1.5 },
 );
 
+export const IconThread = stroke(
+  <>
+    <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" stroke-linejoin="round" />
+    <path d="M5.5 6h5M5.5 8h3" stroke-linecap="round" />
+  </>,
+  { width: 1.5 },
+);
+
 /** Tack brand mark — teal pin with a check (uses accent + surface tokens). */
 export const BrandMark: Component<{ size?: number; class?: string }> = (props) => (
   // The sail: the nautical "tack" — mainsail in the accent, jib in the second
