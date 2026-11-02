@@ -13,8 +13,8 @@ the release archive for your OS and CPU and verifies its SHA-256 digest before
 installing; it never builds from source and never downloads anything except that
 archive.
 
-Supported: macOS (Apple Silicon and Intel) and Linux x86_64. Linux ARM64 arrives
-with the release after `v0.1.0-beta.9`; until then the formula stops with a clear
+Supported: macOS (Apple Silicon and Intel) and Linux x86_64. On Linux ARM64 the formula
+installs the release's ARM64 archive when it has one, and otherwise stops with a clear
 message rather than installing the wrong binary.
 
 ## Formula/tack.rb is generated, not hand-edited

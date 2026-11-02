@@ -2,29 +2,16 @@
 
 This page is for integrators and contributors who call Tack's HTTP API. It covers what the generated reference cannot say: how the two kinds of caller authenticate, the live board channel, rules a schema cannot express, and a few worked calls. After reading it you can write a client that authenticates correctly and avoids the surprises.
 
-**Spec of record:** [`docs/openapi.json`](openapi.json), generated from the router — where this page and the spec disagree, the spec is right.
+**Spec of record:** [`docs/openapi.json`](openapi.json), generated from the router. Where this page and the spec disagree, the spec is right.
 **Base URL:** `http://localhost:3210/api`
 **WebSocket URL:** `ws://localhost:3210/api/projects/{id}/boards/live`
 
-> **Every path, method, parameter and request/response schema name** is generated, not written
-> by hand: `GET /api/openapi.json` from a running server, the checked-in
-> [`docs/openapi.json`](openapi.json), or its rendering at
-> [`docs/book/src/developer/api-reference.md`](book/src/developer/api-reference.md)
-> (`scripts/gen-api-reference.py`, run by `./scripts/regen-generated.sh`). CI gates all three, so
-> none can drift from the code. This page does not list endpoints. It covers what a schema cannot
-> say: the two authentication surfaces, the WebSocket channel, rules that span fields or routes,
-> and two worked calls.
-
----
-
-## Table of Contents
-
-1. [Authentication — two surfaces](#authentication--two-surfaces)
-2. [WebSocket Events](#websocket-events)
-3. [Notable behaviors not visible in the schema](#notable-behaviors-not-visible-in-the-schema)
-4. [Worked examples](#worked-examples)
-5. [Error envelope](#error-envelope)
-6. [Rate limiting, CORS, versioning](#rate-limiting-cors-versioning)
+Every path, method, parameter and request/response schema name is generated, not written by hand:
+`GET /api/openapi.json` from a running server, the checked-in `docs/openapi.json`, or its rendering
+in the book, [API Reference](book/src/developer/api-reference.md) (`scripts/gen-api-reference.py`,
+run by `./scripts/regen-generated.sh`). CI gates all three, so none can drift from the code. This
+page does not list endpoints. It covers what a schema cannot say: the two authentication surfaces,
+the WebSocket channel, rules that span fields or routes, and two worked calls.
 
 ---
 
@@ -68,8 +55,9 @@ It is never logged.
 
 ### Runner protocol surface — `/api/runner/v1`
 
-The 14 `/api/runner/v1/*` paths (enroll, refresh, claim, heartbeat, and per-attempt
-accept/start/events/decisions/decisions-poll/artifacts/artifact content/completion/cancellation/recovery-observation)
+The `/api/runner/v1/*` paths (enroll, refresh, claim, heartbeat, the activity feed, and per
+attempt accept, start, events, decisions, the decision poll, answered-elsewhere, artifacts, artifact
+content, completion, the cancellation observation and the recovery observation)
 are a **sibling** of `/api` on the outer router, not nested under it — they never
 traverse `require_token` at all. Each handler authenticates its own hashed bearer
 credential via `handlers/runner_protocol/runner_auth.rs`; a raw enrollment token is
@@ -119,6 +107,7 @@ Every message is a JSON object tagged by `type`:
 | `item_deleted` | `project_id`, `item_id` |
 | `board_config_updated` | `project_id` |
 | `sprint_updated` | `project_id`, `sprint_id` |
+| `ping` | none; a keepalive |
 
 The channel is a single Tokio broadcast (capacity 100) shared by every project; each connection
 filters by `project_id` server-side. Sends are fire-and-forget: a disconnected client misses events
@@ -151,10 +140,10 @@ per-endpoint listing precisely so they do not get duplicated by one.
   when the verifier left none. `POST .../mrp/viewed` marks that a person opened it, and
   `POST .../mrp/review` records the verdict with a required reason: the first review is the
   record and a second is a `409`. Accepting never moves the item.
-- A run never changes an item's status. `status_map_policy_id` on `POST /api/executions`, and
-  `on_start_status` and `on_finish_status` on `PATCH /api/projects/{id}`, were removed; a request
-  that still sends one is accepted and the answer carries `notice: "ignored: the status is set by a
-  person"`.
+- A run never changes an item's status. A request that sends `status_map_policy_id` to
+  `POST /api/executions`, or `on_start_status` or `on_finish_status` to `PATCH /api/projects/{id}`,
+  is accepted, the field is ignored, and the answer carries `notice: "ignored: the status is set by
+  a person"`.
 - `GET /api/projects/{id}/metrics/factory` accepts an optional RFC 3339 `since`; every
   ratio carries its numerator and denominator, and a value that cannot be measured is
   `null` with a `null_reason`, never `0`.
@@ -227,7 +216,7 @@ per-endpoint listing precisely so they do not get duplicated by one.
 - Remote backup bundles carry a generation counter and install id: an upload that
   would overwrite newer work from a *different* install is rejected unless `force`
   is set, and a restore that would clobber newer local work needs confirmation. See
-  [`docs/DEPLOYMENT-GUIDE.md`](DEPLOYMENT-GUIDE.md#backups) for the full model.
+  [Backup & Restore](book/src/admin-guide/backup-restore.md) for the full model.
 
 **Import**
 - GitHub import skips pull requests; an unauthenticated call is limited to 60

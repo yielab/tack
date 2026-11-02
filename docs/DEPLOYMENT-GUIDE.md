@@ -15,29 +15,11 @@ Deployment is therefore "run one binary behind a reverse proxy."
 
 ---
 
-## Table of Contents
-
-1. [Get the binary](#get-the-binary)
-2. [Run it](#run-it)
-3. [Systemd service (recommended)](#systemd-service-recommended)
-4. [Per-user service (no root)](#per-user-service-no-root)
-5. [Reverse proxy + HTTPS (Caddy)](#reverse-proxy--https-caddy)
-6. [Reverse proxy (nginx)](#reverse-proxy-nginx)
-7. [Docker](#docker)
-8. [Configuration](#configuration)
-9. [Backups](#backups)
-10. [Monitoring & logging](#monitoring--logging)
-11. [Security checklist](#security-checklist)
-12. [Scaling considerations](#scaling-considerations)
-13. [Maintenance](#maintenance)
-
----
-
 ## Get the binary
 
 ### Option A — download a release
 
-Prebuilt binaries for Linux (x86_64, and ARM64 from the release after `v0.1.0-beta.9`), macOS (Intel and
+Prebuilt binaries for Linux (x86_64 and ARM64), macOS (Intel and
 Apple Silicon) and Windows are attached to each [GitHub Release](https://github.com/yielab/tack/releases), along with the desktop
 app installers. Each archive contains the single `tack` executable, `LICENSE`, `README.md`, and a
 `QUICKSTART.txt`. Each release also has a separate `tack-runner` archive, for machines that only run
@@ -511,5 +493,4 @@ If you use `journalctl` (no `TACK_LOG_FILE`), systemd already rotates the journa
 ## Support
 
 - [GitHub Issues](https://github.com/yielab/tack/issues)
-- [API Reference](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md)
 - [Security Policy](https://github.com/yielab/tack/blob/develop/SECURITY.md)
