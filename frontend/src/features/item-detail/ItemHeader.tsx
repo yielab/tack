@@ -1,7 +1,9 @@
 import { type Component, type JSX, createResource, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
 import { api } from '../../shared/api';
 import { A } from '@solidjs/router';
-import { TypeBadge, typeKey } from '../../shared/ui';
+import { Icons, TypeBadge, typeKey } from '../../shared/ui';
+import { statusDotColor } from '../../shared/ui/statusDot';
+import ItemMenu from './ItemMenu';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useProject } from '../../shared/state/projectContext';
 import { useVocab } from '../../shared/vocab/useVocab';
@@ -65,6 +67,10 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
   onCleanup(() => window.removeEventListener('resize', fitTitle));
 
   const statuses = () => workflow()?.statuses ?? [];
+  const categoryOf = (status: string) => statuses().find((s) => s.name === status)?.category;
+  const StatusDot: Component<{ category: string | undefined }> = (p) => (
+    <span aria-hidden="true" class="flex-none" style={{ width: '8px', height: '8px', 'border-radius': '50%', background: statusDotColor(p.category) }} />
+  );
 
   return (
     <div class="space-y-5">
@@ -107,39 +113,29 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         aria-label="Item title"
       />
 
-      {/* Status: a person's. What the agents report is Work, in the Work panel below. */}
+      {/* Status: a person's. What the agents report is Work, in the Work panel below. Only the current
+          status shows; the others are options behind one button, never a row of steps. */}
       <div class="flex flex-wrap items-center gap-2">
-      <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Status</span>
-      <div
-        class="inline-flex max-w-full flex-wrap gap-1 rounded-xl p-1"
-        style={{ 'background-color': 'var(--color-bg-panel)' }}
-        role="group"
-        aria-label="Status"
-      >
-        <For each={statuses()}>
-          {(s) => {
-            const active = () => props.item.status === s.name;
-            return (
-              <button
-                type="button"
-                onClick={() => { if (!active()) props.onPatch({ status: s.name }); }}
-                aria-pressed={active() ? 'true' : 'false'}
-                class="focus:outline-none focus-visible:ring-2"
-                style={{
-                  padding: '6px 14px', 'border-radius': '999px', cursor: 'pointer',
-                  'font-size': '0.8125rem', 'font-weight': active() ? 600 : 500, 'font-family': 'inherit',
-                  border: 'none',
-                  background: active() ? 'var(--color-primary-600)' : 'transparent',
-                  color: active() ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
-                  '--tw-ring-color': 'var(--color-focus-ring)',
-                }}
-              >
-                {s.name}
-              </button>
-            );
-          }}
-        </For>
-      </div>
+        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Status</span>
+        <span
+          data-testid="item-status"
+          class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold"
+          style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}
+        >
+          <StatusDot category={categoryOf(props.item.status)} />
+          {props.item.status}
+        </span>
+        <ItemMenu
+          buttonLabel="Change status"
+          menuLabel="Status"
+          icon={<Icons.IconChevronDown size={14} />}
+          entries={statuses().map((s) => ({
+            label: s.name,
+            current: s.name === props.item.status,
+            leading: <StatusDot category={s.category} />,
+            onSelect: () => { if (s.name !== props.item.status) props.onPatch({ status: s.name }); },
+          }))}
+        />
       </div>
 
       <Show when={parent()}>

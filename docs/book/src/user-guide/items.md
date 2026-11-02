@@ -19,9 +19,9 @@ At the top of the drawer, the **header** shows:
 
 - A **type badge** (labeled with your project's vocabulary, e.g. "Task" or "Work Order") and the item's **short id** — the first six characters of the id, uppercased.
 - The editable **title**. Edit it in place; the change is saved when you leave the field or press `Enter`.
-- A row of **status pills**, one per workflow status. Click any inactive pill to transition the item to that status. The transition is validated by the project workflow (allowed transitions and WIP limits are enforced server-side); if it is rejected the item reverts and an error toast appears.
+- The item's **Status**: its current status, with the colour dot its board column has and its name beside it. The **Change status** button next to it opens a short menu of the project's statuses in the workflow's order, the current one marked **Current**; any status can be picked from any other, with the arrow keys or the mouse, and `Esc` closes the menu and returns to the button. The status is yours to set: a run never changes it. The transition is validated by the project workflow (allowed transitions and WIP limits are enforced server-side); if it is rejected the item reverts and an error toast appears.
 - The date the item was created.
-- Under the status pills, **Part of:** with a link to the item this one belongs under, and **Sub-items:** with a link and the status of each item that belongs under this one, so a parent made from a plan lists the items it was split into.
+- Under the status, **Part of:** with a link to the item this one belongs under, and **Sub-items:** with a link and the status of each item that belongs under this one, so a parent made from a plan lists the items it was split into.
 
 Under the header, the **Now** panel comes first. It shows the item's latest run as one state, with an icon and a word (Queued, Running, Needs you, Ready for review, Done, Failed or Cancelled), one sentence about it, a bar for the tokens it has used against its limit, and the one filled button for what comes next: **Run with agent** for an item that never ran (with a line under it saying which agent and team would take it), **Answer the question** when the agent is waiting for you, **Review and merge** when the run is ready, **See why it failed** when it failed, and **Run again** once it is done. Stopping a run and following it live are quieter buttons beside it, and starting another run is always one press away. At the foot of the panel, one muted line says what happens to the item without you (the **Automation** row, see [Roles and the Automation row](#roles-and-the-automation-row)).
 
@@ -35,7 +35,7 @@ All edits save at once.
 
 **Expand** in the drawer's top bar opens the same item on a page of its own, at `/projects/<project>/items/<id>`, and closes the drawer. The page has a breadcrumb (Projects, the project, Items, the item), the Now panel and the tabs in a main column, and the properties list in a column at the side, with no Details fold. **Copy link** at the top right copies the page's address; the open tab is part of it, so a link opens on the same tab. A tab shows a number beside its name when it is already known, as Dependencies does.
 
-<img src="../screenshots/item-page.png" width="98%" alt="An item on its page: the breadcrumb Projects, Product Launch, Items and the item's short id, Copy link at the top right, the title and the status pills, the tabs Overview, Activity, Execution, Dependencies, Files and Fields over the description and the Done when list, and a side column with the last run's card (Accept, Reject… and See what it did), Run again and the properties list.">
+<img src="../screenshots/item-page.png" width="98%" alt="An item on its page: the breadcrumb Projects, Product Launch, Items and the item's short id, Copy link at the top right, the title and its status, the tabs Overview, Activity, Execution, Dependencies, Files and Fields over the description and the Done when list, and a side column with the last run's card (Accept, Reject… and See what it did), Run again and the properties list.">
 
 ---
 

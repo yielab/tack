@@ -17,6 +17,7 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { useAutoStart, type WaitingReason } from '../../shared/state/autoStart';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
+import { statusDotColor } from '../../shared/ui/statusDot';
 import { Avatar, AvatarStack, teamInitialsOf, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
@@ -521,13 +522,7 @@ const Board: Component = () => {
   // status name → category, for the column dot color.
   const categoryOf = (status: string): 'todo' | 'in_progress' | 'done' =>
     project()?.workflow.statuses.find((s) => s.name === status)?.category ?? 'todo';
-  const dotColor = (status: string): string => {
-    switch (categoryOf(status)) {
-      case 'in_progress': return 'var(--color-primary-600)';
-      case 'done': return 'var(--color-success-600)';
-      default: return 'var(--color-accent2)';
-    }
-  };
+  const dotColor = (status: string): string => statusDotColor(categoryOf(status));
   const typeLabelOf = (item: Item) => vocab.t(typeKey(item.item_type));
 
   const [showCreateModal, setShowCreateModal] = createSignal(false);
