@@ -4,8 +4,8 @@ This page is for the person who protects Tack's data. After reading it you can t
 server runs, restore one, send backups to cloud storage, and tell which copy to use when.
 
 Tack offers three data-protection mechanisms: **hot backup** (a database-only SQLite copy),
-**remote/cloud backup** (a full bundle including on-disk files), and **JSON export** (a
-human-readable per-project snapshot). All three can be triggered via the API or the CLI. The commands
+**remote/cloud backup** (a full bundle including on-disk files), and a **project snapshot** (a
+human-readable copy of one project). All three can be triggered via the API or the CLI. The commands
 below assume the token that every API call needs; see
 [Administration & Security](administration.md#authentication). The `tack` command finds the token of a
 local server by itself.
@@ -14,7 +14,7 @@ local server by itself.
 |---|---|
 | A quick copy before an upgrade | [Hot backup](#hot-backup) |
 | Protection against losing the machine | [Remote/cloud backup](#remotecloud-backup) |
-| To archive or move one project | [JSON export](#json-export-project-snapshot) |
+| To archive or move one project | [Project snapshot](#project-snapshot) |
 
 ---
 
@@ -105,19 +105,52 @@ file under `TACK_STORAGE_DIR`**: item attachments and `execution-artifacts/` (wh
 for an attempt, such as logs, diffs and generated files; see
 [Installing and Operating Runners](runners.md#workspace-and-artifact-storage)).
 This is the one backup mechanism that captures artifacts without a separate `rsync`
-step. It requires cloud object storage to be configured, and is otherwise inert. See
-[Cloud Backup](administration.md#cloud-backup-s3-compatible) for the S3-compatible setup.
+step. It needs an S3-compatible object store (AWS S3, Cloudflare R2, Backblaze B2 or MinIO) and is
+otherwise inert.
+
+### Set it up
+
+Remote backup is enabled only when a bucket, an access key and a secret key are all present. Two layers
+feed the settings:
+
+1. **Environment defaults** (`TACK_BACKUP_*`), applied at startup. Every variable, with its default, is in
+   the [Configuration](configuration-reference.md) page.
+2. **UI overrides** (Settings → Cloud Backup), stored in the board's database. Until cloud backup is set
+   up, the page shows its buttons disabled with the reason "Set up cloud backup first".
+
+The UI values win for endpoint, bucket, region, access key, secret key, prefix and retention. A blank UI
+field clears its override and falls back to the environment. The automatic-backup interval
+(`TACK_BACKUP_INTERVAL_SECS`, values under 60 are raised to 60) is environment-only and applies at startup.
 
 ```sh
-tack backup --remote                 # push a bundle now
-tack backups                         # list bundles in the bucket
+TACK_BACKUP_ENDPOINT='https://<account>.r2.cloudflarestorage.com' \
+TACK_BACKUP_BUCKET='tack-backups' \
+TACK_BACKUP_ACCESS_KEY='...' \
+TACK_BACKUP_SECRET_KEY='...' \
+TACK_BACKUP_INTERVAL_SECS=86400 \
+tack serve
 ```
+
+Leave `TACK_BACKUP_ENDPOINT` out for AWS S3, and set `TACK_BACKUP_REGION` to the real region there (it is
+`auto` by default). `GET /api/settings/backup` returns the settings in effect; the secret key is never
+sent, only `secret_key_set`. `PUT /api/settings/backup` saves overrides, and a blank `secret_key` keeps
+the stored one.
+
+### Back up and list
+
+```sh
+tack backup --remote                 # push a bundle now (prunes to TACK_BACKUP_RETENTION, 10 by default)
+tack backups                         # list bundles in the bucket, newest first
+```
+
+The same actions are `POST /api/backup/remote` and `GET /api/backup/remote`; both answer `409` when remote
+backup is not configured.
 
 The bundle is a `zstd`-compressed tar (`database.db`, the whole storage
 tree, and a `manifest.json` with a sha256 of the database and an item count). The same machine-local
 secrets as above are removed from the database copy before it is bundled.
 
-Restore is staged the same way as local restore: download, stage, restart.
+Restore is staged the same way as a local restore: download, stage, restart (`POST /api/backup/remote/restore` does the first two).
 
 ```sh
 tack restore --remote --key <object-key>   # omit --key to restore the latest bundle
@@ -138,22 +171,11 @@ the provider, and scope the access key to that one bucket.
 
 ---
 
-## JSON Export (Project Snapshot)
+## Project Snapshot
 
-A human-readable snapshot of a single project. Not a substitute for a full backup, but useful for archiving completed projects or migrating between instances.
-
-```sh
-# Full project snapshot (all items, sprints, roles, comments, dependencies)
-curl -H "Authorization: Bearer <token>" \
-  "http://127.0.0.1:3210/api/projects/{id}/export?format=json" -o project.json
-
-# Item list as CSV (for spreadsheets)
-curl -H "Authorization: Bearer <token>" \
-  "http://127.0.0.1:3210/api/projects/{id}/export?format=csv" -o items.csv
-```
-
-`scope=bundle` exports the project file instead, which carries a project's settings, roles, profiles
-and automation so that it can be set up again somewhere else; see
+A snapshot is a human-readable copy of one project's items, sprints and dependencies. It is not a
+substitute for a full backup, but it suits archiving a finished project or moving it to another Tack. The
+project file also carries a project's settings, roles, profiles and automation. Both are described in
 [Import, Export & Project Files](../user-guide/import-export.md).
 
 ---
@@ -177,7 +199,7 @@ For a complete restore you need both the database backup and the storage directo
 | Before a server upgrade | Full backup first |
 | Before bulk import or schema changes | Full backup first |
 | Routine protection | Daily cron (see below) |
-| Completing a project phase | JSON export for archival |
+| Finishing a project | A project snapshot for archival |
 
 **Daily cron example:**
 
