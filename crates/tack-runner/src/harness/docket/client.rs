@@ -126,6 +126,17 @@ impl Client {
         self.send(Method::GET, &["health"], &[], None).await
     }
 
+    /// Whether this docket lists `name` among the `features` of `GET /health`. A docket that
+    /// does not answer, or answers without the list, has none.
+    pub async fn has_feature(&self, name: &str) -> bool {
+        match self.health().await {
+            Ok(reply) if reply.status == 200 => reply
+                .read::<super::wire::HealthAnswer>()
+                .is_ok_and(|health| health.features.iter().any(|feature| feature == name)),
+            _ => false,
+        }
+    }
+
     /// Waits until `GET /health` answers, up to `within`; each ask is cut at two seconds so a
     /// daemon that accepts and does not answer cannot hold the wait past its end.
     pub async fn wait_until_healthy(&self, within: Duration) {

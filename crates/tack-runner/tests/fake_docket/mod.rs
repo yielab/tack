@@ -363,6 +363,9 @@ struct World {
     /// A docket before `taskCursor`: the features do not list it, a task has no `rev`, and
     /// `updatedSince` is an unknown parameter docket ignores.
     without_task_cursor: bool,
+    /// A docket before `failureKinds`: the features do not list it, and a task that settles
+    /// `failed` without a kind of its own carries none.
+    without_failure_kinds: bool,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -403,6 +406,7 @@ impl FakeDocket {
             before_task_scope: false,
             without_task_current: false,
             without_task_cursor: false,
+            without_failure_kinds: false,
             rev: 0,
             next_channel: None,
         }));
@@ -471,6 +475,11 @@ impl FakeDocket {
     /// A docket before `taskCursor`.
     pub fn without_task_cursor(&self) {
         self.shared.lock().unwrap().without_task_cursor = true;
+    }
+
+    /// A docket before `failureKinds`.
+    pub fn without_failure_kinds(&self) {
+        self.shared.lock().unwrap().without_failure_kinds = true;
     }
 
     /// The next task posted comes from this channel (`cli`, `routine`), as docket records the
@@ -826,6 +835,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_task_cursor {
         listed.push("taskCursor");
+    }
+    if !state.without_failure_kinds {
+        listed.push("failureKinds");
     }
     json!(listed)
 }
@@ -1718,6 +1730,10 @@ fn task_record(state: &World, task: &Task) -> Value {
     match &task.script.failure_kind {
         Some(kind) if matches!(task.status.as_str(), "failed" | "blocked") => {
             object.insert("failureKind".to_owned(), json!(kind));
+        }
+        // `failureKinds`: a task that settles `failed` always carries one, `hop_failed` by default.
+        None if task.status == "failed" && !state.without_failure_kinds => {
+            object.insert("failureKind".to_owned(), json!("hop_failed"));
         }
         _ => {
             object.remove("failureKind");

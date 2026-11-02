@@ -1167,6 +1167,22 @@ impl DocketAdapter {
                        "message": "The team's wait ran out and its pipeline does not say what comes next.",
                        "task": info.task}),
             ),
+            // The team's budget was spent before a step (`failureKinds`): the run says so and how
+            // it goes on, and not docket's text, which keeps a dollar figure Tack does not report.
+            "blocked"
+                if failure_kind == Some("pod_budget")
+                    && self.client.has_feature("failureKinds").await =>
+            {
+                (
+                    AttemptState::Failed,
+                    json!({"code": "pod_budget",
+                           "message": format!(
+                               "The team's budget is spent, so docket started nothing more. \
+                                Resume it with `docket run --pod {} --resume` once the budget allows.",
+                               info.pod),
+                           "task": info.task}),
+                )
+            }
             "blocked" => (
                 AttemptState::Failed,
                 json!({"code": "blocked", "message": format!("docket said: {why}"), "task": info.task}),

@@ -2467,6 +2467,56 @@ async fn failures_carry_docket_kind_and_text() {
     );
 }
 
+/// `failureKinds`: a task blocked by the team's spent budget says so, and a failed task with no
+/// kind of its own says `hop_failed`. A docket without the feature is read as it always was.
+#[tokio::test]
+async fn failure_kinds_say_why_a_task_ended_and_only_from_a_docket_that_lists_them() {
+    for listed in [true, false] {
+        let fake = pods_fake().await;
+        if !listed {
+            fake.without_failure_kinds();
+        }
+        fake.script(Script {
+            status: "blocked".to_owned(),
+            failure_kind: Some("pod_budget".to_owned()),
+            reason: "pod budget spent".to_owned(),
+            ..Script::default()
+        });
+        let blocked = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &blocked), &spec(&blocked, "attempt-1", 1)).await;
+        assert_eq!(outcome.terminal_state, AttemptState::Failed, "{listed}");
+        if listed {
+            assert_eq!(outcome.terminal_reason["code"], json!("pod_budget"));
+            let message = outcome.terminal_reason["message"].as_str().expect("message");
+            assert!(message.starts_with("The team's budget is spent"), "{message}");
+            assert!(
+                message.contains(&format!("docket run --pod {POD} --resume")),
+                "{message}"
+            );
+        } else {
+            assert_eq!(outcome.terminal_reason["code"], json!("blocked"));
+            assert_eq!(
+                outcome.terminal_reason["message"],
+                json!("docket said: pod budget spent")
+            );
+        }
+
+        let fake = pods_fake().await;
+        if !listed {
+            fake.without_failure_kinds();
+        }
+        fake.script(Script {
+            status: "failed".to_owned(),
+            reason: "the hop failed".to_owned(),
+            ..Script::default()
+        });
+        let failed = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &failed), &spec(&failed, "attempt-1", 1)).await;
+        let code = if listed { "hop_failed" } else { "failed" };
+        assert_eq!(outcome.terminal_reason["code"], json!(code), "{listed}");
+    }
+}
+
 #[tokio::test]
 async fn a_failed_install_fails_the_attempt_with_dockets_reason_and_no_work() {
     let fake = pods_fake().await;
@@ -5523,6 +5573,7 @@ async fn the_fake_lists_only_the_features_it_serves() {
         if cursor {
             expected.push("taskCursor");
         }
+        expected.extend(LATER_FEATURES.iter().map(|(name, _)| *name));
         for path in ["/health", "/status.json"] {
             let (status, answer) = ask(&fake, "GET", path, None).await;
             assert_eq!(status, 200, "{path}");
@@ -5531,6 +5582,34 @@ async fn the_fake_lists_only_the_features_it_serves() {
                 json!(expected),
                 "{path} (current: {current}, cursor: {cursor})"
             );
+        }
+    }
+}
+
+/// The features docket added after `taskCurrent` and `taskCursor`, in the order the fake lists
+/// them, each with the switch that makes the fake a docket before it.
+const LATER_FEATURES: [(&str, fn(&FakeDocket)); 1] =
+    [("failureKinds", FakeDocket::without_failure_kinds)];
+
+/// Each later feature is dropped from both lists by its own switch and by no other.
+#[tokio::test]
+async fn each_later_feature_has_its_own_off_switch() {
+    for (off, switch) in LATER_FEATURES {
+        let fake = pods_fake().await;
+        switch(&fake);
+        let expected: Vec<&str> = ["taskCurrent", "taskCursor"]
+            .into_iter()
+            .chain(
+                LATER_FEATURES
+                    .iter()
+                    .map(|(name, _)| *name)
+                    .filter(|name| *name != off),
+            )
+            .collect();
+        for path in ["/health", "/status.json"] {
+            let (status, answer) = ask(&fake, "GET", path, None).await;
+            assert_eq!(status, 200, "{path}");
+            assert_eq!(answer["features"], json!(expected), "{path} without {off}");
         }
     }
 }
