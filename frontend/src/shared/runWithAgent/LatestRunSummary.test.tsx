@@ -104,6 +104,13 @@ describe('LatestRunSummary', () => {
     expect(buttons(card)).toEqual(expect.arrayContaining(['Review and merge', 'Accept', 'Reject…']));
   });
 
+  it('the panel is titled Work, and the run state in it is a work word, never a status', async () => {
+    const c = mount([RUN], () => {}, [ATTEMPT]);
+    for (let i = 0; i < 4; i++) await flush();
+    expect(c.querySelector('section h2')!.textContent).toBe('Work');
+    expect(c.querySelector('[data-testid="latest-run"] [role="status"]')!.textContent).toContain('Ready for review');
+  });
+
   it('while the Execution tab is open the card keeps its state and its links but leaves out Accept and Reject…', async () => {
     const c = mount([RUN], () => {}, [ATTEMPT], [], true);
     for (let i = 0; i < 4; i++) await flush();
@@ -426,11 +433,11 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(buttonsOf(panel(c)).map((b) => b.textContent)).toContain('Run again');
   });
 
-  it('a merged run says Done, and Run again is the filled button, once', async () => {
+  it('a merged run says Finished, and Run again is the filled button, once', async () => {
     const merged = { ...ATTEMPT, merge: { enabled: false, reason: null, merged: { merged_at: '2026-10-08T12:30:00Z' } } };
     const c = mount([RUN], () => {}, [merged]);
     await settle();
-    expect(banner(c)).toBe('Done');
+    expect(banner(c)).toBe('Finished');
     expect(c.querySelector('[data-testid="latest-run-merged"]')).not.toBeNull();
     expect(filled(panel(c))).toEqual(['Run again']);
     expect(buttonsOf(panel(c)).filter((b) => b.textContent === 'Run again')).toHaveLength(1);

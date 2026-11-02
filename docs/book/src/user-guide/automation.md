@@ -55,8 +55,8 @@ When
       When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
       (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
        controls disabled)
-   When a run starts (folded)
-   When a run finishes (folded)
+      The status is a person's: a run never changes it.
+   Definition of done (folded)
 
 Merge
    (o) L3 - You merge every change yourself.
@@ -348,7 +348,7 @@ without you:
 
 These are the folded sections above the ladder. Each saves as soon as you change it.
 
-<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: where the code is, how the agent works on it, the push switch, the default profile, the column a finished run moves the task to, and the Definition of done.">
+<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: where the code is, how the agent works on it, the push switch, the default profile, and the Definition of done.">
 
 ### Where the code is
 
@@ -386,19 +386,16 @@ computer". Push is set up on the runner by an administrator; see
 and the runner does not, the run records "push skipped" instead of failing. The work is not lost either way:
 in the first mode it is on the local branch.
 
-### When a run starts
+### Status and Work
 
-**Move the item to** is the column a task moves to the moment a run on it starts, so the board stops saying
-the task waits while an agent works on it. A new project starts with the first in-progress column of its
-workflow; **Do not move** leaves the task where it is, and is what a project that existed before this
-setting keeps. A task already in that column, or in a done column, does not move: running done work again
-does not reopen it.
+A run never changes a task's status. The column is yours: you move the card, or apply a change set, and a
+run that starts, finishes or is reviewed leaves it where it is. What the agents report is the task's **Work**
+(Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled), shown beside the status on the
+card, the task, the List and the Board's strip. See [Status and Work](views.md#status-and-work).
 
-### When a run finishes
+### Definition of done
 
-**Move the item to** is optionally the column a task moves to when a run on it finishes, in addition to
-**Needs your review**. **Do not move** is the default. The **Definition of done** is one text the agent reads
-on every run of this project.
+The **Definition of done** is one text the agent reads on every run of this project.
 
 ### Agent and model
 

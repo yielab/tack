@@ -157,7 +157,6 @@ export interface CreateExecutionInput {
   environment: unknown;
   metadata: unknown;
   timeout_seconds: number;
-  status_map_policy_id?: string | null;
 }
 
 /** `POST /executions` success body (executions.rs lines 409-415). `state` is

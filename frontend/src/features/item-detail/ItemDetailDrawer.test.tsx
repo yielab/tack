@@ -132,6 +132,9 @@ describe('ItemDetailDrawer', () => {
     container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
     await flush();
 
+    // The header names Status beside its pills; the agents' Work is the panel below, never the same pill.
+    const group = document.querySelector('[role="group"][aria-label="Status"]')!;
+    expect(group.parentElement!.firstElementChild!.textContent).toBe('Status');
     // Status is a row of pills; click the "done" pill.
     const donePill = [...document.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Status"] button')]
       .find((b) => b.textContent === 'done')!;
