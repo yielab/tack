@@ -445,9 +445,12 @@ describe('Board agent strip and column bars', () => {
     const c = await mountBoard(ITEMS, RUNS);
     const bars = [...c.querySelectorAll('[data-testid="run-mini-bar"]')];
     expect(bars.map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Work in this column: 2 running, 1 needs you',
+      'Work in this column: 1 needs you, 2 running',
       'Work in this column: 1 failed',
     ]);
+    // Under each bar a legend names every state in words, in the same order, so colour is never the only cue.
+    const legends = [...c.querySelectorAll('[data-testid="run-mini-legend"]')].map((l) => [...l.querySelectorAll('li')].map((li) => li.textContent).join(' | '));
+    expect(legends).toEqual(['1Needs you | 2Running', '1Failed']);
     const segment = bars[0].querySelector<HTMLButtonElement>('[aria-label="1 needs you"]')!;
     segment.click();
     await flush();

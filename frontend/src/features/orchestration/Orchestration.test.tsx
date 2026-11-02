@@ -284,6 +284,16 @@ describe('Orchestration: lanes', () => {
     expect(q<HTMLAnchorElement>(lane, '[data-testid="flow-lane-name"]')!.getAttribute('href')).toBe('/agents#team-saas-notes');
   });
 
+  it('draws_no_empty_queue_bar_for_a_lane_with_nothing_running_or_waiting_and_says_so_in_words', async () => {
+    const c = await mount(threeLanes());
+    const idle = qa(c, '[data-testid="flow-lane"]').filter((lane) => lane.getAttribute('data-urgency') === 'idle');
+    expect(idle.length).toBeGreaterThan(0);
+    for (const lane of idle) {
+      expect(q(lane, '[data-testid="flow-queue"] [role="img"]')).toBeNull();
+      expect(q(lane, '[data-testid="flow-queue"]')!.textContent).toBe('Nothing running or waiting');
+    }
+  });
+
   it('writes_the_same_word_at_every_empty_station', async () => {
     const c = await mount(threeLanes());
     const empties = qa(c, '[data-lane="team:saas-notes"] [data-testid="flow-station"] ul > li.text-caption');
@@ -783,6 +793,21 @@ describe('Orchestration: Map and Compare', () => {
     expect(cellFor('members', 'saas-notes').textContent).toContain('Lead · m');
     expect(cellFor('steps', 'saas-notes').textContent).toContain('checked by a reviewer');
     expect(cellFor('merge', 'saas-notes').textContent).toBe('You merge (L3)');
+  });
+
+  it('lets_a_compare_cell_wrap_at_its_words_inside_equal_columns_and_carries_its_full_text_as_a_tooltip', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const table = q<HTMLTableElement>(c, '[data-testid="compare"] table')!;
+    // Fixed, equal columns: a long cell wraps instead of widening the table past its frame.
+    expect(table.style.tableLayout).toBe('fixed');
+    expect(table.style.minWidth).not.toBe('max-content');
+    expect(qa(table, 'tbody th[scope="row"]').every((th) => !th.className.includes('whitespace-nowrap'))).toBe(true);
+    const step = qa(table, '[data-row="steps"] li').find((li) => li.textContent!.includes('checked by a reviewer'))!;
+    expect(step.getAttribute('title')).toBe(step.textContent);
+    const text = qa(table, '[data-row="network"] td span')[0];
+    expect(text.getAttribute('title')).toBe(text.textContent);
   });
 
   it('reads_not_reported_for_what_a_team_left_out_with_the_reason_on_hover', async () => {
