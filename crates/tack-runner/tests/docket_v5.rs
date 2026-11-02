@@ -4677,18 +4677,9 @@ async fn the_fake_answers_a_wait_and_an_outward_approval_with_the_keys_of_the_sp
     }
 }
 
-/// The docket of the captures: the committed one, with the scope of a record set, `_role` on a row
-/// and what a member reaches. `before_task_scope()` is the docket before that, of which there is no
-/// capture. The captures predate `podPause`, so the fake answers without `paused`.
-async fn captured_docket() -> FakeDocket {
-    let fake = FakeDocket::start().await;
-    fake.without_pod_pause();
-    fake
-}
-
 #[tokio::test]
 async fn the_fake_answers_with_the_keys_of_the_captures() {
-    let fake = captured_docket().await;
+    let fake = FakeDocket::start().await;
     let mut seen: Vec<(&str, Value)> = Vec::new();
     let mut get = |name, answer: (u16, Value)| seen.push((name, answer.1));
 
@@ -4784,7 +4775,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
             &fake,
             "POST",
             &format!("/tasks/saas-dev/{id}/cancel"),
-            Some(json!({"reason": "x"})),
+            Some(request_file("task-cancel-finished")),
         )
         .await,
     );
@@ -5018,7 +5009,7 @@ async fn the_fake_answers_with_the_keys_of_the_captures() {
 
 #[tokio::test]
 async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_captures() {
-    let fake = captured_docket().await;
+    let fake = FakeDocket::start().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set(
         "saas-notes",
@@ -5061,7 +5052,7 @@ async fn the_fake_answers_a_folder_team_and_its_records_with_the_keys_of_the_cap
 
 #[tokio::test]
 async fn the_fake_answers_scope_roles_and_reach_with_the_keys_of_the_captures() {
-    let fake = captured_docket().await;
+    let fake = FakeDocket::start().await;
     fake.add_folder_pod("saas-notes");
     fake.add_record_set_scoped("saas-notes", "entries", "Things", &["ref", "title"], "pod");
     fake.add_record_set_scoped(

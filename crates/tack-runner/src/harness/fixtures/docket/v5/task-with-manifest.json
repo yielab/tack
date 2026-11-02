@@ -78,6 +78,9 @@
       "repoFiles": {},
       "model": "anthropic/claude-sonnet-4-6",
       "provider": "anthropic",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
       "promptManifest": {
         "layers": [
           {
@@ -148,6 +151,9 @@
       "repoFiles": {},
       "model": "local/qwen2.5-coder:7b",
       "provider": "local",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
       "promptManifest": {
         "layers": [
           {
