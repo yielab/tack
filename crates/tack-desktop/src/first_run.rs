@@ -13,14 +13,20 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use crate::paths::DataPaths;
 use crate::supervisor::DEFAULT_PORT;
 
-/// The app's own settings.json. Holds a database-path override and the
-/// port -- nothing else; every other server default is untouched.
+/// The app's own settings.json. Holds a database-path override, the port and
+/// whether to attach to a server the person runs themselves -- nothing else;
+/// every other server default is untouched.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Settings {
     #[serde(default)]
     pub database_path: Option<PathBuf>,
     #[serde(default = "default_port")]
     pub port: u16,
+    /// Attach to a Tack server already answering on `port` that this app did
+    /// not start (a service, say), instead of refusing it as something else.
+    /// Off by default; the server's version must still be this app's or newer.
+    #[serde(default)]
+    pub attach_existing: bool,
 }
 
 fn default_port() -> u16 {
@@ -34,6 +40,7 @@ impl Default for Settings {
         Self {
             database_path: None,
             port: default_port(),
+            attach_existing: false,
         }
     }
 }
@@ -57,6 +64,7 @@ fn settings_for_answer(use_existing: bool, chosen_file: Option<PathBuf>) -> Sett
     Settings {
         database_path: if use_existing { chosen_file } else { None },
         port: DEFAULT_PORT,
+        attach_existing: false,
     }
 }
 
@@ -130,6 +138,7 @@ mod tests {
         let original = Settings {
             database_path: Some(PathBuf::from("/data/existing.db")),
             port: 4444,
+            attach_existing: true,
         };
         original.save(&path).unwrap();
 
@@ -150,5 +159,16 @@ mod tests {
         let path = tmp.path().join("settings.json");
         std::fs::write(&path, b"not json").unwrap();
         assert_eq!(Settings::load(&path), None);
+    }
+
+    #[test]
+    fn attach_existing_is_off_unless_settings_json_says_so() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("settings.json");
+        std::fs::write(&path, br#"{"database_path": null, "port": 3210}"#).unwrap();
+        assert!(!Settings::load(&path).unwrap().attach_existing);
+
+        std::fs::write(&path, br#"{"port": 3210, "attach_existing": true}"#).unwrap();
+        assert!(Settings::load(&path).unwrap().attach_existing);
     }
 }

@@ -19,7 +19,8 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
 use paths::DataPaths;
 use supervisor::{
-    ExitReport, Outcome, SidecarHandle, SidecarLauncher, SupervisorError, attach_or_start, shutdown,
+    ExitReport, LaunchCode, Outcome, SidecarHandle, SidecarLauncher, SupervisorError,
+    attach_or_start, shutdown,
 };
 
 /// [`SidecarHandle`] backed by the real Tauri sidecar child. `CommandChild`
@@ -266,7 +267,10 @@ fn main() {
                     &launcher,
                     &folders,
                     env!("CARGO_PKG_VERSION"),
-                    &nonce,
+                    LaunchCode {
+                        nonce: &nonce,
+                        attach_unmarked: settings.attach_existing,
+                    },
                 )
                 .await
                 {
@@ -326,7 +330,10 @@ fn main() {
                             .dialog()
                             .message(format!(
                                 "Port {port} is already in use by something other than Tack. \
-                                 Close whatever is using it and reopen Tack."
+                                 Close whatever is using it and reopen Tack.\n\n\
+                                 To use a Tack server you started yourself, set \
+                                 \"attach_existing\": true in {}.",
+                                paths.settings_file.display()
                             ))
                             .title("Tack")
                             .kind(MessageDialogKind::Error)
