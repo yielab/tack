@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Added
 
+- Every row of `GET /api/executions` carries `never_started` (the newest attempt was turned away before it started) and `verifier_recommendation` (`merge`, `review` or `reject`, from the pack of a succeeded attempt), and each attempt of `GET /api/executions/{id}/attempts` carries `never_started`; both are additive, and one rule in `tack-core` decides `never_started` for both.
 - A run's steps say how long each took ("Took 4m 55s") on the Execution tab and under each step of the track, from a docket that lists `hopTimes`; steps that did no agent work, and a docket without the feature, show nothing as before.
 - A team docket has paused (its budget is spent) shows "Paused: budget spent" on its card in Agents → Teams, and a run sent to it says on its timeline that it waits and that `docket run --pod <team> --resume` resumes the team; there is no button, as docket has no route that resumes a team. Needs a docket that lists `podPause`; an older one reads as before.
 - A question answered at docket's own command line closes in Tack as **Answered in docket**, with a line on the timeline, and the run's next question is put to a person without waiting for the first to expire. It needs a docket that lists `settledCursor`; with an older one the question stays open until the run ends, as before.

@@ -3744,6 +3744,11 @@ export interface components {
             /** @description Whether the Merge button may be pressed, and why not. */
             merge: components["schemas"]["AttemptMerge"];
             model_provenance?: null | components["schemas"]["ModelProvenance"];
+            /**
+             * @description The attempt ended without ever starting work: the computer refused it, or the team's
+             *     ceiling did (`tack_core::run_outcome::never_started`, the one rule).
+             */
+            never_started: boolean;
             pull_request?: null | components["schemas"]["AttemptPullRequest"];
             request_id: string;
             rerun_at_l3?: null | components["schemas"]["AttemptRerun"];
@@ -4871,6 +4876,11 @@ export interface components {
             latest_hop?: null | components["schemas"]["LatestHop"];
             /** @description The run's token limit and who applies it. */
             limit: components["schemas"]["RunLimit"];
+            /**
+             * @description The run's newest attempt ended without ever starting work: the computer refused it, or the
+             *     team's ceiling did. A screen reads "Not started" from this, never a failure of the work.
+             */
+            never_started: boolean;
             request_id: string;
             /**
              * @description The agent the run asked for (`claude-code`, `codex`, `opencode`, `docket`); null when it
@@ -4878,6 +4888,7 @@ export interface components {
              */
             requested_harness_kind?: string | null;
             state: string;
+            verifier_recommendation?: null | components["schemas"]["MergeDecision"];
             /**
              * @description The runs that hold every slot of the computers this request may run on, when no poll has
              *     given a reason because those computers are full; empty otherwise. Read at read time.
@@ -5316,6 +5327,11 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /**
+         * @description Merge recommendation.
+         * @enum {string}
+         */
+        MergeDecision: "merge" | "review" | "reject";
         /**
          * @description The merge that happened for an attempt: `trigger` is what asked for it
          *     (`button`, `done`, `auto`), `merge_sha` the commit it landed on.

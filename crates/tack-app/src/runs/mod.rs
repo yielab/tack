@@ -16,5 +16,6 @@ pub mod refresh;
 pub mod report_events;
 pub mod requeue;
 pub mod resolve_decision;
+pub mod run_facts;
 pub mod start_run;
 pub mod submit_artifacts;
