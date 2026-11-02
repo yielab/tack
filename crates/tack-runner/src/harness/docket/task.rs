@@ -231,12 +231,12 @@ pub(super) fn body(
     };
     // A thread's turn asks a local agent to also write its reply to a file; docket's team answers
     // with its last step, so its input says that instead.
-    let turn = TurnNote::of(&request.metadata).is_some();
+    let turn = TurnNote::of(&request.metadata);
     let told = request.task.as_ref().map(|task| {
         let mut task = task.clone();
-        if turn {
+        if let Some(turn) = &turn {
             task.description = task.description.map(|description| {
-                tack_core::thread::turn_input_for_a_team(&description, REPLY_FILE)
+                tack_core::thread::turn_input_for_a_team(&description, REPLY_FILE, &turn.id)
             });
         }
         task
