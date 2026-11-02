@@ -5,7 +5,7 @@ takes your project's word for a sprint) — all showing the same items. An item 
 in the others. Two more screens, **Overview** and **Factory metrics**, are in the sidebar and show
 project statistics.
 
-Every view shares the same shell: a sidebar to switch project and view, a top bar with item
+Every view shares the same shell: a sidebar to switch project and view (on a short window its list scrolls, and a fade under its lower edge says there is more, such as **Agents** and **Settings**), a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
 on `Ctrl+K`. Theme, palette, text size and zoom are set in Settings → Display & accessibility — see
 [Appearance](appearance.md).
