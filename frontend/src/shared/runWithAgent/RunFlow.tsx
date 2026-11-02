@@ -429,9 +429,12 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         </ul>
       </Show>
 
+      {/* The dialog's scroll area has 1.5rem of padding under its content, and a sticky element stops at
+          the padding edge: the offset and the negative margin below put the footer on the dialog's own
+          lower edge, so no field shows beneath it. */}
       <div
         data-testid="run-footer"
-        class="sticky bottom-0 -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-6 py-3"
+        class="sticky bottom-[-1.5rem] -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-6 py-3"
         style={{
           'background-color': 'var(--color-bg-elevated)',
           'border-top': '1px solid var(--color-border-light)',

@@ -201,7 +201,7 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   title and description, its acceptance criteria, the project's **Definition of done**, and anything in the
   task's collapsed **For the agent** block. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent).
 - **Start run** sits in a footer that stays in view while the dialog scrolls, beside **Cancel** and the run's
-  token limit. When something blocks the run, the footer gives the link that fixes it in its place.
+  token limit, on the dialog's lower edge with no field showing beneath it. When something blocks the run, the footer gives the link that fixes it in its place.
 - **Ask before each action.** On when the agent is not sandboxed, off otherwise. When on, the agent pauses
   and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
   pause, the switch is disabled and says why.
