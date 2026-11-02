@@ -283,3 +283,74 @@ async fn an_install_the_project_already_ignores_does_not_stop_the_capture() {
         fs::remove_dir_all(scratch).expect("scratch");
     }
 }
+
+#[tokio::test]
+async fn a_reply_is_staged_from_the_harness_or_the_file_and_kept_out_of_the_patch() {
+    if Command::new("git").arg("--version").output().is_err() {
+        eprintln!("skipped: the git binary is not on PATH");
+        return;
+    }
+    let root = tempfile::tempdir().expect("temp dir");
+    let path = root.path().join("ws");
+    fs::create_dir_all(&path).expect("workspace");
+    assert!(git(&path, &["init", "--quiet"]));
+    fs::write(path.join("keep.txt"), "keep\n").expect("keep");
+    assert!(git(&path, &["add", "-A"]));
+    assert!(git(&path, &["commit", "--quiet", "-m", "base"]));
+    let base = Command::new("git")
+        .current_dir(&path)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .expect("rev-parse");
+    let base = String::from_utf8_lossy(&base.stdout).trim().to_owned();
+    fs::write(path.join("tack-reply.md"), "from the file\n").expect("reply");
+    fs::write(path.join(".tack-attempt"), "attempt").expect("marker");
+    let workspace = Workspace {
+        attempt_id: AttemptId::new("attempt"),
+        id: WorkspaceId::new("ws_attempt"),
+        path: path.clone(),
+        base_revision: base,
+    };
+    let workspaces =
+        WorkspaceManager::new(root.path().join("root"), GitWorktreeProvisioner::default());
+    let run = |terminal_reason: serde_json::Value| {
+        capture(
+            &workspaces,
+            &workspace,
+            "codex".to_owned(),
+            terminal_reason,
+            serde_json::Value::Null,
+            None,
+            None,
+            ("Tack <t@localhost>", "work"),
+            None,
+        )
+    };
+
+    let (scratch, staged) = run(serde_json::json!({"code": "completed"})).await;
+    let reply = staged
+        .iter()
+        .find(|item| item["kind"] == "reply")
+        .expect("the file is staged as the reply");
+    assert_eq!(reply["media_type"], "text/markdown");
+    assert_eq!(
+        fs::read(reply["staged_path"].as_str().unwrap()).unwrap(),
+        b"from the file\n"
+    );
+    assert!(
+        staged.iter().all(|item| item["kind"] != "patch"
+            || !String::from_utf8_lossy(&fs::read(item["staged_path"].as_str().unwrap()).unwrap())
+                .contains("tack-reply")),
+        "the reply is not part of the work"
+    );
+    fs::remove_dir_all(scratch).expect("scratch");
+
+    // What the harness holds wins over the file.
+    let (scratch, staged) = run(serde_json::json!({"reply": "from the harness"})).await;
+    let reply = staged.iter().find(|item| item["kind"] == "reply").unwrap();
+    assert_eq!(
+        fs::read(reply["staged_path"].as_str().unwrap()).unwrap(),
+        b"from the harness"
+    );
+    fs::remove_dir_all(scratch).expect("scratch");
+}

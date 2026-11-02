@@ -231,7 +231,7 @@ impl Repository {
         project: Uuid,
     ) -> Result<HashMap<String, usize>, StoreError> {
         let rows: Vec<(String, i64)> = sqlx::query_as(
-            "SELECT status, COUNT(*) FROM items WHERE project_id = ? GROUP BY status",
+            "SELECT status, COUNT(*) FROM items WHERE project_id = ? AND hidden = 0 GROUP BY status",
         )
         .bind(project.to_string())
         .fetch_all(self.pool())

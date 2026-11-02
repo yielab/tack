@@ -31,4 +31,5 @@ pub mod spa;
 pub mod sprints;
 pub mod teams;
 pub mod templates;
+pub mod threads;
 pub mod websocket;

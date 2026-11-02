@@ -12,7 +12,7 @@ use tack_core::auto_start::{Candidate, Facts, Limits, Why, WipColumn, pick, why}
 use tack_core::dependency::{DependencyEdge, DependencyGraph};
 use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
 use tack_core::principal::Principal;
-use tack_core::run_defaults::Source;
+use tack_core::run_defaults::{Resolved, Source};
 use tack_core::workflow::StatusCategory;
 use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_db::{Repository, queries};
@@ -262,19 +262,14 @@ async fn project_tick(
     Ok(count)
 }
 
-/// Enqueue the run of one picked task, then move it to the in-progress status. Whether the run
-/// was started by this pass.
-async fn start(
+/// What a run started without a person ticking boxes is allowed: the profile's tools for its
+/// agent, the network only if its role needs it, and a question before each action where some
+/// eligible machine does not sandbox the agent.
+pub(crate) async fn permissions_for(
     repo: &Repository,
-    clock: &dyn Clock,
-    ports: &Ports,
     project: &Project,
-    candidate: &Candidate,
-    started: &str,
-) -> bool {
-    let Some(resolved) = &candidate.profile else {
-        return false;
-    };
+    resolved: &Resolved,
+) -> Permitted {
     let harness = resolved
         .harness
         .clone()
@@ -301,6 +296,40 @@ async fn start(
     if !sandboxed_everywhere(repo, resolved.fleet_id.as_deref(), &harness).await {
         permissions.approvals = Some(Approvals::Ask);
     }
+    Permitted {
+        permissions,
+        policy,
+        harness,
+    }
+}
+
+/// What [`permissions_for`] settled, with the two facts it read to settle it.
+pub(crate) struct Permitted {
+    pub permissions: PermissionRequest,
+    /// The profile's tool policy, when it has one.
+    pub policy: Option<Value>,
+    /// The agent the run goes to.
+    pub harness: String,
+}
+
+/// Enqueue the run of one picked task, then move it to the in-progress status. Whether the run
+/// was started by this pass.
+async fn start(
+    repo: &Repository,
+    clock: &dyn Clock,
+    ports: &Ports,
+    project: &Project,
+    candidate: &Candidate,
+    started: &str,
+) -> bool {
+    let Some(resolved) = &candidate.profile else {
+        return false;
+    };
+    let Permitted {
+        permissions,
+        policy,
+        harness,
+    } = permissions_for(repo, project, resolved).await;
     let input = RunRequest {
         item_id: candidate.item_id,
         idempotency_key: format!("auto-start:{}:{}", candidate.item_id, candidate.version),

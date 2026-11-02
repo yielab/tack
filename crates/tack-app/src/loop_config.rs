@@ -18,7 +18,7 @@ use crate::due_soon::DueSoonSink;
 use crate::github_sync::GitHub;
 use crate::ports::Ports;
 use crate::remote_backup::BackupConfig;
-use crate::{auto_start, due_soon, github_sync, observability, remote_backup, retention};
+use crate::{auto_start, due_soon, github_sync, observability, remote_backup, retention, threads};
 
 /// The floor of the automatic backup interval: `tokio::time::interval` panics on zero, and
 /// anything faster would hammer the object store.
@@ -226,6 +226,9 @@ impl LoopConfig {
                 Duration::from_secs(self.auto_start_seconds),
             );
         }
+
+        // The replies of conversation turns whose runs ended; always on, and idle without threads.
+        threads::spawn(loops, repo.clone(), clock.clone(), ports.artifacts.clone());
 
         // Inbound GitHub poll: starts nothing when polling is off or no token is set.
         github_sync::spawn(

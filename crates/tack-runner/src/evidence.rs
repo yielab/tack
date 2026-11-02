@@ -20,6 +20,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tack_protocol::conversation::{REPLY_FILE, REPLY_KIND, REPLY_MEDIA_TYPE, REPLY_REASON_KEY};
 
 use crate::{
     client::workspace::{Workspace, WorkspaceManager, WorktreeProvisioner},
@@ -185,7 +186,7 @@ pub async fn capture<P: WorktreeProvisioner>(
     let attempt_id = workspace.attempt_id.as_str();
     // An install the runner prepared is not the agent's work, whether or not the
     // project ignores it.
-    let mut exclude = vec![RUNNER_DIR, PLAN_FILE];
+    let mut exclude = vec![RUNNER_DIR, PLAN_FILE, REPLY_FILE];
     if head.is_none() {
         exclude.extend(crate::prepare::prepared_folders(&workspace.path));
     }
@@ -340,6 +341,17 @@ pub async fn capture<P: WorktreeProvisioner>(
                 let _ = fs::write(scratch.join(PLAN_INVALID_FILE), reason);
             }
         }
+    }
+    // A thread's turn answers in a reply: the agent's final message when the harness holds it
+    // (`terminal_reason.reply`), else the file it left at the root of its work tree. A run that
+    // leaves neither stages nothing.
+    let reply = match evidence.terminal_reason[REPLY_REASON_KEY].as_str() {
+        Some(text) => Some(text.as_bytes().to_vec()),
+        None if head.is_none() => fs::read(workspace.path.join(REPLY_FILE)).ok(),
+        None => None,
+    };
+    if let Some(bytes) = reply.filter(|bytes| !bytes.iter().all(u8::is_ascii_whitespace)) {
+        stage(REPLY_FILE, REPLY_KIND, REPLY_MEDIA_TYPE, &bytes);
     }
     let manifest = serde_json::to_vec_pretty(&evidence).unwrap_or_default();
     stage("evidence.json", "evidence", "application/json", &manifest);

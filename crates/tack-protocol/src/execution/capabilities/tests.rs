@@ -151,6 +151,7 @@ fn an_agents_own_features_ride_beside_its_report_and_round_trip() {
         },
         proposals: None,
         activity: None,
+        converse: None,
         additional: BTreeMap::new(),
     };
     report.set_features(&declared);
