@@ -525,7 +525,7 @@ describe('Settings panels', () => {
       await flush();
       await flush();
       expect(rung(container, 'merge').querySelector('[data-testid="load-error"]')).toBeNull();
-      expect(rung(container, 'merge').textContent).toContain('You merge every change yourself.');
+      expect(rung(container, 'merge').textContent).toContain('Merge when moved to Done'); // the Merge block loaded
     });
 
     it('the_no_role_row_says_the_state_of_the_default_profiles_team', async () => {
@@ -774,7 +774,7 @@ describe('Settings panels', () => {
       expect(has('automation-when', '[data-testid="rung-start"]')).toBe(true);
       expect(has('automation-when', '#automation-run-start')).toBe(true);
       expect(has('automation-when', '#automation-finish')).toBe(true);
-      expect(has('automation-merge', 'input[name="autonomy-level"]')).toBe(true);
+      expect(has('automation-merge', 'input[name="autonomy-level"]')).toBe(false); // the ladder above is the selector
       expect(has('automation-merge', 'textarea[aria-label="Public key"]')).toBe(true);
       expect(has('automation-merge', 'input[aria-label="Tokens per day"]')).toBe(false);
       for (const label of ['Tokens per day', 'Automatic merges per day', 'Items waiting at once', 'Provisional tokens per run']) {
@@ -929,7 +929,9 @@ describe('Settings panels', () => {
       expect(l4.disabled).toBe(true);
       expect(l5.disabled).toBe(true);
       expect(l3.disabled).toBe(false);
-      expect(container.querySelector('[data-testid="autonomy-blocked"]')!.textContent).toContain('GitHub polling is off');
+      // The reason is said once, in the ladder's own lines; Merge no longer repeats it.
+      expect(container.querySelector('[data-testid="ceiling-blocker"]')!.textContent).toContain('GitHub polling is off');
+      expect(container.querySelector('[data-testid="autonomy-blocked"]')).toBeNull();
     });
 
     it('an_enabled_L4_saves_the_level', async () => {

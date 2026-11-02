@@ -71,12 +71,15 @@ const FixLink = (props: { fix: Fix }) => (
 /**
  * The ladder: L3 to L5 side by side, the level the project is set to filled, the most it can reach
  * marked as the ceiling, and under it what holds the rungs above off, each with its fix. The lines
- * under the rungs are the ladder's description for a screen reader.
+ * under the rungs are the ladder's description for a screen reader. Each rung is also a radio:
+ * pressing one sets the level; L4 and L5 are off while the board has a blocker.
  */
 const Rungs: Component<{
   settings: Accessor<AutonomySettings | null | undefined>;
   loadError: Accessor<unknown>;
   onRetry: () => void;
+  /** Sets the project's level: the ladder is the selector. */
+  save: (patch: Partial<AutonomySettings>) => Promise<void>;
 }> = (props) => {
   const uid = createUniqueId();
   const teams = () => props.settings()?.teams ?? [];
@@ -84,6 +87,8 @@ const Rungs: Component<{
   const blockers = () => (props.settings()?.automatic_merge_blocked_by ?? []).filter((b) => !isTeamBlocker(b, teams().map((t) => t.name)));
   const ceiling = () => props.settings()?.ceiling;
   const held = (level: string) => rank(level) > rank(ceiling() ?? 'L5') || (level !== 'L3' && capped().length + blockers().length > 0);
+  /** A level above L3 cannot be picked while anything blocks automatic merges. */
+  const off = (level: string) => level !== 'L3' && (props.settings()?.automatic_merge_blocked_by ?? []).length > 0;
   const holdCount = () => capped().length + blockers().length;
   /** Ids of the lines that make up the description, in the order they are read. */
   const lineIds = () => [
@@ -133,13 +138,23 @@ const Rungs: Component<{
                       data-level={l.value}
                       data-state={current() ? 'current' : held(l.value) ? 'held' : 'open'}
                       aria-current={current() ? 'step' : undefined}
-                      class={`flex min-w-0 flex-col gap-1 rounded-item border p-3 ${!current() && held(l.value) ? 'border-dashed' : ''}`}
+                      class={`relative flex min-w-0 flex-col gap-1 rounded-item border p-3 focus-within:ring-2 ${!current() && held(l.value) ? 'border-dashed' : ''}`}
                       style={{
                         'background-color': current() ? 'var(--color-primary-600)' : 'var(--color-bg-base)',
                         'border-color': current() ? 'var(--color-primary-600)' : 'var(--color-border-medium)',
                         color: current() ? 'var(--color-on-accent)' : 'var(--color-text-primary)',
                       }}
                     >
+                      <input
+                        type="radio"
+                        name="autonomy-level"
+                        value={l.value}
+                        aria-label={`${l.value} — ${l.sentence}`}
+                        checked={current()}
+                        disabled={off(l.value)}
+                        onChange={() => void props.save({ level: l.value })}
+                        class="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+                      />
                       <span class="font-semibold">{l.value}</span>
                       <span class="text-caption" style={{ 'overflow-wrap': 'anywhere' }}>{l.short}</span>
                       <span class="text-caption font-semibold" data-testid="ladder-status">{status(l.value)}</span>
