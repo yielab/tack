@@ -377,7 +377,7 @@ describe('Board agent strip and column bars', () => {
     const names = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim());
     expect(names.join(' ')).not.toContain('Your turn');
     expect(c.querySelector('[data-testid="strip-waiting"]')).toBeNull();
-    expect(names.map((n) => n.split('.')[0])).toEqual(['0 Queued', '2 Running', '1 Needs you', '0 Ready for review', '1 Failed']);
+    expect(names.map((n) => n.split('.')[0])).toEqual(['1 Needs you', '0 Ready for review', '1 Failed', '2 Running', '0 Queued']);
     // A counter with nothing in it says why it cannot be used.
     const queued = strip.querySelector<HTMLButtonElement>('[data-testid="strip-queued"]')!;
     expect(queued.disabled).toBe(true);

@@ -1,7 +1,7 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, type RunStateName } from '../../shared/ui';
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
-import { filterOf, totalRuns, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
+import { filterOf, stateRank, totalRuns, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
 
 /** The words for each state, as the board prints them next to a count: the one set of work words. */
 const RUN_STATE_WORDS = RUN_STATE_LABEL;
@@ -13,13 +13,19 @@ const STATE_NOTE: Partial<Record<RunStateName, string>> = {
   failed: 'The run ended badly.',
 };
 
-const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateName }> = [
-  { filter: 'queued', state: 'queued' },
-  { filter: 'running', state: 'running' },
-  { filter: 'needs', state: 'needs' },
-  { filter: 'review', state: 'review' },
-  { filter: 'failed', state: 'failed' },
-];
+// In the order the List's Work column and a board column rank runs, what needs a person first, the same
+// order the Flow's Work counters read in.
+const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateName }> = (
+  [
+    { filter: 'queued', state: 'queued' },
+    { filter: 'running', state: 'running' },
+    { filter: 'needs', state: 'needs' },
+    { filter: 'review', state: 'review' },
+    { filter: 'failed', state: 'failed' },
+  ] as const
+)
+  .map((entry) => ({ ...entry }))
+  .sort((a, b) => stateRank(a.state) - stateRank(b.state));
 
 /**
  * One row under the board title that counts the board's runs by state, one chip per state. Each

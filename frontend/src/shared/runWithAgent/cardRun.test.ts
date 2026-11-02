@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardRun, countRuns, passesFilters, showsPriority, totalRuns, runTally, tallySentence, countStates, orderByWork, runRank, type RunFilter } from './cardRun';
+import { cardRun, countRuns, passesFilters, showsPriority, totalRuns, runTally, tallySentence, countStates, orderByWork, runRank, stateRank, type RunFilter } from './cardRun';
 
 const at = (state: string, cancelled: string | null = null) =>
   cardRun({ request_id: 'r', state, cancellation_requested_at: cancelled }, false);
@@ -62,6 +62,15 @@ describe('showsPriority', () => {
     expect(showsPriority('low', false)).toBe(true);
     expect(showsPriority('medium', true)).toBe(true);
     expect(showsPriority('none', true)).toBe(false);
+  });
+});
+
+describe('stateRank', () => {
+  it('is_the_rank_runRank_gives_a_run_in_that_state_and_puts_what_needs_a_person_first', () => {
+    for (const state of ['needs', 'review', 'failed', 'running', 'queued', 'done', 'cancelled'] as const) {
+      expect(stateRank(state)).toBe(runRank({ state, live: false, asking: false }));
+    }
+    expect(['queued', 'running', 'needs', 'review', 'failed'].sort((a, b) => stateRank(a as never) - stateRank(b as never))).toEqual(['needs', 'review', 'failed', 'running', 'queued']);
   });
 });
 

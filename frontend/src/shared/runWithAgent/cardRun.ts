@@ -75,9 +75,14 @@ const RUN_RANK: Record<string, number> = {
   cancelled: 6,
 };
 
+/** Where a state sorts; the order every list of run states is read in, whether cards or counters. */
+export function stateRank(state: RunStateName): number {
+  return RUN_RANK[state] ?? 99;
+}
+
 /** Where a run sorts: the item's newest run, or after every run when it has none. */
 export function runRank(run: CardRun | undefined): number {
-  return run ? (RUN_RANK[run.state] ?? 99) : 100;
+  return run ? stateRank(run.state) : 100;
 }
 
 /**
