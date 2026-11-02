@@ -1,6 +1,7 @@
 //! The body of `POST /tasks/<pod>`, built from the claimed request.
 
 use serde_json::{Map, Value, json};
+use tack_protocol::conversation::{REPLY_FILE, TurnNote};
 use tack_protocol::execution::{AutonomyLevel, ExecutionRequestSnapshot, TaskDocument};
 use tack_protocol::prepare::PrepareSetting;
 
@@ -228,7 +229,19 @@ pub(super) fn body(
         Some(channel) => format!("{instructions}\n\n{channel}"),
         None => instructions.to_owned(),
     };
-    let description = match &request.task {
+    // A thread's turn asks a local agent to also write its reply to a file; docket's team answers
+    // with its last step, so its input says that instead.
+    let turn = TurnNote::of(&request.metadata).is_some();
+    let told = request.task.as_ref().map(|task| {
+        let mut task = task.clone();
+        if turn {
+            task.description = task.description.map(|description| {
+                tack_core::thread::turn_input_for_a_team(&description, REPLY_FILE)
+            });
+        }
+        task
+    });
+    let description = match &told {
         Some(task) => {
             let fence = uuid::Uuid::new_v4().simple().to_string();
             format!(
@@ -241,7 +254,7 @@ pub(super) fn body(
     };
     let mut body = Map::new();
     body.insert("description".into(), json!(description));
-    if let Some(task) = &request.task {
+    if let Some(task) = &told {
         body.insert("task".into(), task_fields(task, request));
     }
     body.insert(
