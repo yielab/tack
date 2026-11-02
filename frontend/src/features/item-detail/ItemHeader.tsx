@@ -1,4 +1,5 @@
-import { type Component, type JSX, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
+import { type Component, type JSX, createResource, createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js';
+import { api } from '../../shared/api';
 import { A } from '@solidjs/router';
 import { TypeBadge, typeKey } from '../../shared/ui';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
@@ -21,14 +22,20 @@ export interface ItemHeaderProps {
 const ItemHeader: Component<ItemHeaderProps> = (props) => {
   const { workflow } = useProject();
   const vocab = useVocab();
-  // The project's items name the parent and the sub-items; without them (a screen with no list loaded) the header names nobody.
-  const projectItems = (() => {
+  // The project's items name the parent and the sub-items. A screen under the board's tabs already has them;
+  // the drawer sits outside those tabs, so it reads them itself rather than name nobody.
+  const shared = (() => {
     try {
       return useProjectItems().items;
     } catch {
-      return () => undefined;
+      return null;
     }
   })();
+  const [own] = createResource(
+    () => (shared ? null : `${props.item.project_id}:${props.item.updated_at}`),
+    () => api.items.list(props.item.project_id).catch(() => [] as Item[]),
+  );
+  const projectItems = () => (shared ? shared() : own());
   const parent = () => (props.item.parent_id ? projectItems()?.find((i) => i.id === props.item.parent_id) : undefined);
   const children = () => projectItems()?.filter((i) => i.parent_id === props.item.id) ?? [];
   const href = (id: string) => `/projects/${props.item.project_id}/items/${id}`;
