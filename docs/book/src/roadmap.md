@@ -29,12 +29,8 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 ## Open
 
 Phases 73 to 86 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
-and it is not a card. What remains are three dependency cards:
+and it is not a card. What remains are two dependency cards:
 
-- **`@axe-core/playwright` 4.14.0.** It fails 25 accessibility tests on one rule,
-  `label-content-name-mismatch`: the waiting badge in the sidebar and the command palette button
-  carry an accessible name that does not contain their visible text. The card renames both, then
-  takes the update; until then the package stays at 4.13.0.
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
   Run the desktop workflow on the branch first.
 - **Vitest 5** (4.1 to 5.0.3, with `@vitest/coverage-v8`). It is a major version and its pull request fails the
