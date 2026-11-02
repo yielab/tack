@@ -223,8 +223,15 @@ impl Client {
     }
 
     /// `POST /tasks/<pod>/<id>/cancel`.
+    ///
+    /// A docket that lists `settledCursor` takes `actor`, the label its audit entry carries
+    /// (`http` when none); Tack sends the label it uses when it answers an escalation. A docket
+    /// without the feature is sent the body it always got.
     pub async fn cancel_task(&self, pod: &str, id: &str, reason: &str) -> Result<Reply, String> {
-        let body = json!({"reason": reason});
+        let mut body = json!({"reason": reason});
+        if self.has_feature("settledCursor").await {
+            body["actor"] = json!("tack");
+        }
         self.send(Method::POST, &["tasks", pod, id, "cancel"], &[], Some(body))
             .await
     }

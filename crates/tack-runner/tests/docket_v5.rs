@@ -2711,6 +2711,45 @@ async fn a_decision_that_expired_in_tack_cancels_the_task_and_posts_no_deny() {
     assert_eq!(cancels.len(), 1);
 }
 
+/// `settledCursor`: the cancel names who made it, so docket's audit entry does not say `http`. A
+/// docket that does not list the feature gets the body it always got.
+#[tokio::test]
+async fn a_cancel_names_tack_as_its_actor_only_to_a_docket_that_lists_settled_cursor() {
+    for listed in [true, false] {
+        let fake = pods_fake().await;
+        if !listed {
+            fake.without_settled_cursor();
+        }
+        fake.script(Script {
+            gate: Gate::approval("tool call 'bash'"),
+            ..Script::default()
+        });
+        let scene = scene();
+        let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+        parked.question().await;
+        parked
+            .answer(DecisionAnswer {
+                option_id: Some("deny".to_owned()),
+                text: None,
+                unanswered: true,
+            })
+            .await;
+        let (outcome, _) = parked.end().await;
+        assert_eq!(outcome.terminal_reason["code"], json!("not_answered"), "{listed}");
+        let task = fake.task_ids()[0].clone();
+        let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
+        let [cancel] = cancels.as_slice() else {
+            panic!("one cancel, got {cancels:?}");
+        };
+        assert_eq!(cancel.body["reason"], json!("nobody answered before the question expired"));
+        if listed {
+            assert_eq!(cancel.body["actor"], json!("tack"));
+        } else {
+            assert!(cancel.body.get("actor").is_none(), "{:?}", cancel.body);
+        }
+    }
+}
+
 #[tokio::test]
 async fn an_approval_docket_expired_ends_not_answered_with_its_own_reason() {
     let fake = pods_fake().await;
@@ -5588,8 +5627,10 @@ async fn the_fake_lists_only_the_features_it_serves() {
 
 /// The features docket added after `taskCurrent` and `taskCursor`, in the order the fake lists
 /// them, each with the switch that makes the fake a docket before it.
-const LATER_FEATURES: [(&str, fn(&FakeDocket)); 1] =
-    [("failureKinds", FakeDocket::without_failure_kinds)];
+const LATER_FEATURES: [(&str, fn(&FakeDocket)); 2] = [
+    ("failureKinds", FakeDocket::without_failure_kinds),
+    ("settledCursor", FakeDocket::without_settled_cursor),
+];
 
 /// Each later feature is dropped from both lists by its own switch and by no other.
 #[tokio::test]

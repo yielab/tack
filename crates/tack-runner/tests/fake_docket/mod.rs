@@ -154,6 +154,10 @@ fn request_keys() -> HashMap<String, KeySpec> {
                 .map(str::to_owned),
         );
     }
+    // `actor` on a cancel is docket's 7.15.0 (`settledCursor`); the capture predates it.
+    if let Some(spec) = routes.get_mut("POST /tasks/<pod>/<id>/cancel") {
+        spec.allowed.insert("actor".to_owned());
+    }
     for (route, spec) in &mut routes {
         if let (Some(required), Some(optional)) = (&mut spec.required, optional.get(route)) {
             required.retain(|key| !optional.contains(key));
@@ -366,6 +370,9 @@ struct World {
     /// A docket before `failureKinds`: the features do not list it, and a task that settles
     /// `failed` without a kind of its own carries none.
     without_failure_kinds: bool,
+    /// A docket before `settledCursor`: the features do not list it, and a cancel with an `actor`
+    /// is refused with `400`, as a docket that does not know the key may.
+    without_settled_cursor: bool,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -407,6 +414,7 @@ impl FakeDocket {
             without_task_current: false,
             without_task_cursor: false,
             without_failure_kinds: false,
+            without_settled_cursor: false,
             rev: 0,
             next_channel: None,
         }));
@@ -480,6 +488,12 @@ impl FakeDocket {
     /// A docket before `failureKinds`.
     pub fn without_failure_kinds(&self) {
         self.shared.lock().unwrap().without_failure_kinds = true;
+    }
+
+    /// A docket before `settledCursor`. The fake serves only the half Tack reads: a cancel that
+    /// takes an `actor`.
+    pub fn without_settled_cursor(&self) {
+        self.shared.lock().unwrap().without_settled_cursor = true;
     }
 
     /// The next task posted comes from this channel (`cli`, `routine`), as docket records the
@@ -787,7 +801,10 @@ async fn handle(
     };
     let refused_keys = match (method.as_str(), segments.as_slice()) {
         ("POST", ["pods"]) => keyed("POST /pods"),
-        ("POST", ["tasks", _, _, "cancel"]) => keyed("POST /tasks/<pod>/<id>/cancel"),
+        ("POST", ["tasks", _, _, "cancel"]) => keyed("POST /tasks/<pod>/<id>/cancel").or_else(|| {
+            (state.without_settled_cursor && parsed.get("actor").is_some())
+                .then(|| error(400, "the fake: this docket does not know \"actor\" on a cancel"))
+        }),
         ("POST", ["tasks", _]) => keyed("POST /tasks/<pod>"),
         ("POST", ["escalations", _]) => keyed("POST /escalations/<id>"),
         _ => None,
@@ -838,6 +855,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_failure_kinds {
         listed.push("failureKinds");
+    }
+    if !state.without_settled_cursor {
+        listed.push("settledCursor");
     }
     json!(listed)
 }
