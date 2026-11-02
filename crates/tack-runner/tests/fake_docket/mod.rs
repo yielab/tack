@@ -154,10 +154,6 @@ fn request_keys() -> HashMap<String, KeySpec> {
                 .map(str::to_owned),
         );
     }
-    // `actor` on a cancel is docket's 7.15.0 (`settledCursor`); the capture predates it.
-    if let Some(spec) = routes.get_mut("POST /tasks/<pod>/<id>/cancel") {
-        spec.allowed.insert("actor".to_owned());
-    }
     for (route, spec) in &mut routes {
         if let (Some(required), Some(optional)) = (&mut spec.required, optional.get(route)) {
             required.retain(|key| !optional.contains(key));
@@ -1793,9 +1789,8 @@ fn finish(state: &mut World, index: usize) {
                 let lasted = payload["durationMs"].as_i64().unwrap_or(0) * 1000;
                 hop["startedAt"] = json!(instant(finished - lasted));
                 hop["finishedAt"] = json!(instant(finished));
-                if let Some(cycle) = payload.get("cycle") {
-                    hop["cycle"] = cycle.clone();
-                }
+                // docket always writes the cycle of an agent turn (0 on the first pass).
+                hop["cycle"] = payload.get("cycle").cloned().unwrap_or(json!(0));
             }
             if let Some(event) = payload.as_object_mut() {
                 for key in ["promptManifest", "artifact"] {
