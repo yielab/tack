@@ -434,7 +434,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           lower edge, so no field shows beneath it. */}
       <div
         data-testid="run-footer"
-        class="sticky bottom-[-1.5rem] -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-6 py-3"
+        class="sticky -bottom-6 -mx-6 -mb-6 flex flex-wrap items-center justify-end gap-x-3 gap-y-2 px-6 py-3"
         style={{
           'background-color': 'var(--color-bg-elevated)',
           'border-top': '1px solid var(--color-border-light)',
