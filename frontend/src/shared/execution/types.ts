@@ -302,6 +302,12 @@ export interface RunStep {
   prompts: RunStepPrompt[];
   assumptions: string[];
   questions: string[];
+  /** When the hop's agent turn began and ended (ISO 8601, UTC) and the rework cycle it ran in
+   *  (`0` on a first pass). `null` for a hop with no agent turn and for a run whose docket does not
+   *  send them. */
+  startedAt: string | null;
+  finishedAt: string | null;
+  cycle: number | null;
 }
 
 /** Where a step of a team's reported steps stands in a run, read from the run's own events. */

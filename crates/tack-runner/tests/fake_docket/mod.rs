@@ -373,6 +373,9 @@ struct World {
     /// A docket before `settledCursor`: the features do not list it, and a cancel with an `actor`
     /// is refused with `400`, as a docket that does not know the key may.
     without_settled_cursor: bool,
+    /// A docket before `hopTimes`: the features do not list it, and no hop of the record carries
+    /// `startedAt`, `finishedAt` or `cycle`.
+    without_hop_times: bool,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -415,6 +418,7 @@ impl FakeDocket {
             without_task_cursor: false,
             without_failure_kinds: false,
             without_settled_cursor: false,
+            without_hop_times: false,
             rev: 0,
             next_channel: None,
         }));
@@ -494,6 +498,13 @@ impl FakeDocket {
     /// takes an `actor`.
     pub fn without_settled_cursor(&self) {
         self.shared.lock().unwrap().without_settled_cursor = true;
+    }
+
+    /// A docket before `hopTimes`: its hops carry no instants and no cycle. With it, a hop that
+    /// has a role (an agent turn) carries `startedAt`, `finishedAt` (ISO 8601 UTC, microseconds)
+    /// and `cycle`; a hop without one (a command, a gate, a wait) carries none of the three.
+    pub fn without_hop_times(&self) {
+        self.shared.lock().unwrap().without_hop_times = true;
     }
 
     /// The next task posted comes from this channel (`cli`, `routine`), as docket records the
@@ -718,6 +729,15 @@ fn timestamp(index: usize) -> String {
     format!("2026-10-14T10:{:02}:{:02}Z", seconds / 60, seconds % 60)
 }
 
+/// An instant as docket writes the ones of a hop: UTC, microseconds, an explicit offset.
+/// `micros` counts from the trace's first second.
+fn instant(micros: i64) -> String {
+    let start = chrono::DateTime::parse_from_rfc3339("2026-10-14T10:00:00+00:00").expect("start");
+    (start + chrono::Duration::microseconds(micros))
+        .format("%Y-%m-%dT%H:%M:%S%.6f+00:00")
+        .to_string()
+}
+
 /// One trace line: the envelope of a captured event, with this event's own
 /// payload.
 fn trace_event(state: &mut World, pod: &str, task: &str, event_type: &str, payload: Value) {
@@ -801,10 +821,16 @@ async fn handle(
     };
     let refused_keys = match (method.as_str(), segments.as_slice()) {
         ("POST", ["pods"]) => keyed("POST /pods"),
-        ("POST", ["tasks", _, _, "cancel"]) => keyed("POST /tasks/<pod>/<id>/cancel").or_else(|| {
-            (state.without_settled_cursor && parsed.get("actor").is_some())
-                .then(|| error(400, "the fake: this docket does not know \"actor\" on a cancel"))
-        }),
+        ("POST", ["tasks", _, _, "cancel"]) => {
+            keyed("POST /tasks/<pod>/<id>/cancel").or_else(|| {
+                (state.without_settled_cursor && parsed.get("actor").is_some()).then(|| {
+                    error(
+                        400,
+                        "the fake: this docket does not know \"actor\" on a cancel",
+                    )
+                })
+            })
+        }
         ("POST", ["tasks", _]) => keyed("POST /tasks/<pod>"),
         ("POST", ["escalations", _]) => keyed("POST /escalations/<id>"),
         _ => None,
@@ -858,6 +884,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_settled_cursor {
         listed.push("settledCursor");
+    }
+    if !state.without_hop_times {
+        listed.push("hopTimes");
     }
     json!(listed)
 }
@@ -1607,6 +1636,17 @@ fn finish(state: &mut World, index: usize) {
                 hop["usage"] = usage.clone();
             }
             hop["trace"] = json!({"lastTs": timestamp(state.trace.len())});
+            // `hopTimes`: an agent turn (a hop with a role) ends where the trace now ends and
+            // began `durationMs` before; any other hop has neither instant nor cycle.
+            if !state.without_hop_times && payload["role"].is_string() {
+                let finished = state.trace.len() as i64 * 500_000;
+                let lasted = payload["durationMs"].as_i64().unwrap_or(0) * 1000;
+                hop["startedAt"] = json!(instant(finished - lasted));
+                hop["finishedAt"] = json!(instant(finished));
+                if let Some(cycle) = payload.get("cycle") {
+                    hop["cycle"] = cycle.clone();
+                }
+            }
             if let Some(event) = payload.as_object_mut() {
                 for key in ["promptManifest", "artifact"] {
                     if let Some(value) = event.remove(key) {

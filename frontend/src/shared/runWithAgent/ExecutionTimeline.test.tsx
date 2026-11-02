@@ -460,6 +460,27 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
     expect(rows[1].textContent).not.toContain('×');
   });
 
+  it('a step says how long it took in words, a row of alike steps adds theirs, and a step with no instants says nothing', async () => {
+    const hop = (from: string | null, to: string | null, over: object = {}) => ({
+      role: 'implementer', model: 'qwen2.5-coder:7b', class: 'any', family: null, verdict: null, ok: true, summary: null,
+      prompts: [], assumptions: [], questions: [], startedAt: from, finishedAt: to, cycle: 0, ...over,
+    });
+    const c = mountFinished({
+      result: 'Done.',
+      steps: [
+        hop('2026-10-14T10:00:00.000000+00:00', '2026-10-14T10:01:05.000000+00:00'),
+        hop('2026-10-14T10:02:00.000000+00:00', '2026-10-14T10:02:10.000000+00:00', { cycle: 1 }),
+        hop(null, null, { role: 'reviewer' }),
+      ],
+    });
+    await settle();
+    const rows = [...c.querySelectorAll('[data-testid="run-step"]')];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector('[data-testid="step-duration"]')!.textContent).toBe('Took 1m 15s');
+    expect(rows[1].querySelector('[data-testid="step-duration"]')).toBeNull();
+    expect(rows[1].textContent).not.toContain('Took');
+  });
+
   it('a model class of "any", or none, is never shown', async () => {
     const step = (cls: string | null) => ({
       role: 'implementer', model: 'qwen2.5-coder:7b', class: cls, family: null, verdict: null, ok: true, summary: null,

@@ -3,7 +3,7 @@ import { Portal } from 'solid-js/web';
 import { Badge } from '../ui';
 import { toast } from '../ui/toast';
 import type { RunRecordSet, RunStep, RunStepPrompt } from '../execution';
-import { inProject } from './attemptFormat';
+import { hopDurationText, hopMilliseconds, inProject } from './attemptFormat';
 import EventTimeline from './EventTimeline';
 import { plainLine } from './plainWords';
 import { groupByTool, type RunLog, type ToolGroup } from './runLog';
@@ -249,6 +249,8 @@ interface StepGroup {
   count: number;
   /** The place of the group's first step, for a step with no role. */
   n: number;
+  /** The time the group's steps took together, from the steps that know it; `null` when none does. */
+  lasted: number | null;
 }
 
 const sameStep = (a: RunStep, b: RunStep) => a.role === b.role && a.model === b.model && a.class === b.class && a.verdict === b.verdict;
@@ -258,12 +260,18 @@ const once = <T,>(items: T[], key: (item: T) => string): T[] => {
   return items.filter((item) => (seen.has(key(item)) ? false : (seen.add(key(item)), true)));
 };
 
+const addTime = (total: number | null, step: RunStep) => {
+  const lasted = hopMilliseconds(step);
+  return lasted === null ? total : (total ?? 0) + lasted;
+};
+
 function groupSteps(steps: RunStep[]): StepGroup[] {
   const groups: StepGroup[] = [];
   steps.forEach((step, i) => {
     const last = groups[groups.length - 1];
     if (last && sameStep(last.step, step)) {
       last.count += 1;
+      last.lasted = addTime(last.lasted, step);
       last.step = {
         ...last.step,
         prompts: once([...last.step.prompts, ...step.prompts], promptKey),
@@ -271,7 +279,7 @@ function groupSteps(steps: RunStep[]): StepGroup[] {
         questions: once([...last.step.questions, ...step.questions], (x) => x),
       };
     } else {
-      groups.push({ step, count: 1, n: i + 1 });
+      groups.push({ step, count: 1, n: i + 1, lasted: addTime(null, step) });
     }
   });
   return groups;
@@ -312,6 +320,9 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
             const said = plainLine(v());
             return <span title={said.raw}><Badge tone="neutral">Verdict: {said.text}</Badge></span>;
           }}
+        </Show>
+        <Show when={hopDurationText(props.group.lasted)}>
+          {(text) => <span data-testid="step-duration" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{text()}</span>}
         </Show>
       </div>
       {list('The agent assumed', step().assumptions)}

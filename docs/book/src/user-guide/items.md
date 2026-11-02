@@ -212,7 +212,7 @@ shows only the run you picked, and reads it from the top down in this order:
   or its agent reports no steps, the tab says "<Agent> does not report its steps in advance" and the track
   is made of the steps the run took. **What each step ran** lists each step in order: who did it (Lead,
   Implementer, Reviewer, or the name of a role your team gave), the model it used (with "a small model" or
-  "a strong model" when the team said which), its verdict when it gave one, and, under it, what the agent
+  "a strong model" when the team said which), its verdict when it gave one, how long it took when docket records when its work began and ended ("Took 4m 55s"; a row of alike steps shows their total, and a step that did no agent work shows nothing), and, under it, what the agent
   assumed and what it asked when it said any. Steps that came out alike one after another are one row with
   a count, such as "Implementer ×3". The prompts a step read are folded under **Prompts used**, each with
   its name and version and where it came from: built in, the team's own, this repository's, your settings

@@ -99,6 +99,17 @@ describe('what the run was made of', () => {
     expect(steps![1]).toMatchObject({ role: null, verdict: 'approve', prompts: [] });
   });
 
+  it('readRunSteps reads the instants and the cycle of a hop, and null for a hop that has none', () => {
+    const steps = readRunSteps({
+      steps: [
+        { role: 'lead', startedAt: '2026-10-14T10:00:00.000000+00:00', finishedAt: '2026-10-14T10:00:05.000000+00:00', cycle: 1 },
+        { role: null },
+      ],
+    });
+    expect(steps![0]).toMatchObject({ startedAt: '2026-10-14T10:00:00.000000+00:00', finishedAt: '2026-10-14T10:00:05.000000+00:00', cycle: 1 });
+    expect(steps![1]).toMatchObject({ startedAt: null, finishedAt: null, cycle: null });
+  });
+
   it('readRunSteps reads a missing prompt list as none, and drops a step that is not an object', () => {
     const steps = readRunSteps({ steps: [null, { role: 'lead' }] });
     expect(steps).toEqual([

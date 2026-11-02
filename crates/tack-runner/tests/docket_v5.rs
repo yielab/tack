@@ -1696,7 +1696,7 @@ async fn steps_of(after: Vec<(String, Value)>) -> Option<Value> {
 #[tokio::test]
 async fn a_settled_runs_result_holds_what_each_step_was_made_of() {
     let steps = steps_of(hops_with_their_manifests()).await.expect("steps");
-    let steps = steps.as_array().expect("one entry per hop");
+    let mut steps = steps.as_array().expect("one entry per hop").clone();
     assert_eq!(steps.len(), 3);
     assert_eq!(
         steps
@@ -1705,6 +1705,13 @@ async fn a_settled_runs_result_holds_what_each_step_was_made_of() {
             .collect::<Vec<_>>(),
         ["lead", "implementer", "reviewer"]
     );
+
+    // The instants have their own test; the rest of the step is compared whole.
+    for step in &mut steps {
+        for key in ["startedAt", "finishedAt", "cycle"] {
+            step.as_object_mut().expect("a step").remove(key);
+        }
+    }
 
     // The implementer: the prompts by layer, in the order docket composed them, and what its
     // handoff said.
@@ -1734,6 +1741,64 @@ async fn a_settled_runs_result_holds_what_each_step_was_made_of() {
     assert_eq!(steps[2]["verdict"], "approved");
     assert_eq!(steps[2]["assumptions"], json!([]));
     assert_eq!(steps[2]["questions"], json!([]));
+}
+
+/// The seconds between two instants docket writes (`2026-10-14T10:00:05.000000+00:00`).
+fn seconds_between(started: &Value, finished: &Value) -> i64 {
+    let read = |value: &Value| {
+        chrono::DateTime::parse_from_rfc3339(value.as_str().expect("an instant")).expect("ISO 8601")
+    };
+    (read(finished) - read(started)).num_seconds()
+}
+
+#[tokio::test]
+async fn a_step_carries_the_instants_and_the_cycle_of_its_hop() {
+    let steps = steps_of(hops_with_their_manifests()).await.expect("steps");
+    for step in steps.as_array().expect("steps") {
+        assert!(step["startedAt"].as_str().unwrap().ends_with("+00:00"));
+        assert_eq!(seconds_between(&step["startedAt"], &step["finishedAt"]), 5);
+        assert_eq!(step["cycle"], 0);
+    }
+    // The second pass of a rework loop says so.
+    let steps = steps_of(vec![(
+        "hop_finished".into(),
+        hop_finished("implementer", "local/local-model", 2, Value::Null),
+    )])
+    .await
+    .expect("steps");
+    assert_eq!(steps[0]["cycle"], 2);
+}
+
+#[tokio::test]
+async fn a_hop_with_no_agent_turn_has_none_of_the_three_keys() {
+    // A command or gate hop has no role in the fake; the keys are absent, never null.
+    let mut payload = hop_finished("implementer", "local/local-model", 0, Value::Null);
+    payload["role"] = Value::Null;
+    let steps = steps_of(vec![("hop_finished".into(), payload)])
+        .await
+        .expect("steps");
+    for key in ["startedAt", "finishedAt", "cycle"] {
+        assert!(steps[0].get(key).is_none(), "{key} is present");
+    }
+}
+
+#[tokio::test]
+async fn a_docket_before_hop_times_leaves_the_steps_as_they_were() {
+    let fake = pods_fake().await;
+    fake.without_hop_times();
+    fake.script(Script {
+        after: hops_with_their_manifests(),
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    let steps = outcome.terminal_reason["steps"].as_array().expect("steps");
+    assert_eq!(steps.len(), 3);
+    for step in steps {
+        for key in ["startedAt", "finishedAt", "cycle"] {
+            assert!(step.get(key).is_none(), "{key} is present");
+        }
+    }
 }
 
 #[tokio::test]
@@ -2483,12 +2548,18 @@ async fn failure_kinds_say_why_a_task_ended_and_only_from_a_docket_that_lists_th
             ..Script::default()
         });
         let blocked = scene();
-        let (outcome, _) = run_to_end(&adapter(&fake, &blocked), &spec(&blocked, "attempt-1", 1)).await;
+        let (outcome, _) =
+            run_to_end(&adapter(&fake, &blocked), &spec(&blocked, "attempt-1", 1)).await;
         assert_eq!(outcome.terminal_state, AttemptState::Failed, "{listed}");
         if listed {
             assert_eq!(outcome.terminal_reason["code"], json!("pod_budget"));
-            let message = outcome.terminal_reason["message"].as_str().expect("message");
-            assert!(message.starts_with("The team's budget is spent"), "{message}");
+            let message = outcome.terminal_reason["message"]
+                .as_str()
+                .expect("message");
+            assert!(
+                message.starts_with("The team's budget is spent"),
+                "{message}"
+            );
             assert!(
                 message.contains(&format!("docket run --pod {POD} --resume")),
                 "{message}"
@@ -2511,7 +2582,8 @@ async fn failure_kinds_say_why_a_task_ended_and_only_from_a_docket_that_lists_th
             ..Script::default()
         });
         let failed = scene();
-        let (outcome, _) = run_to_end(&adapter(&fake, &failed), &spec(&failed, "attempt-1", 1)).await;
+        let (outcome, _) =
+            run_to_end(&adapter(&fake, &failed), &spec(&failed, "attempt-1", 1)).await;
         let code = if listed { "hop_failed" } else { "failed" };
         assert_eq!(outcome.terminal_reason["code"], json!(code), "{listed}");
     }
@@ -2735,13 +2807,20 @@ async fn a_cancel_names_tack_as_its_actor_only_to_a_docket_that_lists_settled_cu
             })
             .await;
         let (outcome, _) = parked.end().await;
-        assert_eq!(outcome.terminal_reason["code"], json!("not_answered"), "{listed}");
+        assert_eq!(
+            outcome.terminal_reason["code"],
+            json!("not_answered"),
+            "{listed}"
+        );
         let task = fake.task_ids()[0].clone();
         let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
         let [cancel] = cancels.as_slice() else {
             panic!("one cancel, got {cancels:?}");
         };
-        assert_eq!(cancel.body["reason"], json!("nobody answered before the question expired"));
+        assert_eq!(
+            cancel.body["reason"],
+            json!("nobody answered before the question expired")
+        );
         if listed {
             assert_eq!(cancel.body["actor"], json!("tack"));
         } else {
@@ -5625,11 +5704,15 @@ async fn the_fake_lists_only_the_features_it_serves() {
     }
 }
 
+/// The switch that makes the fake a docket before one feature.
+type FeatureSwitch = fn(&FakeDocket);
+
 /// The features docket added after `taskCurrent` and `taskCursor`, in the order the fake lists
 /// them, each with the switch that makes the fake a docket before it.
-const LATER_FEATURES: [(&str, fn(&FakeDocket)); 2] = [
+const LATER_FEATURES: [(&str, FeatureSwitch); 3] = [
     ("failureKinds", FakeDocket::without_failure_kinds),
     ("settledCursor", FakeDocket::without_settled_cursor),
+    ("hopTimes", FakeDocket::without_hop_times),
 ];
 
 /// Each later feature is dropped from both lists by its own switch and by no other.
