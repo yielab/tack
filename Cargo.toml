@@ -41,7 +41,7 @@ axum = { version = "0.8", features = ["ws", "multipart"] }
 # OpenAPI contract generation (compile-time; no bundled Swagger UI to protect the
 # binary-size budget — only the raw spec JSON is served). chrono/uuid map the
 # domain timestamp + id types into the schema.
-utoipa = { version = "5", features = ["chrono", "uuid"] }
+utoipa = { version = "6", features = ["chrono", "uuid"] }
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.7", features = ["cors", "trace", "fs", "compression-gzip", "set-header"] }
 validator = { version = "0.21", features = ["derive"] }
