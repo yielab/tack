@@ -285,7 +285,8 @@ const RequestRow: Component<{
             {summary()?.request_id ?? '—'}
           </span>
         </Show>
-        <Show when={props.record.cancellation.requested || props.record.cancellation.pending}>
+        {/* Only while it is true: once the run has ended its state says how. */}
+        <Show when={(props.record.cancellation.requested || props.record.cancellation.pending) && !isTerminalStateString(state())}>
           <Badge tone="warning">{props.record.cancellation.pending ? 'Cancellation pending' : 'Cancellation requested'}</Badge>
         </Show>
         <Show when={props.record.cancellation.conflict}>
