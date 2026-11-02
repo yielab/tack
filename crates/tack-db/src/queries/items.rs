@@ -10,7 +10,8 @@ pub struct WaitingItem {
 }
 
 /// The tasks of the project in `status` that say who does them: at least one role, or a profile
-/// chosen on the task itself (`run_settings.agent_profile_id`).
+/// chosen on the task itself (`run_settings.agent_profile_id`), and that have never had a run: a
+/// task with any execution request, open or ended, is not waiting to start.
 pub async fn waiting_with_someone_to_do_it(
     repo: &Repository,
     project_id: &str,
@@ -20,7 +21,8 @@ pub async fn waiting_with_someone_to_do_it(
         "SELECT id, priority, sort_order, version FROM items
          WHERE project_id = ? AND status = ?
            AND (EXISTS (SELECT 1 FROM item_roles ir WHERE ir.item_id = items.id)
-                OR COALESCE(json_extract(items.run_settings, '$.agent_profile_id'), '') <> '')",
+                OR COALESCE(json_extract(items.run_settings, '$.agent_profile_id'), '') <> '')
+           AND NOT EXISTS (SELECT 1 FROM execution_requests r WHERE r.item_id = items.id)",
     )
     .bind(project_id)
     .bind(status)

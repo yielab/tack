@@ -68,8 +68,8 @@ const run = (state: string, needsReview = false) =>
 
 describe('Board ItemCard', () => {
   it('a_waiting_card_says_why_auto_start_has_not_started_it_and_a_free_card_says_nothing', async () => {
-    const text = 'In Progress is full (5 of 5): move something on to make room';
-    const held = await mount(makeItem(), undefined, { waiting: { code: 'wip', text } });
+    const text = '3 runs are already open, the most this project allows';
+    const held = await mount(makeItem(), undefined, { waiting: { code: 'max_open', text } });
     const line = held.querySelector('[data-testid="card-waiting"]')!;
     expect(line.textContent).toBe(`Waiting to start: ${text}`);
     expect(line.getAttribute('title')).toBe(`Waiting to start: ${text}`);
@@ -80,8 +80,8 @@ describe('Board ItemCard', () => {
   });
 
   it('a_card_auto_start_holds_or_started_names_its_parent_and_any_other_card_does_not', async () => {
-    const text = 'In Progress is full (5 of 5): move something on to make room';
-    const held = await mount(makeItem({ parent_id: 'p' }), undefined, { waiting: { code: 'wip', text }, parentTitle: 'Billing epic' });
+    const text = '3 runs are already open, the most this project allows';
+    const held = await mount(makeItem({ parent_id: 'p' }), undefined, { waiting: { code: 'max_open', text }, parentTitle: 'Billing epic' });
     expect(held.querySelector('[data-testid="card-parent"]')!.textContent).toBe('Part of: Billing epic');
     const started = await mount(makeItem({ parent_id: 'p', started_by: 'auto_start' }), undefined, { parentTitle: 'Billing epic' });
     expect(started.querySelector('[data-testid="card-parent"]')).not.toBeNull();

@@ -224,7 +224,6 @@ impl LoopConfig {
                 loops,
                 repo.clone(),
                 clock.clone(),
-                ports.clone(),
                 Duration::from_secs(self.auto_start_seconds),
             );
         }

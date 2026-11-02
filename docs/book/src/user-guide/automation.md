@@ -207,26 +207,25 @@ high, medium, low, none), and within the same priority in board order. A task st
 hold:
 
 - It has a role, or a profile chosen on the task itself (see **Who does it** below).
-- It has no open run (queued, starting, running or waiting on you).
+- It has never had a run. A task starts once; a second run is yours to start.
 - It has no unfinished blocker.
 - A profile resolves for it, as under [Teams](#teams), and an agent is named by the profile or by the
   project's default agent.
 - There is a machine to run on: the profile's fleet, or exactly one active runner.
 - The project's daily limits are not spent (tokens, items waiting for your review; see
   [Budgets](merging.md#budgets)).
-- The first In progress column has room under its work-in-progress limit.
 - Fewer than the cap of runs are open in the project.
 
 A task that waits in the status because one of these does not hold says so, on the board card and on the task
-itself, as "Waiting to start:" and the reason: "In Progress is full (5 of 5): move something on to make
-room", "Blocked by 2 unfinished tasks", "3 runs are already open, the most this project allows", "This
-project's token limit is reached", "No one is chosen to do it", "No computer can run it" or "It already has a
-run open". When the reason has a way out, the sentence says it. A task that nothing holds back shows no
-line, and it starts at the next look.
+itself, as "Waiting to start:" and the reason: "Blocked by 2 unfinished tasks", "3 runs are already open,
+the most this project allows", "This project's token limit is reached", "No one is chosen to do it", "No
+computer can run it" or "It already has a run open". When the reason has a way out, the sentence says it. A
+task that nothing holds back shows no line, and it starts at the next look.
 
-A task that starts moves to the first In progress status, and its activity says "Started by itself: it
-reached To Do with the role Content", or, for a task with no role, "Started by itself: it reached To Do with
-no role, and goes to the team saas-content" (or to the agent, such as Codex, when the profile names no team).
+A task that starts stays in the status it was in: only you move it, and a column's work-in-progress limit
+does not hold it back. Its activity says "Started by itself: it reached To Do with the role Content", or, for
+a task with no role, "Started by itself: it reached To Do with no role, and goes to the team saas-content"
+(or to the agent, such as Codex, when the profile names no team).
 The agent works with the tools its profile allows. Web tools are on
 only when the profile says its role needs the network. The run lasts as long as the profile's time limit
 allows, and one hour when it sets none.
