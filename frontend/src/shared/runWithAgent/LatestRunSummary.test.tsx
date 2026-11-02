@@ -146,6 +146,15 @@ describe('LatestRunSummary', () => {
     expect(card.querySelector('[data-testid="review-reject"]')?.textContent).toBe('Reject…');
   });
 
+  it('a machine line as the agent\'s last words is said in a sentence, the raw line on hover', async () => {
+    const answer = { ...ATTEMPT, terminal_reason: { result: 'waited: resumed' }, merge: { enabled: false, reason: 'No branch was pushed' } };
+    const c = mount([RUN], () => {}, [answer]);
+    for (let i = 0; i < 4; i++) await flush();
+    const said = c.querySelector('[data-testid="latest-run-said"]')!;
+    expect(said.textContent).toBe('It waited, then went on.');
+    expect(said.getAttribute('title')).toBe('waited: resumed');
+  });
+
   it('a run that changed no file shows the answer as what it delivered and offers Accept, not Merge', async () => {
     const answer = { ...ATTEMPT, terminal_reason: { result: 'The answer is 42.' }, merge: { enabled: false, reason: 'No branch was pushed' } };
     const c = mount([RUN], () => {}, [answer]);

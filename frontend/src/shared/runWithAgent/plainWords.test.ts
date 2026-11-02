@@ -8,6 +8,13 @@ describe('plainVerdict', () => {
     expect(text).not.toMatch(/prill|criterion_manual|human-review/);
   });
 
+  it('says several findings, each in words, and leaves the verifier\'s decision to the chip', () => {
+    expect(plainVerdict('prill: reject — blocking: criterion_failed — impossible; review: criterion_manual — m1')).toBe(
+      'A check failed (impossible); a check only a person can make (m1).',
+    );
+    expect(plainVerdict('blocking: criterion_failed — impossible')).toBe('A check failed (impossible).');
+  });
+
   it('says a file check, the next-steps heading, the ceiling and the approval line in plain sentences', () => {
     expect(plainVerdict('file_present')).toBe('A file the task needs is not there.');
     expect(plainVerdict('NEXT STEPS: blocking criterion impossible to satisfy')).toBe(
@@ -16,6 +23,13 @@ describe('plainVerdict', () => {
     expect(plainVerdict("this pod's ceiling L3 (profile attended)")).toContain('no further than L3: you approve each step');
     expect(plainVerdict('approval required before lead hop (L5 asks nobody)')).toBe(
       'A person has to approve before the Lead step, and at L5 nobody is asked, so it cannot go on by itself.',
+    );
+  });
+
+  it('says a finished wait and a request to start in sentences', () => {
+    expect(plainVerdict('waited: resumed')).toBe('It waited, then went on.');
+    expect(plainVerdict("docket asked: pod dispatch — task enqueue for 'saas-code': You are a careful software engineer <<<card-text id=ffc540ea>>>")).toBe(
+      'The agent asked to start the task.',
     );
   });
 

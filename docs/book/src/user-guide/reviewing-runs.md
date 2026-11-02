@@ -47,6 +47,9 @@ A team that proposes items and ends with proposals Tack cannot use (for example,
 earlier row in the file) is shown as **Finished — proposals could not be used**, not as a plain success, with the
 reason in words and docket's own line on hover.
 
+The verifier's recommendation, the reasons for its risk and its next steps are written as sentences; the verifier's own
+line is what shows when you hover over one.
+
 ### What you see on the board
 
 After a run, the task's card on the board carries these marks. The list carries the merge and automation

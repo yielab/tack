@@ -268,6 +268,25 @@ describe('MrpPanel', () => {
     expect(el.textContent).toContain('touches auth');
   });
 
+  it('says the verifier\'s sentence, its risk reasons and its next step in plain words, the raw line on hover', async () => {
+    const raw = 'prill: reject — blocking: criterion_failed — impossible; review: criterion_manual — m1';
+    mockFetch({
+      ...ready,
+      recommendation: { decision: 'reject', rationale: raw },
+      risk: { tier: 'low', reasons: ['blocking: criterion_failed — impossible'] },
+      next_steps: [{ code: 'criterion_failed', severity: 'error', stage: 'verify', message: 'criterion impossible failed: file_present', path: 'DONE.txt' }],
+    });
+    const el = mount();
+    await flush();
+    const verdict = el.querySelector('[data-testid="mrp-verdict"]')!;
+    expect(verdict.textContent).not.toMatch(/prill|criterion_failed|criterion_manual/);
+    expect(verdict.textContent).toContain('A check failed (impossible); a check only a person can make (m1).');
+    expect(verdict.querySelector('p')!.getAttribute('title')).toBe(raw);
+    const step = el.querySelector('[data-testid="mrp-next-step"]')!;
+    expect(step.textContent).toContain('The check “impossible” failed');
+    expect(step.textContent).not.toContain('file_present');
+  });
+
   it('folds the verify command and its output', async () => {
     mockFetch({ ...ready, verify: { command: 'cargo test', exit_code: 0, output_tail: 'ok', duration_s: 3 } });
     const el = mount();
