@@ -188,3 +188,69 @@ async fn an_attempt_says_whether_it_never_started() {
         assert_eq!(body["data"][0]["never_started"], json!(expected), "{body}");
     }
 }
+
+/// The single-run read carries the same two facts as the list, from the same `run_facts` path.
+#[tokio::test]
+async fn the_single_run_read_carries_the_same_two_facts() {
+    let root = tempfile::tempdir().unwrap();
+    let (app, repo, item_id, _events, _bus) = setup_with_bus(root.path(), None).await;
+    use ExecutionState::{Failed, Succeeded};
+    let refused = run(
+        &app,
+        &repo,
+        &item_id,
+        "refused",
+        Failed,
+        json!({"code": "harness_rejected", "message": "refused"}),
+        None,
+    )
+    .await;
+    let rejected = run(
+        &app,
+        &repo,
+        &item_id,
+        "rejected",
+        Succeeded,
+        json!({"code": "completed"}),
+        Some(NOT_READY),
+    )
+    .await;
+    let ready = run(
+        &app,
+        &repo,
+        &item_id,
+        "ready",
+        Succeeded,
+        json!({"code": "completed"}),
+        Some(READY),
+    )
+    .await;
+    let no_pack = run(
+        &app,
+        &repo,
+        &item_id,
+        "no-pack",
+        Succeeded,
+        json!({"code": "completed"}),
+        None,
+    )
+    .await;
+    for (request, never_started, recommendation) in [
+        (refused, json!(true), Value::Null),
+        (rejected, json!(false), json!("reject")),
+        (ready, json!(false), json!("merge")),
+        (no_pack, json!(false), Value::Null),
+    ] {
+        let (status, body) = common::send(
+            &app,
+            "GET",
+            &format!("/api/executions/{request}"),
+            json!(null),
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(body["never_started"], never_started, "{body}");
+        assert_eq!(body["verifier_recommendation"], recommendation, "{body}");
+    }
+}

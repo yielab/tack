@@ -523,6 +523,13 @@ pub struct ExecutionDetailResponse {
     pub agent_profile_id: Option<String>,
     /// The agent the run asked for; null when it left the choice to the computer.
     pub requested_harness_kind: Option<String>,
+    /// The run's newest attempt ended without ever starting work, the same flag the run list
+    /// carries (read through `tack_app::runs::run_facts`, the one rule).
+    pub never_started: bool,
+    /// What the verifier's pack for the run's newest attempt recommends (`merge`, `review` or
+    /// `reject`); null while that attempt has not succeeded, or when it left no readable pack.
+    #[schema(value_type = Option<tack_protocol::mrp::MergeDecision>)]
+    pub verifier_recommendation: Option<tack_protocol::mrp::MergeDecision>,
 }
 
 /// One attempt as reported by `GET /api/executions/{id}/attempts` — every
@@ -1367,8 +1374,28 @@ pub async fn get_execution(
         })?
         .remove(&request_id)
         .unwrap_or_else(|| limit_source(&Value::Null, None, None));
+    let ports = state.app.as_ref().map(|app| app.ports());
+    let run_facts = tack_app::runs::run_facts::run_facts(
+        &state.repo,
+        ports.as_ref().map(|ports| ports.artifacts.as_ref()),
+        std::slice::from_ref(&request_id),
+    )
+    .await
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not read the run's newest attempt");
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not read the run's newest attempt",
+            json!({}),
+        )
+    })?
+    .remove(&request_id)
+    .unwrap_or_default();
     Ok(Json(ExecutionDetailResponse {
         protocol_version: 1,
+        never_started: run_facts.never_started,
+        verifier_recommendation: run_facts.verifier_recommendation,
         request_id,
         limit,
         item_id: row.item_id,
