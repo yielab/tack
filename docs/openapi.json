@@ -12385,7 +12385,8 @@
           "state",
           "created_at",
           "waiting_behind",
-          "limit"
+          "limit",
+          "never_started"
         ],
         "properties": {
           "agent_profile_id": {
@@ -12418,6 +12419,10 @@
             "$ref": "#/components/schemas/RunLimit",
             "description": "The run's token limit and who applies it."
           },
+          "never_started": {
+            "type": "boolean",
+            "description": "The run's newest attempt ended without ever starting work, the same flag the run list\ncarries (read through `tack_app::runs::run_facts`, the one rule)."
+          },
           "protocol_version": {
             "type": "integer",
             "format": "int32",
@@ -12435,6 +12440,17 @@
           },
           "state": {
             "type": "string"
+          },
+          "verifier_recommendation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MergeDecision",
+                "description": "What the verifier's pack for the run's newest attempt recommends (`merge`, `review` or\n`reject`); null while that attempt has not succeeded, or when it left no readable pack."
+              }
+            ]
           },
           "waiting_behind": {
             "type": "array",

@@ -4837,12 +4837,18 @@ export interface components {
             item_id: string;
             /** @description The run's token limit and who applies it. */
             limit: components["schemas"]["RunLimit"];
+            /**
+             * @description The run's newest attempt ended without ever starting work, the same flag the run list
+             *     carries (read through `tack_app::runs::run_facts`, the one rule).
+             */
+            never_started: boolean;
             /** Format: int32 */
             protocol_version: number;
             request_id: string;
             /** @description The agent the run asked for; null when it left the choice to the computer. */
             requested_harness_kind?: string | null;
             state: string;
+            verifier_recommendation?: null | components["schemas"]["MergeDecision"];
             /**
              * @description The runs that hold every slot of the computers this request may run on, when no poll has
              *     given a reason because those computers are full; empty otherwise. Read at read time.
