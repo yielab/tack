@@ -154,6 +154,61 @@ describe('PlanPanel', () => {
     expect(container.textContent).not.toContain('Planner');
   });
 
+  it('names_every_field_of_an_entry_and_writes_the_description_in_a_text_area', async () => {
+    routeFetch(PLAN, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    const row = container.querySelector('[data-testid="plan-row"]')!;
+    expect([...row.querySelectorAll('[data-field-label]')].map((l) => l.textContent)).toEqual([
+      'Title',
+      'Description',
+      'Done when (one line each)',
+      'Type',
+      'Role',
+      'Who does it',
+    ]);
+    // Each caption names its control, so the control's accessible name is the words on screen.
+    for (const label of row.querySelectorAll<HTMLLabelElement>('label[data-field-label]')) {
+      expect(label.control, label.textContent!).not.toBeNull();
+    }
+    const description = row.querySelector('[aria-label="Description"]')!;
+    expect(description.tagName).toBe('TEXTAREA');
+  });
+
+  it('sends_the_done_when_lines_of_an_entry_that_has_sub_items_as_well_as_theirs', async () => {
+    const posts: Array<{ url: string; body: any }> = [];
+    const nested = {
+      v: '1',
+      subtasks: [
+        { title: 'Sharing', description: '', acceptance: ['Both child items are done', 'Access can be revoked'], depends_on: [] },
+        { title: 'Model', description: '', acceptance: ['A design note lists the roles'], depends_on: [], parent: 0 },
+      ],
+    };
+    routeFetch(nested, { created: [] }, posts);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    // The whole of a long list is shown, not its first lines only.
+    const first = container.querySelector<HTMLTextAreaElement>('textarea[aria-label^="Done when"]')!;
+    expect(first.value).toBe('Both child items are done\nAccess can be revoked');
+    clickButton(container, 'Create 2 items');
+    await settle();
+    const sent = posts[0].body.subtasks;
+    expect(sent[0].acceptance).toEqual(['Both child items are done', 'Access can be revoked']);
+    expect(sent[1].acceptance).toEqual(['A design note lists the roles']);
+    expect(sent[1].parent).toBe(0);
+  });
+
+  it('says_what_becomes_of_a_type_the_project_does_not_have', async () => {
+    const odd = { v: '1', subtasks: [{ title: 'Odd', description: '', acceptance: [], depends_on: [], type: 'saga' }, { title: 'Plain', description: '', acceptance: [], depends_on: [] }] };
+    routeFetch(odd, { created: [] }, []);
+    const container = mount({ requestId: 'exec_1', attemptNumber: 1, artifactId: 'plan_1', itemId: 'item_1' });
+    await settle();
+    const rows = container.querySelectorAll('[data-testid="plan-row"]');
+    const note = rows[0].querySelector('[data-testid="plan-type-note"]')!;
+    expect(note.textContent).toBe('This project has no type "saga": the item will be created with its parent\'s type.');
+    expect(rows[1].querySelector('[data-testid="plan-type-note"]')).toBeNull();
+  });
+
   it('a_role_the_project_has_is_not_marked_as_missing', async () => {
     const named = { v: '1', subtasks: [{ title: 'Settings', description: '', acceptance: [], depends_on: [], role: 'Backend' }, { title: 'Docs', description: '', acceptance: [], depends_on: [], role: 'Writer' }] };
     routeFetch(named, { created: [] }, []);

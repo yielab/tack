@@ -31,6 +31,8 @@ export interface WhoDoesItProps {
   teams?: TeamEntry[];
   /** The accessible name of the control. */
   label: string;
+  /** The control's id, so a visible label can name it. */
+  id?: string;
   disabled?: boolean;
 }
 
@@ -65,6 +67,7 @@ const WhoDoesIt: Component<WhoDoesItProps> = (props) => {
 
   return (
     <select
+      id={props.id}
       aria-label={props.label}
       disabled={props.disabled}
       class="rounded px-2 py-1 text-sm"

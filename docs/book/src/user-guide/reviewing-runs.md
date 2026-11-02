@@ -95,8 +95,10 @@ and a line that counts them: items, sub-items and dependencies. An item that bel
 beneath it, and it is unticked when its parent is unticked. Every other change is a line in a list under the
 tree, with the item it is about named by its title. Each row has a checkbox, and each can be edited:
 
-- An item's title, description and acceptance criteria, its **Type** and **Role**, and **Who does it**, which
-  names the team that will do it once it exists. **Waits on** lists the titles of the items it must wait for,
+- An item's **Title**, **Description**, **Done when** lines (one per line, and they become the item's Done when
+  checks), its **Type** and **Role**, and **Who does it**, which names the team that will do it once it exists;
+  each field is named above it. A type the project does not have is said so under the row: the item is created
+  with its parent's type. **Waits on** lists the titles of the items it must wait for,
   each with a × to remove it, and a menu to add another.
 - A change of who does an item, its role and team; a priority; the status to move to; the text of a
   comment; a due date. A dependency has nothing to edit: untick it to leave it out.

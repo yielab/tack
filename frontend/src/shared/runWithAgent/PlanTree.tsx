@@ -1,4 +1,4 @@
-import { type Accessor, type Component, type JSX, For, Show } from 'solid-js';
+import { type Accessor, type Component, type JSX, For, Show, createUniqueId } from 'solid-js';
 import { agentProfilesApi } from '../execution';
 import type { AgentProfileSummary } from '../execution/api';
 import { api } from '../api';
@@ -36,6 +36,8 @@ export interface Offer {
   teams: TeamEntry[];
   /** The names of the project's statuses, in the board's order. */
   statuses: string[];
+  /** The project's own types were read, so a type missing from them is really not there. */
+  ready?: boolean;
 }
 
 export const EMPTY_OFFER: Offer = { types: getItemTypeList(undefined), roles: [], profiles: [], teams: [], statuses: [] };
@@ -54,6 +56,7 @@ export async function loadOffer(projectId: string): Promise<Offer> {
     profiles,
     teams,
     statuses: [...(project?.workflow?.statuses ?? [])].sort((a, b) => a.order - b.order).map((s) => s.name),
+    ready: project !== null,
   };
 }
 
@@ -120,6 +123,19 @@ export function withCurrent(options: Array<{ value: string; label: string }>, cu
   return [{ value: current, label: `${current} (not in this project)` }, ...options];
 }
 
+/** A control under the words that name it, so no field of an entry is left to its placeholder or its position. */
+const Field: Component<{ id: string; label: string; class?: string; children: JSX.Element }> = (props) => (
+  <div class={`flex min-w-0 flex-col gap-0.5 ${props.class ?? ''}`}>
+    <label for={props.id} data-field-label class="text-xs font-semibold" style={{ color: 'var(--color-text-secondary)' }}>
+      {props.label}
+    </label>
+    {props.children}
+  </div>
+);
+
+/** A text area that grows with its text, so a long line is read whole and not cut at the edge. */
+const grow = { 'field-sizing': 'content' } as const;
+
 /**
  * The proposed items as a tree: checkbox, title, description, acceptance, type, role, who does it and
  * what each waits on. It changes nothing itself; every edit goes out through `patch` and `setTicked`.
@@ -143,104 +159,132 @@ const PlanTree: Component<{
   const entry = (i: number) => {
     const r = () => rows()[i];
     const frozen = () => !!r().locked;
+    const uid = createUniqueId();
+    const fid = (name: string) => `plan-${uid}-${name}`;
+    const typeMissing = () => !!r().type && ctx().ready === true && !ctx().types.some((t) => t.value === r().type);
     const others = () => rows().map((_, j) => j).filter((j) => j !== i && !waitsOn(rows(), i).includes(j));
     return (
       <div data-testid="plan-row" class="min-w-0 space-y-2 rounded-item p-2" style={{ border: '1px solid var(--color-border-light)' }}>
-        <label class="flex min-w-0 items-center gap-2 text-sm">
+        <div class="flex min-w-0 items-end gap-2 text-sm">
           <input
             type="checkbox"
+            class="mb-2"
             checked={r().selected}
             disabled={frozen() || !ancestorsTicked(rows(), i)}
             aria-label={`Create ${r().title}`}
             onChange={(e) => props.setTicked(i, e.currentTarget.checked)}
           />
-          <input
-            class="min-w-0 flex-1 rounded px-2 py-1"
-            style={inputStyle}
-            aria-label="Title"
-            disabled={frozen()}
-            value={r().title}
-            onInput={(e) => patch(i, { title: e.currentTarget.value })}
-          />
+          <Field id={fid('title')} label="Title" class="flex-1">
+            <input
+              id={fid('title')}
+              class="min-w-0 rounded px-2 py-1"
+              style={inputStyle}
+              aria-label="Title"
+              disabled={frozen()}
+              value={r().title}
+              onInput={(e) => patch(i, { title: e.currentTarget.value })}
+            />
+          </Field>
           <Show when={r().locked}>
             {(why) => (
-              <span data-testid="plan-row-state" class="shrink-0 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <span data-testid="plan-row-state" class="mb-2 shrink-0 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                 {why()}
               </span>
             )}
           </Show>
-        </label>
-        <input
-          class="w-full min-w-0 rounded px-2 py-1 text-sm"
-          style={inputStyle}
-          aria-label="Description"
-          disabled={frozen()}
-          value={r().description}
-          onInput={(e) => patch(i, { description: e.currentTarget.value })}
-        />
-        <textarea
-          class="w-full min-w-0 rounded px-2 py-1 text-sm"
-          style={inputStyle}
-          aria-label="Acceptance criteria, one per line"
-          disabled={frozen()}
-          rows={Math.max(2, r().acceptance.length)}
-          value={r().acceptance.join('\n')}
-          onInput={(e) => patch(i, { acceptance: e.currentTarget.value.split('\n') })}
-        />
-        <div class="flex min-w-0 flex-wrap items-center gap-2 text-xs">
-          <select
-            aria-label="Type"
-            class="max-w-full rounded px-2 py-1 text-xs"
-            style={inputStyle}
+        </div>
+        <Field id={fid('description')} label="Description">
+          <textarea
+            id={fid('description')}
+            class="w-full min-w-0 rounded px-2 py-1 text-sm"
+            style={{ ...inputStyle, ...grow }}
+            aria-label="Description"
             disabled={frozen()}
-            onChange={(e) => patch(i, { type: e.currentTarget.value || null })}
-          >
-            <option value="" selected={!r().type}>
-              Default
-            </option>
-            <For each={withCurrent(ctx().types, r().type)}>
-              {(t) => (
-                <option value={t.value} selected={r().type === t.value}>
-                  {t.label}
-                </option>
-              )}
-            </For>
-          </select>
-          <select
-            aria-label="Role"
-            class="max-w-full rounded px-2 py-1 text-xs"
-            style={inputStyle}
+            rows={2}
+            value={r().description}
+            onInput={(e) => patch(i, { description: e.currentTarget.value })}
+          />
+        </Field>
+        <Field id={fid('done-when')} label="Done when (one line each)">
+          <textarea
+            id={fid('done-when')}
+            class="w-full min-w-0 rounded px-2 py-1 text-sm"
+            style={{ ...inputStyle, ...grow }}
+            aria-label="Done when (one line each)"
             disabled={frozen()}
-            onChange={(e) => patch(i, { role: e.currentTarget.value || null })}
-          >
-            <option value="" selected={!r().role}>
-              No role
-            </option>
-            <For each={withCurrent(ctx().roles, r().role)}>
-              {(role) => (
-                <option value={role.value} selected={r().role === role.value}>
-                  {role.label}
-                </option>
-              )}
-            </For>
-          </select>
-          {/* The profile reads as a chip: the picker keeps its own border inside the pill. */}
-          <span class="inline-flex max-w-full items-center rounded-full px-1" style={chipStyle}>
-            <WhoDoesIt
-              label="Who does it"
-              value={r().team}
-              profiles={ctx().profiles}
-              teams={ctx().teams}
+            rows={Math.max(2, r().acceptance.length)}
+            value={r().acceptance.join('\n')}
+            onInput={(e) => patch(i, { acceptance: e.currentTarget.value.split('\n') })}
+          />
+        </Field>
+        <div class="flex min-w-0 flex-wrap items-end gap-2 text-xs">
+          <Field id={fid('type')} label="Type">
+            <select
+              id={fid('type')}
+              aria-label="Type"
+              class="max-w-full rounded px-2 py-1 text-xs"
+              style={inputStyle}
               disabled={frozen()}
-              onChange={(team) => patch(i, { team })}
-            />
-          </span>
+              onChange={(e) => patch(i, { type: e.currentTarget.value || null })}
+            >
+              <option value="" selected={!r().type}>
+                Default
+              </option>
+              <For each={withCurrent(ctx().types, r().type)}>
+                {(t) => (
+                  <option value={t.value} selected={r().type === t.value}>
+                    {t.label}
+                  </option>
+                )}
+              </For>
+            </select>
+          </Field>
+          <Field id={fid('role')} label="Role">
+            <select
+              id={fid('role')}
+              aria-label="Role"
+              class="max-w-full rounded px-2 py-1 text-xs"
+              style={inputStyle}
+              disabled={frozen()}
+              onChange={(e) => patch(i, { role: e.currentTarget.value || null })}
+            >
+              <option value="" selected={!r().role}>
+                No role
+              </option>
+              <For each={withCurrent(ctx().roles, r().role)}>
+                {(role) => (
+                  <option value={role.value} selected={r().role === role.value}>
+                    {role.label}
+                  </option>
+                )}
+              </For>
+            </select>
+          </Field>
+          <Field id={fid('who')} label="Who does it" class="max-w-full">
+            {/* The profile reads as a chip: the picker keeps its own border inside the pill. */}
+            <span class="inline-flex max-w-full items-center rounded-full px-1" style={chipStyle}>
+              <WhoDoesIt
+                id={fid('who')}
+                label="Who does it"
+                value={r().team}
+                profiles={ctx().profiles}
+                teams={ctx().teams}
+                disabled={frozen()}
+                onChange={(team) => patch(i, { team })}
+              />
+            </span>
+          </Field>
           <Show when={r().estimate}>
             {(estimate) => (
-              <span style={{ color: 'var(--color-text-tertiary)' }}>{estimate()}</span>
+              <span class="pb-1.5" style={{ color: 'var(--color-text-tertiary)' }}>{estimate()}</span>
             )}
           </Show>
         </div>
+        <Show when={typeMissing()}>
+          <p data-testid="plan-type-note" class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            {`This project has no type "${r().type}": the item will be created with its parent's type.`}
+          </p>
+        </Show>
         <fieldset class="min-w-0 space-y-1">
           <legend class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             Waits on
