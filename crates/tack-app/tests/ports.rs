@@ -1,5 +1,5 @@
-//! The ports in `tack_app::ports` stand in for the HTTP layer: a use case or a loop pass runs
-//! against fakes of them, with a real store and no router.
+//! The ports in `tack_app::ports` stand in for the HTTP layer: a use case runs against fakes of
+//! them, with a real store and no router.
 
 use std::sync::Arc;
 
@@ -7,9 +7,8 @@ use async_trait::async_trait;
 use tack_app::events::RecordedEvents;
 use tack_app::github_sync::GitHub;
 use tack_app::loop_config::{LoopConfig, MIN_BACKUP_INTERVAL_SECS};
+use tack_app::merge;
 use tack_app::ports::{Artifacts, Ports, Verifier, VerifierError};
-use tack_app::{auto_start, merge};
-use tack_protocol::SystemClock;
 use tack_test_support::setup_test_db;
 
 struct NoVerifier;
@@ -59,20 +58,6 @@ async fn the_merge_button_answers_over_fake_ports() {
 
     assert!(!enabled);
     assert_eq!(reason.as_deref(), Some("The attempt could not be read"));
-}
-
-#[tokio::test]
-async fn an_auto_start_pass_over_fake_ports_with_nothing_to_start_says_nothing() {
-    let repo = setup_test_db().await;
-    let events = Arc::new(RecordedEvents::default());
-    let ports = fake_ports(events.clone());
-
-    let outcome = auto_start::tick(&repo, &SystemClock, &ports)
-        .await
-        .expect("a pass over an empty board");
-
-    assert_eq!(outcome.started, 0);
-    assert!(events.events().is_empty());
 }
 
 #[test]

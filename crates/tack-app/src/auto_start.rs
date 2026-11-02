@@ -1,27 +1,22 @@
 //! A project that starts its own work: the tick that turns a task in the project's
-//! auto-start status, with a role or a profile chosen on it, into a run and moves it to the first in-progress
-//! status. Which tasks and how many is `tack_core::auto_start::pick`'s; this is the
-//! rows that feed it and the enqueue and the move that follow.
+//! auto-start status, with a role or a profile chosen on it and no run yet, into a run. The task stays
+//! in its status: only a person moves it. Which tasks and how many is `tack_core::auto_start::pick`'s;
+//! this is the rows that feed it and the enqueue that follows.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use tack_core::auto_start::{Candidate, Facts, Limits, Why, WipColumn, pick, why};
+use tack_core::auto_start::{Candidate, Facts, Limits, Why, pick, why};
 use tack_core::dependency::{DependencyEdge, DependencyGraph};
-use tack_core::models::{DependencyType, Priority, Project, UpdateItem};
-use tack_core::principal::Principal;
+use tack_core::models::{DependencyType, Priority, Project};
 use tack_core::run_defaults::{Resolved, Source};
-use tack_core::workflow::StatusCategory;
-use tack_db::repo::items::AtomicItemUpdateOutcome;
 use tack_db::{Repository, queries};
 use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::background::{Loops, Start};
-use crate::events::DomainEvent;
-use crate::ports::Ports;
 use crate::runs::start_run::{
     PermissionRequest, RunRequest, default_selector, resolve_profile, start_run,
 };
@@ -41,17 +36,11 @@ pub struct Outcome {
 /// The loop `tack serve` starts: `tick` every `interval`, the first pass one interval after
 /// the start, a failed pass logged. The caller does not start it when auto-start is off
 /// (`auto_start_seconds` is 0).
-pub fn spawn(
-    loops: &mut Loops,
-    repo: Repository,
-    clock: Arc<dyn Clock>,
-    ports: Ports,
-    interval: Duration,
-) {
+pub fn spawn(loops: &mut Loops, repo: Repository, clock: Arc<dyn Clock>, interval: Duration) {
     loops.spawn_tick("auto_start", Start::AfterInterval, interval, move || {
-        let (repo, clock, ports) = (repo.clone(), clock.clone(), ports.clone());
+        let (repo, clock) = (repo.clone(), clock.clone());
         async move {
-            if let Err(error) = tick(&repo, clock.as_ref(), &ports).await {
+            if let Err(error) = tick(&repo, clock.as_ref()).await {
                 tracing::warn!(%error, "auto-start: could not list projects");
             }
         }
@@ -59,16 +48,12 @@ pub fn spawn(
 }
 
 /// One pass over every project with auto-start on.
-pub async fn tick(
-    repo: &Repository,
-    clock: &dyn Clock,
-    ports: &Ports,
-) -> Result<Outcome, AppError> {
+pub async fn tick(repo: &Repository, clock: &dyn Clock) -> Result<Outcome, AppError> {
     let ids = queries::projects::auto_start_project_ids(repo).await?;
     let mut outcome = Outcome::default();
     for id in ids.iter().filter_map(|id| id.parse::<Uuid>().ok()) {
         match repo.get_project(id).await {
-            Ok(Some(project)) => match project_tick(repo, clock, ports, &project).await {
+            Ok(Some(project)) => match project_tick(repo, clock, &project).await {
                 Ok(started) => outcome.started += started,
                 Err(error) => {
                     tracing::warn!(project_id = %id, %error, "auto-start: project pass failed");
@@ -85,15 +70,13 @@ pub async fn tick(
 
 /// What `pick` is given for one project, and the numbers its sentences quote.
 struct Plan {
-    /// The first in-progress status, where a started task goes.
-    started: String,
     candidates: Vec<Candidate>,
     limits: Limits,
     facts: Facts,
 }
 
 /// The tasks waiting in the project's start status with someone to do them, and the limits they
-/// meet. `None` when nothing waits or the workflow has no in-progress status.
+/// meet. `None` when nothing waits.
 async fn plan(
     repo: &Repository,
     clock: &dyn Clock,
@@ -107,30 +90,6 @@ async fn plan(
     if rows.is_empty() {
         return Ok(None);
     }
-    let Some(started) = project
-        .workflow
-        .statuses
-        .iter()
-        .filter(|status| status.category == StatusCategory::InProgress)
-        .min_by_key(|status| status.order)
-    else {
-        tracing::debug!(project_id = %project.id, "auto-start: the workflow has no in-progress status");
-        return Ok(None);
-    };
-    let wip = match started.wip_limit {
-        Some(limit) => {
-            let taken = repo
-                .count_items_by_status(project.id, &started.name)
-                .await?;
-            Some(WipColumn {
-                name: started.name.clone(),
-                taken: usize::try_from(taken).unwrap_or(usize::MAX),
-                limit,
-            })
-        }
-        None => None,
-    };
-    let wip_room = wip.as_ref().map(|c| c.limit.saturating_sub(c.taken));
     let open = queries::execution_requests::items_with_an_open_request(repo, &project_id).await?;
     let budget_reached = crate::scheduler_wiring::budget_reached(repo, &project_id, clock.now())
         .await?
@@ -199,15 +158,12 @@ async fn plan(
         max_open: usize::try_from(project.auto_start_max_open).unwrap_or(1),
         open_now: open.len(),
         budget_reached,
-        wip_room,
     };
     let facts = Facts {
-        wip,
         max_open: limits.max_open,
         open_now: limits.open_now,
     };
     Ok(Some(Plan {
-        started: started.name.clone(),
         candidates,
         limits,
         facts,
@@ -235,14 +191,10 @@ pub async fn explain(
 async fn project_tick(
     repo: &Repository,
     clock: &dyn Clock,
-    ports: &Ports,
     project: &Project,
 ) -> Result<usize, AppError> {
     let Some(Plan {
-        started,
-        candidates,
-        limits,
-        ..
+        candidates, limits, ..
     }) = plan(repo, clock, project).await?
     else {
         return Ok(0);
@@ -254,7 +206,7 @@ async fn project_tick(
     let mut count = 0;
     for item_id in picked {
         if let Some(candidate) = candidates.iter().find(|c| c.item_id == item_id)
-            && start(repo, clock, ports, project, candidate, &started).await
+            && start(repo, clock, project, candidate).await
         {
             count += 1;
         }
@@ -312,15 +264,13 @@ pub(crate) struct Permitted {
     pub harness: String,
 }
 
-/// Enqueue the run of one picked task, then move it to the in-progress status. Whether the run
-/// was started by this pass.
+/// Enqueue the run of one picked task and say so on its activity. The task's status is not
+/// touched: it stays where the person put it. Whether the run was started by this pass.
 async fn start(
     repo: &Repository,
     clock: &dyn Clock,
-    ports: &Ports,
     project: &Project,
     candidate: &Candidate,
-    started: &str,
 ) -> bool {
     let Some(resolved) = &candidate.profile else {
         return false;
@@ -363,37 +313,11 @@ async fn start(
             return false;
         }
     }
-    let moved = repo
-        .update_item_atomically(
-            candidate.item_id,
-            UpdateItem {
-                status: Some(started.to_owned()),
-                ..UpdateItem::default()
-            },
-            &project.workflow,
-            None,
-        )
-        .await;
-    let (item, old_status) = match moved {
-        Ok(AtomicItemUpdateOutcome::Updated {
-            item, old_status, ..
-        }) => (*item, old_status),
-        other => {
-            tracing::warn!(item_id = %candidate.item_id, outcome = ?other, "auto-start: could not move the task");
-            return true;
-        }
-    };
-    ports.events.emit(DomainEvent::item_changed(
-        item.project_id,
-        &Principal::system(),
-        item.id,
-        &old_status,
-        &item.status,
-    ));
+    let waiting_in = project.auto_start_status.as_deref().unwrap_or_default();
     let role = match &resolved.source {
         Source::Role(name) => Some(name.clone()),
         _ => repo
-            .profiles_for_item(item.id)
+            .profiles_for_item(candidate.item_id)
             .await
             .ok()
             .and_then(|roles| roles.into_iter().next().map(|(name, _)| name)),
@@ -409,8 +333,8 @@ async fn start(
     };
     merge::tell(
         repo,
-        &item.id.to_string(),
-        format!("Started by itself: it reached {old_status} {who}"),
+        &candidate.item_id.to_string(),
+        format!("Started by itself: it reached {waiting_in} {who}"),
     )
     .await;
     true

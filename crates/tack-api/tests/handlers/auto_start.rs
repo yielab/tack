@@ -1,6 +1,6 @@
 //! `GET /api/projects/{id}/auto-start`: why a task that the project would start by itself is
-//! still waiting. A full In Progress column, an unfinished blocker, the cap on open runs and the
-//! day's tokens each name themselves; a task the next pass would start is not listed.
+//! still waiting. An unfinished blocker, the cap on open runs and the day's tokens each name
+//! themselves, a full In Progress column is not a reason; a task the next pass would start is not listed.
 
 use crate::common;
 use axum::Router;
@@ -11,7 +11,9 @@ use tack_api::{AppState, router::build_router};
 use tack_core::models::{
     CreateDependency, CreateItem, CreateProject, CreateRole, DependencyType, ProjectType,
 };
+use tack_db::queries::execution_request_rows::execution_requests_of_item;
 use tack_db::repo::execution::{NewAgentProfile, NewRunner};
+use tack_protocol::execution::ExecutionState;
 use tack_protocol::{Clock, SystemClock};
 use tack_test_support::seed;
 use uuid::Uuid;
@@ -142,7 +144,7 @@ impl Board {
     }
 
     async fn tick(&self) {
-        tack_app::auto_start::tick(&self.state.repo, &SystemClock, &self.state.ports())
+        tack_app::auto_start::tick(&self.state.repo, &SystemClock)
             .await
             .unwrap();
     }
@@ -164,23 +166,50 @@ fn codes(body: &Value) -> Vec<(String, String)> {
 }
 
 #[tokio::test]
-async fn a_full_in_progress_column_is_why_a_ready_task_waits() {
+async fn a_full_in_progress_column_does_not_hold_a_ready_task_back() {
     let b = board().await;
     for n in 0..5 {
         b.task(&format!("busy {n}"), "In Progress", Some("profile-1"))
             .await;
     }
-    let waiting = b.task("ready", "To Do", Some("profile-1")).await;
+    let ready = b.task("ready", "To Do", Some("profile-1")).await;
 
     let body = b.auto_start().await;
 
     assert_eq!(body["enabled"], true);
     assert_eq!(body["status"], "To Do");
-    assert_eq!(codes(&body), [(waiting.to_string(), "wip".to_owned())]);
-    assert_eq!(
-        body["waiting"][0]["why"]["text"],
-        "In Progress is full (5 of 5): move something on to make room"
-    );
+    assert_eq!(body["waiting"], json!([]), "nothing waits on a column");
+
+    b.tick().await;
+
+    // It started, and it is still where it was: the board moved nothing into the full column.
+    let requests = execution_requests_of_item(&b.state.repo, &ready.to_string())
+        .await
+        .unwrap();
+    assert_eq!(requests.len(), 1);
+    let item = b.state.repo.get_item(ready).await.unwrap().unwrap();
+    assert_eq!(item.status, "To Do");
+}
+
+#[tokio::test]
+async fn a_task_that_has_run_is_not_listed_or_started_again() {
+    let b = board().await;
+    let ran = b.task("ran", "To Do", Some("profile-1")).await;
+    b.tick().await;
+    let request = execution_requests_of_item(&b.state.repo, &ran.to_string())
+        .await
+        .unwrap()
+        .remove(0);
+    seed::execution_request_state(&b.state.repo, &request.id, ExecutionState::Failed).await;
+
+    let body = b.auto_start().await;
+    b.tick().await;
+
+    assert_eq!(body["waiting"], json!([]), "{body}");
+    let requests = execution_requests_of_item(&b.state.repo, &ran.to_string())
+        .await
+        .unwrap();
+    assert_eq!(requests.len(), 1);
 }
 
 #[tokio::test]

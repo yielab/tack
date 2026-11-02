@@ -2561,8 +2561,9 @@ async fn status_of(repo: &Repository, item_id: &str) -> String {
         .status
 }
 
-// A task that reaches the auto-start status with a role is started once and moved; one
-// without a role stays; a project at its cap starts nothing more.
+// A task that reaches the auto-start status with a role is started once and stays in that
+// status, even after its run ends; one without a role stays; a project at its cap starts
+// nothing more.
 #[tokio::test]
 async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap() {
     let (repo, state, item_id, project_id) = auto_start_board().await;
@@ -2573,10 +2574,10 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
         .unwrap()
         .expect("item version");
 
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
 
@@ -2587,7 +2588,7 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     let metadata: Value = serde_json::from_str(&started[0].2).unwrap();
     assert_eq!(metadata["started_by"], "auto_start");
     assert_eq!(metadata["profile_source"], "role:Content");
-    assert_eq!(status_of(&repo, &item_id).await, "In Progress");
+    assert_eq!(status_of(&repo, &item_id).await, "To Do");
     // The only runner reports no sandbox for the agent, so the run asks before each action.
     let approvals = permission_of(&repo, &item_id, "approvals").await;
     assert_eq!(approvals.as_ref().and_then(Value::as_str), Some("ask"));
@@ -2615,11 +2616,25 @@ async fn the_auto_start_tick_starts_a_task_with_a_role_once_and_stops_at_the_cap
     seed::project_auto_start_max_open(&repo, &project_id.to_string(), 1).await;
     let next = add_item(&repo, project_id, "next").await;
     add_role(&repo, &next, "QA", Some("profile-c1")).await;
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
     assert!(requests_of(&repo, &next).await.is_empty());
     assert_eq!(status_of(&repo, &next).await, "To Do");
+
+    // The run ends and the task is still in the start status: it has run, so it is not started again.
+    let request = execution_request_rows::execution_requests_of_item(&repo, &item_id)
+        .await
+        .unwrap()
+        .remove(0);
+    seed::execution_request_state(&repo, &request.id, ExecutionState::Succeeded).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
+        .await
+        .unwrap();
+    assert_eq!(requests_of(&repo, &item_id).await.len(), 1);
+    assert_eq!(status_of(&repo, &item_id).await, "To Do");
+    // The place the first run held is free: the waiting task starts, the one that ran does not.
+    assert_eq!(requests_of(&repo, &next).await.len(), 1);
 }
 
 /// Put `settings` on the task, as the Run dialog or the picker would.
@@ -2688,12 +2703,12 @@ async fn the_auto_start_tick_starts_a_task_with_a_profile_in_its_run_settings_an
     set_run_settings(&repo, &settings_only, timeout_only).await;
     seed::project_auto_start_max_open(&repo, &project_id.to_string(), 10).await;
 
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
 
     assert_eq!(requests_of(&repo, &chosen).await.len(), 1);
-    assert_eq!(status_of(&repo, &chosen).await, "In Progress");
+    assert_eq!(status_of(&repo, &chosen).await, "To Do");
     let metadata: Value = serde_json::from_str(&requests_of(&repo, &chosen).await[0].2).unwrap();
     assert_eq!(metadata["profile_source"], "run_settings");
     assert_eq!(
@@ -2737,18 +2752,18 @@ async fn the_auto_start_tick_waits_for_a_group_where_two_computers_answer() {
     choose_profile(&repo, &chosen, "profile-c1").await;
     seed::project_auto_start_max_open(&repo, &project_id.to_string(), 10).await;
 
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
     assert!(requests_of(&repo, &chosen).await.is_empty());
     assert_eq!(status_of(&repo, &chosen).await, "To Do");
 
     seed::agent_profile_in_fleet(&repo, "profile-c1", "fleet-c1", "runner-active").await;
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
     assert_eq!(requests_of(&repo, &chosen).await.len(), 1);
-    assert_eq!(status_of(&repo, &chosen).await, "In Progress");
+    assert_eq!(status_of(&repo, &chosen).await, "To Do");
 }
 
 // A role that needs the network (`tool_policy.network`) starts its auto-started run with it.
@@ -2758,7 +2773,7 @@ async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {
     add_profile_with_policy(&repo, "profile-net", &json!({"network": true})).await;
     let research = add_item(&repo, project_id, "research").await;
     add_role(&repo, &research, "Research", Some("profile-net")).await;
-    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock, &state.ports())
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
         .await
         .unwrap();
     assert_eq!(requests_of(&repo, &research).await.len(), 1);
