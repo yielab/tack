@@ -285,6 +285,12 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
   );
 };
 
+/**
+ * The badge's accessible name. Its visible text is the count, so the name begins with it
+ * (WCAG 2.5.3 Label in Name) — the sentence alone says "Nothing" where the screen shows "0".
+ */
+export const badgeLabel = (count: number): string => (count === 0 ? `0: ${waitingSentence(0)}` : waitingSentence(count));
+
 /** The top bar's indicator: the same count, and a press brings the list into view. */
 export const WaitingBadge: Component = () => {
   useWaiting();
@@ -297,7 +303,7 @@ export const WaitingBadge: Component = () => {
       type="button"
       data-testid="waiting-badge"
       onClick={reveal}
-      aria-label={waitingSentence(waitingCount())}
+      aria-label={badgeLabel(waitingCount())}
       title={breakdown()}
       class="inline-flex items-center gap-1.5"
       style={{

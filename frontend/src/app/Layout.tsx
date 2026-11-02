@@ -158,7 +158,7 @@ const LayoutInner: Component<LayoutProps> = (props) => {
           <button
             type="button"
             onClick={() => openPalette()}
-            aria-label="Command palette"
+            aria-label="⌃K Command palette"
             title="Command palette"
             style={{
               display: 'flex', 'align-items': 'center', padding: '6px 10px',
