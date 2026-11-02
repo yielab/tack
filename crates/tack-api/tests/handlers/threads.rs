@@ -264,6 +264,16 @@ async fn a_thread_kept_for_one_credential_is_that_credentials_alone() {
 /// A thread in a project with code, a default harness and one active runner, so a person's
 /// message starts a turn.
 async fn runnable() -> (Setup, String) {
+    runnable_after_patching(json!({
+        "default_harness": "codex",
+        "code_origin": "url",
+        "repository": "https://example.test/c1.git",
+    }))
+    .await
+}
+
+/// The same, with the project given only what `patch` sets.
+async fn runnable_after_patching(patch: Value) -> (Setup, String) {
     let repo = tack_test_support::setup_test_db().await;
     let workspace = tack_test_support::create_test_workspace(&repo).await;
     repo.register_runner(
@@ -301,7 +311,7 @@ async fn runnable() -> (Setup, String) {
         &s.app,
         "PATCH",
         &format!("/api/projects/{}", s.project),
-        json!({"default_harness": "codex", "code_origin": "url", "repository": "https://example.test/c1.git"}),
+        patch,
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{patched}");
@@ -359,4 +369,26 @@ async fn an_agents_message_is_accepted_while_a_turn_is_pending() {
     let (status, posted) = agent(&s.app, &talker, "POST", &uri, json!({"body": "an alert"})).await;
     assert_eq!(status, StatusCode::OK, "{posted}");
     assert!(posted["turn"].is_null(), "{posted}");
+}
+
+#[tokio::test]
+async fn a_default_harness_alone_does_not_make_a_turn_startable_and_the_thread_says_why() {
+    let (s, id) = runnable_after_patching(json!({"default_harness": "codex"})).await;
+    let uri = format!("/api/threads/{id}/messages");
+
+    let (status, posted) = op(&s.app, "POST", &uri, json!({"body": "hello"})).await;
+    assert_eq!(status, StatusCode::OK, "{posted}");
+    assert!(posted["turn"].is_null(), "{posted}");
+    let notice = posted["notice"]["body"].as_str().unwrap_or_default();
+    assert!(notice.contains("could not start"), "{posted}");
+    // A reason, not a bare failure: the project has a harness but no code to run against.
+    assert!(
+        notice.contains("no code to run against"),
+        "the notice gives no reason: {posted}"
+    );
+
+    // The thread keeps the person's message and the notice, and holds no turn that never runs.
+    let (_, detail) = op(&s.app, "GET", &format!("/api/threads/{id}"), json!(null)).await;
+    assert_eq!(detail["messages"].as_array().unwrap().len(), 2, "{detail}");
+    assert!(detail["turns"].as_array().unwrap().is_empty(), "{detail}");
 }
