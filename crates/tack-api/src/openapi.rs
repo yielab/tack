@@ -1129,6 +1129,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::CreateExecution,
         handlers::executions::CreateExecutionResponse,
         handlers::executions::ExecutionSummary,
+        tack_protocol::mrp::MergeDecision,
         handlers::executions::ExecutionListResponse,
         handlers::executions::ExecutionDetailResponse,
         handlers::executions::AttemptSummary,

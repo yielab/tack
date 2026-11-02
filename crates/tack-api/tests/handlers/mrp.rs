@@ -324,8 +324,12 @@ pub(crate) async fn accept_and_start(app: &axum::Router, attempt: &ClaimedAttemp
 /// Manifests and uploads `ready.json` as the attempt's MRP artifact through the
 /// real runner-protocol routes.
 async fn upload_pack(app: &axum::Router, attempt: &ClaimedAttempt) {
+    upload_pack_of(app, attempt, READY.as_bytes()).await;
+}
+
+/// [`upload_pack`] for any pack's bytes.
+pub(crate) async fn upload_pack_of(app: &axum::Router, attempt: &ClaimedAttempt, content: &[u8]) {
     let auth = headers_ref(&attempt.auth);
-    let content = READY.as_bytes();
     let (status, manifest, _) = common::send_with_raw(
         app,
         "POST",
