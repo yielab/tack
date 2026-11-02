@@ -82,6 +82,7 @@ The `#[derive(...)]` line above the struct is a *derive macro* — the compiler 
 Methods go in a separate `impl` block:
 
 ```rust
+// crates/tack-core/src/workflow.rs
 impl WorkflowConfig {
     pub fn validate_transition(&self, from: &str, to: &str) -> Result<(), CoreError> {
         // self is a reference to the WorkflowConfig instance
@@ -94,14 +95,10 @@ impl WorkflowConfig {
 `&self` is like Python's `self` or Java's `this`. There is no `new` keyword — constructors are just associated functions that return `Self`:
 
 ```rust
-impl Item {
-    pub fn new(project_id: Uuid, title: String) -> Self {
-        Item {
-            id: Uuid::new_v4(),
-            project_id,
-            title,
-            // ...
-        }
+// crates/tack-db: the repository is built from a pool
+impl Repository {
+    pub fn new(pool: SqlitePool) -> Self {
+        Repository { pool }
     }
 }
 ```
@@ -244,17 +241,18 @@ use uuid::Uuid;
 
 `use` is like Python's `from x import y` or TypeScript's `import { y } from 'x'`. It brings names into scope without needing to write the full path every time.
 
-**Crates** are the compilation unit — analogous to npm packages, Python packages, or Maven artifacts. Tack's workspace has nine crates, plus a desktop shell built separately (see the [Architecture Overview](../index.md#1-the-layering-rule) and [Crate Tour](../crate-tour.md) for the full picture); the four at the center of the layering rule are:
+**Crates** are the compilation unit — analogous to npm packages, Python packages, or Maven artifacts. Tack's workspace has nine crates, plus a desktop shell built separately (see the [Architecture Overview](../index.md#1-the-layering-rule) and [Crate Tour](../crate-tour.md) for the full picture); the ones to know first are:
 
 ```
 crates/
 ├── tack-core/   # pure business logic, zero I/O
 ├── tack-db/     # database access layer
+├── tack-app/    # the rules of a run, and the background loops
 ├── tack-api/    # HTTP server
-└── tack-cli/    # command-line tool
+└── tack-cli/    # the single `tack` binary: server and command-line client
 ```
 
-Each crate has its own `Cargo.toml` (equivalent to `package.json` or `pom.xml`). A crate can depend on other crates in the workspace. `tack-api` depends on `tack-db` and `tack-core`; `tack-db` depends on `tack-core`. This hard boundary enforces the architectural rule that HTTP concerns do not leak into database code, and database concerns do not leak into pure business logic.
+Each crate has its own `Cargo.toml` (equivalent to `package.json` or `pom.xml`). A crate can depend on other crates in the workspace. `tack-api` depends on `tack-app`, `tack-db` and `tack-core`; `tack-db` depends on `tack-core` (and on `tack-protocol`, the contract it shares with the runner). `scripts/check-crate-graph.sh` fails on any edge the plan does not allow. This hard boundary enforces the architectural rule that HTTP concerns do not leak into database code, and database concerns do not leak into pure business logic.
 
 ---
 
@@ -267,6 +265,7 @@ Tack uses `thiserror` to define typed error enums, and `anyhow` in main/CLI code
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
+    // … a few of the variants:
     #[error("Item not found: {0}")]
     ItemNotFound(Uuid),
 
@@ -283,22 +282,24 @@ pub enum CoreError {
 
 The `#[error("...")]` attribute generates the `Display` implementation — the string you see in logs and API responses. The `{0}`, `{from}`, `{column}` are interpolated from the enum variant's fields.
 
-Each `CoreError` variant names a stable error code, and the code decides the HTTP status. The `ApiError` type in `tack-api` wraps `CoreError` and implements `IntoResponse`:
+Each `CoreError` variant names a stable error code, and the code decides the HTTP status. `CoreError::code()` in `tack-core` is the one table; the `ApiError` type in `tack-api` wraps `CoreError` and implements `IntoResponse`:
 
 ```rust
+// CoreError::code()
 CoreError::ItemNotFound(_)           => StableErrorCode::NotFound,                 // 404
 CoreError::InvalidTransition { .. }  => StableErrorCode::InvalidStatusTransition,  // 400
 CoreError::WipLimitExceeded { .. }   => StableErrorCode::WipLimitExceeded,         // 400
 ```
 
-This is exhaustive — if a new `CoreError` variant is added without handling it here, the code will not compile. That is the point.
+The `match` is exhaustive — if a new `CoreError` variant is added without a code, the code will not compile. That is the point.
 
 The `?` operator chains these cleanly:
 
 ```rust
-pub async fn update_item(/* ... */) -> ApiResult<Json<serde_json::Value>> {
-    let project = state.repo.get_project(project_id).await?;  // StoreError → ApiError
-    project.workflow.validate_transition(&old_status, &new_status)?;  // CoreError → ApiError
+pub async fn create_item(/* ... */) -> ApiResult<Json<serde_json::Value>> {
+    let project = state.repo.get_project(project_id).await?   // StoreError → ApiError
+        .ok_or_else(|| ApiError::NotFound(format!("Project {project_id} not found")))?;
+    let initial_status = project.workflow.initial_status()?;  // CoreError → ApiError
     // ...
 }
 ```
