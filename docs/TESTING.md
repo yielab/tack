@@ -359,6 +359,7 @@ through a browser. The suite, in `frontend/e2e/`:
 | Spec | Journey |
 | --- | --- |
 | `smoke.spec.ts` | Every primary surface renders without a blank screen or a page error |
+| `chrome-reachable.spec.ts` | At a laptop height the sidebar reaches its last links and the run dialog's footer is the last thing in the dialog |
 | `journey.spec.ts`, `table.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists; the drawer's Expand opens the item's page with its breadcrumb, properties, tabs and Copy link |
 | `brief.spec.ts` | A checklist line and a machine check on an item survive a reload |
 | `run-with-agent.spec.ts` | "Run with agent" from the board, the item and the sprint: required fields block submit, a run is created and shows up without navigation, the project's model default is sent unchanged |
@@ -375,77 +376,23 @@ files in the directory are recorders, not tests — `screenshots.spec.ts`, `reco
 `agent-assets.spec.ts` and `tutorial-assets.spec.ts` produce the README's and the book's images
 and GIFs, each through its own config. The default config ignores them and CI never runs them.
 
-**Live docket and prill suite.** `docket-prill.spec.ts` is not versioned: it lives in the
-git-ignored `onboarding-lab/e2e/` with `docket-prill-e2e.sh`, which builds `tack` with the SPA
-embedded, runs docket and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`) in a
-scratch `HOME`, and drives a project through the UI the way a person would. CI never runs it
-and never needs docket or prill; the three meet only here. A test that needs a model can fail on
-the local model alone, so read the log before blaming Tack. The script lists its knobs at the top;
-`DOCKET_PRILL_SKIP_BUILD=1` reuses the last build.
-
-The suite has four teams for tests 1 to 20. Three work in the fixture repository and call the local model
-(`saas-code`, `saas-content`, `saas-lights`); the fourth, `saas-notes`, works in a plain folder
-and runs no model: its pipeline is one wait of 25 seconds. Test 16 sends it a task through the
-board and asserts docket received no `baseRef` and no `prepare`, ended the task `done` with no
-branch, and that the run card and the Agents page show the team's steps. Test 17 holds a task of
-that team open during the wait and writes three rows in its `tack_proposals` set through docket's
-own records port (no model writes them), then asserts the attempt's `plan` artifact, accepts it
-through `POST /items/{id}/subtasks-from-plan` and checks the three items, their nesting, their
-blocker, their roles and their profile. It also asserts docket answered the team with `blueprint`
-and `pipeline.steps`. The rest of the suite is a real model's work and can fail on the model alone.
-
-Tests 21 to 27 prove a manager that works through the board. Two more teams are made for
-them: `saas-ops`, a folder team with one wait and no model (the second team an auto-started item goes to), and
-`saas-manager`, a lights-out team of two steps over a plain folder. The script declares in docket
-one `kind: service` named `tack` whose `baseUrl` is the Tack server on loopback and whose `hosts`
-is `["127.0.0.1"]`; it carries an `Authorization` header that references a docket secret, never a
-value. docket keeps reading and acting apart, so the first step (`analyst`) holds only the
-service's `digest` and the second (`actor`) only its `propose`, a `POST` and therefore docket's
-`send`.
-
-- **21** reads `features` from docket's `GET /health` and `GET /status.json`, records which of the
-  nine names it looks for (`taskCurrent`, `taskCursor`, `podMemory`, `readScope`, `conversation`,
-  `settledCursor`, `failureKinds`, `podPause`, `hopTimes`) it found in `summary.json`, with what
-  the board sees of the harness, and fails naming each one that is missing.
-- **22** issues an agent credential through Tack's API as the operator (scopes `read`, `propose`
-  and `converse` on the project), hands it to docket with `docket setup secret set --stdin`, and
-  asserts what docket holds: the service points at Tack's port, lists only `127.0.0.1`, names the
-  secret, and docket's secret store holds that credential and neither the operator's API token nor
-  the decision token.
-- **23** starts a thread with the manager's profile on screen and sends one message. It asserts, from
-  docket's trace and Tack's API and not from the model's words, that the first call of the turn was
-  the digest through the service, that the `propose` was parked for a person and ran only when the
-  person approved it on screen (the approval shows the whole call and no credential), that exactly
-  one change set waits, with the credential's name as its principal, the thread as its origin and
-  two `create` operations for two teams, and that the board has not changed.
-- **24** applies that change set on screen and asserts the two items exist, each for the profile of
-  its team, decided by the operator, and that nothing started.
-- **25** turns on the project's auto-start and asserts each item reached its own team at docket
-  and nothing else on the board was started.
-- **26** calls Tack with the credential itself: a direct write answers `403` naming the change-set
-  route, starting a run and listing credentials answer `403`, a proposal is kept as a waiting change
-  set with nothing applied, and the board is as it was.
-- **27** closes the thread through the API, waits for docket to let go of the turn's task, and scans
-  everything the run wrote for the credential's value.
-
-The model can skip the digest when the task text already carries one, which is why the first
-step's instructions say to call the service anyway; if a run fails at the order of the calls,
-that is the model's, and test 23 prints the calls it saw. A `propose` the model gets wrong is
-parked for a person again each time it is retried, so test 23 allows retries and asserts that
-only one `propose` was answered well and that exactly one change set exists. Test 13 lists the
-eight teams the script makes.
+**Live docket and prill suite.** `docket-prill-e2e.sh` and its `docket-prill.spec.ts` are not
+versioned: they live in the git-ignored `onboarding-lab/e2e/`. The script builds `tack` with the SPA
+embedded, runs docket and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`) in a scratch
+`HOME`, and drives a project through the UI the way a person would, including a manager that works
+through the board with an agent credential. CI never runs it and never needs docket or prill; the
+three meet only here. A test that needs a model can fail on the local model alone, so read the log
+before blaming Tack. The knobs are listed at the top of the script.
 
 `docket-prill-e2e.sh --check` needs no model and no container. It runs
-`scripts/capture-docket-fixtures.sh` against a real docket, compares the keys of docket's answers
-with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, compares
+`scripts/capture-docket-fixtures.sh` against a real docket and compares the keys of docket's answers
+with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`. It compares
 `docs/contracts/mrp-v1/fixtures/prill/` with prill's own contract fixtures, runs the
 `briefing_schema` test (`#[ignore]`d in CI because it needs `prill` on `PATH`), and runs the fake
-docket's tests against the captures, so a key docket sends that the fake does not, or the reverse,
-fails by name. It exits non-zero when anything drifted. What the captures cannot reach stays
-`constructed`: it needs a model's reply, an agent's call that leaves the machine, or a deadline of
-docket's that is hours long (`task-failed-approval-expired`), and each says so in its provenance.
-The refusals of a folder team (a `baseRef` or a `prepare` sent to it, `failureKind` `base_ref` and
-`prepare`) need none of those and are captured.
+docket's tests against the captures, so a key that docket sends and the fake does not, or the
+reverse, fails by name. It exits non-zero when anything drifted. What a capture cannot reach stays
+`constructed`, and its provenance says why: it needs a model's reply, an agent's call that leaves
+the machine, or a deadline of docket's that is hours long.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it
