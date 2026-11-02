@@ -23,7 +23,6 @@ const Merge: Component<{
   const settings = props.settings;
   const save = props.save;
   const blocked = () => settings()?.automatic_merge_blocked_by ?? [];
-  const blockedWhy = () => blocked().join('. ');
   const saveDomain = (index: number, patch: Partial<AutonomyDomain>) =>
     save({ domains: (settings()?.domains ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)) });
   const addDomain = () =>
@@ -32,9 +31,10 @@ const Merge: Component<{
   return (
     <Block id="automation-autonomy" testid="rung-merge">
       <div class="flex items-center gap-2">
-        <Heading>Autonomy level</Heading>
+        <Heading>Merge rules</Heading>
         <HelpHint label="Autonomy" help={HELP.autonomyLevel} />
       </div>
+      <Note>The level is chosen on the ladder above.</Note>
       <Show
         when={settings()}
         fallback={
@@ -45,34 +45,6 @@ const Merge: Component<{
       >
         {(s) => (
           <>
-            <div class="flex flex-col gap-2">
-              <For each={LEVELS}>
-                {(l) => {
-                  const off = () => l.value !== 'L3' && blocked().length > 0;
-                  return (
-                    <label class="flex items-start gap-2 text-sm" style={{ color: off() ? 'var(--color-text-tertiary)' : 'var(--color-text-primary)' }}>
-                      <input
-                        type="radio"
-                        name="autonomy-level"
-                        value={l.value}
-                        checked={s().level === l.value}
-                        disabled={off()}
-                        onChange={() => void save({ level: l.value })}
-                      />
-                      <span>
-                        <span class="font-semibold">{l.value}</span> — {l.sentence}
-                      </span>
-                    </label>
-                  );
-                }}
-              </For>
-              <Show when={blocked().length > 0}>
-                <p data-testid="autonomy-blocked" class="text-xs" style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}>
-                  L4 and L5 are off: {blockedWhy()}
-                </p>
-              </Show>
-            </div>
-
             <div class="flex items-center gap-2">
               <Switch
                 ariaLabel="Merge when moved to Done"
