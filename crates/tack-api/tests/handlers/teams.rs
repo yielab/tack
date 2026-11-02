@@ -210,3 +210,159 @@ async fn a_teams_activity_shows_work_outside_the_board_and_says_why_an_agent_can
     assert_eq!(got["reason"], "codex holds no team");
     assert_eq!(got["tasks"], json!([]));
 }
+
+/// An agent credential reads a team's activity through the real router, limited to its projects:
+/// the tasks the board started for another project's items and the work the board did not start
+/// stay out unless the credential may read every project. The operator sees all of it.
+#[tokio::test]
+async fn an_agent_credential_reads_a_teams_activity_limited_to_its_projects() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    let item_of = |project: &str| {
+        let project = project.to_owned();
+        async move {
+            let project: uuid::Uuid = project.parse().unwrap();
+            repo.create_item(
+                project,
+                "To Do",
+                tack_core::models::CreateItem {
+                    title: "Another task".into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .id
+            .to_string()
+        }
+    };
+    let other_project = repo
+        .create_project(
+            b.state.workspace_id,
+            tack_core::models::CreateProject {
+                name: "Other".into(),
+                description: None,
+                project_type: tack_core::models::ProjectType::Software,
+                template: None,
+                code_origin: Some(tack_core::models::CodeOrigin::Url),
+                repository: Some("https://example.test/other.git".into()),
+                default_branch: None,
+                workspace_mode: None,
+            },
+        )
+        .await
+        .unwrap()
+        .id
+        .to_string();
+    let other_item = item_of(&other_project).await;
+
+    let snapshot = json!({"harnesses": [
+        {"harness_kind": "docket", "installed_version": "0.3.0", "probe_error": null,
+         "probed_at": "2026-08-06T12:00:00Z",
+         "teams": [{"name": "writers", "profile": "lights-out", "violations": []}],
+         "features": {"cancel": {"support": "supported"}, "resume": {"support": "supported"},
+             "decisions": {"support": "supported"}, "artifacts": {"support": "supported"},
+             "usage": {"support": "supported"}, "activity": {"support": "supported", "reason": "the task list"}}},
+    ]})
+    .to_string();
+    seed::agent_runner_reporting(repo, "ru1", &snapshot).await;
+    for (task, on_board) in [
+        ("mine", Some(b.item_id.as_str())),
+        ("theirs", Some(other_item.as_str())),
+        ("from-the-cli", None),
+    ] {
+        repo.record_team_task(&TeamTaskReport {
+            runner_id: "ru1",
+            harness: "docket",
+            team: "writers",
+            task_ref: task,
+            on_board,
+            state: "running",
+            waits_on: None,
+            current_step: Some(r#"{"name":"implementer","role":"implementer"}"#),
+            changed_at: None,
+            reported_at: "2026-08-06T12:00:00+00:00",
+            steps: Vec::new(),
+        })
+        .await
+        .unwrap();
+    }
+
+    let credential = |name: &'static str, scopes: Value| {
+        let app = &b.app;
+        async move {
+            let (status, issued) = common::send(
+                app,
+                "POST",
+                "/api/agent-credentials",
+                json!({"name": name, "scopes": scopes}),
+                &operator_headers(),
+            )
+            .await;
+            assert_eq!(status, 200, "{issued}");
+            format!("Bearer {}", issued["secret"].as_str().unwrap())
+        }
+    };
+    let activity = |authorization: String| {
+        let app = &b.app;
+        async move {
+            let (status, got) = common::send(
+                app,
+                "GET",
+                "/api/teams/writers/activity",
+                Value::Null,
+                &[("authorization", authorization.as_str())],
+            )
+            .await;
+            let mut refs: Vec<String> = got["tasks"]
+                .as_array()
+                .map(|tasks| {
+                    tasks
+                        .iter()
+                        .map(|task| task["ref"].as_str().unwrap().to_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            refs.sort();
+            (status, refs, got)
+        }
+    };
+
+    // The operator sees every task the team holds.
+    let (status, refs, got) = activity("Bearer e2-mrp-operator-token".to_owned()).await;
+    assert_eq!(status, 200, "{got}");
+    assert_eq!(refs, ["from-the-cli", "mine", "theirs"]);
+
+    // `read` on one project: that project's task, not the other project's and not the work the
+    // board did not start.
+    let reader = credential(
+        "Reader",
+        json!([{"projects": [b.project_id], "capabilities": ["read"]}]),
+    )
+    .await;
+    let (status, refs, got) = activity(reader).await;
+    assert_eq!(status, 200, "{got}");
+    assert_eq!(refs, ["mine"], "{got}");
+    assert_eq!(got["supported"], true, "{got}");
+
+    // `read` on every project also sees the work the board did not start.
+    let everything = credential(
+        "Everything",
+        json!([{"all_projects": true, "capabilities": ["read"]}]),
+    )
+    .await;
+    let (status, refs, got) = activity(everything).await;
+    assert_eq!(status, 200, "{got}");
+    assert_eq!(refs, ["from-the-cli", "mine", "theirs"], "{got}");
+
+    // A credential that may not read any project is refused, as for the list of teams.
+    let proposer = credential(
+        "Proposer",
+        json!([{"projects": [b.project_id], "capabilities": ["propose"]}]),
+    )
+    .await;
+    let (status, _, got) = activity(proposer).await;
+    assert_eq!(status, 403, "{got}");
+}

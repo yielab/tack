@@ -758,7 +758,8 @@ GET /api/teams/{id}/activity
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say | `TeamActivityEntry` |
+| 200 | What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). An agent credential gets the tasks of the projects it may read, and the work the board did not start only if it may read every project. `supported` is `false`, with its reason, for an agent that cannot say | `TeamActivityEntry` |
+| 403 | An agent credential with the scope `read` on no project | `ErrorEnvelope` |
 | 404 | not_found (no active runner reports a team of that name) | — |
 
 ---
