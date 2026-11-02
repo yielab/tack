@@ -1,10 +1,10 @@
 # Administration and Security
 
-This page is for the person who decides who can reach Tack and how it is protected. After reading it you can set the API token, choose the allowed origins, expose Tack safely on a network, turn on cloud backup and webhooks, and set the log options.
+This page is for the person who decides who can reach Tack and how it is protected. After reading it you can set the API token, give an agent its own credential, choose the allowed origins, expose Tack safely on a network and send events to a webhook.
 
 Tack has no identity model: there are no user accounts, no sessions, and no per-user permissions. `assignee` is a free-text label on an item, not an account, and anyone can type any name into it. Every person who authenticates is the same single operator, via one shared token. Tack is built for one operator, or a small team willing to share that one secret, not for telling users apart. The one other kind of caller is an agent you hand a key to: an [agent credential](#agent-credentials), which is a key for software and not an account for a person.
 
-Tack is local-first by default. It binds to `127.0.0.1`, keeps everything in a single SQLite file, and on that loopback bind it creates a token of its own and requires it. This page covers what you set when you go beyond that: choosing the token, controlling network exposure, enabling cloud backups, wiring up webhooks, and tuning logs. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration.md) for how those are loaded.
+Tack is local-first by default. It binds to `127.0.0.1`, keeps everything in a single SQLite file, and on that loopback bind it creates a token of its own and requires it. This page covers what you set when you go beyond that. Every setting below is read from `tack.toml` or environment variables at startup; see [Configuration](configuration-reference.md) for how those are loaded and for every default.
 
 All examples assume the default base URL `http://127.0.0.1:3210`. The `curl` examples leave out the `Authorization` header that every call needs; see [Authentication](#authentication).
 
@@ -19,7 +19,7 @@ You can choose the token or let the server make one:
 - **You choose it.** Set `TACK_API_TOKEN` (or `api_token` in `tack.toml`) and restart the server.
 - **The server makes it.** On a loopback bind with no `TACK_API_TOKEN`, the server reads `api-token` from the directory of its database file, or creates it there on the first start (mode `0600`, one line). A server that cannot read or create the file does not start, and says which path failed. An in-memory database has no directory, so its token lives only in the process.
 
-Answering a run's questions from the Inbox needs a **second secret**, kept apart from the API token. The server keeps it the same way: on a loopback bind with no `TACK_EXECUTION_DECISION_TOKEN`, it reads `decision-token` beside `api-token`, or creates it on the first start (mode `0600`). The variable still wins. The desktop app hands it to its window, so nobody pastes it there. In a browser the Inbox asks for it once per session and names this file; open the file and paste its one line.
+Answering a run's questions needs a **second secret**, kept apart from the API token. The server keeps it the same way: on a loopback bind with no `TACK_EXECUTION_DECISION_TOKEN`, it reads `decision-token` beside `api-token`, or creates it on the first start (mode `0600`). The variable still wins. The desktop app hands it to its window, so nobody pastes it there. In a browser, **Waiting for you** and the question itself ask for it once per session and name this file; open the file and paste its one line.
 
 ```sh
 TACK_API_TOKEN='a-long-random-secret' tack serve
@@ -59,7 +59,7 @@ An agent that uses Tack on its own, for example through `tack mcp`, should not h
 
 The secret, which starts with `tack_agent_`, is shown once when you issue or rotate a credential, with a **Copy** button; Tack keeps only a hash of it and cannot show it again. The agent sends it the way the operator's token is sent, as `Authorization: Bearer <secret>`; for `tack mcp`, set `TACK_API_TOKEN` to the secret in the agent's configuration.
 
-An agent changes the board only through change sets: it cannot create or edit an item, write a comment or add a dependency by calling those routes, which answer `403` and name the change-set route. Through `tack mcp`, the tools that create, update, move and comment build a change set for it. The project's *Agents on the board* setting decides which changes apply at once and which wait for a person; the stricter of that and the credential's scopes wins. You set it in the project's **Settings → Automation**, under **Agents**, and the changes that wait appear in **Waiting for you** and on the project's **Change sets** page (see [When an agent proposes changes](../user-guide/reviewing-runs.md#when-an-agent-proposes-changes)).
+An agent changes the board only through change sets: it cannot create or edit an item, write a comment or add a dependency by calling those routes, which answer `403` and name the change-set route. Through `tack mcp`, the tools that create, update, move and comment build a change set for it. The project's *Agents on the board* setting decides which changes apply at once and which wait for a person; the stricter of that and the credential's scopes wins. You set it in the project's **Settings → Automation**, under **Agents**, and the changes that wait appear in **Waiting for you** and on the project's **Change sets** page (see [When an agent proposes changes](../user-guide/reviewing-runs.md#when-an-agent-proposes-changes)). **Agents → Add a manager** issues a credential for you and wires the rest; see [Managers and Threads](../user-guide/talking-with-a-manager.md#set-up-a-manager).
 
 What a credential cannot do, whatever its scopes:
 
@@ -69,29 +69,6 @@ What a credential cannot do, whatever its scopes:
 - It cannot sign as someone else. A comment an agent writes carries the credential's name as its author, whatever author the agent sent, and the items and links its change sets create or change show the same name.
 
 A credential expires 90 days after it is issued or rotated. **Rotate** gives it a new secret and 90 more days, and the old secret stops working at once. **Revoke** ends it for good; what it already wrote stays, signed with its name. An expired, revoked or unknown secret answers `401`, and the list shows when each credential was last used.
-
-## Triggers and managers
-
-A **trigger** wakes an agent profile on its own. It is either something that happens on a board (a run fails, a run waits for you, a question is asked, a task is created or moves, a change set has waited for you too long) or a time of day on chosen weekdays. You manage a project's triggers in **Settings → Automation**, under **Agents**: each one has a name, the profile it wakes, an on switch, how long things must stay quiet before it starts, and the most runs it may start in a day.
-
-- **One run takes everything since the last one.** Events that arrive close together wait until things have been quiet for the trigger's quiet period, and then start one run that is told about all of them (up to 50, with a count of the rest) together with the digest. If events never stop, the run starts after an hour anyway.
-- **Never twice at once.** A trigger does not start a run while its previous run is still going, and it stops for the day when it has started as many runs as its cap allows; what happened meanwhile waits for the next run.
-- **An agent's own changes never wake it.** When a trigger names a credential, anything that credential changed on the board, such as a change set it applied, is left out of that profile's triggers, so a manager does not wake itself. What you change does wake it.
-- **Limits still apply.** A run a trigger starts is an ordinary run under the profile's token limit and the project's rules. A weekday digest is read in the time zone of the browser that made it, and its zone is shown beside the time.
-
-Triggers a profile does not need can be turned off with the switch or deleted; a deleted trigger takes its unread events with it.
-
-### Add a manager
-
-**Agents → Add a manager** sets up a profile that looks after one project in a single step. You choose the project and the profile (one you have, or a new one on the agent you pick). Tack then:
-
-1. makes the profile, if you asked for a new one, with general instructions that name nothing of your project;
-2. issues a credential with the scopes **Read**, **Propose** and **Converse** on that project;
-3. opens a thread with the profile, so you can talk with it;
-4. adds three triggers: failed runs (once things are quiet for two minutes, at most six runs a day), a change set that has waited an hour (at most four a day) and a digest on weekdays at 09:00 (once a day);
-5. shows the MCP configuration for the agent, with the credential's secret in it.
-
-Copy the configuration now: the secret is shown once, and Tack keeps only a hash. For Claude Code, save it as `.mcp.json` in the folder the agent works in; other agents take the same `command`, `args` and `env`. The project's **Agents on the board** setting is left as it was, **Propose** unless you changed it, so every change the manager wants waits for you. Nothing here is special: the profile, credential, thread and triggers appear with the others in Settings and can be changed or removed one by one.
 
 ## CORS
 
@@ -146,85 +123,6 @@ TACK_MAX_BODY_SIZE=5242880 tack serve   # raise to 5 MB
 ```
 
 The file-upload endpoint (`POST /api/items/{id}/attachments`) is exempt from this limit and is always capped at 50 MB, regardless of `TACK_MAX_BODY_SIZE`.
-
----
-
-## Cloud backup (S3-compatible)
-
-Tack can push backup bundles (the database and the attachments) to any S3-compatible object store — AWS S3, Cloudflare R2, Backblaze B2, or MinIO. Remote backup is **enabled only when a bucket, an access key, and a secret key are all present**. For local snapshot/restore, see [Backup and Restore](backup-restore.md).
-
-### Configuration sources
-
-Two layers feed the effective config:
-
-1. **Environment defaults** (`TACK_BACKUP_*`), applied at startup.
-2. **UI overrides** (Settings → Cloud Backup), stored in the board's database. Until cloud backup is set
-   up, the page shows its buttons disabled with the reason "Set up cloud backup first".
-
-The UI values override the environment for these fields: endpoint, bucket, region, access key, secret key, prefix, retention. A blank UI field clears the override and falls back to the environment default. The one exception is the auto-backup **interval**, which is environment-only (`TACK_BACKUP_INTERVAL_SECS`) and applied at startup — it is not editable from the UI.
-
-The variables are `TACK_BACKUP_ENDPOINT` (omit for AWS S3), `TACK_BACKUP_BUCKET`, `TACK_BACKUP_REGION`
-(`auto` by default; AWS needs the real region), `TACK_BACKUP_ACCESS_KEY`, `TACK_BACKUP_SECRET_KEY` (never logged),
-`TACK_BACKUP_PREFIX` (default `tack`), `TACK_BACKUP_INTERVAL_SECS` (omit for manual-only; values under 60 are
-raised to 60) and `TACK_BACKUP_RETENTION` (default `10`, the bundles kept after each upload). Their defaults are in the
-[Configuration Reference](configuration-reference.md).
-
-Example (Cloudflare R2):
-
-```sh
-TACK_BACKUP_ENDPOINT='https://<account>.r2.cloudflarestorage.com' \
-TACK_BACKUP_BUCKET='tack-backups' \
-TACK_BACKUP_REGION='auto' \
-TACK_BACKUP_ACCESS_KEY='...' \
-TACK_BACKUP_SECRET_KEY='...' \
-TACK_BACKUP_INTERVAL_SECS=86400 \
-tack serve
-```
-
-### Reading and writing settings via the API
-
-`GET /api/settings/backup` returns the effective config. The secret key is never sent to clients — it is replaced by a boolean `secret_key_set`:
-
-```sh
-curl http://127.0.0.1:3210/api/settings/backup
-```
-
-```json
-{
-  "configured": true,
-  "endpoint": "https://<account>.r2.cloudflarestorage.com",
-  "bucket": "tack-backups",
-  "region": "auto",
-  "access_key": "...",
-  "secret_key_set": true,
-  "prefix": "tack",
-  "retention": 10
-}
-```
-
-`PUT /api/settings/backup` saves overrides. Sending a blank `secret_key` keeps the stored secret (so the masked UI field can be left untouched); any other blank string field clears that override and reverts to the environment default.
-
-### Manual backup endpoints
-
-When remote backup is configured, these endpoints operate on demand. If it is not configured they return `409 Conflict`.
-
-| Method & path | Action |
-|---------------|--------|
-| `POST /api/backup/remote` | Create a bundle and upload it; prunes to `retention` afterward |
-| `GET /api/backup/remote` | List remote backups, newest first |
-| `POST /api/backup/remote/restore` | Download a bundle and **stage** it for the next restart |
-
-Restore is staged, not live — restart the server to apply it. Omit the body (or `key`) to restore the latest backup, or target a specific object:
-
-```sh
-# Upload now
-curl -X POST http://127.0.0.1:3210/api/backup/remote
-
-# Restore a specific object (then restart the server)
-curl -X POST http://127.0.0.1:3210/api/backup/remote/restore \
-  -H 'Content-Type: application/json' \
-  -d '{"key":"tack/tack-backup-2026-06-26T12-00-00Z.tar.zst"}'
-```
 
 ---
 
@@ -304,22 +202,6 @@ tack serve
 
 ---
 
-## Logging
+## Logs and every other setting
 
-Logging is controlled by three variables. Secrets — the API token, the webhook secret, the backup secret key, and the GitHub token — are never written to logs at any level.
-
-`TACK_LOG_LEVEL` sets the verbosity (`trace`, `debug`, `info` by default, `warn`, `error`), `TACK_LOG_JSON=true`
-emits structured JSON lines for a log aggregator, and `TACK_LOG_FILE` also writes the log to a file (standard output
-still gets it).
-
-```sh
-TACK_LOG_LEVEL=debug TACK_LOG_JSON=true TACK_LOG_FILE=/var/log/tack.log tack serve
-```
-
----
-
-## Every setting
-
-The [Configuration Reference](configuration-reference.md) lists each `TACK_*` variable with its default. For the
-workflow-facing side of backups, see [Backup and Restore](backup-restore.md); for proxy and TLS setup, see
-[Deployment](deployment.md).
+Logging has three variables (`TACK_LOG_LEVEL`, `TACK_LOG_JSON`, `TACK_LOG_FILE`). Secrets (the API token, the webhook secret, the backup secret key and the GitHub token) are never written to logs at any level. The [Configuration](configuration-reference.md) page lists each `TACK_*` variable with its default and the debugging recipes. For cloud backup, see [Backup & Restore](backup-restore.md#remotecloud-backup); for proxy and TLS setup, see [Deployment](deployment.md).
