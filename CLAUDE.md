@@ -81,17 +81,28 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   members). Front end except N (`on_start_status`) and S (`GET /api/executions?project_id=` with `latest_hop`).
   The live suite passes its 20 tests against docket `9cdd6253` on the local model; two Opus audits of its screenshots
   drove a polish pass and a review pass; the second audit's list of fixes is what is left.
-- **Accepted 2026-11-01, cards P, M, A, C built in `develop`:** Phase 85 (`docs/plans/phase-85.md`, ADR 0034) — a manager is a profile
+- **Built 2026-11-02, in `develop`:** Phase 85 (`docs/plans/phase-85.md`, ADR 0034) — a manager is a profile
   that works through the board, with no "manager" type in the code: every caller a principal (agent credentials
   with scopes, amends ADR 0004), change sets as an agent's only write path with an "Agents on the board" rung,
   team activity (incl. work the board did not start), a computed digest, threads where each message is a turn
   (`features.converse`: continues or replays), triggers on domain events. The Create rung exists (off by
-  default, capped; amends ADR 0032 d4) and a credential may name every project. Waits on Phase 84's S, I, J.
-  Six docket asks, all pulls, none blocking.
-- **Accepted 2026-11-02, no card started:** Phase 86 (`docs/plans/phase-86.md`, no ADR; amends ADR 0033 d1) — a person sets a
+  default, capped; amends ADR 0032 d4) and a credential may name every project. Cards P, M, E, C, A, D, U, W, T,
+  TU, R and G are built. Through docket a manager runs at L3/L4: a docket `send` tool always asks a person and at L5
+  an `ask` is denied at once, so a `propose` that is a `send` cannot run at L5; whether it stays a `send` is the
+  maintainer's call. The live suite (27 tests) passes in one run with Claude Haiku 5.5 against docket `a268257b` (2026-11-02;
+  18 tasks, about 130 000 counted tokens), and `--check` reports no drift.
+- **Built 2026-11-02, in `develop`:** Phase 86 (`docs/plans/phase-86.md`, no ADR; amends ADR 0033 d1) — a person sets a
   task's status and the agents report its work: the six automatic status moves are removed with their settings,
-  auto-start starts a task once and moves nothing, and the screen shows "Status" and "Work" apart. Status rules
-  (a rule builds a change set) are a future, optional idea in the roadmap.
+  auto-start starts a task once and moves nothing, and the screen shows "Status" and "Work" apart (cards A, B, C).
+  Status rules (a rule builds a change set) are a future, optional idea in the roadmap.
+- **Built 2026-11-02, in `develop`:** docket's Phase 58 (API still 6, all additive and negotiated by `features`):
+  `settledCursor` (a question answered at docket's own CLI closes in Tack as "Answered in docket"; the runner's
+  `answered-elsewhere` operation), `failureKinds` (a spent team budget reads as such), `podPause` (a paused team
+  says so; docket has no route to resume it) and `hopTimes` (a step says how long it took). Plus the third audit
+  of the live suite's screenshots: a refused run reads "Not started" and a reject-review says so, the board sorts
+  needs-you first, the item drawer's status is one control that opens the menu, drawer sections fold
+  (`shared/ui/Fold.tsx`), and dependencies were updated except `@axe-core/playwright` (4.14.0 fails 25 accessibility
+  tests until two buttons carry their visible text in their accessible name).
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
