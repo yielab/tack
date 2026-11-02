@@ -341,15 +341,19 @@ export function neverStarted(attempt: { state: string; terminal_reason?: unknown
 
 /** The one status an attempt shows: its review verdict, then what its outcome
  *  says, then its lifecycle state. The run's heading shows its latest
- *  attempt's, so a run never shows two states at once. */
+ *  attempt's, so a run never shows two states at once. `recommendation` is the
+ *  verifier's call, when its pack has been read: a run it says to reject is not
+ *  announced as a plain success. */
 export function describeAttemptStatus(
   attempt: AttemptDelivery,
   review: AttemptSummary['review'] | undefined = null,
+  recommendation?: 'merge' | 'review' | 'reject',
 ): { label: string; tone: StateTone } {
   if (review && needsVerdict(attempt)) {
     return review.verdict === 'accepted' ? { label: 'Accepted', tone: 'success' } : { label: 'Rejected', tone: 'neutral' };
   }
   if (isReviewableAttempt(attempt)) {
+    if (recommendation === 'reject') return { label: 'Finished — the verifier says reject, needs your review', tone: 'warning' };
     return attemptPatchBytes(attempt.terminal_reason) > 0
       ? { label: 'Finished — needs your review', tone: 'warning' }
       : { label: 'Finished — changes could not be read, needs your review', tone: 'warning' };

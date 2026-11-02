@@ -209,7 +209,7 @@ const AttemptRow: Component<{
   // submitted here, then the refetched attempt's.
   const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
   const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
-  const status = () => describeAttemptStatus(props.attempt, review());
+  const status = () => describeAttemptStatus(props.attempt, review(), mrp.pack()?.recommendation.decision);
   // The merge state as last read: the prop's until a merge is pressed here, then the refetched attempt's.
   const [freshMerge, setFreshMerge] = createSignal<AttemptSummary['merge'] | undefined>(undefined);
   const merge = () => freshMerge() ?? props.attempt.merge;

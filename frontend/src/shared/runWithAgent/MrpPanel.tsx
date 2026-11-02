@@ -243,6 +243,9 @@ export const MrpVerdict: Component<{ pack: MrpPack }> = (props) => (
       <Badge tone={RISK_TONE[props.pack.risk.tier] ?? 'neutral'}>Risk: {props.pack.risk.tier}</Badge>
     </div>
     <p class="text-sm" title={plainLine(props.pack.recommendation.rationale).raw} style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+      <Show when={props.pack.recommendation.decision === 'reject'}>
+        <strong>The verifier recommends rejecting this run: </strong>
+      </Show>
       {plainLine(props.pack.recommendation.rationale).text}
     </p>
   </div>
