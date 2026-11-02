@@ -7,8 +7,6 @@ import { flush } from '../../test/flush';
 const disposers: Array<() => void> = [];
 // The files the mocked run left; a test that wants a pack puts one here.
 let artifacts: unknown[] = [];
-// The pack the mocked run's /mrp answers with, when a test wants the verifier's call.
-let mrpResponse: unknown = null;
 
 const ATTEMPT = {
   attempt_id: 'att-1', request_id: 'req-1', attempt_number: 1, runner_id: 'runner-1', fencing_token: 1,
@@ -34,7 +32,6 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
   vi.spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith('/decisions')) return new Response(JSON.stringify({ protocol_version: 1, data: decisions }), { status: 200 });
-    if (url.endsWith('/mrp')) return new Response(JSON.stringify(mrpResponse), { status: 200 });
     if (url.includes('/artifacts')) return new Response(JSON.stringify({ protocol_version: 1, data: artifacts }), { status: 200 });
     if (url.includes('/events')) return new Response(JSON.stringify({ protocol_version: 1, data: events }), { status: 200 });
     if (url.includes('/attempts')) return new Response(JSON.stringify({ protocol_version: 1, data: attempts }), { status: 200 });
@@ -67,7 +64,6 @@ function mount(executions: unknown[], onOpen = () => {}, attempts: unknown[] = [
 
 afterEach(() => {
   artifacts = [];
-  mrpResponse = null;
   while (disposers.length) disposers.pop()!();
   vi.restoreAllMocks();
 });
@@ -446,13 +442,30 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(buttonsOf(panel(c)).map((b) => b.textContent)).toContain('Run again');
   });
 
-  it('a run the verifier says to reject is still Ready for review, and the line under it says what the verifier called', async () => {
+  it('a run the verifier says to reject is still Ready for review, and the line under it says what the verifier called, read from the run and not from its pack', async () => {
     artifacts = [{ artifact_id: 'a3', kind: 'mrp', name: 'pack.json', media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-10-08T12:02:00Z' }];
-    mrpResponse = { pack: { recommendation: { decision: 'reject', rationale: 'prill: reject' }, risk: { tier: 'low', reasons: [] } }, review: null };
-    const c = mount([RUN]);
+    const c = mount([{ ...RUN, verifier_recommendation: 'reject' }]);
     await settle();
     expect(banner(c)).toBe('Ready for reviewNeeds your review');
     expect(c.querySelector('[data-testid="latest-run-status"]')!.textContent).toContain('the verifier says reject');
+    const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(asked.some((url) => url.endsWith('/mrp'))).toBe(false);
+  });
+
+  it('a run with no recommendation on its summary says nothing about the verifier', async () => {
+    artifacts = [{ artifact_id: 'a3', kind: 'mrp', name: 'pack.json', media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-10-08T12:02:00Z' }];
+    const c = mount([{ ...RUN, verifier_recommendation: null }]);
+    await settle();
+    expect(banner(c)).toBe('Ready for reviewNeeds your review');
+    expect(c.querySelector('[data-testid="latest-run-status"]')!.textContent).not.toContain('the verifier says');
+  });
+
+  it('a run whose summary says it never started reads Not started, whatever its attempt carries', async () => {
+    const refused = { ...ATTEMPT, state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'This team may go no further than L3' } };
+    const c = mount([{ ...RUN, state: 'failed', never_started: true }], () => {}, [refused]);
+    await settle();
+    expect(banner(c)).toBe('Not started');
+    expect(filled(panel(c))).toEqual(['Run again']);
   });
 
   it('a run turned away before it started says Not started, and Run again is its one action', async () => {
