@@ -42,7 +42,6 @@ pub mod local_runner;
 pub mod loop_config;
 pub mod merge;
 pub mod model_policy_wiring;
-pub mod mrp;
 pub mod observability;
 pub mod ports;
 pub mod pull_request;

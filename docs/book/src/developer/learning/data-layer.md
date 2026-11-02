@@ -229,55 +229,6 @@ If the JSON is malformed (e.g. a migration corrupted it), this returns `StoreErr
 
 ---
 
-## Auto-complete: check_and_update_parent_status
-
-When an item moves to a Done status, Tack automatically checks if all siblings are also done. If so, the parent is updated to Done too. This logic lives in the data layer because it requires querying sibling state:
-
-```rust
-// From repo/items.rs
-
-pub async fn siblings_all_done(
-    &self,
-    parent_id: Uuid,
-    done_status: &str,
-) -> Result<bool, StoreError> {
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM items WHERE parent_id = ?"
-    )
-    .bind(parent_id.to_string())
-    .fetch_one(self.pool()).await?;
-
-    if total == 0 { return Ok(false); }
-
-    let not_done: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM items WHERE parent_id = ? AND status != ?"
-    )
-    .bind(parent_id.to_string())
-    .bind(done_status)
-    .fetch_one(self.pool()).await?;
-
-    Ok(not_done == 0)
-}
-```
-
-The handler in `items.rs` calls this after every successful status update:
-
-```rust
-// After update_item succeeds:
-if let Some(parent_id) = item.parent_id
-    && item.status != old_status
-    && proj.workflow.is_done_status(&item.status)
-    && let Ok(all_done) = state.repo.siblings_all_done(parent_id, done_status).await
-    && all_done
-{
-    let _ = state.repo.check_and_update_parent_status(parent_id, done_status).await;
-}
-```
-
-The `let _` and the fact that errors are ignored (`let _ = ...`) is intentional — this is a best-effort feature. If the parent update fails for any reason, the primary operation (the child's status change) still succeeds. That is the correct tradeoff for an auto-complete feature.
-
----
-
 ## Testing with in-memory SQLite
 
 Because every repository method reads its pool from `self`, a test can hand it an in-memory SQLite database. `tack-test-support` does that in one call:

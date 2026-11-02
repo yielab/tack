@@ -59,7 +59,7 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
     .await
     .expect("profile");
     let snapshot = format!(
-        r#"{{"request_id":"req-viewed","item_id":"{item_id}","idempotency_key":"k","created_by":{{"source":"test","subject_id":"viewed"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model":null,"repository":{{"kind":"git","remote":"https://example.test/v.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
+        r#"{{"request_id":"req-viewed","item_id":"{item_id}","idempotency_key":"k","created_by":{{"source":"test","subject_id":"viewed"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model":null,"repository":{{"kind":"git","remote":"https://example.test/v.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"environment":{{}},"metadata":{{}}}}"#
     );
     repo.enqueue_execution(
         NewExecutionRequest {
@@ -78,7 +78,6 @@ async fn claimed_attempt_with_a_decision() -> (Repository, FakeClock) {
             permission_policy: r#"{"tools":[],"network":false}"#,
             timeout_seconds: Some(60),
             budgets: "{}",
-            status_map_policy_id: None,
             environment: "{}",
             metadata: "{}",
             request_snapshot: &snapshot,

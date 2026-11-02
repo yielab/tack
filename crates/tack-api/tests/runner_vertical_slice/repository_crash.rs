@@ -147,7 +147,6 @@ fn request<'a>(item_id: &'a str, request_snapshot: &'a str) -> NewExecutionReque
         permission_policy: r#"{"tools":[],"network":false}"#,
         timeout_seconds: Some(60),
         budgets: "{}",
-        status_map_policy_id: None,
         environment: "{}",
         metadata: "{}",
         request_snapshot,
@@ -175,7 +174,7 @@ fn request_snapshot(item_id: &str, clock: &FakeClock) -> String {
         },
         "permission_policy": {"tools": [], "network": false},
         "timeout_seconds": 60,
-        "budgets": {}, "status_map_policy_id": null,
+        "budgets": {},
         "environment": {}, "metadata": {}
     })
     .to_string()

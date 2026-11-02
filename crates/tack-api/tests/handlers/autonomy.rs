@@ -226,7 +226,7 @@ pub(crate) async fn finished_attempt(b: &Board, setup: &Setup) -> ClaimedAttempt
             .await
             .unwrap();
     }
-    let a = request_and_claim(&b.app, &b.item_id, "a2", None).await;
+    let a = request_and_claim(&b.app, &b.item_id, "a2").await;
     accept_and_start(&b.app, &a).await;
     let mut pack: Value = serde_json::from_str(READY).unwrap();
     pack["stages"] = setup
@@ -592,7 +592,7 @@ async fn a_finished_item_or_a_replaced_run_is_never_merged_by_itself() {
             }
             _ => {
                 // A newer run of the same item makes this attempt a replaced one.
-                let _ = request_and_claim(&b.app, &b.item_id, "a2-newer", None).await;
+                let _ = request_and_claim(&b.app, &b.item_id, "a2-newer").await;
             }
         }
         tick(&b.state).await;
@@ -969,7 +969,7 @@ async fn an_attempt_that_needed_a_person_offers_a_run_at_l3_and_says_when_it_can
         let prill = fake_prill(root.path());
         let b = board(root.path(), None, &prill).await;
         let repo = &b.state.repo;
-        let a = request_and_claim(&b.app, &b.item_id, "rerun", None).await;
+        let a = request_and_claim(&b.app, &b.item_id, "rerun").await;
         seed::project_autonomy_level(repo, &b.project_id, level).await;
         seed::execution_request_harness(repo, &a.request_id, harness).await;
         if let Some(team) = team {
@@ -1031,7 +1031,7 @@ async fn a_docket_run_created_at_l3_keeps_that_level_and_any_other_run_is_refuse
     let root = tempfile::tempdir().unwrap();
     let prill = fake_prill(root.path());
     let b = board(root.path(), None, &prill).await;
-    let a = request_and_claim(&b.app, &b.item_id, "cap", None).await;
+    let a = request_and_claim(&b.app, &b.item_id, "cap").await;
     let profile =
         tack_db::queries::execution_requests::request_snapshot(&b.state.repo, &a.request_id)
             .await
@@ -1049,7 +1049,6 @@ async fn a_docket_run_created_at_l3_keeps_that_level_and_any_other_run_is_refuse
             key,
             &a.runner_id,
             profile.as_str().unwrap(),
-            None,
         );
         body["requested_harness_kind"] = json!(harness);
         body["autonomy"] = json!(autonomy);

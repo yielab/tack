@@ -639,6 +639,17 @@ fn check_automation(
     problems: &mut Vec<String>,
     warnings: &mut Vec<String>,
 ) {
+    for (key, given) in [
+        ("on_start_status", auto.on_start_status.take()),
+        ("on_finish_status", auto.on_finish_status.take()),
+    ] {
+        if given.is_some() {
+            warnings.push(format!(
+                "automation.{key} is {}",
+                crate::models::STATUS_SET_BY_A_PERSON
+            ));
+        }
+    }
     let origin = auto.code_origin.as_deref().map(str::trim);
     if let Some(origin) = origin
         && !["folder", "new_folder", "url", "none"].contains(&origin)
@@ -698,26 +709,6 @@ fn check_automation(
             .find(|s| s.name.eq_ignore_ascii_case(status.trim()))
             .map(|s| s.name.clone())
     };
-    if let Some(status) = auto.on_finish_status.as_deref() {
-        match in_workflow(status) {
-            Some(found) => auto.on_finish_status = Some(found),
-            None => problems.push(format!(
-                "automation.on_finish_status \"{}\" is not a status of the workflow ({})",
-                status.trim(),
-                board.workflow.status_names().join(", ")
-            )),
-        }
-    }
-    if let Some(status) = auto.on_start_status.as_deref() {
-        match in_workflow(status) {
-            Some(found) => auto.on_start_status = Some(found),
-            None => problems.push(format!(
-                "automation.on_start_status \"{}\" is not a status of the workflow ({})",
-                status.trim(),
-                board.workflow.status_names().join(", ")
-            )),
-        }
-    }
     if let Some(autonomy) = auto.autonomy.as_mut() {
         if let Some(level) = autonomy.level.as_deref() {
             autonomy.level = Some(lowered_level(
@@ -954,8 +945,8 @@ pub fn to_bundle(parts: &Parts<'_>) -> Outline {
             .and_then(|id| profile_by_id.get(id))
             .map(|p| p.name.clone()),
         default_model: project.default_model.clone(),
-        on_finish_status: project.on_finish_status.clone(),
-        on_start_status: project.on_start_status.clone(),
+        on_finish_status: None,
+        on_start_status: None,
         definition_of_done: project.definition_of_done.clone(),
         autonomy: parts.autonomy.clone(),
         auto_start: Some(parts.auto_start.clone()),

@@ -159,11 +159,11 @@ crates/tack-db/src`). Write-first methods are fine as they are. The shared in-me
 can mask these races, so prove a new concurrency test load-bearing against a file-backed database
 by reverting the fix and watching it fail.
 
-**Parent status follows its children.** When an item moves to a `Done`-category status, the
-handler calls `propagate_parent_completion` (`tack-api/src/handlers/items.rs`), which calls
-`Repository::check_and_update_parent_status`: if every sibling is done, the parent moves to done
-too. The check does not repeat for the grandparent. It is best-effort: a failure there never fails the
-move that triggered it.
+**Only a person writes an item's status.** A run that starts or ends, a pack that is accepted and a
+child that is finished write nothing to `items.status`: the status moves by a person's edit, by a
+change set that is applied or by an imported file. A status change a person makes still starts the
+recurrence, the GitHub sync and, into Done, the merge (`after_update` in
+`tack-api/src/handlers/items.rs`).
 
 **Search and tags.** Tags are JSON arrays in SQLite. The `items_fts` FTS5 table indexes titles,
 descriptions and tags, and triggers keep it in step with `items`.

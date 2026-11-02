@@ -103,7 +103,6 @@ pub async fn start_test_run(
         environment: json!({}),
         metadata: json!({}),
         timeout_seconds: Some(TIMEOUT_SECONDS),
-        status_map_policy_id: None,
         verify: None,
         push_branch: None,
         autonomy: None,

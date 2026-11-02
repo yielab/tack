@@ -179,8 +179,7 @@ async fn an_agents_change_set_is_announced_when_it_applies_with_the_agents_princ
 #[tokio::test]
 async fn a_run_that_starts_and_finishes_announces_each_once_with_the_runner() {
     let board = board().await;
-    let attempt =
-        request_and_claim(&board.app, &board.item, "events", Some("done_on_success")).await;
+    let attempt = request_and_claim(&board.app, &board.item, "events").await;
     let mut events = board.bus.subscribe();
 
     accept_and_start(&board.app, &attempt).await;
@@ -208,11 +207,7 @@ async fn a_run_that_starts_and_finishes_announces_each_once_with_the_runner() {
     assert!(
         matches!(
             &facts[..],
-            [
-                Fact::RunStarted { .. },
-                Fact::RunFinished { .. },
-                Fact::ItemMoved { to, .. },
-            ] if to == "Done"
+            [Fact::RunStarted { .. }, Fact::RunFinished { .. }]
         ),
         "{facts:?}"
     );
@@ -226,7 +221,7 @@ async fn a_run_that_starts_and_finishes_announces_each_once_with_the_runner() {
 #[tokio::test]
 async fn a_runners_question_opens_a_decision_and_parks_the_run_once_over_http() {
     let board = board().await;
-    let attempt = request_and_claim(&board.app, &board.item, "ask", None).await;
+    let attempt = request_and_claim(&board.app, &board.item, "ask").await;
     accept_and_start(&board.app, &attempt).await;
     let mut events = board.bus.subscribe();
     let question = json!({

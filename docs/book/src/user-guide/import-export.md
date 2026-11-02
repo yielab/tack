@@ -83,8 +83,6 @@ sprints:
 
 automation:
   default_profile: My SaaS content writer
-  on_start_status: En curso
-  on_finish_status: En revisión
   definition_of_done: >
     Content pieces carry their dialect and read aloud without a stumble.
   auto_start:

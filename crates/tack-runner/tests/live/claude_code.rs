@@ -113,7 +113,6 @@ fn spec_with(
         permission_policy: permission_policy(tools, network),
         timeout_seconds: 60,
         budgets: serde_json::json!({}),
-        status_map_policy_id: None,
         environment,
         metadata: serde_json::json!({}),
         brief: None,

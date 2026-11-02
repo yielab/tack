@@ -30,7 +30,6 @@ pub struct NewExecutionRequest<'a> {
     pub permission_policy: &'a str,
     pub timeout_seconds: Option<i64>,
     pub budgets: &'a str,
-    pub status_map_policy_id: Option<&'a str>,
     pub environment: &'a str,
     pub metadata: &'a str,
     pub request_snapshot: &'a str,
@@ -359,7 +358,6 @@ pub(super) fn parse_execution_request_snapshot(
         .as_u64()
         .ok_or_else(|| snapshot_error("timeout_seconds must be u64"))?;
     snapshot_object(snapshot_field(root, "budgets")?, "budgets")?;
-    snapshot_nullable_string(root, "status_map_policy_id")?;
     let environment = snapshot_object(snapshot_field(root, "environment")?, "environment")?;
     for value in environment.values() {
         let environment_value = snapshot_object(value, "environment value")?;
@@ -410,8 +408,6 @@ pub(super) fn validate_execution_request_snapshot(
             != Some(snapshot_string(root, "requested_harness_kind")?.as_str())
         || input.requested_model.map(str::to_owned)
             != snapshot_nullable_string(root, "requested_model")?
-        || input.status_map_policy_id.map(str::to_owned)
-            != snapshot_nullable_string(root, "status_map_policy_id")?
     {
         return Err(refused_snapshot(
             "requested fields contradict normalized request",
@@ -794,15 +790,15 @@ pub(super) async fn enqueue_in(
         "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key, \
          request_fingerprint, selector_kind, selector_id, agent_profile_id, agent_profile_snapshot, \
          requested_harness_kind, requested_model, repository_snapshot, \
-         permission_policy, timeout_seconds, budgets, status_map_policy_id, environment, metadata, request_snapshot, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         permission_policy, timeout_seconds, budgets, environment, metadata, request_snapshot, created_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(input.id).bind(input.item_id).bind(input.idempotency_scope).bind(input.idempotency_key)
     .bind(input.request_fingerprint).bind(input.selector_kind).bind(input.selector_id)
     .bind(input.agent_profile_id).bind(input.agent_profile_snapshot).bind(input.requested_harness_kind)
     .bind(input.requested_model).bind(input.repository_snapshot)
     .bind(input.permission_policy).bind(input.timeout_seconds).bind(input.budgets)
-    .bind(input.status_map_policy_id).bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(now).bind(now)
+    .bind(input.environment).bind(input.metadata).bind(request_snapshot).bind(now).bind(now)
     .execute(&mut **tx).await?;
     Ok(EnqueueResult::Created(input.id.to_string()))
 }

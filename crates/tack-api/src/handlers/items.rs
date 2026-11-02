@@ -286,9 +286,9 @@ pub async fn update_item(
 }
 
 /// Everything that follows a saved change to an item, the person's route and a change set's
-/// alike: the board's event channel (and with it the WebSocket) and the webhook hear of it, a finished child may finish its
-/// parent, a closed recurring task makes the next one, a linked GitHub issue follows, and
-/// into Done the finished run is merged when the project asks for it. `over_mcp` says the
+/// alike: the board's event channel (and with it the WebSocket) and the webhook hear of it, a
+/// closed recurring task makes the next one, a linked GitHub issue follows, and into Done the
+/// finished run is merged when the project asks for it. `over_mcp` says the
 /// change came over MCP, which the merge holds back for a person.
 pub(crate) async fn after_update(
     state: &AppState,
@@ -317,9 +317,6 @@ pub(crate) async fn after_update(
             }),
         );
     }
-
-    // Auto-propagate parent status when all siblings reach Done
-    propagate_parent_completion(state, item, old_status).await;
 
     // A recurring task that was just closed makes the next one.
     create_next_recurrence(state, principal, &project.workflow, item, old_status).await;
@@ -454,24 +451,6 @@ pub(crate) async fn maybe_sync_github(state: &AppState, item: &Item, old_status:
             tracing::warn!(repo = %repo, issue = number, error = %e, "GitHub status push failed");
         }
     });
-}
-
-/// Best-effort: when `item` just moved into a Done-category status, mark its
-/// parent as done if every sibling is now complete. Errors are ignored.
-pub(crate) async fn propagate_parent_completion(state: &AppState, item: &Item, old_status: &str) {
-    if let Some(parent_id) = item.parent_id
-        && item.status != old_status
-        && let Ok(Some(proj)) = state.repo.get_project(item.project_id).await
-        && proj.workflow.is_done_status(&item.status)
-        && let Some(done_status) = proj.workflow.find_first_done_status()
-        && let Ok(all_done) = state.repo.siblings_all_done(parent_id, done_status).await
-        && tack_core::workflow::WorkflowConfig::should_complete_parent(all_done)
-    {
-        let _ = state
-            .repo
-            .check_and_update_parent_status(parent_id, done_status)
-            .await;
-    }
 }
 
 #[instrument(skip(state))]

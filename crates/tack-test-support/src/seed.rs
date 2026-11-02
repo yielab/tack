@@ -509,7 +509,7 @@ pub async fn running_attempt(
 
     let request_id = format!("req-{tag}");
     let snapshot = format!(
-        r#"{{"request_id":"{request_id}","item_id":"{item_id}","idempotency_key":"{request_id}","created_by":{{"source":"test","subject_id":"seed"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{runner_id}"}},"agent_profile_id":"{profile_id}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/seed.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#
+        r#"{{"request_id":"{request_id}","item_id":"{item_id}","idempotency_key":"{request_id}","created_by":{{"source":"test","subject_id":"seed"}},"created_at":"2026-08-12T12:00:00Z","selector":{{"kind":"exact_runner","runner_id":"{runner_id}"}},"agent_profile_id":"{profile_id}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/seed.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"environment":{{}},"metadata":{{}}}}"#
     );
     repo.enqueue_execution(
         NewExecutionRequest {
@@ -528,7 +528,6 @@ pub async fn running_attempt(
             permission_policy: r#"{"tools":[],"network":false}"#,
             timeout_seconds: Some(60),
             budgets: "{}",
-            status_map_policy_id: None,
             environment: "{}",
             metadata: "{}",
             request_snapshot: &snapshot,
@@ -663,26 +662,6 @@ pub async fn execution_prill_pack_artifact(
     .execute(repo.pool())
     .await
     .expect("seed execution_artifacts prill pack");
-}
-
-/// Sets the status a project moves an item to when a run leaves evidence.
-pub async fn project_on_finish_status(repo: &Repository, project_id: &str, status: &str) {
-    sqlx::query("UPDATE projects SET on_finish_status = ? WHERE id = ?")
-        .bind(status)
-        .bind(project_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed projects on_finish_status");
-}
-
-/// Sets, or with `None` clears, the status a project moves an item to when a run starts.
-pub async fn project_on_start_status(repo: &Repository, project_id: &str, status: Option<&str>) {
-    sqlx::query("UPDATE projects SET on_start_status = ? WHERE id = ?")
-        .bind(status)
-        .bind(project_id)
-        .execute(repo.pool())
-        .await
-        .expect("seed projects on_start_status");
 }
 
 /// Replaces the stored snapshot (raw text, valid or not) of an `execution_requests` row.

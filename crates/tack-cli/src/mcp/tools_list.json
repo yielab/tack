@@ -473,14 +473,6 @@
           "description": "Exact runner id (at most one of runner_id/fleet_id)",
           "type": "string"
         },
-        "status_map_policy_id": {
-          "description": "Moves the item to its first Done status: done_on_success when the attempt succeeds, done_on_mrp_accepted when its MRP is accepted. Omit to leave the status untouched",
-          "enum": [
-            "done_on_success",
-            "done_on_mrp_accepted"
-          ],
-          "type": "string"
-        },
         "timeout_seconds": {
           "description": "Omit to use the profile's time limit",
           "type": "integer"

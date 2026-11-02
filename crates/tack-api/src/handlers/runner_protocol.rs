@@ -1218,24 +1218,18 @@ async fn transition_attempt(
             })?;
     }
 
-    // Only the report that starts the run moves the item; a replay of it must not move it again
-    // after a person has put it elsewhere.
+    // Only the report that starts the run says so; a replay of it says nothing again.
     if matches!(phase, AttemptTransitionPhase::Running)
         && matches!(result, AttemptTransitionResult::Applied(_))
+        && let Some(app) = state.app.as_ref()
     {
-        let moved =
-            tack_app::runs::move_on_start::move_item(&state.repo, attempt_id.as_str()).await;
-        if let Some(app) = state.app.as_ref() {
-            // The board learns about the move the same way as from an edit.
-            runs::announce::run_started(
-                &state.repo,
-                app.events().as_ref(),
-                &Principal::runner(principal.runner_id.as_str()),
-                &attempt_id,
-                moved.as_ref(),
-            )
-            .await;
-        }
+        runs::announce::run_started(
+            &state.repo,
+            app.events().as_ref(),
+            &Principal::runner(principal.runner_id.as_str()),
+            &attempt_id,
+        )
+        .await;
     }
 
     match result {
@@ -1950,7 +1944,6 @@ pub async fn submit_completion(
 
     if let Completed::Committed { .. } = &completed {
         if let Some(app) = state.app.as_ref() {
-            // The board learns about the move the same way as from an edit.
             runs::announce::run_ended(
                 &state.repo,
                 app.events().as_ref(),
@@ -1971,7 +1964,7 @@ pub async fn submit_completion(
     }
 
     match completed {
-        Completed::Committed { response, .. } => completion_json(attempt_id, response, false),
+        Completed::Committed { response } => completion_json(attempt_id, response, false),
         Completed::Replayed(response) => completion_json(attempt_id, response, true),
         // Same split as `submit_events` above: the same
         // `(attempt_id, completion_id)` idempotency-scoped key

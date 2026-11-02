@@ -113,7 +113,6 @@ pub fn full_request(item_id: Uuid) -> RunRequest {
         environment: json!({"MODE":{"value":"test","secret_reference":null}}),
         metadata: json!({"source":"c1-test"}),
         timeout_seconds: Some(60),
-        status_map_policy_id: None,
         verify: None,
         push_branch: None,
         autonomy: None,

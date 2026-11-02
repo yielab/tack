@@ -113,7 +113,6 @@ pub static CREATE_EXECUTION: Tool = Tool {
                     "model": { "type": "string", "description": "The model to run, passed to the agent as given. Omit to use the project's default for its default agent, else the agent's own choice" },
                     "budgets": { "type": "object", "description": "Default: {}. tokens: omit to use the profile's limit, null for no limit, or a positive number" },
                     "metadata": { "type": "object", "description": "Default: {}" },
-                    "status_map_policy_id": { "type": "string", "enum": ["done_on_success", "done_on_mrp_accepted"], "description": "Moves the item to its first Done status: done_on_success when the attempt succeeds, done_on_mrp_accepted when its MRP is accepted. Omit to leave the status untouched" },
                     "idempotency_key": { "type": "string", "description": "Defaults to a fresh key each call; pass a stable value to safely retry the exact same request" }
                 },
                 "required": [
@@ -153,7 +152,6 @@ fn create_execution(client: &TackClient, args: &Value) -> Result<Value, String> 
     };
     let idempotency_key = opt_str(args, "idempotency_key");
     let model = opt_str(args, "model");
-    let status_map_policy_id = opt_str(args, "status_map_policy_id");
 
     let values = execution::CreateExecutionValues {
         item_id: &item_id,
@@ -167,9 +165,13 @@ fn create_execution(client: &TackClient, args: &Value) -> Result<Value, String> 
         environment: json!({}),
         metadata: opt_object_or_empty(args, "metadata"),
         timeout_seconds,
-        status_map_policy_id: status_map_policy_id.as_deref(),
     };
     let mut body = execution::create_execution_body(selector.as_ref(), values);
     body["origin"] = json!("mcp");
-    call(client.post("/executions", &body))
+    let mut answer = call(client.post("/executions", &body))?;
+    // A caller written before the setting was removed still sends it: accepted, and told.
+    if args.get("status_map_policy_id").is_some() {
+        answer["notice"] = tack_core::models::STATUS_SET_BY_A_PERSON.into();
+    }
+    Ok(answer)
 }
