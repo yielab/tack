@@ -209,5 +209,6 @@
   "pipelineSource": "blueprint 'build'",
   "workspaceKind": "codebase",
   "repoConfigDir": "/scratch/repo2/.docket",
-  "readOnly": []
+  "readOnly": [],
+  "paused": false
 }

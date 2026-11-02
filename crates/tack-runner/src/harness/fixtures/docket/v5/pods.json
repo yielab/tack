@@ -16,7 +16,8 @@
         "failed": 0,
         "done": 0,
         "cancelled": 0
-      }
+      },
+      "paused": false
     },
     {
       "name": "saas-lights",
@@ -34,7 +35,8 @@
         "failed": 0,
         "done": 0,
         "cancelled": 0
-      }
+      },
+      "paused": false
     }
   ]
 }
