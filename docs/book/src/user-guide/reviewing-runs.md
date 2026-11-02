@@ -43,6 +43,10 @@ or Planner. (A Planner's or Researcher's write tool is for the plan file, so it 
 "The agent reported success but delivered no change to review", and the number of files the agent left
 uncommitted when there were any. A failed run leads with why it failed.
 
+A team that proposes items and ends with proposals Tack cannot use (for example, one names a parent that is not an
+earlier row in the file) is shown as **Finished — proposals could not be used**, not as a plain success, with the
+reason in words and docket's own line on hover.
+
 ### What you see on the board
 
 After a run, the task's card on the board carries these marks. The list carries the merge and automation
