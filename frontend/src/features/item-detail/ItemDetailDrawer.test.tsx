@@ -132,20 +132,56 @@ describe('ItemDetailDrawer', () => {
     container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
     await flush();
 
-    // The header names Status beside its pills; the agents' Work is the panel below, never the same pill.
-    const group = document.querySelector('[role="group"][aria-label="Status"]')!;
-    expect(group.parentElement!.firstElementChild!.textContent).toBe('Status');
-    // Status is a row of pills; click the "done" pill.
-    const donePill = [...document.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Status"] button')]
-      .find((b) => b.textContent === 'done')!;
-    donePill.click();
+    // The header names Status, shows only the current one, and keeps the others behind a menu.
+    const label = document.querySelector<HTMLElement>('[data-testid="item-status"]')!;
+    expect(label.textContent).toBe('todo');
+    expect(document.querySelector('[role="group"][aria-label="Status"]')).toBeNull();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    const change = document.querySelector<HTMLButtonElement>('button[aria-label="Change status"]')!;
+    change.click();
     await flush();
+    const options = [...document.querySelectorAll<HTMLButtonElement>('[role="menu"][aria-label="Status"] [role="menuitem"]')];
+    // The workflow's own order, as options: the current one says so in text, none is a step.
+    expect(options.map((o) => o.textContent)).toEqual(['todoCurrent', 'done']);
+    expect(options[0].getAttribute('aria-current')).toBe('true');
+    options.find((o) => o.textContent === 'done')!.click();
+    await flush();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
 
     const patch = fetchMock.mock.calls.find(
       (c) => (c[1] as RequestInit)?.method === 'PATCH' && String(c[0]).endsWith('/api/items/item-1'),
     );
     expect(patch).toBeTruthy();
     expect(JSON.parse((patch![1] as RequestInit).body as string)).toEqual({ status: 'done' });
+
+    dispose();
+  });
+
+  it('the status menu opens on the current option, moves with the arrows and Escape returns to its button', async () => {
+    const { container, dispose } = mount();
+    container.querySelector<HTMLButtonElement>('[data-testid="open"]')!.click();
+    await flush();
+
+    const change = document.querySelector<HTMLButtonElement>('button[aria-label="Change status"]')!;
+    expect(change.getAttribute('aria-haspopup')).toBe('menu');
+    expect(change.getAttribute('aria-expanded')).toBe('false');
+    change.click();
+    await flush();
+    expect(change.getAttribute('aria-expanded')).toBe('true');
+    const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="Status"]')!;
+    expect(document.activeElement?.textContent).toBe('todoCurrent');
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    expect(document.activeElement?.textContent).toBe('done');
+    menu.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    await flush();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(document.activeElement).toBe(change);
+    // Choosing the status the item is in changes nothing.
+    change.click();
+    await flush();
+    document.querySelector<HTMLButtonElement>('[role="menuitem"][aria-current="true"]')!.click();
+    await flush();
+    expect(fetchMock.mock.calls.some((c) => (c[1] as RequestInit)?.method === 'PATCH')).toBe(false);
 
     dispose();
   });
