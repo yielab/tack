@@ -34,7 +34,7 @@ makes the runner refuse to start.
 | `[secrets]`, `[environment]` | What a run may reference and the variables every run gets. See [What the Agent Can Reach](what-the-agent-can-reach.md). |
 | `[docket]` | Where docket's API is. See [docket teams](#docket-teams). |
 
-Every variable and key is in the [Configuration Reference](configuration-reference.md). Run
+Every variable and key is in the [Configuration](configuration-reference.md). Run
 `tack runner doctor` on the runner's machine at any point: it reports, for each agent, whether it was
 found, whether it is signed in and which models it offers, plus the secret store, the verifier and
 docket.
@@ -140,10 +140,8 @@ running.
 - **No enrollment.** On a fresh state directory it creates its own pending runner and redeems its own
   token. No token is printed or configured. A later start with the same state directory reuses the
   stored credential instead of creating a second runner.
-- **Its name** is "This computer (host name)", the name of the machine it runs on. A runner the
-  board enrolled earlier under a generated `local-…` name takes it on its next start and keeps its
-  identity and credential; a name you chose yourself is never changed. A runner on another machine
-  has the name you gave it when you enrolled it.
+- **Its name** is "This computer (host name)", the name of the machine it runs on. A name you chose
+  yourself is never changed. A runner on another machine has the name you gave it when you enrolled it.
 - **Loopback only.** `TACK_HOST` must be a loopback address. A board bound anywhere else refuses to
   start with the embedded runner, before it opens a socket or the database, and never falls back to
   a board without a runner. The Agents page then says the embedded runner is not available. An
@@ -151,8 +149,7 @@ running.
   machine you sit at.
 - **Off unless asked.** A plain `tack serve` starts no runner.
 - **Its state directory** is `<TACK_STORAGE_DIR>/runner` unless `TACK_RUNNER_STATE_DIR` says
-  otherwise. Tying it to the storage directory keeps two boards from sharing one runner's state. A
-  state directory in a former default location is moved there on the first start.
+  otherwise. Tying it to the storage directory keeps two boards from sharing one runner's state.
 - **Its settings file.** Put it at `~/.config/tack/runner.toml` and the embedded runner reads it on
   every start, including a service installed by `tack service install`. Wiping the board's data
   folder leaves it in place. To use another file, pass `tack serve --runner-config <path>` (or set
@@ -217,17 +214,14 @@ already running is left running.
   shell variable does not reach an agent. The board never sees, stores or forwards a model
   credential.
 
-  | Agent | Sign in with | Where the sign-in lives |
-  |---|---|---|
-  | Claude Code | `claude` | `~/.claude` |
-  | Codex | `codex login` | `~/.codex` |
-  | opencode | `opencode auth login` | opencode's own `auth.json` |
-  | docket | docket's own sign-in | docket's own home (`DOCKET_HOME`) |
+  | Agent | Sign in with | Where the sign-in lives | What the sandbox binds |
+  |---|---|---|---|
+  | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | `~/.claude` |
+  | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | `~/.codex` |
+  | opencode | `opencode auth login` ([providers](https://opencode.ai/docs/providers/)) | opencode's own `auth.json` | Its `auth.json` only, in a scratch home, with the `provider`, `model` and `small_model` keys of its configuration. Its MCP servers, plugins and permissions do not reach the run |
+  | docket | docket's own sign-in ([docket](https://github.com/yielab/docket)) | docket's own home (`DOCKET_HOME`) | Nothing: docket is a daemon the runner talks to over HTTP, and it confines its agents in its own jail |
 
-  opencode runs with a scratch home that receives only its `auth.json` and the `provider`, `model`
-  and `small_model` keys of its configuration. Its MCP servers, plugins and permissions do not reach
-  the run. A runner whose settings file has a `[provider.*]` table refuses to start and names the
-  table.
+  A runner whose settings file has a `[provider.*]` table refuses to start and names the table.
 
 ## Running several attempts at once
 
@@ -264,7 +258,7 @@ the machine and the quota allow and no further.
 
 docket runs a long-lived **team** of agents, each with its own model, steps and checks. When a profile
 uses docket, the runner posts each attempt to the team as one task, follows what the team does,
-carries its questions and approvals to the person through Tack's inbox, and cancels it over docket's
+carries its questions and approvals to the person (they appear in **Waiting for you**), and cancels it over docket's
 HTTP API. Setting this up has three parts: install docket, tell the runner where it is, and make each
 team able to run without a person.
 
@@ -276,24 +270,17 @@ checks the version before every task. A version below 6 is reported as "needs do
 (API 6); this docket answers API N", and no task is sent to it. docket installs the project's
 dependencies in its own copy, using the project's install setting.
 
-Add a `[docket]` table to the runner's settings file:
+Add a `[docket]` table to the runner's settings file. Naming the program is enough:
 
 ```toml
 [docket]
-home = "/home/me/.docket"      # the daemon's DOCKET_HOME; docket's own default when unset
-port = 7399                    # where the daemon listens, on 127.0.0.1
-token_file = "/home/me/.docket/token"   # the daemon's bearer token
 binary = "docket"              # starts `docket start --dispatch` with the runner
-# base_url = "http://127.0.0.1:7399"   # a daemon someone else runs; the runner starts nothing
+# base_url = "http://127.0.0.1:7399"   # or: a daemon someone else runs; the runner starts nothing
 ```
 
-| Key | Default | Meaning |
-|---|---|---|
-| `home` | docket's own | The daemon's `DOCKET_HOME`, passed to it when the runner starts it. |
-| `port` | `7399` | The port the daemon listens on, on `127.0.0.1`. |
-| `token_file` | none | The file holding the daemon's bearer token. The runner reads it again on every call, so a daemon restarted with a new token needs no runner restart. |
-| `binary` | none | The docket program. Naming one turns docket on for this runner and lets the runner start the daemon. |
-| `base_url` | none | A daemon that is already running at this URL. The runner uses it as it is and never starts one. |
+`home`, `port` (default `7399`, on `127.0.0.1`) and `token_file` (the daemon's bearer token, read again on
+every call, so a daemon restarted with a new token needs no runner restart) are optional; all five keys are
+in the [Configuration](configuration-reference.md#docket-docket) page.
 
 docket is on for a runner as soon as `binary` or `base_url` is set. It is never turned on because a
 `docket` program happens to be on the `PATH`. The runner starts the daemon only when `binary` is set
@@ -362,14 +349,14 @@ commands, then run the doctor again. The Merge button is not held by this ceilin
 
 The end of each team's line says which folders its sandbox reads besides its own work: the folders
 docket granted, `reads nothing outside its work` when there are none, or `reads: not reported by this
-docket` for a docket that does not say. The Teams rung of the Automation settings shows the same fact
+docket` for a docket that does not say. The Teams block of the Automation settings shows the same fact
 under each role's team.
 
 When the daemon does not answer, the `daemon:` line says why, for example "not answering at
 http://127.0.0.1:7399/health; the runner starts it with the runner" (the runner is configured to
 start it but has not), or "no binary is set to start one".
 
-The Teams rung of the Automation settings has a button to apply a repository's teams. It is shown
+The Teams block of the Automation settings has a button to apply a repository's teams. It is shown
 disabled, with its reason, because the board has no channel to the runner's machine. Apply a team
 with docket's own commands on that machine.
 
@@ -481,14 +468,14 @@ written, and it says why.
 evidence and uploads the merge-readiness pack it writes. It is off by default. A verifier that fails,
 is missing or times out records `attempt.verify_failed` and nothing more. The pack is what a person
 reads in [Reviewing a merge-readiness pack](../user-guide/reviewing-runs.md#reviewing-a-merge-readiness-pack).
-The settings are in the [Configuration Reference](configuration-reference.md);
+The settings are in the [Configuration](configuration-reference.md);
 `tack runner doctor` reports whether the verifier is on and whether its program is found.
 
 **Branch push.** A runner with `push_branches = true` under `[git]` commits what the agent left
 uncommitted onto a branch named `<prefix><first 8 characters of the item's id>-a<attempt number>` and
 pushes it to the remote the repository came from, using your own git credentials. It is off by
 default. A failed push records `attempt.push_failed`. Turn it on only for agents you would trust with
-those credentials. The Configuration Reference says what the push does and does not guard against.
+those credentials. The [Configuration](configuration-reference.md#pushing-the-attempts-branch-git) page says what the push does and does not guard against.
 
 **Pull request.** Not at completion: the board opens it when the attempt is accepted, in the attempt
 review or the merge-readiness pack review, or by a project's automatic merge. It needs a pushed branch, an item linked
@@ -500,9 +487,9 @@ or a board with no token, gets no pull request and nothing else changes.
 
 **The item's status.** A run never changes it: not when it starts, not when it succeeds and not when
 a person accepts the attempt's merge-readiness pack. The task stays in its column until a person moves
-it. Older scripts that still send `status_map_policy_id`, `--status-map-policy` or the project's
-`on_start_status` and `on_finish_status` keep working: the call is accepted, the value is ignored, and the
-answer says "ignored: the status is set by a person".
+it. A request that still names a status move (`status_map_policy_id`, `--status-map-policy`, or `on_start_status`
+and `on_finish_status` in a project) is accepted, and the answer says "ignored: the status is set by a
+person".
 
 ## Starting tasks by itself
 
@@ -527,7 +514,7 @@ is about the part you run. It happens **in the board's process**, not in a runne
   computers could run it and its profile names no group of computers to choose from".
 - **Whether it asks.** A started run asks before each action unless **every** machine it could land on
   reports the agent as sandboxed, by `bwrap` or by the agent's own jail (docket). A machine that
-  reports no sandbox, or says nothing, makes it ask. The person answers in Tack's inbox.
+  reports no sandbox, or says nothing, makes it ask. The person answers in **Waiting for you**.
 - **With no active runner,** or with several and no fleet, nothing starts. Enroll a runner or name a
   fleet first.
 

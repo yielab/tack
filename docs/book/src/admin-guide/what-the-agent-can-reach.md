@@ -13,18 +13,11 @@ reaches only what you gave it, and where the limits are. The short version is in
 
 Tack has one operator and one secret. There are no user accounts.
 
-- **The token.** On a loopback bind the server always has a token. If you set
-  `TACK_API_TOKEN` it uses that; if not, it reads `api-token` from the directory of its
-  database file, or creates it there at the first start (mode `0600`, one line). Every
-  `/api` request except `/api/health` must carry it, as `Authorization: Bearer <token>`
-  or as the cookie below. A server that cannot read or create the file does not start,
-  and says which path failed.
-- **The cookie.** The page the server answers at `/` sets the token as a `tack_session`
-  cookie (`HttpOnly`, `SameSite=Strict`, sent only to `/api`). Your browser holds it; the
-  page's scripts cannot read it. The cookie is only set for a host name the server
-  answers to. The `tack` command finds the token by itself on the same machine, after
-  `--token`, `TACK_API_TOKEN` and `~/.tackrc`. If the server's database is somewhere
-  else, set `TACK_API_TOKEN` on both ends.
+- **The token.** Every `/api` request except `/api/health` and `/api/openapi.json` must carry the operator token, as
+  `Authorization: Bearer <token>` or as the `tack_session` cookie the page sets for your browser (the
+  page's scripts cannot read it). On a loopback bind the server makes the token itself if you set none,
+  and a server that cannot read or create its file does not start. Where it lives and how the `tack`
+  command finds it is in [Administration & Security](administration.md#authentication).
 - **The Host rule.** A request whose `Host` is not `localhost`, `127.0.0.1`, `::1`, the
   address the server is bound to, or the host of an origin you listed in
   `TACK_ALLOWED_ORIGINS` is answered `421`. This is what stops a web page from reaching
@@ -34,9 +27,12 @@ Tack has one operator and one secret. There are no user accounts.
   of the server's own. A body that does not say what it is (JSON, YAML, or the backup
   file's own type) is refused with `415`.
 
-Binding beyond loopback still needs a token, and the server will not start without one
-unless you set `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK=1`. Do that only on a network
-you already trust. See [Administration & Security](administration.md).
+- **An agent that uses Tack itself.** A manager, or any agent that reads and changes the board through
+  `tack mcp`, should not hold the operator token. It gets an [agent credential](administration.md#agent-credentials):
+  it sees only the projects you named, it changes the board only through change sets, and it can never answer
+  a run's question, start a run or change a setting.
+
+Binding beyond loopback still needs a token; see [Network exposure](administration.md#network-exposure-and-tls).
 
 ## What a run receives
 
@@ -82,7 +78,7 @@ you already trust. See [Administration & Security](administration.md).
 
 ## When a run asks before each action
 
-A run that asks pauses before each action and waits for a person to answer in Tack's inbox. Whether a
+A run that asks pauses before each action and waits for a person to answer in **Waiting for you**. Whether a
 run asks depends on the sandbox, and it is decided in two places:
 
 - **The Run with agent dialog.** "Ask before each action" starts switched on when any machine the run
