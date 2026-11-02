@@ -149,6 +149,39 @@ describe('AgentsPage — this computer only', () => {
     expect(fetchSpy.mock.calls.some(([u]) => String(u).includes('/api/executions/req_1'))).toBe(true);
   });
 
+  it('the_test_run_is_disabled_with_its_reason_when_the_agent_it_would_use_is_not_signed_in', async () => {
+    mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([
+        { ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '1.2.3', sign_in: { state: 'signed_out', command: 'codex login', detail: null } },
+      ]),
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Run test'))!;
+    expect(button.disabled).toBe(true);
+    expect(container.textContent).toContain('Codex is not signed in');
+    expect(container.textContent).toContain('codex login');
+  });
+
+  it('the_test_run_uses_a_signed_in_agent_when_another_is_signed_out', async () => {
+    const fetchSpy = mockFetch({
+      '/api/local-runner': RUNNING,
+      '/api/runners': runnerWith([
+        { ...CLAUDE_INSTALLED, harness_kind: 'codex', installed_version: '1.2.3', sign_in: { state: 'signed_out', command: 'codex login', detail: null } },
+        { ...CLAUDE_INSTALLED, sign_in: { state: 'signed_in', command: null, detail: 'x' } },
+      ]),
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Run test'))!;
+    expect(button.disabled).toBe(false);
+    expect(container.textContent).toContain('Runs claude-code once');
+    expect(fetchSpy).toBeDefined();
+  });
+
   it('the_test_run_is_refused_with_a_reason_when_every_installed_agent_needs_a_model', async () => {
     mockFetch({
       '/api/local-runner': RUNNING,

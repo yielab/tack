@@ -886,6 +886,18 @@ describe('AttemptList', () => {
       expect([...merge.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Merge']);
     });
 
+    it('a run turned away before it started shows no tokens and no duration', async () => {
+      route();
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const refused = { ...FINISHED(), state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'ceiling L3' } };
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[refused as never]} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      await settle();
+      expect(container.querySelector('[data-testid="verdict-tokens"]')).toBeNull();
+      expect(container.querySelector('[data-testid="verdict-duration"]')).toBeNull();
+    });
+
     it('without a limit the tokens are said in words, not drawn as a meter', async () => {
       route();
       const container = document.createElement('div');
@@ -1101,6 +1113,7 @@ describe('AttemptList', () => {
       expect(attemptRunState(attempt({ state: 'waiting_decision', ended_at: null }))).toEqual({ state: 'needs', docket: 'Needs a person' });
       expect(attemptRunState(attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } }))).toEqual({ state: 'needs', docket: 'Needs a person' });
       expect(attemptRunState(attempt({ state: 'failed' }))).toEqual({ state: 'failed' });
+      expect(attemptRunState(attempt({ state: 'failed', terminal_reason: { code: 'harness_rejected' } }))).toEqual({ state: 'notstarted' });
       expect(attemptRunState(attempt({ state: 'cancelled' }))).toEqual({ state: 'cancelled' });
       expect(attemptRunState(FINISHED())).toEqual({ state: 'review', docket: 'Needs your review' });
       expect(attemptRunState({ ...FINISHED(), review: { verdict: 'accepted', note: null, reviewed_at: 'x' } })).toEqual({ state: 'done' });

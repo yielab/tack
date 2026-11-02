@@ -5,7 +5,7 @@ import { IconClock, IconClose } from './icons';
 // token pair, so the state is never carried by colour alone, and the same
 // words mean the same thing on the board, the item page and the run.
 
-export type RunStateName = 'queued' | 'running' | 'needs' | 'review' | 'done' | 'failed' | 'cancelled';
+export type RunStateName = 'queued' | 'running' | 'needs' | 'review' | 'done' | 'failed' | 'cancelled' | 'notstarted';
 
 /** The docket words a run can carry. Each one is kept as the second line. */
 export type DocketRunWord = 'Needs a person' | 'Needs your review' | 'Cancellation requested' | 'no changes recorded';
@@ -36,6 +36,8 @@ export const RUN_STATE_LABEL: Record<RunStateName, string> = {
   done: 'Finished',
   failed: 'Failed',
   cancelled: 'Cancelled',
+  // Turned away before the agent did anything: neither a failure of the work nor a stop by a person.
+  notstarted: 'Not started',
 };
 
 /** Which state a docket word puts a run in. "Cancellation requested" is still a run going on, so it stays Running. */
@@ -82,6 +84,7 @@ const GLYPH: Record<RunStateName, (size: number) => JSX.Element> = {
     ),
   done: (size) => frame(size, <path d="M3.4 8.6l3 3 6.2-6.6" />),
   failed: (size) => <IconClose size={size} />,
+  notstarted: (size) => frame(size, <circle cx="8" cy="8" r="5.6" stroke-dasharray="2.4 2.4" />),
   cancelled: (size) =>
     frame(
       size,

@@ -98,7 +98,7 @@ export function countRuns(runs: Iterable<CardRun | undefined>): RunCounts {
 
 /** Runs counted by state, from any list of states: the one place a count over run states is made. */
 export function countStates(states: Iterable<RunStateName | undefined>): RunCounts {
-  const counts: RunCounts = { queued: 0, running: 0, needs: 0, review: 0, done: 0, failed: 0, cancelled: 0 };
+  const counts: RunCounts = { queued: 0, running: 0, needs: 0, review: 0, done: 0, failed: 0, cancelled: 0, notstarted: 0 };
   for (const state of states) if (state) counts[state] += 1;
   return counts;
 }

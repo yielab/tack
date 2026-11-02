@@ -325,6 +325,20 @@ export function lastSteps(events: ReadonlyArray<{ kind: string; payload: unknown
   return lines.slice(-count);
 }
 
+/**
+ * Whether a run was turned away before the agent did anything: the computer refused it
+ * (`harness_rejected`), or the team's own ceiling did (its message names the level). Such a run
+ * used nothing and changed nothing, so it reads "Not started", never as a failure of the work.
+ */
+export function neverStarted(attempt: { state: string; terminal_reason?: unknown }): boolean {
+  if (attempt.state !== 'failed') return false;
+  const reason = (attempt.terminal_reason && typeof attempt.terminal_reason === 'object' ? attempt.terminal_reason : {}) as {
+    code?: unknown;
+    message?: unknown;
+  };
+  return reason.code === 'harness_rejected' || (typeof reason.message === 'string' && /\bceiling\s+L\d\b/i.test(reason.message));
+}
+
 /** The one status an attempt shows: its review verdict, then what its outcome
  *  says, then its lifecycle state. The run's heading shows its latest
  *  attempt's, so a run never shows two states at once. */
@@ -340,6 +354,7 @@ export function describeAttemptStatus(
       ? { label: 'Finished — needs your review', tone: 'warning' }
       : { label: 'Finished — changes could not be read, needs your review', tone: 'warning' };
   }
+  if (neverStarted(attempt)) return { label: 'Not started', tone: 'neutral' };
   const badge = describeAttemptOutcome(attempt.state, attempt.terminal_reason).badge;
   if (badge) return { label: badge.label, tone: badge.tone };
   const state = describeExecutionState(attempt.state);
