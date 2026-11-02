@@ -125,7 +125,9 @@ describe('Waiting for you', () => {
     toggle(c).click();
     await flush();
     expect(c.querySelector('[data-testid="waiting-empty"]')!.textContent).toBe('Nothing is waiting for you.');
-    expect(badge(c).getAttribute('aria-label')).toBe('Nothing is waiting for you');
+    expect(badge(c).getAttribute('aria-label')).toBe('0: Nothing is waiting for you');
+    // Label in Name (WCAG 2.5.3): the name starts with the count the button shows.
+    expect(badge(c).getAttribute('aria-label')!.startsWith(badge(c).textContent!.trim())).toBe(true);
   });
 
   it('lists a question, a run to review and a failure since the last look, each with its dot, title, project, age and action', async () => {
@@ -210,6 +212,7 @@ describe('Waiting for you', () => {
 
     expect(badge(c).textContent).toBe('2');
     expect(badge(c).getAttribute('aria-label')).toBe('2 things are waiting for you');
+    expect(badge(c).getAttribute('aria-label')!.startsWith(badge(c).textContent!.trim())).toBe(true);
     expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('2');
   });
 
