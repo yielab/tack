@@ -12,6 +12,22 @@ on `Ctrl+K`. Theme, palette, text size and zoom are set in Settings → Display 
 
 ---
 
+## Status and Work
+
+Every task has two things to read, and the screen keeps them apart.
+
+- **Status** is the column the task sits in. It is yours: you set it by hand, by dragging the card, by applying
+  a change set or by importing a file. Nothing an agent does moves it.
+- **Work** is what the agents report about the task's newest run: **Queued**, **Running**, **Needs you**,
+  **Ready for review**, **Finished**, **Failed** or **Cancelled**. You do not set it; it follows the run.
+
+So a task in Backlog with a run that is Running shows both, and neither is wrong. A work word is never a
+status name: "Ready for review" is the work, "In Review" is a column. On the task, the header names **Status**
+with its buttons and the **Work** panel below it names the run's state and the one thing to do next. The
+Board's strip, the sidebar's list and the List give the same count for the same run.
+
+---
+
 ## Board
 
 Kanban columns driven by the project's workflow statuses.
@@ -21,8 +37,8 @@ Kanban columns driven by the project's workflow statuses.
 - **Move a card by keyboard.** Tab to the small arrow on a card, or hover the card to see it, and press Enter or Space to open **Move to…**. The arrow keys choose a column, Enter moves the card and the page announces where it went, and Escape closes the menu. Each column is a named region that scrolls inside itself: Tab into its list and use the arrow keys or Page Down to reach the last card, while the board's own scroll bar stays at the bottom of the screen.
 - **WIP limit** is shown in the column header when set. Dragging a card into a full column is blocked.
 - **Click a card** to open the item drawer (tabs Overview, Activity, Execution, Dependencies, Files and Fields; see [Working with Items](items.md)).
-- **A card reads top to bottom.** The title comes first. Under it one line says where the card's latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Done**, **Failed** or **Cancelled**; press it to open the task's Execution tab, or the run's question when it is asking one), then the team that ran it, then the priority, then the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** in Settings, under Display & accessibility, to show it on every card (this browser remembers the choice). A card whose run **needs you** or **failed** has a coloured bar on its left edge, and so does one whose run is going in a column no work has started in, so the board does not look idle. The card's short id shows when you hover it and at the top of its **Move to…** menu. The ▶ button, **Run with agent**, is hidden while a run is going and comes back when it ends; a card whose run is ready for review shows a **Review and merge** button instead, which opens the Execution tab.
-- **Which cards need you.** Under the board title, when the project has run anything, a row counts the runs: **Your turn** (runs that need you plus runs ready for review; failed runs are counted under **Failed**, and the sidebar's **Waiting for you** also counts failures you have not looked at yet), then **Queued**, **Running**, **Needs you**, **Ready for review** and **Failed**. Press a count to show only those cards, and again to show all. Each column header has a small bar of its cards' states, with a segment for each; pressing a segment filters the same way, and the column's count then reads "2 of 5".
+- **A card reads top to bottom.** The title comes first. Under it one line says the card's work, where its latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed** or **Cancelled**; press it to open the task's Execution tab, or the run's question when it is asking one), then the team that ran it, then the priority, then the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** in Settings, under Display & accessibility, to show it on every card (this browser remembers the choice). A card whose run **needs you** or **failed** has a coloured bar on its left edge, and so does one whose run is going in a column no work has started in, so the board does not look idle. The card's short id shows when you hover it and at the top of its **Move to…** menu. The ▶ button, **Run with agent**, is hidden while a run is going and comes back when it ends; a card whose run is ready for review shows a **Review and merge** button instead, which opens the Execution tab.
+- **Which cards need you.** Under the board title, when the project has run anything, a row titled **Work** counts the runs by state: **Queued**, **Running**, **Needs you**, **Ready for review** and **Failed** (the sidebar's **Waiting for you** gives the same counts, and also counts failures you have not looked at yet). Press a count to show only those cards, and again to show all. Each column header has a small bar of its cards' work, with a segment for each; pressing a segment filters the same way, and the column's count then reads "2 of 5".
 - **More on a card.** **Repeats** means closing the task creates the next one. Two more show what Tack did without you: **Started by itself** and **Merged by itself**. The List shows the same badges in its Details column. See [Automating a Project](automation.md).
 - **Add an item** with the **Add item** button in a column header (it starts in that status), the **+ New** button in the top bar, or the `n` key (first column).
 - Press `r` to refresh the board. Changes made in another browser tab or by another person appear without refreshing.
@@ -39,7 +55,7 @@ roles, and what each team reports about itself. It follows changes as they happe
 off, with the words "No agent has worked in this project yet", until a task has run; opened by its address
 before then, the page says the same and links to the Agents page.
 
-**The summary row.** Four counts sit under the title: **Needs you** (runs that ask you something plus
+**The summary row.** Four counts of the tasks' **Work** sit under the title: **Needs you** (runs that ask you something plus
 runs ready for review), **Running**, **Queued** and **Nobody will take it**. Press one to show only the
 lanes with a task in that state, and press it again to show all. Under them one line says how many runs
 are open in this project against the number it keeps open by itself, and how many runs the computers
@@ -130,12 +146,12 @@ Every item as a row, children indented under their parent, with a header row to 
 controls to filter, edit and rearrange the columns.
 
 - Rows are ordered by creation date within each level until you sort. A parent with children shows how many it has; use the arrow to expand or collapse it, or **Expand all** and **Collapse all** in the header.
-- Each row shows the title, priority, status, assignee, due date, where the item's latest run is, and the badges the Board shows. Click the title to open the item drawer.
+- Each row shows the title, priority, status, assignee, due date, its work (where the item's latest run is), and the badges the Board shows. Click the title to open the item drawer.
 - **New Item** in the header adds an item at the top level. On a row, **+** (shown on hover or keyboard focus) adds a child under it and the bin deletes it after a confirmation.
-- When every child of an item reaches a Done status, the parent moves to Done too, and so on up the hierarchy.
-- **Sort.** Press a column header to sort by it, again to reverse, and a third time to go back to creation order. Priority sorts Critical, High, Medium, Low, None; **Run** puts what needs you first, then what is going, then what is over, and items with no run last. Sorting reorders the rows within each parent, so a child never leaves its parent.
-- **Filter.** **Filter…** matches as you type against the title, assignee and status, and the run-state list beside it keeps only items whose latest run is in that state (**Your turn**, **Queued**, **Running**, **Needs you**, **Ready for review** or **Failed**). A parent that holds a match stays in view, open, so the match is never shown without where it belongs; **Clear filter** brings every row back.
-- **Run.** The Run column says where the item's latest run is, in the same words and symbols as the Board (**Queued**, **Running**, **Needs you**, **Ready for review**, **Done**, **Failed**, **Cancelled**); an item that has never run shows a dash.
+- Moving the last child of an item to Done does not move the parent: a status is only set by a person.
+- **Sort.** Press a column header to sort by it, again to reverse, and a third time to go back to creation order. Priority sorts Critical, High, Medium, Low, None; **Work** puts what needs you first, then what is going, then what is over, and items with no run last. Sorting reorders the rows within each parent, so a child never leaves its parent.
+- **Filter.** **Filter…** matches as you type against the title, assignee and status, and the work list beside it keeps only items whose latest run is in that state (**Your turn**, **Queued**, **Running**, **Needs you**, **Ready for review** or **Failed**). A parent that holds a match stays in view, open, so the match is never shown without where it belongs; **Clear filter** brings every row back.
+- **Work.** The Work column sits beside Status and says where the item's latest run is, in the same words and symbols as the Board (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled**); an item that has never run shows a dash. Status is the column you chose; Work is what the agents report, so a row can be in Backlog and Running at once.
 - **Edit in place.** Press a status, priority, assignee or due date to change it where it is, and the title's pencil to rename it (the title itself opens the item). Enter or leaving the field saves, Escape puts the value back, and the keyboard returns to the cell.
 - **Columns** shows or hides columns (the title stays: rows are named and nested by it), and **Compact** and **Comfortable** switch the row height. Both choices are remembered in this browser. **Type** is hidden until you show it, because each row already carries a type tile.
 - A row cannot be dragged under another parent.

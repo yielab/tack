@@ -80,12 +80,15 @@ describe('List columns', () => {
     // Every sortable column on show: a remembered choice, so the empty Run column is not hidden.
     localStorage.setItem('tack_list_cols', JSON.stringify(['item_type']));
     const c = await mountProjectView(() => <List />, 'list', { items: FAMILY });
-    const sortable = ['Title', 'Status', 'Priority', 'Assignee', 'Due', 'Run'];
+    const sortable = ['Title', 'Status', 'Priority', 'Assignee', 'Due', 'Work'];
     for (const name of sortable) {
       expect(header(c, name).querySelector('button'), name).not.toBeNull();
       expect(header(c, name).getAttribute('aria-sort')).toBe('none');
     }
     expect(header(c, 'Details').querySelector('button')).toBeNull();
+    // Work sits right beside Status: the column is the person's, the work is the agents'.
+    const names = [...c.querySelectorAll('[role="columnheader"]')].map((h) => h.textContent!.replace(/[^A-Za-z]/g, ''));
+    expect(names.indexOf('Work')).toBe(names.indexOf('Status') + 1);
 
     await pressHeader(c, 'Priority');
     expect(header(c, 'Priority').getAttribute('aria-sort')).toBe('ascending');
@@ -137,7 +140,7 @@ describe('List columns', () => {
         { request_id: 'r2', item_id: 'c', state: 'waiting_decision' },
       ],
     });
-    await pressHeader(c, 'Run');
+    await pressHeader(c, 'Work');
     expect(rowIds(c)).toEqual(['c', 'b', 'a']);
     expect(c.querySelector('[data-item-id="c"]')!.textContent).toContain('Needs you');
     expect(c.querySelector('[data-item-id="b"]')!.textContent).toContain('Running');
@@ -171,7 +174,7 @@ describe('List columns', () => {
     });
     expect(header(c, 'Assignee')).toBeDefined();
     expect(header(c, 'Due')).toBeUndefined();
-    expect(header(c, 'Run')).toBeUndefined();
+    expect(header(c, 'Work')).toBeUndefined();
     expect(header(c, 'Details')).toBeUndefined();
     expect(localStorage.getItem('tack_list_cols')).toBeNull(); // hiding them is not a choice
     [...c.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.startsWith('Columns'))!.click();
@@ -195,7 +198,7 @@ describe('List columns', () => {
     localStorage.setItem('tack_table_density', 'compact');
     const c = await mountProjectView(() => <List />, 'list', { items: FAMILY });
     expect(header(c, 'Assignee')).toBeUndefined();
-    expect(header(c, 'Run')).toBeUndefined();
+    expect(header(c, 'Work')).toBeUndefined();
     expect(header(c, 'Details')).toBeUndefined();
     expect(header(c, 'Type')).toBeDefined();
     expect(localStorage.getItem('tack_table_cols')).toBeNull();
@@ -223,7 +226,7 @@ describe('List filter', () => {
   beforeEach(() => localStorage.clear());
 
   const filterBox = (c: HTMLElement) => c.querySelector<HTMLInputElement>('input[aria-label="Filter items"]')!;
-  const runBox = (c: HTMLElement) => c.querySelector<HTMLSelectElement>('select[aria-label="Filter by run state"]')!;
+  const runBox = (c: HTMLElement) => c.querySelector<HTMLSelectElement>('select[aria-label="Filter by work"]')!;
 
   it('matches_title_assignee_and_status_and_keeps_the_parents_of_what_matches', async () => {
     const c = await mountProjectView(() => <List />, 'list', { items: FAMILY });
@@ -261,7 +264,7 @@ describe('List filter', () => {
       ],
     });
     expect([...runBox(c).options].map((o) => o.textContent)).toEqual([
-      'Any run state', 'Your turn', 'Queued', 'Running', 'Needs you', 'Ready for review', 'Failed',
+      'Any work', 'Your turn', 'Queued', 'Running', 'Needs you', 'Ready for review', 'Failed',
     ]);
 
     await choose(runBox(c), 'failed');

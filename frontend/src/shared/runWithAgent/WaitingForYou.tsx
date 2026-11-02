@@ -22,15 +22,16 @@ import { DecisionTokenField } from './DecisionInbox';
 import { relativeTimeFromIso } from './shared';
 import { tallySentence } from './cardRun';
 
-/** What the count is made of, in the states' own words; the sentence alone when nothing waits. */
+/** What the count is made of: the work in its own words (the same tally as the board's Work strip), then the change sets; the sentence alone when nothing waits. */
 const breakdown = (): string => {
   const changes = waitingChangeSets().length;
+  const work = tallySentence(waitingTally());
   const parts = [
-    tallySentence(waitingTally()),
+    work ? `Work: ${work}` : '',
     changes > 0 ? `${changes} ${changes === 1 ? 'change set' : 'change sets'} to apply` : '',
   ]
     .filter(Boolean)
-    .join(', ');
+    .join('; ');
   return parts ? `${waitingSentence(waitingCount())}: ${parts}` : waitingSentence(waitingCount());
 };
 

@@ -47,7 +47,7 @@ const PRIORITIES = [
 
 const priorityLabel = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
-/** The run states a filter can ask for, in the words the board uses. */
+/** The work a filter can ask for, in the words the board uses. */
 const RUN_FILTERS: { value: RunFilter; label: string }[] = [
   { value: 'waiting', label: 'Your turn' },
   { value: 'queued', label: RUN_STATE_LABEL.queued },
@@ -390,12 +390,12 @@ export default function List() {
             class="min-h-9 px-3.5 py-1.5 rounded-full text-sm w-56 max-w-full border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
           />
           <select
-            aria-label="Filter by run state"
+            aria-label="Filter by work"
             value={runFilter()}
             onChange={(e) => setRunFilter(e.currentTarget.value as RunFilter | '')}
             class="min-h-9 px-3.5 rounded-full text-sm border border-line bg-surface text-content focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)]"
           >
-            <option value="">Any run state</option>
+            <option value="">Any work</option>
             <For each={RUN_FILTERS}>
               {(f) => <option value={f.value} selected={runFilter() === f.value}>{f.label}</option>}
             </For>
