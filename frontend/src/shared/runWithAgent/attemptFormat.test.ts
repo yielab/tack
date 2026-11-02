@@ -261,10 +261,12 @@ describe('a verifier that says reject, and a run that never started', () => {
     expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, null, 'merge').label).toBe('Finished — needs your review');
   });
   it('a run turned away before the agent did anything is Not started, neutral, not Failed', () => {
-    expect(describeAttemptStatus({ state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'x' } })).toEqual({ label: 'Not started', tone: 'neutral' });
-    expect(neverStarted({ state: 'failed', terminal_reason: { message: 'run refused: ceiling L3 (needs approval)' } })).toBe(true);
-    expect(neverStarted({ state: 'failed', terminal_reason: { code: 'timeout' } })).toBe(false);
-    expect(neverStarted({ state: 'succeeded', terminal_reason: { code: 'harness_rejected' } })).toBe(false);
+    // The server decides it (one rule in Rust); an attempt is read by its flag, never by its message.
+    expect(describeAttemptStatus({ state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected', message: 'x' } })).toEqual({ label: 'Not started', tone: 'neutral' });
+    expect(neverStarted({ never_started: true })).toBe(true);
+    expect(neverStarted({ never_started: false })).toBe(false);
+    expect(neverStarted({})).toBe(false);
+    expect(describeAttemptStatus({ state: 'failed', terminal_reason: { message: 'run refused: ceiling L3 (needs approval)' } }).label).not.toBe('Not started');
   });
 });
 

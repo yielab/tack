@@ -229,7 +229,7 @@ export const ItemCard: Component<{
               class="rounded-pill focus:outline-none focus-visible:ring-2"
               style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
             >
-              <RunState state={run().state} docket={run().docket} />
+              <RunState state={run().state} docket={run().docket} note={run().note} />
               <span class="sr-only">{` — open the Execution tab for ${props.item.title}`}</span>
             </button>
           )}

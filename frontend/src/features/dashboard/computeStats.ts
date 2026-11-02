@@ -102,7 +102,8 @@ export const TOKENS_BY_TEAM_UNAVAILABLE =
 /** The state of an item's latest run, in the board's own words; queued counts with running. */
 function outcomeOf(summary: ExecutionSummary | undefined, needsReview: boolean): RunOutcome | undefined {
   const run = cardRun(summary, needsReview);
-  if (!run) return undefined;
+  // A run turned away before it started is no outcome of the work, so the week's counts leave it out.
+  if (!run || run.state === 'notstarted') return undefined;
   return run.state === 'queued' ? 'running' : run.state;
 }
 

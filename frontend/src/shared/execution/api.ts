@@ -84,6 +84,13 @@ export interface ExecutionSummary {
   /** The hop the run's newest attempt is in; null when its agent reports no hops (every agent but
    *  docket) or the attempt has not reached its first one. Absent on a server that predates it. */
   latest_hop?: LatestHop | null;
+  /** The run's newest attempt was turned away before it started (the computer refused it, or the
+   *  team's ceiling did). The server decides it; no screen matches the reason's text. Absent on a
+   *  server that predates it. */
+  never_started?: boolean;
+  /** What the verifier's pack for the newest attempt recommends; null while the attempt has not
+   *  succeeded or left no readable pack. Absent on a server that predates it. */
+  verifier_recommendation?: 'merge' | 'review' | 'reject' | null;
 }
 
 /** The latest hop event of a run's newest attempt, read by the server from its text. Match `role`

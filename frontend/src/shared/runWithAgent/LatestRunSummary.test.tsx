@@ -456,7 +456,7 @@ describe('LatestRunSummary: the Now panel in each state', () => {
   });
 
   it('a run turned away before it started says Not started, and Run again is its one action', async () => {
-    const refused = { ...ATTEMPT, state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'This team may go no further than L3' } };
+    const refused = { ...ATTEMPT, state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected', message: 'This team may go no further than L3' } };
     const c = mount([{ ...RUN, state: 'failed' }], () => {}, [refused]);
     await settle();
     expect(banner(c)).toBe('Not started');

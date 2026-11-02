@@ -20,6 +20,11 @@ export interface RunStateProps {
    * caller's state was); every word is shown as the second line.
    */
   docket?: DocketRunWord;
+  /**
+   * A short fact printed after the state in words, so it is never carried by colour alone
+   * ("verifier says reject" after Ready for review). Shown on the chip, the banner and the tooltip.
+   */
+  note?: string;
   /** `dot` icon only, `chip` a pill, `banner` a full-width row. Defaults to `chip`. */
   size?: RunStateSize;
 }
@@ -109,7 +114,8 @@ export function runStateView(props: Pick<RunStateProps, 'state' | 'docket'>): { 
  */
 const RunState: Component<RunStateProps> = (props) => {
   const view = () => runStateView(props);
-  const text = () => (view().word ? `${RUN_STATE_LABEL[view().state]} — ${view().word}` : RUN_STATE_LABEL[view().state]);
+  const label = () => (props.note ? `${RUN_STATE_LABEL[view().state]} · ${props.note}` : RUN_STATE_LABEL[view().state]);
+  const text = () => (view().word ? `${label()} — ${view().word}` : label());
   const ink = () => `var(--run-${view().state}-ink)`;
 
   return (
@@ -136,7 +142,7 @@ const RunState: Component<RunStateProps> = (props) => {
         >
           <span class="mt-px inline-flex flex-none items-center">{GLYPH[view().state](16)}</span>
           <div class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>
-            <p class="text-sm font-semibold">{RUN_STATE_LABEL[view().state]}</p>
+            <p class="text-sm font-semibold">{label()}</p>
             <Show when={view().word}>
               {(word) => <p class="text-xs">{word()}</p>}
             </Show>
@@ -154,7 +160,7 @@ const RunState: Component<RunStateProps> = (props) => {
           }}
         >
           {GLYPH[view().state](13)}
-          {RUN_STATE_LABEL[view().state]}
+          {label()}
         </span>
       </Match>
     </Switch>

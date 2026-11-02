@@ -58,7 +58,8 @@ function newestPerItem(runs: readonly ExecutionSummary[]): ExecutionSummary[] {
   return [...newest.values()];
 }
 
-const isFailed = (run: ExecutionSummary) => run.state === 'failed' || run.state === 'lost';
+// A run turned away before it started is not a failure of the work, so it is not "Failed since you last looked".
+const isFailed = (run: ExecutionSummary) => (run.state === 'failed' && run.never_started !== true) || run.state === 'lost';
 
 /**
  * The rows of the inbox. A question is any newest run waiting for an answer; a run is ready for

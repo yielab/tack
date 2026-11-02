@@ -11,6 +11,7 @@ const STATE_NOTE: Partial<Record<RunStateName, string>> = {
   needs: 'The run asks you a question and waits for your answer.',
   review: 'The run finished and its work waits for you to look at it.',
   failed: 'The run ended badly.',
+  notstarted: 'The run was turned away before the agent did anything, so it used nothing and changed nothing.',
 };
 
 // In the order the List's Work column and a board column rank runs, what needs a person first, the same
@@ -22,6 +23,7 @@ const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateNa
     { filter: 'needs', state: 'needs' },
     { filter: 'review', state: 'review' },
     { filter: 'failed', state: 'failed' },
+    { filter: 'notstarted', state: 'notstarted' },
   ] as const
 )
   .map((entry) => ({ ...entry }))
@@ -94,7 +96,8 @@ const AgentStrip: Component<{
         <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task of this project. The column is its status, which only a person changes. The sidebar's Waiting for you counts every project.">
           Work in this project
         </span>
-        <For each={COUNTERS}>
+        {/* Not started appears only once a run was turned away: five chips are the ones a person acts on. */}
+        <For each={COUNTERS.filter((entry) => entry.state !== 'notstarted' || props.counts.notstarted > 0 || props.active.has('notstarted'))}>
           {(entry) => (
             counter(entry.filter, () => props.counts[entry.state], RUN_STATE_WORDS[entry.state], entry.state, STATE_NOTE[entry.state])
           )}

@@ -355,6 +355,43 @@ describe('Board column order', () => {
   });
 });
 
+describe('Board runs the server describes', () => {
+  const ITEMS = [
+    makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),
+    makeItem({ id: 'b', title: 'Bravo', status: 'To Do' }),
+    makeItem({ id: 'c', title: 'Charlie', status: 'To Do', needs_review: true }),
+    makeItem({ id: 'd', title: 'Delta', status: 'To Do', needs_review: true }),
+  ];
+  const RUNS = [
+    Object.assign(summary('r1', 'a', 'failed'), { never_started: true }),
+    summary('r2', 'b', 'failed'),
+    Object.assign(summary('r3', 'c', 'succeeded'), { verifier_recommendation: 'reject' }),
+    Object.assign(summary('r4', 'd', 'succeeded'), { verifier_recommendation: 'merge' }),
+  ];
+  const chip = (c: HTMLElement, id: string) => c.querySelector(`[data-item-id="${id}"] [data-testid="card-meta"] button`)!.textContent!;
+
+  it('a_run_turned_away_before_it_started_reads_Not_started_and_is_not_counted_as_failed', async () => {
+    const c = await mountBoard(ITEMS, RUNS);
+    expect(chip(c, 'a')).toContain('Not started');
+    expect(chip(c, 'a')).not.toContain('Failed');
+    expect(chip(c, 'b')).toContain('Failed');
+    const strip = c.querySelector('[data-testid="agent-strip"]')!;
+    const counts = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim().split('.')[0]);
+    expect(counts).toContain('1 Failed');
+    expect(counts).toContain('1 Not started');
+    expect(counts).toContain('2 Ready for review');
+    // It sorts after the runs that need a person or are going, never among the failed ones.
+    expect(titles(c)).toEqual(['Charlie', 'Delta', 'Bravo', 'Alpha']);
+  });
+
+  it('a_ready_for_review_run_the_verifier_says_to_reject_says_so_in_words_and_stays_in_review', async () => {
+    const c = await mountBoard(ITEMS, RUNS);
+    expect(chip(c, 'c')).toContain('Ready for review · verifier says reject');
+    expect(chip(c, 'd')).toContain('Ready for review');
+    expect(chip(c, 'd')).not.toContain('verifier says reject');
+  });
+});
+
 describe('Board agent strip and column bars', () => {
   const ITEMS = [
     makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),

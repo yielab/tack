@@ -265,7 +265,7 @@ export function isReviewableAttempt(attempt: Pick<AttemptSummary, 'state' | 'ter
 }
 
 type AttemptDelivery = Pick<AttemptSummary, 'state' | 'terminal_reason'> &
-  Partial<Pick<AttemptSummary, 'actual_execution' | 'pull_request'>>;
+  Partial<Pick<AttemptSummary, 'actual_execution' | 'pull_request' | 'never_started'>>;
 
 /** A run that succeeded and left nothing to merge: no patch, no kept workspace, no
  *  pushed branch and no pull request. What it delivered is the agent's answer. */
@@ -326,17 +326,13 @@ export function lastSteps(events: ReadonlyArray<{ kind: string; payload: unknown
 }
 
 /**
- * Whether a run was turned away before the agent did anything: the computer refused it
- * (`harness_rejected`), or the team's own ceiling did (its message names the level). Such a run
- * used nothing and changed nothing, so it reads "Not started", never as a failure of the work.
+ * Whether a run was turned away before the agent did anything: the computer refused it, or the
+ * team's own ceiling did. Such a run used nothing and changed nothing, so it reads "Not started",
+ * never as a failure of the work. The server decides it (`tack_core::run_outcome::never_started`,
+ * the one rule, which also sets the same flag on a run's list row), so this only reads the flag.
  */
-export function neverStarted(attempt: { state: string; terminal_reason?: unknown }): boolean {
-  if (attempt.state !== 'failed') return false;
-  const reason = (attempt.terminal_reason && typeof attempt.terminal_reason === 'object' ? attempt.terminal_reason : {}) as {
-    code?: unknown;
-    message?: unknown;
-  };
-  return reason.code === 'harness_rejected' || (typeof reason.message === 'string' && /\bceiling\s+L\d\b/i.test(reason.message));
+export function neverStarted(attempt: { never_started?: boolean }): boolean {
+  return attempt.never_started === true;
 }
 
 /** The one status an attempt shows: its review verdict, then what its outcome
