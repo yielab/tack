@@ -117,7 +117,7 @@ Nothing here runs an agent until you turn one on: **Run with agent** says "Agent
 2. **Tell the project where its code is.** If you answered **Does this project have code?** when you created it, this is done; otherwise open **Settings → Automation**. See [Where the agent works](automation.md#where-the-agent-works).
 3. **Open a task and click Run with agent**, then **Start run**. The defaults are the recommended ones. See [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: a one-line summary of who runs it and where, the text the agent will read, two switches, and an Advanced section.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: the profile to run as, a What will happen summary of the agent, branch, checks and network, two switches, collapsed What the agent will read and Advanced sections, and a Start run button.">
 
 When the run ends, the task's **Execution** tab shows the attempt. If the agent changed anything, the task is marked **Needs your review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal, see [Running from the command line](running-agents.md#running-from-the-command-line). To start the server with agents already on, run `tack serve --with-runner`.
 

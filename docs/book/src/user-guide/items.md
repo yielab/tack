@@ -25,7 +25,7 @@ At the top of the drawer, the **header** shows:
 
 Under the header, the **Now** panel comes first. It shows the item's latest run as one state, with an icon and a word (Queued, Running, Needs you, Ready for review, Finished, Failed or Cancelled), one sentence about it, a bar for the tokens it has used against its limit, and the one filled button for what comes next: **Run with agent** for an item that never ran (with a line under it saying which agent and team would take it), **Answer the question** when the agent is waiting for you, **Review and merge** when the run is ready, **See why it failed** when it failed, and **Run again** once it is finished. Stopping a run and following it live are quieter buttons beside it, and starting another run is always one press away. At the foot of the panel, the **Automation** fold says in one muted line what happens to the item without you; opened, it holds the full line, its help and **Who does it** (see [Roles and the Automation row](#roles-and-the-automation-row)). On the Overview tab, **For the agent** and **GitHub issue** are folds too.
 
-Every part of the drawer that is history, or that you rarely change, is a fold: a header with a chevron that you press to open, and that says in one line what is inside while it is shut ("Details · High · Ana", "Automation · By hand: this project doesn't start tasks by itself", "GitHub issue · no GitHub issue linked"). The folds are **Details**, **Automation**, **For the agent** and **GitHub issue** on the item, and **Steps**, **Activity**, **Files from this run**, **Usage** and **Technical** on a run. What needs a decision stays open: the status, the Now panel and the Done when list. A fold whose content needs you says so in its header ("Automation · needs you: the role Content has no profile") and opens by itself. The browser remembers whether you opened or shut each kind of fold, and your choice wins over the default.
+Every part of the drawer that is history, or that you rarely change, is a fold: a header with a chevron that you press to open, and that says in one line what is inside while it is shut ("Details · High · Ana", "Automation · By hand: this project doesn't start tasks by itself", "GitHub issue · no GitHub issue linked"). The folds are **Details**, **Automation**, **For the agent** and **GitHub issue** on the item, and **Steps**, **Activity**, **Files from this run**, **Usage** and **Technical** on a run. What needs a decision stays open: the status, the Work panel and the Done when list. A fold whose content needs you says so in its header ("Automation · needs you: the role Content has no profile") and opens by itself. The browser remembers whether you opened or shut each kind of fold, and your choice wins over the default.
 
 Below the tabs, the **Details** fold holds the properties: **Priority**, **Due date**, **Assignee**, **Estimate**, **Sprint**, **Repeats**, the **last update**, **Tags** (type a tag and press `Enter` to add; click the `×` on a tag to remove it) and what the item **blocks**, each with its name on the left and its value on the right. Shut, the fold still says the priority, the assignee and the due date. Every one but the last update and what the item blocks can be edited in place.
 
@@ -35,9 +35,9 @@ All edits save at once.
 
 ### The item's page
 
-**Expand** in the drawer's top bar opens the same item on a page of its own, at `/projects/<project>/items/<id>`, and closes the drawer. The page has a breadcrumb (Projects, the project, Items, the item), the Now panel and the tabs in a main column, and the properties list in a column at the side, with no Details fold. **Copy link** at the top right copies the page's address; the open tab is part of it, so a link opens on the same tab. A tab shows a number beside its name when it is already known, as Dependencies does.
+**Expand** in the drawer's top bar opens the same item on a page of its own, at `/projects/<project>/items/<id>`, and closes the drawer. The page has a breadcrumb (Projects, the project, Items, the item), the Work panel and the tabs in a main column, and the properties list in a column at the side, with no Details fold. **Copy link** at the top right copies the page's address; the open tab is part of it, so a link opens on the same tab. A tab shows a number beside its name when it is already known, as Dependencies does.
 
-<img src="../screenshots/item-page.png" width="98%" alt="An item on its page: the breadcrumb Projects, Product Launch, Items and the item's short id, Copy link at the top right, the title and its status, the tabs Overview, Activity, Execution, Dependencies, Files and Fields over the description and the Done when list, and a side column with the last run's card (Accept, Reject… and See what it did), Run again and the properties list.">
+<img src="../screenshots/item-page.png" width="98%" alt="An item on its page: the breadcrumb Projects, Product Launch, Items and the item's short id, Copy link at the top right, the title and its status In Progress, the Work panel reading Ready for review with Review and merge and Run again and the Automation line, the tabs Overview, Execution, Activity, Dependencies, Files and Fields over the description, the Done when list and the For the agent and GitHub issue folds, and the properties in a column at the side.">
 
 ---
 
@@ -55,7 +55,7 @@ Assignee, priority, estimate, sprint, due date and tags are in the Details fold 
 removes the link. A linked task can open its pull request and, with a GitHub token on the board, stays in
 step with the issue; see [Keeping GitHub issues in sync](import-export.md#keeping-github-issues-in-sync).
 
-<img src="../screenshots/brief.png" width="50%" alt="The Overview tab of an item: the description editor, a Done when checklist with one check and Add check, a collapsed For the agent section summarised as 3 checks, 3 limits and risk noted, and Link GitHub issue.">
+<img src="../screenshots/brief.png" width="50%" alt="An item in the drawer: its status, the Work panel saying nothing has run yet with a Run with agent button, the tabs, the description, a Done when list with one check to tick and Add check, a collapsed For the agent fold summarised as 3 checks, 3 limits and risk noted, a collapsed GitHub issue fold saying none is linked, and the Details fold.">
 
 ---
 
@@ -148,7 +148,7 @@ The closed task's activity says "Created the next one, due 2026-11-30" with the 
 
 A **role** says what kind of work a task is for, such as Content or Developer. A project's roles are created under **Settings → Roles**, and each role can be given an agent profile in [Automation](automation.md#teams). On a task, the **Fields** tab lists the project's roles with a checkbox for each; ticking one gives the task that role. A task with no role is never started by itself, but you can always run it by hand.
 
-The **Automation** line at the foot of the Now panel says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board and the list. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
+The **Automation** line at the foot of the Work panel says in one line what happens to this task without you, for example "Starts by itself when it reaches To Do · Team saas-content · Merge L3" or "By hand: this project doesn't start tasks by itself". After Tack acts on a task, badges say so on the board and the list. Both are explained in [What Tack shows when it acts](automation.md#what-tack-shows-when-it-acts).
 
 ---
 

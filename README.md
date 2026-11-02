@@ -3,7 +3,7 @@
 **An open-source project manager that can assign tasks to AI agents.**
 
 <p align="center">
-  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Asking you and Finished" />
+  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, a strip counting the work that needs you, and two cards carrying an agent run's state, Needs you and Finished" />
 </p>
 
 <p align="center">

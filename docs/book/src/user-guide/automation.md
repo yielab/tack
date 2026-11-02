@@ -273,7 +273,7 @@ When Tack acts without you, it tells you in three places.
 
 Hover a badge for a one-sentence explanation.
 
-**The task's Automation row**, the last line of the Now panel in the task drawer, says what happens to this task
+**The task's Automation row**, the last line of the Work panel in the task drawer, says what happens to this task
 without you:
 
 - "Starts by itself when it reaches To Do · Team saas-content · Merge L3", when the project starts tasks by
@@ -300,7 +300,7 @@ without you:
 
 These are the folded sections above the ladder. Each saves as soon as you change it.
 
-<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: where the code is, how the agent works on it, the push switch, the default profile, and the Definition of done.">
+<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: the Autonomy ladder with L3 set and L4 and L5 blocked, what stops this project reaching a higher rung, the jump links Who, When, Merge, Limits and Agents, and the Who section with the agent, the teams, where the code is and how the agent works on it, above the When section.">
 
 ### Where the code is
 
