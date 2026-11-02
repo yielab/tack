@@ -18,7 +18,7 @@ export interface AutomationBadgeProps {
 const AutomationBadge: Component<AutomationBadgeProps> = (props) => (
   <>
     <Show when={props.startedBy === 'auto_start'}>
-      <span data-testid="badge-started-by-itself" title={HELP.startedByItself.text}><Badge tone="info">Started by itself</Badge></span>
+      <span data-testid="badge-started-by-itself" title={HELP.startedByItself.text}><Badge tone="neutral">Started by itself</Badge></span>
     </Show>
     <Show when={props.team}>
       {(team) => <span data-testid="badge-team" title={HELP.teamBadge.text}><Badge tone="neutral">Team: {team()}</Badge></span>}

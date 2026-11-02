@@ -50,6 +50,8 @@ export const ItemCard: Component<{
   alwaysPriority?: boolean;
   /** Why auto-start has not started this task, when it would have. */
   waiting?: WaitingReason | null;
+  /** The title of the item this one is part of; shown on a card auto-start holds or started. */
+  parentTitle?: string;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isHovered, setIsHovered] = createSignal(false);
@@ -200,6 +202,17 @@ export const ItemCard: Component<{
           </p>
         )}
       </Show>
+      <Show when={props.parentTitle && (props.waiting || props.item.started_by === 'auto_start') ? props.parentTitle : undefined}>
+        {(parent) => (
+          <p
+            data-testid="card-parent"
+            title={`Part of: ${parent()}`}
+            style={{ margin: 0, 'font-size': '0.75rem', 'line-height': 1.3, color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
+          >
+            Part of: {parent()}
+          </p>
+        )}
+      </Show>
       <div
         data-testid="card-meta"
         style={{ display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '6px 8px', 'font-size': '0.75rem' }}
@@ -273,6 +286,7 @@ const BoardColumnView: Component<{
   started: boolean;
   runOf: (item: Item) => CardRun | undefined;
   waitingOf: (item: Item) => WaitingReason | null;
+  parentTitleOf: (item: Item) => string | undefined;
   filters: ReadonlySet<RunFilter>;
   onToggleFilter: (filter: RunFilter) => void;
   alwaysPriority: boolean;
@@ -378,6 +392,7 @@ const BoardColumnView: Component<{
               onMove={props.onMoveItem}
               run={props.runOf(item())}
               waiting={props.waitingOf(item())}
+              parentTitle={props.parentTitleOf(item())}
               notStarted={!props.started}
               alwaysPriority={props.alwaysPriority}
             />
@@ -455,6 +470,8 @@ const Board: Component = () => {
   const runOf = (item: Item): CardRun | undefined => cardRun(newestRuns().get(item.id), item.needs_review === true);
   const autoStart = useAutoStart(projectId);
   const waitingOf = (item: Item): WaitingReason | null => autoStart.waiting(item.id);
+  const titles = createMemo(() => new Map((items() ?? []).map((i) => [i.id, i.title] as const)));
+  const parentTitleOf = (item: Item): string | undefined => (item.parent_id ? titles().get(item.parent_id) : undefined);
 
   const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
   const toggleRunFilter = (filter: RunFilter) =>
@@ -694,6 +711,7 @@ const Board: Component = () => {
                   started={categoryOf(entry().id) !== 'todo'}
                   runOf={runOf}
                   waitingOf={waitingOf}
+                  parentTitleOf={parentTitleOf}
                   filters={runFilters()}
                   onToggleFilter={toggleRunFilter}
                   alwaysPriority={alwaysPriority()}

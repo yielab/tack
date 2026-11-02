@@ -31,6 +31,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 - Settings → Automation: the ladder is where you pick the level (each rung is the control), and the Merge block no longer repeats the levels or the reasons L4 and L5 are off.
+- A board card that auto-start holds or started names the item it is part of ("Part of: …"), and the "Started by itself" chip is neutral instead of the colour of "Ready for review".
 
 - The List gives the title the free width and lets it wrap to two lines instead of cutting it at about twenty characters, and, until you choose columns yourself, leaves out the ones no item has a value in (Assignee, Due, Run, Details); they stay in the Columns menu.
 - A step's verdict, what the agent assumed and asked, and why a run stopped read as plain sentences where they were verifier codes (a check that only a person can make, a file the task needs, the team's level ceiling, an approval nobody is asked for); the raw line is the tooltip.
