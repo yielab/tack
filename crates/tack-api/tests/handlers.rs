@@ -71,3 +71,5 @@ mod teams;
 mod templates;
 #[path = "handlers/threads.rs"]
 mod threads;
+#[path = "handlers/triggers.rs"]
+mod triggers;

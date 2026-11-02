@@ -8,6 +8,7 @@ import TestRunStep from './steps/TestRunStep';
 import AdvancedSection from './AdvancedSection';
 import AgentCapabilities from './AgentCapabilities';
 import TeamsPanel from './TeamsPanel';
+import AddManager from './AddManager';
 import { countOtherActiveRunners, findThisMachineRunner, harnessesOf, isReady, isThisMachineRunner } from './runnerObservations';
 
 /** How often this page re-polls `GET /api/runners` while mounted — enough
@@ -176,6 +177,8 @@ const AgentsPage: Component = () => {
       <AgentCapabilities runners={runners()} />
 
       <TeamsPanel runners={runners()} />
+
+      <AddManager />
 
       <AdvancedSection />
     </div>

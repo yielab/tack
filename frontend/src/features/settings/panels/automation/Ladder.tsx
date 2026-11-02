@@ -10,6 +10,7 @@ import Merge from './Merge';
 import Limits from './Limits';
 import Rungs from './Rungs';
 import AgentsOnBoard from './AgentsOnBoard';
+import Triggers from './Triggers';
 import { Section, inputStyle } from './parts';
 
 interface Props {
@@ -105,8 +106,9 @@ const Ladder: Component<Props> = (props) => {
           <Section id="automation-limits" title="Limits" lead="What the project may spend and queue, in tokens.">
             <Limits settings={settings} save={saveAutonomy} />
           </Section>
-          <Section id="automation-agents" title="Agents" lead="How far an agent may go on this board.">
+          <Section id="automation-agents" title="Agents" lead="How far an agent may go on this board, and what wakes it.">
             <AgentsOnBoard project={props.project} save={props.saveProject} />
+            <Triggers projectId={props.projectId} profiles={props.profiles} />
           </Section>
         </div>
       </div>
