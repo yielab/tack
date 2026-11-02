@@ -368,7 +368,8 @@ const AttemptRow: Component<{
       }
       return patchText.loading ? 'Reading the changes…' : 'The changes could not be read.';
     }
-    return folderTeam() ? 'It worked in a folder: no repository changes.' : 'This run changed no files.';
+    // A folder team's verdict says it worked in a folder; the section does not say so again.
+    return folderTeam() ? undefined : 'This run changed no files.';
   };
 
   return (

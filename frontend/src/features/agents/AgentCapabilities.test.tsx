@@ -76,6 +76,17 @@ describe('AgentCapabilities', () => {
     expect(proposals.querySelector('details p')!.textContent).toBe('Not reported by Claude Code');
   });
 
+  it('says what the agents can do once, in a caption, and keeps it as each column\'s description', () => {
+    const c = mount([runner([CLAUDE])]);
+    const caption = c.querySelector('[data-testid="agent-can-caption"]')!;
+    expect(caption.querySelectorAll('li')).toHaveLength(1);
+    expect(caption.textContent).toBe('Claude Code: Can stop a run, answer questions and report usage.');
+    const column = c.querySelector('[data-testid="agent-claude-code"]')!;
+    const description = column.querySelector('[data-testid="agent-can"]')!;
+    expect(description.className).toContain('sr-only');
+    expect(column.getAttribute('aria-describedby')).toBe(description.id);
+  });
+
   it('gives a screen reader the whole line of a cell, not just its mark', () => {
     const c = mount([runner([CLAUDE])]);
     expect(cell(c, 'claude-code', 'cancel').querySelector('.sr-only')!.textContent).toBe('Can stop a run. ');

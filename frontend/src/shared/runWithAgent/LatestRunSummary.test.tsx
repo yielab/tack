@@ -353,6 +353,9 @@ describe('LatestRunSummary: questions the agent asked and a folder team', () => 
     expect(card.getAttribute('data-state')).toBe('done');
     expect(card.querySelector('[data-testid="latest-run-folder"]')!.textContent).toBe('This team works in a folder: nothing to merge');
     expect(card.textContent).toContain('What it did');
+    // Nothing to merge is said once, by the folder line: not again as "no changes recorded" or "no files changed".
+    expect(card.textContent).not.toContain('no changes recorded');
+    expect(card.textContent).not.toContain('no files changed');
     expect(card.querySelector('[data-testid="latest-run-said"]')!.textContent).toContain('Wrote the brief to the folder.');
     const labels = [...card.querySelectorAll('button')].map((b) => b.textContent);
     expect(labels).not.toContain('Accept');

@@ -751,4 +751,27 @@ describe('Orchestration: Map and Compare', () => {
     expect(missing.getAttribute('title')).toContain('No computer reports this team');
     expect(qa(c, '[data-missing="true"]').length).toBeGreaterThan(3);
   });
+
+  it('says_why_a_fact_is_not_reported_beside_it_collapses_a_row_nobody_filled_and_hints_at_hidden_columns', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    // A reason that is not the column's own is written out beside "not reported".
+    const reasons = qa(c, '[data-testid="compare-reason"]').map((e) => e.textContent);
+    expect(reasons).toContain('No profile names this team, so no limit is set for it.');
+    expect(reasons.some((r) => r!.startsWith('No computer reports this team'))).toBe(false); // the header says that once
+    // A row no team filled is one line across the table.
+    const collapsed = qa(c, '[data-collapsed="true"]');
+    expect(collapsed.length).toBeGreaterThan(0);
+    expect(collapsed[0].getAttribute('colspan')).toBe('4');
+    // The table is wider than its frame: the hint and the edge appear.
+    const frame = q<HTMLElement>(c, '[aria-label="Teams compared"]')!;
+    Object.defineProperty(frame, 'clientWidth', { configurable: true, value: 100 });
+    Object.defineProperty(frame, 'scrollWidth', { configurable: true, value: 400 });
+    frame.dispatchEvent(new Event('scroll'));
+    await settle();
+    expect(q(c, '[data-testid="compare-scroll-hint"]')!.textContent).toContain('to the right');
+    expect(q(c, '[data-testid="compare-edge-right"]')!.getAttribute('aria-hidden')).toBe('true');
+    expect(q(c, '[data-testid="compare-edge-left"]')).toBeNull();
+  });
 });

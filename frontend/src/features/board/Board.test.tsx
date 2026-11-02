@@ -79,6 +79,15 @@ describe('Board ItemCard', () => {
     expect(unknown.querySelector('[data-testid="card-waiting"]')).toBeNull();
   });
 
+  it('a_card_auto_start_holds_or_started_names_its_parent_and_any_other_card_does_not', async () => {
+    const text = 'In Progress is full (5 of 5): move something on to make room';
+    const held = await mount(makeItem({ parent_id: 'p' }), undefined, { waiting: { code: 'wip', text }, parentTitle: 'Billing epic' });
+    expect(held.querySelector('[data-testid="card-parent"]')!.textContent).toBe('Part of: Billing epic');
+    const started = await mount(makeItem({ parent_id: 'p', started_by: 'auto_start' }), undefined, { parentTitle: 'Billing epic' });
+    expect(started.querySelector('[data-testid="card-parent"]')).not.toBeNull();
+    const plain = await mount(makeItem({ parent_id: 'p' }), undefined, { parentTitle: 'Billing epic' });
+    expect(plain.querySelector('[data-testid="card-parent"]')).toBeNull();
+  });
 
   it('a_card_shows_ready_for_review_when_its_run_left_something_to_review', async () => {
     const flagged = await mount(makeItem({ needs_review: true }), undefined, { run: cardRun(undefined, true) });

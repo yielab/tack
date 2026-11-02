@@ -59,7 +59,7 @@ const Ladder: Component<Props> = (props) => {
 
   return (
     <div class="flex min-w-0 flex-col gap-4" data-testid="ladder">
-      <Rungs settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} />
+      <Rungs settings={settings} loadError={() => resource.error} onRetry={() => void refetchSettings()} save={saveAutonomy} />
       <div class="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
         <nav aria-label="Sections" data-testid="section-index" class="lg:sticky lg:top-4 lg:w-32 lg:shrink-0">
           <ul class="flex flex-wrap gap-2 lg:flex-col lg:gap-1.5">
