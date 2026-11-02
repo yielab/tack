@@ -379,7 +379,7 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
     const text =
       str(reason.message) ??
-      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
+      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'cancelled' ? 'It was stopped before it finished' : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
       'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
     if (reason.reason === 'exit_status') {

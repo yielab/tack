@@ -182,6 +182,12 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
   });
 });
 
+describe('a run that was stopped', () => {
+  it('says it was stopped, not the bare code', () => {
+    expect(describeAttemptOutcome('cancelled', { code: 'cancelled' }).whyStopped).toBe('It was stopped before it finished');
+  });
+});
+
 describe('a run whose proposals could not be used', () => {
   it('is not a plain success: the badge says it and the detail names the problem, the raw reason kept', () => {
     const raw = "'orphan': parent 'nowhere' is not the ref of an earlier row";
