@@ -42,6 +42,8 @@ const ATTEMPT = {
 };
 
 let runs: unknown[] = [];
+/** The project's items as the list endpoint answers them. */
+let projectItems: unknown[] = [];
 let autoStart = false;
 /** Why auto-start has not started the item, as the server answers it; null lists nothing. */
 let oneRunner = false;
@@ -49,6 +51,7 @@ let waitingReason: { code: string; text: string } | null = null;
 
 function jsonOf(url: string): unknown {
   if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: ITEM, roles: [], dependencies: [] };
+  if (/\/projects\/p1\/items\?/.test(url)) return { data: projectItems, total: projectItems.length, page: 1, per_page: 200 };
   if (url.includes('/dependencies')) return [];
   if (url.includes('/sprints')) return [];
   if (url.includes('/agent-profiles')) return { protocol_version: 1, data: [PROFILE] };
@@ -66,6 +69,7 @@ function jsonOf(url: string): unknown {
 
 beforeEach(() => {
   runs = [];
+  projectItems = [];
   localStorage.clear();
   vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) =>
     Promise.resolve(
@@ -127,6 +131,19 @@ describe('ItemBody', () => {
       expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
     expect(labels(container, '[role="tab"]')).toEqual(['Overview', 'Execution', 'Activity', 'Dependencies0', 'Files', 'Fields']);
+    dispose();
+  });
+
+  it('a parent lists its sub-items and a sub-item names its parent, in the drawer that sits outside the items context', async () => {
+    projectItems = [
+      ITEM,
+      { ...ITEM, id: 'kid-1', title: 'First child', status: 'todo', parent_id: ITEM.id },
+      { ...ITEM, id: 'kid-2', title: 'Second child', status: 'todo', parent_id: ITEM.id },
+    ];
+    const { container, dispose } = await mount('drawer');
+    const kids = container.querySelector('[data-testid="item-children"]')!;
+    expect(kids.textContent).toContain('Sub-items');
+    expect([...kids.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['First child', 'Second child']);
     dispose();
   });
 
