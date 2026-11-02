@@ -67,6 +67,26 @@ describe('Button', () => {
     expect(c.querySelector('span[id]')).toBeNull();
     expect(btn.getAttribute('aria-describedby')).toBe('other');
   });
+
+  it('takes a reason after it was drawn without one, without failing to place the button', () => {
+    const [reason, setReason] = createSignal<string | undefined>(undefined);
+    const c = mount(() => (
+      <div>
+        <h2>Title</h2>
+        <Button disabled={reason() !== undefined} reason={reason()}>
+          Close
+        </Button>
+      </div>
+    ));
+    expect(c.querySelector('span[id]')).toBeNull();
+    expect(() => setReason('Already closed.')).not.toThrow();
+    expect(c.querySelectorAll('button')).toHaveLength(1);
+    expect(c.querySelector('span[id]')?.textContent).toBe('Already closed.');
+    expect(c.querySelector('button')!.disabled).toBe(true);
+    expect(() => setReason(undefined)).not.toThrow();
+    expect(c.querySelector('span[id]')).toBeNull();
+    expect(c.querySelectorAll('button')).toHaveLength(1);
+  });
 });
 
 describe('Badge / EmptyState / Field', () => {
