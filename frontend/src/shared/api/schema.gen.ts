@@ -6398,6 +6398,11 @@ export interface components {
          * @enum {string}
          */
         TeamNetwork: "none" | "limited" | "open";
+        /**
+         * @description Why a team is paused.
+         * @enum {string}
+         */
+        TeamPause: "budget" | "other";
         /** @description A profile that names a team. */
         TeamProfile: {
             id: string;
@@ -6450,6 +6455,7 @@ export interface components {
             members?: components["schemas"]["TeamMember"][] | null;
             name: string;
             network?: null | components["schemas"]["TeamNetwork"];
+            paused?: null | components["schemas"]["TeamPause"];
             profile: string;
             /**
              * @description Whether what the members propose is kept for every task of the team together (`true`: a

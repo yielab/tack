@@ -74,6 +74,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
     sign_in_docs: "https://github.com/yielab/docket/blob/develop/docs/MODEL-GATEWAYS.md",
 };
 
+/// The feature of `GET /health` under which a team's `paused` is sent.
+const POD_PAUSE: &str = "podPause";
+
 /// How often a running task's trace, inbox and record are read.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -1674,6 +1677,30 @@ impl DocketAdapter {
 }
 
 impl DocketAdapter {
+    /// What to tell a person whose task waits on `pod`, when docket says the team is paused: why
+    /// and the command that resumes it, as no route of docket's does. `None` when the team runs
+    /// or docket's answer cannot be read.
+    async fn paused_team_line(&self, pod: &str) -> Option<String> {
+        let reply = self
+            .client
+            .pod(pod)
+            .await
+            .ok()
+            .filter(|r| r.status == 200)?;
+        let report: wire::PodReport = reply.read().ok()?;
+        if report.paused != Some(true) {
+            return None;
+        }
+        let why = match report.paused_reason.as_deref() {
+            Some("budget") => "its budget is spent",
+            _ => "docket paused it",
+        };
+        Some(format!(
+            "The team is paused ({why}), so this task waits. \
+             Resume it with `docket run --pod {pod} --resume`."
+        ))
+    }
+
     /// Follows one task until it ends: trace page, inbox, record, then wait
     /// for the next poll or for the person's answer, whichever comes first.
     async fn follow(
@@ -1717,6 +1744,9 @@ impl DocketAdapter {
         // What docket called the options it offered, learnt from the escalations read before the
         // events that name them.
         let mut labels = OptionLabels::new();
+        // Whether the person was told the team is paused, and whether this docket can say so.
+        let mut pause_told = false;
+        let mut pause_listed: Option<bool> = None;
         loop {
             // Whatever needs a person.
             let mut expired_in_docket = false;
@@ -1801,6 +1831,23 @@ impl DocketAdapter {
                         last_asked.as_ref(),
                     )
                     .await);
+            }
+            // A task docket holds `pending` while its team is paused: the attempt runs and nothing
+            // moves. Said once; the team is read only from a docket that lists `podPause`.
+            if !pause_told && task.as_ref().is_some_and(|view| view.status == "pending") {
+                if pause_listed.is_none() {
+                    pause_listed = Some(self.client.has_feature(POD_PAUSE).await);
+                }
+                if pause_listed == Some(true)
+                    && let Some(line) = self.paused_team_line(&info.pod).await
+                {
+                    let _ = side.progress.try_send(Progress {
+                        kind: event_kind::AGENT_TEAM_PAUSED.to_owned(),
+                        text: line,
+                        usage: None,
+                    });
+                    pause_told = true;
+                }
             }
             let now = tokio::time::Instant::now();
             let waiting = task

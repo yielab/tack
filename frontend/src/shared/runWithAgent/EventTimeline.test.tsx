@@ -166,7 +166,7 @@ describe('EventTimeline', () => {
 
   it('every kind the runner reports reads in words, and a failed answer takes the failure colour', async () => {
     const kinds = [
-      'agent.hop_started', 'agent.hop_finished', 'agent.untracked', 'agent.refused', 'agent.answer_failed',
+      'agent.hop_started', 'agent.hop_finished', 'agent.untracked', 'agent.refused', 'agent.answer_failed', 'agent.team_paused',
       'escalation.asked', 'escalation.resolved', 'escalation.expired', 'escalation.waiting', 'escalation.decided', 'escalation.unreadable',
     ];
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(page(kinds.map((k, i) => step(i + 1, k, 'x'))));
