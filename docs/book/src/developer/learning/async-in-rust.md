@@ -15,25 +15,21 @@ If you have written async code in JavaScript, Python, or Java, the concepts here
 | Java | ForkJoinPool / virtual threads | Somewhat — you configure it |
 | Rust | *none built in* | Yes — Tack uses Tokio |
 
-Tack uses [Tokio](https://tokio.rs/), the most widely used async runtime in the Rust ecosystem. The entry point of the server annotates `main` with `#[tokio::main]`:
+Tack uses [Tokio](https://tokio.rs/), the most widely used async runtime in the Rust ecosystem. Most of the `tack` CLI is synchronous (it uses a blocking HTTP client), so its `main` builds a runtime only for the command that needs one, `tack serve`:
 
 ```rust
-// crates/tack-api/src/main.rs
+// crates/tack-cli/src/main.rs
+let runtime = tokio::runtime::Runtime::new()?;
+runtime.block_on(local_runner::serve(config, runner_config, &environment))
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let config = AppConfig::load();
-    // ...
-    let pool = init_pool(&config.database_url).await?;
-    // ...
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
-    Ok(())
-}
+// crates/tack-cli/src/serve.rs (shortened): the composition root
+let pool = init_pool(&config.database_url).await?;
+migrations::run_all(&pool).await?;
+let repo = Repository::new(pool);
+// ... build AppState, start the background loops, then tack_api::serve(...)
 ```
 
-`#[tokio::main]` is a macro that wraps your function in a Tokio runtime initialization. Everything inside `main` runs on the Tokio executor. Without this annotation, calling `.await` anywhere would be a compile error.
+`tack-runner`'s `main` uses the `#[tokio::main]` macro instead, which does the same thing in one line. Everything inside runs on the Tokio executor; `.await` outside an async context is a compile error.
 
 ---
 
@@ -88,8 +84,8 @@ async fn handle_socket(socket: WebSocket, project_id: Uuid, state: AppState) {
     let mut send_task = tokio::spawn(async move {
         while let Ok(event) = rx.recv().await {
             if event_matches_project(&event, project_id) {
-                let msg = serde_json::to_string(&event).unwrap();
-                if sender.send(Message::Text(msg.into())).await.is_err() {
+                let Ok(json) = serde_json::to_string(&event) else { continue };
+                if sender.send(Message::Text(json.into())).await.is_err() {
                     break;
                 }
             }
@@ -136,7 +132,7 @@ The spawned task runs independently of the caller. `tokio::spawn` returns a `Joi
 The real-time board updates use Tokio's broadcast channel:
 
 ```rust
-// Created once at startup in main.rs:
+// Created once at startup in tack-cli's serve.rs:
 let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
 
 // Stored in AppState — every handler and WebSocket connection
@@ -147,20 +143,7 @@ pub struct AppState {
 }
 ```
 
-`broadcast::channel(100)` creates a multi-producer, multi-consumer channel with a buffer of 100 messages. Any handler can send an event:
-
-```rust
-// In items.rs, after updating an item:
-websocket::broadcast_event(
-    &state,
-    BoardEvent::ItemUpdated {
-        project_id: item.project_id,
-        item_id: item.id,
-        old_status: Some(old_status),
-        new_status: item.status.clone(),
-    },
-);
-```
+`broadcast::channel(100)` creates a multi-producer, multi-consumer channel with a buffer of 100 messages. A handler can send an event with `websocket::broadcast_event(&state, BoardEvent::ItemUpdated { project_id, item_id, old_status, new_status })`. Most item changes do not call it directly: the handler emits a domain event (`state.events().emit(...)`), and `board_message` in `ports.rs` turns the ones the browser understands into `BoardEvent`s on this channel.
 
 Each WebSocket connection calls `state.broadcast_tx.subscribe()` to get its own receiver. The event is delivered to every active subscriber. The filter in `handle_socket` discards events for other projects.
 
@@ -174,6 +157,7 @@ Each WebSocket connection calls `state.broadcast_tx.subscribe()` to get its own 
 #[instrument(skip(state))]
 pub async fn create_item(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(project_id): Path<Uuid>,
     Json(input): Json<CreateItem>,
 ) -> ApiResult<Json<serde_json::Value>> {

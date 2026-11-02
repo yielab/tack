@@ -24,7 +24,7 @@ Whoever creates the request, the server writes the instructions the harness is g
 
 ## The protocol surface
 
-The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outside the operator token check. `docs/openapi.json` lists 14 operations there, all authenticated with the runner's own hashed bearer credential:
+The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outside the operator token check. `docs/openapi.json` lists 16 operations there, all authenticated with the runner's own hashed bearer credential:
 
 | Group | Operations |
 |---|---|
@@ -33,7 +33,7 @@ The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outsi
 | One attempt | `accept`, `start`, `events`, `decisions`, `decisions/poll`, `decisions/answered-elsewhere`, `artifacts`, `artifacts/{artifact_id}/content` (PUT, the bytes), `completion`, `cancellation-observation`, `recovery-observation` |
 | Team activity | `activity` (additive: the tasks a harness's teams hold that changed) |
 
-Fifteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The frozen fixtures under `docs/contracts/runner-v1/` are 52 files, including 15 error envelopes under `errors/`. They are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the count.
+Fifteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The fixtures under `docs/contracts/runner-v1/` are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the list, so a changed or added fixture fails there until the pin is updated.
 
 ### Several attempts at once
 
@@ -71,7 +71,7 @@ A harness entry may also carry `teams` (each team the harness runs: its profile 
 
 1. A restarted runner reads its own journal and reports what it actually observed: `ProcessStopped`, `ProcessRunning`, or `Ambiguous` (`POST /api/runner/v1/attempts/{id}/recovery-observation`). For docket, the adapter's `reconcile` reads the task named by the journal's `<team>/<task id>` and reports it stopped when the task is in a terminal state.
 
-   When `reconcile` answers `ProcessRunning`, the journal is `process_observed_running` and it holds the claim (`AttemptJournal.claimed_work`, which carries references to secrets and no literal environment value), the engine calls `resume`, then sends one heartbeat for the lease with the journal's fencing token. If the heartbeat is accepted, `recover` hands the prepared run back as `RunCycle::Resumed` instead of following it, and `serve` follows it in a run slot of its own (`follow_resumed`), so the ticker heartbeats its lease with every other and the journals behind it are recovered without waiting. It takes the same path a fresh run takes after it starts (`follow_to_end`: the wait, evidence, verifier, publish, terminal report), and no recovery observation is sent. The attempt's deadline starts over at the resume. Decisions the board already holds for the attempt are read once and are not created again when the agent asks the same question; the existing decision is waited for. If `resume` fails or answers `Unsupported`, or the heartbeat is refused, the runner reports `ProcessRunning` as before. A journal written before this existed has no claim and recovers as it always did.
+   When `reconcile` answers `ProcessRunning`, the journal is `process_observed_running` and it holds the claim (`AttemptJournal.claimed_work`, which carries references to secrets and no literal environment value), the engine calls `resume`, then sends one heartbeat for the lease with the journal's fencing token. If the heartbeat is accepted, `recover` hands the prepared run back as `RunCycle::Resumed` instead of following it, and `serve` follows it in a run slot of its own (`follow_resumed`), so the ticker heartbeats its lease with every other and the journals behind it are recovered without waiting. It takes the same path a fresh run takes after it starts (`follow_to_end`: the wait, evidence, verifier, publish, terminal report), and no recovery observation is sent. The attempt's deadline starts over at the resume. Decisions the board already holds for the attempt are read once and are not created again when the agent asks the same question; the existing decision is waited for. If `resume` fails or answers `Unsupported`, or the heartbeat is refused, the runner reports `ProcessRunning`. A journal with no recorded claim is recovered by that report alone.
 2. The server computes a disposition: `SafePreSpawnRequeue` (nothing had started yet, automatically safe), `NeedsOperator` (anything else), or `AlreadyTerminal`.
 3. An operator resolves a `needs_operator` request explicitly, with an audited reason:
 
@@ -93,7 +93,7 @@ Each agent's adapter turns its own way in into the same `plan` artifact, and say
 
 ## Version compatibility
 
-Every runner-v1 request body that carries JSON holds `"protocol_version": 1`. The server rejects anything else outright. `check_protocol_version` in `crates/tack-api/src/handlers/runner_protocol.rs` returns `unsupported_protocol` (the fixture is `docs/contracts/runner-v1/errors/unsupported-protocol.json`) for any other number, and `invalid_request` when the field is missing or not a number, on every one of the 13 operations that carry a JSON body. There is no negotiated fallback: a v2 protocol, if it ever exists, is a new contract revision, not a version range this server tries to interpolate.
+Every runner-v1 request body that carries JSON holds `"protocol_version": 1`. The server rejects anything else outright. `check_protocol_version` in `crates/tack-api/src/handlers/runner_protocol.rs` returns `unsupported_protocol` (the fixture is `docs/contracts/runner-v1/errors/unsupported-protocol.json`) for any other number, and `invalid_request` when the field is missing or not a number, on every operation that carries a JSON body. There is no negotiated fallback: a v2 protocol, if it ever exists, is a new contract revision, not a version range this server tries to interpolate.
 
 Separately, each runner reports its own `runner_version` (a free-form string in the capability snapshot) and each harness reports its `installed_version`. Both are informational, logged and stored, and the server never uses them to gate behaviour. docket is the one place a version is enforced, and by the runner's probe, not by the protocol: the adapter reads `apiVersion` from docket's `GET /status.json` and accepts a number, 6 or later.
 
@@ -120,7 +120,7 @@ These are documented rather than papered over, per this project's "unsupported i
 
 This section separates what the contract guarantees from what the test suite proves. This is the one page where test names belong.
 
-**Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-protocol/tests/runner_contract.rs` (byte-pins all 52 frozen fixtures), and the integrator test files referenced throughout this page.
+**Proven end-to-end against the real production router** (`build_router`, no card-local test scaffolding): creating an execution request, scheduling it to an exact runner or a fleet, the full runner-v1 protocol surface (enroll, claim, heartbeat, accept, start, events, decisions, artifacts, completion), cancellation and recovery-observation handling, the decision-resolve and artifact-download routes, and the retention and expiry sweeps. See `crates/tack-api/tests/handlers/production_router.rs`, `crates/tack-protocol/tests/runner_contract.rs` (byte-pins every frozen fixture), and the integrator test files referenced throughout this page.
 
 **The `tack-runner` binary's own network transport is wired and proven.** `tack_runner::bootstrap::build_runtime` is the one composition root that both the standalone `tack-runner` binary and the embedded `tack serve --with-runner` and `tack runner start` paths call. It wires the real `HttpPullProtocol`, not `UnavailableProtocolClient`. `UnavailableProtocolClient` still exists in the crate as an explicit no-client fallback, reachable only if something constructs a runtime without attaching a protocol client, and stays pinned by `runtime::tests::unavailable_protocol_is_a_typed_failure_not_success` so that path fails as a typed `RunnerError::ProtocolUnavailable` rather than a silent success.
 
