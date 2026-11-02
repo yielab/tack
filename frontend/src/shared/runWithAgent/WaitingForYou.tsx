@@ -18,7 +18,7 @@ import {
   type WaitingRow,
 } from '../state/waiting';
 import { sessionDecisionToken } from '../state/decisionSession';
-import { DecisionTokenField } from './DecisionInbox';
+import DecisionTokenField from './DecisionTokenField';
 import { relativeTimeFromIso } from './shared';
 import { tallySentence } from './cardRun';
 
