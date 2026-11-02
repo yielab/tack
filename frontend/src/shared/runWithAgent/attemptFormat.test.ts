@@ -174,6 +174,8 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
       tone: 'warning',
       detail: 'The agent ended without changing any files. What it said is below.',
     });
+    // A folder team has no repository: no badge says it changed nothing.
+    expect(describeAttemptOutcome('succeeded', { ...art(0), outside_repository: true }).badge).toBeNull();
     const kept = describeAttemptOutcome('succeeded', { workspace_kept_at: '/var/ws/1' }).badge;
     expect(kept?.label).toBe('Finished — changes could not be read');
     expect(kept?.detail).toContain('/var/ws/1');
