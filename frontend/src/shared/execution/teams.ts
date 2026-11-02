@@ -84,6 +84,15 @@ export function memberReachText(member: TeamMember): string[] {
 export const SHARED_PROPOSALS_TEXT =
   "This team's proposals are kept for all its tasks together: a name used in one task cannot be used again in another until the team's proposal list is recreated.";
 
+/** What a paused team is owed: the fact in a few words and the one way to end it. Tack has no
+ *  control to resume a team (the agent has no route for it), so the sentence is the reason. */
+export function pausedText(name: string, paused: NonNullable<TeamReport['paused']>): { headline: string; resume: string } {
+  return {
+    headline: paused === 'budget' ? 'Paused: budget spent' : 'Paused',
+    resume: `Resume it with \`docket run --pod ${name} --resume\`; its queued tasks wait until then.`,
+  };
+}
+
 /** What the team's report says of proposing, read from the one field both the card and Compare use:
  *  each member's `can_propose`. `roles` are the members that can; `not_reported` when the report does not say. */
 export function teamProposes(report: TeamReport | null | undefined): { state: 'can' | 'cannot' | 'not_reported'; roles: string[] } {

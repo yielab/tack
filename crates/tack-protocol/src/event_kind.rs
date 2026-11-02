@@ -12,6 +12,9 @@ pub const AGENT_REFUSED: &str = "agent.refused";
 /// docket did not take a person's answer; the question is asked again.
 pub const AGENT_ANSWER_FAILED: &str = "agent.answer_failed";
 
+/// The team the task was sent to is paused, so the task waits; the line says how to resume it.
+pub const AGENT_TEAM_PAUSED: &str = "agent.team_paused";
+
 /// docket asked a person.
 pub const ESCALATION_ASKED: &str = "escalation.asked";
 /// A person answered what docket asked.

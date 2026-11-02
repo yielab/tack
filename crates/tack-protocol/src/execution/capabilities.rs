@@ -209,6 +209,21 @@ pub struct TeamReport {
     /// proposals or the harness did not say; no field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposals_shared_across_tasks: Option<bool>,
+    /// Why the team claims no task now, when it does not: tasks sent to it wait. Absent means the
+    /// team is not paused, or the harness did not say; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused: Option<TeamPause>,
+}
+
+/// Why a team is paused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamPause {
+    /// Its budget is spent.
+    Budget,
+    /// For a reason Tack has no word for.
+    Other,
 }
 
 /// One member of a team.
