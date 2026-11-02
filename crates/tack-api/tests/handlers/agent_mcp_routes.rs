@@ -28,7 +28,9 @@ use Reach::{Agent, OperatorOnly};
 
 /// Each tool, what it reaches and the routes it calls. `{p}`, `{i}`, `{t}` and `{c}` stand for a
 /// project, an item, a thread and a change set that exist.
-const TOOLS: &[(&str, Reach, &[(&str, &str)])] = &[
+type Tool = (&'static str, Reach, &'static [(&'static str, &'static str)]);
+
+const TOOLS: &[Tool] = &[
     ("list_projects", Agent, &[("GET", "/api/projects")]),
     (
         "get_autonomy",
