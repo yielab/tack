@@ -169,11 +169,11 @@ pub async fn get_thread(
     params(("id" = Uuid, Path, description = "Thread ID")),
     request_body = PostMessage,
     responses(
-        (status = 200, description = "The message is in the thread and its turn has started", body = PostedMessage),
+        (status = 200, description = "The message is in the thread; when a person wrote it, its turn has started (an agent's message starts none)", body = PostedMessage),
         (status = 400, description = "The message or its references are not acceptable", body = crate::openapi::ErrorEnvelope),
         (status = 403, description = "The credential lacks the scope `converse` on the thread's project", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "Not found", body = crate::openapi::ErrorEnvelope),
-        (status = 409, description = "The thread is closed or at a cap, or its last turn has not answered yet", body = crate::openapi::ErrorEnvelope),
+        (status = 409, description = "The thread is closed or idle, or a person's message is past the turn cap or comes before the last turn has answered", body = crate::openapi::ErrorEnvelope),
     ),
 )]
 #[instrument(skip(state, principal, input))]
