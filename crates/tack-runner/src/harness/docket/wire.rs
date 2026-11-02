@@ -268,6 +268,15 @@ pub(super) struct TaskHop {
     pub prompt_manifest: Option<PromptManifest>,
     #[serde(default)]
     pub artifact: Option<HopArtifact>,
+    /// `hopTimes`: the instants (ISO 8601 UTC) of a hop that ran an agent turn and the rework
+    /// cycle it ran in. A command, gate, wait or resolution hop, and a hop recorded before the
+    /// feature, carry none of the three.
+    #[serde(default, rename = "startedAt")]
+    pub started_at: Option<String>,
+    #[serde(default, rename = "finishedAt")]
+    pub finished_at: Option<String>,
+    #[serde(default)]
+    pub cycle: Option<u32>,
 }
 
 /// The prompts a hop's turn was composed from (`promptManifest`), in composition order, and the

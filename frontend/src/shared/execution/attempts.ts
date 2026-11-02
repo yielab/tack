@@ -198,6 +198,9 @@ export function readRunSteps(terminalReason: unknown): RunStep[] | undefined {
       : [],
     assumptions: plainTexts(step.assumptions),
     questions: plainTexts(step.questions),
+    startedAt: plainText(step.startedAt),
+    finishedAt: plainText(step.finishedAt),
+    cycle: typeof step.cycle === 'number' ? step.cycle : null,
   }));
 }
 

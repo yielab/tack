@@ -140,7 +140,7 @@ describe('TeamSteps', () => {
 
   describe('the step track', () => {
     const hop = (over: Partial<RunStep>): RunStep => ({
-      role: null, model: null, class: null, family: null, verdict: null, ok: null, summary: null, prompts: [], assumptions: [], questions: [], ...over,
+      role: null, model: null, class: null, family: null, verdict: null, ok: null, summary: null, prompts: [], assumptions: [], questions: [], startedAt: null, finishedAt: null, cycle: null, ...over,
     });
 
     it('is one node per step, in order, each saying its state in words and not by its bar alone', async () => {
@@ -173,6 +173,17 @@ describe('TeamSteps', () => {
       expect(step(c, 'review').textContent).toContain('Verdict: approved');
       // A step nobody with a role does has no hop to show.
       expect(step(c, 'tests').textContent).not.toContain('Verdict');
+    });
+
+    it('says how long a hop took when both its instants are known, and nothing when either is missing', async () => {
+      const hops = [
+        hop({ role: 'lead', startedAt: '2026-10-14T10:00:00.000000+00:00', finishedAt: '2026-10-14T10:04:55.400000+00:00', cycle: 0 }),
+        hop({ role: 'reviewer', startedAt: '2026-10-14T10:05:00.000000+00:00' }),
+      ];
+      const c = mount({ steps: STEPS, events: () => [started('Lead'), finished('Lead'), started('Reviewer'), finished('Reviewer')], hops });
+      await settle();
+      expect(step(c, 'write').textContent).toContain('Took 4m 55s');
+      expect(step(c, 'review').textContent).not.toContain('Took');
     });
 
     it('as a track alone it leaves the model and verdict to the list of hops below, and says Done once the run ended', async () => {

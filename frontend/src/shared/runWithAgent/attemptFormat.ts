@@ -72,6 +72,19 @@ export function formatWallClock(wallClockMs: number | null, terminal = false): s
   return parts.join(' ');
 }
 
+/** How long a hop's agent turn took, in milliseconds: finished minus started. `null` when either
+ *  instant is missing or unreadable, or the clock ran backwards. */
+export function hopMilliseconds(hop: { startedAt: string | null; finishedAt: string | null }): number | null {
+  const from = hop.startedAt ? Date.parse(hop.startedAt) : NaN;
+  const to = hop.finishedAt ? Date.parse(hop.finishedAt) : NaN;
+  return Number.isNaN(from) || Number.isNaN(to) || to < from ? null : to - from;
+}
+
+/** The words for a hop's duration ("Took 4m 55s"), or `null` when it is not known. */
+export function hopDurationText(milliseconds: number | null): string | null {
+  return milliseconds === null ? null : `Took ${formatWallClock(milliseconds)}`;
+}
+
 export interface RunnerTimeCostDisplay {
   wallClock: string;
   costUsd: string;

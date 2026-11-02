@@ -8,9 +8,11 @@ use super::wire::{PromptManifest, TaskHop};
 
 /// The `steps` of a task's hops. A hop with no manifest has `prompts: []`, which the screen words
 /// as "recorded no prompt", and an empty list for what the agent assumed or asked means it said
-/// nothing; nothing here is invented for a key the hop does not have.
-pub(super) fn steps(hops: &[TaskHop]) -> Vec<Value> {
-    hops.iter().map(step).collect()
+/// nothing; nothing here is invented for a key the hop does not have. `hop_times` is whether this
+/// docket lists `hopTimes`: only then are `startedAt`, `finishedAt` and `cycle` read, and a hop
+/// that has none of them (no agent turn, or recorded before) keeps the keys out of its step.
+pub(super) fn steps(hops: &[TaskHop], hop_times: bool) -> Vec<Value> {
+    hops.iter().map(|hop| step(hop, hop_times)).collect()
 }
 
 /// What a task handed off as its result: the summary of its last step, when it wrote one.
@@ -24,12 +26,12 @@ pub(super) fn result(hops: &[TaskHop]) -> Option<String> {
         .map(str::to_owned)
 }
 
-fn step(hop: &TaskHop) -> Value {
+fn step(hop: &TaskHop, hop_times: bool) -> Value {
     let manifest = hop.prompt_manifest.as_ref();
     let artifact = hop.artifact.as_ref();
     let text = |value: Option<&str>| value.filter(|value| !value.is_empty()).map(str::to_owned);
     let prompts = manifest.map_or_else(Vec::new, prompts);
-    json!({
+    let mut step = json!({
         "role": text(hop.role.as_deref()),
         // The model the hop was served by; the manifest names the one it was planned for.
         "model": text(hop.model.as_deref())
@@ -43,7 +45,19 @@ fn step(hop: &TaskHop) -> Value {
         "prompts": prompts,
         "assumptions": artifact.map_or_else(Vec::new, |artifact| artifact.assumptions.clone()),
         "questions": artifact.map_or_else(Vec::new, |artifact| artifact.questions.clone()),
-    })
+    });
+    if hop_times && let Some(object) = step.as_object_mut() {
+        if let Some(started) = text(hop.started_at.as_deref()) {
+            object.insert("startedAt".to_owned(), json!(started));
+        }
+        if let Some(finished) = text(hop.finished_at.as_deref()) {
+            object.insert("finishedAt".to_owned(), json!(finished));
+        }
+        if let Some(cycle) = hop.cycle {
+            object.insert("cycle".to_owned(), json!(cycle));
+        }
+    }
+    step
 }
 
 fn prompts(manifest: &PromptManifest) -> Vec<Value> {

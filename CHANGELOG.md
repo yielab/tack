@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Added
 
+- A run's steps say how long each took ("Took 4m 55s") on the Execution tab and under each step of the track, from a docket that lists `hopTimes`; steps that did no agent work, and a docket without the feature, show nothing as before.
 - docket's audit entry for a task Tack cancels now names `tack` as who cancelled it instead of `http`, from a docket that lists `settledCursor`.
 - A run on a team whose budget is spent says so: "The team's budget is spent", with the command that resumes the team, instead of docket's raw text. A failed run with no more specific reason now ends with docket's own `hop_failed`. Both need a docket that lists `failureKinds`; an older one reads as before.
 - **Triggers and Add a manager:** Settings → Automation → Agents lists a project's triggers (an event such as a failed run, a run waiting for you, a question or a change set that has waited too long, or chosen weekdays at a time), each with a quiet period, a daily cap and an on switch; a burst of events starts one run of the profile that is told about all of them and the digest, and what a profile's own credential changed never wakes it. `/api/triggers` manages them (operator only), and Agents → **Add a manager** makes the profile, a credential with read, propose and converse, the thread, three triggers and the MCP configuration in one step.

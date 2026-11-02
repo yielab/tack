@@ -3,7 +3,7 @@ import { agentName } from '../execution/agents';
 import { agentProfilesApi, attemptsApi, teamOf, type AgentProfileSummary, type ExecutionSummary } from '../execution';
 import { teamsApi, type TeamEntry } from '../execution/teams';
 import type { RunStep, TeamStepReport } from '../execution/types';
-import { formatTokenCount } from './attemptFormat';
+import { formatTokenCount, hopDurationText, hopMilliseconds } from './attemptFormat';
 import { classWords, roleWords } from './AgentWork';
 import { matchSteps } from './teamSteps';
 
@@ -59,6 +59,7 @@ function hopFacts(hop: RunStep | undefined): string[] {
   return [
     classWords(hop.model, hop.class),
     hop.verdict ? `Verdict: ${hop.verdict}` : null,
+    hopDurationText(hopMilliseconds(hop)),
     promptTokens > 0 ? `${formatTokenCount(promptTokens)} prompt tokens` : null,
   ].filter((x): x is string => !!x);
 }

@@ -979,7 +979,7 @@ impl DocketAdapter {
         }
     }
 
-    fn outcome(
+    async fn outcome(
         &self,
         info: &RunInfo,
         state: AttemptState,
@@ -1024,7 +1024,11 @@ impl DocketAdapter {
             && !task.hops.is_empty()
             && let Some(object) = reason.as_object_mut()
         {
-            object.insert("steps".to_owned(), Value::Array(steps::steps(&task.hops)));
+            let hop_times = self.client.has_feature("hopTimes").await;
+            object.insert(
+                "steps".to_owned(),
+                Value::Array(steps::steps(&task.hops, hop_times)),
+            );
         }
         let ended_at = Utc::now();
         let elapsed =
@@ -1240,7 +1244,7 @@ impl DocketAdapter {
                        "message": format!("docket said: {why}"), "task": info.task}),
             ),
         };
-        let mut outcome = self.outcome(info, state, reason, Some(task), model);
+        let mut outcome = self.outcome(info, state, reason, Some(task), model).await;
         // What the team wrote in this task, beside the steps. The task has ended, so no row
         // changes under the read.
         let records::Kept {
@@ -1683,13 +1687,15 @@ impl DocketAdapter {
                 text: error.clone(),
                 usage: None,
             });
-            return Ok(self.outcome(
-                info,
-                AttemptState::Failed,
-                json!({"code": "rejected", "message": error}),
-                None,
-                None,
-            ));
+            return Ok(self
+                .outcome(
+                    info,
+                    AttemptState::Failed,
+                    json!({"code": "rejected", "message": error}),
+                    None,
+                    None,
+                )
+                .await);
         }
         // The attempt's clock bounds the agent's work; a task docket holds for a person is not
         // working, so the time between two polls that both saw it waiting is not counted.
@@ -1819,15 +1825,17 @@ impl DocketAdapter {
                         "nobody answered before the question expired",
                     )
                     .await;
-                return Ok(self.outcome(
-                    info,
-                    AttemptState::Failed,
-                    json!({"code": "not_answered",
+                return Ok(self
+                    .outcome(
+                        info,
+                        AttemptState::Failed,
+                        json!({"code": "not_answered",
                            "message": super::not_answered(held_expiry),
                            "task": info.task}),
-                    task.as_ref(),
-                    relay.served_model.take(),
-                ));
+                        task.as_ref(),
+                        relay.served_model.take(),
+                    )
+                    .await);
             }
             if now >= deadline {
                 let _ = self
@@ -1835,13 +1843,15 @@ impl DocketAdapter {
                     .cancel_task(&info.pod, &info.task, "the attempt's time ran out")
                     .await;
                 let message = super::time_ran_out(info.timeout, pending.is_some());
-                return Ok(self.outcome(
-                    info,
-                    AttemptState::Failed,
-                    json!({"code": "timeout", "message": message, "task": info.task}),
-                    task.as_ref(),
-                    relay.served_model.take(),
-                ));
+                return Ok(self
+                    .outcome(
+                        info,
+                        AttemptState::Failed,
+                        json!({"code": "timeout", "message": message, "task": info.task}),
+                        task.as_ref(),
+                        relay.served_model.take(),
+                    )
+                    .await);
             }
 
             tokio::select! {
@@ -1868,7 +1878,7 @@ impl DocketAdapter {
                                        "task": info.task}),
                                 task.as_ref(),
                                 relay.served_model.take(),
-                            ));
+                            ).await);
                         }
                         if let Some(problem) = self.deliver(&ask, &answer).await {
                             // The decision is resolved in Tack, so the run would wait on
