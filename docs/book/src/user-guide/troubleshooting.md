@@ -42,17 +42,17 @@ This page is for people who use Tack every day and hit something unexpected. Eac
 
 **Cause.** Everything after a succeeded run is optional and none of it changes the run's result. The run's timeline says which step was skipped and why: verification not set up, the branch not pushed, or a task that is not linked to a GitHub issue, which a pull request needs.
 
-**What to do.** Read the skipped step on the run's timeline. To open pull requests, link the task to its issue (in the **Link GitHub issue** section of its Overview tab). Verification, pushing and the GitHub token are set up by whoever installed the runner; the steps are in the [Administrator Guide](../admin-guide/troubleshooting.md#a-succeeded-run-has-no-pull-request-pack-or-branch). Then run the task again.
+**What to do.** Read the skipped step on the run's timeline. To open pull requests, link the task to its issue (in the **GitHub issue** section of its Overview tab: type `owner/repo#42` and press **Link**). Verification, pushing and the GitHub token are set up by whoever installed the runner; the steps are in the [Administrator Guide](../admin-guide/troubleshooting.md#a-succeeded-run-has-no-pull-request-pack-or-branch). Then run the task again.
 
 ---
 
 ## Auto-start is off, and says why
 
-**What you see.** In **Settings → Automation**, the Start rung's switch **Start a task by itself** is greyed out with the line "Choose a profile for at least one role in Teams". Or the switch was on and is now off, with a line such as "Auto-start is off: the project dropped to L3".
+**What you see.** In **Settings → Automation**, the switch **Start a task by itself** is greyed out with the line "Choose a profile for at least one role in Teams". Or the switch was on and is now off, with a line such as "Auto-start is off: the project dropped to L3".
 
 **Cause and fix.**
 
-- **No profile.** Auto-start only starts a task whose role leads to a profile. Until at least one role has a profile, or the project has a default profile, the switch stays off. Choose a profile for a role in the Teams rung, then switch Start on.
+- **No profile.** Auto-start only starts a task whose role leads to a profile. Until at least one role has a profile, or the project has a default profile, the switch stays off. Choose a profile for a role in **Teams**, then switch Start on.
 - **The project dropped to L3.** When a pull request Tack merged by itself is reverted, or goes red on its merge commit, Tack takes the merge level down to L3 and switches auto-start off. The task's activity says which pull request. Look into that merge, raise the level again under **Settings → Automation**, then switch Start on again.
 
 Auto-start is off by default for every project. A project file never switches it on; see [A project file was refused](#a-project-file-was-refused).
@@ -125,7 +125,7 @@ Yes, as far as Tack goes. It runs on your own machine or network and needs no ou
 
 ### Where is my data stored?
 
-In two places on the machine that runs the server: a database, and a folder of attachments, organised by item. By default both sit in the folder you started the server from; a background service started with `tack service install` uses your per-user application-data folder. The [Administrator Guide](../admin-guide/configuration.md) says how to move them.
+In two places on the machine that runs the server: a database, and a folder of attachments, organised by item. By default both sit in the folder you started the server from; a background service started with `tack service install` uses your per-user application-data folder. The [Configuration](../admin-guide/configuration-reference.md) page says how to move them.
 
 ### How do I back up my data?
 

@@ -5,7 +5,7 @@
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
 **Tack is delivered through Phase 82.** A project is planned and tracked on a board, a list, a
-table, a calendar or a timeline, with or without agents. A task can be handed to an agent on
+calendar or a timeline, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. The run's work comes back as evidence to review, an independent
 verifier can judge it, and Tack can push the branch, open the pull request and merge it: by a

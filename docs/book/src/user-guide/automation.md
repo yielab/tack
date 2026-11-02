@@ -2,9 +2,9 @@
 
 This page is for the person who decides how much of a project's work Tack does without being asked. After
 reading it you can say which profile and team work on which tasks, let a task start by itself, understand
-how far Tack may merge on its own, make a task repeat, and read the badges that show what Tack did. It then
-covers the project's other agent settings: where the code is, where the agent works, and the default agent
-and model.
+how far Tack may merge on its own, and read the badges that show what Tack did. It then covers the
+project's other agent settings: where the code is, where the agent works, and the default agent and model.
+A task that repeats is set on the task; see [Repeating a task](items.md#repeating-a-task).
 
 ## Automation
 
@@ -13,65 +13,28 @@ highest place that can own it: the computer (the Agents page), the project (this
 run dialog). The dialog shows project values read-only, with a link to change them.
 
 The tab has two parts. At the top is the **ladder**, one picture of how far Tack may go on its own: the
-levels L3, L4 and L5 side by side, the one this project is set to filled in, the most it can reach marked
-**Ceiling**, and, under it, what holds the levels above back, each with a link to the fix. Below it are four
-sections in the order you set them up, with an index beside them that stays in view on a wide screen:
+levels L3, L4 and L5 side by side. Each level is a choice for the project. The one the project is set to is
+filled in and says **Set here**, the most it can reach is marked **Ceiling**, and under the levels a line for
+each thing that holds the higher ones back says what to change, with a link to the fix. A level the board
+cannot allow yet is shown disabled, with the reasons.
 
-1. **Who.** The default agent and its model and profile, the profile each role works with, and where the
-   code is and how the agent works on it.
-2. **When.** Let a task start a run by itself when it reaches a status, and write the definition of done the
-   agent reads.
-3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
+Below the ladder are five sections, in the order you set them up, with an index beside them that stays in
+view on a wide screen:
+
+1. **Who.** The default agent and its model and profile, the profile each role works with ([Teams](#teams)),
+   and where the code is and how the agent works on it ([The project's other settings](#the-projects-other-settings)).
+2. **When.** Let a task start a run by itself when it reaches a status ([Start](#start)), and write the
+   definition of done the agent reads.
+3. **Merge.** The rules for letting Tack merge a finished change by itself, as far as you allow
+   ([Merge](#merge)).
 4. **Limits.** How many tokens a day, how many automatic merges a day and how many waiting items the
-   project allows, and the limit for a run whose profile sets none.
+   project allows, and the limit for a run whose profile sets none ([Token limits](running-agents.md#token-limits)).
+5. **Agents.** How far an agent may go on this board, and the triggers that wake a manager; see
+   [Managers and Threads](talking-with-a-manager.md) and [How far an agent may
+   go](reviewing-runs.md#how-far-an-agent-may-go).
 
-The tab as it looks, with every control that can be disabled shown with its reason beside it:
-
-```text
-Autonomy ladder
-   [ L3 You merge: Set here, Ceiling ]  [ L4 Inside the domains: Blocked by 3 things ]  [ L5 Anything that passes: Blocked by 3 things ]
-   This project can reach L3.
-   ✗ The team saas-dev keeps its tasks at L3. <what to change>     Run saas-dev lights-out
-   ✗ GitHub polling is off on this board, so Tack cannot read CI or merge     Turn on GitHub polling
-   ✗ The project has no public key to check the verifier's signature against     Add the public key
-
-Who
-   Agent, Model, Default profile (folded)
-   Teams
-      Each role works with a profile. The profile names the team and the machine.
-      Content      [ My SaaS content writer v ]
-                   saas-content · lights-out · this computer
-      Developer    [ My SaaS implementer v ]
-                   saas-dev · needs a person · this computer
-      No role      [ No profile v ]
-      Manage profiles →      [ Apply the repository's teams ]   (disabled)
-                             Tack cannot run this on the team's computer from the board yet.
-                             How to set up a team there (a link to the Administrator Guide)
-   Where the code is, How the agent works on it (folded)
-
-When
-   Start
-      [ ] Start a task by itself
-      When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
-      (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
-       controls disabled)
-      The status is a person's: a run never changes it.
-   Definition of done (folded)
-
-Merge
-   (o) L3 - You merge every change yourself.
-   ( ) L4 - Tack merges changes that stay inside the domains below.   (disabled while L4 and L5 are off)
-   ( ) L5 - Tack merges any change that passes its checks.            (disabled while L4 and L5 are off)
-   L4 and L5 are off: <the reasons>
-   [ ] Merge when moved to Done
-   Domains, Stages the verifier must run, Public key, Times a rejected change goes back to the agent
-
-Limits
-   Daily limits: Tokens per day, Automatic merges per day, Items waiting at once
-   Provisional tokens per run (the default is 2 000 000 tokens, with where it comes from)
-```
-
-The names above (My SaaS, saas-content) are only an example; yours come from your own profiles.
+A run never changes a task's status: the column is yours, and what the agents report is the task's **Work**.
+See [Status and Work](views.md#status-and-work).
 
 > **Which tasks does this touch?** Only tasks with a role. A role is how Tack knows a task is meant for an
 > agent. Create roles under **Settings → Roles**, and give a task a role on its **Fields** tab.
@@ -242,17 +205,15 @@ is turned off, and the section says "Auto-start is off: the project dropped to L
 yourself.
 
 How often Tack looks is the administrator's setting; see
-[Configuration Reference](../admin-guide/configuration-reference.md).
+[Configuration](../admin-guide/configuration-reference.md).
 
 ### Who does it
 
-A task does not need a role to start by itself: you can say who does it on the task. **Who does it** is on the
-new-item dialog, on the item's Automation row and in the Run with agent dialog, and it is the same list in all
-three. It shows every profile, grouped by the team the profile names (with what the team is made of) or, for a
-profile that names no team, by the agent that runs it: Claude Code, Codex, OpenCode or Docket. Each agent says
-in one line what it can do, from what it told Tack about itself; what it cannot do, or did not say, is shown in
-grey, with its reason. A team that an agent reports but no profile names is greyed too, with "Make a profile
-for it on the Agents page". Each task can use a different agent; the choice is for this task.
+A task does not need a role to start by itself: you can say who does it on the task. **Who does it** is on
+the new-item dialog, on the item's Automation row and in the Run with agent dialog, and it is the same list
+in all three: every profile, grouped by the team it names or, for a profile with no team, by the agent that
+runs it. [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog) describes the list. Each
+task can use a different agent; the choice is for this task.
 
 Choosing a profile saves it on the task. **Nobody yet** removes it, and the task goes back to the profile of
 its role or the project's default. The Automation row says where the choice came from: "chosen on this task"
@@ -262,10 +223,11 @@ or "from the role Content". The Run with agent dialog always needs a profile, so
 
 ## Merge
 
-The **Merge** section is how much of the merge Tack decides. It has the **Merge** button, **Merge when moved to
-Done**, and the automatic merge at L4 and L5, with their domains, required checks and key.
-All of it is on [Merging from Tack](merging.md). L4 and L5 are shown disabled, with the reasons in "L4 and
-L5 are off: …", until what an automatic merge needs is in place.
+The level is chosen on the ladder. The **Merge** section holds the rules that go with it: **Merge when moved
+to Done**, the **Domains** (paths and task types, each with its own level), the **Stages the verifier must
+run**, the **Public key** that checks the verifier's signature, and **Times a rejected change goes back to
+the agent**. All of it is explained on [Merging from Tack](merging.md), together with the **Merge** button.
+L4 and L5 are shown disabled, with the reasons, until what an automatic merge needs is in place.
 
 ---
 
@@ -294,17 +256,6 @@ you to the key field).
 The ceiling holds back only the automatic merge. The **Merge** button is never held by it. If the team that
 ran a change needs a person, the automatic merge holds the change and the task says "The team that ran this
 stays at L3: it needs a person during a run".
-
----
-
-## Repeating a task
-
-A task can repeat **weekly**, **monthly** or **quarterly**: closing it creates the next one, once. Set
-it in the task's **Repeats** field; the rules for the next task's date and what it copies are in
-[Working with Items](items.md#repeating-a-task).
-
-The next task has the roles of the old one and starts in the first To do column. If that column is the
-project's start status, Tack starts it on its next look, so a repeating task can run on its own each period.
 
 ---
 
@@ -387,20 +338,13 @@ computer". Push is set up on the runner by an administrator; see
 and the runner does not, the run records "push skipped" instead of failing. The work is not lost either way:
 in the first mode it is on the local branch.
 
-### Status and Work
-
-A run never changes a task's status. The column is yours: you move the card, or apply a change set, and a
-run that starts, finishes or is reviewed leaves it where it is. What the agents report is the task's **Work**
-(Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled), shown beside the status on the
-card, the task, the List and the Board's strip. See [Status and Work](views.md#status-and-work).
-
 ### Definition of done
 
 The **Definition of done** is one text the agent reads on every run of this project.
 
 ### Agent and model
 
-- **Agent** is the agent a new run uses. Each pill is an agent that a runner on this computer reports. A line
+- **Agent** is the agent a new run uses. Each choice is an agent that a runner on this computer reports. A line
   below it says whether the agent is sandboxed or has your user's access, or, when the agent cannot be used
   here, why. With no runner reporting an agent, the section says "No runner reports an agent yet".
 - **Model** is the same field as in the run dialog: **Agent's default**, the models the agent listed or
@@ -421,8 +365,7 @@ A profile is what the agent is told to be and which tools it may use. Four are b
 | **Researcher** | Reads and searches, and writes a report. The only file it writes is the plan file `tack-plan.json`, when its findings lead to work |
 | **Planner** | Plans and designs, and proposes subtasks you can accept. The only file it writes is the plan file `tack-plan.json` |
 
-You pick one with the pills in the run dialog; each pill has a tooltip saying what it may do. You edit a
-profile in a form on the Agents page, never as JSON. A profile you change is copied into each request when
+You pick one under **Who does it** in the run dialog. You edit a profile in a form on the Agents page, never as JSON. A profile you change is copied into each request when
 the request is created, so editing it later never changes the history of an earlier run. The profile's list of
 tools for an agent is the default for every agent: a run that names its own tools (from the command line or an
 MCP client) uses those, and a run that names none uses the profile's. A profile that gives
