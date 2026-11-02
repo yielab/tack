@@ -86,6 +86,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A thread's turn on a docket team names its thread ("This turn belongs to thread <id>") and the fields to set on a change set it proposes (`origin` `thread`, `origin_ref` the id), so a manager reaching Tack over HTTP through docket can say where its change set came from without the operator writing the id in the message.
 - A thread's turn on a docket team no longer asks the agent to write `tack-reply.md`, a file docket's agent cannot write; its task says the team's last step answers.
 - An agent credential can read what a team is doing (`GET /api/teams/{id}/activity`, the `team_activity` tool of `tack mcp`) instead of being refused: it sees the tasks the team holds for projects it may read, and the work the board did not start only if it may read every project.
 - A thread's turn on a docket team now ends with an answer: the thread shows what the team's last step handed off, for a team in a repository and for one in a folder, instead of "the agent finished without leaving a reply".
