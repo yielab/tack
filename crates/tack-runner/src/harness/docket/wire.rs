@@ -52,6 +52,10 @@ pub(super) struct PodRow {
     pub queue: Option<PodQueue>,
     /// `codebase` or `workdir`: where the team works. Absent from a docket before that key.
     pub workspace_kind: Option<String>,
+    /// Whether the team claims no task now (`podPause`). Absent from a docket before that key.
+    pub paused: Option<bool>,
+    /// Why, while `paused`; the key is absent while it runs.
+    pub paused_reason: Option<String>,
 }
 
 /// The counts of a row's `queue` that Tack reads. A state with no count is zero.
@@ -89,6 +93,9 @@ pub(super) struct PodReport {
     /// first of the two asks of ADR 0032).
     pub blueprint: Option<String>,
     pub pipeline: Option<PodPipeline>,
+    /// The same pair the team's row of the list carries (`podPause`).
+    pub paused: Option<bool>,
+    pub paused_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

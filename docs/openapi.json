@@ -16867,6 +16867,14 @@
           "open"
         ]
       },
+      "TeamPause": {
+        "type": "string",
+        "description": "Why a team is paused.",
+        "enum": [
+          "budget",
+          "other"
+        ]
+      },
       "TeamProfile": {
         "type": "object",
         "description": "A profile that names a team.",
@@ -16990,6 +16998,17 @@
               {
                 "$ref": "#/components/schemas/TeamNetwork",
                 "description": "How far the team's agents can reach over the network. Absent means the harness did not\nsay; no field may carry a harness's own key name."
+              }
+            ]
+          },
+          "paused": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TeamPause",
+                "description": "Why the team claims no task now, when it does not: tasks sent to it wait. Absent means the\nteam is not paused, or the harness did not say; no field may carry a harness's own key name."
               }
             ]
           },

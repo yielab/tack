@@ -4,6 +4,7 @@ import {
   agentName,
   memberReachText,
   networkText,
+  pausedText,
   plainName,
   queueText,
   teamProposes,
@@ -296,6 +297,14 @@ const TeamCard: Component<TeamCardProps> = (props) => {
             )}
           </Rule>
         </dl>
+        <Show when={report()?.paused}>
+          {(paused) => (
+            <p data-testid="team-paused" class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+              <strong style={{ color: 'var(--color-text-primary)' }}>{pausedText(entry().name, paused()).headline}.</strong>{' '}
+              {pausedText(entry().name, paused()).resume}
+            </p>
+          )}
+        </Show>
         <Show when={report()?.proposals_shared_across_tasks === true}>
           <p data-testid="team-proposals-shared" class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
             {SHARED_PROPOSALS_TEXT}

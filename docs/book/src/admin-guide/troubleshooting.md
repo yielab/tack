@@ -26,6 +26,7 @@ file that was refused, are in the [User Guide's troubleshooting page](../user-gu
 | `tack runner doctor` says "needs docket 0.2.0-beta.6" | [A runner shows "needs docket 0.2.0-beta.6"](#a-runner-shows-needs-docket-020-beta6) |
 | docket shows as absent, or the daemon is not started | [docket is absent and the daemon does not start](#docket-is-absent-and-the-daemon-does-not-start) |
 | A team is reported as attended and tasks stay at L3 | [A team is attended](#a-team-is-attended) |
+| A docket run is running and nothing moves, and the timeline says the team is paused | [A team is paused](#a-team-is-paused) |
 | A queued run shows "Waiting: …", or failed after thirty minutes | [A queued run says why it waits](#a-queued-run-says-why-it-waits) |
 | Projects with auto-start on never start a task | [Auto-start does not tick](#auto-start-does-not-tick) |
 | A run shows "Needs operator" and says the computer stopped answering | [A run says the computer stopped answering](#a-run-says-the-computer-stopped-answering) |
@@ -310,6 +311,23 @@ run `tack runner doctor` again. The ceiling lifts when the team reports `lights-
 Settings that would apply a repository's teams is shown disabled, because the board has no way to reach
 the runner's machine. See
 [Making a team run without a person](runners.md#making-a-team-run-without-a-person).
+
+---
+
+## A team is paused
+
+**What you see.** A docket run is running, but its timeline has stopped. One line reads "The team is paused
+(its budget is spent), so this task waits. Resume it with `docket run --pod saas-code --resume`." On
+the **Agents** page, the team's card under Teams says "Paused: budget spent".
+
+**Cause.** docket paused the team, which it does when the team's budget is spent. While a team is paused it
+starts nothing: the tasks sent to it, and every task queued behind them, stay waiting. Only a docket that
+lists `podPause` in `GET /health` says so; with an older docket the run shows no such line.
+
+**What to do.** Resume the team with docket's own command, on the runner's machine:
+`docket run --pod <team> --resume`. Tack has no button for it, because docket has no route over HTTP that
+resumes a team. The waiting tasks start by themselves once the team runs, and the run continues. If you would
+rather give up, stop the run from its card.
 
 ---
 

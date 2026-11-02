@@ -60,6 +60,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: bo
   'agent.untracked': { label: 'Files left out of the evidence' },
   'agent.refused': { label: 'docket refused the task', failed: true },
   'agent.answer_failed': { label: 'docket did not take the answer', failed: true },
+  'agent.team_paused': { label: 'The team is paused' },
   'escalation.asked': { label: 'docket asked a person' },
   'escalation.resolved': { label: 'A person answered' },
   'escalation.expired': { label: 'Nobody answered before it expired' },
