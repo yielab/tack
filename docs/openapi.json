@@ -8118,7 +8118,7 @@
         },
         "responses": {
           "200": {
-            "description": "The message is in the thread and its turn has started",
+            "description": "The message is in the thread; when a person wrote it, its turn has started (an agent's message starts none)",
             "content": {
               "application/json": {
                 "schema": {
@@ -8158,7 +8158,7 @@
             }
           },
           "409": {
-            "description": "The thread is closed or at a cap, or its last turn has not answered yet",
+            "description": "The thread is closed or idle, or a person's message is past the turn cap or comes before the last turn has answered",
             "content": {
               "application/json": {
                 "schema": {

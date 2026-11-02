@@ -198,11 +198,11 @@ POST /api/threads/{id}/messages
 
 | Status | Meaning | Schema |
 |---|---|---|
-| 200 | The message is in the thread and its turn has started | `PostedMessage` |
+| 200 | The message is in the thread; when a person wrote it, its turn has started (an agent's message starts none) | `PostedMessage` |
 | 400 | The message or its references are not acceptable | `ErrorEnvelope` |
 | 403 | The credential lacks the scope `converse` on the thread's project | `ErrorEnvelope` |
 | 404 | Not found | `ErrorEnvelope` |
-| 409 | The thread is closed or at a cap, or its last turn has not answered yet | `ErrorEnvelope` |
+| 409 | The thread is closed or idle, or a person's message is past the turn cap or comes before the last turn has answered | `ErrorEnvelope` |
 
 ---
 
