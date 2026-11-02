@@ -215,6 +215,22 @@ describe('buildMap: links are as wide as the open tasks routed along them', () =
   });
 });
 
+describe('buildMap: every profile and every route is drawn', () => {
+  it('lists_a_profile_no_role_default_or_task_reaches_and_joins_it_to_its_team', () => {
+    const { input } = world();
+    const spare = profile('lights-p', 'saas-lights');
+    const m = buildMap({ ...input, profiles: [...input.profiles, spare], teams: [...input.teams, team('saas-lights', { profiles: [{ id: 'lights-p', name: 'lights-p' }] })] });
+    expect(ids(m, 'profiles')).toContain('profile:lights-p');
+    expect(link(m, 'profile:lights-p>team:saas-lights')).toMatchObject({ tasks: 0, width: 1 });
+    expect(node(m, 'team:saas-lights').dashed).toBe(false);
+    expect(node(m, 'profile:lights-p').dashed).toBe(false);
+  });
+
+  it('still_draws_a_team_dashed_when_no_profile_at_all_names_it', () => {
+    expect(node(world().model, 'team:orphan').dashed).toBe(true);
+  });
+});
+
 describe('orderRows: rows by the barycentre of their neighbours', () => {
   it('uncrosses_a_known_example', () => {
     // A joins Q and B joins P, but P is listed first: the two lines cross until the rows swap.
@@ -268,7 +284,7 @@ describe('buildMap: what is dashed, marked or unrouted', () => {
     expect(node(model, 'team:saas-notes').dashed).toBe(false);
   });
 
-  it('draws_a_team_that_only_a_profile_the_project_does_not_use_names_dashed_with_the_fix_in_the_Teams_settings', () => {
+  it('draws_a_team_that_only_a_profile_missing_from_the_list_names_dashed_with_the_fix_in_the_Teams_settings', () => {
     const unused = buildMap({
       ...world().input,
       teams: [...world().input.teams, team('elsewhere', { profiles: [{ agent_profile_id: 'far', name: 'far' }] } as Partial<TeamEntry>)],
@@ -276,7 +292,7 @@ describe('buildMap: what is dashed, marked or unrouted', () => {
     const elsewhere = node(unused, 'team:elsewhere');
     expect(elsewhere.dashed).toBe(true);
     expect(elsewhere.fix).toEqual({ to: 'automation-teams', text: 'Settings → Automation → Teams' });
-    expect(elsewhere.reason).toContain('no role of this project uses it');
+    expect(elsewhere.reason).toContain('is not among the profiles');
   });
 
   it('puts_a_member_under_its_team', () => {

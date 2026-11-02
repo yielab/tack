@@ -90,7 +90,7 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
       <div class="flex min-w-0 flex-col gap-1">
         <h3 id="map-title" class="text-lead font-bold" style={{ color: 'var(--color-text-primary)' }}>Who can do what</h3>
         <p class="text-small" data-testid="map-summary" style={MUTED}>
-          {`${counts().roles} ${counts().roles === 1 ? 'role' : 'roles'} lead to ${counts().profiles} ${counts().profiles === 1 ? 'profile' : 'profiles'}, which run on ${counts().teams} ${counts().teams === 1 ? 'team or agent' : 'teams and agents'}. A line is as wide as the open tasks routed along it, and a line with none appears when you point at or focus a box. Press a box or a column title to see it in Flow.`}
+          {`${counts().roles} ${counts().roles === 1 ? 'role' : 'roles'} lead to ${counts().profiles} ${counts().profiles === 1 ? 'profile' : 'profiles'}, which run on ${counts().teams} ${counts().teams === 1 ? 'team or agent' : 'teams and agents'}. A line is as wide as the open tasks routed along it, and a hairline joins boxes with none. Press a box or a column title to see it in Flow.`}
         </p>
         <p class="text-caption" style={{ color: 'var(--color-text-tertiary)' }}>
           A dashed box has nothing behind it: a role with no profile, or a team no profile names.
@@ -118,7 +118,6 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
             <g aria-hidden="true" data-testid="map-links" fill="none" stroke-linecap="butt">
               <For each={model().links}>
                 {(link) => (
-                  <Show when={link.tasks > 0 || linked(link)}>
                   <path
                     data-testid="map-link"
                     data-link={link.id}
@@ -126,9 +125,8 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                     d={linkPath(model(), link)}
                     stroke="var(--color-text-tertiary)"
                     stroke-width={link.width}
-                    stroke-opacity={linked(link) ? 0.95 : 0.5}
+                    stroke-opacity={linked(link) ? 0.95 : link.tasks > 0 ? 0.5 : 0.7}
                   />
-                  </Show>
                 )}
               </For>
             </g>
