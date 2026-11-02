@@ -7,7 +7,7 @@ import { HARNESS_KINDS } from '../../../shared/runWithAgent/shared';
 import { installLine } from '../../../shared/runWithAgent/install';
 import type { FolderCheck } from '../../../shared/api/projects';
 import { toast } from '../../../shared/ui/toast';
-import { Field, FieldShell, HelpHint, HelpNote, LoadError, Select, Switch, type FieldHelp } from '../../../shared/ui';
+import { Field, FieldShell, HelpHint, HelpNote, LoadError, Switch, type FieldHelp } from '../../../shared/ui';
 import { HELP, agentSafety, type AgentSafetyReport } from '../../../shared/help/texts';
 import { useProject } from '../../../shared/state/projectContext';
 import { agentProfilesApi, runnersApi } from '../../../shared/execution';
@@ -329,27 +329,9 @@ const AutomationPanel: Component = () => {
     </>
   );
 
-  /** What happens to the item when a run starts. */
-  const startFold = () => (
-    <Fold id="automation-run-start" title="When a run starts" summary={p()?.on_start_status ? `Moves the item to ${p()!.on_start_status}` : 'Does not move the item'}>
-      <Select
-        label="Move the item to"
-        value={p()?.on_start_status ?? ''}
-        onChange={(e) => void save({ on_start_status: e.currentTarget.value || null })}
-        options={[{ value: '', label: 'Do not move' }, ...statuses().map((s) => ({ value: s.name, label: s.name }))]}
-      />
-    </Fold>
-  );
-
-  /** What happens to the item when a run finishes. */
-  const finishFold = () => (
-    <Fold id="automation-finish" title="When a run finishes" summary={p()?.on_finish_status ? `Moves the item to ${p()!.on_finish_status}` : 'Does not move the item'}>
-      <Select
-        label="Move the item to"
-        value={p()?.on_finish_status ?? ''}
-        onChange={(e) => void save({ on_finish_status: e.currentTarget.value || null })}
-        options={[{ value: '', label: 'Do not move' }, ...statuses().map((s) => ({ value: s.name, label: s.name }))]}
-      />
+  /** What counts as done: the line the agent and the person read a run against. */
+  const doneFold = () => (
+    <Fold id="automation-done" title="Definition of done" summary={p()?.definition_of_done ? 'Set' : 'Not set'}>
       <FieldShell label="Definition of done" help={HELP.definitionOfDone}>
         <textarea
           aria-label="Definition of done"
@@ -382,8 +364,7 @@ const AutomationPanel: Component = () => {
             saveProject={save}
             agent={agentFold()}
             workspace={workspaceFolds()}
-            runStart={startFold()}
-            finish={finishFold()}
+            definition={doneFold()}
           />
         )}
       </Show>

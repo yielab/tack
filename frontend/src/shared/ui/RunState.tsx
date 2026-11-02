@@ -24,13 +24,16 @@ export interface RunStateProps {
   size?: RunStateSize;
 }
 
-/** The words each state is shown under. */
+/**
+ * The words each state is shown under. They are a task's Work, so none of them may equal a status name
+ * (a test checks them against the workflow templates): a finished run reads Finished, never the column Done.
+ */
 export const RUN_STATE_LABEL: Record<RunStateName, string> = {
   queued: 'Queued',
   running: 'Running',
   needs: 'Needs you',
   review: 'Ready for review',
-  done: 'Done',
+  done: 'Finished',
   failed: 'Failed',
   cancelled: 'Cancelled',
 };

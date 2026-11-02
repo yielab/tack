@@ -52,7 +52,7 @@ describe('buildCreateExecutionInput', () => {
     expect(input.requested_harness_kind).toBe('codex');
     expect(input.requested_model).toBeNull();
     expect(input.timeout_seconds).toBe(1800);
-    expect(input.status_map_policy_id).toBeNull();
+    expect(input).not.toHaveProperty('status_map_policy_id');
   });
 
   it('sends no agent_profile_snapshot: the server loads the profile by id', () => {

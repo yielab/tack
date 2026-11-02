@@ -163,10 +163,11 @@ export const COLUMNS: ColDef[] = [
   { key: 'title', label: 'Title', rem: 12, sortable: true, editable: true, pinned: 'Rows are named and nested by their title' },
   { key: 'item_type', label: 'Type', rem: 5.5, sortable: true, editable: false },
   { key: 'status', label: 'Status', rem: 7.5, sortable: true, editable: true },
+  // Work is what the newest run reports; Status is the person's. The key stays `run` so a remembered choice of columns holds.
+  { key: 'run', label: 'Work', rem: 9, sortable: true, editable: false },
   { key: 'priority', label: 'Priority', rem: 6, sortable: true, editable: true },
   { key: 'assignee', vocabKey: 'assignee', label: 'Assignee', rem: 7, sortable: true, editable: true },
   { key: 'due_date', label: 'Due', rem: 6.5, sortable: true, editable: true },
-  { key: 'run', label: 'Run', rem: 9, sortable: true, editable: false },
   { key: 'details', label: 'Details', rem: 8, sortable: false, editable: false },
 ];
 

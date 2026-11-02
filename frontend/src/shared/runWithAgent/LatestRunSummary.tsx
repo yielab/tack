@@ -341,7 +341,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       class="min-w-0 space-y-3 rounded-item p-4"
       style={{ 'background-color': 'var(--color-bg-panel)', 'box-shadow': 'var(--shadow-sm)' }}
     >
-      <h2 id={headingId} class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Now</h2>
+      <h2 id={headingId} class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Work</h2>
 
       <Show when={!latest()}>
         <div data-testid="now-idle" class="space-y-1.5">
