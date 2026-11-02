@@ -250,6 +250,25 @@ describe('Orchestration: lanes', () => {
     expect(working.textContent).toContain('The agent reports no steps');
   });
 
+  it('says_how_each_task_that_ended_today_ended_instead_of_counting_them_all_as_done', async () => {
+    const w = world({
+      teams: [team('saas-code', [])],
+      profiles: [profile('code-p', 'saas-code')],
+      items: [1, 2, 3, 4].map((n) => item(`e${n}`, { run_settings: { agent_profile_id: 'code-p' } })),
+      runs: [run('e1', 'succeeded', 'code-p'), run('e2', 'succeeded', 'code-p'), run('e3', 'cancelled', 'code-p'), run('e4', 'failed', 'code-p')],
+    });
+    const c = await mount(w);
+    q<HTMLButtonElement>(c, '[data-lane="team:saas-code"] [data-testid="flow-lane-toggle"]')!.click(); // a lane with nothing going on is folded
+    await flush();
+    const station = q(c, '[data-lane="team:saas-code"] [data-station="done"]')!;
+    expect(station.textContent).toContain('Ended today');
+    expect(station.textContent).not.toContain('Done today');
+    const tally = q(station, '[data-testid="flow-ended-tally"]')!;
+    expect(tally.textContent).toBe('2 finished · 1 cancelled · 1 failed');
+    // Each part carries its run-state icon with the state's words, so colour never says it alone.
+    expect(qa(tally, '[role="img"]').map((e) => e.getAttribute('aria-label'))).toEqual(['Finished', 'Cancelled', 'Failed']);
+  });
+
   it('draws_the_header_of_a_team_from_what_it_reported', async () => {
     const c = await mount(threeLanes());
     const lane = q(c, '[data-lane="team:saas-notes"]')!;

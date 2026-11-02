@@ -79,8 +79,9 @@ not started, most urgent first, the order the project takes them in; each says w
 itself** (and at which column) or is **by hand**, and a queued task says why it has not started. Then
 come the team's own steps, as it reported them. A check between two steps is a small mark between them:
 a command, a reviewer, a person or a check outside the team; a step that runs side by side with another
-is drawn as a stack. Then **Needs you** and **Done today**, whose count unfolds to the tasks that ended
-in the last day. A team that reports no steps has one station, **Working**, which says the agent reports
+is drawn as a stack. Then **Needs you** and **Ended today**, which says how
+the tasks that ended in the last day ended, such as "2 finished · 1 cancelled · 1 failed", each with its
+run-state icon, and unfolds to the tasks themselves. A team that reports no steps has one station, **Working**, which says the agent reports
 no steps; so does a run whose current step the team cannot name.
 
 **A task is a token.** It shows its type, its title, the title of its parent, the run's state in the same

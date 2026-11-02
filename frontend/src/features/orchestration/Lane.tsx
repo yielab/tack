@@ -1,13 +1,14 @@
 import { type Component, type JSX, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Avatar, Badge } from '../../shared/ui';
+import { Avatar, Badge, RunState } from '../../shared/ui';
+import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { memberReachText, networkText, queueText, type TeamMember } from '../../shared/execution';
 import { checkText } from '../../shared/runWithAgent/teamSteps';
 import { runTally, tallySentence } from '../../shared/runWithAgent/cardRun';
 import UsageMeter from '../../shared/runWithAgent/UsageMeter';
 import { spaced } from '../../shared/runWithAgent/runLimit';
 import { IconBranch, IconFolder, IconWho } from '../../shared/runWithAgent/runDialogIcons';
-import { laneQueue, moveTarget, type FlowLane, type FlowStation, type FlowToken } from './flow';
+import { endedTally, laneQueue, moveTarget, type FlowLane, type FlowStation, type FlowToken } from './flow';
 import { useFlowUi } from './context';
 import Token from './Token';
 
@@ -243,9 +244,25 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
               onClick={() => setUnfolded((v) => !v)}
             >
               {`${unfolded() ? '▾' : '▸'} ${st().label}`}
-              <span class="tabular-nums" style={{ 'margin-left': '0.4rem' }}>{st().tokens.length}</span>
             </button>
           </h4>
+          <Show when={st().tokens.length > 0}>
+            <span data-testid="flow-ended-tally" class="flex min-w-0 flex-wrap items-center gap-x-0.5 text-caption" style={MUTED}>
+              <For each={endedTally(st().tokens)}>
+                {(part, i) => (
+                  <>
+                    <Show when={i() > 0}>
+                      <span aria-hidden="true">{" · "}</span>
+                    </Show>
+                    <span class="inline-flex items-center gap-1">
+                      <RunState state={part.state} size="dot" />
+                      {`${part.count} ${RUN_STATE_LABEL[part.state].toLowerCase()}`}
+                    </span>
+                  </>
+                )}
+              </For>
+            </span>
+          </Show>
         </Show>
         <Show when={st().step}>
           {(step) => (
@@ -281,7 +298,7 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
 /**
  * One team's lane, or one single agent's: a header that says who it is and how it works, and below it
  * the places a task stands as it goes: Up next, the team's own steps (a check between two of them is
- * a small glyph), Needs you and Done today. A lane with nothing going on folds to its header.
+ * a small glyph), Needs you and Ended today. A lane with nothing going on folds to its header.
  */
 const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props) => {
   const lane = () => props.lane;
