@@ -51,5 +51,6 @@ pub mod retention;
 pub mod runs;
 pub mod scheduler_wiring;
 pub mod threads;
+pub mod triggers;
 
 pub use error::AppError;

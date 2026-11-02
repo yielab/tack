@@ -55,7 +55,7 @@ An agent that uses Tack on its own, for example through `tack mcp`, should not h
 | **Read** | See the project, its items, comments, dependencies and roles, and the list of teams. |
 | **Propose** | Propose a change set: a list of changes to the board, kept for a person to apply. |
 | **Act** | Everything **Propose** does, and lets the changes the project's *Agents on the board* setting allows apply at once. |
-| **Converse** | Shown but off: nothing in Tack takes threads from an agent yet. |
+| **Converse** | Read and write in a thread kept for the credential, and nothing else. |
 
 The secret, which starts with `tack_agent_`, is shown once when you issue or rotate a credential, with a **Copy** button; Tack keeps only a hash of it and cannot show it again. The agent sends it the way the operator's token is sent, as `Authorization: Bearer <secret>`; for `tack mcp`, set `TACK_API_TOKEN` to the secret in the agent's configuration.
 
@@ -69,6 +69,29 @@ What a credential cannot do, whatever its scopes:
 - It cannot sign as someone else. A comment an agent writes carries the credential's name as its author, whatever author the agent sent, and the items and links its change sets create or change show the same name.
 
 A credential expires 90 days after it is issued or rotated. **Rotate** gives it a new secret and 90 more days, and the old secret stops working at once. **Revoke** ends it for good; what it already wrote stays, signed with its name. An expired, revoked or unknown secret answers `401`, and the list shows when each credential was last used.
+
+## Triggers and managers
+
+A **trigger** wakes an agent profile on its own. It is either something that happens on a board (a run fails, a run waits for you, a question is asked, a task is created or moves, a change set has waited for you too long) or a time of day on chosen weekdays. You manage a project's triggers in **Settings → Automation**, under **Agents**: each one has a name, the profile it wakes, an on switch, how long things must stay quiet before it starts, and the most runs it may start in a day.
+
+- **One run takes everything since the last one.** Events that arrive close together wait until things have been quiet for the trigger's quiet period, and then start one run that is told about all of them (up to 50, with a count of the rest) together with the digest. If events never stop, the run starts after an hour anyway.
+- **Never twice at once.** A trigger does not start a run while its previous run is still going, and it stops for the day when it has started as many runs as its cap allows; what happened meanwhile waits for the next run.
+- **An agent's own changes never wake it.** When a trigger names a credential, anything that credential changed on the board, such as a change set it applied, is left out of that profile's triggers, so a manager does not wake itself. What you change does wake it.
+- **Limits still apply.** A run a trigger starts is an ordinary run under the profile's token limit and the project's rules. A weekday digest is read in the time zone of the browser that made it, and its zone is shown beside the time.
+
+Triggers a profile does not need can be turned off with the switch or deleted; a deleted trigger takes its unread events with it.
+
+### Add a manager
+
+**Agents → Add a manager** sets up a profile that looks after one project in a single step. You choose the project and the profile (one you have, or a new one on the agent you pick). Tack then:
+
+1. makes the profile, if you asked for a new one, with general instructions that name nothing of your project;
+2. issues a credential with the scopes **Read**, **Propose** and **Converse** on that project;
+3. opens a thread with the profile, so you can talk with it;
+4. adds three triggers: failed runs (once things are quiet for two minutes, at most six runs a day), a change set that has waited an hour (at most four a day) and a digest on weekdays at 09:00 (once a day);
+5. shows the MCP configuration for the agent, with the credential's secret in it.
+
+Copy the configuration now: the secret is shown once, and Tack keeps only a hash. For Claude Code, save it as `.mcp.json` in the folder the agent works in; other agents take the same `command`, `args` and `env`. The project's **Agents on the board** setting is left as it was, **Propose** unless you changed it, so every change the manager wants waits for you. Nothing here is special: the profile, credential, thread and triggers appear with the others in Settings and can be changed or removed one by one.
 
 ## CORS
 

@@ -26,7 +26,8 @@ use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
     briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
     export, import_github, import_linear, items, local_runner, metrics, mrp, outline, projects,
-    roles, runner_admin, runner_protocol, settings, sprints, teams, templates, threads, websocket,
+    roles, runner_admin, runner_protocol, settings, sprints, teams, templates, threads, triggers,
+    websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -136,6 +137,29 @@ fn change_set_routes() -> Router<AppState> {
         .route(
             "/change-sets/{id}/operations/{index}",
             patch(change_sets::edit_operation),
+        )
+}
+
+/// What wakes a profile and what a person says to it: threads (an agent credential with
+/// `converse` reaches its own) and triggers (the operator's alone).
+fn conversation_routes() -> Router<AppState> {
+    Router::new()
+        .route(
+            "/threads",
+            get(threads::list_threads).post(threads::create_thread),
+        )
+        .route("/threads/{id}", get(threads::get_thread))
+        .route("/threads/{id}/messages", post(threads::post_message))
+        .route("/threads/{id}/close", post(threads::close_thread))
+        .route(
+            "/triggers",
+            get(triggers::list_triggers).post(triggers::create_trigger),
+        )
+        .route(
+            "/triggers/{id}",
+            get(triggers::get_trigger)
+                .patch(triggers::update_trigger)
+                .delete(triggers::delete_trigger),
         )
 }
 
@@ -388,13 +412,6 @@ pub fn build_router(state: AppState) -> Router {
             get(briefs::list_brief_versions),
         )
         .route("/digest", get(digest::get_digest))
-        .route(
-            "/threads",
-            get(threads::list_threads).post(threads::create_thread),
-        )
-        .route("/threads/{id}", get(threads::get_thread))
-        .route("/threads/{id}/messages", post(threads::post_message))
-        .route("/threads/{id}/close", post(threads::close_thread))
         .route("/teams", get(teams::list_teams))
         .route("/teams/{id}/activity", get(teams::team_activity))
         .route(
@@ -518,6 +535,7 @@ pub fn build_router(state: AppState) -> Router {
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
         .merge(change_set_routes())
+        .merge(conversation_routes())
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .layer(middleware::from_fn(read_client))
         // Outside the token check, so a wrong host or a foreign page is
