@@ -163,6 +163,7 @@ export function stationFor(run: CardRun | undefined, hop: LatestHop | null | und
     case 'done':
     case 'failed':
     case 'cancelled':
+    case 'notstarted':
       return 'done';
     case 'running': {
       const at = stepIndexOf(steps, hop);
