@@ -3,6 +3,7 @@ import { render } from 'solid-js/web';
 import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import ThreadPanel from './ThreadPanel';
 import { composerState, entries } from './threadModel';
+import { useToasts } from '../../shared/ui/toast';
 import { flush } from '../../test/flush';
 
 const disposers: Array<() => void> = [];
@@ -254,6 +255,25 @@ describe('ThreadPanel', () => {
     expect(calls.some((x) => x.method === 'POST' && x.url.endsWith(`/threads/${T}/close`))).toBe(true);
     expect(q(c, 'thread-status')?.textContent).toBe('Closed');
     expect((q(c, 'composer') as HTMLTextAreaElement).disabled).toBe(true);
+  });
+
+  it('closes a thread whose reply carries a change set and keeps showing both', async () => {
+    const { c } = mount({
+      thread: thread(),
+      messages: [msg('m1', 'operator:local', 'Raise the priority'), msg('m2', `thread:${T}`, 'Proposed.', [{ kind: 'change_set', id: 'cs1' }])],
+      turns: [turn('m1', 'replied')],
+    });
+    await settle();
+    expect(q(c, 'change-set-panel')).not.toBeNull();
+    (q(c, 'thread-close') as HTMLButtonElement).click();
+    await settle();
+    // A failure while the page redraws is told as a toast; none may appear.
+    expect(useToasts()().map((t) => t.message)).toEqual([]);
+    expect(q(c, 'thread-status')?.textContent).toBe('Closed');
+    expect(q(c, 'change-set-panel')).not.toBeNull();
+    const close = q(c, 'thread-close') as HTMLButtonElement;
+    expect(close.disabled).toBe(true);
+    expect(c.textContent).toContain('This thread is already closed.');
   });
 });
 
