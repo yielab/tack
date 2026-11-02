@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cardRun, countRuns, passesFilters, showsPriority, totalRuns, runTally, tallySentence, countStates, type RunFilter } from './cardRun';
+import { cardRun, countRuns, passesFilters, showsPriority, totalRuns, runTally, tallySentence, countStates, orderByWork, runRank, type RunFilter } from './cardRun';
 
 const at = (state: string, cancelled: string | null = null) =>
   cardRun({ request_id: 'r', state, cancellation_requested_at: cancelled }, false);
@@ -62,5 +62,19 @@ describe('showsPriority', () => {
     expect(showsPriority('low', false)).toBe(true);
     expect(showsPriority('medium', true)).toBe(true);
     expect(showsPriority('none', true)).toBe(false);
+  });
+});
+
+describe('orderByWork', () => {
+  const run = (state: string) => cardRun({ request_id: 'r', state, cancellation_requested_at: null }, false);
+  it('puts what needs a person first, then what is going, then what is over, and keeps the given order among equals', () => {
+    const states: Record<string, string | undefined> = {
+      a: undefined, b: 'running', c: 'waiting_decision', d: 'queued', e: 'failed', f: 'succeeded', g: 'running',
+    };
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    const ordered = orderByWork(ids, (id) => (states[id] ? run(states[id]!) : undefined));
+    expect(ordered).toEqual(['c', 'e', 'b', 'g', 'd', 'f', 'a']);
+    expect(ids).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+    expect(runRank(undefined)).toBeGreaterThan(runRank(run('cancelled')));
   });
 });

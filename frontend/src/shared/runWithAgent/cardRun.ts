@@ -64,6 +64,34 @@ export function cardRun(
   }
 }
 
+/** What needs a person comes first, then what is going, then what is over; no run last. */
+const RUN_RANK: Record<string, number> = {
+  needs: 0,
+  review: 1,
+  failed: 2,
+  running: 3,
+  queued: 4,
+  done: 5,
+  cancelled: 6,
+};
+
+/** Where a run sorts: the item's newest run, or after every run when it has none. */
+export function runRank(run: CardRun | undefined): number {
+  return run ? (RUN_RANK[run.state] ?? 99) : 100;
+}
+
+/**
+ * The same order the List's Work column sorts by: what needs a person first, then what is going,
+ * then what is over, no run last. Items that rank alike keep the order they came in. Returns a
+ * new array.
+ */
+export function orderByWork<T>(items: readonly T[], runOf: (item: T) => CardRun | undefined): T[] {
+  return items
+    .map((item, index) => ({ item, index, rank: runRank(runOf(item)) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((entry) => entry.item);
+}
+
 /** What a filter on the board can ask for: one run state, or "waiting for you". */
 export type RunFilter = 'waiting' | 'queued' | 'running' | 'needs' | 'review' | 'failed';
 
