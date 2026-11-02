@@ -204,12 +204,17 @@ async fn m060_quarantines_all_nonterminal_malformed_legacy_snapshots() {
         ("legacy-valid", "legacy-valid-key", |s| s.to_owned()),
     ];
     for (id, key, mutate) in mutations {
-        // A snapshot as it was written when migration 060 ran: provider and id as two keys.
+        // A snapshot as it was written when migration 060 ran: provider and id as two keys, and
+        // the status map policy it required.
         let legacy = request(id, "legacy-item", key, "same")
             .request_snapshot
             .replace(
                 "\"requested_model\": \"opaque/model\"",
                 "\"requested_model_provider\":\"openai\",\"requested_model_id\":\"opaque/model\"",
+            )
+            .replace(
+                "\"environment\":",
+                "\"status_map_policy_id\":null,\"environment\":",
             );
         let snapshot = mutate(&legacy);
         set_legacy_snapshot(&pool, id, key, &snapshot).await;

@@ -494,7 +494,6 @@ pub struct ExecutionRequestSnapshot {
     pub permission_policy: PermissionPolicy,
     pub timeout_seconds: u64,
     pub budgets: serde_json::Value,
-    pub status_map_policy_id: Option<String>,
     #[serde(default)]
     pub environment: BTreeMap<String, EnvironmentValue>,
     #[serde(default)]

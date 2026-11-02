@@ -19,8 +19,8 @@ sections in the order you set them up, with an index beside them that stays in v
 
 1. **Who.** The default agent and its model and profile, the profile each role works with, and where the
    code is and how the agent works on it.
-2. **When.** Let a task start a run by itself when it reaches a status, and say what happens to the task
-   when a run starts and when it finishes.
+2. **When.** Let a task start a run by itself when it reaches a status, and write the definition of done the
+   agent reads.
 3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
 4. **Limits.** How many tokens a day, how many automatic merges a day and how many waiting items the
    project allows, and the limit for a run whose profile sets none.

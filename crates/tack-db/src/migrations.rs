@@ -164,6 +164,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("100_team_activity", &MIGRATION_100[..]),
         ordinary("101_change_sets", &MIGRATION_101[..]),
         ordinary("102_threads", &MIGRATION_102[..]),
+        ordinary("103_drop_status_moves", &MIGRATION_103[..]),
     ]
 }
 
@@ -2047,4 +2048,13 @@ const MIGRATION_102: [&str; 6] = [
         PRIMARY KEY (thread_id, position)
     )"##,
     "CREATE INDEX idx_thread_turns_state ON thread_turns(state)",
+];
+
+// 103: a run no longer moves a task's status (Phase 86). The project's two settings and the
+// request's policy column go; a stored request snapshot that still names `status_map_policy_id`
+// is read and ignored.
+const MIGRATION_103: [&str; 3] = [
+    "ALTER TABLE projects DROP COLUMN on_start_status",
+    "ALTER TABLE projects DROP COLUMN on_finish_status",
+    "ALTER TABLE execution_requests DROP COLUMN status_map_policy_id",
 ];

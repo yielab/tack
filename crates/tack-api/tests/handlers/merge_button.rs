@@ -317,7 +317,7 @@ async fn a_run_created_with_origin_mcp_keeps_it_in_the_snapshot() {
         ("o-mcp", Some("mcp"), true),
         ("o-other", Some("cli"), false),
     ] {
-        let mut body = execution_request_body(&b.item_id, key, &a.runner_id, &profile, None);
+        let mut body = execution_request_body(&b.item_id, key, &a.runner_id, &profile);
         if let Some(origin) = origin {
             body["origin"] = json!(origin);
         }

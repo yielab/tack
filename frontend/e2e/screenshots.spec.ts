@@ -115,7 +115,6 @@ async function startRun(
       environment: {},
       metadata: {},
       timeout_seconds: 3600,
-      status_map_policy_id: null,
     },
   });
   expect(res.ok(), `create execution: ${res.status()} ${await res.text()}`).toBeTruthy();

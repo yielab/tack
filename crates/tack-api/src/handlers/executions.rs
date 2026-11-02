@@ -195,10 +195,11 @@ pub struct CreateExecution {
     /// Absent: the profile's `limits.timeout_seconds`, else the default time limit.
     #[serde(default)]
     pub timeout_seconds: Option<u64>,
-    /// `done_on_success` or `done_on_mrp_accepted`; any other id is rejected
-    /// with `invalid_request`. Omitted leaves the item's status untouched.
-    #[serde(default)]
-    pub status_map_policy_id: Option<String>,
+    /// Removed: a run never moves a task. A request that still carries the key is accepted, the
+    /// value is ignored, and the answer's `notice` says so.
+    #[serde(default, deserialize_with = "present", skip_serializing)]
+    #[schema(ignore)]
+    pub status_map_policy_id: Option<Value>,
     /// `false` declines the runner's verifier for this run. The runner's own
     /// configuration decides whether a verifier exists; `true` never enables one.
     #[serde(default)]
@@ -231,6 +232,10 @@ pub struct CreateExecutionResponse {
     /// only once created.
     pub state: String,
     pub replayed: bool,
+    /// Present when the request named a setting that was removed: "ignored: the status is set by
+    /// a person".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 /// One row of `GET /api/executions` / the `GET /api/executions/{id}`
@@ -880,7 +885,6 @@ impl TryFrom<CreateExecution> for RunRequest {
             environment: input.environment,
             metadata: input.metadata,
             timeout_seconds: input.timeout_seconds,
-            status_map_policy_id: input.status_map_policy_id,
             verify: input.verify,
             push_branch: input.push_branch,
             autonomy: start_run::level_from(input.autonomy)?,
@@ -889,12 +893,13 @@ impl TryFrom<CreateExecution> for RunRequest {
     }
 }
 
-fn created(started: Started) -> Json<CreateExecutionResponse> {
+fn created(started: Started, named_removed_setting: bool) -> Json<CreateExecutionResponse> {
     Json(CreateExecutionResponse {
         protocol_version: 1,
         request_id: started.request_id,
         state: "queued".into(),
         replayed: started.replayed,
+        notice: named_removed_setting.then(|| tack_core::models::STATUS_SET_BY_A_PERSON.to_owned()),
     })
 }
 
@@ -905,10 +910,11 @@ pub(crate) async fn create_as(
     principal: String,
     input: CreateExecution,
 ) -> Result<Json<CreateExecutionResponse>, (StatusCode, Json<Value>)> {
+    let named_removed_setting = input.status_map_policy_id.is_some();
     let input = RunRequest::try_from(input).map_err(refused)?;
     start_run(&state.repo, state.clock.now(), &principal, input)
         .await
-        .map(created)
+        .map(|started| created(started, named_removed_setting))
         .map_err(refused)
 }
 

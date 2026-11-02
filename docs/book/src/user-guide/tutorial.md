@@ -115,7 +115,7 @@ prove it:
 
 Everything a run needs from the project lives in its **Settings → Automation** tab: where the
 code is, how the agent works on it (on a new branch of your repo, or in the folder directly),
-what happens when a run starts and when it finishes, and the **Agent** section — which agent, which model, and the
+the definition of done, and the **Agent** section — which agent, which model, and the
 default profile. Each section is a single line until you open it; the picture shows **Agent** open:
 
 <img src="../screenshots/tutorial/09-default-model.png" width="60%" alt="The Agent section of a project's Automation settings, opened: 'No default agent'; agent choices Claude Code, Codex and OpenCode; the Model field reading 'Choose an agent first'; default profile choices Implementer, Planner, Researcher and Reviewer; and a Manage profiles link.">

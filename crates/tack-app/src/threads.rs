@@ -272,7 +272,6 @@ async fn begin_turn(
             tack_protocol::conversation::TURN_KEY: note.into_metadata(),
         }),
         timeout_seconds: None,
-        status_map_policy_id: None,
         verify: None,
         push_branch: None,
         autonomy: None,

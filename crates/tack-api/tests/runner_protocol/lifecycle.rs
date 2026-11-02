@@ -201,7 +201,6 @@ impl Fixture {
             RUNNER_ID,
             "profile-c2",
             key,
-            None,
         )
         .await
     }
@@ -462,7 +461,6 @@ async fn enqueue_request(
     runner_id: &str,
     agent_profile_id: &str,
     key: &str,
-    status_map_policy_id: Option<&str>,
 ) -> String {
     let request_id = format!("exec_{}", Uuid::new_v4());
     let created_at = clock.now();
@@ -483,7 +481,6 @@ async fn enqueue_request(
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
         "budgets": {"tokens": 1000},
-        "status_map_policy_id": status_map_policy_id,
         "environment": {},
         "metadata": {},
     });
@@ -507,7 +504,6 @@ async fn enqueue_request(
             permission_policy: &field_str("permission_policy"),
             timeout_seconds: Some(60),
             budgets: &field_str("budgets"),
-            status_map_policy_id,
             environment: &field_str("environment"),
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,
@@ -794,10 +790,10 @@ async fn accept_is_idempotent_and_start_transitions_to_running() {
     assert_eq!(fx.request_state(&request_id).await, "running");
 }
 
-/// The report that starts the run moves the item to the project's `on_start_status`; the same
-/// report again does not, so a person who has moved the item since keeps their choice.
+/// The report that starts the run leaves the item where it is, and so does the same report again:
+/// the status is a person's.
 #[tokio::test]
-async fn starting_a_run_moves_its_item_once() {
+async fn starting_a_run_leaves_its_item_where_it_is() {
     let fx = Fixture::new().await;
     let item_id = Uuid::parse_str(&fx.item_id).unwrap();
     let status_of = || async { fx.repo.get_item(item_id).await.unwrap().unwrap().status };
@@ -807,17 +803,8 @@ async fn starting_a_run_moves_its_item_once() {
 
     let (status, started) = fx.start(&attempt_id, fencing_token, "pid-1").await;
     assert_eq!(status, StatusCode::OK, "{started}");
-    assert_eq!(status_of().await, "In Progress");
+    assert_eq!(status_of().await, "To Do");
 
-    tack_test_support::update_item(
-        &fx.repo,
-        item_id,
-        tack_core::models::UpdateItem {
-            status: Some("To Do".to_string()),
-            ..Default::default()
-        },
-    )
-    .await;
     let (status, replayed) = fx.start(&attempt_id, fencing_token, "pid-1").await;
     assert_eq!(status, StatusCode::OK, "{replayed}");
     assert_eq!(replayed["replayed"], true);
@@ -1259,38 +1246,6 @@ async fn completion_is_idempotent_and_restores_capacity_once() {
         fx.available_capacity().await,
         2,
         "capacity is restored exactly once"
-    );
-}
-
-#[tokio::test]
-async fn create_execution_rejects_an_unknown_status_map_policy_id() {
-    let fx = Fixture::new().await;
-    let state = tack_api::handlers::executions::OperatorExecutionState::with_clock(
-        fx.repo.clone(),
-        Arc::new(fx.clock.clone()),
-    );
-    let app = tack_api::handlers::executions::routes(state);
-    let body = json!({
-        "item_id": fx.item_id, "idempotency_key": "bad-policy", "selector_kind": "exact_runner",
-        "selector_id": RUNNER_ID, "agent_profile_id": "profile-c2", "requested_harness_kind": "codex",
-        "repository_snapshot": {"kind": "git", "remote": "https://example.test/c2.git", "base_revision": "abc123def456abc123def456abc123def456abc", "subdirectory": null},
-        "permission_policy": {"tools": [], "network": false},
-        "timeout_seconds": 60, "budgets": {}, "environment": {}, "metadata": {},
-        "status_map_policy_id": "anything_else",
-    });
-    let (status, resp) = send(
-        &app,
-        "POST",
-        "/executions",
-        body.to_string(),
-        &[("x-tack-principal", "operator:local")],
-    )
-    .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{resp}");
-    assert_eq!(resp["error"]["code"], "invalid_request", "{resp}");
-    assert_eq!(
-        resp["error"]["details"]["field"], "status_map_policy_id",
-        "{resp}"
     );
 }
 

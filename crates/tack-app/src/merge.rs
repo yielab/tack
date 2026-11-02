@@ -7,7 +7,6 @@
 use chrono::SecondsFormat;
 use serde_json::Value;
 use tack_core::autonomy::{Check, CiState, Facts, Level, Trigger, evaluate};
-use tack_core::principal::Principal;
 use tack_db::repo::autonomy::MergeRow;
 use tack_db::{Repository, queries};
 use tack_protocol::Clock;
@@ -210,15 +209,6 @@ pub async fn attempt(
                 format!("Tack merged pull request #{} {by}.", pr.number),
             )
             .await;
-            if trigger == Trigger::Auto {
-                crate::mrp::apply_accepted(
-                    repo,
-                    ports.events.as_ref(),
-                    &Principal::system(),
-                    &context.request_id,
-                )
-                .await;
-            }
             Ok(sha)
         }
     }

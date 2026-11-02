@@ -140,7 +140,7 @@ async fn enqueue(
         },
         "permission_policy": {"tools": [], "network": false},
         "timeout_seconds": 60,
-        "budgets": {}, "status_map_policy_id": null,
+        "budgets": {},
         "environment": {}, "metadata": serde_json::from_str::<serde_json::Value>(metadata).unwrap()
     })
     .to_string();
@@ -161,7 +161,6 @@ async fn enqueue(
             permission_policy: r#"{"tools":[],"network":false}"#,
             timeout_seconds: Some(60),
             budgets: "{}",
-            status_map_policy_id: None,
             environment: "{}",
             metadata,
             request_snapshot: &snapshot,

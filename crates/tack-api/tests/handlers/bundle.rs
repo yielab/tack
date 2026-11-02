@@ -101,13 +101,7 @@ async fn the_fixture_makes_a_whole_project() {
 
     assert_eq!(project["workflow"]["statuses"].as_array().unwrap().len(), 5);
     assert_eq!(project["vocabulary"]["epic"], "Colección");
-    for (key, value) in [
-        ("repository", "/home/person/Sites/my-saas"),
-        ("on_start_status", "En curso"),
-        ("on_finish_status", "En revisión"),
-    ] {
-        assert_eq!(project[key], value, "{key}");
-    }
+    assert_eq!(project["repository"], "/home/person/Sites/my-saas");
     assert_eq!(project["push_after_run"], true);
     assert_eq!(project["auto_start_enabled"], false);
 
@@ -285,35 +279,26 @@ async fn an_import_never_raises_autonomy_past_the_projects_own() {
     assert!(!warnings.contains("autonomy.level"), "{warnings}");
 }
 
-/// A new project gets the first in-progress status of the file's own workflow, unless the file
-/// has an automation section: then it says what the project does, and an absent key is "Do not move".
+/// A file written before a run stopped moving its task still imports: the two keys are ignored
+/// and the preview says so, and the export does not carry them.
 #[tokio::test]
-async fn a_new_projects_start_status_comes_from_the_file() {
-    let workflow = "  workflow:\n    statuses:\n      - { name: Idea, category: todo }\n      - { name: Doing, category: in_progress }\n      - { name: Shipped, category: done }\n";
+async fn a_file_that_names_the_status_moves_is_told_they_are_ignored() {
     let app = app().await;
-    for (automation, expected) in [
-        ("", json!("Doing")),
-        ("automation:\n  push_after_run: true\n", Value::Null),
-        (
-            "automation:\n  on_start_status: shipped\n",
-            json!("Shipped"),
-        ),
-    ] {
-        let file = format!("project:\n  name: Mini\n{workflow}{automation}");
-        let (status, out) = import(&app, "/api/projects/outline", &file).await;
-        assert_eq!(status, StatusCode::OK, "{out}");
-        let pid = out["project"]["id"].as_str().unwrap();
-        let project = get(&app, &format!("/api/projects/{pid}")).await;
-        assert_eq!(project["on_start_status"], expected, "{automation}");
+    let file = "project:\n  name: Mini\nautomation:\n  on_start_status: Nowhere\n  on_finish_status: Done\n";
+    let (status, out) = import(&app, "/api/projects/outline", file).await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    let warnings = section(&out, "automation")["warnings"].to_string();
+    for key in ["on_start_status", "on_finish_status"] {
+        assert!(
+            warnings.contains(&format!(
+                "automation.{key} is ignored: the status is set by a person"
+            )),
+            "{warnings}"
+        );
     }
-
-    let nowhere = "project:\n  name: Mini\nautomation:\n  on_start_status: Nowhere\n";
-    let (status, out) = import(&app, "/api/projects/outline", nowhere).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{out}");
-    assert!(
-        out.to_string().contains("automation.on_start_status"),
-        "{out}"
-    );
+    let pid = out["project"]["id"].as_str().unwrap();
+    let project = get(&app, &format!("/api/projects/{pid}")).await;
+    assert!(project.get("on_start_status").is_none(), "{project}");
 }
 
 #[tokio::test]

@@ -3832,10 +3832,6 @@ export interface components {
             /** @description The name of the profile a run uses when none is named. */
             default_profile?: string | null;
             definition_of_done?: string | null;
-            /** @description The status a card moves to when its run finishes. */
-            on_finish_status?: string | null;
-            /** @description The status a card moves to when its run starts. */
-            on_start_status?: string | null;
             /**
              * @description How a run installs the project's dependencies: a one-line command replaces the one the
              *     lockfile implies, an empty one turns the install off. Absent, an import leaves it as it is
@@ -4184,11 +4180,6 @@ export interface components {
              */
             selector_kind?: string | null;
             /**
-             * @description `done_on_success` or `done_on_mrp_accepted`; any other id is rejected
-             *     with `invalid_request`. Omitted leaves the item's status untouched.
-             */
-            status_map_policy_id?: string | null;
-            /**
              * Format: int64
              * @description Absent: the profile's `limits.timeout_seconds`, else the default time limit.
              */
@@ -4204,6 +4195,11 @@ export interface components {
          *     idempotent replay of an existing one (`replayed` distinguishes the two).
          */
         CreateExecutionResponse: {
+            /**
+             * @description Present when the request named a setting that was removed: "ignored: the status is set by
+             *     a person".
+             */
+            notice?: string | null;
             /** Format: int32 */
             protocol_version: number;
             replayed: boolean;
@@ -5507,9 +5503,6 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
-            on_finish_status?: string | null;
-            /** @description The status an item moves to when a run of it starts. */
-            on_start_status?: string | null;
             /**
              * @description How a run installs the project's dependencies: absent detects the command from the
              *     lockfile, empty turns the install off, any other text replaces the detected command.
@@ -6676,8 +6669,6 @@ export interface components {
              */
             github_token_ref?: string | null;
             name?: string | null;
-            on_finish_status?: string | null;
-            on_start_status?: string | null;
             /**
              * @description Omitted leaves it untouched; `null` detects the command from the lockfile, `""` turns the
              *     install off, any other single line replaces the detected command.
@@ -9827,7 +9818,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated project */
+            /** @description Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored */
             200: {
                 headers: {
                     [name: string]: unknown;

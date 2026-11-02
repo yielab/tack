@@ -344,7 +344,6 @@ async fn start(
         environment: json!({}),
         metadata: json!({ "started_by": "auto_start" }),
         timeout_seconds: None,
-        status_map_policy_id: None,
         verify: None,
         push_branch: None,
         autonomy: None,

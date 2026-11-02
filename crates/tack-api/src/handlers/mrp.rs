@@ -1,9 +1,7 @@
 //! The operator's view of an attempt's Merge-Readiness Pack and the human
 //! verdict on it. The pack is the newest artifact of the attempt whose media
 //! type is `application/vnd.tack.mrp+json`; `tack_protocol::mrp` is its wire shape.
-//! The first review is the record, a second one is a 409. Accepting under the
-//! `done_on_mrp_accepted` status-map policy is the only thing here that moves
-//! an item.
+//! The first review is the record, a second one is a 409. Nothing here moves an item.
 
 use crate::extract::{Json, Path};
 use axum::extract::State;
@@ -160,7 +158,6 @@ pub async fn mark_viewed(
 )]
 pub async fn review_mrp(
     State(state): State<AppState>,
-    axum::Extension(principal): axum::Extension<tack_core::principal::Principal>,
     Path((request_id, attempt_number)): Path<(String, i64)>,
     Json(input): Json<MrpReviewRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -185,15 +182,6 @@ pub async fn review_mrp(
         )
         .await?
         .ok_or_else(|| ApiError::Conflict("This pack was already reviewed".into()))?;
-    if input.verdict == MrpVerdict::Accept {
-        tack_app::mrp::apply_accepted_checked(
-            &state.repo,
-            state.events().as_ref(),
-            &principal,
-            &request_id,
-        )
-        .await?;
-    }
     let mut body =
         serde_json::to_value(&review).map_err(|error| ApiError::Internal(error.into()))?;
     if input.verdict == MrpVerdict::Accept

@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use tracing::{instrument, warn};
 
-use super::super::items::{AtomicItemUpdateOutcome, update_item_in};
 use super::decisions::end_attempt_decisions;
 use super::enqueue::{
     EnqueueResult, NewExecutionRequest, enqueue_in, validate_execution_request_snapshot,
@@ -13,30 +12,17 @@ use super::shared::{mirror_request_state, terminal, token_column};
 use super::state::{self, Move};
 use crate::canonical_json;
 use crate::{Repository, StoreError};
-use tack_core::models::UpdateItem;
-use tack_core::workflow::WorkflowConfig;
 use tack_protocol::execution::{
     self, ActualExecution, AttemptId, CancellationRequestId, Checkpoint, CompletionId,
     ExecutionRequestId, ExecutionState, FencingToken, RunnerId, Usage, WorkspaceId,
 };
-use uuid::Uuid;
 
 /// What a successful completion sets going, written in the completion's own transaction: either
 /// the attempt ends with all of it or with none of it, and the runner's retry finds the rest.
 #[derive(Debug, Default)]
 pub struct FollowUps<'a> {
-    /// The board move the project maps a finished run to.
-    pub item_update: Option<ItemUpdate<'a>>,
     /// The run that goes back to the agent with what the verifier asked it to fix.
     pub rework: Option<Rework<'a>>,
-}
-
-/// A move of one item, validated against `workflow` as any other edit of it is.
-#[derive(Debug)]
-pub struct ItemUpdate<'a> {
-    pub item_id: Uuid,
-    pub update: UpdateItem,
-    pub workflow: &'a WorkflowConfig,
 }
 
 /// A follow-up run to enqueue. `created_at` is the instant the request's snapshot names.
@@ -46,11 +32,9 @@ pub struct Rework<'a> {
     pub created_at: DateTime<Utc>,
 }
 
-/// What the [`FollowUps`] did; empty unless the completion was committed. A move the workflow
-/// refuses is an outcome, not an error: the completion stands and the item stays where it is.
+/// What the [`FollowUps`] did; empty unless the completion was committed.
 #[derive(Debug, Default)]
 pub struct FollowUpsOutcome {
-    pub item_update: Option<AtomicItemUpdateOutcome>,
     pub rework: Option<EnqueueResult>,
 }
 
@@ -421,18 +405,6 @@ impl Repository {
         .to_string();
         sqlx::query("INSERT INTO execution_completion_replays(attempt_id,completion_id,fingerprint,response,committed_at) VALUES(?,?,?,?,?)").bind(completion.attempt_id.as_str()).bind(completion.completion_id.as_str()).bind(fingerprint).bind(serialized_response).bind(&now).execute(&mut *tx).await?;
         let mut done = FollowUpsOutcome::default();
-        if let Some(move_item) = follow_ups.item_update {
-            done.item_update = Some(
-                update_item_in(
-                    &mut tx,
-                    move_item.item_id,
-                    move_item.update,
-                    move_item.workflow,
-                    None,
-                )
-                .await?,
-            );
-        }
         if let Some((rework, snapshot)) = rework {
             let created_at = rework.created_at.to_rfc3339();
             done.rework = Some(enqueue_in(&mut tx, &rework.request, &snapshot, &created_at).await?);

@@ -110,7 +110,6 @@ pub async fn enqueue(world: &World, key: &str) -> String {
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
         "budgets": {"tokens": 1000},
-        "status_map_policy_id": Value::Null,
         "environment": {},
         "metadata": {},
     });
@@ -135,7 +134,6 @@ pub async fn enqueue(world: &World, key: &str) -> String {
                 permission_policy: &field("permission_policy"),
                 timeout_seconds: Some(60),
                 budgets: &field("budgets"),
-                status_map_policy_id: None,
                 environment: &field("environment"),
                 metadata: &field("metadata"),
                 request_snapshot: &snapshot_string,

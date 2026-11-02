@@ -182,12 +182,12 @@ fn every_rule_of_the_check_speaks_in_its_own_section() {
             Problem("automation.default_profile \"Ghost\""),
         ),
         (
-            "automation: { on_finish_status: Nowhere }",
-            Problem("automation.on_finish_status \"Nowhere\""),
+            "automation: { on_finish_status: Done }",
+            Warning("automation.on_finish_status is ignored: the status is set by a person"),
         ),
         (
             "automation: { on_start_status: Nowhere }",
-            Problem("automation.on_start_status \"Nowhere\""),
+            Warning("automation.on_start_status is ignored: the status is set by a person"),
         ),
         (
             "automation: { auto_start: { status: Nowhere } }",
@@ -330,8 +330,6 @@ fn synthetic_project() -> Project {
         push_after_run: false,
         default_harness: None,
         default_profile_id: None,
-        on_finish_status: None,
-        on_start_status: None,
         definition_of_done: None,
         auto_start_enabled: false,
         auto_start_status: None,
