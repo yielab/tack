@@ -63,10 +63,16 @@ M, E, C, A, D, U, W, T, TU, R and G, in six rounds; six asks of docket, none blo
 
 What is not a card is in "Cancelled" below.
 
+**[Phase 86](https://github.com/yielab/tack/blob/develop/docs/plans/phase-86.md) — a person sets a
+task's status, and the agents report its work.** Accepted 2026-11-02; no card started. The six places that
+move a task's status because a run did something are removed, with their settings, and the board shows
+the task's status and its work as two things. Auto-start starts a task once and moves nothing. Cards A,
+B and C.
+
 ## Future, not planned
 
-Phase 76 is the only one. It has no date, no owner and no card in progress; it stays written so
-it can be opened later.
+Phase 76 and status rules are the only ones. They have no date, no owner and no card in progress;
+they stay written so they can be opened later.
 
 **[Phase 76](https://github.com/yielab/tack/blob/develop/docs/plans/phase-76.md) — the project
 file is kept in sync.** ADR 0025 is proposed. Nothing is built, and the plan was written before
@@ -99,6 +105,12 @@ directory and content in the database; Tack's file already has the two halves. S
 
 Until it is opened, the project file stays what Phase 73 made it: an import that creates and
 updates by name and never deletes.
+
+**Status rules.** Optional, written in Phase 86's plan ("Considered and not adopted now"), no phase opened.
+One list of rules per project, each "when this happens, and this holds, propose these changes": a run starting
+moves its task, a run with changes suggests In Review, every child done marks the parent done. A rule builds
+a change set with the rule as its actor, applied at once or left waiting, so a refusal is a visible reason.
+It reads the same events as the triggers of Phase 85 and writes only the status.
 
 ## Cancelled
 

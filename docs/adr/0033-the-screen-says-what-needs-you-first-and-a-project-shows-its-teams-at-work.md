@@ -19,6 +19,10 @@ view, which is removed, and its abilities move to the List.
 | 4 | **The Table view is removed; the List does what it did.** The List gains sorting by a column, a filter, editing a cell in place (title, status, priority, assignee, due date), choosing columns and two row heights. `/table` and a remembered "table" view open the List | Five work views instead of six, and the one that shows the hierarchy can also sort and triage |
 | 5 | **A new work view, Orchestration** (a project can rename it), in two modes. **Flow**: one lane per team that works in the project, its stations being the team's own steps as the agent reported them, each task placed at the step it is in, with what waits on a person, what nobody will pick up and what each team is spending. **Map**: who does what, from roles to profiles to teams to members, and the teams compared side by side. A project where no agent has ever run shows the view disabled with its reason | The work of several teams can be followed as it moves, and the reason a task goes to one team and not another can be seen |
 
+**Amended 2026-11-02 (Phase 86, `docs/plans/phase-86.md`).** Decision 1 is reversed: a run that starts no
+longer moves its item, and neither does a run that finishes. A task's status is a person's, and its
+work is what its runs report; the two are shown apart. Nothing else in this ADR changes.
+
 **Why now.** The live suite's screenshots of 2026-11-01 and the My SaaS onboarding of 2026-10-31 show
 that the board keeps tasks in Backlog while their runs work, that the item and run screens put the one
 thing to do below a dozen sections of equal weight, and that nothing on screen shows a team's process,
