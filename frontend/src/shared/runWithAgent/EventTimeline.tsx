@@ -2,6 +2,7 @@ import { type Component, For, Show, createEffect, createResource, createSignal, 
 import { Badge, Icons, LoadError } from '../ui';
 import { attemptsApi, type EventSummary } from '../execution';
 import { relativeTimeFromIso } from './shared';
+import { plainLine } from './plainWords';
 import { NEEDS_A_PERSON_TEXT, inProject } from './attemptFormat';
 
 export interface EventTimelineProps {
@@ -116,8 +117,8 @@ const EventRow: Component<{ event: EventSummary; last: boolean; workspace?: stri
       <Show
         when={props.event.kind === 'attempt.terminal' && props.event.payload && typeof props.event.payload === 'object'}
         fallback={
-          <p class="mt-0.5 text-xs break-words" style={{ color: 'var(--color-text-secondary)' }}>
-            {inProject(describeEventPayload(props.event.payload), props.workspace)}
+          <p class="mt-0.5 text-xs break-words" title={plainLine(describeEventPayload(props.event.payload)).raw} style={{ color: 'var(--color-text-secondary)' }}>
+            {inProject(plainLine(describeEventPayload(props.event.payload)).text, props.workspace)}
           </p>
         }
       >

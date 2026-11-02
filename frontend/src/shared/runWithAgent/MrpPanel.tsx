@@ -6,6 +6,7 @@ import type { AcceptanceCriterion } from '../api/briefs';
 import { mrpApi, type MrpCriterionStatus, type MrpPack, type MrpReview } from '../execution/api';
 import type { AttemptMerge } from '../execution/attempts';
 import { LEVEL_MEANING } from '../help/texts';
+import { plainLine } from './plainWords';
 
 export interface MrpPanelProps {
   /** The run's verdict is asked for at the top of the run, so this panel only shows it once given. */
@@ -241,11 +242,17 @@ export const MrpVerdict: Component<{ pack: MrpPack }> = (props) => (
       </Badge>
       <Badge tone={RISK_TONE[props.pack.risk.tier] ?? 'neutral'}>Risk: {props.pack.risk.tier}</Badge>
     </div>
-    <p class="text-sm" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
-      {props.pack.recommendation.rationale}
+    <p class="text-sm" title={plainLine(props.pack.recommendation.rationale).raw} style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>
+      {plainLine(props.pack.recommendation.rationale).text}
     </p>
   </div>
 );
+
+/** A next step in a sentence: the verifier's "criterion X failed: kind" line names the check, and its kind stays in the tooltip. */
+function nextStepWords(s: { code: string; message?: string | null }): string {
+  const failed = s.message ? /^criterion (\S+) failed\b/i.exec(s.message) : null;
+  return failed ? `The check “${failed[1]}” failed` : (s.message ?? CODE_WORDS[s.code] ?? s.code);
+}
 
 /** What each kind of check does, in words; a kind this build does not know is shown as it came. */
 const KIND_WORDS: Record<string, string> = {
@@ -348,7 +355,7 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
             <Show when={pack().risk.reasons.length > 0}>
               <Section title="Why this risk">
                 <ul class="list-disc pl-5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                  <For each={pack().risk.reasons}>{(r) => <li>{r}</li>}</For>
+                  <For each={pack().risk.reasons}>{(r) => <li title={plainLine(r).raw}>{plainLine(r).text}</li>}</For>
                 </ul>
               </Section>
             </Show>
@@ -358,11 +365,11 @@ const MrpPanel: Component<MrpPanelProps> = (props) => {
                 <ul class="space-y-1 text-xs" style={{ color: 'var(--color-text-primary)' }}>
                   <For each={pack().next_steps}>
                     {(s) => (
-                      <li data-testid="mrp-next-step" title={`${s.severity}: ${s.code}${s.path ? ` — ${s.path}` : ''}`}>
+                      <li data-testid="mrp-next-step" title={`${s.severity}: ${s.code}${s.message ? ` — ${s.message}` : ''}${s.path ? ` — ${s.path}` : ''}`}>
                         <Badge tone={s.severity === 'error' ? 'danger' : s.severity === 'warning' ? 'warning' : 'neutral'}>
                           {SEVERITY_WORDS[s.severity] ?? s.severity}
                         </Badge>{' '}
-                        <span>{s.message ?? CODE_WORDS[s.code] ?? s.code}</span>
+                        <span>{nextStepWords(s)}</span>
                         {/* These two codes carry an id in `path`, not a file: the stage is said in words, the
                             criterion's id stays in the tooltip. */}
                         <Show when={s.path && s.code === 'stage_degraded'}>

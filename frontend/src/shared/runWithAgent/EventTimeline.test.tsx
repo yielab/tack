@@ -31,6 +31,17 @@ const step = (sequence: number, kind: string, text: string) => ({
 });
 
 describe('EventTimeline', () => {
+  it('a request to start a task is a sentence, the raw line on hover', async () => {
+    const raw = "docket asked: pod dispatch — task enqueue for 'saas-code': You are a careful software engineer <<<card-text id=ffc540ea>>>";
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(page([step(1, 'escalation.asked', raw)]));
+    const c = mount();
+    await flush();
+    await flush();
+    expect(c.textContent).toContain('The agent asked to start the task.');
+    expect(c.textContent).not.toContain('card-text');
+    expect(c.querySelector(`[title="${raw}"]`)).not.toBeNull();
+  });
+
   it('attempt.install_skipped is named, and its reason is shown', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       page([{ event_id: 'evt_1', sequence: 1, source: 'runner', kind: 'attempt.install_skipped', payload: { reason: 'No install: this profile runs no commands' }, occurred_at: '2026-10-11T12:00:00Z', created_at: '2026-10-11T12:00:00Z' }]),

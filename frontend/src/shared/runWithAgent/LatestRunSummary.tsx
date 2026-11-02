@@ -4,6 +4,7 @@ import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
 import type { WaitingBehind } from '../execution/api';
+import { plainLine } from './plainWords';
 import {
   changedNoFile,
   countPatchFiles,
@@ -465,7 +466,12 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                     <Show when={noChange()}>
                       <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
                     </Show>
-                    <p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>
+                    <Show
+                      when={plainLine(text()).raw}
+                      fallback={<p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>}
+                    >
+                      {(raw) => <p data-testid="latest-run-said" title={raw()} class="text-sm" style={muted()}>{plainLine(text()).text}</p>}
+                    </Show>
                   </>
                 )}
               </Show>

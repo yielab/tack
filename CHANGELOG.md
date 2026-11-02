@@ -39,7 +39,8 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 - A run that ends well but whose proposed items could not be read (a row names a parent that is not an earlier row) says "Finished — proposals could not be used" with the reason in words, instead of a green "Finished".
-- The Execution tab's steps say "Not started yet" for a step a live run has not reached and "Not reached" on a run that ended before it, instead of "Waiting" beside an agent that is working.
+- The Execution tab's steps say "Not started yet" for a step a live run has not reached and "Not reached" on a run that ended before it, instead of "Waiting" beside an agent that is working; a run that has ended no longer carries "Cancellation requested", and a stopped run says "It was stopped before it finished".
+- The verifier's verdict, its risk reasons and its next steps, a finished wait ("waited: resumed") and an agent's request to start a task read as plain sentences on the run card and the timeline, with the raw line on hover.
 - The screen names a task's **Status** (its column, which only a person changes) and its **Work** (what its newest run reports) apart: the task's header says Status and its panel says Work, the Board's strip is titled Work, the List's Work column sits beside Status and sorts and filters by work, and a finished run reads **Finished** so that no work word equals a column name; Settings → Automation no longer has **When a run starts** or **When a run finishes**, and says a run never changes the status.
 - Settings → Automation: the ladder is where you pick the level (each rung is the control), and the Merge block no longer repeats the levels or the reasons L4 and L5 are off.
 - A board card that auto-start holds or started names the item it is part of ("Part of: …"), and the "Started by itself" chip is neutral instead of the colour of "Ready for review".
