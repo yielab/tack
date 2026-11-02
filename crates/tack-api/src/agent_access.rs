@@ -63,6 +63,9 @@ pub fn classify(method: &Method, path: &str) -> Access {
         (["projects"], true) => Some(Access::Filtered),
         (["teams"], true) => Some(Access::Anywhere(Read)),
         (["digest"], true) => Some(Access::Filtered),
+        // Needs `read` on one project; the handler keeps the tasks of the projects the caller may
+        // read, like the digest.
+        (["teams", _, "activity"], true) => Some(Access::Anywhere(Read)),
         (["search"], true) => Some(Access::Everywhere(Read)),
         (["projects", project], true) => id(project).map(|p| Access::Project(p, Read)),
         (
@@ -351,5 +354,15 @@ mod tests {
         );
         // The digest filters its own answer by the caller's scopes.
         assert_eq!(classify(&Method::GET, "/api/digest"), Access::Filtered);
+        // A team's activity crosses projects: it needs `read` on one, and the handler keeps the
+        // tasks of the projects the caller may read.
+        assert_eq!(
+            classify(&Method::GET, "/api/teams/writers/activity"),
+            Access::Anywhere(Capability::Read)
+        );
+        assert_eq!(
+            classify(&Method::POST, "/api/teams/writers/activity"),
+            Access::OperatorOnly
+        );
     }
 }

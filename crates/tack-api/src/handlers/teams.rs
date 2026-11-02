@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use axum::Extension;
 use axum::extract::State;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,7 @@ use serde_json::Value;
 use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
+use tack_core::principal::{Capability, Principal, may};
 use tack_db::queries;
 use tack_protocol::execution::{
     ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, TeamReport,
@@ -185,19 +187,21 @@ fn instant(text: &str) -> Option<DateTime<Utc>> {
 }
 
 /// GET /api/teams/{id}/activity
-#[instrument(skip(state))]
+#[instrument(skip(state, principal))]
 #[utoipa::path(
     get,
     path = "/api/teams/{id}/activity",
     tag = "teams",
     params(("id" = String, Path, description = "The team's name"), ActivityQuery),
     responses(
-        (status = 200, description = "What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say", body = TeamActivityEntry),
+        (status = 200, description = "What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). An agent credential gets the tasks of the projects it may read, and the work the board did not start only if it may read every project. `supported` is `false`, with its reason, for an agent that cannot say", body = TeamActivityEntry),
+        (status = 403, description = "An agent credential with the scope `read` on no project", body = crate::openapi::ErrorEnvelope),
         (status = 404, description = "not_found (no active runner reports a team of that name)"),
     ),
 )]
 pub async fn team_activity(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(team): Path<String>,
     Query(query): Query<ActivityQuery>,
 ) -> ApiResult<Json<TeamActivityEntry>> {
@@ -251,7 +255,25 @@ pub async fn team_activity(
             tasks: Vec::new(),
         }));
     }
-    let rows = queries::team_activity::team_tasks(&state.repo, &team, Some(&harness)).await?;
+    let mut rows = queries::team_activity::team_tasks(&state.repo, &team, Some(&harness)).await?;
+    // A team's tasks cross projects. A caller sees the ones the board started for an item of a
+    // project it may read; the work the board did not start belongs to no project and is shown
+    // only to a caller that may read them all (the digest's rule).
+    if !principal.may_everywhere(Capability::Read) {
+        let projects: std::collections::HashMap<String, Option<uuid::Uuid>> =
+            queries::team_activity::team_task_projects(&state.repo, &team, &harness)
+                .await?
+                .into_iter()
+                .map(|(task, project)| (task, project.and_then(|id| id.parse().ok())))
+                .collect();
+        rows.retain(|row| {
+            projects
+                .get(&row.task_ref)
+                .copied()
+                .flatten()
+                .is_some_and(|project| may(&principal, project, Capability::Read))
+        });
+    }
     let mut steps = std::collections::HashMap::<String, Vec<FinishedStep>>::new();
     for row in queries::team_activity::team_task_steps(&state.repo, &harness, &team).await? {
         if let Ok(step) = serde_json::from_str::<FinishedStep>(&row.step) {
