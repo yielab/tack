@@ -3320,6 +3320,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/triggers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/triggers */
+        get: operations["list_triggers"];
+        put?: never;
+        /** POST /api/triggers */
+        post: operations["create_trigger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/triggers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/triggers/{id} */
+        get: operations["get_trigger"];
+        put?: never;
+        post?: never;
+        /** DELETE /api/triggers/{id} */
+        delete: operations["delete_trigger"];
+        options?: never;
+        head?: never;
+        /** PATCH /api/triggers/{id} */
+        patch: operations["update_trigger"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4391,6 +4428,35 @@ export interface components {
             project_id: string;
             title: string;
         };
+        /** @description What makes a trigger. */
+        CreateTrigger: {
+            /**
+             * Format: uuid
+             * @description When given, the events of the projects this credential may read count, and the
+             *     credential's own changes never wake the profile.
+             */
+            credential_id?: string | null;
+            /**
+             * Format: int32
+             * @description The most runs in a day (1 to 100).
+             */
+            daily_cap?: number;
+            enabled?: boolean;
+            name: string;
+            /** @description The agent profile that runs. */
+            profile: string;
+            /**
+             * Format: uuid
+             * @description The project the runs happen in; with no credential, the only project whose events count.
+             */
+            project_id: string;
+            /**
+             * Format: int32
+             * @description How long events stay quiet before the run starts, in seconds (0 to 3600).
+             */
+            quiet_seconds?: number;
+            source: components["schemas"]["Source"];
+        };
         CreatedSubtask: {
             /** Format: uuid */
             id: string;
@@ -4639,6 +4705,11 @@ export interface components {
         EstimateUnit: "story_points" | "hours" | "days" | {
             custom: string;
         };
+        /**
+         * @description The kinds of thing a trigger can wait for.
+         * @enum {string}
+         */
+        EventKind: "item_created" | "item_updated" | "item_moved" | "item_deleted" | "run_started" | "run_finished" | "run_failed" | "run_waiting" | "decision_opened" | "decision_resolved" | "change_set_waiting";
         EventListResponse: {
             data: components["schemas"]["EventSummary"][];
             /** Format: int32 */
@@ -4798,6 +4869,16 @@ export interface components {
             item: components["schemas"]["DigestItem"];
             reason?: string | null;
             run: string;
+        };
+        /** @description What narrows an event trigger. Every field that is set must match. */
+        Filter: {
+            /**
+             * Format: int32
+             * @description For `change_set_waiting`: how long the change set waits before it counts, in seconds.
+             */
+            after_seconds?: number | null;
+            /** @description For an item event: the status the item is in after the event. */
+            status?: string | null;
         };
         /** @description A step that ended, with what it said. */
         FinishedStep: {
@@ -5899,6 +5980,17 @@ export interface components {
             description?: string | null;
             name: string;
         };
+        /**
+         * @description Weekdays and a time of day. `days` are ISO weekdays (1 Monday to 7 Sunday); the time is
+         *     the minute of the day in the zone `utc_offset_minutes` east of UTC names.
+         */
+        Schedule: {
+            days: number[];
+            /** Format: int32 */
+            minute_of_day: number;
+            /** Format: int32 */
+            utc_offset_minutes?: number;
+        };
         /** @description A set of projects times a set of capabilities. */
         Scope: {
             /**
@@ -6131,6 +6223,16 @@ export interface components {
             field_id: string;
             value: unknown;
         };
+        /** @description What wakes the profile. */
+        Source: {
+            event: components["schemas"]["EventKind"];
+            filter?: components["schemas"]["Filter"];
+            /** @enum {string} */
+            kind: "event";
+        } | (components["schemas"]["Schedule"] & {
+            /** @enum {string} */
+            kind: "schedule";
+        });
         Sprint: {
             /** Format: date-time */
             created_at: string;
@@ -6533,6 +6635,32 @@ export interface components {
             from: string;
             to: string;
         };
+        /** @description A rule that starts a run of a profile. */
+        Trigger: {
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: int32
+             * @description The most runs in a day (24 hours).
+             */
+            daily_cap: number;
+            enabled: boolean;
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            last_fired_at?: string | null;
+            name: string;
+            /** @description The agent profile that runs. */
+            profile: string;
+            /**
+             * Format: int32
+             * @description How long events must stay quiet before the run starts, in seconds.
+             */
+            quiet_seconds: number;
+            /** @description The project the runs happen in and, with a credential, the projects whose events count. */
+            scope: components["schemas"]["ThreadScope"];
+            source: components["schemas"]["Source"];
+        };
         /** @description One run of the thread's profile, started by one message. */
         Turn: {
             /**
@@ -6708,6 +6836,17 @@ export interface components {
         };
         UpdateSprintStatus: {
             status: components["schemas"]["SprintStatus"];
+        };
+        /** @description What an edit changes; a field left out stays. */
+        UpdateTrigger: {
+            /** Format: int32 */
+            daily_cap?: number | null;
+            enabled?: boolean | null;
+            name?: string | null;
+            profile?: string | null;
+            /** Format: int32 */
+            quiet_seconds?: number | null;
+            source?: null | components["schemas"]["Source"];
         };
         UpsertItemBrief: {
             acceptance: components["schemas"]["AcceptanceCriterion"][];
@@ -11720,6 +11859,178 @@ export interface operations {
             };
             /** @description The thread is closed or at a cap, or its last turn has not answered yet */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_triggers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Only the triggers whose home is this project. */
+                project_id: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Triggers, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trigger"][];
+                };
+            };
+        };
+    };
+    create_trigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTrigger"];
+            };
+        };
+        responses: {
+            /** @description The trigger */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trigger"];
+                };
+            };
+            /** @description The trigger, its profile or its credential is not acceptable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Project not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_trigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Trigger ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The trigger */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trigger"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_trigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Trigger ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted, with the events it kept */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_trigger: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Trigger ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTrigger"];
+            };
+        };
+        responses: {
+            /** @description The trigger, changed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trigger"];
+                };
+            };
+            /** @description The change is not acceptable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

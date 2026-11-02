@@ -59,6 +59,12 @@ pub trait Artifacts: Send + Sync {
 pub trait DomainEvents: Send + Sync {
     /// Tell every listener that `event` became true. It never blocks and never fails.
     fn emit(&self, event: DomainEvent);
+
+    /// A receiver of everything emitted from now on, for a consumer that reads events on its
+    /// own schedule; `None` for a channel nobody can listen to.
+    fn subscribe(&self) -> Option<tokio::sync::broadcast::Receiver<DomainEvent>> {
+        None
+    }
 }
 
 /// Everything a tick or a merge reaches outside the store, built once per pass by the caller.

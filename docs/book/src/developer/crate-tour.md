@@ -193,6 +193,12 @@ The digest (ADR 0034, decision 6): what a reader should know about some projects
 
 ---
 
+### `trigger.rs`
+
+What wakes a profile (ADR 0034, decision 8), as pure values and rules. A `Trigger` is a `Source` (an `EventKind` with a `Filter`, or a `Schedule` of ISO weekdays and a minute of the day in a stated zone), a profile, a quiet period, a daily cap and a `ThreadScope` (the home project, and optionally the credential whose projects count). `fires(trigger, happened, own, reaches)` says whether a `Happened` belongs in the trigger's next run; `own` is `profile_labels(...)`, the principal labels the profile works under (the credentials its triggers name, its triggers' `trigger:<id>` and its threads' `thread:<id>`), and `is_echo` makes an event a principal of that set caused never fire it. `burst_ready` waits for quiet but not for more than an hour, `cap_reached` counts the last 24 hours, `schedule_due` compares the latest scheduled moment with the last run (or the trigger's creation), and `run_input` writes what the run is told: why it started, up to 50 events and the digest.
+
+---
+
 ### `recurrence.rs` and `rate_card.rs`
 
 `recurrence::next_due` computes when the next copy of a repeating task is due, and `clone_for_next` builds it. `rate_card` prices a model's tokens against the operator's card, returning nothing for a model the card does not list.
@@ -319,6 +325,10 @@ One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, 
 ### `change_sets.rs`
 
 `propose` reads the board into a `BoardView`, validates the whole set (a set that fails is refused with every reason and kept nowhere), keeps it under its idempotency key (the same key on a project answers the first change set again), lets `decide` pick the operations that apply now and applies them with `Repository::apply_change_set`: one `BEGIN IMMEDIATE` transaction that re-reads the set, writes every operation through the same row-level functions the person's routes use (`insert_item`, `update_item_in` with the workflow as gate, `insert_dependency`) and records each operation's state and result, so a failure anywhere leaves nothing. `apply` (a person, all or some operations, with edits), `reject` and `edit_operation` finish the lifecycle. `Mode::Now` is a person's own plan: everything applies at once and the rung does not count it. A plan accepted from a run (`POST /api/items/{id}/subtasks-from-plan`) is a set of creates proposed in that mode, so the plan flow and an agent's proposal share one write path. The handlers in `tack-api` announce what changed to the WebSocket and run `after_update` for a move, as `update_item` does.
+
+### `triggers.rs`
+
+`observe` turns a `DomainEvent` into a `Happened` (a run or decision of a thread's or trigger's hidden item is the profile's own work and is skipped) and keeps it, per trigger, in `trigger_events`. The loop (`spawn`) drains a subscription to the event bus (`DomainEvents::subscribe`) and calls `tick` every five seconds: `tick` notices each change set that has waited longer than a `change_set_waiting` trigger's `after_seconds` once (a dedupe key, cause `system:tack`), then for every enabled trigger whose last run has ended and whose burst is quiet or whose schedule has come, and whose cap is not reached, starts one run against the trigger's hidden item under the principal `trigger:<id>` and marks the events it took. A run that cannot start is logged and counts toward the cap. The HTTP routes (`/api/triggers`) are the operator's alone.
 
 ### `AppError`
 

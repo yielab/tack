@@ -32,4 +32,5 @@ pub mod sprints;
 pub mod teams;
 pub mod templates;
 pub mod threads;
+pub mod triggers;
 pub mod websocket;

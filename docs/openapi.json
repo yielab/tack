@@ -8159,6 +8159,232 @@
           }
         }
       }
+    },
+    "/api/triggers": {
+      "get": {
+        "tags": [
+          "triggers"
+        ],
+        "summary": "GET /api/triggers",
+        "operationId": "list_triggers",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "description": "Only the triggers whose home is this project.",
+            "required": true,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Triggers, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Trigger"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "triggers"
+        ],
+        "summary": "POST /api/triggers",
+        "operationId": "create_trigger",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTrigger"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The trigger",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trigger"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The trigger, its profile or its credential is not acceptable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/triggers/{id}": {
+      "get": {
+        "tags": [
+          "triggers"
+        ],
+        "summary": "GET /api/triggers/{id}",
+        "operationId": "get_trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Trigger ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The trigger",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trigger"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "triggers"
+        ],
+        "summary": "DELETE /api/triggers/{id}",
+        "operationId": "delete_trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Trigger ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted, with the events it kept"
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "triggers"
+        ],
+        "summary": "PATCH /api/triggers/{id}",
+        "operationId": "update_trigger",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Trigger ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTrigger"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The trigger, changed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Trigger"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The change is not acceptable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11299,6 +11525,56 @@
           }
         }
       },
+      "CreateTrigger": {
+        "type": "object",
+        "description": "What makes a trigger.",
+        "required": [
+          "project_id",
+          "profile",
+          "name",
+          "source"
+        ],
+        "properties": {
+          "credential_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "When given, the events of the projects this credential may read count, and the\ncredential's own changes never wake the profile."
+          },
+          "daily_cap": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The most runs in a day (1 to 100).",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string",
+            "description": "The agent profile that runs."
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The project the runs happen in; with no credential, the only project whose events count."
+          },
+          "quiet_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How long events stay quiet before the run starts, in seconds (0 to 3600).",
+            "minimum": 0
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          }
+        }
+      },
       "CreatedSubtask": {
         "type": "object",
         "required": [
@@ -11924,6 +12200,23 @@
           }
         ]
       },
+      "EventKind": {
+        "type": "string",
+        "description": "The kinds of thing a trigger can wait for.",
+        "enum": [
+          "item_created",
+          "item_updated",
+          "item_moved",
+          "item_deleted",
+          "run_started",
+          "run_finished",
+          "run_failed",
+          "run_waiting",
+          "decision_opened",
+          "decision_resolved",
+          "change_set_waiting"
+        ]
+      },
       "EventListResponse": {
         "type": "object",
         "required": [
@@ -12343,6 +12636,28 @@
           },
           "run": {
             "type": "string"
+          }
+        }
+      },
+      "Filter": {
+        "type": "object",
+        "description": "What narrows an event trigger. Every field that is set must match.",
+        "properties": {
+          "after_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "For `change_set_waiting`: how long the change set waits before it counts, in seconds.",
+            "minimum": 0
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For an item event: the status the item is in after the event."
           }
         }
       },
@@ -15352,6 +15667,33 @@
           }
         }
       },
+      "Schedule": {
+        "type": "object",
+        "description": "Weekdays and a time of day. `days` are ISO weekdays (1 Monday to 7 Sunday); the time is\nthe minute of the day in the zone `utc_offset_minutes` east of UTC names.",
+        "required": [
+          "days",
+          "minute_of_day"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          },
+          "minute_of_day": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "utc_offset_minutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "Scope": {
         "type": "object",
         "description": "A set of projects times a set of capabilities.",
@@ -16010,6 +16352,53 @@
           },
           "value": {}
         }
+      },
+      "Source": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "event",
+              "kind"
+            ],
+            "properties": {
+              "event": {
+                "$ref": "#/components/schemas/EventKind"
+              },
+              "filter": {
+                "$ref": "#/components/schemas/Filter"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "event"
+                ]
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Schedule"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "schedule"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "description": "What wakes the profile."
       },
       "Sprint": {
         "type": "object",
@@ -17079,6 +17468,67 @@
           }
         }
       },
+      "Trigger": {
+        "type": "object",
+        "description": "A rule that starts a run of a profile.",
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "profile",
+          "source",
+          "quiet_seconds",
+          "daily_cap",
+          "enabled",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "daily_cap": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The most runs in a day (24 hours).",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_fired_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "name": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "string",
+            "description": "The agent profile that runs."
+          },
+          "quiet_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "description": "How long events must stay quiet before the run starts, in seconds.",
+            "minimum": 0
+          },
+          "scope": {
+            "$ref": "#/components/schemas/ThreadScope",
+            "description": "The project the runs happen in and, with a credential, the projects whose events count."
+          },
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          }
+        }
+      },
       "Turn": {
         "type": "object",
         "description": "One run of the thread's profile, started by one message.",
@@ -17692,6 +18142,56 @@
           }
         }
       },
+      "UpdateTrigger": {
+        "type": "object",
+        "description": "What an edit changes; a field left out stays.",
+        "properties": {
+          "daily_cap": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "profile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "quiet_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Source"
+              }
+            ]
+          }
+        }
+      },
       "UpsertItemBrief": {
         "type": "object",
         "required": [
@@ -18082,6 +18582,10 @@
     {
       "name": "threads",
       "description": "Conversations between a person and a profile; each message starts a turn."
+    },
+    {
+      "name": "triggers",
+      "description": "Rules that wake a profile on an event or a schedule; one run takes every event since the last."
     },
     {
       "name": "items",

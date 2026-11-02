@@ -95,6 +95,10 @@ impl DomainEvents for Adapter {
         }
         self.0.event_bus.emit(event);
     }
+
+    fn subscribe(&self) -> Option<tokio::sync::broadcast::Receiver<DomainEvent>> {
+        Some(self.0.event_bus.subscribe())
+    }
 }
 
 /// What the open boards are told of an event: the message they have always understood, or

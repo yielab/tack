@@ -131,10 +131,12 @@ describe('AgentsPage — this computer only', () => {
     await flush();
     await flush();
 
-    // No project exists, and the page has no input at all.
-    const inputs = Array.from(container.querySelectorAll('input, select, textarea'));
+    // No project exists, and the steps and the test run have no input at all ("Add a manager" is its own form).
+    const steps = container.cloneNode(true) as HTMLElement;
+    steps.querySelector('[data-testid="add-manager"]')?.remove();
+    const inputs = Array.from(steps.querySelectorAll('input, select, textarea'));
     expect(inputs.length).toBe(0);
-    expect(container.textContent).not.toContain('Project');
+    expect(steps.textContent).not.toContain('Project');
     const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Run test'))!;
     expect(button).toBeTruthy();
     expect(button.disabled).toBe(false);

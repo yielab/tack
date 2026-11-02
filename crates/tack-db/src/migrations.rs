@@ -165,6 +165,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("101_change_sets", &MIGRATION_101[..]),
         ordinary("102_threads", &MIGRATION_102[..]),
         ordinary("103_drop_status_moves", &MIGRATION_103[..]),
+        ordinary("104_triggers", &MIGRATION_104[..]),
     ]
 }
 
@@ -2057,4 +2058,50 @@ const MIGRATION_103: [&str; 3] = [
     "ALTER TABLE projects DROP COLUMN on_start_status",
     "ALTER TABLE projects DROP COLUMN on_finish_status",
     "ALTER TABLE execution_requests DROP COLUMN status_map_policy_id",
+];
+
+// 104: triggers (ADR 0034, decision 8). A trigger wakes a profile on an event or a schedule: `source` is a JSON
+// document (`{"kind":"event","event":...,"filter":...}` or `{"kind":"schedule","days":...}`). Like a thread, a trigger
+// keeps one hidden item its runs are made against. `trigger_events` holds the events a trigger has not read yet
+// (`firing_id` NULL) and the ones its runs took; `dedupe_key` makes an event Tack notices on a timer (a change set
+// waiting) count once. `trigger_firings` is one row per run, which the daily cap counts.
+const MIGRATION_104: [&str; 6] = [
+    r##"CREATE TABLE triggers (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        credential_id TEXT,
+        profile TEXT NOT NULL,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL,
+        quiet_seconds INTEGER NOT NULL,
+        daily_cap INTEGER NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        anchor_item_id TEXT REFERENCES items(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL,
+        last_fired_at TEXT
+    )"##,
+    "CREATE INDEX idx_triggers_project ON triggers(project_id)",
+    r##"CREATE TABLE trigger_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+        at TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        cause TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT,
+        subject TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        dedupe_key TEXT,
+        firing_id TEXT,
+        UNIQUE (trigger_id, dedupe_key)
+    )"##,
+    "CREATE INDEX idx_trigger_events_pending ON trigger_events(trigger_id, firing_id)",
+    r##"CREATE TABLE trigger_firings (
+        id TEXT PRIMARY KEY NOT NULL,
+        trigger_id TEXT NOT NULL REFERENCES triggers(id) ON DELETE CASCADE,
+        request_id TEXT NOT NULL,
+        fired_at TEXT NOT NULL,
+        events INTEGER NOT NULL
+    )"##,
+    "CREATE INDEX idx_trigger_firings_trigger ON trigger_firings(trigger_id, fired_at)",
 ];

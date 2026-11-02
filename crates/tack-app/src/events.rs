@@ -133,6 +133,10 @@ impl DomainEvents for EventBus {
         // No subscriber is fine.
         let _ = self.0.send(event);
     }
+
+    fn subscribe(&self) -> Option<broadcast::Receiver<DomainEvent>> {
+        Some(EventBus::subscribe(self))
+    }
 }
 
 /// A [`DomainEvents`] that keeps what it was told, for a test to read.
