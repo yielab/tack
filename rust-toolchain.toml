@@ -15,5 +15,5 @@
 # .github/dependabot.yml). A bump can surface new clippy lints — that is the
 # point of doing it deliberately instead of on whatever day upstream ships.
 [toolchain]
-channel = "1.98.1"
+channel = "1.99.1"
 components = ["rustfmt", "clippy"]
