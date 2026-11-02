@@ -284,6 +284,19 @@ describe('Orchestration: lanes', () => {
     expect(q<HTMLAnchorElement>(lane, '[data-testid="flow-lane-name"]')!.getAttribute('href')).toBe('/agents#team-saas-notes');
   });
 
+  it('writes_the_same_word_at_every_empty_station', async () => {
+    const c = await mount(threeLanes());
+    const empties = qa(c, '[data-lane="team:saas-notes"] [data-testid="flow-station"] ul > li.text-caption');
+    expect(empties.length).toBeGreaterThan(1);
+    expect([...new Set(empties.map((li) => li.textContent))]).toEqual(['None']);
+  });
+
+  it('names_the_check_between_two_stations_in_visible_words_beside_its_glyph', async () => {
+    const c = await mount(threeLanes());
+    const check = q(c, '[data-lane="team:saas-notes"] [data-testid="flow-check"]')!;
+    expect(q(check, '[data-testid="flow-check-word"]')!.textContent).toBe('reviewer');
+  });
+
   it('says_the_check_between_two_stations_in_words_and_draws_it_as_a_glyph', async () => {
     const c = await mount(threeLanes());
     const lane = q(c, '[data-lane="team:saas-notes"]')!;
@@ -796,6 +809,8 @@ describe('Orchestration: Map and Compare', () => {
     const collapsed = qa(c, '[data-collapsed="true"]');
     expect(collapsed.length).toBeGreaterThan(0);
     expect(collapsed[0].getAttribute('colspan')).toBe('4');
+    // It says it is every team's, not the first column's alone.
+    expect(collapsed[0].textContent).toContain('not reported by any of the 4 teams');
     // The table is wider than its frame: the hint and the edge appear.
     const frame = q<HTMLElement>(c, '[aria-label="Teams compared"]')!;
     Object.defineProperty(frame, 'clientWidth', { configurable: true, value: 100 });

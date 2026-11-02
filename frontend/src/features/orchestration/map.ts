@@ -26,9 +26,9 @@ type TeamLine = components['schemas']['TeamLine'];
 
 // ── Geometry ─────────────────────────────────────────────────────────────────────────────────────
 
-export const NODE_W = 184;
+export const NODE_W = 200;
 export const NODE_H = 62;
-export const COL_GAP = 92;
+export const COL_GAP = 80;
 export const ROW_GAP = 14;
 export const HEADER_H = 40;
 export const PAD = 12;
@@ -482,6 +482,31 @@ export function linkPath(model: Pick<MapModel, 'nodes'>, link: Pick<MapLink, 'fr
 /** A name that fits a node: cut with an ellipsis; the whole name stays in the node's label and tooltip. */
 export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, Math.max(1, max - 1))}…`;
+}
+
+/**
+ * A text broken at spaces into at most `maxLines` lines of at most `width` characters, the last one cut
+ * with an ellipsis when the rest does not fit; a word longer than a line is broken where the line ends.
+ * The whole text stays in the node's tooltip.
+ */
+export function wrapLines(text: string, width: number, maxLines: number): string[] {
+  const lines: string[] = [];
+  let rest = text.trim();
+  while (rest.length > 0 && lines.length < maxLines) {
+    if (lines.length === maxLines - 1) {
+      lines.push(clip(rest, width));
+      break;
+    }
+    if (rest.length <= width) {
+      lines.push(rest);
+      break;
+    }
+    const at = rest.lastIndexOf(' ', width);
+    const cut = at > 0 ? at : width;
+    lines.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  return lines;
 }
 
 // ── Keyboard: node by node ───────────────────────────────────────────────────────────────────────
