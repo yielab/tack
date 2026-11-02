@@ -446,10 +446,16 @@ pub fn turn_input(window: &Window<'_>, digest_json: &str, reply_file: &str) -> S
 }
 
 /// A [`turn_input`] for a team that answers with its last step's message and cannot write
-/// `reply_file`: the sentence that asks for the file says what is true instead. Any other text
-/// comes back as it is.
-pub fn turn_input_for_a_team(input: &str, reply_file: &str) -> String {
-    input.replace(&reply_in_file(reply_file), REPLY_BY_LAST_STEP)
+/// `reply_file`: the sentence that asks for the file says what is true instead. A team reaches
+/// the board over HTTP and is told nothing else of the thread, so the input also names
+/// `thread_id` and the fields a change set it proposes sets to say where it came from. Any
+/// other text comes back as it is.
+pub fn turn_input_for_a_team(input: &str, reply_file: &str, thread_id: &str) -> String {
+    let reply = format!(
+        "This turn belongs to thread {thread_id}; when you propose a change set, name it as \
+         the origin: origin `thread`, origin_ref {thread_id}.\n\n{REPLY_BY_LAST_STEP}"
+    );
+    input.replace(&reply_in_file(reply_file), &reply)
 }
 
 /// The text of a reply cut to [`BODY_CHARS`], with a note when it was cut.
@@ -564,15 +570,21 @@ mod tests {
     fn a_team_that_cannot_write_the_reply_file_is_told_its_last_step_answers() {
         let all = messages(3, "same");
         let input = turn_input(&window(&all), "{}", "tack-reply.md");
-        let for_a_team = turn_input_for_a_team(&input, "tack-reply.md");
+        let for_a_team = turn_input_for_a_team(&input, "tack-reply.md", "thr-1");
         assert!(!for_a_team.contains("tack-reply.md"), "{for_a_team}");
         assert!(for_a_team.contains("last step is your reply"));
+        assert!(for_a_team.contains("origin `thread`, origin_ref thr-1"));
+        let thread_note = "This turn belongs to thread thr-1; when you propose a change set, name \
+             it as the origin: origin `thread`, origin_ref thr-1.\n\n";
         assert_eq!(
-            for_a_team.replace(REPLY_BY_LAST_STEP, ""),
+            for_a_team.replace(&format!("{thread_note}{REPLY_BY_LAST_STEP}"), ""),
             input.replace(&reply_in_file("tack-reply.md"), "")
         );
         // Text without that sentence is left alone.
-        assert_eq!(turn_input_for_a_team("hello", "tack-reply.md"), "hello");
+        assert_eq!(
+            turn_input_for_a_team("hello", "tack-reply.md", "thr-1"),
+            "hello"
+        );
     }
 
     #[test]
