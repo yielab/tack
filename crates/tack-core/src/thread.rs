@@ -1,7 +1,7 @@
 //! A conversation between a person and a profile (ADR 0034, decision 7), as pure values and the
 //! rules that bound it. A [`Thread`] belongs to a project or to a credential's projects and has
 //! one profile; a [`Message`] has a principal, a body and references. Each message from a person
-//! starts a turn, and a turn reads the thread through a [`Window`]: the last messages whole, the
+//! starts a turn (a message from an agent is posted and starts none, see [`opens_turn`]), and a turn reads the thread through a [`Window`]: the last messages whole, the
 //! older ones as their first line, all within one size bound. Nothing here touches the store, a
 //! clock or HTTP.
 
@@ -11,6 +11,8 @@ use std::str::FromStr;
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::principal::PrincipalKind;
 
 /// The most turns one thread takes; a thread that reached it is closed and a new one is opened.
 pub const MAX_TURNS: u32 = 50;
@@ -283,6 +285,25 @@ pub fn may_take_turn(thread: &Thread, now: DateTime<Utc>) -> Result<(), TurnStop
     Ok(())
 }
 
+/// Whether a message written by `author` starts a turn. Only the operator's does: the turn is
+/// the answer to a person, and a run that an agent could start by writing would let a profile
+/// that writes to its own thread start a loop. An agent's message (a report, an alert) is posted
+/// and waits for the person to read it.
+pub fn opens_turn(author: PrincipalKind) -> bool {
+    matches!(author, PrincipalKind::Operator)
+}
+
+/// Whether a message that [`opens_turn`] or not may be posted in the thread at `now`. A message
+/// that starts a turn needs the thread to [`may_take_turn`]; one that starts none needs only an
+/// open thread that is not idle, so it is not held back by a turn still pending or by the turn
+/// cap, which count turns.
+pub fn may_post(thread: &Thread, now: DateTime<Utc>, opens_turn: bool) -> Result<(), TurnStop> {
+    match may_take_turn(thread, now) {
+        Err(TurnStop::TurnCap) if !opens_turn => Ok(()),
+        other => other,
+    }
+}
+
 /// What a turn reads of a thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Window<'a> {
@@ -531,6 +552,29 @@ mod tests {
         open.status = ThreadStatus::Closed;
         assert_eq!(may_take_turn(&open, at(1)), Err(TurnStop::Closed));
         assert!(!is_idle(&open, at(30)), "a closed thread is not idle");
+    }
+
+    #[test]
+    fn only_the_operators_message_opens_a_turn() {
+        assert!(opens_turn(PrincipalKind::Operator));
+        for kind in [
+            PrincipalKind::Agent,
+            PrincipalKind::Runner,
+            PrincipalKind::System,
+        ] {
+            assert!(!opens_turn(kind), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_message_that_opens_no_turn_ignores_the_turn_cap_but_not_a_closed_thread() {
+        let mut full = thread();
+        full.turns = MAX_TURNS;
+        assert_eq!(may_post(&full, at(1), true), Err(TurnStop::TurnCap));
+        assert_eq!(may_post(&full, at(1), false), Ok(()));
+        assert_eq!(may_post(&full, at(IDLE_DAYS), false), Err(TurnStop::Idle));
+        full.status = ThreadStatus::Closed;
+        assert_eq!(may_post(&full, at(1), false), Err(TurnStop::Closed));
     }
 
     #[test]

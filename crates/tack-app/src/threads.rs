@@ -13,7 +13,7 @@ use tack_core::models::Project;
 use tack_core::principal::{Capability, Principal, may};
 use tack_core::thread::{
     self, Message, Ref, RefKind, Thread, ThreadScope, Turn, TurnState, body_problem, fit_reply,
-    refs_problem, title_problem, turn_principal,
+    opens_turn, refs_problem, title_problem, turn_principal,
 };
 use tack_db::{Repository, queries};
 use tack_protocol::Clock;
@@ -90,15 +90,19 @@ pub struct Post<'a> {
 #[derive(Debug)]
 pub struct Posted {
     pub message: Message,
-    /// The turn the message started; `None` when it could not start one.
+    /// The turn the message started; `None` when it could not start one, or when its author
+    /// does not start turns (an agent's message).
     pub turn: Option<Turn>,
     /// The note posted in the thread when the turn could not start, saying why.
     pub notice: Option<Message>,
 }
 
-/// Writes `post.body` in the thread and starts the turn it asks for. A thread that reached a
-/// cap, or has been idle for too long, closes and refuses; a thread whose last turn has not
-/// answered yet refuses too, so a profile that writes to its own thread cannot start a loop.
+/// Writes `post.body` in the thread and, when its author is one whose messages start a turn
+/// (`thread::opens_turn`: the operator), starts that turn. A thread that reached a cap, or has
+/// been idle for too long, closes and refuses; a thread whose last turn has not answered yet
+/// refuses the person's next message. An agent's message starts no turn, so it is posted even
+/// while a turn is pending or the turn cap is reached, and a profile that writes to its own
+/// thread cannot start a loop.
 pub async fn post(
     repo: &Repository,
     clock: &dyn Clock,
@@ -112,17 +116,19 @@ pub async fn post(
         .get_thread(post.thread)
         .await?
         .ok_or(AppError::NotFound)?;
-    if let Err(stop) = thread::may_take_turn(&thread, now) {
+    let starts_turn = opens_turn(post.principal.kind);
+    if let Err(stop) = thread::may_post(&thread, now, starts_turn) {
         if let Some(reason) = stop.closing_reason() {
             repo.close_thread(thread.id, reason).await?;
         }
         return Err(AppError::Conflict(stop.to_string()));
     }
-    if repo
-        .list_thread_turns(thread.id)
-        .await?
-        .iter()
-        .any(|turn| turn.state == TurnState::Pending)
+    if starts_turn
+        && repo
+            .list_thread_turns(thread.id)
+            .await?
+            .iter()
+            .any(|turn| turn.state == TurnState::Pending)
     {
         return Err(AppError::Conflict(
             "the previous turn has not answered yet; write again when it has".into(),
@@ -137,6 +143,13 @@ pub async fn post(
             now,
         )
         .await?;
+    if !starts_turn {
+        return Ok(Posted {
+            message,
+            turn: None,
+            notice: None,
+        });
+    }
     match begin_turn(repo, clock, &thread, &message).await {
         Ok(turn) => Ok(Posted {
             message,

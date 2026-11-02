@@ -124,9 +124,9 @@ status, the turns it has taken and its latest messages (20 at most, `more` count
 ones), each body fenced as card text. `post_message` writes in it, with `refs` to the items,
 change sets and decisions the message is about; both need the scope `converse` on the thread's
 project, and a thread kept for one credential answers only that credential. A message from an
-agent starts a turn of the thread's profile like a person's does, so the answer says whether a
-turn started (`turn_started`), and the thread takes one turn at a time: a message while the last
-turn has not answered, to a closed thread or past its turn cap is refused with the reason. An agent
+agent is posted and starts no turn, only a person's message does, so the answer says
+`turn_started: false`; it is posted even while a turn is running, and is refused only when the
+thread is closed or has been idle too long. An agent
 taking a turn gives `propose` the `thread_id` it is told, and the reply then shows the change set.
 
 Every free text these tools return that somebody wrote (a change set's reason and its
