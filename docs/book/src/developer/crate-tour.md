@@ -651,7 +651,7 @@ Builds the Tauri app and calls `attach_or_start` before creating the window — 
 
 ### `first_run.rs`
 
-`ensure_settings` runs before the supervisor does: on an empty data root it shows a first-run dialog (database path, port) and writes the answer to `settings.json` before anything tries to reach a server. The dialog call itself runs off the main thread — Tauri's dialog plugin deadlocks the event loop if it doesn't.
+`ensure_settings` runs before the supervisor does: on an empty data root it shows a first-run dialog (database path, port) and writes the answer to `settings.json` before anything tries to reach a server. `settings.json` also carries `attach_existing` (off unless written by hand): it tells the supervisor to attach to a server that answers health with no launch code, judged on its version like any other, so a service the person runs can serve the window. The dialog call itself runs off the main thread — Tauri's dialog plugin deadlocks the event loop if it doesn't.
 
 ### `tray.rs`
 

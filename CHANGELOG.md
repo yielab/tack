@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Added
 
+- The desktop app can use a Tack server you run yourself, for example a service that stays up with the window closed: set `"attach_existing": true` in its `settings.json` and it attaches to the server already answering on its port, as long as that server is this app's version or newer. It is off by default, a server with another launch code is still refused, and the message for a busy port now names the setting.
 - A run's steps say how long each took ("Took 4m 55s") on the Execution tab and under each step of the track, from a docket that lists `hopTimes`; steps that did no agent work, and a docket without the feature, show nothing as before.
 - A team docket has paused (its budget is spent) shows "Paused: budget spent" on its card in Agents → Teams, and a run sent to it says on its timeline that it waits and that `docket run --pod <team> --resume` resumes the team; there is no button, as docket has no route that resumes a team. Needs a docket that lists `podPause`; an older one reads as before.
 - A question answered at docket's own command line closes in Tack as **Answered in docket**, with a line on the timeline, and the run's next question is put to a person without waiting for the first to expire. It needs a docket that lists `settledCursor`; with an older one the question stays open until the run ends, as before.
