@@ -355,7 +355,7 @@ describe('Board agent strip and column bars', () => {
   it('the_strip_counts_runs_by_state_with_one_chip_per_state_and_no_aggregate', async () => {
     const c = await mountBoard(ITEMS, RUNS);
     const strip = c.querySelector('[data-testid="agent-strip"]')!;
-    expect(strip.getAttribute('aria-label')).toBe('Agent runs on this board');
+    expect(strip.getAttribute('aria-label')).toBe('Work');
     const names = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim());
     expect(names.join(' ')).not.toContain('Your turn');
     expect(c.querySelector('[data-testid="strip-waiting"]')).toBeNull();
@@ -363,7 +363,7 @@ describe('Board agent strip and column bars', () => {
     // A counter with nothing in it says why it cannot be used.
     const queued = strip.querySelector<HTMLButtonElement>('[data-testid="strip-queued"]')!;
     expect(queued.disabled).toBe(true);
-    expect(queued.title).toBe('No runs are queued');
+    expect(queued.title).toBe('No work under Queued');
   });
 
   it('a_counter_toggles_a_filter_on_the_board', async () => {
@@ -389,8 +389,8 @@ describe('Board agent strip and column bars', () => {
     const c = await mountBoard(ITEMS, RUNS);
     const bars = [...c.querySelectorAll('[data-testid="run-mini-bar"]')];
     expect(bars.map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Runs in this column: 2 running, 1 needs you',
-      'Runs in this column: 1 failed',
+      'Work in this column: 2 running, 1 needs you',
+      'Work in this column: 1 failed',
     ]);
     const segment = bars[0].querySelector<HTMLButtonElement>('[aria-label="1 needs you"]')!;
     segment.click();

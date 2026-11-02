@@ -1,17 +1,10 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, type RunStateName } from '../../shared/ui';
+import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { filterOf, totalRuns, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
 
-/** The words for each state, as the board prints them next to a count. */
-export const RUN_STATE_WORDS: Record<RunStateName, string> = {
-  queued: 'Queued',
-  running: 'Running',
-  needs: 'Needs you',
-  review: 'Ready for review',
-  done: 'Done',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-};
+/** The words for each state, as the board prints them next to a count: the one set of work words. */
+const RUN_STATE_WORDS = RUN_STATE_LABEL;
 
 /** What each state means, said once where its counter is: the same meaning on every surface. */
 const STATE_NOTE: Partial<Record<RunStateName, string>> = {
@@ -49,7 +42,7 @@ const AgentStrip: Component<{
         type="button"
         aria-pressed={on()}
         disabled={unusable()}
-        title={unusable() ? `No runs are ${label.toLowerCase()}` : note}
+        title={unusable() ? `No work under ${label}` : note}
         data-testid={`strip-${filter}`}
         onClick={() => props.onToggle(filter)}
         class="inline-flex min-h-7 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60"
@@ -87,11 +80,14 @@ const AgentStrip: Component<{
     <Show when={totalRuns(props.counts) > 0}>
       <div
         role="group"
-        aria-label="Agent runs on this board"
+        aria-label="Work"
         data-testid="agent-strip"
         class="flex flex-wrap items-center gap-2"
         style={{ padding: '0 22px 10px' }}
       >
+        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task. The column is its status, which only a person changes.">
+          Work
+        </span>
         <For each={COUNTERS}>
           {(entry) => (
             counter(entry.filter, () => props.counts[entry.state], RUN_STATE_WORDS[entry.state], entry.state, STATE_NOTE[entry.state])
@@ -122,7 +118,7 @@ export const RunMiniBar: Component<{
     <Show when={segments().length > 0}>
       <div
         role="group"
-        aria-label={`Runs in this column: ${summary()}`}
+        aria-label={`Work in this column: ${summary()}`}
         data-testid="run-mini-bar"
         class="flex w-full items-stretch gap-px overflow-hidden rounded-pill"
         style={{ height: '6px' }}

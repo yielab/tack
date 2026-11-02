@@ -100,7 +100,9 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
         aria-label="Item title"
       />
 
-      {/* Status pills */}
+      {/* Status: a person's. What the agents report is Work, in the Work panel below. */}
+      <div class="flex flex-wrap items-center gap-2">
+      <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Status</span>
       <div
         class="inline-flex max-w-full flex-wrap gap-1 rounded-xl p-1"
         style={{ 'background-color': 'var(--color-bg-panel)' }}
@@ -130,6 +132,7 @@ const ItemHeader: Component<ItemHeaderProps> = (props) => {
             );
           }}
         </For>
+      </div>
       </div>
 
       <Show when={parent()}>

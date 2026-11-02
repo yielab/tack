@@ -146,7 +146,6 @@ export function buildCreateExecutionInput(values: RunWithAgentFormValues): Creat
     environment: {},
     metadata: {},
     timeout_seconds: values.timeoutSeconds,
-    status_map_policy_id: null,
     ...(values.verify === false ? { verify: false } : {}),
     ...(values.pushBranch === false ? { push_branch: false } : {}),
     ...(values.autonomy ? { autonomy: values.autonomy } : {}),

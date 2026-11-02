@@ -8,8 +8,7 @@ cost, and read the project's Factory metrics page.
 
 A run that left changes marks the task **Needs your review**. This is a flag on the task, separate from your
 board columns. The board and the list show it. It clears when you press **Accept** or **Reject** on the
-attempt. If the project chose a column for finished runs (under **Settings → Automation**, see
-[When a run finishes](automation.md#when-a-run-finishes)), the task also moves there.
+attempt. The task's status does not change: its column is yours, and you move the card when you want to.
 
 Open the task and go to its **Execution** tab. Chips pick the run, each with its state; the run you picked
 reads from the top down, in the same order every time: the verdict first, then why, then the raw detail.
@@ -179,9 +178,6 @@ If the pack's review is saved but the run's verdict cannot be (for instance, the
 the two), the block does not ask for a reason again and does not offer **Reject**: it says the pack was
 accepted or rejected and offers **Save the verdict on the run**, which gives the run the pack's verdict and
 reason. If saving fails again, the block shows why, and you can press it again.
-
-If you started the run from the command line with `--status-map-policy done_on_mrp_accepted`, accepting the
-pack also moves the task to its workflow's first Done status; see [CLI](cli.md#runs).
 
 When the verifier rejects a change, a project can send it back to the agent with the list of what to fix;
 see [Sending a rejected change back to the agent](merging.md#sending-a-rejected-change-back-to-the-agent).

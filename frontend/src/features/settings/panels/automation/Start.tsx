@@ -71,6 +71,7 @@ const Start: Component<Props> = (props) => {
           runs open
         </label>
       </div>
+      <Note testid="start-status-note">The status is a person's: a run never changes it.</Note>
       <Show when={props.project()?.auto_start_disabled_reason}>
         {(why) => <Note testid="start-disabled-reason">{why()}</Note>}
       </Show>

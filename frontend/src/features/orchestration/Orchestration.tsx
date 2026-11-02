@@ -110,7 +110,8 @@ const Summary: Component<{
   capacity: string;
 }> = (props) => (
   <div class="flex min-w-0 flex-col gap-2" data-testid="flow-summary">
-    <div role="group" aria-label="Tasks by state" class="flex min-w-0 flex-wrap items-center gap-2">
+    <div role="group" aria-label="Work" class="flex min-w-0 flex-wrap items-center gap-2">
+      <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>Work</span>
       <For each={COUNTERS}>
         {(c) => {
           const count = () => c.count(props.flow);
