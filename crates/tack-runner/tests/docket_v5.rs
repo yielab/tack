@@ -1808,6 +1808,8 @@ async fn a_folder_teams_done_task_succeeds_with_its_last_summary_and_nothing_to_
     assert_eq!(reason["team"], POD);
     assert_eq!(reason["task"], fake.task_ids()[0].as_str());
     assert_eq!(reason["summary"], "The change matches the card.");
+    // A run that is not a thread's turn leaves no reply.
+    assert!(reason.get("reply").is_none());
     // No branch, so no head for the engine to propose a merge from.
     assert!(reason.get("branch").is_none() && reason.get("head_commit").is_none());
     assert!(
@@ -1816,6 +1818,89 @@ async fn a_folder_teams_done_task_succeeds_with_its_last_summary_and_nothing_to_
     );
     // The steps are kept as for any run.
     assert_eq!(reason["steps"].as_array().map(Vec::len), Some(3));
+}
+
+/// The hops of a team that answers a thread's turn: a lead that plans and a last step whose
+/// handoff says `answer`. The reply is the last step's, not the lead's.
+fn answering(answer: &str) -> Vec<(String, Value)> {
+    let mut lead = hop_finished("lead", "local/qwen2.5-coder:7b", 0, Value::Null);
+    lead["artifact"] = json!({"summary": "the lead's plan, which is not the answer"});
+    let mut last = hop_finished("reviewer", "local/qwen2.5-coder:7b", 0, Value::Null);
+    last["artifact"] = json!({"summary": answer});
+    vec![
+        ("hop_finished".to_owned(), lead),
+        ("hop_finished".to_owned(), last),
+    ]
+}
+
+/// Three turns of a thread on the team the fake serves: every turn is a new task whose item
+/// carries the conversation so far (docket replays), and each must end with its answer as the
+/// run's `reply`, which the engine stages as the reply artifact the thread waits for.
+async fn three_turns_of_a_thread(fake: &FakeDocket) {
+    let scene = scene();
+    let adapter = adapter(fake, &scene);
+    let mut conversation = String::new();
+    for turn in 1..=3_u32 {
+        let (question, answer) = (format!("question {turn}"), format!("answer {turn}"));
+        fake.script(Script {
+            after: answering(&answer),
+            ..Script::default()
+        });
+        conversation.push_str(&format!("Person: {question}\n"));
+        let mut attempt = spec(&scene, &format!("attempt-{turn}"), turn);
+        attempt
+            .work
+            .request
+            .task
+            .as_mut()
+            .expect("task")
+            .description = Some(conversation.clone());
+        attempt.work.request.metadata[tack_protocol::conversation::TURN_KEY] =
+            tack_protocol::conversation::TurnNote {
+                id: "thread-1".to_owned(),
+                turn,
+                max_turns: 20,
+                message: question.clone(),
+            }
+            .into_metadata();
+
+        let (outcome, _) = run_to_end(&adapter, &attempt).await;
+
+        assert_eq!(
+            outcome.terminal_state,
+            AttemptState::Succeeded,
+            "turn {turn}"
+        );
+        assert_eq!(
+            outcome.terminal_reason[tack_protocol::conversation::REPLY_REASON_KEY],
+            answer.as_str(),
+            "turn {turn}: {}",
+            outcome.terminal_reason
+        );
+        // The turn goes to docket with every earlier question and answer in its item.
+        let posted = fake.requests_to("POST", "/tasks/saas-dev");
+        assert_eq!(posted.len(), turn as usize);
+        let description = posted[turn as usize - 1].body["description"]
+            .as_str()
+            .expect("description");
+        for earlier in 1..=turn {
+            assert!(
+                description.contains(&format!("question {earlier}")),
+                "turn {turn} lacks question {earlier}: {description}"
+            );
+        }
+        conversation.push_str(&format!("Assistant: {answer}\n"));
+    }
+}
+
+#[tokio::test]
+async fn a_thread_on_a_team_in_a_repository_gets_the_last_steps_summary_as_each_reply() {
+    three_turns_of_a_thread(&pods_fake().await).await;
+}
+
+#[tokio::test]
+async fn a_thread_on_a_team_in_a_folder_gets_the_last_steps_summary_as_each_reply() {
+    three_turns_of_a_thread(&folder_fake().await).await;
 }
 
 /// The body posted for one run on `fake`, whose project says `npm ci` is the install.
