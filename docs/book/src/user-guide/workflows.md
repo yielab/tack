@@ -102,10 +102,10 @@ Every column belongs to one category:
 | Category | Meaning | Side effects |
 |---|---|---|
 | `todo` | Not started | New items start in the first one |
-| `in_progress` | Being worked on | The item's start date is set the first time it moves in |
-| `done` | Complete | The completion date is set |
+| `in_progress` | Being worked on | Tack records when the item first moved in |
+| `done` | Complete | Tack records when it was completed; moving it back out clears that |
 
-Categories are what the Overview, [starting tasks by itself](automation.md#start) and the other views read. The board shows only column names.
+Categories are what Overview and [starting tasks by itself](automation.md#start) (which offers the first to do status) read. The board shows only column names.
 
 ---
 

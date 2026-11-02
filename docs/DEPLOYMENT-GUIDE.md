@@ -2,7 +2,7 @@
 
 This page is for the person who installs Tack on a server or a workstation. After reading it you can
 get the binary, run it as a service behind HTTPS, check that it is healthy, and keep it updated.
-Settings are in the [Configuration Reference](https://yielab.github.io/tack/admin-guide/configuration-reference.html),
+Settings are in [Configuration](https://yielab.github.io/tack/admin-guide/configuration-reference.html),
 tokens and origins in [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html),
 backups in [Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html), and
 machines that run agents in
@@ -315,12 +315,10 @@ shell, so health-check the container from the host (`curl .../api/health`) or vi
 
 ## Configuration
 
-The server reads built-in defaults, then `tack.toml` in its working directory, then `TACK_*`
-environment variables, which win. [Configuration](https://yielab.github.io/tack/admin-guide/configuration.html)
-explains the order, shows a `tack.toml` and says how to confirm a change took effect; the
-[Configuration Reference](https://yielab.github.io/tack/admin-guide/configuration-reference.html) lists every
-setting, including the optional integrations (outbound webhooks, GitHub sync, S3-compatible cloud
-backup, tasks that projects start by themselves).
+[Configuration](https://yielab.github.io/tack/admin-guide/configuration-reference.html) explains the order
+(built-in defaults, then `tack.toml`, then `TACK_*` environment variables, which win), shows a `tack.toml`
+and lists every setting, including the optional integrations (outbound webhooks, GitHub sync, S3-compatible
+cloud backup, tasks that projects start by themselves).
 
 For a deployment you set these:
 
@@ -348,7 +346,7 @@ A snapshot covers the database only, so back up the storage directory too, or us
 bundle, which includes it. Automate with cron or a systemd timer and test a restore. Hot backup,
 staged restore, remote bundles and what each includes are in
 [Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html); the S3 setup is
-in [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html#cloud-backup-s3-compatible).
+in the same page.
 
 ---
 

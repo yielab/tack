@@ -158,8 +158,8 @@ counts the process groups an agent reported and had not reported finished: `trac
 running when the cancellation began, `killed` are gone afterwards, and `survived` are still
 running and need stopping by hand on the runner's machine. An agent that reports no process
 groups always shows `tracked: 0`. That means nothing was reported, not that nothing was left
-behind. Today that is every agent, so after a cancel, look for stray processes on the runner's
-machine yourself.
+behind. No agent reports its process groups, so after a cancel, look for stray processes on the
+runner's machine yourself.
 
 A cancellation observation on an attempt that already reached a terminal state returns
 `409 invalid_transition` with the actual terminal state named, not a false success.

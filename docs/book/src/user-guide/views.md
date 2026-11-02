@@ -2,8 +2,9 @@
 
 Tack has six **work tabs** — Board, Orchestration, List, Calendar, Timeline and Sprint (the last
 takes your project's word for a sprint) — all showing the same items. An item created in one appears at once
-in the others. Two more screens, **Overview** and **Factory metrics**, are in the sidebar and show
-project statistics.
+in the others. Four more screens are in the project's sidebar: **Overview** and **Factory metrics** show
+statistics, **Change sets** lists what agents proposed and **Threads** holds your conversations with them (see
+[Managers and Threads](talking-with-a-manager.md)).
 
 Every view shares the same shell: a sidebar to switch project and view (on a short window its list scrolls, and a fade under its lower edge says there is more, such as **Agents** and **Settings**), a top bar with item
 [search](command-palette.md) and a **+ New** button, and the [command palette](command-palette.md)
@@ -36,9 +37,15 @@ Kanban columns driven by the project's workflow statuses.
 - **Drag and drop** a card to change its status. The change saves at once.
 - **Move a card by keyboard.** Tab to the small arrow on a card, or hover the card to see it, and press Enter or Space to open **Move to…**. The arrow keys choose a column, Enter moves the card and the page announces where it went, and Escape closes the menu. Each column is a named region that scrolls inside itself: Tab into its list and use the arrow keys or Page Down to reach the last card, while the board's own scroll bar stays at the bottom of the screen.
 - **WIP limit** is shown in the column header when set. Dragging a card into a full column is blocked.
-- **Click a card** to open the item drawer (tabs Overview, Activity, Execution, Dependencies, Files and Fields; see [Working with Items](items.md)).
-- **A card reads top to bottom.** The title comes first. Under it one line says the card's work, where its latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled** or **Not started**; press it to open the task's Execution tab, or the run's question when it is asking one), then the team that ran it, then the priority, then the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** in Settings, under Display & accessibility, to show it on every card (this browser remembers the choice). A run the verifier says to reject but that still waits for your look reads **Ready for review · verifier says reject**, in words, so the card does not read as plain good news. A run turned away before the agent did anything (the computer refused it, or the team's level ceiling did) reads **Not started**, in neutral grey, and is not counted as failed. A card whose run **needs you** or **failed** has a coloured bar on its left edge, and so does one whose run is going in a column no work has started in, so the board does not look idle. The card's short id shows when you hover it and at the top of its **Move to…** menu. The ▶ button, **Run with agent**, is hidden while a run is going and comes back when it ends; a card whose run is ready for review shows a **Review and merge** button instead, which opens the Execution tab.
-- **Which cards need you.** Under the board title, when the project has run anything, a row titled **Work in this project** counts the runs by state, in the order a column ranks them: **Needs you**, **Ready for review**, **Failed**, **Running** and **Queued**, and **Not started** once a run was turned away (the sidebar's **Waiting for you** counts every project, in the same words, and also counts failures you have not looked at yet and changes to apply). Inside a column the cards that need you come first (**Needs you**, then **Ready for review**, then **Failed**), then the ones going (**Running**, then **Queued**), then the rest (**Finished**, **Cancelled** and **Not started**), each group in the order the column already had. Press a count to show only those cards, and again to show all; a pressed count is marked as pressed, not only coloured. Each column header has a small bar of its cards' work, with a segment for each; pressing a segment filters the same way, and the column's count then reads "2 of 5".
+- **Click a card** to open the item drawer (tabs Overview, Execution, Activity, Dependencies, Files and Fields; see [Working with Items](items.md)).
+- **A card reads top to bottom.** The title comes first. Under it one line says the card's **Work**: where its latest run is (**Queued**, **Running**, **Needs you**, **Ready for review**, **Finished**, **Failed**, **Cancelled** or **Not started**). Press it to open the task's Execution tab, or the run's question when it is asking one. Then come the team that ran it, the priority and the type. The priority is left out when it is **Medium**, the default; turn on **Always show priority on cards** in Settings, under Display & accessibility, to show it on every card (this browser remembers the choice). The card's short id shows when you hover it and at the top of its **Move to…** menu.
+- **Reading the work line.**
+  - A run the verifier says to reject but that still waits for your look reads **Ready for review · verifier says reject**, in words, so the card does not read as plain good news.
+  - A run turned away before the agent did anything (the computer refused it, or the team's level ceiling did) reads **Not started**, in neutral grey, and is not counted as failed.
+  - A card whose run **needs you** or **failed** has a coloured bar on its left edge, and so does one whose run is going in a column no work has started in, so the board does not look idle.
+- **The run button.** The ▶ button, **Run with agent**, is hidden while a run is going and comes back when it ends. A card whose run is ready for review shows a **Review and merge** button instead, which opens the Execution tab.
+- **What needs you comes first.** Under the board title, when the project has run anything, a row titled **Work in this project** counts the runs by state, in the order a column ranks them: **Needs you**, **Ready for review**, **Failed**, **Running** and **Queued**, and **Not started** once a run was turned away. (The sidebar's **Waiting for you** counts every project in the same words, and also counts failures you have not looked at yet and changes to apply.) Inside a column the cards that need you come first (**Needs you**, then **Ready for review**, then **Failed**), then the ones going (**Running**, then **Queued**), then the rest (**Finished**, **Cancelled** and **Not started**), each group in the order the column already had.
+- **Filter by work.** Press a count in that row to show only those cards, and again to show all; a pressed count is marked as pressed, not only coloured. Each column header has a small bar of its cards' work, with a segment for each; pressing a segment filters the same way, and the column's count then reads "2 of 5".
 - **More on a card.** **Repeats** means closing the task creates the next one. Two more show what Tack did without you: **Started by itself** and **Merged by itself**. The List shows the same badges in its Details column. See [Automating a Project](automation.md).
 - **Add an item** with the **Add item** button in a column header (it starts in that status), the **+ New** button in the top bar, or the `n` key (first column).
 - Press `r` to refresh the board. Changes made in another browser tab or by another person appear without refreshing.
@@ -55,13 +62,22 @@ roles, and what each team reports about itself. It follows changes as they happe
 off, with the words "No agent has worked in this project yet", until a task has run; opened by its address
 before then, the page says the same and links to the Agents page.
 
-**The summary row.** Four counts of the tasks' **Work** sit under the title: **Needs you** (runs that ask you something plus
+A switch beside the title chooses between **Flow** and **Map**; **Compare** sits under the Map. Flow is what you
+see first, and Tack remembers in this browser which of the two you left on.
+
+### Flow
+
+#### The summary row
+
+Four counts of the tasks' **Work** sit under the title: **Needs you** (runs that ask you something plus
 runs ready for review), **Running**, **Queued** and **Nobody will take it**. Press one to show only the
 lanes with a task in that state, and press it again to show all. Under them one line says how many runs
 are open in this project against the number it keeps open by itself, and how many runs the computers
 take at a time.
 
-**One lane for each team.** Every team that has a profile this project uses gets a lane, and so does
+#### One lane for each team
+
+Every team that has a profile this project uses gets a lane, and so does
 each single agent it uses; a single agent is a lane with one station. Lanes that need you come first,
 then lanes with work running, then idle lanes, which fold to their header (press the arrow to unfold
 one). The header names the team (press the name to open its card on the Agents page) and shows what the
@@ -74,7 +90,9 @@ tells its model. Two meters finish the header: a bar of what the team is running
 tokens its runs counted today against the project's daily limit, or the count alone when the project has
 no daily limit.
 
-**The stations.** A lane reads left to right. **Up next** holds the tasks routed to the team that have
+#### The stations
+
+A lane reads left to right. **Up next** holds the tasks routed to the team that have
 not started, most urgent first, the order the project takes them in; each says whether it **starts by
 itself** (and at which column) or is **by hand**, and a queued task says why it has not started. Then
 come the team's own steps, as it reported them. A check between two steps is a small mark between them,
@@ -85,7 +103,9 @@ the tasks that ended in the last day ended, such as "2 finished · 1 cancelled �
 run-state icon, and unfolds to the tasks themselves. A team that reports no steps has one station, **Working**, which says the agent reports
 no steps; so does a run whose current step the team cannot name.
 
-**A task is a token.** It shows its type, its title, the title of its parent, the run's state in the same
+#### A task is a token
+
+It shows its type, its title, the title of its parent, the run's state in the same
 words and marks as everywhere else, and how long the run has been going. A task a reviewer or a check
 sent back shows a small arrow with how many times out of how many it may go back. A task that waits for
 another says **after:** with that task's title and lane; pointing at the line, or tabbing to it, lights
@@ -93,15 +113,21 @@ up the task it waits for. A task whose run proposed items says how many were cre
 created from a proposal says **from:** with the task it came from. Press a token's title to open the
 task on its Execution tab (on the run's question when the run is asking).
 
-**Nobody will take it.** When a task goes to no lane, a lane at the top, in the warning colour, lists it
+#### Nobody will take it
+
+When a task goes to no lane, a lane at the top, in the warning colour, lists it
 with the reason: it has no role and the project has no default profile, its role has no profile, the
 profile it uses no longer exists, or no computer reports the team its profile names. Each has the
 **Who does it** choice beside it, so a choice made there is saved on the task at once.
 
-**Teams not used here.** A folded row at the foot lists the teams no profile of this project uses.
+#### Teams not used here
+
+A folded row at the foot lists the teams no profile of this project uses.
 **Make a profile for it** is off for each, with the reason; profiles are made on the Agents page.
 
-**Sending a task to another team.** A task that has not started can be dragged to another lane's Up next,
+#### Sending a task to another team
+
+A task that has not started can be dragged to another lane's Up next,
 or sent with the small arrow on the token, **Move to…**, which opens a menu of the other lanes (arrow
 keys choose, Enter picks, Escape closes). Either way Tack asks first, then changes the task's **Who does
 it** to a profile of that lane; nothing starts because of it, and the choice can be changed from the task
@@ -111,10 +137,9 @@ and each task that changes station, in a polite announcement such as "Collect th
 With motion reduced, in Tack's display settings or by the system's, a task simply appears at its new
 station instead of sliding to it.
 
-**Flow and Map.** A switch beside the title chooses between **Flow**, which is everything above, and
-**Map**. Flow is what you see first, and Tack remembers in this browser which of the two you left on.
+### Map
 
-**The Map.** Where Flow shows work as it happens, the Map shows the structure behind it: how a task finds
+Where Flow shows work as it happens, the Map shows the structure behind it: how a task finds
 its team. Four columns read from left to right, **Roles**, **Profiles**, **Teams** and **Members**. Every
 profile is a box, the same ones the Run with agent dialog offers, whether or not a role or a task uses it,
 so a team a profile names is never drawn as unreachable when the dialog offers it. A
@@ -134,7 +159,9 @@ Map at one stop; the arrow keys move between boxes (up and down along a column, 
 box it is joined to), and Enter opens the box in Flow. The same routes are written out as sentences, one
 for each line, under **Routes as text**, together with what is dashed and what is the default.
 
-**Compare.** Under the Map, a table sets the teams side by side, one column each, with these rows: where
+### Compare
+
+Under the Map, a table sets the teams side by side, one column each, with these rows: where
 the team works, what it delivers, whether it runs to the end or stops for a person, its network, its
 members, which of them change the project, its steps and what checks each, which can propose items, how
 its changes are merged here, the token limit for one run and the tokens counted today. A fact a team did

@@ -44,7 +44,7 @@ Under the hood, Tack is two components, built to be one product.
 
 ## Core concepts
 
-Six terms recur throughout this documentation:
+A few terms recur throughout this documentation:
 
 | Term | What it means |
 |------|---------------|
@@ -54,6 +54,8 @@ Six terms recur throughout this documentation:
 | **Vocabulary** | Per-project label overrides that rename built-in terms to your domain — "Task" → "Work Order", "Sprint" → "Phase". The UI, CLI, and API all follow your terms. See [Vocabulary](user-guide/vocabulary.md). |
 | **Runner** | A small worker process that lives where your code and credentials already are, pulls work from the board, launches a coding agent, and reports back. See [Running Agents on Tasks](user-guide/running-agents.md) and the [Administrator Guide](admin-guide/runners.md). |
 | **Run** | One execution of an item by a runner. At most one attempt is active at a time, and every run stays in the item's history: what the agent did, the questions it asked, the files it produced, and what it used. |
+| **Status and Work** | A task's **Status** is its column, and only a person sets it. Its **Work** is what the agents report about its newest run (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled or Not started). A run never moves a task. See [Views](user-guide/views.md#status-and-work). |
+| **Team and manager** | A **team** is a group of agents an agent runtime such as docket keeps, which a task can be sent to. A **manager** is an agent profile that looks after a project through the board and proposes its changes for you to apply. See [Automating a Project](user-guide/automation.md) and [Managers and Threads](user-guide/talking-with-a-manager.md). |
 
 ## How this documentation is organized
 
@@ -63,8 +65,8 @@ repeating them.
 
 | Guide | For whom | You will find |
 |-------|----------|---------------|
-| **[User Guide](user-guide/quick-start.md)** | Anyone who works in Tack: managing projects, running agents on tasks, reviewing and merging their work | The board and its views, items, workflows, running an agent, reviewing a run, automating a project (teams, starting by itself, repeating tasks), merging, project files, the CLI |
-| **[Administrator Guide](admin-guide/index.md)** | Whoever installs, secures and operates a board and its runners | Deployment, configuration and the full variable reference, tokens and network exposure, installing runners and agents, what an agent can reach, backup, restore and recovery |
+| **[User Guide](user-guide/quick-start.md)** | Anyone who works in Tack: managing projects, running agents on tasks, reviewing and merging their work | The board and its views (including Orchestration), items, workflows, running an agent, reviewing a run, automating a project (teams, starting by itself, merging), managers and threads, project files, the CLI |
+| **[Administrator Guide](admin-guide/index.md)** | Whoever installs, secures and operates a board and its runners | Deployment, configuration and the full variable reference, tokens, agent credentials and network exposure, installing runners and agents, what an agent can reach, backup, restore and recovery |
 | **[Developer Guide](developer/index.md)** | Contributors and integrators | Architecture, how runs, teams and automation are built, the runner contract, the project file format, the API and MCP, testing, the decisions behind it |
 | **[Learning Path](developer/learning/index.md)** | Developers new to Rust, Axum or SolidJS | The stack explained with analogies |
 | **[Roadmap](roadmap.md)** | Everyone | What is delivered and what is still open |
@@ -73,7 +75,8 @@ repeating them.
 
 - [Quick Start](user-guide/quick-start.md) — up and running in five minutes
 - [Running Agents on Tasks](user-guide/running-agents.md) — handing a board item to Claude Code, Codex, opencode, or docket
-- [Automating a Project](user-guide/automation.md) — teams, starting tasks by itself, repeating tasks, merging
+- [Automating a Project](user-guide/automation.md) — teams, starting tasks by itself, merging
+- [Managers and Threads](user-guide/talking-with-a-manager.md) — an agent that looks after a project and talks with you
 - [Administrator Guide](admin-guide/index.md) — deploy, configure, secure and operate
 - [Architecture Overview](developer/index.md) — the mental model behind the codebase
 - [Frontend & Design System](developer/frontend.md) — tokens, palettes, and the UI kit
