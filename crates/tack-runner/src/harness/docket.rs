@@ -21,7 +21,7 @@ use std::{
 use async_trait::async_trait;
 use chrono::{DateTime, Local, Utc};
 use serde_json::{Value, json};
-use tack_protocol::conversation::ConverseMode;
+use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
@@ -164,8 +164,9 @@ fn capabilities() -> FeatureCapabilities {
              including the work its CLI, a routine or another channel gave it",
         )),
         converse: Some(ConverseMode::Replays.capability(
-            "every turn is a new task given the conversation so far; docket's own continuing task \
-             (an escalation of kind `turn`, ADR 0037 decision 4) is not used yet",
+            "every turn is a new task given the conversation so far, and its reply is the summary \
+             of the team's last step; docket's own continuing task (an escalation of kind \
+             `turn`, ADR 0037 decision 4) is not used yet",
         )),
         additional: policy_capability(
             CapabilitySupport::Supported,
@@ -190,6 +191,8 @@ struct RunInfo {
     /// The team works in a repository. False only when docket says the team has none; a docket
     /// that does not say is taken to have one, as every team did before.
     in_repository: bool,
+    /// The run is one turn of a thread, which answers with the last step's summary.
+    turn: bool,
 }
 
 /// The ends of the channels `wait` drives.
@@ -1061,6 +1064,18 @@ impl DocketAdapter {
         }
     }
 
+    /// A thread's turn answers with what the team's last step handed off: its `handoff` summary,
+    /// which docket fills with the step's whole reply when the step made no handoff call. A
+    /// repository team's turn has a branch, so the engine would never look for a reply file, and
+    /// docket's agent is not told to write one.
+    fn reply(info: &RunInfo, task: &TaskView, reason: &mut Value) {
+        if info.turn
+            && let Some(summary) = steps::result(&task.hops)
+        {
+            reason[REPLY_REASON_KEY] = json!(summary);
+        }
+    }
+
     /// The task has ended: what that makes of the attempt.
     async fn finish(
         &self,
@@ -1079,11 +1094,13 @@ impl DocketAdapter {
         let (state, reason) = match task.status.as_str() {
             // A team in a folder leaves no branch: what it did is what its last step handed off,
             // and there is nothing for the engine to capture or merge.
-            "done" if task.worktree.is_none() && !info.in_repository => (
-                AttemptState::Succeeded,
-                json!({"code": "done", "outside_repository": true, "team": info.pod,
-                       "task": info.task, "summary": steps::result(&task.hops)}),
-            ),
+            "done" if task.worktree.is_none() && !info.in_repository => {
+                let mut reason = json!({"code": "done", "outside_repository": true,
+                                        "team": info.pod, "task": info.task,
+                                        "summary": steps::result(&task.hops)});
+                Self::reply(info, task, &mut reason);
+                (AttemptState::Succeeded, reason)
+            }
             "done" => {
                 let branch = task
                     .worktree
@@ -1122,6 +1139,7 @@ impl DocketAdapter {
                         if untracked > 0 {
                             reason["untracked_files"] = json!(untracked);
                         }
+                        Self::reply(info, task, &mut reason);
                         (AttemptState::Succeeded, reason)
                     }
                     Err(message) => (
@@ -1372,6 +1390,7 @@ impl HarnessAdapter for DocketAdapter {
                 refused,
                 api: Some(api),
                 in_repository,
+                turn: TurnNote::of(&request.metadata).is_some(),
             })
             .await)
     }
@@ -1525,6 +1544,7 @@ impl HarnessAdapter for DocketAdapter {
                 refused: None,
                 api,
                 in_repository,
+                turn: TurnNote::of(&spec.work.request.metadata).is_some(),
             })
             .await)
     }
