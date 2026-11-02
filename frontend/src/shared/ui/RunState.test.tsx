@@ -270,6 +270,15 @@ describe('RunState', () => {
     const c = mount(() => <RunState state="done" docket="Needs your review" />);
     expect(c.querySelector('span')!.textContent).toBe('Ready for review');
   });
+
+  it('a note is said in words after the state on the chip, the dot and the banner', () => {
+    const chip = mount(() => <RunState state="review" note="verifier says reject" />);
+    expect(chip.querySelector('span')!.textContent).toBe('Ready for review · verifier says reject');
+    const dot = mount(() => <RunState state="review" note="verifier says reject" size="dot" />);
+    expect((dot.querySelector('[role="img"]') as HTMLElement).getAttribute('aria-label')).toBe('Ready for review · verifier says reject');
+    const banner = mount(() => <RunState state="review" docket="Needs your review" note="verifier says reject" size="banner" />);
+    expect([...banner.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['Ready for review · verifier says reject', 'Needs your review']);
+  });
 });
 
 describe('RunChips through RunState', () => {

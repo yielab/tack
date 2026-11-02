@@ -49,7 +49,7 @@ or Planner. (A Planner's or Researcher's write tool is for the plan file, so it 
 uncommitted when there were any. A failed run leads with why it failed.
 
 A run that was turned away before the agent did anything (the computer refused it, or the team's level ceiling is
-below the level the run asked for) is shown as **Not started**, in a neutral grey, not as **Failed**: it used nothing and
+below the level the run asked for) is shown as **Not started**, in a neutral grey, not as **Failed**, on the board's cards, the strip's counts and the List as well as here: it used nothing and
 changed nothing, so it shows no tokens or duration, its reason stands as plain text, and the one button is **Run again**.
 A run that ended asking for a person offers **Open the question** and **Run again at L3**, not a third **Run again**.
 
@@ -72,8 +72,8 @@ badges and shows the run's state in its own column.
 
 | Badge | Meaning |
 |---|---|
-| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Done, Failed, Cancelled) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
-| **Ready for review** | The latest run left changes and nobody has accepted or rejected them |
+| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Done, Failed, Cancelled, Not started) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
+| **Ready for review** | The latest run left changes and nobody has accepted or rejected them. When the verifier recommends rejecting them the chip says so, **Ready for review · verifier says reject**; the decision is still yours |
 | **Waiting for CI to merge**, **Not merged: …** | Tack tried to merge the change and could not. Press the badge for the reason and what to do |
 | **Started by itself** | The project started the run, not a person |
 | The team's name, with its initials | The team the run's profile named |

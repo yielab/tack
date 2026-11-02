@@ -82,6 +82,14 @@ describe('computeDashboardStats', () => {
 });
 
 describe('computeRunStats', () => {
+  it('leaves a run turned away before it started out of the week, as it is no outcome of the work', () => {
+    const a = mk({});
+    const b = mk({});
+    const s = computeRunStats([a, b], [{ ...run(a, 'failed', 1), never_started: true }, run(b, 'failed', 1)], NOW);
+    expect(s.week).toEqual({ done: 0, review: 0, needs: 0, running: 0, failed: 1, cancelled: 0 });
+    expect(s.withRuns).toBe(2);
+  });
+
   it('sorts each item by its latest run into the last seven days, and counts what needs a person now', () => {
     const a = mk({});
     const b = mk({ needs_review: true });
@@ -102,6 +110,7 @@ describe('computeRunStats', () => {
       run(e, 'running', 6),
       run(f, 'cancelled', 10), // outside the window: counted as having run, not in the bar
       run(i, 'failed', 2), // a failed run is never ready for review, whatever the item flag says
+
       { ...run(h, 'failed', 1), item_id: 'some-other-items-run' }, // belongs to no item here
     ];
 

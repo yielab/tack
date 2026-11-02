@@ -15,10 +15,15 @@ export interface CardRun {
   /** The run waits for an answer, so the card opens on that run's question. */
   asking: boolean;
   requestId?: string;
+  /** A short fact the chip prints after its state, in words (never colour alone): "verifier says reject". */
+  note?: string;
 }
 
 /** A project's default priority: what a new item gets, and so what a card need not repeat. */
 export const DEFAULT_PRIORITY = 'medium';
+
+/** What the chip adds to Ready for review when the verifier's pack recommends reject. */
+const REJECT_NOTE = 'verifier says reject';
 
 const LIVE: ReadonlySet<RunStateName> = new Set(['queued', 'running', 'needs']);
 
@@ -28,15 +33,19 @@ const LIVE: ReadonlySet<RunStateName> = new Set(['queued', 'running', 'needs']);
  * run loaded yet still reads that way. `undefined` for a word this build does not know.
  */
 export function cardRun(
-  summary: Pick<ExecutionSummary, 'request_id' | 'state' | 'cancellation_requested_at'> | undefined,
+  summary:
+    | (Pick<ExecutionSummary, 'request_id' | 'state' | 'cancellation_requested_at'> &
+        Partial<Pick<ExecutionSummary, 'never_started' | 'verifier_recommendation'>>)
+    | undefined,
   needsReview: boolean,
 ): CardRun | undefined {
   if (!summary) {
     return needsReview ? { state: 'review', docket: 'Needs your review', live: false, asking: false } : undefined;
   }
-  const make = (state: RunStateName, docket?: DocketRunWord): CardRun => ({
+  const make = (state: RunStateName, docket?: DocketRunWord, note?: string): CardRun => ({
     state,
     docket,
+    ...(note ? { note } : {}),
     live: LIVE.has(state),
     asking: summary.state === 'waiting_decision',
     requestId: summary.request_id,
@@ -53,8 +62,13 @@ export function cardRun(
     case 'needs_operator':
       return make('needs');
     case 'succeeded':
-      return needsReview ? make('review', 'Needs your review') : make('done');
+      // A verifier that says reject does not take the run out of review: a person still decides.
+      return needsReview
+        ? make('review', 'Needs your review', summary.verifier_recommendation === 'reject' ? REJECT_NOTE : undefined)
+        : make('done');
     case 'failed':
+      // Turned away before the agent did anything (the server's one rule): neither a failure of the work nor a stop by a person.
+      return summary.never_started ? make('notstarted') : make('failed');
     case 'lost':
       return make('failed');
     case 'cancelled':
@@ -73,6 +87,8 @@ const RUN_RANK: Record<string, number> = {
   queued: 4,
   done: 5,
   cancelled: 6,
+  // Turned away before it started: over, and nothing to act on, so it sorts with cancelled.
+  notstarted: 6,
 };
 
 /** Where a state sorts; the order every list of run states is read in, whether cards or counters. */
@@ -98,7 +114,7 @@ export function orderByWork<T>(items: readonly T[], runOf: (item: T) => CardRun 
 }
 
 /** What a filter on the board can ask for: one run state, or "waiting for you". */
-export type RunFilter = 'waiting' | 'queued' | 'running' | 'needs' | 'review' | 'failed';
+export type RunFilter = 'waiting' | 'queued' | 'running' | 'needs' | 'review' | 'failed' | 'notstarted';
 
 /** The run states a filter lets through. */
 const MATCHES: Record<RunFilter, readonly RunStateName[]> = {
@@ -108,6 +124,7 @@ const MATCHES: Record<RunFilter, readonly RunStateName[]> = {
   needs: ['needs'],
   review: ['review'],
   failed: ['failed'],
+  notstarted: ['notstarted'],
 };
 
 /** Whether a filter can be set on this state: Done and Cancelled have no counter. */

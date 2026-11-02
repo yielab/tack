@@ -27,6 +27,23 @@ describe('cardRun', () => {
     expect(cardRun(undefined, false)).toBeUndefined();
   });
 
+  it('reads a failed run the server says never started as Not started, and still Failed otherwise', () => {
+    const failed = { request_id: 'r', state: 'failed', cancellation_requested_at: null };
+    expect(cardRun({ ...failed, never_started: true }, false)).toMatchObject({ state: 'notstarted', live: false });
+    expect(cardRun({ ...failed, never_started: false }, false)?.state).toBe('failed');
+    expect(cardRun(failed, false)?.state).toBe('failed');
+  });
+
+  it('keeps a ready-for-review run the verifier says to reject in review, and says so in words', () => {
+    const done = { request_id: 'r', state: 'succeeded', cancellation_requested_at: null };
+    expect(cardRun({ ...done, verifier_recommendation: 'reject' }, true)).toMatchObject({ state: 'review', note: 'verifier says reject' });
+    expect(cardRun({ ...done, verifier_recommendation: 'merge' }, true)?.note).toBeUndefined();
+    expect(cardRun({ ...done, verifier_recommendation: null }, true)?.note).toBeUndefined();
+    // Once a person has reviewed it the item no longer needs review, and the verifier's call is not news.
+    expect(cardRun({ ...done, verifier_recommendation: 'reject' }, false)).toMatchObject({ state: 'done' });
+    expect(cardRun({ ...done, verifier_recommendation: 'reject' }, false)?.note).toBeUndefined();
+  });
+
   it('does not invent a state for a word it does not know', () => {
     expect(at('teleporting')).toBeUndefined();
   });
@@ -67,10 +84,22 @@ describe('showsPriority', () => {
 
 describe('stateRank', () => {
   it('is_the_rank_runRank_gives_a_run_in_that_state_and_puts_what_needs_a_person_first', () => {
-    for (const state of ['needs', 'review', 'failed', 'running', 'queued', 'done', 'cancelled'] as const) {
+    for (const state of ['needs', 'review', 'failed', 'running', 'queued', 'done', 'cancelled', 'notstarted'] as const) {
       expect(stateRank(state)).toBe(runRank({ state, live: false, asking: false }));
     }
     expect(['queued', 'running', 'needs', 'review', 'failed'].sort((a, b) => stateRank(a as never) - stateRank(b as never))).toEqual(['needs', 'review', 'failed', 'running', 'queued']);
+  });
+});
+
+describe('a run that never started', () => {
+  it('ranks with cancelled, after every run that is going or finished, and is not in the Failed count', () => {
+    expect(stateRank('notstarted')).toBe(stateRank('cancelled'));
+    expect(stateRank('notstarted')).toBeGreaterThan(stateRank('done'));
+    const refused = cardRun({ request_id: 'r', state: 'failed', cancellation_requested_at: null, never_started: true }, false);
+    const counts = countRuns([refused, cardRun({ request_id: 'r', state: 'failed', cancellation_requested_at: null }, false)]);
+    expect(counts).toMatchObject({ notstarted: 1, failed: 1 });
+    expect(runTally(counts).failed).toBe(1);
+    expect(totalRuns(counts)).toBe(2);
   });
 });
 
