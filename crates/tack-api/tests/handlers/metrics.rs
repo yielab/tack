@@ -546,6 +546,107 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
     close(&lights["value"], 0.5);
 }
 
+// A question the agent's own tool took the answer to is closed and answered: it is counted as a
+// decision a person answered (and so the task was not run lights-off), never as one still open,
+// and the question still pending beside it is not counted as answered.
+#[tokio::test]
+async fn a_decision_answered_elsewhere_counts_as_answered() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = setup_test_db().await;
+    let workspace_id = create_test_workspace(&repo).await;
+    let (tx, _rx) = tokio::sync::broadcast::channel(16);
+    let app = crate::common::with_default_host(build_router(AppState {
+        repo: repo.clone(),
+        config: AppConfig {
+            api_token: Some(TOKEN.into()),
+            database_url: "sqlite::memory:".into(),
+            storage_dir: root.path().to_string_lossy().into_owned(),
+            ..AppConfig::default()
+        },
+        workspace_id,
+        broadcast_tx: tx,
+        event_bus: Default::default(),
+        webhook: None,
+        local_runner: None,
+        tasks: Default::default(),
+    }));
+    let (project_id, item) = project_with_item(&repo, workspace_id, "Answered elsewhere").await;
+    seed::statement(
+        &repo,
+        "INSERT INTO agent_runners (id, name, credential_hash, protocol_version, created_at, updated_at)
+         VALUES ('run', 'ae', 'h', 1, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')",
+        &[],
+    )
+    .await;
+    seed::statement(
+        &repo,
+        "INSERT INTO execution_requests (id, item_id, idempotency_scope, idempotency_key,
+           request_fingerprint, selector_kind, selector_id, agent_profile_snapshot,
+           repository_snapshot, permission_policy, metadata, created_at, updated_at)
+         VALUES ('R1', ?, 's', 'R1', 'f', 'exact_runner', 'run', '{}', '{}', '{}',
+           '{\"started_by\":\"auto_start\"}', '2026-09-10T08:00:00Z', '2026-09-10T08:00:00Z')",
+        &[&item],
+    )
+    .await;
+    seed::statement(
+        &repo,
+        "INSERT INTO execution_attempts (id, request_id, attempt_number, runner_id, fencing_token,
+           lease_issued_at, lease_expires_at, created_at, updated_at)
+         VALUES ('R1a', 'R1', 1, 'run', 1, '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z',
+           '2026-09-10T09:00:00Z', '2026-09-10T09:00:00Z')",
+        &[],
+    )
+    .await;
+    seed::statement(
+        &repo,
+        "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, state, created_at,
+           updated_at, resolved_at)
+         VALUES ('DA', 'R1a', 'DA', 'choice', 'p', 'answered_elsewhere', '2026-09-10T09:10:00Z',
+           '2026-09-10T09:30:00Z', '2026-09-10T09:30:00Z')",
+        &[],
+    )
+    .await;
+    seed::statement(
+        &repo,
+        "INSERT INTO execution_decisions (id, attempt_id, decision_id, kind, prompt, state, created_at,
+           updated_at)
+         VALUES ('DP', 'R1a', 'DP', 'choice', 'p', 'pending', '2026-09-10T09:40:00Z',
+           '2026-09-10T09:40:00Z')",
+        &[],
+    )
+    .await;
+    let project = project_id.to_string();
+    seed::statement(
+        &repo,
+        "INSERT INTO tack_merges (attempt_id, project_id, trigger, checked_at, merged_at)
+         VALUES ('R1a', ?, 'auto', '2026-09-10T11:00:00Z', '2026-09-10T11:00:00Z')",
+        &[&project],
+    )
+    .await;
+
+    let headers = [("authorization", "Bearer g1a-metrics-token")];
+    let uri = format!("/api/projects/{project_id}/metrics/factory");
+    let (status, m) = common::send(&app, "GET", &uri, Value::Null, &headers).await;
+    assert_eq!(status, StatusCode::OK, "{m}");
+    assert_eq!(m["decisions"], 2, "both questions were asked");
+    assert_eq!(
+        m["decisions_answered"], 1,
+        "only the closed one is answered"
+    );
+    assert_eq!(m["human_minutes_per_decision"]["measured"], 1, "{m}");
+    close(&m["human_minutes_per_decision"]["median_minutes"], 20.0);
+    assert_eq!(
+        m["decided_alone"], 0,
+        "a person's tool answered, not the agent's policy"
+    );
+    let lights = &m["lights_off_rate"];
+    assert_eq!(
+        (lights["numerator"].as_i64(), lights["denominator"].as_i64()),
+        (Some(0), Some(1)),
+        "a task that had a question answered is not lights-off"
+    );
+}
+
 /// A prill that answers `--version` and `metrics` from the captured output,
 /// with `qualified` raised to 2 so the per-dollar figure is not zero.
 fn fake_prill(dir: &std::path::Path) -> String {
