@@ -271,7 +271,7 @@ fn a_board_of_any_size_stays_under_the_size_bound() {
                     .map(|n| UnclaimedFact {
                         item: id(base + 10 + n),
                         title: long.clone(),
-                        code: "wip".into(),
+                        code: "max_open".into(),
                         text: long.clone(),
                     })
                     .collect(),

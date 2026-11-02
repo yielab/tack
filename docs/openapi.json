@@ -17938,7 +17938,7 @@
         "properties": {
           "code": {
             "type": "string",
-            "description": "`open_request`, `blocked`, `no_profile`, `no_machine`, `wip`, `budget` or `max_open`."
+            "description": "`open_request`, `blocked`, `no_profile`, `no_machine`, `budget` or `max_open`."
           },
           "text": {
             "type": "string",

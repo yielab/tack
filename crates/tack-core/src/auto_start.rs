@@ -26,8 +26,6 @@ pub struct Limits {
     pub max_open: usize,
     pub open_now: usize,
     pub budget_reached: bool,
-    /// Room in the first in-progress column; `None` is no limit.
-    pub wip_room: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,7 +34,6 @@ pub enum Skip {
     Blocked(usize),
     NoProfile,
     NoMachine,
-    Wip,
     Budget,
     MaxOpen,
 }
@@ -67,8 +64,6 @@ pub fn pick(candidates: &[Candidate], limits: &Limits) -> (Vec<Uuid>, Vec<(Uuid,
             Some(Skip::Budget)
         } else if picked.len() >= room {
             Some(Skip::MaxOpen)
-        } else if limits.wip_room.is_some_and(|wip| picked.len() >= wip) {
-            Some(Skip::Wip)
         } else {
             None
         };
@@ -80,18 +75,9 @@ pub fn pick(candidates: &[Candidate], limits: &Limits) -> (Vec<Uuid>, Vec<(Uuid,
     (picked, skipped)
 }
 
-/// The first in-progress column and how full it is.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WipColumn {
-    pub name: String,
-    pub taken: usize,
-    pub limit: usize,
-}
-
 /// The numbers the sentence of a [`Skip`] quotes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Facts {
-    pub wip: Option<WipColumn>,
     pub max_open: usize,
     pub open_now: usize,
 }
@@ -120,26 +106,10 @@ pub fn why(skip: &Skip, facts: &Facts) -> Why {
         ),
         Skip::NoProfile => ("no_profile", "No one is chosen to do it".to_owned()),
         Skip::NoMachine => ("no_machine", "No computer can run it".to_owned()),
-        Skip::Wip => ("wip", wip_text(facts.wip.as_ref())),
         Skip::Budget => ("budget", "This project's token limit is reached".to_owned()),
         Skip::MaxOpen => ("max_open", max_open_text(facts)),
     };
     Why { code, text }
-}
-
-fn wip_text(column: Option<&WipColumn>) -> String {
-    match column {
-        Some(c) if c.taken >= c.limit => format!(
-            "{} is full ({} of {}): move something on to make room",
-            c.name, c.taken, c.limit
-        ),
-        Some(c) => format!(
-            "{} has room for {} more, and the tasks ahead of this one take it",
-            c.name,
-            c.limit - c.taken
-        ),
-        None => "The column it moves to is full".to_owned(),
-    }
 }
 
 fn max_open_text(facts: &Facts) -> String {
@@ -188,7 +158,6 @@ mod tests {
             max_open: 10,
             open_now: 0,
             budget_reached: false,
-            wip_room: None,
         }
     }
 
@@ -241,22 +210,6 @@ mod tests {
             ),
             (
                 Limits {
-                    wip_room: Some(1),
-                    ..limits()
-                },
-                vec![id(7)],
-                vec![
-                    (id(1), Skip::OpenRequest),
-                    (id(2), Skip::Blocked(2)),
-                    (id(3), Skip::NoProfile),
-                    (id(4), Skip::NoMachine),
-                    (id(6), Skip::Wip),
-                    (id(8), Skip::Wip),
-                    (id(5), Skip::Wip),
-                ],
-            ),
-            (
-                Limits {
                     budget_reached: true,
                     ..limits()
                 },
@@ -280,11 +233,6 @@ mod tests {
 
     fn facts() -> Facts {
         Facts {
-            wip: Some(WipColumn {
-                name: "In Progress".into(),
-                taken: 5,
-                limit: 5,
-            }),
             max_open: 3,
             open_now: 3,
         }
@@ -304,11 +252,6 @@ mod tests {
             (Skip::Blocked(1), "blocked", "Blocked by 1 unfinished task"),
             (Skip::NoProfile, "no_profile", "No one is chosen to do it"),
             (Skip::NoMachine, "no_machine", "No computer can run it"),
-            (
-                Skip::Wip,
-                "wip",
-                "In Progress is full (5 of 5): move something on to make room",
-            ),
             (
                 Skip::Budget,
                 "budget",
@@ -332,20 +275,11 @@ mod tests {
     }
 
     #[test]
-    fn a_column_or_a_cap_with_room_says_the_tasks_ahead_take_it() {
+    fn a_cap_with_room_says_the_tasks_ahead_take_the_places_left() {
         let open = Facts {
-            wip: Some(WipColumn {
-                name: "Doing".into(),
-                taken: 3,
-                limit: 5,
-            }),
             max_open: 1,
             open_now: 0,
         };
-        assert_eq!(
-            why(&Skip::Wip, &open).text,
-            "Doing has room for 2 more, and the tasks ahead of this one take it"
-        );
         assert_eq!(
             why(&Skip::MaxOpen, &open).text,
             "This project allows 1 run open at once, and the tasks ahead of this one take the places left"
@@ -353,7 +287,6 @@ mod tests {
         let one = Facts {
             max_open: 1,
             open_now: 1,
-            ..open
         };
         assert_eq!(
             why(&Skip::MaxOpen, &one).text,
