@@ -80,6 +80,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A board column scrolled down to its last card keeps that card in view when the column gets shorter (for example when the "This board can run its items with an agent" banner appears above the board); before, the last card slipped under the column's edge until you scrolled again.
 - A run that has a merge-readiness pack saves the one reason on the run's verdict for Accept as well as for Reject (it used to be dropped from the run and kept only on the pack); if the pack's review is saved and the run's is not, the review block offers **Save the verdict on the run** with the pack's verdict and reason instead of letting you reject a run whose pack you accepted. On the Overview, the Now panel no longer accepts or rejects a run whose pack is unreviewed (which left the pack open and the task where it was): it offers **Review and merge**, which opens the Execution tab.
 - On an item, who would do the task is said once: by the idle Now panel before a run ("Would go to …"), and by the Automation line only after one.
 - A run's Usage and the task's latest-run line no longer show a dollar cost or "Cost: Not measured" (the data is kept; limits and reports are in tokens), and **Always show priority on cards** moved from the board header to Settings → Display & accessibility (same stored choice).
