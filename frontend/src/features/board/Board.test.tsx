@@ -355,7 +355,8 @@ describe('Board agent strip and column bars', () => {
   it('the_strip_counts_runs_by_state_with_one_chip_per_state_and_no_aggregate', async () => {
     const c = await mountBoard(ITEMS, RUNS);
     const strip = c.querySelector('[data-testid="agent-strip"]')!;
-    expect(strip.getAttribute('aria-label')).toBe('Work');
+    expect(strip.getAttribute('aria-label')).toBe('Work in this project');
+    expect(strip.textContent).toContain('Work in this project');
     const names = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim());
     expect(names.join(' ')).not.toContain('Your turn');
     expect(c.querySelector('[data-testid="strip-waiting"]')).toBeNull();
