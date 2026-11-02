@@ -16,6 +16,7 @@
 - [Vocabulary](user-guide/vocabulary.md)
 - [Running Agents on Tasks](user-guide/running-agents.md)
 - [Reviewing a Run](user-guide/reviewing-runs.md)
+- [Talking with a Manager](user-guide/talking-with-a-manager.md)
 - [Automating a Project](user-guide/automation.md)
 - [Merging from Tack](user-guide/merging.md)
 - [Import, Export & Project Files](user-guide/import-export.md)

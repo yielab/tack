@@ -33,6 +33,12 @@ describe('destinations shared by the sidebar and the command palette', () => {
     expect(PROJECT_DESTINATIONS.find((d) => d.id === 'orchestration')!.path('p1')).toBe('/projects/p1/orchestration');
   });
 
+  it('lists Threads among the project views, with its route', () => {
+    const threads = PROJECT_DESTINATIONS.find((d) => d.id === 'threads');
+    expect(threads?.label(() => '')).toBe('Threads');
+    expect(threads?.path('p1')).toBe('/projects/p1/threads');
+  });
+
   it('keeps the all-projects page active only on an exact match', () => {
     expect(WORKSPACE_DESTINATIONS.find((d) => d.id === 'all-projects')!.end).toBe(true);
   });
