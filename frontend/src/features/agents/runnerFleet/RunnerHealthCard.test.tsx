@@ -148,7 +148,7 @@ describe('RunnerHealthCard — capacity display', () => {
 });
 
 describe('RunnerHealthCard — feature support always carries a visible reason', () => {
-  it('shows "not supported" with the no-data reason when capabilities is null', () => {
+  it('says "not reported" for each feature and the reason once, above the list, when capabilities is null', () => {
     const c = mount({
       name: 'r',
       runnerId: 'runr_1',
@@ -158,9 +158,12 @@ describe('RunnerHealthCard — feature support always carries a visible reason',
       labels: {},
       capabilities: null,
     });
-    expect(c.textContent).toContain('no runner capability data available');
+    expect(c.textContent).not.toContain('no runner capability data available');
+    expect(c.querySelectorAll('[data-testid="features-unreported"]')).toHaveLength(1);
+    expect(c.querySelector('[data-testid="features-unreported"]')!.textContent).toContain('has not reported');
     expect(c.textContent).toContain('Cancel:');
-    expect(c.textContent).toContain('not supported');
+    expect(c.textContent).not.toContain('not supported');
+    expect((c.textContent!.match(/not reported/g) ?? []).length).toBeGreaterThanOrEqual(5);
   });
 
   it('shows "supported" with no fabricated reason when the runner reports one verbatim as null', () => {
