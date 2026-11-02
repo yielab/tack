@@ -3,6 +3,7 @@ import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
   describeAttemptStatus,
+  neverStarted,
   readAttemptUsage,
   formatApproxCost,
   formatCountedTokens,
@@ -248,6 +249,16 @@ describe('describeAttemptStatus — one status per attempt', () => {
     );
     expect(describeAttemptStatus({ state: 'running', terminal_reason: null })).toEqual({ label: 'Running', tone: 'primary' });
     expect(describeAttemptStatus({ state: 'leased', terminal_reason: null }).label).toBe('Starting');
+  });
+});
+
+describe('a run that never started', () => {
+  const patch = { artifacts: [{ kind: 'patch', size_bytes: 40 }] };
+  it('a run turned away before the agent did anything is Not started, neutral, not Failed', () => {
+    expect(describeAttemptStatus({ state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'x' } })).toEqual({ label: 'Not started', tone: 'neutral' });
+    expect(neverStarted({ state: 'failed', terminal_reason: { message: 'run refused: ceiling L3 (needs approval)' } })).toBe(true);
+    expect(neverStarted({ state: 'failed', terminal_reason: { code: 'timeout' } })).toBe(false);
+    expect(neverStarted({ state: 'succeeded', terminal_reason: { code: 'harness_rejected' } })).toBe(false);
   });
 });
 

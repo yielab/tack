@@ -442,6 +442,24 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(buttonsOf(panel(c)).map((b) => b.textContent)).toContain('Run again');
   });
 
+  it('a run turned away before it started says Not started, and Run again is its one action', async () => {
+    const refused = { ...ATTEMPT, state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'This team may go no further than L3' } };
+    const c = mount([{ ...RUN, state: 'failed' }], () => {}, [refused]);
+    await settle();
+    expect(banner(c)).toBe('Not started');
+    expect(c.querySelector('[data-testid="latest-run-why"]')!.textContent).toContain('This team may go no further than L3');
+    expect(filled(panel(c))).toEqual(['Run again']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).not.toContain('See why it failed');
+    expect(c.querySelector('[data-testid="latest-run-usage"]')).toBeNull();
+  });
+
+  it('a run that ended asking for a person offers the question and Run again at L3, and no second plain Run again', async () => {
+    const asked = { ...ATTEMPT, state: 'failed', terminal_reason: { code: 'needs_human' }, rerun_at_l3: { enabled: true, reason: null } };
+    const c = mount([{ ...RUN, state: 'failed' }], () => {}, [asked]);
+    await settle();
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run again at L3', 'Open the question']);
+  });
+
   it('a merged run says Finished, and Run again is the filled button, once', async () => {
     const merged = { ...ATTEMPT, merge: { enabled: false, reason: null, merged: { merged_at: '2026-10-08T12:30:00Z' } } };
     const c = mount([RUN], () => {}, [merged]);

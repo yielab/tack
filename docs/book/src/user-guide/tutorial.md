@@ -107,7 +107,7 @@ this machine has Codex and Claude Code, and the tutorial uses Claude Code. Step 
 one row per installed agent. Each asks the agent itself, so a row reads **Signed in**, or **Not
 signed in. Run `<command>` in a terminal.** with a link to that agent's own documentation; Tack
 holds no model key and never signs in for you. **Run test** at the bottom runs the agent once to
-prove it:
+prove it. While the agent the test would use is not signed in, **Run test** is disabled and says which agent to sign in; when another installed agent is signed in, the test uses that one:
 
 <img src="../screenshots/tutorial/08-agents-on.png" width="98%" alt="The Agents page after Turn on: execution Running with its start time and a Turn off button; Codex v0.149.1, Claude Code v2.1.304 and OpenCode installed (docket not installed), the Sign in step with one row per installed agent, saying Signed in or giving the command to run; the Test run section with a Run test button; and a collapsed Advanced section.">
 

@@ -43,6 +43,11 @@ or Planner. (A Planner's or Researcher's write tool is for the plan file, so it 
 "The agent reported success but delivered no change to review", and the number of files the agent left
 uncommitted when there were any. A failed run leads with why it failed.
 
+A run that was turned away before the agent did anything (the computer refused it, or the team's level ceiling is
+below the level the run asked for) is shown as **Not started**, in a neutral grey, not as **Failed**: it used nothing and
+changed nothing, so it shows no tokens or duration, its reason stands as plain text, and the one button is **Run again**.
+A run that ended asking for a person offers **Open the question** and **Run again at L3**, not a third **Run again**.
+
 A team that proposes items and ends with proposals Tack cannot use (for example, one names a parent that is not an
 earlier row in the file) is shown as **Finished — proposals could not be used**, not as a plain success, with the
 reason in words and docket's own line on hover.

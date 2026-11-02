@@ -10,6 +10,7 @@ import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
   describeAttemptStatus,
+  neverStarted,
   describeModelProvenance,
   formatTokenCount,
   formatWallClock,
@@ -87,7 +88,10 @@ export function attemptRunState(
   if (attempt.state === 'waiting_decision') return { state: 'needs', docket: 'Needs a person' };
   if (!isTerminalAttemptState(attempt.state)) return { state: 'running' };
   if (attempt.state === 'cancelled') return { state: 'cancelled' };
-  if (attempt.state !== 'succeeded') return needsAPerson(attempt) ? { state: 'needs', docket: 'Needs a person' } : { state: 'failed' };
+  if (attempt.state !== 'succeeded') {
+    if (needsAPerson(attempt)) return { state: 'needs', docket: 'Needs a person' };
+    return neverStarted(attempt) ? { state: 'notstarted' } : { state: 'failed' };
+  }
   if (attempt.merge?.merged || attempt.pull_request?.state === 'merged') return { state: 'done' };
   if (needsVerdict(attempt) && !review) return { state: 'review', docket: 'Needs your review' };
   // A folder team has no repository to change, so having changed nothing there is not news.
@@ -429,7 +433,7 @@ const AttemptRow: Component<{
 
         <Show when={mrp.pack()}>{(pack) => <MrpVerdict pack={pack()} />}</Show>
 
-        <Show when={terminal()}>
+        <Show when={terminal() && !neverStarted(props.attempt)}>
           <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
               when={props.limit?.tokens != null && counted() !== null && !dupe()}

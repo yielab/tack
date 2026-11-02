@@ -28,8 +28,15 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
   };
   // The test run names no model, and the scheduler refuses that for an agent
   // that reports it needs one: the request would wait with nothing to run it.
-  const harnessKind = () =>
-    HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind) && !installed(kind)?.requires_model);
+  const candidates = () =>
+    HARNESS_KINDS.map((k) => k.value).filter((kind) => installed(kind) && !installed(kind)?.requires_model);
+  // An agent known to be signed out would only fail: the test uses one that is not, and when none is, it says so.
+  const signedOut = (kind: string) => installed(kind)?.sign_in?.state === 'signed_out';
+  const harnessKind = () => candidates().find((kind) => !signedOut(kind)) ?? candidates()[0];
+  const blockedBySignIn = () => {
+    const kind = harnessKind();
+    return kind !== undefined && signedOut(kind) ? kind : undefined;
+  };
   const needsModelKind = () => HARNESS_KINDS.map((k) => k.value).find((kind) => installed(kind));
   const itemId = createMemo(() => {
     const id = requestId();
@@ -38,7 +45,7 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
 
   const run = async () => {
     const kind = harnessKind();
-    if (!kind) return;
+    if (!kind || blockedBySignIn()) return;
     setRunning(true);
     try {
       const { request_id } = await localRunnerApi.testRun(kind);
@@ -59,9 +66,18 @@ const TestRunStep: Component<TestRunStepProps> = (props) => {
       <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
         Runs {harnessKind() ?? 'an installed agent'} once on this computer, with its own login, and shows what happened.
       </p>
-      <Button class="self-start" onClick={() => void run()} loading={running()} disabled={running() || !harnessKind()}>
+      <Button class="self-start" onClick={() => void run()} loading={running()} disabled={running() || !harnessKind() || !!blockedBySignIn()}>
         Run test
       </Button>
+      <Show when={blockedBySignIn()}>
+        {(kind) => (
+          <p data-testid="test-run-signed-out" class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
+            {HARNESS_KINDS.find((k) => k.value === kind())?.label ?? kind()} is not signed in
+            <Show when={installed(kind())?.sign_in?.command}>{(command) => <>: run <code class="font-mono">{command()}</code> in a terminal, then re-check</>}</Show>
+            . The test would fail before it started.
+          </p>
+        )}
+      </Show>
       <Show when={!harnessKind()}>
         <p class="text-small" style={{ color: 'var(--color-text-secondary)' }}>
           <Show
