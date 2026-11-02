@@ -19,6 +19,7 @@
   "completedAt": "2026-01-01T00:00:00Z",
   "claimedAt": "2026-01-01T00:00:00Z",
   "reason": "lead hop failed: no output cap is known for claude-haiku-5-5, and the Messages API requires max_tokens; declare one with: docket setup provider add anthropic --model claude-haiku-5-5 --max-tokens N",
+  "failureKind": "hop_failed",
   "pendingApprovalIndex": null,
   "hops": [
     {
@@ -52,6 +53,9 @@
       "repoFiles": null,
       "model": "anthropic/claude-haiku-5-5",
       "provider": "anthropic",
+      "startedAt": "2026-01-01T00:00:00Z",
+      "finishedAt": "2026-01-01T00:00:00Z",
+      "cycle": 0,
       "promptManifest": {
         "layers": [
           {
