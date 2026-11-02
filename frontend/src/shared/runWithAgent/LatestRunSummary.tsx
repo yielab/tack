@@ -3,7 +3,6 @@ import { Button, LoadError, RunState, type DocketRunWord, type RunStateName } fr
 import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
-import { mrpApi } from '../execution/api';
 import type { WaitingBehind } from '../execution/api';
 import { plainLine } from './plainWords';
 import {
@@ -188,7 +187,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   };
   const usageLine = () => {
     const a = attempt();
-    if (!a || !finished() || neverStarted(a)) return null;
+    if (!a || !finished() || refused()) return null;
     const u = readAttemptUsage(a);
     const parts: string[] = [];
     const tokens = formatCountedTokens(u);
@@ -200,7 +199,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   // The agent stopped to ask a person, or ended because it needed one: one state, with the question one press away.
   const asking = () => (attempt()?.state ?? latest()?.state) === 'waiting_decision';
   const needsPerson = () => asking() || needsAPerson(attempt());
-  const refused = () => !!attempt() && neverStarted(attempt()!);
+  // Turned away before it started: the run's own summary says so (the server's one rule); a server that
+  // predates the field is read from the attempt, which carries the same flag.
+  const refused = () => latest()?.never_started ?? (attempt() ? neverStarted(attempt()!) : false);
   const failedReason = () => (latest()?.state === 'failed' ? latest()?.waiting_reason || null : null);
   const waitingReason = () => (latest()?.state === 'queued' ? latest()?.waiting_reason || null : null);
   // When the wait is a full computer, the sentence names its limit and the tasks that hold it:
@@ -253,7 +254,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   const metaLine = () => {
     const a = attempt();
-    if (!a || !finished() || neverStarted(a)) return null;
+    if (!a || !finished() || refused()) return null;
     const parts: string[] = [];
     const ms = readAttemptUsage(a).wallClockMs;
     if (ms !== null) parts.push(formatWallClock(ms, true));
@@ -282,21 +283,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   // Known to have no pack: only then are Accept and Reject… shown here.
   const inlineReview = () => !hasPack.loading && hasPack() === false;
-  // The verifier's call on a run that has a pack to review: the card says so when it is to reject.
-  const [recommended] = createResource(
-    () => {
-      const a = attempt();
-      return a && kind() === 'review' && hasPack() === true ? { id: a.request_id, n: a.attempt_number } : undefined;
-    },
-    async ({ id, n }) => {
-      try {
-        return (await mrpApi.get(id, n)).pack.recommendation.decision;
-      } catch {
-        return undefined;
-      }
-    },
-  );
-  const recommendation = () => (recommended.error ? undefined : recommended());
+  // The verifier's call, as the run's own summary states it (the server reads the pack once for the
+  // whole list); nothing here opens the pack.
+  const recommendation = () => latest()?.verifier_recommendation ?? undefined;
 
   // While it runs: its last steps, reloaded every few seconds.
   const live = () => kind() === 'running' && attempt() !== undefined;

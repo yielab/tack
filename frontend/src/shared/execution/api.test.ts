@@ -128,6 +128,22 @@ describe('executionsApi', () => {
     expect(data).toEqual(row);
   });
 
+  it('get(id) keeps the two facts the run list carries, never_started and verifier_recommendation', async () => {
+    const row = {
+      request_id: 'exec_1',
+      item_id: 'item_1',
+      state: 'succeeded',
+      cancellation_requested_at: null,
+      created_at: '2026-08-06T12:00:00Z',
+      never_started: false,
+      verifier_recommendation: 'reject',
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ protocol_version: 1, ...row }));
+    const { data } = await executionsApi.get('exec_1');
+    expect(data.never_started).toBe(false);
+    expect(data.verifier_recommendation).toBe('reject');
+  });
+
   it('get(id) URL-encodes the request id', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       jsonResponse({ request_id: 'a/b', item_id: 'i', state: 'queued', cancellation_requested_at: null, created_at: '' }),

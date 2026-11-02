@@ -261,6 +261,8 @@ export const executionsApi = {
       waiting_since: data.waiting_since,
       waiting_behind: data.waiting_behind,
       limit: data.limit,
+      never_started: data.never_started,
+      verifier_recommendation: data.verifier_recommendation,
     };
     return { data: summary, headers };
   },
