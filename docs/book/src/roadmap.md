@@ -109,7 +109,7 @@ and each ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/doc
 
 ### Phase 86 — a person sets a task's status, and the agents report its work
 
-**Plan:** [`phase-86.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-86.md); no ADR (it amends ADR 0033, decision 1).
+**Plan:** [`phase-86.md`](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-86.md); no ADR (it amends ADR 0033, decision 1).
 
 The six places that moved a task's status because a run did something are removed, with their
 settings. Auto-start starts a task once and moves nothing. The item and its card show **Status**
@@ -118,7 +118,7 @@ set, are written in the plan and not adopted.
 
 ### Phase 85 — a manager works through the board
 
-**ADR:** 0034 (accepted). **Plan:** [`phase-85.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-85.md).
+**ADR:** 0034 (accepted). **Plan:** [`phase-85.md`](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-85.md).
 
 A profile becomes a manager by being given general parts, none of them called "manager": a
 credential with scopes (every caller a principal), change sets as an agent's only way to change the
@@ -131,7 +131,7 @@ denied at once. The local suite proves it against docket: with Claude Haiku 5.5 
 
 ### Phase 84 — the screen says what needs you first, and a project shows its teams at work
 
-**ADR:** 0033 (accepted). **Plan:** [`phase-84.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-84.md).
+**ADR:** 0033 (accepted). **Plan:** [`phase-84.md`](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-84.md).
 
 One run-state language on every screen; the item, the run, the run dialog, Automation and Agents
 ordered by what to do now, with the rest one fold away; the Table view removed and its sorting,
@@ -143,7 +143,7 @@ status is one control, and the drawer's sections fold.
 
 ### Phase 83 — a team is shown as it is, a task can go to a team, and what a run finds can become items
 
-**ADR:** 0032 (accepted). **Plan:** [`phase-83.md`](https://github.com/yielab/tack/blob/develop/docs/plans/phase-83.md).
+**ADR:** 0032 (accepted). **Plan:** [`phase-83.md`](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-83.md).
 
 Agents → Teams lists every team any agent reports and what each member can do; a task says who does
 it and starts by itself without a role; a run's findings reach one accept panel from a plan file, a

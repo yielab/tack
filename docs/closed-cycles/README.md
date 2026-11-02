@@ -28,7 +28,7 @@ delivered and what is open.
 - `plans/` — a plan whose phase has landed or whose design was replaced: the harness
   maintainability audit, the human-maintainability (Phase 63) specification, the
   agnostic control plane plan whose bridge Phase 64 retired, Phase 64's own two
-  plans (`phase-64.md`, `harnesses.md`), and the plans of Phases 65–75 and 77–82. The
+  plans (`phase-64.md`, `harnesses.md`), and the plans of Phases 65–75 and 77–86. The
   two Spanish learning guides to Phase 79 (`phase-79-guia.md`, `phase-79-desde-cero.md`) are
   here too: they teach the first draft of that plan, with ports and in-memory fakes that
   were not built, so `phase-79.md` is the plan that counts. Only Phase 76 is still in
