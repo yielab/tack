@@ -24,43 +24,43 @@ The oldest records use a plainer layout (context, decision, consequences). A rec
 | Withdrawn | Not decided as an ADR. Any work it described moved to a plan. |
 | Superseded | A later record replaced all or part of it. The file carries a dated note saying which decisions. |
 
-The Status line in each file is the authority. The "Superseded by" column below only points at the later record; the older file says whether the replacement is whole or partial.
+The Status line in each file is the authority. The last column of the table below only points at the later record; the older file says whether the replacement is whole or partial.
 
 ## All records, newest first
 
-| ADR | Title | Status | Superseded by |
+| ADR | Title | Status | Replaced or amended by |
 |---|---|---|---|
 | 0034 | [a manager is a profile that works through the board](https://github.com/yielab/tack/blob/develop/docs/adr/0034-a-manager-is-a-profile-that-works-through-the-board.md) | Accepted 2026-11-01 | — |
-| 0033 | [the screen says what needs you first, and a project shows its teams at work](https://github.com/yielab/tack/blob/develop/docs/adr/0033-the-screen-says-what-needs-you-first-and-a-project-shows-its-teams-at-work.md) | Accepted 2026-11-01 | — |
-| 0032 | [a team is shown as it is, a task can go to a team, and what a run finds can become items](https://github.com/yielab/tack/blob/develop/docs/adr/0032-a-team-is-shown-as-it-is-a-task-can-go-to-a-team-and-what-a-run-finds-can-become-items.md) | Accepted 2026-10-31 | — |
+| 0033 | [the screen says what needs you first, and a project shows its teams at work](https://github.com/yielab/tack/blob/develop/docs/adr/0033-the-screen-says-what-needs-you-first-and-a-project-shows-its-teams-at-work.md) | Accepted 2026-11-01 | decision 1, by [Phase 86](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-86.md) |
+| 0032 | [a team is shown as it is, a task can go to a team, and what a run finds can become items](https://github.com/yielab/tack/blob/develop/docs/adr/0032-a-team-is-shown-as-it-is-a-task-can-go-to-a-team-and-what-a-run-finds-can-become-items.md) | Accepted 2026-10-31 | 0034 (decision 4) |
 | 0031 | [a docket team may work outside the repository, and what leaves is seen before it leaves](https://github.com/yielab/tack/blob/develop/docs/adr/0031-a-docket-team-may-work-outside-the-repository-and-what-leaves-is-seen-before-it-leaves.md) | Accepted 2026-10-31 | — |
 | 0030 | [the task goes to docket as fields, and a run says which prompts made it](https://github.com/yielab/tack/blob/develop/docs/adr/0030-the-task-goes-to-docket-as-fields-and-a-run-says-which-prompts-made-it.md) | Accepted 2026-10-31 | — |
 | 0029 | [one test binary per crate, dependencies without debug info, agent builds without the incremental cache](https://github.com/yielab/tack/blob/develop/docs/adr/0029-one-test-binary-per-crate.md) | Accepted 2026-10-26 | — |
 | 0028 | [the protocol is a crate, and the SQL has one home](https://github.com/yielab/tack/blob/develop/docs/adr/0028-the-protocol-is-a-crate-and-the-sql-has-one-home.md) | Accepted 2026-10-26 | — |
 | 0027 | [whoever makes the agent's working copy prepares it](https://github.com/yielab/tack/blob/develop/docs/adr/0027-whoever-makes-the-working-copy-prepares-it.md) | Accepted 2026-10-19 | — |
 | 0026 | [the runner finds its own settings, and a card says when nothing checks it](https://github.com/yielab/tack/blob/develop/docs/adr/0026-the-runner-finds-its-settings-and-a-card-says-what-checks-it.md) | Accepted 2026-10-19 | — |
-| 0025 | [the project file is kept in sync, not only imported](https://github.com/yielab/tack/blob/develop/docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md) | Proposed 2026-10-18 | — |
+| 0025 | [the project file is kept in sync, not only imported](https://github.com/yielab/tack/blob/develop/docs/adr/0025-the-project-file-is-kept-in-sync-not-only-imported.md) | Proposed 2026-10-18; postponed 2026-10-27, not planned | — |
 | 0024 | [limits in tokens, and nothing sent to an agent twice](https://github.com/yielab/tack/blob/develop/docs/adr/0024-limits-in-tokens-and-a-lean-context.md) | Accepted 2026-10-18 | 0027 |
 | 0023 | [what the first real project found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0023-what-the-first-real-project-found.md) | Accepted 2026-10-17 | — |
-| 0022 | [a whole project goes in and out through one file](https://github.com/yielab/tack/blob/develop/docs/adr/0022-a-whole-project-goes-in-and-out-through-one-file.md) | Accepted 2026-10-17 | 0025 |
-| 0021 | [every run goes to a long-lived team, and a project's automation is one ladder](https://github.com/yielab/tack/blob/develop/docs/adr/0021-every-run-goes-to-a-team-and-automation-is-one-ladder.md) | Accepted 2026-10-14 | 0024 |
+| 0022 | [a whole project goes in and out through one file](https://github.com/yielab/tack/blob/develop/docs/adr/0022-a-whole-project-goes-in-and-out-through-one-file.md) | Accepted 2026-10-17 | 0025 (proposed only) |
+| 0021 | [every run goes to a long-lived team, and a project's automation is one ladder](https://github.com/yielab/tack/blob/develop/docs/adr/0021-every-run-goes-to-a-team-and-automation-is-one-ladder.md) | Accepted 2026-10-14 | 0024, 0032 |
 | 0020 | [merge authority follows the autonomy level you set, and Tack stays one of three tools that work alone](https://github.com/yielab/tack/blob/develop/docs/adr/0020-merge-authority-follows-the-autonomy-level-you-set.md) | Accepted 2026-10-13 | 0024 |
-| 0019 | [the agent brings its own model](https://github.com/yielab/tack/blob/develop/docs/adr/0019-the-agent-brings-its-own-model.md) | Accepted 2026-10-13 | — |
+| 0019 | [the agent brings its own model](https://github.com/yielab/tack/blob/develop/docs/adr/0019-the-agent-brings-its-own-model.md) | Accepted 2026-10-13 | 0021 |
 | 0018 | [the agent reaches only what you gave it](https://github.com/yielab/tack/blob/develop/docs/adr/0018-the-agent-reaches-only-what-you-gave-it.md) | Accepted 2026-10-12 | — |
 | 0017 | [a project and its items from one outline or CSV](https://github.com/yielab/tack/blob/develop/docs/adr/0017-projects-from-an-outline-or-a-csv.md) | Accepted 2026-10-12 | — |
-| 0016 | [what the first docket + prill run found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0016-what-the-docket-and-prill-run-found.md) | Accepted 2026-10-12 | 0019 |
+| 0016 | [what the first docket + prill run found, and what Tack changes for it](https://github.com/yielab/tack/blob/develop/docs/adr/0016-what-the-docket-and-prill-run-found.md) | Accepted 2026-10-12 | 0019, 0020 |
 | 0015 | [a run a normal person can start](https://github.com/yielab/tack/blob/develop/docs/adr/0015-a-run-a-normal-person-can-start.md) | Accepted 2026-10-07 | 0019 |
 | 0014 | [agent onboarding — prerequisites discovery, validation, and configuration clarity](https://github.com/yielab/tack/blob/develop/docs/adr/0014-agent-onboarding-prerequisites-and-validation.md) | Accepted 2026-10-03 | 0015 |
 | 0013 | [every attempt leaves evidence; an independent verifier certifies it; the runner pushes, the board opens the pull request](https://github.com/yielab/tack/blob/develop/docs/adr/0013-evidence-merge-readiness-and-the-verifier-boundary.md) | Accepted 2026-10-03 | 0015, 0018, 0020 |
-| 0012 | [docket contract 1.1 is adopted — cancel becomes per-harness evidence, a recipe is one flag, the task goes by file](https://github.com/yielab/tack/blob/develop/docs/adr/0012-docket-harness-contract-1-1.md) | Accepted 2026-10-03 | 0021 |
-| 0011 | [the brief is a first-class entity on the item, typed, and it travels](https://github.com/yielab/tack/blob/develop/docs/adr/0011-briefing-script-on-the-item.md) | Accepted 2026-10-03 | — |
+| 0012 | [docket contract 1.1 is adopted — cancel becomes per-harness evidence, a recipe is one flag, the task goes by file](https://github.com/yielab/tack/blob/develop/docs/adr/0012-docket-harness-contract-1-1.md) | Accepted 2026-10-03 | 0021, 0024 |
+| 0011 | [the brief is a first-class entity on the item, typed, and it travels](https://github.com/yielab/tack/blob/develop/docs/adr/0011-briefing-script-on-the-item.md) | Accepted 2026-10-03 | 0020 |
 | 0010 | [Tack is maintained by people — retire what only agents needed, delete what nothing calls, and rebuild testing and CI around verified behaviour](https://github.com/yielab/tack/blob/develop/docs/adr/0010-a-codebase-for-human-maintainers.md) | Accepted 2026-09-18 | — |
 | 0009 | [opencode is readmitted as a fourth harness, on the shared core, with its one limitation typed](https://github.com/yielab/tack/blob/develop/docs/adr/0009-opencode-readmitted-as-a-fourth-harness.md) | Accepted 2026-09-14 | 0019 |
 | 0008 | [Docket becomes a third harness — the runner spawns it, and the model axis finally has a harness that proves it](https://github.com/yielab/tack/blob/develop/docs/adr/0008-docket-as-a-third-harness.md) | Accepted 2026-09-14 | 0019, 0021 |
 | 0007 | [Tests run under nextest, build once per resolution, and group one binary per subject](https://github.com/yielab/tack/blob/develop/docs/adr/0007-test-architecture.md) | Accepted 2026-09-05 | 0010, 0029 |
 | 0006 | [Tack runs as a background service, and ships as a desktop app](https://github.com/yielab/tack/blob/develop/docs/adr/0006-desktop-app-and-background-service.md) | Accepted 2026-09-03 | — |
 | 0005 | [Where a model provider's API key lives, and who's allowed to touch it](https://github.com/yielab/tack/blob/develop/docs/adr/0005-provider-credentials-at-the-runner-boundary.md) | Accepted 2026-09-03 | 0019 |
-| 0004 | [Single-operator identity posture](https://github.com/yielab/tack/blob/develop/docs/adr/0004-single-operator-identity-posture.md) | Accepted | — |
+| 0004 | [Single-operator identity posture](https://github.com/yielab/tack/blob/develop/docs/adr/0004-single-operator-identity-posture.md) | Accepted | 0034 |
 | 0003 | [Standalone single-binary operation via an embedded runner](https://github.com/yielab/tack/blob/develop/docs/adr/0003-standalone-single-binary-runner.md) | Accepted | — |
 | 0002 | [Tack-owned scheduling and runner-owned execution](https://github.com/yielab/tack/blob/develop/docs/adr/0002-runner-control-plane.md) | Accepted | 0010, 0019 |
 | 0001 | [transactional migration rebuild recovery](https://github.com/yielab/tack/blob/develop/docs/adr/0001-transactional-migration-rebuild-recovery.md) | Accepted 2026-08-06 | — |

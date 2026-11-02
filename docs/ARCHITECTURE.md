@@ -1,7 +1,7 @@
 # Architecture & Implementation Notes
 
 Crate responsibilities and the implementation rules that hold across them. This file is the
-authority on crate boundaries; CLAUDE.md keeps only the condensed map. It is for contributors. The
+authority on crate boundaries. It is for contributors. The
 book's [Developer Guide](book/src/developer/index.md) is the narrative version: its
 [Crate Tour](book/src/developer/crate-tour.md) walks each source file, and
 [Runs, Teams and Automation](book/src/developer/runs-and-teams.md) and
@@ -39,21 +39,12 @@ crates/tack-desktop/   Tauri shell that supervises `tack` as a bundled sidecar; 
                        from this workspace (own Cargo.toml/lockfile) so Tauri's GTK/WebKit
                        dependency never reaches a plain `cargo build --workspace`
 
-frontend/
-├── src/
-│   ├── app/         Root App/Layout components and routes.tsx
-│   ├── features/    One directory per surface (board, list, table, calendar, timeline,
-│   │                sprints, item-detail, dashboard, projects, settings, templates, agents)
-│   ├── shared/      Cross-feature code: api/ (generated client + schema), realtime/,
-│   │                runWithAgent/, execution/, agents/, ui/, state/, vocab/, keyboard/,
-│   │                help/, types/
-│   └── test/        Vitest setup
-├── e2e/             Playwright specs
-├── public/          Static assets
-└── package.json     Frontend dependencies (SolidJS, Vite, Tailwind v4)
+frontend/              SolidJS + TypeScript SPA (Vite, Tailwind v4); src/app (shell and routes),
+                       src/features (one directory per surface), src/shared (cross-feature code),
+                       e2e/ (Playwright). See book/src/developer/frontend.md
 
-docs/                Documentation: this file, CONFIG.md, MCP.md, TESTING.md, the guides,
-                     adr/ (decisions), contracts/ (language-neutral fixtures), book/ (mdBook)
+docs/                  This file, CONFIG.md, MCP.md, TESTING.md and the other guides; adr/
+                       (decisions), contracts/ (language-neutral fixtures), book/ (mdBook)
 ```
 
 ## Crate Boundaries & Responsibilities
@@ -98,7 +89,7 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - Auto-runs migrations on startup; the database is created automatically if missing
 
 **tack-app** (the application layer; depends on `tack-protocol`, `tack-core`, `tack-orch` and `tack-db`; names `reqwest`, never `axum` or `sqlx`):
-- **Use cases** in `runs/`, one file per verb (`claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, …): `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, <args>) -> Result<T, AppError>`, where the caller read the clock once at the edge and the store takes that instant as a value. They hold the rules a handler used to hold (idempotency keys, fencing checks, `validate_transition`); a handler extracts, calls, maps the error and responds. A test of a rule calls the use case on `setup_test_db()`
+- **Use cases** in `runs/`, one file per verb (`claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, …): `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, <args>) -> Result<T, AppError>`, where the caller read the clock once at the edge and the store takes that instant as a value. They hold the rules of a run (idempotency keys, fencing checks, `validate_transition`); a handler extracts, calls, maps the error and responds. A test of a rule calls the use case on `setup_test_db()`
 - **Background work has one owner and stops.** Every background loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) is a module with `tick()`, one pass that tests call with a fake clock so nothing sleeps, and `spawn()`, which hands that pass to `background::Loops`: the one helper that runs a named tick on an interval, stops on one shared `CancellationToken` (a pass in progress finishes first) and logs a panic with the loop's name. `tack-cli/src/serve.rs` owns the `Loops`, calls each module's `spawn` and stops them all, bounded by `background::STOP_GRACE`, when the server returns; the HTTP server starts only the artifact sweep (`tack-api`'s `ExecutionRuntime`, on the same `Loops`), because the blobs need its `ArtifactStorage`. Each table has one owner: `retention` is the only code that deletes from `execution_events`, and it also expires overdue decisions on the same flag; the artifact sweep deletes `execution_artifacts` and their blobs. A use case a handler starts after answering (the merge on Done, a GitHub push, the pack going to prill) goes on `AppState::tasks`, a `TaskTracker` the server closes and waits for, bounded, before it exits. `complete` writes everything a success sets going in the transaction that ends the attempt: it decides the board move and the rework follow-up from what is stored, hands them to `Repository::complete_execution_with_follow_ups`, and a crash leaves the attempt open for the runner's retry instead of ended with its move lost. The autonomy pass (`autonomy::tick`, with `merge.rs`) runs after each GitHub poll
 - **`ports`** are the small traits through which `tack-app` calls back into things that still live in `tack-api`: `Verifier` (prill's attestation check and the outcome of a pull request, failing with `VerifierError`), `Artifacts` (the bytes of a stored file) and `DomainEvents` (the board's event channel: item, run and decision events, each with its project and the principal that caused it, in `events.rs`; the item events also reach the WebSocket). `Ports` bundles them with `github_sync::GitHub` (the API root, the token and the GitHub calls, which are `tack-app`'s own) and the embedded runner (`LocalRunnerControl`, which resolves secret references); `tack-api` builds it with `AppState::ports()`, and a `tack-app` test builds it from fakes (`tests/ports.rs`). **The process environment is read once, in each crate's config module** (`tack-api/src/config.rs`, `tack-cli/src/config.rs`, `tack-runner/src/config.rs`) and handed down as values: the runner's `ProcessEnv` reaches the harness locator, the readiness check, the verifier, the install and `env:` secret references, the CLI's `ClientEnvironment` reaches `Config::load_with`, and no test sets a process variable. The one read left outside them is the desktop shell's `WEBKIT_DISABLE_DMABUF_RENDERER`, set before the webview starts. A port is a trait only where its implementor names an HTTP type this crate may not
 - `scheduler_wiring` and `model_policy_wiring` (the live callers of `tack-orch`), `local_runner` (the embedded runner as the rest of Tack sees it: the `LocalRunnerControl` seam the routes call, its preference, folder checks and the supervisor that keeps one runner process alive) and `AppError`
@@ -136,19 +127,9 @@ current crate, route, migration and test counts; quote those counts from it, nev
 - `tack` with no subcommand (or `tack serve`) starts the server + web UI — the primary, UI-first entry point. `serve.rs` is the composition root: it opens the database, builds the `Repository` and the `AppState`, calls `tack_api::serve()` and hands `tack_app::loop_config::LoopConfig` (the loops' settings, owned by `tack-app` and flattened into `AppConfig`) the `Loops` to start
 - CLI client using `clap` (`Commands` enum in `main.rs`): board/item basics — `init` (with `--template`), `export` (with `--bundle`), `import`, `projects`, `project`, `add`, `list`, `move`, `board`, `branch`, `start`, `open`, `search`, `config`, `completions`; entity subcommand groups — `sprint`, `template` (`list`, `show`, `create-from`, `save`), `role`, `comment`, `field`; backup — `backup`, `backups`, `restore`; and the execution/runner surface, each its own subcommand group — `execution` (create/list/get/cancel/reconcile requests), `fleet` (runner fleets), `runner` (enroll/revoke/start/doctor), `service` (manage `tack` as a background service — a systemd user unit on Linux, a launchd agent on macOS), `agent-profile`
 - `tack mcp` — Model Context Protocol server over stdio (hand-rolled JSON-RPC 2.0 in `mcp.rs`); proxies tool calls to a running server over HTTP so workflow rules apply. See `docs/MCP.md`
-- `tack branch <item-id>` — derives/creates a git branch from an item (`git.rs`)
 - Client commands talk to the server over HTTP (blocking `reqwest`); never open the DB directly. Only `serve.rs` names `tack-db`, to build the `Repository` it hands to the server and the loops
 
-**frontend** (SolidJS + TypeScript):
-- Responsive SPA on a **two-axis design-token system**: mode (`.dark` class) × palette (`data-palette` attr) → Harbor (default)/Teal/Clay/Graphite × light/dark, switched in Settings → Display & accessibility, alongside text size (the root font size; all text is in rem), desktop zoom, a high-legibility font and reduced motion (`shared/state/display.ts`). All colors come from `--color-*` tokens in `index.css`; components never use raw hex. WCAG AA, axe-gated in CI. Fonts: Bricolage Grotesque (display) + Figtree (body) + JetBrains Mono, and Atkinson Hyperlegible Next as the high-legibility option (self-hosted via `@fontsource`). See `docs/book/src/developer/frontend.md`.
-- **Board view** with HTML5 drag-and-drop (visual Kanban-style)
-- **List view** with sortable table, filtering, and bulk operations
-- WebSocket integration for real-time updates
-- Optimistic UI updates (instant feedback)
-- Keyboard shortcuts + command palette (Ctrl+K)
-- Global search (Ctrl+/)
-- Toast notifications
-- Skeleton loading screens
+**frontend** (SolidJS + TypeScript): a responsive SPA on a two-axis design-token system (mode × palette; every colour is a `--color-*` token, never raw hex), WCAG AA and axe-gated in CI. Surfaces are the board (HTML5 drag and drop), the list (sorts, filters and edits in place), calendar, timeline, orchestration, sprints, the item page, the agents and settings pages, with live updates over the WebSocket, optimistic edits, a command palette (Ctrl+K) and global search (Ctrl+/). The structure, the module boundary and the token system are in [Frontend & Design System](book/src/developer/frontend.md).
 
 ## Implementation rules
 
