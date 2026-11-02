@@ -387,3 +387,56 @@ fn a_409_to_a_cancel_is_a_finished_task_unless_docket_says_the_run_refused() {
     assert_eq!(super::cancel_observation(409, &refused), Ambiguous);
     assert_eq!(super::cancel_observation(500, &ended), Ambiguous);
 }
+
+/// The input of a thread's turn asks a local agent to also write `tack-reply.md`; docket's agent
+/// cannot write it and the reply is its team's last step, so the task it is given says that.
+#[test]
+fn a_docket_thread_turn_is_told_the_teams_last_step_answers_and_no_reply_file_is_written() {
+    use tack_protocol::conversation::{REPLY_FILE, TURN_KEY, TurnNote};
+    let state = crate::harness::test_support::scratch("docket-turn-input");
+    let input = tack_core::thread::turn_input(&tack_core::thread::window(&[]), "{}", REPLY_FILE);
+    assert!(
+        input.contains(REPLY_FILE),
+        "the local agent's input: {input}"
+    );
+    let description = |turn: bool| {
+        let mut spec = crate::harness::test_support::spec("docket", state.path());
+        let request = &mut spec.work.request;
+        request.metadata = if turn {
+            json!({TURN_KEY: TurnNote {
+                id: "t-1".into(),
+                turn: 1,
+                max_turns: 10,
+                message: "hello".into(),
+            }.into_metadata()})
+        } else {
+            json!({})
+        };
+        request.task = Some(tack_protocol::execution::TaskDocument {
+            instructions: "Do the thing.".into(),
+            title: "A card".into(),
+            description: Some(input.clone()),
+            comments: Vec::new(),
+            comments_left_out: 0,
+            brief: None,
+            definition_of_done: None,
+            kind: "task".into(),
+            source: "human".into(),
+        });
+        super::task::body(request, "attempt", 1, Some("main"), None)["description"]
+            .as_str()
+            .expect("description")
+            .to_owned()
+    };
+    let turn = description(true);
+    assert!(!turn.contains(REPLY_FILE), "{turn}");
+    assert!(
+        turn.contains("final message of your team's last step is your reply"),
+        "{turn}"
+    );
+    assert!(turn.contains("Write no reply file."), "{turn}");
+    // Nothing else of the input changes.
+    assert!(turn.contains("Board digest:"), "{turn}");
+    // A card that is not a turn is left as written.
+    assert!(description(false).contains(REPLY_FILE));
+}

@@ -418,6 +418,20 @@ pub fn render_window(window: &Window<'_>) -> String {
     text
 }
 
+/// How a turn is told to reply when the agent works in a folder: its final message, and the same
+/// text in `reply_file` at the root of its work tree.
+fn reply_in_file(reply_file: &str) -> String {
+    format!(
+        "Reply: when you finish, your final message is your reply. If you work in a folder, also \
+         write it to `{reply_file}` at the root of your work tree.\n"
+    )
+}
+
+/// How a turn is told to reply when the agent is a team that hands work from step to step and
+/// cannot leave a file: the final message of its last step.
+const REPLY_BY_LAST_STEP: &str = "Reply: when you finish, the final message of your team's last \
+     step is your reply. Write no reply file.\n";
+
 /// What a turn is told: the conversation, then the board's digest, then how to answer.
 /// `reply_file` is where an agent that works in a folder leaves its reply.
 pub fn turn_input(window: &Window<'_>, digest_json: &str, reply_file: &str) -> String {
@@ -425,11 +439,17 @@ pub fn turn_input(window: &Window<'_>, digest_json: &str, reply_file: &str) -> S
         "You are taking part in a conversation with a person about their board. Answer the \
          latest message. The board's digest below is computed, not written by a model; ask for \
          detail through your tools rather than guessing. Anything you want changed on the board \
-         goes through a change set, which a person applies.\n\n{}\nBoard digest:\n{digest_json}\n\n\
-         Reply: when you finish, your final message is your reply. If you work in a folder, also \
-         write it to `{reply_file}` at the root of your work tree.\n",
-        render_window(window)
+         goes through a change set, which a person applies.\n\n{}\nBoard digest:\n{digest_json}\n\n{}",
+        render_window(window),
+        reply_in_file(reply_file)
     )
+}
+
+/// A [`turn_input`] for a team that answers with its last step's message and cannot write
+/// `reply_file`: the sentence that asks for the file says what is true instead. Any other text
+/// comes back as it is.
+pub fn turn_input_for_a_team(input: &str, reply_file: &str) -> String {
+    input.replace(&reply_in_file(reply_file), REPLY_BY_LAST_STEP)
 }
 
 /// The text of a reply cut to [`BODY_CHARS`], with a note when it was cut.
@@ -538,6 +558,21 @@ mod tests {
         let input = turn_input(&window(&all), "{}", "tack-reply.md");
         assert_eq!(input, turn_input(&window(&all), "{}", "tack-reply.md"));
         assert!(input.contains("`tack-reply.md`"));
+    }
+
+    #[test]
+    fn a_team_that_cannot_write_the_reply_file_is_told_its_last_step_answers() {
+        let all = messages(3, "same");
+        let input = turn_input(&window(&all), "{}", "tack-reply.md");
+        let for_a_team = turn_input_for_a_team(&input, "tack-reply.md");
+        assert!(!for_a_team.contains("tack-reply.md"), "{for_a_team}");
+        assert!(for_a_team.contains("last step is your reply"));
+        assert_eq!(
+            for_a_team.replace(REPLY_BY_LAST_STEP, ""),
+            input.replace(&reply_in_file("tack-reply.md"), "")
+        );
+        // Text without that sentence is left alone.
+        assert_eq!(turn_input_for_a_team("hello", "tack-reply.md"), "hello");
     }
 
     #[test]
