@@ -39,8 +39,8 @@ use thiserror::Error;
 use crate::secrets::SecretStore;
 
 pub use crate::client::engine::{
-    CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter, HarnessError,
-    HarnessOutcome, LocalRunHandle, Progress, Question, StreamSignal,
+    AnsweredElsewhere, CancelObservation, CancellationEvidence, ExecutionSpec, HarnessAdapter,
+    HarnessError, HarnessOutcome, LocalRunHandle, Progress, Question, StreamSignal,
 };
 pub use crate::client::{AttemptJournal, DecisionAnswer, DecisionOption, RecoveryObservation};
 
@@ -617,6 +617,17 @@ impl HarnessAdapter for AdapterRegistry {
         self.resolve(&kind)
             .ok()?
             .progress_channel(&LocalRunHandle { process_id: inner })
+            .await
+    }
+
+    async fn answered_elsewhere_channel(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<tokio::sync::mpsc::Receiver<AnsweredElsewhere>> {
+        let (kind, inner) = decode_handle(&handle.process_id)?;
+        self.resolve(&kind)
+            .ok()?
+            .answered_elsewhere_channel(&LocalRunHandle { process_id: inner })
             .await
     }
 }

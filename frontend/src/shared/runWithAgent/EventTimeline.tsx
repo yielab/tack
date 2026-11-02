@@ -63,6 +63,7 @@ const EVENT_LABELS: Record<string, { label: string; failed?: boolean; clock?: bo
   'escalation.asked': { label: 'docket asked a person' },
   'escalation.resolved': { label: 'A person answered' },
   'escalation.expired': { label: 'Nobody answered before it expired' },
+  'escalation.answered_elsewhere': { label: 'Answered in docket, not in Tack' },
   'escalation.waiting': { label: 'The team is waiting', clock: true },
   'escalation.decided': { label: 'docket decided on its own' },
   'escalation.unreadable': { label: 'docket asked for something Tack cannot put to a person', failed: true },
