@@ -795,6 +795,21 @@ describe('Orchestration: Map and Compare', () => {
     expect(cellFor('merge', 'saas-notes').textContent).toBe('You merge (L3)');
   });
 
+  it('lets_a_compare_cell_wrap_at_its_words_inside_equal_columns_and_carries_its_full_text_as_a_tooltip', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const table = q<HTMLTableElement>(c, '[data-testid="compare"] table')!;
+    // Fixed, equal columns: a long cell wraps instead of widening the table past its frame.
+    expect(table.style.tableLayout).toBe('fixed');
+    expect(table.style.minWidth).not.toBe('max-content');
+    expect(qa(table, 'tbody th[scope="row"]').every((th) => !th.className.includes('whitespace-nowrap'))).toBe(true);
+    const step = qa(table, '[data-row="steps"] li').find((li) => li.textContent!.includes('checked by a reviewer'))!;
+    expect(step.getAttribute('title')).toBe(step.textContent);
+    const text = qa(table, '[data-row="network"] td span')[0];
+    expect(text.getAttribute('title')).toBe(text.textContent);
+  });
+
   it('reads_not_reported_for_what_a_team_left_out_with_the_reason_on_hover', async () => {
     const c = await mount(mapWorld());
     modeButton(c, 'map').click();
