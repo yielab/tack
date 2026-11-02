@@ -8,10 +8,10 @@ This chapter is for contributors who need to find the file that owns a behaviour
 >
 > This chapter is a per-file walkthrough, not a reference. How an automatic run, a docket
 > team and the merge ceiling are built is in [Runs, Teams and Automation](runs-and-teams.md);
-> the project file is in [The Project File Format](project-file.md). For crate boundaries stated
-> as a condensed table, design patterns, the DB schema, the API structure, and
-> troubleshooting, see [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) — the
-> authority when the two disagree on a fact rather than depth.
+> the project file is in [The Project File Format](project-file.md). Crate boundaries and the
+> rules that hold across crates are in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md),
+> the authority when the two disagree on a fact. Modules a section does not name are small
+> and carry a doc comment on their first lines; `ls` the crate's `src/` for the full list.
 
 ---
 
@@ -20,6 +20,8 @@ This chapter is for contributors who need to find the file that owns a behaviour
 **Lives in:** `crates/tack-protocol/src/`
 
 **Owns:** the runner-v1 contract, the one thing the server and `tack-runner` both build on: the execution types (`execution/`), the attempt lifecycle, capability negotiation, usage provenance, the merge-readiness pack (`mrp.rs`: the `mrp-v1` types, their validation and their pull-request rendering), the prepare step (`prepare.rs`) and the one `Clock` trait with `SystemClock` (`clock.rs`). `utoipa` is behind an `openapi` feature.
+
+It also holds `conversation.rs` (what a thread's turn and the harness running it say to each other), `event_kind.rs` (the names of the timeline events a runner reports) and `execution/activity.rs` (what a team is doing, in Tack's own words).
 
 **Does not own:** I/O of any kind, or a dependency on any other workspace crate. This is the trust boundary: what the board and a runner exchange is defined here and nowhere else, and `docs/contracts/runner-v1/` fixtures outrank any Rust or TypeScript type. `tests/runner_contract` byte-pins those fixtures.
 
@@ -64,6 +66,8 @@ summed into one opaque number. Every dollar-valued field in the runs crates is n
 **Lives in:** `crates/tack-core/src/`
 
 **Owns:** the planning and runs policy, as pure logic. Domain models, workflow engine, vocabulary system, dependency DAG, typed error enum, the merge policy, the rules that choose a run's profile and the tasks to start, and the contracts Tack reads and writes as plain data: an item's brief (`brief.rs`: the types, their validation and a Markdown rendering for the harness), and the project file (`outline.rs` and `outline/bundle.rs`).
+
+Smaller modules: `decision.rs` (who settled a decision), `principal.rs` (who is calling, and their scopes), `thread.rs` (a conversation with a profile), `run_outcome.rs` (whether a run was turned away before the agent did anything), `rich_text.rs` (an item's description as an agent reads it) and `outline/csv.rs`.
 
 **Does not own:** anything that performs I/O. No `sqlx`, no `reqwest`, no file operations, no `tokio`. This is enforced by the `Cargo.toml` — the crate has no async runtime dependency at all.
 
@@ -114,9 +118,7 @@ If `transitions` is `None`, any move between two known statuses is allowed. This
 | `simple_workflow()` | `Simple` | To Do, Doing, Done | None (open) |
 | `construction_workflow()` | `Construction` | Permit, Procurement, Build, Inspect, Handover | Explicit linear list |
 
-`workflow_for_type(project_type)` maps each `ProjectType` to the right preset. Adding a new project type means adding a variant to the `ProjectType` enum, a preset function, and a match arm here.
-
-The test suite in this file covers initial status selection, transition validation for open and constrained workflows, WIP limit edge cases, and done-status detection — all without any database or async runtime.
+The file also holds presets for the legal, research and event project types and three construction variants (wood frame, steel frame, SIP panel). `workflow_for_type(project_type)` maps each `ProjectType` to its preset, and `preset_workflow(name)` finds one by name for the project file. Adding a project type is a recipe in [Adding Features](adding-features.md#adding-a-new-workflow-preset). The tests need no database or async runtime.
 
 ---
 
@@ -158,12 +160,9 @@ pub struct DependencyGraph {
 
 ### `error.rs`
 
-`CoreError` is a `thiserror`-derived enum that covers every domain-level failure:
+`CoreError` is a `thiserror`-derived enum that covers every domain-level failure: the four not-found cases (`ItemNotFound`, `ProjectNotFound`, `SprintNotFound`, `RoleNotFound`) and the rule violations (`InvalidTransition`, `WipLimitExceeded`, `DependencyCycle`, `DuplicateDependency`, `InvalidVocabularyKey`, `EmptyWorkflow`, `InvalidWorkflow`, `HasChildren`, `Validation`).
 
-- `ItemNotFound(Uuid)`, `ProjectNotFound(Uuid)`, `SprintNotFound(Uuid)`, `RoleNotFound(Uuid)` — map to HTTP 404.
-- `InvalidTransition { from, to }`, `WipLimitExceeded { column, limit, current }`, `DependencyCycle(Uuid)`, `DuplicateDependency { ... }`, `InvalidVocabularyKey(String)`, `EmptyWorkflow`, `HasChildren(Uuid, usize)`, `Validation(String)` — map to HTTP 400.
-
-The mapping from `CoreError` to HTTP status codes lives in `tack-api/src/error.rs`, keeping the core crate free of HTTP knowledge.
+Each variant has a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. The table is under `tack-api`'s `error.rs` below, so the core crate stays free of HTTP knowledge.
 
 ---
 
@@ -229,36 +228,20 @@ The project file. `outline.rs` holds the serde types of every section (`Outline`
 
 ### `migrations.rs`
 
-Contains every migration (check `GET /api/health`'s `migrations_applied` field for
-the current count rather than trusting a hand-written number here) as `const` arrays
-of SQL strings. Each entry is `(&str name, &[&str] statements)`. The runner:
+Holds every migration in one ordered list (`all_migrations()`); `GET /api/health`'s `migrations_applied` gives the current count. An entry is `(name, statements)`, the statements being `const` arrays of SQL strings. At startup the runner:
 
-1. Creates `_migrations` table if absent.
-2. For each migration, checks if the name is already recorded.
-3. Executes each SQL statement in order.
-4. Records the migration name on success.
+1. Creates the `_migrations` table if absent.
+2. Checks every applied migration against the binary's own list by name **and** a deterministic checksum. An edited or reordered history refuses to boot instead of running silently.
+3. Takes a `VACUUM INTO` snapshot before any pending migration that cannot be re-run safely: a table rebuild (`037_orch_runs_rebuild`, `038_orch_approvals_rebuild`) or one that runs `DROP TABLE`.
+4. Applies each pending migration in order. An ordinary migration runs all its statements and records its name in **one transaction**, so a failing statement rolls the whole migration back. A rebuild also proves the copy (row counts and projections) and runs `foreign_key_check` before it commits.
 
-Migrations are append-only: never edit a shipped one. Some that show the range of what they hold:
-
-- `004_items` — creates the `items` table with indexes on `project_id`, `status`, `priority`, `parent_id`, and `sprint_id`.
-- `010_fts` — creates the FTS5 virtual table `items_fts` and the triggers (`items_fts_insert`, `items_fts_update`, `items_fts_delete`) that keep the FTS index in sync with the `items` table.
-- `012_custom_fields` — `custom_field_definitions` and `custom_field_values` tables.
-- `088`–`095` — roles, recurrence, auto-start, templates, budgets and profiles for the automatic runs. See [Runs, Teams and Automation](runs-and-teams.md#the-migrations).
-
-Each ordinary migration runs in its own transaction with the `_migrations` record
-inserted at commit; a failing statement rolls the whole migration back. Applied
-migrations are checked at every startup against the binary's own ordered list by name
-**and** a deterministic checksum — an edited or reordered history refuses to boot
-rather than running silently. A migration that cannot be re-run safely (the table rebuilds 037 and 038, and any migration that
-runs `DROP TABLE`) additionally takes an automatic `VACUUM INTO` snapshot before its first attempt. See `docs/MIGRATION-GUIDE.md` for the
-operator-facing version of this and `docs/adr/0001-transactional-migration-rebuild-recovery.md`
-for the design rationale.
+Migrations are append-only: never edit a shipped one. For example, `004_items` creates the `items` table and its indexes, `010_fts` creates the FTS5 table `items_fts` with the triggers that keep it in step, and `012_custom_fields` adds the custom-field tables. The operator-facing version is `docs/MIGRATION-GUIDE.md`; the design is `docs/adr/0001-transactional-migration-rebuild-recovery.md`. How to add one is in [Adding Features](adding-features.md#adding-a-migration).
 
 ---
 
 ### `repo.rs` and `repo/`
 
-`repo.rs` declares the `Repository` struct, which holds a `SqlitePool`, and the submodules of `repo/` each add an `impl Repository` block with the commands of one aggregate: `attachments`, `autonomy`, `backup`, `boards`, `briefs`, `budgets`, `comments`, `custom_fields`, `dependencies`, `execution/` (one file per concern: `enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`), `github_links`, `items`, `metrics`, `prill_records`, `projects`, `pull_requests`, `rate_card`, `roles`, `sprints`, `templates` and `workspaces`. A caller holds one `Repository` and calls `repo.create_item(..)`; each entity's SQL stays in its own file.
+`repo.rs` declares the `Repository` struct, which holds a `SqlitePool`, and each submodule of `repo/` adds an `impl Repository` block with the commands of one aggregate (`items`, `projects`, `sprints`, `roles`, `comments`, `change_sets`, `threads`, `triggers`, `agent_credentials`, `templates/`, …). `repo/execution/` has one file per concern (`enqueue`, `claim`, `events`, `decisions`, `artifacts`, `completion`, `recovery`, `review`, `admin`, `state`). A caller holds one `Repository` and calls `repo.create_item(..)`; each entity's SQL stays in its own file. `canonical.rs` is the one canonical form of a JSON value that snapshots and replay fingerprints are compared in.
 
 `rate_card.rs` holds the one SQL that prices usage: `spend_by_model` returns tokens per model, repository and team, and the Factory page and the token budget both call it.
 
@@ -269,7 +252,7 @@ for the design rationale.
 - JSON fields (`workflow`, `vocabulary`, `tags`) are serialised to and from strings with `serde_json`.
 - Timestamps are stored as RFC 3339 strings and parsed via `chrono::DateTime<Utc>`.
 
-**`queries/`** is the read side: one file per table (`items.rs`, `execution_requests.rs`, `execution_attempts.rs`, `agent_runners.rs`, `pull_requests.rs`, `autonomy.rs`, …), one `pub async fn` per question the rest of the program asks of it. Each takes the `Repository`, returns `Result<_, StoreError>` and answers with a row struct whose fields are the columns, under the columns' names. A test reads what a route wrote through these functions instead of writing SQL.
+**`queries/`** is the read side: one file per table or subject (`items.rs`, `execution_requests.rs`, `execution_attempts.rs`, `agent_runners.rs`, `team_activity.rs`, `digest.rs`, …), one `pub async fn` per question the rest of the program asks of it. Each takes the `Repository`, returns `Result<_, StoreError>` and answers with a row struct whose fields are the columns, under the columns' names. A test reads what a route wrote through these functions instead of writing SQL.
 
 ---
 
@@ -320,11 +303,15 @@ checks it against a list, and the agent refuses one it does not know when the ru
 
 ### `runs/`
 
-One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, `submit_artifacts`, `report_events` and the rest of the runner-v1 operations. A use case is `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, <args>) -> Result<T, AppError>`: the caller reads the clock once at the edge, and the use case takes plain values and holds the rule a handler used to hold (idempotency keys, fencing checks, `validate_transition`). A handler in `tack-api` extracts, calls the use case, maps the error and responds. A test of a rule calls the use case directly on `setup_test_db()`, with no router.
+One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, `create_decision`, `resolve_decision`, `submit_artifacts`, `report_events` and the rest of the runner-v1 operations. A use case is `pub async fn <verb>(repo: &Repository, now: DateTime<Utc>, <args>) -> Result<T, AppError>`: the caller reads the clock once at the edge, and the use case takes plain values and holds the rule of the run (idempotency keys, fencing checks, `validate_transition`). A handler in `tack-api` extracts, calls the use case, maps the error and responds. A test of a rule calls the use case directly on `setup_test_db()`, with no router.
 
 ### `change_sets.rs`
 
 `propose` reads the board into a `BoardView`, validates the whole set (a set that fails is refused with every reason and kept nowhere), keeps it under its idempotency key (the same key on a project answers the first change set again), lets `decide` pick the operations that apply now and applies them with `Repository::apply_change_set`: one `BEGIN IMMEDIATE` transaction that re-reads the set, writes every operation through the same row-level functions the person's routes use (`insert_item`, `update_item_in` with the workflow as gate, `insert_dependency`) and records each operation's state and result, so a failure anywhere leaves nothing. `apply` (a person, all or some operations, with edits), `reject` and `edit_operation` finish the lifecycle. `Mode::Now` is a person's own plan: everything applies at once and the rung does not count it. A plan accepted from a run (`POST /api/items/{id}/subtasks-from-plan`) is a set of creates proposed in that mode, so the plan flow and an agent's proposal share one write path. The handlers in `tack-api` announce what changed to the WebSocket and run `after_update` for a move, as `update_item` does.
+
+### `threads.rs`
+
+Opens a thread (a conversation between a person and a profile, ADR 0034 decision 7), writes in it and starts the turn each message causes: a run of the thread's profile against the thread's hidden item, under the principal `thread:<id>`, whose input is the window of messages and the digest. The rules that bound a thread are `tack_core::thread`'s; the routes are `/api/threads` in `tack-api`.
 
 ### `triggers.rs`
 
@@ -336,7 +323,7 @@ One file per verb: `claim`, `heartbeat`, `start_run`, `complete`, `cancel_run`, 
 
 ### Ticks
 
-Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`) is a module with two functions. `tick()` is one pass, and tests call it with a fake clock so nothing sleeps. `spawn()` hands that pass to `background::Loops`, the one helper that runs a named tick on an interval, stops on a shared cancellation token and logs a panic with the loop's name. `tack-cli/src/serve.rs` owns the `Loops`, calls each module's `spawn` and stops them all when the server returns. The HTTP server starts only the artifact sweep. The autonomy pass (`autonomy::tick`, which merges and demotes by `tack_core::autonomy::evaluate`, with the merge itself in `merge.rs`) runs after each GitHub poll.
+Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`, `triggers`) is a module with `tick()`, one pass that tests call with a fake clock so nothing sleeps, and `spawn()`, which hands that pass to `background::Loops`. `tack-cli/src/serve.rs` owns the `Loops` and stops them all when the server returns. The rules for a loop (one owner per table, shared cancellation, a use case started after answering goes on `AppState::tasks`) are in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md). `loop_config.rs` holds the loops' settings, which `tack-api`'s `AppConfig` flattens into `tack.toml`. The autonomy pass (`autonomy::tick`, with `merge.rs`) runs after each GitHub poll; `pull_request.rs` opens the pull request an accepted attempt asks for.
 
 ### `retention.rs` and `observability.rs`
 
@@ -344,11 +331,11 @@ Two sibling background loops, each a `tick()` plus a `spawn()`. Retention purges
 
 ### `ports.rs`
 
-Three small traits are how `tack-app` calls back into things that still live in `tack-api`: `Verifier` (prill's attestation check and the outcome of a pull request, failing with `VerifierError`), `Artifacts` (the bytes of a stored file) and `DomainEvents` (the board's event channel: `emit` takes a `DomainEvent`). `Ports` bundles them with `github_sync::GitHub`, which holds the GitHub API root and token and makes the GitHub calls, and with the embedded runner, which resolves secret references. `tack-api` builds a `Ports` over its `AppState` (`ports.rs` there). A port stays a trait only where its implementor names an HTTP type `tack-app` may not.
+The small traits through which `tack-app` calls back into things that still live in `tack-api`: `Verifier`, `Artifacts` and `DomainEvents`. `Ports` bundles them with `github_sync::GitHub` and the embedded runner. `tack-api`'s `ports.rs` builds a `Ports` over its `AppState`, and a `tack-app` test builds one from fakes. See [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) for why a port is a trait only where its implementor names an HTTP type.
 
 ### `events.rs`
 
-What happened on a board, as values: a `DomainEvent` is a `Fact` (an item created, updated, moved or deleted; a run started, finished, failed or waiting on a person; a decision opened or resolved), the project it happened in, and the `Principal` that caused it (a runner and Tack itself are principals too). The place where a fact becomes true emits it once: the item routes and the change-set announcement in `tack-api`, and `runs/announce.rs` for what a runner reports, which the handler calls with the outcome of the use case so that a replayed report, an already-asked question or an already-given answer announces nothing. `EventBus` is the in-process implementation every consumer subscribes to, and `RecordedEvents` is the one a test reads. `tack-api`'s `ports.rs` emits each event to the bus and, for the item events, to the WebSocket as the message the open boards have always understood; a run or a decision has no such message and is not sent to the browser.
+What happened on a board, as values: a `DomainEvent` is a `Fact` (an item created, updated, moved or deleted; a run started, finished, failed or waiting on a person; a decision opened or resolved), the project it happened in, and the `Principal` that caused it (a runner and Tack itself are principals too). The place where a fact becomes true emits it once: the item routes and the change-set announcement in `tack-api`, and `runs/announce.rs` for what a runner reports, which the handler calls with the outcome of the use case so that a replayed report, an already-asked question or an already-given answer announces nothing. `EventBus` is the in-process implementation every consumer subscribes to, and `RecordedEvents` is the one a test reads. `tack-api`'s `ports.rs` emits each event to the bus and, for the item events, to the WebSocket as the message the open boards understand; a run or a decision has no such message and is not sent to the browser.
 
 ### `scheduler_wiring.rs` and `model_policy_wiring.rs`
 
@@ -393,7 +380,8 @@ pub struct AppState {
     pub repo: Repository,
     pub config: AppConfig,
     pub workspace_id: Uuid,
-    pub broadcast_tx: broadcast::Sender<BoardEvent>,
+    pub broadcast_tx: broadcast::Sender<BoardEvent>,          // the browser's share of the events
+    pub event_bus: tack_app::events::EventBus,                // every consumer of a domain event
     pub webhook: Option<WebhookClient>,                       // None when TACK_WEBHOOK_URL is unset
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,    // the embedded runner's seam
     pub tasks: TaskTracker,                                   // work started after answering
@@ -404,7 +392,7 @@ pub struct AppState {
 
 - **CORS** — reads `config.allowed_origins`, constructs a `tower_http::cors::CorsLayer`.
 - **Body limit** — `DefaultBodyLimit::max(config.max_body_size_bytes)` globally; the attachment upload route overrides this to 50 MB.
-- **Security headers** — `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` via `SetResponseHeaderLayer`.
+- **Security headers** — `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `X-Frame-Options: DENY` and a Content-Security-Policy built from the config, via `SetResponseHeaderLayer`.
 - **Request tracing** — `TraceLayer` logs every request with method and URI.
 - **Token gate** — `middleware::from_fn_with_state(state, require_token)` wraps all `/api` routes.
 - **embed-spa feature** — when compiled with `--features embed-spa`, a fallback handler serves the bundled SPA.
@@ -413,7 +401,7 @@ pub struct AppState {
 
 ### `handlers/`
 
-One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `create_as`, which a run started by the board itself goes through, and a `resolve_profile` that calls the one in `tack-app`'s `runs/start_run.rs`, beside `default_selector`), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
+One file per entity group. The agent-work ones: `executions.rs` and `attempt_lists.rs` (requests, and the attempts with their pull request; `executions.rs` also holds `create_as`, which a run started by the board itself goes through, and a `resolve_profile` that calls the one in `tack-app`'s `runs/start_run.rs`, beside `default_selector`), `decisions.rs`, `briefs.rs` (`/items/{id}/brief`), `mrp.rs` (an attempt's merge-readiness pack, its viewed mark and its review), `metrics.rs` (`/projects/{id}/metrics/factory`), `autonomy.rs` (a project's levels, ceiling and teams), `teams.rs` (the teams the agents report), `local_runner.rs` (the embedded runner) and `runner_protocol/` (the runner's own surface). The manager's surface (ADR 0034) is `agent_credentials.rs`, `change_sets.rs`, `digest.rs`, `threads.rs` and `triggers.rs`, and `agent_access.rs` is the closed table of routes an agent credential may call. The project file goes through `outline.rs` (import), `export.rs` (export) and `templates.rs`.
 
 The board's own timed work (the auto-start tick, the autonomy tick that merges and demotes, the merge itself, the GitHub poll and the remote backup) is in `tack-app`; a handler that needs one of them calls it. What `tack-app` needs back from this crate is `ports.rs`, the implementation of `tack_app::ports` over `AppState`.
 
@@ -635,7 +623,7 @@ A test plants rows with `tack_test_support::seed` and reads them back with `tack
 
 **Lives in:** `crates/tack-desktop/src/`
 
-**Owns:** the Tauri shell — a window, a system tray icon, and the supervisor that either attaches to a `tack serve` already answering on the configured port or starts one itself as a bundled sidecar. Built with `make desktop`; excluded from the root workspace (see the crate map in the top-level `CLAUDE.md`) so a contributor without Tauri's system dependencies (GTK, WebKit) still builds every other crate with a plain `cargo build --workspace`. Its own `Cargo.lock`, CI job, and Dependabot entry follow from that same exclusion.
+**Owns:** the Tauri shell — a window, a system tray icon, and the supervisor that either attaches to a `tack serve` already answering on the configured port or starts one itself as a bundled sidecar. Built with `make desktop`; excluded from the root workspace (the `exclude` comment in the root `Cargo.toml` says why) so a contributor without Tauri's system dependencies (GTK, WebKit) still builds every other crate with a plain `cargo build --workspace`. Its own `Cargo.lock`, CI job, and Dependabot entry follow from that same exclusion.
 
 **Does not own:** the server. It never opens the database or reimplements anything `tack-api` already does — only starts, attaches to, and supervises the `tack` binary as a child process, and only ever stops a server it started itself.
 
@@ -649,10 +637,14 @@ Builds the Tauri app and calls `attach_or_start` before creating the window — 
 
 `attach_or_start` probes the configured port for a Tack server already answering at a compatible version and attaches to it instead of spawning a second one; otherwise it spawns the bundled sidecar binary and waits up to a fixed health timeout for `/api/health` to answer. A server this process did not start is never signalled to stop, on any exit path.
 
+### `paths.rs` and `lifecycle.rs`
+
+`paths.rs` computes the per-user data root (`dirs::data_dir()` + `tack`) and the folders under it; only the database path can move, through `settings.json`. `lifecycle.rs` makes closing the window hide it, *Open Tack* show it again, and *Quit* the only way to stop the app, warning first when an agent attempt is in flight.
+
 ### `first_run.rs`
 
 `ensure_settings` runs before the supervisor does: on an empty data root it shows a first-run dialog (database path, port) and writes the answer to `settings.json` before anything tries to reach a server. The dialog call itself runs off the main thread — Tauri's dialog plugin deadlocks the event loop if it doesn't.
 
 ### `tray.rs`
 
-Builds the tray icon and its menu: **Open Tack** (show or refocus the window), a disabled **agent execution status line**, a checked **Launch at login** toggle (on by default the first time), and **Quit**. The status line polls `GET /api/local-runner` every three seconds — at the port this app's own `settings.json` names, falling back to the default — and renders one of six typed labels: *on*, *off*, *turning on…*, *turning off…* (the persisted preference and the runtime state disagreeing while a toggle takes effect), *waiting for the server…* (nothing answering yet), and *status unavailable (request failed)*. It is a status line and not a switch: it never writes, and a server that has not answered is never rendered as *off*. Closing the window only hides it — the server keeps running; **Quit** is the action that actually stops it.
+Builds the tray icon and its menu: **Open Tack** (show or refocus the window), a disabled **agent execution status line**, a **Launch at login** toggle (unchecked until you turn it on), and **Quit**. The status line polls `GET /api/local-runner` every three seconds — at the port this app's own `settings.json` names, falling back to the default — and renders one of six typed labels: *on*, *off*, *turning on…*, *turning off…* (the persisted preference and the runtime state disagreeing while a toggle takes effect), *waiting for the server…* (nothing answering yet), and *status unavailable (request failed)*. It is a status line and not a switch: it never writes, and a server that has not answered is never rendered as *off*. Closing the window only hides it — the server keeps running; **Quit** is the action that actually stops it.

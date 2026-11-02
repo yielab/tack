@@ -1,6 +1,6 @@
 # Adding Features
 
-This chapter is for contributors who add to Tack. It gives four recipes: a new entity, a new workflow preset, an extension of the workflow engine, and a new key in the project file. Each section includes a concrete example and explains the reasoning behind the step order. Before you start, read the layering rule in the [Architecture Overview](index.md) and the anti-patterns at the end of this page. The Milestone and `education_workflow` examples are illustrations; neither exists in the codebase.
+This chapter is for contributors who add to Tack. It gives four recipes: a new entity, a new workflow preset, an extension of the workflow engine, and a new key in the project file. Each section includes a concrete example and explains the reasoning behind the step order. After the recipes come the rules for a migration and the conventions every change follows (errors, logging, secrets in backups). Before you start, read the layering rule in the [Architecture Overview](index.md) and the anti-patterns at the end of this page. The Milestone and `education_workflow` examples are illustrations; neither exists in the codebase.
 
 ---
 
@@ -78,7 +78,7 @@ const MIGRATION_NNN: [&str; 2] = [
 ];
 ```
 
-Migrations are append-only and run in order. Never edit a shipped one: startup refuses a database whose applied history differs from the binary's list by name or checksum. To change the schema, add a new migration.
+Migrations are append-only and run in order. Never edit a shipped one: startup refuses a database whose applied history differs from the binary's list by name or checksum. To change the schema, add a new migration; the rules are under [Adding a migration](#adding-a-migration).
 
 ### Step 3: Create the repository module
 
@@ -416,6 +416,36 @@ A template stores `roles`, `profiles` and `automation` as JSON in `project_templ
 
 ---
 
+## Adding a migration
+
+Append one `ordinary("NNN_name", &MIGRATION_NNN[..])` line to `all_migrations()` in `crates/tack-db/src/migrations.rs` and write the statements as a `const` array of SQL strings, as in the entity recipe above.
+
+- **The name is permanent.** Numbers are sequential and never reused. The runner records the name and a checksum of the SQL, so renaming or editing a shipped migration stops every existing install at startup.
+- **One migration is one transaction.** Its statements and the record of its name commit together, and a failing statement rolls all of them back, so a migration with several `ALTER`s cannot be left half applied.
+- **A migration that cannot be re-run safely gets a snapshot.** A table rebuild (declare it with `rebuild(..)`, which proves the copy before it commits; see `037_orch_runs_rebuild`) or any migration containing `DROP TABLE` makes the runner write a `VACUUM INTO` copy beside the database file before it starts.
+- **A transaction that reads, then writes, starts with `BEGIN IMMEDIATE`.** This is the rule for repository code, not for migrations; see [Implementation rules](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md#implementation-rules).
+- **A new table with a secret column** is also a change to the backup scrub, below.
+
+The operator's view of what runs at startup is `docs/MIGRATION-GUIDE.md`.
+
+---
+
+## Conventions every change follows
+
+### Errors
+
+A failure has one of three owners. `tack-core` raises a `CoreError`, `tack-db` a `StoreError` and a `tack-app` use case an `AppError`; each carries a `code()`, a `StableErrorCode` from `tack-protocol`, and that code decides the HTTP status. `tack-api` wraps them in `ApiError`, which keeps the code and answers every failure with the same JSON body. The full table, with the status of each variant, is under `error.rs` in the [Crate Tour](crate-tour.md#errorrs-1). An internal error logs its cause and tells the client only "Internal server error". To add a code, add it to `StableErrorCode` and its `status()` arm in `tack-protocol`; the OpenAPI schema lists the enum, so regenerate the API files.
+
+### Logging
+
+Logging is the `tracing` crate. A handler carries `#[instrument(skip(state))]`, the request layer logs each request with its method, URI and duration, and the level is `TACK_LOG_LEVEL` (or `RUST_LOG`, which wins). A log line carries ids only: never a credential, a prompt body, a query string or an environment value. Where a line could plausibly carry one, a test asserts the redaction. The settings are in the [Configuration Reference](https://github.com/yielab/tack/blob/develop/docs/CONFIG.md#debugging).
+
+### Secrets in backups
+
+A secret is write-only over the API and never logged. A backup or a remote-sync snapshot must never carry one in the clear, so every new secret-bearing column gets its own block in `scrub_snapshot_secrets` (`crates/tack-db/src/repo/backup.rs`) in the same change that adds the column. The function nulls the value in the snapshot before it leaves the machine; `SENSITIVE_META_KEYS` covers only the keys of `app_meta`.
+
+---
+
 ## Anti-Patterns to Avoid
 
 The crate layering is the project's load-bearing constraint. Most review feedback on new features comes down to one of these:
@@ -424,7 +454,7 @@ The crate layering is the project's load-bearing constraint. Most review feedbac
 - **Don't scatter validation across handlers.** Transition rules, WIP limits, cycle checks, and field validation belong in `tack-core`, called from the handler. Duplicating a rule inline in a handler means the CLI, API, and MCP server can disagree about what's valid.
 - **Don't reach past the repository layer.** Handlers call `Repository` methods; they never build SQL or touch the pool directly. New commands go in the matching `repo/` module and new reads in `queries/`.
 - **Don't let `tack-cli` import `tack-db`.** The CLI is an HTTP client — all data access goes through the API so workflow rules are enforced server-side. The same applies to the MCP server. The one exception is `serve.rs`, which builds the `Repository` the server runs on. `scripts/check-crate-graph.sh` fails on any other edge.
-- **Don't edit an existing migration.** Migrations are append-only. Changing a shipped migration corrupts databases that already applied it. Add a new numbered migration and wire it into `all_migrations()`.
+- **Don't edit an existing migration.** Add a new numbered one; see [Adding a migration](#adding-a-migration).
 - **Don't hardcode colors in the frontend.** Components consume `--color-*` design tokens via inline `style`, never raw hex, so the theme/palette system keeps working. See [Frontend & Design System](frontend.md).
 - **Don't add an endpoint without a handler test.** Every new route gets at least a success-path and an error-path test in the module of `crates/tack-api/tests/handlers/` that matches the route's subject — see [Testing](testing.md).
 
