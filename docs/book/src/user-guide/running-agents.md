@@ -173,7 +173,7 @@ The [Tutorial](tutorial.md) walks through it with screenshots.
 The dialog is a pre-flight, not a form. What belongs to the computer or the project is decided and shown
 read-only, and each part links to the page that owns it, so nothing is asked twice.
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Web tools; and a collapsed Advanced section.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: Who does it, with the profiles of Claude Code as radio buttons (Implementer, Planner, Researcher, Reviewer); a What will happen summary of the agent and model, the branch, the install, the checks, the permissions and the network; two switches, Ask before each action and Web tools; the collapsed sections What the agent will read and Advanced for this run; and Cancel and Start run under the limit.">
 
 - **Who does it** is one compact list of every profile, each a radio button, grouped by the team it names
   or, for a profile with no team, by the agent that runs it (Claude Code, Codex, OpenCode or Docket). A team
@@ -348,7 +348,7 @@ you to approve it blind; the timeline says to answer it in docket, where it is s
 
 If you answer a question in docket itself, with its own command, instead of in Tack, the question here closes as **Answered in docket** and the timeline says so; it is not an expiry and it is not marked as your answer. The team goes on, and its next question appears here at once. This needs a docket recent enough to tell Tack when a question was settled; with an older one the question stays open here until the run ends.
 
-<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
+<img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question under Needs you on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below, then the decision-token field.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary
 sign-in. Paste it into the field **Your decision token**, in **Waiting for you** in the sidebar or under the question in **Needs you**; the browser keeps it for the

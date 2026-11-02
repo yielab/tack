@@ -206,7 +206,7 @@ When a verifier checks an attempt, it leaves a merge-readiness pack. Its parts a
 each where it is read: the recommendation and risk in the verdict, the criteria and the rest of what the
 verifier ran under **Checks**, and whether it was signed under **Technical**.
 
-<img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a succeeded attempt: Recommendation merge, Risk low, three reasons, a criteria table with every criterion passed and its evidence file, the verify command with exit code 0, mutation score, static analysis counts, a blind judge's verdicts, and Your review with a required reason before Accept or Reject.">
+<img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a finished run: Recommendation merge and Risk low, the box waiting for your verdict with a required reason and the Accept and Reject buttons, Checks reading 6 of 6 checks passed with a How we know line under each, Why this risk, the verify command with exit code 0, and the Changes, Steps, Files from this run and Technical sections.">
 
 It shows:
 

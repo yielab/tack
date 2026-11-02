@@ -401,7 +401,7 @@ test.describe.serial('README screenshots', () => {
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer.getByText('Recommended', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-    await drawer.getByRole('heading', { name: 'Questions from the agent' }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
+    await drawer.getByRole('heading', { name: 'Needs you', level: 4 }).first().evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
     await drawer.screenshot({ path: path.join(OUT_DIR, 'decision-inbox.png') });
   });
@@ -413,7 +413,7 @@ test.describe.serial('README screenshots', () => {
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer.getByText(/^Recommendation:/).first()).toBeVisible({ timeout: 10_000 });
-    await drawer.getByText('Merge-readiness pack', { exact: true }).evaluate((h) => h.scrollIntoView({ block: 'start' }));
+    await drawer.getByRole('region', { name: 'Verdict' }).first().evaluate((h) => h.scrollIntoView({ block: 'start' }));
     await page.waitForTimeout(400);
     await drawer.screenshot({ path: path.join(OUT_DIR, 'merge-readiness.png') });
   });
