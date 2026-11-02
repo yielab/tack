@@ -91,7 +91,8 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await waitForApp(page);
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
-    await expect(drawer.getByRole('tabpanel').getByText('Queued')).toBeVisible();
+    // The newest run's state is shown once, in the Work region, not repeated in the Execution panel.
+    await expect(drawer.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Queued');
     // Nothing has claimed it yet — an honest "no attempts", never a fake
     // empty timeline conflated with "still loading".
     await expect(drawer.getByText('No attempts yet.')).toBeVisible();
@@ -112,10 +113,10 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     // The ids live in the Technical fold, closed until asked for.
     await drawer2.locator('[data-section="technical"] > summary').click();
     await expect(drawer2.getByTitle(runnerId)).toBeVisible();
-    // Right after a claim the run shows one status, its attempt's: Starting.
-    // (The task's own last-run summary, above the tabs, says it too.)
-    await expect(drawer2.getByRole('tabpanel').getByText('Starting', { exact: true })).toHaveCount(1);
-    await expect(drawer2.getByTestId('latest-run')).toContainText('Starting');
+    // Right after a claim the Work region says the run is Running and that its attempt is
+    // Starting; the Execution panel does not repeat either for the newest run.
+    await expect(drawer2.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Running');
+    await expect(drawer2.getByTestId('latest-run-status')).toContainText('Starting');
     // Until it finishes, the card says the agent is working instead of
     // showing a row of empty figures — never $0.00, never a fabricated model.
     await expect(drawer2.getByTestId('attempt-working')).toBeVisible();
