@@ -154,7 +154,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
         if (needsPerson()) return { state: 'needs', docket: 'Needs a person' };
         return { state: raw === 'cancelled' ? 'cancelled' : 'failed' };
       case 'merged': return { state: 'done' };
-      case 'done': return noChange() ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
+      case 'done': return noChange() && !folder() ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
     }
   };
   // The words under the banner: what the status adds to it, and when it last changed.
@@ -252,7 +252,8 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
     if (ms !== null) parts.push(formatWallClock(ms, true));
     const d = digest();
     if (d?.steps) parts.push(`${d.steps} ${d.steps === 1 ? 'step' : 'steps'}`);
-    if (noChange()) parts.push('no files changed');
+    // A folder team has no repository: its card already says "nothing to merge".
+    if (noChange()) { if (!folder()) parts.push('no files changed'); }
     else if (d?.files) parts.push(`${d.files} ${d.files === 1 ? 'file' : 'files'} changed`);
     return parts.length > 0 ? parts.join(' · ') : null;
   };
