@@ -40,6 +40,14 @@ const RESOLVED: DecisionRecord = {
   resolved_by: { kind: 'operator', subject_id: 'operator:local' },
 };
 
+const ANSWERED_ELSEWHERE: DecisionRecord = {
+  ...PENDING_WITH_OPTIONS,
+  decision_id: 'dec_elsewhere',
+  state: 'answered_elsewhere',
+  resolved_at: '2026-08-06T12:30:00Z',
+  resolved_by: { kind: 'harness', subject_id: 'docket' },
+};
+
 function mount(props: Partial<DecisionInboxProps> = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -183,6 +191,18 @@ describe('DecisionInbox — pending / expired / resolved are visually and semant
     expect(c.textContent).toContain('Resolved');
     expect(c.textContent).toContain('allow_once');
     expect(c.textContent).toContain('looked fine');
+    expect(c.querySelectorAll('input[type="radio"]')).toHaveLength(0);
+  });
+
+  it('a decision answered in the agent\'s own tool says where, is not "Expired" and offers no resolve form', async () => {
+    mockFetch([ANSWERED_ELSEWHERE], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.textContent).toContain('Answered in docket');
+    expect(c.textContent).not.toContain('Expired');
+    expect(c.textContent).not.toContain('unrecognised');
     expect(c.querySelectorAll('input[type="radio"]')).toHaveLength(0);
   });
 

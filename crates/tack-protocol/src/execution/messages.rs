@@ -358,6 +358,29 @@ pub struct DecisionPollResponse {
     pub next_after: DateTime<Utc>,
 }
 
+/// `POST /attempts/{id}/decisions/answered-elsewhere` (additive v1): the agent's own tool took the
+/// answer to a question the board still holds open, so the board closes the decision and the
+/// attempt can ask its next one. Idempotent: a decision already closed is reported as it stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionAnsweredElsewhereRequest {
+    pub protocol_version: ProtocolVersion,
+    pub runner_id: RunnerId,
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub decision_id: String,
+    /// The tool that took the answer (`docket`); shown, never branched on.
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionAnsweredElsewhereResponse {
+    pub protocol_version: ProtocolVersion,
+    pub decision_id: String,
+    /// `answered_elsewhere`, or the state another road had already given the decision.
+    pub state: String,
+    pub resolved_at: DateTime<Utc>,
+}
+
 /// One artifact an attempt announces; its bytes follow in a `PUT` to the grant's path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ArtifactManifestEntry {

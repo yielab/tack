@@ -342,6 +342,8 @@ text only while the question is open and erases it the moment you answer or the 
 the timeline, in the run's log or in an export afterwards. If docket does not show the action, Tack does not ask
 you to approve it blind; the timeline says to answer it in docket, where it is shown.
 
+If you answer a question in docket itself, with its own command, instead of in Tack, the question here closes as **Answered in docket** and the timeline says so; it is not an expiry and it is not marked as your answer. The team goes on, and its next question appears here at once. This needs a docket recent enough to tell Tack when a question was settled; with an older one the question stays open here until the run ends.
+
 <img src="../screenshots/decision-inbox.png" width="50%" alt="A pending question on the Execution tab: the agent asks which chart library to add, offers uPlot, Apache ECharts and hand-written SVG, each with a description, a risk in red and an estimate in tokens, and marks uPlot as Recommended with its reasoning and evidence files; a Details field and a Resolve button sit below.">
 
 Answering needs the **decision token**, a secret your administrator sets that is separate from the ordinary

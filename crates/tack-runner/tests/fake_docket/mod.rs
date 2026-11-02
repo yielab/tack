@@ -644,11 +644,58 @@ impl FakeDocket {
     /// Marks every escalation still pending as `expired` in docket's record, as its sweep does
     /// before it moves the task.
     pub fn expire_escalations(&self) {
-        for escalation in &mut self.shared.lock().unwrap().escalations {
-            if escalation.view["state"] == json!("pending") {
-                escalation.view["state"] = json!("expired");
-            }
+        let mut state = self.shared.lock().unwrap();
+        for at in pending_of(&state, None) {
+            state.escalations[at].view["state"] = json!("expired");
+            restamp(&mut state, at);
         }
+    }
+
+    /// A person answers the task's pending escalation at docket's own CLI: it is `resolved` by
+    /// `cli` and takes a new `seq`, and the task is left as it was, held by whatever it waits on
+    /// next (`ask_again`).
+    pub fn resolve_from_cli(&self, task: &str, option_id: &str) {
+        let mut state = self.shared.lock().unwrap();
+        for at in pending_of(&state, Some(task)) {
+            let settled = &mut state.escalations[at].view;
+            settled["state"] = json!("resolved");
+            settled["resolution"] = json!({
+                "optionId": option_id,
+                "content": null,
+                "by": "operator",
+                "channel": "cli",
+                "at": chrono::Utc::now().to_rfc3339(),
+                "appliedAt": null,
+            });
+            settled["affordances"]["options"] = json!([]);
+            restamp(&mut state, at);
+        }
+    }
+
+    /// The task, still running, asks a second question: a new approval escalation `prompt` with
+    /// an id of its own, at the next `seq`.
+    pub fn ask_again(&self, task: &str, prompt: &str) {
+        let mut state = self.shared.lock().unwrap();
+        let first = state
+            .escalations
+            .iter()
+            .find(|found| found.task == task)
+            .expect("the task opened a first escalation");
+        let (pod, mut view) = (first.pod.clone(), first.view.clone());
+        let id = format!("{}-again", escalation_id(task));
+        view["id"] = json!(id);
+        view["prompt"] = json!(prompt);
+        view["state"] = json!("pending");
+        view["seq"] = json!(next_seq(&state));
+        view.as_object_mut().expect("a view").remove("resolution");
+        view["affordances"] = fixture("escalations-pending")["escalations"][0]["affordances"].clone();
+        view["affordances"]["resolveUrl"] = json!(format!("/escalations/{id}"));
+        state.escalations.push(Escalation {
+            task: task.to_owned(),
+            pod,
+            view,
+            call: None,
+        });
     }
 
     /// Makes `GET /escalations/<id>` answer without a `call`, as a docket that does not show it.
@@ -673,11 +720,10 @@ impl FakeDocket {
                 "resolved"
             };
             let id = task.id.clone();
-            for escalation in &mut state.escalations {
-                if escalation.task == id && escalation.view["state"] == json!("pending") {
-                    escalation.view["state"] = json!(closing);
-                    escalation.view["affordances"]["options"] = json!([]);
-                }
+            for at in pending_of(state, Some(&id)) {
+                state.escalations[at].view["state"] = json!(closing);
+                state.escalations[at].view["affordances"]["options"] = json!([]);
+                restamp(state, at);
             }
             finish(state, index);
         }
@@ -940,6 +986,36 @@ fn features(state: &World) -> Value {
 
 /// Gives every task that changed since it was last stamped the next value of the pod's counter,
 /// as docket does inside the write that changed it.
+/// The `seq` the next escalation record takes: one past the highest handed out.
+fn next_seq(state: &World) -> u64 {
+    state
+        .escalations
+        .iter()
+        .filter_map(|found| found.view["seq"].as_u64())
+        .max()
+        .unwrap_or(0)
+        + 1
+}
+
+/// docket's `settledCursor`: an escalation that leaves `pending` takes a new `seq`, so a poller
+/// that saw it pending is handed its final state. A docket before it keeps the `seq` it opened at.
+fn restamp(state: &mut World, position: usize) {
+    if !state.without_settled_cursor {
+        let seq = next_seq(state);
+        state.escalations[position].view["seq"] = json!(seq);
+    }
+}
+
+/// The positions of the escalations of `task` (any, with `None`) that are still pending.
+fn pending_of(state: &World, task: Option<&str>) -> Vec<usize> {
+    (0..state.escalations.len())
+        .filter(|&at| {
+            let found = &state.escalations[at];
+            found.view["state"] == json!("pending") && task.is_none_or(|task| found.task == task)
+        })
+        .collect()
+}
+
 fn stamp(state: &mut World) {
     for index in 0..state.tasks.len() {
         let task = &state.tasks[index];
@@ -1579,7 +1655,7 @@ fn escalation_id(task: &str) -> String {
 
 /// Opens the escalation the task's gate holds, at the next `seq`.
 fn open_escalation(state: &mut World, index: usize) {
-    let seq = state.escalations.len() as u64 + 1;
+    let seq = next_seq(state);
     let task = &state.tasks[index];
     let id = escalation_id(&task.id);
     let mut call = None;
@@ -1970,11 +2046,10 @@ fn cancel_task(state: &mut World, pod: &str, id: &str) -> Response {
     state.tasks[index].status = "cancelled".to_owned();
     state.tasks[index].gate_open = false;
     // docket closes the escalation with no resolution.
-    for escalation in &mut state.escalations {
-        if escalation.task == id && escalation.view["state"] == json!("pending") {
-            escalation.view["state"] = json!("resolved");
-            escalation.view["affordances"]["options"] = json!([]);
-        }
+    for at in pending_of(state, Some(id)) {
+        state.escalations[at].view["state"] = json!("resolved");
+        state.escalations[at].view["affordances"]["options"] = json!([]);
+        restamp(state, at);
     }
     let mut answer = fixture("cancel-accepted");
     answer["task"] = json!(id);
@@ -2068,7 +2143,7 @@ fn escalations(state: &World, query: &str) -> Response {
         Some(Ok(since)) => since,
         Some(Err(_)) => return error(400, "since must be a non-negative integer"),
     };
-    let listed: Vec<Value> = state
+    let mut listed: Vec<Value> = state
         .escalations
         .iter()
         .filter(|found| found.view["seq"].as_u64().unwrap_or(0) > since)
@@ -2076,6 +2151,7 @@ fn escalations(state: &World, query: &str) -> Response {
         .filter(|found| param("pod").is_none_or(|pod| found.pod == pod))
         .map(|found| found.view.clone())
         .collect();
+    listed.sort_by_key(|view| view["seq"].as_u64().unwrap_or(0));
     let next = listed
         .last()
         .and_then(|view| view["seq"].as_u64())
@@ -2207,5 +2283,6 @@ fn resolve(state: &mut World, id: &str, body: &Value) -> Response {
         "appliedAt": null,
     });
     settled["affordances"]["options"] = json!([]);
-    reply(200, settled.clone())
+    restamp(state, position);
+    reply(200, state.escalations[position].view.clone())
 }

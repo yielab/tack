@@ -721,6 +721,7 @@ async fn openapi_enumerates_mounted_operator_and_runner_v1_routes() {
         "/api/runner/v1/attempts/{attempt_id}/events",
         "/api/runner/v1/attempts/{attempt_id}/decisions",
         "/api/runner/v1/attempts/{attempt_id}/decisions/poll",
+        "/api/runner/v1/attempts/{attempt_id}/decisions/answered-elsewhere",
         "/api/runner/v1/attempts/{attempt_id}/artifacts",
         "/api/runner/v1/attempts/{attempt_id}/completion",
         "/api/runner/v1/attempts/{attempt_id}/cancellation-observation",

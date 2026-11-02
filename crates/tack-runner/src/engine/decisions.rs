@@ -4,11 +4,13 @@
 use tokio::sync::mpsc;
 
 use super::{
-    DecisionState, HarnessAdapter, POLL_FROM_THE_START, PendingDecision, Question, RunnerEngine,
+    AnsweredElsewhere, DecisionState, HarnessAdapter, POLL_FROM_THE_START, PendingDecision,
+    Question, RunnerEngine,
 };
 use crate::client::{
-    DecisionAnswer, DecisionCreateReport, DecisionPollReport, PullProtocol, Recommendation,
-    RunnerSession, Timestamp, journal::AttemptJournal, workspace::WorktreeProvisioner,
+    DecisionAnswer, DecisionAnsweredElsewhereReport, DecisionCreateReport, DecisionPollReport,
+    PullProtocol, Recommendation, RunnerSession, Timestamp, journal::AttemptJournal,
+    workspace::WorktreeProvisioner,
 };
 
 /// Posts `answer` back to the harness, if anything is still listening. Best
@@ -222,6 +224,43 @@ where
         if chrono::DateTime::<chrono::Utc>::from(self.clock.now()) >= state.expires_at {
             let opened = state.pending.take().expect("just matched Some above");
             send_answer(state.decisions, deny_answer(&opened.question)).await;
+        }
+    }
+
+    /// The harness says the pending question was answered in its own tool. The board's decision
+    /// for it is closed as answered elsewhere and the question stops being waited for, so the
+    /// next one can be asked. A report about any other question is ignored. When the board
+    /// cannot be told (a transport failure, a board without the operation) the question is still
+    /// dropped: the run goes on, and the board's decision is closed when the attempt ends.
+    pub(super) async fn close_answered_elsewhere(
+        &self,
+        session: &RunnerSession,
+        record: &AttemptJournal,
+        state: &mut DecisionState<'_>,
+        told: AnsweredElsewhere,
+    ) {
+        let Some(open) = state
+            .pending
+            .take_if(|open| open.question.vendor_id == told.vendor_id)
+        else {
+            return;
+        };
+        let Some(data_protocol) = self.data_protocol.as_ref() else {
+            return;
+        };
+        let report = DecisionAnsweredElsewhereReport {
+            attempt_id: record.attempt_id.clone(),
+            fencing_token: record.fencing_token,
+            decision_id: open.decision_id,
+            source: told.source,
+        };
+        if let Err(error) = data_protocol.answered_elsewhere(session, report).await {
+            tracing::warn!(
+                %error,
+                attempt_id = record.attempt_id.as_str(),
+                "the board could not be told a question was answered elsewhere; \
+                 its decision stays open until the attempt ends"
+            );
         }
     }
 }

@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (116 paths, 160 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (117 paths, 161 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -2076,6 +2076,23 @@ Create a decision for later out-of-band operator resolution
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Decision recorded | — |
+| 400 | invalid_request | `RunnerV1ErrorEnvelope` |
+| 401 | unauthorized | `RunnerV1ErrorEnvelope` |
+| 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
+| 409 | conflict / idempotency_conflict / invalid_transition / stale_lease | `RunnerV1ErrorEnvelope` |
+
+#### `POST /api/runner/v1/attempts/{attempt_id}/decisions/answered-elsewhere`
+
+Tell the board the agent's own tool took the answer to a decision it still holds open; the decision is closed and the attempt can ask its next question (additive v1 operation; exact path fixed by protocol.json)
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `attempt_id` | path | `string` | yes | Attempt ID, issued at claim time (opaque) |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Decision closed as answered_elsewhere, or reported as another road had already settled it | — |
 | 400 | invalid_request | `RunnerV1ErrorEnvelope` |
 | 401 | unauthorized | `RunnerV1ErrorEnvelope` |
 | 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |

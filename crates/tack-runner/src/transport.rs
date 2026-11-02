@@ -722,6 +722,17 @@ pub trait AttemptDataProtocol: Send + Sync {
         report: DecisionPollReport,
     ) -> Result<DecisionPollResponse, ProtocolClientError>;
 
+    /// Closes a decision the agent's own tool answered, so the run can ask its next question.
+    /// Additive: a transport without the operation rejects it, and the run goes on as it did.
+    /// Answers the state the board holds the decision in.
+    async fn answered_elsewhere(
+        &self,
+        _session: &RunnerSession,
+        _report: DecisionAnsweredElsewhereReport,
+    ) -> Result<String, ProtocolClientError> {
+        Err(ProtocolClientError::Rejected)
+    }
+
     async fn submit_artifact_manifest(
         &self,
         session: &RunnerSession,
@@ -769,6 +780,16 @@ pub struct DecisionPollReport {
     /// Required, as in `decision.poll.request.json`: the server refuses a
     /// poll with no cursor. "From the beginning" is an early timestamp.
     pub after: Timestamp,
+}
+
+/// The agent's own tool took the answer to a question the board still holds open.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecisionAnsweredElsewhereReport {
+    pub attempt_id: AttemptId,
+    pub fencing_token: FencingToken,
+    pub decision_id: String,
+    /// The tool that took it (`docket`).
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -910,6 +931,38 @@ impl AttemptDataProtocol for HttpPullProtocol {
                 .collect(),
             next_after: Some(timestamp(polled.next_after)),
         })
+    }
+
+    async fn answered_elsewhere(
+        &self,
+        session: &RunnerSession,
+        report: DecisionAnsweredElsewhereReport,
+    ) -> Result<String, ProtocolClientError> {
+        let body = wire::DecisionAnsweredElsewhereRequest {
+            protocol_version: ProtocolVersion::v1(),
+            runner_id: session.runner_id.clone(),
+            attempt_id: report.attempt_id.clone(),
+            fencing_token: report.fencing_token,
+            decision_id: report.decision_id.clone(),
+            source: report.source.clone(),
+        };
+        let path = format!(
+            "/attempts/{}/decisions/answered-elsewhere",
+            report.attempt_id
+        );
+        let value = self
+            .send_json(
+                Method::POST,
+                &path,
+                Some(session.credential()),
+                &body,
+                Idempotency::Replayable,
+                None,
+            )
+            .await?;
+        require_v1(&value)?;
+        let settled: wire::DecisionAnsweredElsewhereResponse = typed(&value)?;
+        Ok(settled.state)
     }
 
     async fn submit_artifact_manifest(

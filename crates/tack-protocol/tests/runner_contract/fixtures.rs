@@ -18,6 +18,14 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("claim.response.json", 0x942c_27a6_690a_a0da),
     ("completion.request.json", 0x7b61_d544_ffa0_3a08),
     ("completion.response.json", 0x99b7_7e8d_6afc_1354),
+    (
+        "decision.answered-elsewhere.request.json",
+        0x2f2c_3c3c_1f5b_b33d,
+    ),
+    (
+        "decision.answered-elsewhere.response.json",
+        0x214e_f2f7_e337_8bc4,
+    ),
     ("decision.create.request.json", 0xce7f_2568_b0b1_1bdb),
     ("decision.create.response.json", 0xb160_e2d3_f16e_3318),
     ("decision.poll.request.json", 0x7b88_373b_f26d_5a4e),
@@ -49,7 +57,7 @@ const FROZEN_FIXTURE_FNV1A64: &[(&str, u64)] = &[
     ("heartbeat.response.json", 0x63a2_31d5_7dd3_20e3),
     ("lifecycle-transitions.json", 0x6545_6c76_7dc0_93a4),
     ("limits.json", 0xed78_5be0_4be8_ed98),
-    ("protocol.json", 0x8e43_773b_7a04_cf1b),
+    ("protocol.json", 0x53f0_efba_19e6_b608),
     ("recovery-observation.request.json", 0xa853_654b_7c9c_3f01),
     ("recovery-observation.response.json", 0x01d2_022b_e95f_3987),
     ("refresh.request.json", 0xc418_5ef4_fc72_fcc8),
@@ -112,7 +120,7 @@ pub(crate) fn fnv1a64(bytes: &[u8]) -> u64 {
 #[test]
 fn every_json_fixture_parses_and_value_round_trips_without_loss() {
     let paths = fixture_paths();
-    assert_eq!(paths.len(), 50, "the frozen fixture manifest changed");
+    assert_eq!(paths.len(), 52, "the frozen fixture manifest changed");
 
     for path in paths {
         let name = fixture_name(&path);
