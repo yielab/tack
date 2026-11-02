@@ -11539,13 +11539,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say */
+            /** @description What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). An agent credential gets the tasks of the projects it may read, and the work the board did not start only if it may read every project. `supported` is `false`, with its reason, for an agent that cannot say */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["TeamActivityEntry"];
+                };
+            };
+            /** @description An agent credential with the scope `read` on no project */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description not_found (no active runner reports a team of that name) */
@@ -11821,7 +11830,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The message is in the thread and its turn has started */
+            /** @description The message is in the thread; when a person wrote it, its turn has started (an agent's message starts none) */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11857,7 +11866,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description The thread is closed or at a cap, or its last turn has not answered yet */
+            /** @description The thread is closed or idle, or a person's message is past the turn cap or comes before the last turn has answered */
             409: {
                 headers: {
                     [name: string]: unknown;
