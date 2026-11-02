@@ -71,18 +71,16 @@ describe('CredentialsSettings', () => {
     expect(row.textContent).toContain('Never used');
   });
 
-  it('shows the controls that cannot work disabled with their reason', async () => {
+  it('shows the issue button disabled with its reason until the form is filled', async () => {
     const { container } = mount();
     await flush();
     // Issuing needs a name and a project first.
     const issue = button(container, 'Issue credential');
     expect(issue.disabled).toBe(true);
     expect(container.textContent).toContain('Give the credential a name');
-    // Two capabilities nothing in Tack serves yet.
-    const propose = container.querySelector<HTMLInputElement>('input[aria-describedby="cap-propose-reason"]')!;
-    expect(propose.disabled).toBe(true);
-    expect(container.querySelector('#cap-propose-reason')!.textContent).toContain('yet');
-    expect(container.querySelector<HTMLInputElement>('input[aria-describedby="cap-converse-reason"]')!.disabled).toBe(true);
+    // Every capability can be picked: change sets and threads exist.
+    expect(container.querySelector('input[aria-describedby="cap-propose-reason"]')).toBeNull();
+    expect(container.querySelector('input[aria-describedby="cap-converse-reason"]')).toBeNull();
   });
 
   it('issues a credential and shows its secret once, with a copy button', async () => {
