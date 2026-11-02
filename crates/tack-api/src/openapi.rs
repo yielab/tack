@@ -542,6 +542,19 @@ impl OpenApi for RunnerProtocolApiDoc {
                 ),
             )
             .path(
+                "/attempts/{attempt_id}/decisions/answered-elsewhere",
+                PathItem::new(
+                    HttpMethod::Post,
+                    op(
+                        "Tell the board the agent's own tool took the answer to a decision it \
+                         still holds open; the decision is closed and the attempt can ask its \
+                         next question (additive v1 operation; exact path fixed by protocol.json)",
+                        vec![attempt_id()],
+                        "Decision closed as answered_elsewhere, or reported as another road had already settled it",
+                    ),
+                ),
+            )
+            .path(
                 "/attempts/{attempt_id}/recovery-observation",
                 PathItem::new(
                     HttpMethod::Post,

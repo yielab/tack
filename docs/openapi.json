@@ -6504,6 +6504,95 @@
         }
       }
     },
+    "/api/runner/v1/attempts/{attempt_id}/decisions/answered-elsewhere": {
+      "post": {
+        "tags": [
+          "runner-protocol-v1"
+        ],
+        "summary": "Tell the board the agent's own tool took the answer to a decision it still holds open; the decision is closed and the attempt can ask its next question (additive v1 operation; exact path fixed by protocol.json)",
+        "description": "Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.",
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "description": "Attempt ID, issued at claim time (opaque)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "protocol_version: 1, plus this exchange's fixture-frozen fields",
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Decision closed as answered_elsewhere, or reported as another road had already settled it",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden / runner_revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict / idempotency_conflict / invalid_transition / stale_lease",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/runner/v1/attempts/{attempt_id}/decisions/poll": {
       "post": {
         "tags": [
@@ -11865,7 +11954,7 @@
       },
       "DecisionResolvedBy": {
         "type": "object",
-        "description": "The `resolved_by` of a settled decision: `{\"kind\": \"operator\", \"subject_id\": <principal>}`\nfor an operator's answer, `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a decision that\npassed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`\nfixes this shape, so it stays an open two-field object.",
+        "description": "The `resolved_by` of a settled decision: `{\"kind\": \"operator\", \"subject_id\": <principal>}`\nfor an operator's answer, `{\"kind\": \"system\", \"subject_id\": \"expiry\"}` for a decision that\npassed its `expires_at`, `{\"kind\": \"harness\", \"subject_id\": <tool>}` for one the agent's own\ntool took the answer to (`docket`). Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`\nfixes this shape, so it stays an open two-field object.",
         "required": [
           "kind",
           "subject_id"

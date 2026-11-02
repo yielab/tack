@@ -399,6 +399,20 @@ pub async fn resolve_decision(
                 json!({"decision_id": decision_id}),
             ))
         }
+        ResolveOutcome::AnsweredElsewhere => {
+            tracing::info!(
+                attempt_id = %attempt_id,
+                decision_id = %decision_id,
+                outcome = "answered_elsewhere",
+                "decision resolve rejected: the agent's own tool already took the answer"
+            );
+            Err(error(
+                StatusCode::CONFLICT,
+                StableErrorCode::DecisionExpired,
+                "The decision was already answered in the agent's own tool",
+                json!({"decision_id": decision_id}),
+            ))
+        }
         ResolveOutcome::IdempotencyConflict => {
             tracing::info!(
                 attempt_id = %attempt_id,

@@ -22,6 +22,8 @@ pub enum ResolveOutcome {
     /// Terminal and fail-closed: the decision is expired, already or by this very call, and no
     /// answer can resolve it.
     Expired,
+    /// Terminal: the agent's own tool took the answer, so no answer given here can stand.
+    AnsweredElsewhere,
     /// Already resolved with a different answer than the one submitted.
     IdempotencyConflict,
     /// A fresh resolution, or the byte-identical replay of one (`replayed` tells them apart).
@@ -41,7 +43,7 @@ pub enum ResolveOutcome {
 /// attempt and its request from `waiting_decision` to `running` in that same transaction.
 ///
 /// The rules, by the decision's stored state:
-/// - `expired`: refused, whatever the answer.
+/// - `expired` and `answered_elsewhere`: refused, whatever the answer.
 /// - `resolved`: a replay of the same answer (compared regardless of key order) returns the
 ///   stored resolution; a different answer is a conflict.
 /// - `pending` and overdue (`expires_at <= now`): expired on the spot and refused, even for an
@@ -61,6 +63,9 @@ pub async fn resolve_decision(
         .settle_execution_decision(attempt_id, decision_id, now, |decision| {
             match decision.state.as_str() {
                 "expired" => (DecisionSettlement::Keep, ResolveOutcome::Expired),
+                "answered_elsewhere" => {
+                    (DecisionSettlement::Keep, ResolveOutcome::AnsweredElsewhere)
+                }
                 "resolved" => {
                     let stored_answer = decision
                         .answer
