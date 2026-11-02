@@ -6,7 +6,11 @@
     "taskCursor",
     "podMemory",
     "readScope",
-    "conversation"
+    "conversation",
+    "settledCursor",
+    "failureKinds",
+    "podPause",
+    "hopTimes"
   ],
   "dispatch": {
     "on": true,

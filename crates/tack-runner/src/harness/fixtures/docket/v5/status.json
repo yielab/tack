@@ -5,7 +5,11 @@
     "taskCursor",
     "podMemory",
     "readScope",
-    "conversation"
+    "conversation",
+    "settledCursor",
+    "failureKinds",
+    "podPause",
+    "hopTimes"
   ],
   "timestamp": "2026-01-01T00:00:00Z",
   "channels": [],
