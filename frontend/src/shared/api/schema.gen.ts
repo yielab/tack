@@ -6953,7 +6953,7 @@ export interface components {
         };
         /** @description Why one task is not started. */
         WaitingReason: {
-            /** @description `open_request`, `blocked`, `no_profile`, `no_machine`, `wip`, `budget` or `max_open`. */
+            /** @description `open_request`, `blocked`, `no_profile`, `no_machine`, `budget` or `max_open`. */
             code: string;
             /** @description The reason in a sentence, with the way out where there is one. */
             text: string;
