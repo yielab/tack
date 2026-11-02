@@ -1,668 +1,158 @@
 # Contributing to Tack
 
-Thanks for your interest in Tack. This guide covers how to report bugs, propose
-features, submit pull requests, and set up your dev environment. All
-participation is governed by our [Code of Conduct](CODE_OF_CONDUCT.md); by
-contributing you agree to uphold it. Project decisions follow the
-[governance model](GOVERNANCE.md) (single-maintainer / BDFL).
+Thanks for your interest in Tack. This guide gets you from a clone to a pull request: setting up,
+the checks a change must pass, and how changes are reviewed. All participation is governed by the
+[Code of Conduct](CODE_OF_CONDUCT.md); project decisions follow the
+[governance model](GOVERNANCE.md) (one maintainer).
 
-**Jump to:** [Reporting bugs & requesting features](#reporting-bugs--requesting-features)
-· [Pull request process](#pull-request-process) · [Branching model](#branching-model)
+How the code is organised, and the recipes for new code, are in the book's
+[Developer Guide](https://yielab.github.io/tack/developer/index.html), not here.
 
-## Quick Start
+## Report a bug or ask for a feature
+
+Issues are tracked on [GitHub Issues](https://github.com/yielab/tack/issues).
+
+- **Bugs:** open a [bug report](https://github.com/yielab/tack/issues/new?template=bug_report.yml)
+  with the Tack version or commit, your OS, the steps to reproduce, what you expected and what
+  happened. A minimal reproduction is the most helpful thing you can give.
+- **Features and ideas:** open a
+  [feature request](https://github.com/yielab/tack/issues/new?template=feature_request.yml), or
+  start a thread in [Discussions](https://github.com/yielab/tack/discussions) if it is open-ended.
+  Describe the problem, not only the solution; it helps keep Tack small and focused.
+- **Security vulnerabilities:** do not open a public issue. Follow [SECURITY.md](SECURITY.md).
+
+For anything beyond a trivial fix, open (or find) an issue before writing code, so the approach is
+agreed first.
+
+## Set up
+
+You need [Rust](https://rustup.rs/) (1.94 or later), [Node.js](https://nodejs.org/) 22 or later,
+git, and `cargo-nextest` (`cargo install cargo-nextest --locked`). No database, Docker or other
+service is needed: SQLite is embedded.
 
 ```bash
 git clone https://github.com/yielab/tack.git
 cd tack
-
-# Hooks and the merge driver for generated files (per-clone git config,
-# so it cannot be committed — this is the one-time setup)
-./scripts/setup-git.sh
-
-# Verify the build and tests pass (nextest is the test runner: cargo install cargo-nextest --locked)
-cargo build
-cargo nextest run --workspace
+./scripts/setup-git.sh       # once per clone: the pre-push hook and the merge driver for generated files
+make dev                     # API on :3210 plus the Vite dev server with hot reload
 ```
 
-`scripts/setup-git.sh` wires up two things:
+`make help` lists the other targets. The ones you will use most:
 
-- **`.githooks/pre-push`** runs exactly three things: `cargo fmt --all --check` for the root workspace *and*, separately, for `crates/tack-desktop` (its own workspace), `cargo clippy --workspace --all-targets -- -D warnings`, and a freshness check on `Cargo.lock` and (when `frontend/node_modules` exists) `schema.gen.ts` — not the test suite. This mirrors most of what CI's `rust` job checks before the test run, so failures are caught locally before they reach GitHub. See "Pull Request Process" below for the exact command.
-- **The `tack-generated` merge driver** for `Cargo.lock`, `frontend/package-lock.json`, `docs/openapi.json` and `frontend/src/shared/api/schema.gen.ts`. Each is a pure function of sources tracked elsewhere, so hand-merging one is always either busywork or a mistake. The driver resolves them without a conflict and `.githooks/post-merge` regenerates them from the merged sources — staged, never committed for you. `scripts/regen-generated.sh` is the same regeneration, runnable by hand.
-
-`rust-toolchain.toml` pins the exact compiler both you and CI use, and rustup installs it with `rustfmt` and `clippy` the first time you run `cargo` here — you do not need to select a toolchain yourself, and you should not override it. The pin binds only rustup's own `cargo`: a distro or Homebrew `cargo` earlier on `PATH` ignores it, so the pre-push hook puts rustup's proxies first and refuses to run with any other version. Bumping that pin is a deliberate one-line change that Dependabot proposes monthly; it can surface new clippy lints, which is precisely why it is not left to whatever day upstream ships a release.
-
-Skipping the setup leaves you with git's ordinary text merge on those files. That is how the repository behaved before, so a clone without it is degraded, not broken.
-
----
-
-## Requirements
-
-| Tool | Version | Install |
-| --- | --- | --- |
-| Rust | 1.94+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| Node.js | 22+ | [nodejs.org](https://nodejs.org/) |
-| Git | 2.x | system package manager |
-| curl | any | pre-installed on most systems |
-| jq | any | `apt install jq` / `brew install jq` (optional, for pretty JSON) |
-
-No external database, Docker, or services needed. SQLite is embedded.
-
----
-
-## Project Structure
-
-```text
-Tack/
-├── Cargo.toml                  # Workspace root (shared dependencies)
-├── Cargo.lock                  # Pinned dependency versions
-├── Makefile                    # Common dev commands
-├── .githooks/
-│   ├── pre-push                # fmt + clippy + generated-file staleness gate
-│   └── post-merge              # regenerates what the tack-generated merge driver resolved
-├── crates/
-│   ├── tack-desktop/         # Tauri desktop shell — its OWN workspace, not a member of
-│   │                         # the one below (Tauri needs GTK/WebKit; the server must not).
-│   │                         # Build with `make desktop`; `cargo --workspace` never sees it.
-│   ├── tack-protocol/        # The runner-v1 contract the server and the runner share:
-│   │   └── src/              # execution/ (types, lifecycle, capabilities), mrp.rs
-│   │                         # (merge-readiness pack, mrp-v1), prepare.rs,
-│   │                         # usage_provenance.rs, clock.rs. Depends on nothing here.
-│   ├── tack-core/            # Pure domain logic (no I/O, no DB)
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── models.rs       # All data structures, DTOs, and custom-field validation
-│   │       ├── workflow.rs     # Workflow engine (transitions, WIP limits)
-│   │       ├── vocabulary.rs   # Term customization system
-│   │       ├── dependency.rs   # Dependency graph (DAG with cycle detection)
-│   │       ├── brief.rs        # Item brief: types, validation, Markdown (brief-v1)
-│   │       └── error.rs        # Domain error types
-│   ├── tack-db/              # Database layer; the only crate that names sqlx
-│   │   ├── src/
-│   │   │   ├── lib.rs          # Pool initialization, WAL mode
-│   │   │   ├── error.rs        # StoreError (NotFound, Conflict, Sql)
-│   │   │   ├── migrations.rs   # Schema migrations (auto-run on startup; the live count is
-│   │   │   │                  #   GET /api/health's migrations_applied, and
-│   │   │   │                  #   scripts/arch-facts.sh prints it)
-│   │   │   ├── repo.rs         # Repository struct
-│   │   │   ├── repo/           # Commands: one file or directory per aggregate
-│   │   │   │   ├── projects.rs, items.rs, sprints.rs, roles.rs, comments.rs
-│   │   │   │   ├── dependencies.rs, attachments.rs, boards.rs, custom_fields.rs
-│   │   │   │   ├── briefs.rs, github_links.rs, pull_requests.rs, templates.rs
-│   │   │   │   ├── metrics.rs      # Factory metrics aggregates
-│   │   │   │   └── execution/      # enqueue, claim, events, decisions, artifacts,
-│   │   │   │                       #   completion, recovery, review, admin
-│   │   │   └── queries/        # Read models: one file per table, one fn per question
-│   │   └── tests/
-│   │       ├── repository/         # CRUD, retention, concurrency
-│   │       ├── migrations/         # schema/upgrade tests
-│   │       └── perf_test.rs        # 50k-item perf test (#[ignore])
-│   ├── tack-orch/            # Pure runs policy: no database, no clock, no I/O
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── scheduler/                  # Runner selection over plain values
-│   │       └── model_policy/               # Deterministic model-selection precedence
-│   ├── tack-app/             # Application layer: names reqwest, never axum or sqlx
-│   │   ├── src/
-│   │   │   ├── runs/           # One use case per verb: claim, heartbeat, start_run, …
-│   │   │   ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
-│   │   │   │   retention.rs, observability.rs   # Ticks: tick() is one pass, run() the loop
-│   │   │   ├── autonomy.rs, merge.rs   # The merge ceiling and the merge itself
-│   │   │   ├── ports.rs        # Verifier, Artifacts, DomainEvents: what tack-app needs back from tack-api
-│   │   │   ├── events.rs       # DomainEvent and Fact; the in-process EventBus; RecordedEvents for tests
-│   │   │   ├── scheduler_wiring.rs, model_policy_wiring.rs   # Live callers of tack-orch
-│   │   │   ├── local_runner/   # The embedded runner as the rest of Tack sees it
-│   │   │   └── error.rs        # AppError
-│   │   └── tests/              # One file per use case; scheduling/ and ingestion/
-│   ├── tack-api/             # Axum HTTP server + WebSocket
-│   │   ├── src/
-│   │   │   ├── main.rs         # Server entry point + staged restore
-│   │   │   ├── lib.rs
-│   │   │   ├── router.rs       # All routes, AppState, middleware
-│   │   │   ├── config.rs       # TOML/env config
-│   │   │   ├── error.rs        # ApiError → HTTP status mapping
-│   │   │   ├── ports.rs        # tack_app::ports over AppState
-│   │   │   ├── debug.rs        # /api/health, /api/debug/*
-│   │   │   ├── middleware.rs   # Bearer token auth
-│   │   │   ├── webhook.rs      # Outbound webhook delivery
-│   │   │   └── handlers/
-│   │   │       ├── attachments.rs
-│   │   │       ├── backup.rs           # GET /api/backup, POST /api/restore
-│   │   │       ├── boards_multi.rs     # Multiple boards per project
-│   │   │       ├── briefs.rs           # /api/items/{id}/brief
-│   │   │       ├── comments.rs
-│   │   │       ├── custom_fields.rs
-│   │   │       ├── dependencies.rs
-│   │   │       ├── export.rs           # JSON/YAML/CSV export + JSON/YAML import
-│   │   │       ├── import_github.rs    # GitHub Issues import
-│   │   │       ├── import_linear.rs    # Linear import
-│   │   │       ├── items.rs
-│   │   │       ├── metrics.rs          # /api/projects/{id}/metrics/factory
-│   │   │       ├── mrp.rs              # an attempt's merge-readiness pack and its review
-│   │   │       ├── projects.rs
-│   │   │       ├── roles.rs
-│   │   │       ├── spa.rs              # SPA fallback (--features embed-spa)
-│   │   │       ├── sprints.rs
-│   │   │       ├── templates.rs
-│   │   │       ├── websocket.rs
-│   │   │       ├── decisions.rs, executions.rs, runner_admin.rs, settings.rs,
-│   │   │       │   attempt_lists.rs, local_runner.rs   # operator execution/fleet surface
-│   │   │       └── runner_protocol.rs + runner_protocol/  # /api/runner/v1, its own
-│   │   │                              # per-handler hashed-credential auth (runner_auth.rs)
-│   │   └── tests/
-│   │       ├── common/mod.rs       # test_app(), test_app_with_config()
-│   │       ├── handlers/           # CRUD, routes, executions (one file per area)
-│   │       ├── runner_protocol/    # lifecycle, decisions, artifact events
-│   │       ├── runner_vertical_slice/  # the production-repository crash matrix
-│   │       ├── security/           # auth surfaces, CORS, write races
-│   │       ├── wiring/             # proofs that a seam is load-bearing
-│   │       ├── openapi_contract.rs # spec-drift gate — regenerates and diffs docs/openapi.json
-│   ├── tack-runner/          # Pull-based execution runner — its OWN binary, separate
-│   │   │                     # from `tack`. Owns local credentials, workspace, journal,
-│   │   │                     # and the harness subprocess `tack-api` must never touch.
-│   │   └── src/
-│   │       ├── main.rs, lib.rs
-│   │       ├── engine.rs        # Per-attempt lifecycle driving one HarnessAdapter
-│   │       ├── client.rs        # Polls /api/runner/v1: enroll, claim, heartbeat, …
-│   │       ├── journal.rs       # Owner-only TOML journal written before spawn
-│   │       ├── workspace.rs     # Isolated per-attempt workspace/worktree
-│   │       ├── git.rs           # The git provisioner, evidence capture, branch push
-│   │       ├── evidence.rs      # What an attempt changed, kept before the workspace is deleted
-│   │       ├── verify.rs        # The operator's verifier over that evidence ([verify])
-│   │       ├── secrets.rs       # Local vendor credential storage
-│   │       └── harness/         # local_process.rs (the shared lifecycle), process.rs, redact.rs,
-│   │                            # artifact.rs; one descriptor + grammar per harness: codex.rs, claude_code.rs,
-│   │                            # docket.rs, opencode.rs
-│   ├── tack-cli/             # clap CLI (talks to API over HTTP, never opens the DB); its
-│   │   └── src/              # serve.rs is the composition root of `tack serve`
-│   │       ├── main.rs         # `Commands` enum + dispatch
-│   │       ├── serve.rs        # Builds the Repository, spawns the ticks
-│   │       ├── client.rs       # HTTP client wrapper (reqwest)
-│   │       ├── config.rs       # ~/.tackrc reader
-│   │       ├── mcp.rs          # `tack mcp` — MCP server over stdio
-│   │       ├── mcp/            # one `Tool` table entry per MCP tool, by domain (see docs/MCP.md)
-│   │       ├── service.rs      # `tack service` — systemd/launchd background service
-│   │       ├── execution.rs    # `tack execution`/`fleet`/`runner` client commands
-│   │       ├── doctor.rs       # `tack doctor` diagnostics
-│   │       └── vocab.rs        # Vocabulary-aware output
-│   └── tack-test-support/    # setup_test_db(), seed (plant rows), ControllableClock, fixtures
-├── frontend/
-│   ├── src/
-│   │   ├── app/                # Root App/Layout components and routes.tsx
-│   │   ├── features/           # One directory per feature: board, list, sprints, agents,
-│   │   │                       # item-detail, dashboard (incl. Factory metrics), settings, …
-│   │   ├── shared/              # Cross-feature: api/ (generated client + schema.gen.ts),
-│   │   │                       # realtime/, agents/, execution/, runWithAgent/ (the run dialog,
-│   │   │                       # attempt list, decision inbox, merge-readiness panel), ui/, state/, vocab/
-│   │   └── test/               # Vitest setup
-│   ├── e2e/                    # Playwright specs
-│   └── dist/                   # Built SPA (gitignored; embedded via --features embed-spa)
-└── docs/                       # Documentation
-```
-
-## Dependency Flow
-
-The allowed edges are the table `scripts/check-crate-graph.sh --print` ends with, and the
-script fails on any normal dependency it does not list (`scripts/arch-facts.sh` prints that
-table together with the current crate, route, migration and test counts):
-
-```text
-tack-protocol     -> (none)
-tack-core         -> tack-protocol
-tack-orch         -> tack-protocol tack-core
-tack-db           -> tack-protocol tack-core
-tack-app          -> tack-protocol tack-core tack-orch tack-db
-tack-api          -> tack-protocol tack-core tack-db tack-app
-tack-runner       -> tack-protocol tack-core
-tack-cli          -> tack-api tack-app tack-runner tack-db tack-protocol tack-core
-tack-test-support -> tack-protocol tack-core tack-db
-```
-
-dev-dependencies are exempt: every crate may test with `tack-test-support`.
-
-**Rules:**
-- `tack-protocol`, `tack-core` and `tack-orch` do no I/O. Keep business logic testable without a database.
-- `sqlx` and `Repository::pool()` live in `tack-db` and `tack-test-support` only; everything else gets `StoreError`. `axum` lives in `tack-api` (and the runner's own server) only. The script's second check and the bans in `deny.toml` enforce both.
-- A rule of a run is a `tack-app` use case (`pub async fn <verb>(repo, clock, ..) -> Result<T, AppError>`); a handler extracts, calls, maps the error and responds. A background loop is a module with `tick()` (one pass, called by tests) and `spawn()` (adds the tick to the `background::Loops` that `tack-cli/src/serve.rs` owns and stops on shutdown); a use case a handler starts after answering goes on `AppState::tasks`, never a bare `tokio::spawn`.
-- What `tack-app` needs from things that still live in `tack-api` goes through the small traits in `tack_app::ports`.
-- `tack-runner` must never import `tack-db`. `tack-cli`'s client commands never open the database; only `serve.rs` builds the `Repository`.
-- Tests plant rows with `tack_test_support::seed` and read them with `tack_db::queries::`.
-
----
-
-## Development Workflow
-
-### Common Commands
-
-```bash
-# ─── Building ────────────────────────────────────
-cargo build                    # Debug build (fast compile)
-cargo build --release          # Release build (optimized, ~10 MB binary)
-cargo build -p tack-core     # Build only one crate
-
-# ─── Testing (nextest — see docs/TESTING.md) ─────
-cargo nextest run --workspace                                 # Everything; the summary line carries the count
-cargo nextest run --workspace -E 'package(tack-core)'         # One crate — always --workspace, select with -E, never -p
-cargo nextest run --workspace -E 'test(workflow)'             # Tests matching a name
-cargo nextest run --workspace --no-capture -E 'test(<name>)'  # Show println! output (runs serially)
-
-# Frontend tests
-cd frontend && npm test         # Vitest
-
-# ─── Running ─────────────────────────────────────
-cargo run -p tack-cli -- serve              # Start the API server
-cargo run --bin tack-cli -- --help    # CLI help
-
-# ─── Code Quality ────────────────────────────────
-cargo fmt --all                                       # Format all code
-cargo fmt --all --check                               # Check formatting (same as CI)
-cargo clippy --workspace --all-targets -- -D warnings # Lint (same as CI — --all-targets covers tests too)
-cargo check                                           # Type-check without building
-make coverage                           # Rust + frontend coverage against CI's thresholds
-make deny                               # License + duplicate-dependency check (same policy as CI)
-
-# ─── Debugging ───────────────────────────────────
-RUST_LOG=debug cargo run -p tack-cli -- serve           # Debug logging
-RUST_LOG=tack_db=trace cargo run -p tack-cli -- serve # Trace SQL queries
-TACK_LOG_JSON=true cargo run -p tack-cli -- serve     # JSON log output
-```
-
-### Manual API Testing
-
-Once the server is running (`cargo run -p tack-cli -- serve`):
-
-```bash
-# 1. Check health
-curl -s localhost:3210/api/health | jq
-
-# 2. Create a project
-curl -s -X POST localhost:3210/api/projects \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Test Project","project_type":"software"}' | jq
-
-# 3. Copy the project ID, then create an item
-curl -s -X POST localhost:3210/api/projects/<PROJECT_ID>/items \
-  -H "Content-Type: application/json" \
-  -d '{"title":"My first task","item_type":"task","priority":"high"}' | jq
-
-# 4. List all items
-curl -s localhost:3210/api/projects/<PROJECT_ID>/items | jq
-
-# 5. Check DB stats
-curl -s localhost:3210/api/debug/db-stats | jq
-```
-
-### Writing Tests
-
-Every test follows the conventions in `docs/TESTING.md` ("Where a test lives, and how big
-it may be"): one claim per test, a name that states it, helpers in `tests/common`, no fixed
-waits. `cargo clippy --workspace --all-targets -- -D warnings` catches an oversized function
-(`clippy.toml`'s `too-many-lines-threshold`); review carries the rest.
-
-**Unit tests** go in the same file as the code, inside a `#[cfg(test)]` module, while that
-module is under 150 lines; past that they move to `<module>/tests.rs`
-(`#[cfg(test)] mod tests;` in the source file, `use super::*;` at the top of the new one):
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_my_feature() {
-        let wf = scrum_workflow();
-        assert!(wf.validate_transition("Backlog", "In Progress").is_ok());
-    }
-}
-```
-
-**API handler tests** go under `crates/tack-api/tests/handlers/`, in the module whose subject fits, using `axum::Router::oneshot()`:
-
-```rust
-#[tokio::test]
-async fn my_handler_returns_200() {
-    let (app, _) = common::test_app().await;
-    let res = app.oneshot(
-        Request::builder()
-            .method(Method::GET)
-            .uri("/api/health")
-            .body(Body::empty())
-            .unwrap(),
-    ).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
-}
-```
-
-**DB integration tests** go under `crates/tack-db/tests/repository/` (or `migrations/` for schema work):
-
-```rust
-#[tokio::test]
-async fn test_my_db_feature() {
-    let repo = setup_test_db().await;   // In-memory SQLite
-    let ws_id = create_test_workspace(&repo).await;
-    let project = repo.create_project(ws_id, CreateProject {
-        name: "Test".into(),
-        ..Default::default()
-    }).await.unwrap();
-    assert_eq!(project.name, "Test");
-}
-```
-
-Each test gets its own isolated in-memory database — no cleanup needed.
-
----
-
-## Good First Contributions
-
-If you're looking for a focused starting point, these areas are self-contained and well-defined:
-
-| Area | What to do | Files to touch |
-| --- | --- | --- |
-| New project-type preset | Add a workflow + vocabulary pair for a new domain (e.g. `education`, `events`, `research`) | `workflow.rs`, `vocabulary.rs`, `models.rs` |
-| New custom field type | Add a new type variant with validation logic | `tack-core/src/models.rs` (CustomFieldType + validate_value) |
-| Vocabulary translation | Add a non-English vocabulary pack for an existing project type | `tack-core/src/vocabulary.rs` |
-| CLI output polish | Improve table formatting or add a `--format table\|csv\|json` flag to a command | `tack-cli/src/main.rs` |
-| Frontend view polish | Fix a visual edge case, improve empty-state UX, or add keyboard shortcuts | `frontend/src/features/` (the relevant feature) or `frontend/src/shared/ui/` |
-| Test coverage | Add handler tests for an endpoint that only has a smoke test | `crates/tack-api/tests/handlers/` |
-
-The crate layering rule is the main constraint: keep `tack-core` free of I/O and `tack-cli` free of direct DB access (all data goes through the HTTP API). See the Dependency Flow section above.
-
----
-
-## How To Add a New Feature
-
-### Adding a New Entity (e.g., "TimeEntry")
-
-1. **Define the model** in `crates/tack-core/src/models.rs`
-2. **Add a migration** in `crates/tack-db/src/migrations.rs` and add it to `all_migrations()`
-3. **Add a repository module** at `crates/tack-db/src/repo/time_entries.rs`; add `pub mod time_entries;` to `repo.rs`
-4. **Add a handler module** at `crates/tack-api/src/handlers/time_entries.rs`; add it to the `use crate::handlers::{...}` import in `router.rs`
-5. **Add routes** in `crates/tack-api/src/router.rs`
-6. **Write tests** under `crates/tack-api/tests/handlers/`
-
-### Adding a New Workflow Preset
-
-Edit `crates/tack-core/src/workflow.rs`, add a new `pub fn my_workflow() -> WorkflowConfig` function and wire it into `workflow_for_type()`.
-
-### Adding a New Vocabulary Pack
-
-Edit `crates/tack-core/src/vocabulary.rs`, add a new match arm in `vocabulary_for_type()`.
-
----
-
-## Database
-
-### Schema
-
-SQLite with WAL mode enabled. Tables:
-
-| Table | Purpose |
+| Command | Does |
 | --- | --- |
-| `workspaces` | Top-level container (one per installation) |
-| `projects` | Projects with vocabulary + workflow JSON |
-| `sprints` | Sprints/iterations with status lifecycle |
-| `items` | Universal work items (tasks, epics, etc.) with hierarchy |
-| `dependencies` | Item-to-item relationships (blocks, relates_to, etc.) |
-| `roles` | Role/specialty definitions per project |
-| `item_roles` | Many-to-many junction between items and roles |
-| `comments` | Comments and activity log per item |
-| `attachments` | File metadata per item |
-| `boards` | Multiple boards per project (grouping, filters) |
-| `project_templates` | Reusable project blueprints |
-| `custom_field_definitions` | User-defined field types per project |
-| `custom_field_values` | Field values per item |
-| `items_fts` | FTS5 virtual table — full-text search (auto-synced via triggers) |
+| `make dev` | The server and the web UI with hot reload. |
+| `cargo run -p tack-cli -- serve` | The server alone, at <http://127.0.0.1:3210>. |
+| `make test` | `cargo nextest run --workspace`. Details and filters: [docs/TESTING.md](docs/TESTING.md). |
+| `make e2e` | Browser tests (Playwright). `make e2e-install` downloads the browsers once. |
+| `make coverage` | Rust and frontend coverage against CI's floors. |
+| `make deny` | The license and duplicate-dependency check CI runs. |
+| `make build` | The release `tack` binary with the UI embedded. |
+| `make desktop` | The Tauri desktop app (a workspace of its own). |
 
-### Resetting the Database
+`rust-toolchain.toml` pins the exact compiler you and CI use; rustup installs it the first time you
+run `cargo` here. Do not override it. A distro or Homebrew `cargo` earlier on `PATH` ignores the
+pin, so the pre-push hook puts rustup's first and refuses any other version. Dependabot proposes
+bumping the pin.
 
-```bash
-rm tack.db tack.db-shm tack.db-wal
-cargo run -p tack-cli -- serve   # migrations re-run automatically
-```
+`setup-git.sh` also installs the `tack-generated` merge driver for `Cargo.lock`,
+`frontend/package-lock.json`, `docs/openapi.json`, `frontend/src/shared/api/schema.gen.ts` and the
+book's `developer/api-reference.md`. Each is a pure function of sources tracked elsewhere, so the
+driver takes your side without a conflict and `.githooks/post-merge` regenerates it. By hand:
+`./scripts/regen-generated.sh`. Never edit those files yourself.
 
-### Inspecting the Database
+## Make a change
 
-```bash
-sqlite3 tack.db
-.tables
-SELECT * FROM _migrations;
-PRAGMA journal_mode;   -- should show "wal"
-```
-
-### Writing a Migration
-
-**One `ALTER` per migration name.** The migration runner executes a migration's statements
-individually, with no wrapping transaction, so a multi-`ALTER` migration that fails partway
-through bricks the install — give each `ALTER` its own migration name instead.
-
-**`BEGIN IMMEDIATE` is mandatory for a transaction that reads then writes.** A deferred
-transaction that reads then writes deadlocks under concurrency once two callers both try to
-upgrade from reader to writer. Prove a concurrency test load-bearing against a file-backed
-database, not the shared in-memory test harness, which can mask the race. Full detail and
-the stress-test approach: `docs/ARCHITECTURE.md`.
-
----
-
-## Error Handling
-
-- **`tack-core`** — `CoreError` (thiserror)
-- **`tack-db`** — `sqlx::Error` + `DependencyError`
-- **`tack-api`** — `ApiError` maps all errors to HTTP status codes:
-
-| Domain Error | HTTP Status |
-| --- | --- |
-| `ItemNotFound`, `ProjectNotFound` | 404 |
-| `InvalidTransition`, `WipLimitExceeded` | 400 |
-| `DependencyCycle` | 400 |
-| Validation error (validator crate) | 422 |
-| `sqlx::Error` (internal) | 500 |
-
-Internal errors log the full cause but return only "Internal server error" to the client.
-
----
-
-## Logging
-
-All logging uses the `tracing` crate with structured spans.
-
-- **Handlers** — `#[instrument(skip(state))]` auto-creates spans
-- **Repository methods** — same instrumentation, logs at `debug` level
-- **HTTP middleware** — `TraceLayer` logs every request with method, URI, and duration
-- **Logs carry ids only** — never credentials, prompt bodies, query strings or env values.
-  A test asserts the redaction wherever a log line could plausibly carry one.
-
-```bash
-RUST_LOG=error cargo run -p tack-cli -- serve                # errors only
-RUST_LOG=tack_db=debug cargo run -p tack-cli -- serve      # debug the DB layer
-RUST_LOG=trace cargo run -p tack-cli -- serve                # everything (very verbose)
-```
-
-## Secrets
-
-Secrets are write-only over the API and never logged. Every new secret column is added to
-`remote_backup.rs::scrub_snapshot_secrets` in the same commit that adds it — a backup or
-remote-sync snapshot must never carry a secret in the clear.
-
----
-
-## Decisions and Scope
-
-A non-trivial design or architecture choice is recorded as an ADR under `docs/adr/`, not
-argued out across commit messages or PR comments. Write it for someone who was not in the
-room: the first screen must say, in plain language with no jargon or citations, what is
-being decided, why it needs deciding now, and what stays blocked if nobody accepts it.
-Put the rejected alternatives, line numbers and cost analysis in a separate section below
-that summary — a reader who trusts the summary should never have to open it.
-
-Do not build a mechanism — a column, a trait, a config flag, a route, a module — that
-nothing in the same change calls. Code with no caller is not "ready for later"; it is
-unverified surface with a maintenance cost and no test that can fail meaningfully. Build
-for the second concrete case you actually have, not a hypothetical third.
-
-## Reporting Bugs & Requesting Features
-
-Issues are tracked on [GitHub Issues](https://github.com/yielab/tack/issues).
-
-- **Bugs:** open a [bug report](https://github.com/yielab/tack/issues/new?template=bug_report.yml).
-  Include the Tack version or commit, your OS and Rust version, exact steps to
-  reproduce, what you expected, and what happened (with any log output). A minimal
-  reproduction is the single most helpful thing you can provide.
-- **Features / ideas:** open a
-  [feature request](https://github.com/yielab/tack/issues/new?template=feature_request.yml),
-  or start a thread in [Discussions](https://github.com/yielab/tack/discussions)
-  if it is more open-ended. Describe the problem you are trying to solve, not just
-  the solution — it helps us keep Tack small and focused (see [GOVERNANCE.md](GOVERNANCE.md)).
-- **Security vulnerabilities:** **do not** open a public issue. Report privately
-  via [GitHub Security Advisories](https://github.com/yielab/tack/security/advisories/new)
-  or email <info@yielab.com>. See [SECURITY.md](SECURITY.md).
-
-For anything beyond a trivial fix, please open (or find) an issue before writing
-code, so the approach can be agreed first and you don't invest effort in a change
-that may not fit the roadmap.
-
----
-
-## Pull Request Process
-
-1. **Discuss first for non-trivial work.** Link your PR to an issue. Docs, tests,
-   and small self-contained fixes can go straight to a PR.
-2. **Branch** off `develop` (see the branching model below). Keep one logical
-   change per PR — smaller PRs are reviewed and merged faster.
-3. **Write tests** for any new business logic or bug fix (a regression test that
-   fails before your change and passes after). See "Writing Tests" above.
-4. **Run the full local gate before pushing.** Running the hook script directly is the
-   most reliable way — it is the definition CI's `rust` job checks against, so unlike a
-   hand-typed command list it cannot quietly drift from it:
+1. **Discuss first** for non-trivial work and link the pull request to the issue. Docs, tests and
+   small self-contained fixes can go straight to a pull request.
+2. **Branch off `develop`** and open the pull request against `develop`. Keep one logical change per
+   pull request.
+3. **Write tests** for new behaviour and for a bug fix (a test that fails before the change and
+   passes after). Where a test lives and how big it may be: [docs/TESTING.md](docs/TESTING.md).
+4. **Run the gate before pushing.** The pre-push hook is the definition of the local gate, so run
+   it rather than a list of commands typed from memory:
 
    ```bash
    ./.githooks/pre-push
-   ```
-
-   That runs, in order: `cargo fmt --all --check` for the root workspace *and*,
-   separately, for `crates/tack-desktop` (its own workspace, excluded from the root
-   one), `cargo clippy --workspace --all-targets -- -D warnings`, and the lockfile /
-   `schema.gen.ts` freshness checks (the latter only when `frontend/node_modules`
-   exists) — **not the test suite**, on purpose. Run that yourself:
-
-   ```bash
    cargo nextest run --workspace
    ```
 
-   Together these reproduce everything CI's `rust` job checks except two steps that
-   regenerate a committed artifact from the code and diff it, rather than testing
-   something new — the OpenAPI spec and tack-orch's golden files, each rerun through a
-   targeted filter. `./scripts/regen-generated.sh` covers the first; docs/TESTING.md's
-   Continuous Integration section describes both.
+   The hook checks formatting (the desktop workspace too), clippy with warnings denied, the crate
+   dependency graph, the boundary test suites, that the generated files are current, and, when
+   `frontend/node_modules` exists, the TypeScript build and the frontend tests your push touches.
+   It does not run the whole suite, so run `nextest` yourself. It runs automatically on `git push`
+   once `setup-git.sh` has run.
 
-   Activating the hook (`git config core.hooksPath .githooks` — done once by
-   `./scripts/setup-git.sh`) runs it automatically on every `git push`.
+   If you touched the frontend, CI also runs `cd frontend && npm run type-check && npm test`,
+   `npm run lint:tokens` (no raw color literals; colors come from `--color-*` tokens) and
+   `npm run build` (the entry bundle stays under 30 KB gzipped).
+5. **Update the docs and the changelog.** If you changed behaviour, configuration or the API, change
+   the matching docs in the same pull request and add a line under `[Unreleased]` in
+   [CHANGELOG.md](CHANGELOG.md) (Added, Changed, Removed, Fixed or Security). The changelog is
+   written by hand for someone upgrading: say what they can now do or what behaves differently, not
+   which file moved. When you change an API response shape, update the frontend types and test mocks
+   with it.
+6. **Describe the pull request:** what changed and why, how you tested it, and any follow-ups. The
+   [template](.github/PULL_REQUEST_TEMPLATE.md) has the checklist.
+7. **Write the commit subject as one plain sentence after a verb:** `Add:` for something new,
+   `Fix:` for a bug, `Change:` for different behaviour, `Clean:` for code or docs removed with no
+   change in behaviour, `Chore:` for regenerated files and housekeeping, `Docs:` for documentation only, `Release:` for a version bump. Say what a user
+   or maintainer can now do or no longer suffers, for example `Fix: an open "Run with agent" dialog
+   survives the board's realtime refetch`. No AI-attribution lines (no `Co-Authored-By` trailers).
+8. **Review.** The maintainer reviews, may ask for changes, and merges once CI is green. Every job
+   in `.github/workflows/ci.yml` that runs on a pull request must pass.
 
-   If you touched the frontend, CI's `frontend` job also runs checks the hook doesn't:
+By submitting a pull request you agree that your contribution is licensed under the project's
+[MIT License](LICENSE).
 
-   ```bash
-   cd frontend
-   npm run type-check && npm test
-   npm run gen:api && git diff --exit-code src/shared/api/schema.gen.ts  # OpenAPI types drift
-   npm run lint:tokens                                                   # no raw color literals
-   npm run build                                                         # entry bundle stays < 30 KB gzipped
-   ```
+## Decisions and scope
 
-5. **Update docs and the changelog.** If you changed behavior, config, or the API, update the
-   relevant docs in the same PR, and add a line to the `[Unreleased]` section of
-   [CHANGELOG.md](CHANGELOG.md) under Added, Changed, Removed, Fixed or Security. The changelog
-   is written by hand, for someone upgrading: say what they can now do or what behaves
-   differently, not which file moved. At a release the maintainer renames `[Unreleased]` to
-   the version, and the release notes are that section. If you changed an API response shape,
-   update the Rust handler **and** the matching frontend types / test mocks.
-6. **Write a clear PR description** — what changed and why, how you tested it, and
-   any follow-ups. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md).
-7. **Write the commit subject as one plain sentence after a verb.** `Add:` for something new,
-   `Fix:` for a bug, `Clean:` for code or docs removed with no change in behaviour, `Docs:`
-   for documentation only, `Release:` for a version bump. Say what a user or a maintainer can
-   now do or no longer suffers, e.g. `Fix: an open "Run with agent" dialog survives the
-   board's realtime refetch`. **No AI-attribution lines** (no `Co-Authored-By` bot trailers)
-   in commit messages.
-8. **Review.** The maintainer reviews, may request changes, and merges once CI is
-   green and the change is approved. Green CI is required — every job in
-   `.github/workflows/ci.yml` that runs on a pull request must pass (all but the weekly
-   `mutants` report).
+A non-trivial design choice is recorded as an ADR under `docs/adr/`, not argued out across commit
+messages or pull-request comments. Write it for someone who was not in the room: the first screen
+says, in plain language, what is being decided, why it needs deciding now, and what stays blocked if
+nobody accepts it. The rejected alternatives and the evidence go in a separate section below it.
 
-By submitting a pull request, you agree that your contribution is licensed under
-the project's [MIT License](LICENSE).
+Do not build a mechanism (a column, a trait, a config flag, a route, a module) that nothing in the
+same change calls. Code with no caller is unverified surface with a maintenance cost. Build for the
+second concrete case you have, not a hypothetical third.
 
----
-
-## Branching Model
-
-Tack uses a simple two-long-lived-branch model:
+## Branches and releases
 
 | Branch | Role |
 | --- | --- |
-| `main` | Release branch. Tagged releases (`vX.Y.Z`) are cut from here. Kept stable. |
-| `develop` | Integration branch. Day-to-day work lands here first. |
-| `feat/…`, `fix/…`, `docs/…` | Short-lived topic branches for a single change. |
+| `main` | The release branch. Tagged releases (`vX.Y.Z`) are cut from it. |
+| `develop` | The integration branch. Work lands here first. |
+| `feat/…`, `fix/…`, `docs/…` | Short-lived topic branches for one change. |
 
-- **Branch topic branches off `develop`** and open your PR **against `develop`**.
-- `main` receives changes from `develop` when a release is prepared; pushing a
-  version tag (`git tag v0.1.0-beta.N && git push origin v0.1.0-beta.N`) triggers
-  `.github/workflows/release.yml`, which builds single-binary distributions for
-  Linux/macOS/Windows and attaches them to a GitHub Release with checksums, SBOMs,
-  and build-provenance attestations. This is a maintainer action, not something a
-  contributor's PR does.
-- Once that release workflow finishes, run `scripts/sync-packaging.sh <tag>` and
-  commit the refreshed recipes (`packaging/homebrew`, `aur`, `nix`, `scoop`) — they
-  name a tag and carry its digests, and nothing else updates them. The workflow's
-  `homebrew-tap` job also publishes the Homebrew formula to `yielab/homebrew-tap`:
-  it creates the commit through the GitHub API (so GitHub signs it), opens a pull
-  request, and enables auto-merge; the tap's own checks (audit, style, install,
-  test, and provenance of every archive the formula points at) decide whether it
-  lands. That needs the repository secret `HOMEBREW_TAP_TOKEN`; when it isn't
-  set, the job prints a notice with the manual steps instead of failing the
-  release.
-- `HOMEBREW_TAP_TOKEN` is a fine-grained personal access token scoped to the
-  single repository `yielab/homebrew-tap` with **Contents: write** and
-  **Pull requests: write** and nothing else. Give it the shortest expiry the
-  release cadence allows (90 days at most), regenerate it on expiry or on any
-  suspicion of exposure, and treat the secret's "Updated" date under
-  Settings → Secrets as the rotation record. The tap's `main` branch accepts no
-  direct pushes and no bypass, even for admins, so a leaked token can at most
-  open a pull request that still has to pass those checks.
-- Branch rules on `main` and `develop` here require green CI on pull requests
-  and forbid force-pushes and deletion. They require no reviewer approval, and
-  repository admins can push to `develop` directly, because Tack has one
-  maintainer and the pre-push hook is the gate for that path. Revisit both
-  settings (one approval, no admin bypass) the day a second person gets write
-  access.
-- CI runs on pushes to `main`, `develop`, and `claude/**` branches, and on every
-  pull request.
-- `tack branch <item-id>` (the CLI) can generate a conventional topic-branch name
-  from a Tack work item if you track your work in Tack itself.
+Rules on `main` and `develop` require green CI on pull requests and forbid force-pushes and
+deletion. They require no reviewer approval, and the maintainer can push to `develop` directly,
+because there is one maintainer and the pre-push hook is the gate for that path; revisit both
+settings the day a second person gets write access. CI runs on pushes to `main`, `develop` and
+`claude/**` and on every pull request. `tack branch <item-id>` makes a topic-branch name from a
+Tack item if you track your work in Tack.
 
----
+Tagging and publishing a release is the maintainer's step, written in
+[docs/LAUNCH-CHECKLIST.md](docs/LAUNCH-CHECKLIST.md).
 
-## Code Style
+## Code style
 
-- Run `cargo fmt --all` before committing (the pre-push hook will catch it anyway)
-- Fix all `cargo clippy --workspace --all-targets -- -D warnings` before pushing
-- Keep `tack-core` free of I/O dependencies
-- Use `#[instrument]` on public async functions for tracing
-- Prefer returning `Result` over panicking
-- Write tests for any new business logic
-- No AI attribution lines in commit messages
-- **Unsupported is typed, unknown is explicit, unmeasured is nullable.** No
-  `unimplemented!()`, and no zero standing in for "unknown" (never render `$0.00` for
-  unmeasured money — the literal is `Not measured`). A capability a component cannot
-  honour is declared as such in its own type, not silently ignored.
-- **Changing an API response shape updates the matching frontend unit/E2E mocks in the
-  same change.** Frontend colors come from `--color-*` tokens only, never raw hex.
+- `cargo fmt --all` and `cargo clippy --workspace --all-targets -- -D warnings` clean; the hook
+  catches both.
+- `tack-core`, `tack-protocol` and `tack-orch` do no I/O. `sqlx` appears only in `tack-db`, and
+  `axum` only in `tack-api`. `scripts/check-crate-graph.sh` enforces the crate edges; the rules and
+  the reasons are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- Prefer returning `Result` over panicking.
+- Unsupported is typed, unknown is explicit, unmeasured is nullable. No `unimplemented!()`, and no
+  zero standing in for "unknown": never render `$0.00` for money nobody measured; the literal is
+  `Not measured`.
+- Errors, logging and the secrets-in-backups rule: [Adding Features](https://yielab.github.io/tack/developer/adding-features.html#conventions-every-change-follows).
 
 ### Comments
 
-Comments explain the code, never the project's history. Write what the code does when the
-name doesn't say it, why a non-obvious choice was made, what breaks if you change it, and
-what isn't true yet (an unwired column, a mechanism with no caller). Don't write dates,
-attributions, commented-out code, or a narrative of how the code got here — `git log`
-already holds that, and a reader with just the code can't use a reference to a process they
-were never part of. `scripts/check-comments.sh` (~0.2s, in CI) enforces the one part of
-this a script can check mechanically: a comment that cites a filename must cite a file that
-still exists. When it fires, repoint the citation or restate the fact it stood in for —
-deleting the comment is almost always the wrong fix, since it usually wraps something real.
+Comments explain the code, never the project's history. Write what the code does when the name
+doesn't say it, why a non-obvious choice was made, what breaks if you change it, and what isn't true
+yet (an unwired column, a mechanism with no caller). Don't write dates, attributions,
+commented-out code, or a narrative of how the code got here: `git log` holds that.
+`scripts/check-comments.sh` (in CI) enforces the one part a script can check: a comment that cites a
+filename must cite a file that still exists. When it fires, repoint the citation or restate the fact
+it stood in for; deleting the comment is almost always the wrong fix.
