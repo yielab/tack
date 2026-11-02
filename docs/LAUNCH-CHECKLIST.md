@@ -57,3 +57,11 @@ automatically; every step under "Publish list" is a human action.
    repository's own `packaging/` copy still needs the commit above. If the tap's checks fail, the
    pull request stays open with the failing job attached: fix it here, re-run `sync-packaging.sh`
    and push the same branch.
+
+   `HOMEBREW_TAP_TOKEN` is a fine-grained personal access token scoped to the single repository
+   `yielab/homebrew-tap` with **Contents: write** and **Pull requests: write** and nothing else.
+   Give it the shortest expiry the release cadence allows (90 days at most), regenerate it on
+   expiry or on any suspicion of exposure, and treat the secret's "Updated" date under Settings →
+   Secrets as the rotation record. The tap's `main` accepts no direct pushes and no bypass, even
+   for admins, so a leaked token can at most open a pull request that still has to pass the tap's
+   checks.
