@@ -306,6 +306,10 @@ docket's own policy settled it. It refreshes every couple of seconds until the r
 its steps while it works. With Claude Code, Codex and opencode the timeline holds the run's events (a
 question, a failure, the end) and the run's log has the rest once it ends.
 
+A docket team whose budget is spent is paused: it starts nothing, so a task sent to it waits, its timeline says
+the team is paused with the docket command that resumes it, and the team's card on the Agents page reads
+**Paused: budget spent**. Tack has no button for it; resume the team in docket and the waiting tasks go on.
+
 When the run ends, see [Reviewing a Run](reviewing-runs.md).
 
 ---

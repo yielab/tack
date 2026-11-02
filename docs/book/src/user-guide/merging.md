@@ -86,7 +86,7 @@ An administrator sets most of this up; see
 
 - A verifier on the runner, set to sign its packs, and the same verifier on the machine the board runs
   on, to check the signatures.
-- The project's public key, which you paste into **Public key** in the Merge step.
+- The project's public key, which you paste into **Public key** in the Merge section.
 - The board's GitHub token and polling. The automatic merge runs on each poll.
 - A task linked to a GitHub issue, since that is how its pull request is opened.
 - The required stages filled in (the box labelled "Stages the verifier must run"). It starts empty, and at least one

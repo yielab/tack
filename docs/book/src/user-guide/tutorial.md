@@ -162,7 +162,7 @@ The drawer follows the run as it happens: the **Now** panel under the header rea
 with the runner that took it. What the agent did, the tokens it used and its cost appear when it
 finishes:
 
-<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Last run panel at the top of the drawer reads Running, 'The agent is working on it', 'Used 0 of 2 000 000 tokens', with Follow live and Stop buttons and a Run again button below it.">
+<img src="../screenshots/tutorial/13-execution-running.png" width="98%" alt="The task drawer mid-run: the card's chip on the board reads Running, and the Now panel at the top of the drawer reads Running, 'The agent is working on it', 'Used 0 of 2 000 000 tokens', with Follow live and Stop buttons and a Run again button below it.">
 
 ## 10. See the result
 

@@ -34,7 +34,7 @@ A **project file** is one YAML or JSON document that holds a project: its workfl
 | `profiles` | Agent profiles: name, kind, instructions, which agent runs it, its team, its fleet and its limits. |
 | `roles` | Project roles: name, color and the profile each role uses. |
 | `sprints` | Name, goal and dates. A sprint is created planned or closed, never active. |
-| `automation` | The project's folder or repository, branch, how the agent works, default profile and model, the status a finished run moves to, the definition of done, autonomy and auto-start. |
+| `automation` | The project's folder or repository, branch, how the agent works, the install command, whether to push, default agent, profile and model, the definition of done, autonomy and auto-start. |
 | `items` | The items, with their hierarchy and dependencies, plus the role, sprint, field values and repeat of each. |
 
 Every section is optional. A file with only `items` is an outline. The full list of keys, with their types and defaults, is in [The Project File Format](../developer/project-file.md).
@@ -171,7 +171,7 @@ The file is **refused** for:
 - a profile with an unknown kind, an unknown agent, or a team name that is not lowercase letters, digits and hyphens;
 - a role that names a profile found neither in the file nor on the board;
 - a sprint with a date that is not `YYYY-MM-DD` or a status other than `planning` or `closed`;
-- an automation setting with an unknown code origin, workspace mode or default agent, a folder that is not an absolute path, a URL that is not a URL, an unknown default profile, a finish or auto-start status the workflow does not have, an auto-start cap below 1, or a level other than L3, L4 or L5;
+- an automation setting with an unknown code origin, workspace mode or default agent, a folder that is not an absolute path, a URL that is not a URL, an install command that is not one line, an unknown default profile, an auto-start status the workflow does not have, an auto-start cap below 1, or a level other than L3, L4 or L5;
 - an item that names a role, sprint or field found neither in the file nor in the project;
 - the item rules of the outline: no title, a `ref` used twice, a `parent` or `depends_on` that names no item or an ambiguous title, a parent or dependency loop, a due date that is not a date, a title over 500 characters, a negative estimate, more than 20 tags, or more than 1,000 items.
 
@@ -180,6 +180,7 @@ The file is **accepted with a warning** for:
 - a built-in profile it tries to redefine;
 - a fleet name the board does not have: the profile then runs on any computer;
 - an autonomy level or auto-start the import lowered;
+- `on_start_status` or `on_finish_status` in `automation`: they are ignored, because a run never moves a task;
 - an item whose status the workflow does not have: it starts in the first status;
 - an unknown priority, which becomes medium;
 - an item with no value for a required field;
@@ -200,7 +201,7 @@ The checks catch problems in the file. A failure while writing, such as a full d
 - From the command line: `tack export <project> --bundle -o project.yaml`. Add `--format json` for JSON.
 - Over the API: `GET /api/projects/{id}/export?scope=bundle&format=yaml`.
 
-The export writes the same file back: items in written order, only the profiles the project's roles and default point at, and no ids. It never writes the signing key that merge verification uses; paste that on the Merge rung of Settings → Automation. Exporting, importing into a new project and exporting again gives the same text.
+The export writes the same file back: items in written order, only the profiles the project's roles and default point at, and no ids. It never writes the signing key that merge verification uses; paste that in the **Public key** field under Merge in Settings → Automation. Exporting, importing into a new project and exporting again gives the same text.
 
 ### Templates
 
@@ -374,14 +375,14 @@ The answer is `{ "created": N, "skipped": N }`.
 
 ### Keeping GitHub issues in sync
 
-Items imported from GitHub stay linked to their issue, and you can link any other item by hand in the **Link GitHub issue** section of its Overview tab. When the board has a GitHub token, the link carries state and comments in both directions:
+Items imported from GitHub stay linked to their issue, and you can link any other item by hand in the **GitHub issue** section of its Overview tab (type `owner/repo#42` and press **Link**). When the board has a GitHub token, the link carries state and comments in both directions:
 
 - **Out, on every change.** Moving a linked item into a Done status closes its issue. Moving it back out reopens it. A comment on the item is posted on the issue.
 - **In, on a poll.** A closed issue moves its item to the first Done status. A reopened one moves it to the first to-do status. A new comment on the issue appears on the item, attributed to its GitHub login.
 
 Both directions are best-effort: a failure is logged and never blocks the item update. A change that came in never triggers a push back out. Title edits, labels and assignees are not mirrored. Tack listens on your computer only by default, so GitHub cannot call it; the inbound side polls instead.
 
-Sync is off until an administrator sets a GitHub token and a poll interval; the settings are in the [Configuration Reference](../admin-guide/configuration-reference.md). A project can also carry its own token as a secret reference. For the full behaviour, see [GitHub Sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md).
+Sync is off until an administrator sets a GitHub token and a poll interval; the settings are in the [Configuration](../admin-guide/configuration-reference.md). A project can also carry its own token as a secret reference. For the full behaviour, see [GitHub Sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md).
 
 ---
 
