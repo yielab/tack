@@ -30,8 +30,8 @@ describe('a task with nowhere to run', () => {
 
 describe('a task auto-start has not started yet', () => {
   it('says why, right after when it starts', () => {
-    expect(automationSentence({ ...base, waiting: 'In Progress is full (5 of 5): move something on to make room' })).toBe(
-      'Starts by itself when it reaches To Do · Waiting to start: In Progress is full (5 of 5): move something on to make room · Team saas-content · Merge L4',
+    expect(automationSentence({ ...base, waiting: '3 runs are already open, the most this project allows' })).toBe(
+      'Starts by itself when it reaches To Do · Waiting to start: 3 runs are already open, the most this project allows · Team saas-content · Merge L4',
     );
   });
   it('says nothing when nothing holds it back, and gives way to the reasons it is by hand', () => {

@@ -515,10 +515,10 @@ is about the part you run. It happens **in the board's process**, not in a runne
   project. A value that is not a whole number counts as the default. The first look comes one interval
   after the board starts. It needs no GitHub token and no poll.
 - **What it does.** For each project it takes the tasks waiting in the project's start status that
-  have a role, orders them by priority and position, and starts as many as the project's conditions
-  allow: no open run on the task, no unfinished blocker, room under the next column's work-in-progress
-  limit, the day's token limit not reached, and fewer open runs than the project's cap. It then moves each
-  started task to the first in-progress status and writes "Started by itself" on its activity.
+  have a role or a profile and have never had a run, orders them by priority and position, and starts as
+  many as the project's conditions allow: no unfinished blocker, the day's token limit not reached, and
+  fewer open runs than the project's cap. It leaves each started task in its status, and writes "Started
+  by itself" on its activity. A task starts once; a second run is a person's to start.
 - **Which machine.** The run goes to the fleet its profile names. If the profile names none, there
   must be exactly one active runner, and that runner is used. With several runners and no fleet the
   task is not started, because Tack cannot tell where it should run. Name a fleet in the profile. Of
