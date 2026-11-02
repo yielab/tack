@@ -1,4 +1,4 @@
-import { type Component, For, Show } from 'solid-js';
+import { type Component, For, Show, createUniqueId } from 'solid-js';
 import { HelpHint } from '../../shared/ui';
 import { HELP } from '../../shared/help/texts';
 import {
@@ -76,6 +76,17 @@ const AgentCapabilities: Component<{ runners: readonly RunnerSummary[] }> = (pro
       const harness = pickHarness(reports(), kind);
       return { kind, harness, lines: agentCapabilityLines(kind, harness) };
     });
+  const uid = createUniqueId();
+  /** What the agents that reported can do, said once per distinct sentence with the agents it holds for. */
+  const captions = () => {
+    const bySentence = new Map<string, string[]>();
+    for (const col of columns()) {
+      if (!col.harness) continue;
+      const sentence = agentCanSentence(col.kind, col.lines);
+      bySentence.set(sentence, [...(bySentence.get(sentence) ?? []), agentName(col.kind)]);
+    }
+    return [...bySentence].map(([sentence, names]) => ({ sentence, names: names.join(', ') }));
+  };
   return (
     <section class="flex min-w-0 flex-col gap-3 rounded-card bg-panel px-5 py-5" data-testid="agent-capabilities">
       <div>
@@ -88,6 +99,17 @@ const AgentCapabilities: Component<{ runners: readonly RunnerSummary[] }> = (pro
         <p class="mt-1 text-small" style={{ color: 'var(--color-text-secondary)' }}>
           {PER_TASK_AGENT_TEXT} What follows is what each agent told Tack about itself.
         </p>
+        <Show when={captions().length > 0}>
+          <ul data-testid="agent-can-caption" class="mt-1 flex flex-col gap-0.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
+            <For each={captions()}>
+              {(c) => (
+                <li>
+                  <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{c.names}:</span> {c.sentence}
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full table-fixed border-collapse text-left" style={{ 'min-width': '36rem' }}>
@@ -97,7 +119,7 @@ const AgentCapabilities: Component<{ runners: readonly RunnerSummary[] }> = (pro
               <td style={{ width: '24%' }} />
               <For each={columns()}>
                 {(col) => (
-                  <th scope="col" data-testid={`agent-${col.kind}`} class="min-w-0 px-2 pb-2 align-top font-normal" style={{ 'overflow-wrap': 'anywhere' }}>
+                  <th scope="col" data-testid={`agent-${col.kind}`} aria-describedby={col.harness ? `${uid}-${col.kind}` : undefined} class="min-w-0 px-2 pb-2 align-top font-normal" style={{ 'overflow-wrap': 'anywhere' }}>
                     <span class="block text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
                       {agentName(col.kind)}
                     </span>
@@ -109,7 +131,8 @@ const AgentCapabilities: Component<{ runners: readonly RunnerSummary[] }> = (pro
                         </DisabledLine>
                       }
                     >
-                      <p data-testid="agent-can" class="text-caption" style={{ color: 'var(--color-text-secondary)' }}>
+                      {/* Said once in the caption above; here it describes the column to a screen reader. */}
+                      <p data-testid="agent-can" id={`${uid}-${col.kind}`} class="sr-only">
                         {agentCanSentence(col.kind, col.lines)}
                       </p>
                     </Show>
