@@ -100,6 +100,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 - The bar under a board column's name has a legend that names each state in words next to its run-state icon ("1 Needs you  2 Running"), so it is no longer read by colour alone, and its segments are ordered as the Work row above the board is: what needs a person first.
 - In Orchestration → Flow, a team with nothing running or waiting no longer draws an empty queue bar beside its tokens; it says "Nothing running or waiting" in words instead.
 - Orchestration → Compare wraps its cells at their words in equal-width columns, with the full text as a tooltip, instead of cutting a line mid-word at the edge of a table that scrolled sideways; six teams fit beside the sidebar at 1440 px with no scrolling.
+- A team's avatar on a board card reads the same wherever it is drawn: its initials come from its name alone (`saas-code` is SC, `saas-lights` SL), not from which other teams happen to be on the board, so it no longer changes from SA to CO as teams are added; two teams that read alike are told apart by the avatar's colour.
 
 ### Removed
 
