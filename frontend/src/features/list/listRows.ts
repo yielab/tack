@@ -173,6 +173,23 @@ export const COLUMNS: ColDef[] = [
 /** Columns hidden until someone shows them: the title tile already says the type. */
 export const DEFAULT_HIDDEN: ColumnKey[] = ['item_type'];
 
+/**
+ * The columns no item has a value in: shown only once someone fills one in, or
+ * asks for them in the Columns menu. Nothing is empty before there are items.
+ */
+export function emptyColumns(items: Item[], runOf?: (item: Item) => CardRun | undefined): ColumnKey[] {
+  if (items.length === 0) return [];
+  const some = (has: (item: Item) => boolean) => items.some(has);
+  const empty: ColumnKey[] = [];
+  if (!some((i) => !!i.assignee)) empty.push('assignee');
+  if (!some((i) => !!i.due_date)) empty.push('due_date');
+  if (!some((i) => runOf?.(i) !== undefined)) empty.push('run');
+  if (!some((i) => !!i.merge_note || i.started_by === 'auto_start' || !!i.team || i.merged_by === 'auto' || (i.tags?.length ?? 0) > 0)) {
+    empty.push('details');
+  }
+  return empty;
+}
+
 /** The columns that can be edited in place. */
 export type EditableKey = 'title' | 'status' | 'priority' | 'assignee' | 'due_date';
 

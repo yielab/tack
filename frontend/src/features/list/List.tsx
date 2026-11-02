@@ -30,10 +30,10 @@ import {
 import { FiPlus, FiMenu, FiCheck, FiX, FiChevronRight, FiChevronDown, FiTrash2, FiMaximize2, FiMinimize2, FiEdit2 } from 'solid-icons/fi';
 import Card from '../../shared/ui/Card';
 import {
-  COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, matchesQuery, pruneTree, visibleRows,
+  COLUMNS, PRIORITIES as EDIT_PRIORITIES, buildTree, currentRaw, editPatch, emptyColumns, matchesQuery, pruneTree, visibleRows,
   type ColDef, type EditableKey, type ItemNode, type SortDir, type SortKey,
 } from './listRows';
-import { loadDensity, loadHiddenColumns, saveDensity, saveHiddenColumns, type Density } from './listPrefs';
+import { hasColumnChoice, loadDensity, loadHiddenColumns, saveDensity, saveHiddenColumns, type Density } from './listPrefs';
 
 type ItemType = 'epic' | 'feature' | 'task' | 'subtask' | 'bug' | 'requirement';
 
@@ -93,6 +93,8 @@ export default function List() {
   const [sort, setSort] = createSignal<{ key: SortKey; dir: SortDir } | null>(null);
   const [query, setQuery] = createSignal('');
   const [runFilter, setRunFilter] = createSignal<RunFilter | ''>('');
+  // Until the person picks columns, the ones no item has a value in stay hidden.
+  const [chosen, setChosen] = createSignal(hasColumnChoice());
   const [hidden, setHidden] = createSignal(loadHiddenColumns());
   const [density, setDensity] = createSignal<Density>(loadDensity());
   const [columnsOpen, setColumnsOpen] = createSignal(false);
@@ -129,6 +131,10 @@ export default function List() {
     const run = runFilter();
     return matchesQuery(item, query()) && (run === '' || passesFilters(runOf(item), new Set([run])));
   };
+
+  const shownHidden = createMemo(() =>
+    chosen() ? hidden() : new Set([...hidden(), ...emptyColumns(items() ?? [], runOf)]),
+  );
 
   // Sorting reorders each set of siblings; a filter keeps the parents of what it lets through.
   const organizedItems = createMemo(() => {
@@ -181,7 +187,7 @@ export default function List() {
     });
   };
 
-  const visibleColumns = createMemo(() => COLUMNS.filter((c) => !hidden().has(c.key)));
+  const visibleColumns = createMemo(() => COLUMNS.filter((c) => !shownHidden().has(c.key)));
   const headerLabel = (c: ColDef) => (c.vocabKey ? t(c.vocabKey) : c.label);
 
   // The title takes what the other columns leave; the list scrolls inside itself when they do not fit.
@@ -191,9 +197,10 @@ export default function List() {
   const minWidth = createMemo(() => `${visibleColumns().reduce((n, c) => n + c.rem, 4.5) + visibleColumns().length * 0.5 + 1.75}rem`);
 
   const toggleColumn = (key: ColDef['key']) => {
-    setHidden((prev) => {
-      const next = new Set(prev);
+    setHidden(() => {
+      const next = new Set(shownHidden());
       if (!next.delete(key)) next.add(key);
+      setChosen(true);
       saveHiddenColumns(next);
       // A hidden column cannot say it is the one sorting.
       if (next.has(key)) setSort((prev) => (prev?.key === key ? null : prev));
@@ -432,7 +439,7 @@ export default function List() {
                         type="checkbox"
                         class="w-4 h-4 flex-none"
                         style={{ 'accent-color': 'var(--color-primary-600)' }}
-                        checked={!hidden().has(c.key)}
+                        checked={!shownHidden().has(c.key)}
                         disabled={!!c.pinned}
                         onChange={() => toggleColumn(c.key)}
                       />
@@ -684,7 +691,7 @@ function ItemRow(props: {
                             class="flex-1 min-w-0 text-left group/title"
                           >
                             <div class="flex items-center gap-2">
-                              <span class="text-sm font-bold text-content group-hover/title:text-brand transition-colors truncate">
+                              <span class="min-w-0 line-clamp-2 break-words text-sm font-bold text-content group-hover/title:text-brand transition-colors">
                                 {props.item.title}
                               </span>
                               <Show when={hasChildren}>

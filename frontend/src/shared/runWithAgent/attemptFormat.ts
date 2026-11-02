@@ -396,7 +396,8 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
       badge = { label: 'Succeeded', tone: 'success' };
     } else if (kept) {
       badge = { label: 'Finished — changes could not be read', tone: 'warning', detail: `Workspace kept at ${kept}` };
-    } else if (patchBytes === 0) {
+    } else if (patchBytes === 0 && !isFolderRun(reason)) {
+      // A folder team has no repository to change; its verdict says so once.
       badge = { label: 'Finished — no changes recorded', tone: 'warning', detail: 'The agent ended without changing any files. What it said is below.' };
     }
   }

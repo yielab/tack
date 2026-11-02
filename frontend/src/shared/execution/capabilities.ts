@@ -35,7 +35,7 @@ export interface CapabilityGate {
   reason: string | null;
 }
 
-const NO_DATA_REASON = 'no runner capability data available';
+export const NO_DATA_REASON = 'no runner capability data available';
 
 /** A single runner capability value is "enabled" at every level except
  *  `'unsupported'` (`'advisory'` still lets a control fire). */

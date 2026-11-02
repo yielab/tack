@@ -1,6 +1,6 @@
 import { type Component, type JSX, For, Show } from 'solid-js';
 import { Badge, type BadgeTone } from '../../../shared/ui';
-import { gateFeature, gateFeatureAcrossRunners, type FeatureName } from '../../../shared/execution';
+import { gateFeature, gateFeatureAcrossRunners, NO_DATA_REASON, type FeatureName } from '../../../shared/execution';
 import type { RunnerCapabilities } from '../../../shared/execution';
 import { formatCapacity, formatLabelChips } from './format';
 import { versionText } from '../runnerObservations';
@@ -98,6 +98,9 @@ export interface RunnerHealthCardProps {
  */
 const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
   const labelChips = () => formatLabelChips(props.labels);
+  const gateOf = (feature: FeatureName) =>
+    props.capabilities ? gateFeature(props.capabilities, feature) : gateFeatureAcrossRunners([], feature);
+  const unreportedFeatures = () => FEATURES.filter((f) => !gateOf(f).enabled && gateOf(f).reason === NO_DATA_REASON).length;
 
   return (
     <Card
@@ -173,13 +176,19 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
         <p style={{ color: 'var(--color-text-tertiary)' }}>
           Feature support
         </p>
+        <Show when={unreportedFeatures() > 0}>
+          <p data-testid="features-unreported" style={{ color: 'var(--color-text-tertiary)' }}>
+            {props.capabilities
+              ? 'This computer did not report some of these features.'
+              : 'This computer has not reported what it supports.'}
+          </p>
+        </Show>
         <ul class="flex flex-wrap gap-1.5">
           <For each={FEATURES}>
             {(feature) => {
-              const gate = () =>
-                props.capabilities
-                  ? gateFeature(props.capabilities, feature)
-                  : gateFeatureAcrossRunners([], feature);
+              const gate = () => gateOf(feature);
+              // A feature nothing was reported for reads "not reported"; the one line above says why.
+              const unreported = () => !gate().enabled && gate().reason === NO_DATA_REASON;
               return (
                 <li
                   class="inline-flex flex-wrap items-center gap-1 rounded-full bg-app py-[3px] pl-2.5 pr-[3px]"
@@ -187,9 +196,9 @@ const RunnerHealthCard: Component<RunnerHealthCardProps> = (props) => {
                 >
                   {FEATURE_LABEL[feature]}:{' '}
                   <Badge tone={gate().enabled ? 'success' : 'neutral'}>
-                    {gate().enabled ? 'supported' : 'not supported'}
+                    {gate().enabled ? 'supported' : unreported() ? 'not reported' : 'not supported'}
                   </Badge>
-                  <Show when={gate().reason}>
+                  <Show when={gate().reason && !unreported()}>
                     <span class="pr-2" style={{ color: 'var(--color-text-tertiary)' }}> — {gate().reason}</span>
                   </Show>
                 </li>

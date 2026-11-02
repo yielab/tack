@@ -93,6 +93,7 @@ export {
   gateFeatureAcrossRunners,
   listReportedHarnessKinds,
   harnessProbeStatus,
+  NO_DATA_REASON,
 } from './capabilities';
 
 export { VersionedCache, SequenceAllocator } from './cache';
