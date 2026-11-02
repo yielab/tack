@@ -80,13 +80,13 @@ const AgentStrip: Component<{
     <Show when={totalRuns(props.counts) > 0}>
       <div
         role="group"
-        aria-label="Work"
+        aria-label="Work in this project"
         data-testid="agent-strip"
         class="flex flex-wrap items-center gap-2"
         style={{ padding: '0 22px 10px' }}
       >
-        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task. The column is its status, which only a person changes.">
-          Work
+        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task of this project. The column is its status, which only a person changes. The sidebar's Waiting for you counts every project.">
+          Work in this project
         </span>
         <For each={COUNTERS}>
           {(entry) => (

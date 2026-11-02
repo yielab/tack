@@ -168,7 +168,7 @@ The record of every time an agent was handed this item. Its tab carries the late
 in plain words, such as "No branch was pushed". The board card carries the same status as a chip.
 
 Everything that waits on you is in one place. **Waiting for you** is always in the sidebar, and the top
-bar shows the same count; with nothing to do it reads 0, and hovering it says so. Press either to open the
+bar shows the same count; with nothing to do it reads 0, and hovering it says so. The count covers every project, and under its name the sidebar spells it out in the same words as the board's **Work** row ("All projects: 1 needs you, 1 ready for review"), so a project's row can read 0 **Needs you** while the sidebar counts a run ready for review. Press either to open the
 list, in three groups: **Questions to answer**, **Ready for review**, and **Failed since you last looked**
 (runs that ended in failure after the last time you opened the list in this browser). Each row has the
 run's state, the item's title, its project and how long ago it happened, and one button for what to do

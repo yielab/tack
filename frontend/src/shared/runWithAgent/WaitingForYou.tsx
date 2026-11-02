@@ -32,7 +32,14 @@ const breakdown = (): string => {
   ]
     .filter(Boolean)
     .join('; ');
-  return parts ? `${waitingSentence(waitingCount())}: ${parts}` : waitingSentence(waitingCount());
+  return parts ? `${waitingSentence(waitingCount())} across all projects: ${parts}` : waitingSentence(waitingCount());
+};
+
+/** The count in the words the board's Work strip uses, with its scope: the strip counts one project, this counts them all. */
+const scopeLine = (): string => {
+  const changes = waitingChangeSets().length;
+  const parts = [tallySentence(waitingTally()), changes > 0 ? `${changes} ${changes === 1 ? 'change set' : 'change sets'} to apply` : ''].filter(Boolean);
+  return parts.length > 0 ? `All projects: ${parts.join(', ')}` : '';
 };
 
 /** The sentence the count stands for, read aloud and shown on hover. */
@@ -184,7 +191,17 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
         }}
       >
         <IconComment size={16} />
-        <span style={{ flex: 1, 'text-align': 'left' }}>Waiting for you</span>
+        <span style={{ flex: 1, 'text-align': 'left', 'min-width': 0 }}>
+          Waiting for you
+          <Show when={scopeLine()}>
+            <span
+              data-testid="waiting-scope"
+              style={{ display: 'block', 'font-size': '0.6875rem', 'font-weight': 400, 'line-height': 1.3, color: 'var(--color-text-secondary)' }}
+            >
+              {scopeLine()}
+            </span>
+          </Show>
+        </span>
         <span data-testid="waiting-count" aria-hidden="true" style={countStyle(waitingCount())}>
           {waitingCount()}
         </span>

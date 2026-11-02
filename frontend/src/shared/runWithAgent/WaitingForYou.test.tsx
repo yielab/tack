@@ -176,6 +176,28 @@ describe('Waiting for you', () => {
     expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('3');
   });
 
+  it('says in words, under its name, what the count is made of and that it covers every project', async () => {
+    mockApi({
+      runs: [
+        { id: 'q', item: 'a', state: 'waiting_decision', created: minutesAgo(3), title: 'Pick a chart library' },
+        { id: 'v', item: 'b', state: 'succeeded', created: minutesAgo(50), ended: minutesAgo(20), needsReview: true, title: 'Add the export' },
+      ],
+    });
+    const c = mount();
+    await settle();
+
+    const scope = c.querySelector('[data-testid="waiting-scope"]')!;
+    expect(scope.textContent).toBe('All projects: 1 needs you, 1 ready for review');
+    expect(badge(c).title).toContain('across all projects');
+  });
+
+  it('shows no scope line when nothing waits', async () => {
+    mockApi({ runs: [{ id: 'r1', item: 'a', state: 'running', created: minutesAgo(5) }] });
+    const c = mount();
+    await settle();
+    expect(c.querySelector('[data-testid="waiting-scope"]')).toBeNull();
+  });
+
   it('the top bar badge shows the same count and announces it', async () => {
     mockApi({
       runs: [
