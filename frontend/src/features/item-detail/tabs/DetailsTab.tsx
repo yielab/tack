@@ -9,7 +9,7 @@ import type {
   BriefRisk,
   ItemBrief,
 } from '../../../shared/api/briefs';
-import { Button, Field, FieldShell, HelpHint, HelpNote, Select } from '../../../shared/ui';
+import { Button, Field, FieldShell, Fold, HelpHint, HelpNote, Select } from '../../../shared/ui';
 import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import type { Item } from '../../../shared/types';
@@ -533,16 +533,14 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
         </Button>
       </section>
 
-      <details class="rounded-card p-5" style={panelStyle}>
-        <summary class="cursor-pointer text-lg" style={{ color: 'var(--color-text-primary)' }}>
-          For the agent
-          <Show when={agentSummary()}>
-            <span class="ml-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              {agentSummary()}
-            </span>
-          </Show>
-        </summary>
-        <div class="mt-3 space-y-4">
+      <Fold
+        kind="for-the-agent"
+        title={<span class="text-lg font-normal">For the agent</span>}
+        summary={agentSummary() || undefined}
+        class="rounded-card p-5"
+        style={panelStyle}
+      >
+        <div class="space-y-4">
           <HelpNote help={HELP.forTheAgent} />
           <div class="space-y-3">
             <h4 class="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
@@ -662,12 +660,15 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
             Save for the agent
           </Button>
         </div>
-      </details>
+      </Fold>
 
-      <section class="space-y-3 rounded-card p-5" style={panelStyle}>
-      <h3 class="text-lg" style={{ color: 'var(--color-text-primary)' }}>
-        Link GitHub issue
-      </h3>
+      <Fold
+        kind="github"
+        title={<span class="text-lg font-normal">GitHub issue</span>}
+        summary={link() ? `${link()!.repo}#${link()!.issue_number}` : 'no GitHub issue linked'}
+        class="rounded-card p-5"
+        style={panelStyle}
+      >
       <Show
         when={link()}
         fallback={
@@ -700,7 +701,7 @@ const DetailsTab: Component<DetailsTabProps> = (props) => {
           </Button>
         </div>
       </Show>
-      </section>
+      </Fold>
     </div>
   );
 };

@@ -41,6 +41,9 @@ export type { ConfirmOptions, ConfirmDialogProps } from './ConfirmDialog';
 export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
 
+export { default as Fold, readFoldOpen } from './Fold';
+export type { FoldProps } from './Fold';
+
 export { default as Tabs } from './Tabs';
 export type { TabsProps, TabItem } from './Tabs';
 

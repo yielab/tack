@@ -124,7 +124,7 @@ describe('ItemBody', () => {
       container.querySelector('[aria-label="Item title"]'),
       container.querySelector('[data-testid="now-panel"]'),
       container.querySelector('[role="tablist"]'),
-      container.querySelector('[data-testid="details-fold"]'),
+      container.querySelector('[data-fold="details"]'),
     ] as Element[];
     expect(order.every(Boolean)).toBe(true);
     for (let i = 1; i < order.length; i++) {
@@ -152,6 +152,18 @@ describe('ItemBody', () => {
     expect(container.querySelector('[data-testid="now-who"]')?.textContent).toBe('Would go to Code agent · team saas-code');
     expect([...container.querySelectorAll('button')].filter((b) => b.textContent === 'Run with agent')).toHaveLength(1);
     expect(container.querySelector('[role="tab"] [role="img"]')).toBeNull();
+    dispose();
+  });
+
+  it('the Details fold is shut with the priority, assignee and due date in its header, and the Automation line is shut with its sentence', async () => {
+    const { container, dispose } = await mount('drawer');
+    const details = container.querySelector<HTMLButtonElement>('[data-fold="details"] > button')!;
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    expect(details.textContent).toContain('Details');
+    expect(details.textContent).toContain('High · Ana');
+    const automation = container.querySelector<HTMLButtonElement>('[data-fold="automation"] > button')!;
+    expect(automation.getAttribute('aria-expanded')).toBe('false');
+    expect(automation.textContent).toContain("By hand: this project doesn't start tasks by itself");
     dispose();
   });
 
@@ -237,7 +249,7 @@ describe('ItemBody', () => {
 
   it('the page keeps its side column of properties, with no Details fold', async () => {
     const { container, dispose } = await mount('page');
-    expect(container.querySelector('[data-testid="details-fold"]')).toBeNull();
+    expect(container.querySelector('[data-fold="details"]')).toBeNull();
     const properties = container.querySelector('aside section[aria-label="Properties"]')!;
     expect(properties.textContent).toContain('Priority');
     expect(container.querySelector('[data-testid="now-panel"]')!.closest('aside')).toBeNull();

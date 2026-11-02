@@ -1,4 +1,5 @@
 import { type Component, type JSX, Show, createUniqueId } from 'solid-js';
+import Fold from '../ui/Fold';
 
 export type RunSectionId = 'needs' | 'checks' | 'changes' | 'steps' | 'files' | 'technical';
 
@@ -7,8 +8,12 @@ export interface RunSectionProps {
   title: string;
   /** One sentence with its number, beside the title: what the section says before the detail does. */
   summary?: JSX.Element;
-  /** A closed disclosure instead of an open section: the third level, for what only a bug report needs. */
+  /** A fold instead of an always-open section: for what is history, or only a bug report needs. */
   fold?: boolean;
+  /** For a fold: open when the person never chose; shut when absent. */
+  defaultOpen?: boolean;
+  /** For a fold: what in it waits for a person; it opens by itself when this appears. */
+  needs?: string | null;
   /** Given the heading, so a button elsewhere can move focus to it. */
   headingRef?: (el: HTMLHeadingElement) => void;
   children: JSX.Element;
@@ -31,12 +36,19 @@ const RunSection: Component<RunSectionProps> = (props) => {
     <Show
       when={!props.fold}
       fallback={
-        <details data-testid="run-section" data-section={props.id} class="min-w-0 border-t pt-4" style={rule}>
-          <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            {props.title} {summary()}
-          </summary>
-          <div class="mt-3 min-w-0 space-y-4">{props.children}</div>
-        </details>
+        <Fold
+          kind={`run-${props.id}`}
+          testId="run-section"
+          attrs={{ 'data-section': props.id }}
+          title={props.title}
+          summary={props.summary}
+          needs={props.needs}
+          defaultOpen={props.defaultOpen}
+          class="border-t pt-4"
+          style={rule}
+        >
+          <div class="min-w-0 space-y-4">{props.children}</div>
+        </Fold>
       }
     >
       <section data-testid="run-section" data-section={props.id} aria-labelledby={headingId} class="min-w-0 space-y-3 border-t pt-4" style={rule}>

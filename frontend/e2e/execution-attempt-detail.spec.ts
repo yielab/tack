@@ -111,7 +111,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await drawer2.getByRole('tab', { name: 'Execution' }).click();
     await expect(drawer2.getByRole('heading', { name: 'Run 1' })).toBeVisible();
     // The ids live in the Technical fold, closed until asked for.
-    await drawer2.locator('[data-section="technical"] > summary').click();
+    await drawer2.locator('[data-section="technical"] > button').click();
     await expect(drawer2.getByTitle(runnerId)).toBeVisible();
     // Right after a claim the Work region says the run is Running and that its attempt is
     // Starting; the Execution panel does not repeat either for the newest run.
@@ -231,6 +231,8 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     await page.reload();
     await waitForApp(page);
     await drawer.getByRole('tab', { name: 'Execution' }).click();
+    // A finished run keeps its files folded, one press away.
+    await drawer.getByRole('button', { name: /^Files from this run/ }).click();
     await expect(drawer.getByText(`${artifactId}.txt`)).toBeVisible();
 
     // Download the REAL artifact from its listed row — a genuine browser
@@ -401,7 +403,7 @@ test.describe('Execution tab — real attempts/decisions/artifacts against the p
     const drawer = page.getByRole('dialog');
     await drawer.getByRole('tab', { name: 'Execution' }).click();
     // What the agent got sits in the Technical fold, closed until asked for.
-    await drawer.locator('[data-section="technical"] > summary').click();
+    await drawer.locator('[data-section="technical"] > button').click();
     const got = drawer.getByTestId('agent-got');
     await expect(got).toBeVisible();
     await expect(got).toContainText('What the agent got');

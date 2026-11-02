@@ -30,11 +30,16 @@ reads from the top down, in the same order every time: the verdict first, then w
    changed; **Open folder** (or **Copy path**, when you are not in the desktop app) shows where the work is
    on this computer; **Copy branch** copies the branch name, when the agent worked on a branch.
 5. **Steps.** The team's steps as a track, one node for each with its role, model and verdict. Under it,
-   **Activity** (folded) has **What the agent did**, by tool or as a timeline, and the questions the agent
-   asked.
+   **Activity** has **What the agent did**, by tool or as a timeline, and the questions the agent asked.
 6. **Files from this run**, one row for each with **View** and **Download**.
-7. **Technical** (folded): the request, attempt and runner ids, what the agent got and read, the usage in
+7. **Technical**: the request, attempt and runner ids, what the agent got and read, the usage in
    full, the **Raw log** and whether the verifier signed its pack.
+
+Sections 5 to 7 are folds: a header you press (with a chevron) that says in one line what is inside while it
+is shut. A run that is still going, or that did not succeed, shows its Steps open; a run that finished well
+shows Steps, Files and Technical shut, and Activity shut once the run is over. When the agent waits for an
+answer, Activity says "a question needs you" in its header and opens by itself. The browser remembers
+whether you opened or shut each kind of section, and your choice wins over these defaults.
 
 **Succeeded** is green only when the changes were captured. It is amber when a run that was not meant to
 change files changed nothing, or when the changes could not be read. A run is meant to change files when its
