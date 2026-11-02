@@ -1,4 +1,4 @@
-import type { Trigger, TriggerEvent, TriggerSchedule, TriggerSource } from '../../../../shared/api/triggers';
+import type { Trigger, TriggerEvent, TriggerSchedule, TriggerSource } from '../api/triggers';
 
 /** The events a trigger can wait for, in the words a person reads. */
 export const EVENT_CHOICES: ReadonlyArray<{ value: TriggerEvent; label: string }> = [

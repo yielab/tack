@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render } from 'solid-js/web';
 import Triggers, { addReason } from './Triggers';
-import { daysText, durationText, scheduleText, triggerSentence } from './triggerText';
+import { daysText, durationText, scheduleText, triggerSentence } from '../../../../shared/agents/triggerText';
 import type { Trigger } from '../../../../shared/api/triggers';
 import { flush } from '../../../../test/flush';
 

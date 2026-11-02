@@ -5,8 +5,8 @@ import { agentProfilesApi } from '../../shared/execution';
 import { HARNESS_KINDS } from '../../shared/runWithAgent/shared';
 import { toast } from '../../shared/ui/toast';
 import { Button, Field, Select } from '../../shared/ui';
-import { AGENT_LEVELS } from '../settings/panels/automation/AgentsOnBoard';
-import { triggerSentence } from '../settings/panels/automation/triggerText';
+import { AGENT_LEVELS } from '../../shared/agents/levels';
+import { triggerSentence } from '../../shared/agents/triggerText';
 import { AddManagerError, type AddManagerResult, addManager } from './addManager';
 
 const NEW_PROFILE = '__new__';
