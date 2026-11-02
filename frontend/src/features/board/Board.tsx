@@ -17,7 +17,7 @@ import { useVocab } from '../../shared/vocab/useVocab';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import { useAutoStart, type WaitingReason } from '../../shared/state/autoStart';
 import EmptyProjectGuide from '../../shared/ui/EmptyProjectGuide';
-import { Avatar, AvatarStack, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
+import { Avatar, AvatarStack, teamInitialsOf, Badge, RunState, TypeBadge, PriorityDot, WipChip, Skeleton, typeKey } from '../../shared/ui';
 import { IconPlus } from '../../shared/ui/icons';
 import { estimateUnitSuffix } from '../../shared/estimateUnit';
 import RunWithAgentButton from '../../shared/runWithAgent/RunWithAgentButton';
@@ -52,6 +52,8 @@ export const ItemCard: Component<{
   waiting?: WaitingReason | null;
   /** The title of the item this one is part of; shown on a card auto-start holds or started. */
   parentTitle?: string;
+  /** The team's initials among the teams on this board. */
+  teamInitials?: (team: string) => string | undefined;
 }> = (props) => {
   const [isDragging, setIsDragging] = createSignal(false);
   const [isHovered, setIsHovered] = createSignal(false);
@@ -238,7 +240,7 @@ export const ItemCard: Component<{
               title={`Team: ${team()}`}
               style={{ display: 'inline-flex', 'align-items': 'center', gap: '5px', 'min-width': 0, color: 'var(--color-text-secondary)' }}
             >
-              <span aria-hidden="true" style={{ display: 'inline-flex' }}><Avatar name={team()} size="sm" /></span>
+              <span aria-hidden="true" style={{ display: 'inline-flex' }}><Avatar name={team()} initials={props.teamInitials?.(team())} size="sm" /></span>
               <span style={{ 'overflow-wrap': 'anywhere' }}>{team()}</span>
             </span>
           )}
@@ -287,6 +289,7 @@ const BoardColumnView: Component<{
   runOf: (item: Item) => CardRun | undefined;
   waitingOf: (item: Item) => WaitingReason | null;
   parentTitleOf: (item: Item) => string | undefined;
+  teamInitialOf: (team: string) => string | undefined;
   filters: ReadonlySet<RunFilter>;
   onToggleFilter: (filter: RunFilter) => void;
   alwaysPriority: boolean;
@@ -393,6 +396,7 @@ const BoardColumnView: Component<{
               run={props.runOf(item())}
               waiting={props.waitingOf(item())}
               parentTitle={props.parentTitleOf(item())}
+              teamInitials={props.teamInitialOf}
               notStarted={!props.started}
               alwaysPriority={props.alwaysPriority}
             />
@@ -471,6 +475,8 @@ const Board: Component = () => {
   const autoStart = useAutoStart(projectId);
   const waitingOf = (item: Item): WaitingReason | null => autoStart.waiting(item.id);
   const titles = createMemo(() => new Map((items() ?? []).map((i) => [i.id, i.title] as const)));
+  const teamInitialMap = createMemo(() => teamInitialsOf((items() ?? []).map((i) => i.team ?? '')));
+  const teamInitialOf = (team: string) => teamInitialMap().get(team);
   const parentTitleOf = (item: Item): string | undefined => (item.parent_id ? titles().get(item.parent_id) : undefined);
 
   const [runFilters, setRunFilters] = createSignal<ReadonlySet<RunFilter>>(new Set());
@@ -712,6 +718,7 @@ const Board: Component = () => {
                   runOf={runOf}
                   waitingOf={waitingOf}
                   parentTitleOf={parentTitleOf}
+                  teamInitialOf={teamInitialOf}
                   filters={runFilters()}
                   onToggleFilter={toggleRunFilter}
                   alwaysPriority={alwaysPriority()}

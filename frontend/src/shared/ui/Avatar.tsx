@@ -99,6 +99,8 @@ export function initialsOf(name: string): string {
 export interface AvatarProps {
   /** Display name (drives the color) or pre-computed initials. */
   name: string;
+  /** Initials to draw in place of the ones taken from the name (the colour still follows the name). */
+  initials?: string;
   size?: AvatarSize;
   /** Render an outline ring (used inside stacks over a surface). */
   ring?: boolean;
@@ -129,7 +131,7 @@ const Avatar: Component<AvatarProps> = (props) => {
         ...props.style,
       }}
     >
-      {initialsOf(props.name)}
+      {props.initials ?? initialsOf(props.name)}
     </span>
   );
 };
