@@ -1425,7 +1425,8 @@ async fn a_second_adapter_over_the_same_state_dir_sends_the_saved_since() {
     assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
     let saved = std::fs::read_to_string(scene.state.join("docket/attempt-1.since"))
         .expect("the since file");
-    assert_eq!(saved.trim(), "1");
+    // The record opened at `seq` 1 and took 2 when it settled, as in a docket with `settledCursor`.
+    assert_eq!(saved.trim(), "2");
 
     fake.script(Script::default());
     let (_, second) = run_to_end(&adapter(&fake, &scene), &attempt).await;
@@ -1438,7 +1439,7 @@ async fn a_second_adapter_over_the_same_state_dir_sends_the_saved_since() {
     // The same attempt keeps its idempotency key, so the second adapter follows the same task.
     let task = fake.task_ids()[0].clone();
     assert_eq!(polls.first().unwrap().query, format!("since=0&task={task}"));
-    assert_eq!(polls.last().unwrap().query, format!("since=1&task={task}"));
+    assert_eq!(polls.last().unwrap().query, format!("since=2&task={task}"));
 }
 
 #[tokio::test]
@@ -2713,6 +2714,7 @@ struct Parked {
     questions: tokio::sync::mpsc::Receiver<tack_runner::client::engine::Question>,
     answers: tokio::sync::mpsc::Sender<DecisionAnswer>,
     progress: tokio::sync::mpsc::Receiver<tack_runner::harness::Progress>,
+    elsewhere: tokio::sync::mpsc::Receiver<tack_runner::harness::AnsweredElsewhere>,
     waiting: tokio::task::JoinHandle<
         Result<tack_runner::harness::HarnessOutcome, tack_runner::client::HarnessError>,
     >,
@@ -2724,6 +2726,10 @@ async fn park(fake: &FakeDocket, scene: &Scene, attempt: &ExecutionSpec) -> Park
     let handle = adapter.start(attempt).await.expect("starts");
     let (questions, answers) = adapter.decision_channels(&handle).await.expect("channels");
     let progress = adapter.progress_channel(&handle).await.expect("progress");
+    let elsewhere = adapter
+        .answered_elsewhere_channel(&handle)
+        .await
+        .expect("answered-elsewhere channel");
     let waiting = tokio::spawn({
         let (adapter, handle) = (Arc::clone(&adapter), handle.clone());
         async move { adapter.wait(&handle).await }
@@ -2734,6 +2740,7 @@ async fn park(fake: &FakeDocket, scene: &Scene, attempt: &ExecutionSpec) -> Park
         questions,
         answers,
         progress,
+        elsewhere,
         waiting,
     }
 }
@@ -2875,6 +2882,117 @@ async fn a_decision_that_expired_in_tack_cancels_the_task_and_posts_no_deny() {
     let task = fake.task_ids()[0].clone();
     let cancels = fake.requests_to("POST", &format!("/tasks/{POD}/{task}/cancel"));
     assert_eq!(cancels.len(), 1);
+}
+
+/// `settledCursor`: a question a person answered at docket's own CLI is closed on the board, and
+/// the next question the task asks is put to a person without waiting for the first to expire.
+#[tokio::test]
+async fn a_question_answered_at_dockets_cli_is_reported_and_the_next_one_is_asked() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        gate: Gate::approval("first: may it install?"),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    let first = parked.question().await;
+    let task = fake.task_ids()[0].clone();
+
+    fake.resolve_from_cli(&task, "approve_once");
+    let told = tokio::time::timeout(Duration::from_secs(20), parked.elsewhere.recv())
+        .await
+        .expect("told in time")
+        .expect("a report");
+    assert_eq!(
+        told,
+        tack_runner::harness::AnsweredElsewhere {
+            vendor_id: first.vendor_id.clone(),
+            source: "docket".to_owned(),
+        }
+    );
+
+    fake.ask_again(&task, "second: may it push?");
+    let second = parked.question().await;
+    assert_eq!(second.prompt, "second: may it push?");
+    parked.answer(granting("approve_once")).await;
+    let (outcome, lines) = parked.end().await;
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    // Tack answered only the second one, and the timeline says where the first was answered.
+    let posted = answers_posted(&fake);
+    assert_eq!(posted.len(), 1, "{posted:?}");
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|(kind, _)| kind == "escalation.answered_elsewhere")
+            .map(|(_, text)| text.as_str())
+            .collect::<Vec<_>>(),
+        ["answered in docket, not in Tack: first: may it install?"]
+    );
+}
+
+/// A docket before `settledCursor` behaves as it always did: nothing is reported.
+#[tokio::test]
+async fn a_docket_without_settled_cursor_reports_no_answer_given_at_its_cli() {
+    let fake = pods_fake().await;
+    fake.without_settled_cursor();
+    fake.script(Script {
+        gate: Gate::approval("first: may it install?"),
+        ..Script::default()
+    });
+    let scene = scene();
+    let mut parked = park(&fake, &scene, &spec(&scene, "attempt-1", 1)).await;
+    parked.question().await;
+    let task = fake.task_ids()[0].clone();
+    let reads = || fake.requests_to("GET", "/escalations").len();
+
+    fake.resolve_from_cli(&task, "approve_once");
+    // The adapter reads the settled record at least once more before the check.
+    let seen = reads();
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while reads() < seen + 2 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await
+    .expect("docket is read again");
+    assert!(parked.elsewhere.try_recv().is_err(), "nothing was reported");
+}
+
+/// The fake stamps a new `seq` on an escalation that settles, as a docket with `settledCursor`
+/// does, so `GET /escalations?since=<n>` hands a poller that saw it pending its final state.
+#[tokio::test]
+async fn a_settled_escalation_comes_back_past_the_seq_it_was_seen_at() {
+    for listed in [true, false] {
+        let fake = pods_fake().await;
+        if !listed {
+            fake.without_settled_cursor();
+        }
+        fake.script(Script {
+            gate: Gate::approval("tool call 'bash'"),
+            ..Script::default()
+        });
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+        adapter
+            .start(&spec(&scene, "attempt-1", 1))
+            .await
+            .expect("starts");
+        let task = fake.task_ids()[0].clone();
+        let (_, pending) = ask(&fake, "GET", "/escalations?since=0", None).await;
+        let seen = pending["next"].as_u64().expect("a seq");
+        assert_eq!(pending["escalations"][0]["state"], json!("pending"));
+
+        fake.resolve_from_cli(&task, "approve_once");
+        let (_, after) = ask(&fake, "GET", &format!("/escalations?since={seen}"), None).await;
+        let found = after["escalations"].as_array().expect("a list");
+        if listed {
+            assert_eq!(found.len(), 1, "{after}");
+            assert_eq!(found[0]["state"], json!("resolved"));
+            assert!(found[0]["seq"].as_u64().unwrap() > seen);
+        } else {
+            assert!(found.is_empty(), "{after}");
+        }
+    }
 }
 
 /// `settledCursor`: the cancel names who made it, so docket's audit entry does not say `http`. A

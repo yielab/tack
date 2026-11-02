@@ -1,9 +1,11 @@
 //! Runner-protocol handler modules, mounted under `/api/runner/v1` (see
 //! `docs/contracts/runner-v1/protocol.json`'s `base_path`) by `router.rs`.
 //!
-//! Only the additive `recovery-observation` and `team_activity` operations have an explicit
-//! path in `protocol.json` (`/attempts/{attempt_id}/recovery-observation` and `/activity`,
-//! preserved here verbatim, relative to `base_path`); every other canonical exchange in
+//! Only the additive `recovery-observation`, `team_activity` and `decision_answered_elsewhere`
+//! operations have an explicit path in `protocol.json`
+//! (`/attempts/{attempt_id}/recovery-observation`, `/activity` and
+//! `/attempts/{attempt_id}/decisions/answered-elsewhere`, preserved here verbatim, relative to
+//! `base_path`); every other canonical exchange in
 //! `docs/contracts/runner-v1/` fixes payload shapes, not URLs.
 //!
 //! `runner_auth` lives at `handlers/runner_protocol/runner_auth.rs` (a
@@ -63,12 +65,13 @@ use tack_protocol::execution::{
     AttemptTransitionRequest, AttemptTransitionResponse, CancelObservation,
     CancellationObservationRequest, CancellationObservationResponse, ClaimGranted, ClaimIdle,
     ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer,
-    DecisionCreateRequest, DecisionCreateResponse, DecisionOption, DecisionPollRequest,
-    DecisionPollResponse, DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot,
-    EnrollmentRequest, EnrollmentResponse, EventBatchRequest, EventBatchResponse,
-    ExecutionRequestSnapshot, ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse,
-    LeaseResult, ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse,
-    RefreshRequest, RefreshResponse, RunnerId, StableErrorCode,
+    DecisionAnsweredElsewhereRequest, DecisionAnsweredElsewhereResponse, DecisionCreateRequest,
+    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
+    DecisionRecommendation, DecisionUpdate, EmbeddedCapabilitySnapshot, EnrollmentRequest,
+    EnrollmentResponse, EventBatchRequest, EventBatchResponse, ExecutionRequestSnapshot,
+    ExecutionState, FencingToken, HeartbeatRequest, HeartbeatResponse, LeaseResult,
+    ProtocolVersion, RecoveryObservationRequest, RecoveryObservationResponse, RefreshRequest,
+    RefreshResponse, RunnerId, StableErrorCode,
 };
 use uuid::Uuid;
 
@@ -185,6 +188,10 @@ pub fn routes(state: RunnerProtocolState, configured_max_body_size_bytes: usize)
         .route(
             "/attempts/{attempt_id}/decisions/poll",
             post(poll_decisions),
+        )
+        .route(
+            "/attempts/{attempt_id}/decisions/answered-elsewhere",
+            post(decision_answered_elsewhere),
         )
         .route("/attempts/{attempt_id}/artifacts", post(submit_artifacts))
         // Artifact content upload. A distinct, more-specific
@@ -1560,6 +1567,72 @@ pub async fn poll_decisions(
         decisions,
         next_after: stored_instant(&next_after, "next_after")?,
     })
+}
+
+/// The agent's own tool took the answer to a question the board still holds open. The decision
+/// is closed as `answered_elsewhere` and the attempt, when that was its last pending decision,
+/// goes back to running so it can ask the next one. Idempotent; a decision another road had
+/// already settled is reported as it stands.
+pub async fn decision_answered_elsewhere(
+    State(state): State<RunnerProtocolState>,
+    headers: HeaderMap,
+    Path(attempt_id): Path<AttemptId>,
+    RawBody(body): RawBody,
+) -> HandlerResult {
+    let (principal, value, fencing_token) =
+        authenticate_attempt_request(&state, &headers, &attempt_id, &body).await?;
+    let DecisionAnsweredElsewhereRequest {
+        decision_id,
+        source,
+        ..
+    } = parse_message(value)?;
+    bounded_text(&source)?;
+
+    let holds_fence = queries::execution_attempts::holds_fence(
+        &state.repo,
+        &attempt_id,
+        &principal.runner_id,
+        fencing_token,
+    )
+    .await
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not verify attempt");
+        internal_error("Could not verify attempt")
+    })?;
+    if !holds_fence {
+        return Err(stale_lease(attempt_id.as_str()));
+    }
+
+    let settled = runs::answered_elsewhere::answered_elsewhere(
+        &state.repo,
+        state.clock.now(),
+        &attempt_id,
+        &decision_id,
+        &source,
+    )
+    .await
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not close the decision");
+        internal_error("Could not close the decision")
+    })?;
+    match settled {
+        runs::answered_elsewhere::AnsweredElsewhere::NotFound => Err(protocol_error(
+            StatusCode::NOT_FOUND,
+            StableErrorCode::NotFound,
+            "The attempt asked no decision with this id",
+            json!({"decision_id": decision_id}),
+        )),
+        runs::answered_elsewhere::AnsweredElsewhere::Settled {
+            state: decision_state,
+            resolved_at,
+            ..
+        } => message_json(&DecisionAnsweredElsewhereResponse {
+            protocol_version: ProtocolVersion::v1(),
+            decision_id,
+            state: decision_state,
+            resolved_at: stored_instant(&resolved_at, "resolved_at")?,
+        }),
+    }
 }
 
 // ---------------------------------------------------------------------

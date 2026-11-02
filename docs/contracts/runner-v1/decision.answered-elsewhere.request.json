@@ -1,0 +1,8 @@
+{
+  "protocol_version": 1,
+  "runner_id": "runr_01J00000000000000000000001",
+  "attempt_id": "att_01J00000000000000000000001",
+  "fencing_token": 7,
+  "decision_id": "dec_01J000000000000000000000001",
+  "source": "docket"
+}

@@ -222,6 +222,9 @@ pub enum DecisionSettlement {
     Expire { resolved_by: String },
     /// Mark the decision `resolved` with this `answer` and `resolved_by` (JSON text).
     Resolve { answer: String, resolved_by: String },
+    /// Mark the decision `answered_elsewhere`: the agent's own tool took the answer, so there is
+    /// none to keep. `resolved_by` is JSON text.
+    AnsweredElsewhere { resolved_by: String },
 }
 
 impl Repository {
@@ -281,6 +284,19 @@ impl Repository {
                      WHERE id=? AND state='pending'"
                 )))
                 .bind(&answer)
+                .bind(&now_s)
+                .bind(&resolved_by)
+                .bind(&now_s)
+                .bind(&row.id)
+                .execute(&mut *tx)
+                .await?;
+                resume_attempt_after_decisions(&mut tx, attempt_id, now).await?;
+            }
+            DecisionSettlement::AnsweredElsewhere { resolved_by } => {
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "UPDATE execution_decisions SET state='answered_elsewhere', answer=NULL, resolved_at=?, resolved_by=?, updated_at=?, {WITHOUT_CALL} \
+                     WHERE id=? AND state='pending'"
+                )))
                 .bind(&now_s)
                 .bind(&resolved_by)
                 .bind(&now_s)

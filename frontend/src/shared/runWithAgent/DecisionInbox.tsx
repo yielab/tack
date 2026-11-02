@@ -161,6 +161,9 @@ const DecisionRow: Component<{
   const isPending = () => props.decision.state === 'pending';
   const isExpired = () => props.decision.state === 'expired';
   const isResolved = () => props.decision.state === 'resolved';
+  // The agent's own tool took the answer (docket, at its own CLI): nothing here can answer it.
+  const isAnsweredElsewhere = () => props.decision.state === 'answered_elsewhere';
+  const answeredIn = () => props.decision.resolved_by?.subject_id || 'the agent\'s own tool';
   const hasOptions = () => props.decision.options.length > 0;
   // An approval of an action that leaves the team (an email, a post, a write to a service) is
   // marked by the runner, and carries the whole action while it is pending.
@@ -220,7 +223,10 @@ const DecisionRow: Component<{
         <Show when={isResolved()}>
           <Badge tone="success">Resolved</Badge>
         </Show>
-        <Show when={!isPending() && !isExpired() && !isResolved()}>
+        <Show when={isAnsweredElsewhere()}>
+          <Badge tone="success">Answered in {answeredIn()}</Badge>
+        </Show>
+        <Show when={!isPending() && !isExpired() && !isResolved() && !isAnsweredElsewhere()}>
           <Badge tone="neutral">{props.decision.state} (unrecognised)</Badge>
         </Show>
         <span class="ml-auto flex min-w-0 items-center gap-1.5 text-micro" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -301,6 +307,12 @@ const DecisionRow: Component<{
         <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
           Answered: <span style={{ 'font-family': 'var(--font-mono)' }}>{props.decision.answer?.option_id}</span>
           {props.decision.answer?.text ? ` — "${props.decision.answer.text}"` : ''}
+        </p>
+      </Show>
+
+      <Show when={isAnsweredElsewhere()}>
+        <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          This was answered in {answeredIn()}, not here — nothing is left to resolve.
         </p>
       </Show>
 

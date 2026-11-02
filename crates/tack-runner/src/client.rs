@@ -33,9 +33,9 @@ pub use journal::{
 pub use tack_protocol::execution::RecoveryObservation;
 pub use transport::{
     ArtifactManifestItem, ArtifactManifestReport, ArtifactUploadGrant, AttemptDataProtocol,
-    DecisionAnswer, DecisionCreateReport, DecisionCreateResponse, DecisionOption,
-    DecisionPollReport, DecisionPollResponse, HttpPullProtocol, HttpRunnerClient, Recommendation,
-    ResolvedDecision, RetryPolicy, persisted_session_runner_id,
+    DecisionAnswer, DecisionAnsweredElsewhereReport, DecisionCreateReport, DecisionCreateResponse,
+    DecisionOption, DecisionPollReport, DecisionPollResponse, HttpPullProtocol, HttpRunnerClient,
+    Recommendation, ResolvedDecision, RetryPolicy, persisted_session_runner_id,
 };
 pub use workspace::{
     CleanupResult, UnavailableWorktreeProvisioner, Workspace, WorkspaceError, WorkspaceManager,
