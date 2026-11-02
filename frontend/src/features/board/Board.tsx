@@ -26,7 +26,7 @@ import FirstRunBanner from '../../shared/agents/FirstRunBanner';
 import MoveMenu from './MoveMenu';
 import AgentStrip, { RunMiniBar } from './AgentStrip';
 import {
-  cardRun, countRuns, getAlwaysPriority, passesFilters, showsPriority,
+  cardRun, countRuns, getAlwaysPriority, orderByWork, passesFilters, showsPriority,
   type CardRun, type RunFilter,
 } from '../../shared/runWithAgent/cardRun';
 
@@ -299,8 +299,11 @@ const BoardColumnView: Component<{
 
   const runCounts = createMemo(() => countRuns(props.column.items.map(props.runOf)));
   // A filter narrows what the column shows, never what it holds: the count and
-  // the WIP chip keep speaking of every card in it.
-  const shown = createMemo(() => props.column.items.filter((item) => passesFilters(props.runOf(item), props.filters)));
+  // the WIP chip keep speaking of every card in it. Inside the column the cards a person has to
+  // act on come first, then the ones going, then the rest, each group in the column's own order.
+  const shown = createMemo(() =>
+    orderByWork(props.column.items.filter((item) => passesFilters(props.runOf(item), props.filters)), props.runOf),
+  );
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();

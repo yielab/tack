@@ -338,6 +338,23 @@ async function mountBoard(items: Item[], executions: ReturnType<typeof summary>[
 
 const titles = (c: Element) => [...c.querySelectorAll('[data-item-id] h4')].map((h) => h.textContent);
 
+describe('Board column order', () => {
+  it('a_column_lists_what_needs_a_person_first_then_what_is_going_then_the_rest_keeping_its_own_order_among_equals', async () => {
+    const items = [
+      makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),
+      makeItem({ id: 'b', title: 'Bravo', status: 'To Do' }),
+      makeItem({ id: 'c', title: 'Charlie', status: 'To Do' }),
+      makeItem({ id: 'd', title: 'Delta', status: 'To Do' }),
+      makeItem({ id: 'e', title: 'Echo', status: 'To Do', needs_review: true }),
+    ];
+    const c = await mountBoard(items, [
+      summary('r1', 'b', 'running'),
+      summary('r2', 'c', 'waiting_decision'),
+    ]);
+    expect(titles(c)).toEqual(['Charlie', 'Echo', 'Bravo', 'Alpha', 'Delta']);
+  });
+});
+
 describe('Board agent strip and column bars', () => {
   const ITEMS = [
     makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),
@@ -369,7 +386,8 @@ describe('Board agent strip and column bars', () => {
 
   it('a_counter_toggles_a_filter_on_the_board', async () => {
     const c = await mountBoard(ITEMS, RUNS);
-    expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
+    // Bravo asks for a person, so it leads its column.
+    expect(titles(c)).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
     const running = c.querySelector<HTMLButtonElement>('[data-testid="strip-running"]')!;
     running.click();
     await flush();
@@ -379,11 +397,11 @@ describe('Board agent strip and column bars', () => {
     expect(c.querySelector('section')?.textContent).toContain('2 of 3');
     c.querySelector<HTMLButtonElement>('[data-testid="strip-needs"]')!.click();
     await flush();
-    expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    expect(titles(c)).toEqual(['Bravo', 'Alpha', 'Charlie']);
     running.click();
     c.querySelector<HTMLButtonElement>('[data-testid="strip-needs"]')!.click();
     await flush();
-    expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
+    expect(titles(c)).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
   });
 
   it('a_column_header_has_a_mini_bar_whose_segments_are_filters_and_are_spelled_out', async () => {
