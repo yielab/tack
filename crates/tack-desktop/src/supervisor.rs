@@ -102,9 +102,19 @@ pub enum HealthVerdict {
 }
 
 /// Pure: the nonce is checked first, so a foreign server is never judged on
-/// its version; then the version, where `Unknown` is refused.
-pub fn judge_health(health: &HealthBody, nonce: &str, bundled_version: &str) -> HealthVerdict {
-    if health.launch_nonce.as_deref() != Some(nonce) {
+/// its version; then the version, where `Unknown` is refused. With
+/// `attach_unmarked` a server that carries no nonce at all (one the person
+/// started themselves, for example a service) is judged on its version too;
+/// one that carries a different nonce is still not ours.
+pub fn judge_health(
+    health: &HealthBody,
+    nonce: &str,
+    bundled_version: &str,
+    attach_unmarked: bool,
+) -> HealthVerdict {
+    let ours = health.launch_nonce.as_deref() == Some(nonce);
+    let unmarked = attach_unmarked && health.launch_nonce.is_none();
+    if !ours && !unmarked {
         return HealthVerdict::NotOurs;
     }
     match check_server_version(&health.version, bundled_version) {
@@ -241,12 +251,23 @@ fn refusal(
     }
 }
 
-/// Attaches if a Tack server already answers on `base_url` with `nonce`;
-/// otherwise spawns one through `launcher` (handing it `nonce` as
-/// `TACK_LAUNCH_NONCE`) and polls until it answers with that nonce or
-/// `HEALTH_TIMEOUT` elapses. Every health body is judged by [`judge_health`]:
-/// one without the nonce is something else on the port, including one that
-/// bound it between the listener check and the spawn, and is refused. `port`
+/// What this launch recognises as its own server: the `nonce` it generated,
+/// and whether a server that carries no nonce at all may be attached to too.
+#[derive(Debug, Clone, Copy)]
+pub struct LaunchCode<'a> {
+    pub nonce: &'a str,
+    pub attach_unmarked: bool,
+}
+
+/// Attaches if a Tack server already answers on `base_url` with `launch.nonce`, or,
+/// when `launch.attach_unmarked` is set, with no nonce at all; otherwise spawns one
+/// through `launcher` (handing it `nonce` as `TACK_LAUNCH_NONCE`) and polls
+/// until it answers with that nonce or `HEALTH_TIMEOUT` elapses. Every health
+/// body is judged by [`judge_health`]: one without the nonce is something
+/// else on the port and is refused, unless `attach_unmarked` was asked for and
+/// it is the first probe. The probe after a spawn never accepts an unmarked
+/// body, because one that bound the port between the listener check and the
+/// spawn must not be taken for the server this call started. `port`
 /// is the same port `base_url` names — the caller owns building both from
 /// one source of truth; this function never binds a port itself, only probes
 /// and connects to one. `bundled_version` is this app's own version.
@@ -257,10 +278,11 @@ pub async fn attach_or_start<L: SidecarLauncher>(
     launcher: &L,
     folders: &ServerFolders,
     bundled_version: &str,
-    nonce: &str,
+    launch: LaunchCode<'_>,
 ) -> Result<Outcome<L::Process>, SupervisorError> {
+    let nonce = launch.nonce;
     if let Some(health) = probe_health(client, base_url).await {
-        return match judge_health(&health, nonce, bundled_version) {
+        return match judge_health(&health, nonce, bundled_version, launch.attach_unmarked) {
             HealthVerdict::Accept => Ok(Outcome::Attached { health }),
             verdict => Err(refusal(verdict, health, port, bundled_version)),
         };
@@ -277,7 +299,7 @@ pub async fn attach_or_start<L: SidecarLauncher>(
     let deadline = tokio::time::Instant::now() + HEALTH_TIMEOUT;
     loop {
         if let Some(health) = probe_health(client, base_url).await {
-            return match judge_health(&health, nonce, bundled_version) {
+            return match judge_health(&health, nonce, bundled_version, false) {
                 HealthVerdict::Accept => Ok(Outcome::Started { health, process }),
                 verdict => {
                     let _ = process.kill();
