@@ -71,7 +71,7 @@ Tack/
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── models.rs       # All data structures, DTOs, and custom-field validation
-│   │       ├── workflow.rs     # Workflow engine (transitions, WIP, parent-auto-complete)
+│   │       ├── workflow.rs     # Workflow engine (transitions, WIP limits)
 │   │       ├── vocabulary.rs   # Term customization system
 │   │       ├── dependency.rs   # Dependency graph (DAG with cycle detection)
 │   │       ├── brief.rs        # Item brief: types, validation, Markdown (brief-v1)

@@ -272,7 +272,7 @@ async fn a_rejected_change_goes_back_to_the_agent_until_a_stop_condition() {
     for row in rows {
         let root = tempfile::tempdir().unwrap();
         let b = board(root.path(), row.cap).await;
-        let a1 = request_and_claim(&b.app, &b.item_id, "l1", None).await;
+        let a1 = request_and_claim(&b.app, &b.item_id, "l1").await;
         finish(&b, &a1, &row.first).await;
         if let Some((second, cancel_first)) = &row.second {
             let next = if *cancel_first {

@@ -55,9 +55,6 @@ pub struct Project {
     pub push_after_run: bool,
     pub default_harness: Option<String>,
     pub default_profile_id: Option<String>,
-    pub on_finish_status: Option<String>,
-    /// The status an item moves to when a run of it starts.
-    pub on_start_status: Option<String>,
     pub definition_of_done: Option<String>,
     /// The project starts a task by itself when it reaches `auto_start_status`.
     pub auto_start_enabled: bool,
@@ -668,6 +665,16 @@ pub struct CreateProject {
     pub workspace_mode: Option<WorkspaceMode>,
 }
 
+/// What an answer says when a call, a file or a flag still names a setting that moved a task's
+/// status because a run did something. Those settings were removed; the call is accepted.
+pub const STATUS_SET_BY_A_PERSON: &str = "ignored: the status is set by a person";
+
+/// Reads a key whatever its value, so a body that still names a removed setting is accepted and
+/// the handler can tell it did.
+fn named<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(d).map(Some)
+}
+
 #[derive(Debug, Default, Deserialize, Validate)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateProject {
@@ -702,11 +709,16 @@ pub struct UpdateProject {
     #[serde(default, with = "::serde_with::rust::double_option")]
     pub default_profile_id: Option<Option<String>>,
     #[serde(default, with = "::serde_with::rust::double_option")]
-    pub on_finish_status: Option<Option<String>>,
-    #[serde(default, with = "::serde_with::rust::double_option")]
-    pub on_start_status: Option<Option<String>>,
-    #[serde(default, with = "::serde_with::rust::double_option")]
     pub definition_of_done: Option<Option<String>>,
+    /// Removed: a run never moves a task. A request that still carries the key is accepted, the
+    /// value is ignored, and the answer's `notice` says so.
+    #[serde(default, deserialize_with = "named")]
+    #[cfg_attr(feature = "openapi", schema(ignore))]
+    pub on_start_status: Option<serde_json::Value>,
+    /// Removed, like `on_start_status`.
+    #[serde(default, deserialize_with = "named")]
+    #[cfg_attr(feature = "openapi", schema(ignore))]
+    pub on_finish_status: Option<serde_json::Value>,
     pub auto_start_enabled: Option<bool>,
     /// A status of the project's workflow; JSON `null` clears it.
     #[serde(default, with = "::serde_with::rust::double_option")]
@@ -719,6 +731,13 @@ pub struct UpdateProject {
     pub prepare_command: Option<Option<String>>,
     /// Replaces the project's rung and the caps on creates; omitted leaves them.
     pub agents_on_board: Option<crate::change_set::AgentsOnBoard>,
+}
+
+impl UpdateProject {
+    /// Whether the request still names a setting that was removed.
+    pub fn names_a_removed_setting(&self) -> bool {
+        self.on_start_status.is_some() || self.on_finish_status.is_some()
+    }
 }
 
 #[derive(Debug, Default, Deserialize, Validate)]

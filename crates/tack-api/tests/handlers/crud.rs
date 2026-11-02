@@ -218,6 +218,26 @@ async fn update_project_vocabulary_persists() {
 }
 
 #[tokio::test]
+async fn a_patch_naming_a_removed_status_move_is_accepted_and_told_it_was_ignored() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "Old caller", "software").await;
+    let uri = format!("/api/projects/{pid}");
+
+    for patch in [
+        json!({"on_start_status": "In Progress"}),
+        json!({"on_finish_status": null, "definition_of_done": "tests pass"}),
+    ] {
+        let (status, body) = common::send(&app, "PATCH", &uri, patch, &[]).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["notice"], "ignored: the status is set by a person");
+        assert!(body.get("on_start_status").is_none(), "{body}");
+    }
+    let (status, body) = common::send(&app, "PATCH", &uri, json!({"name": "New"}), &[]).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.get("notice").is_none(), "{body}");
+}
+
+#[tokio::test]
 async fn automation_settings_round_trip_and_clear() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "Automation", "software").await;
@@ -229,13 +249,13 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(body["workspace_mode"], "local_branch");
     assert_eq!(body["push_after_run"], false);
     assert!(body["repository"].is_null());
-    // A new project starts with the workflow's first in-progress status.
-    assert_eq!(body["on_start_status"], "In Progress");
+    assert!(body.get("on_start_status").is_none());
+    assert!(body.get("on_finish_status").is_none());
 
     let patch = json!({
         "repository": "/tmp/x", "code_origin": "folder", "workspace_mode": "in_place",
         "default_branch": "main", "push_after_run": true, "default_harness": "codex",
-        "on_finish_status": "review", "on_start_status": "doing", "definition_of_done": "tests pass",
+        "definition_of_done": "tests pass",
     });
     let (status, _) = common::send(&app, "PATCH", &uri, patch, &[]).await;
     assert_eq!(status, StatusCode::OK);
@@ -246,8 +266,6 @@ async fn automation_settings_round_trip_and_clear() {
     assert_eq!(body["default_branch"], "main");
     assert_eq!(body["push_after_run"], true);
     assert_eq!(body["default_harness"], "codex");
-    assert_eq!(body["on_finish_status"], "review");
-    assert_eq!(body["on_start_status"], "doing");
     assert_eq!(body["definition_of_done"], "tests pass");
 
     // Absent leaves untouched; null clears.
@@ -256,13 +274,6 @@ async fn automation_settings_round_trip_and_clear() {
     let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
     assert!(body["default_branch"].is_null());
     assert_eq!(body["repository"], "/tmp/x");
-    assert_eq!(body["on_start_status"], "doing");
-
-    let (status, _) =
-        common::send(&app, "PATCH", &uri, json!({"on_start_status": null}), &[]).await;
-    assert_eq!(status, StatusCode::OK);
-    let (_, body) = common::send(&app, "GET", &uri, Value::Null, &[]).await;
-    assert!(body["on_start_status"].is_null());
 
     // The combination is validated: a relative path for a folder, a non-URL for url.
     for patch in [

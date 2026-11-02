@@ -28,8 +28,6 @@ const PROJECT = {
   push_after_run: false,
   default_harness: null,
   default_profile_id: null,
-  on_finish_status: null,
-  on_start_status: null,
 } as unknown as Project;
 
 const ctx: ProjectContextValue = {
@@ -291,8 +289,6 @@ describe('Settings panels', () => {
       return JSON.parse((calls[calls.length - 1][1] as RequestInit).body as string);
     };
     const folder = container.querySelector<HTMLInputElement>('input[aria-label="Folder"]')!;
-    const select = container.querySelector<HTMLSelectElement>('#automation-finish select')!;
-    const startSelect = container.querySelector<HTMLSelectElement>('#automation-run-start select')!;
     const push = byText('label', 'Push the branch when a run finishes').querySelector('input')!;
     const install = container.querySelector<HTMLInputElement>('input[aria-label="Install command"]')!;
     const rows: [string, () => void, object][] = [
@@ -301,9 +297,6 @@ describe('Settings panels', () => {
       ['push', () => push.click(), { push_after_run: true }],
       ['install off', () => byText('label', 'Install dependencies before each run').querySelector('input')!.click(), { prepare_command: '' }],
       ['install command', () => { install.value = ' make deps '; install.dispatchEvent(new Event('change', { bubbles: true })); }, { prepare_command: 'make deps' }],
-      ['start', () => { startSelect.value = 'To Do'; startSelect.dispatchEvent(new Event('change', { bubbles: true })); }, { on_start_status: 'To Do' }],
-      ['start cleared', () => { startSelect.value = ''; startSelect.dispatchEvent(new Event('change', { bubbles: true })); }, { on_start_status: null }],
-      ['finish', () => { select.value = 'Done'; select.dispatchEvent(new Event('change', { bubbles: true })); }, { on_finish_status: 'Done' }],
       ['harness', () => byText('button', 'Codex').click(), { default_harness: 'codex' }],
       ['profile', () => byText('button', 'Implementer').click(), { default_profile_id: 'prof1' }],
     ];
@@ -323,18 +316,6 @@ describe('Settings panels', () => {
     } finally {
       (PROJECT as { default_harness: string | null }).default_harness = null;
     }
-  });
-
-  it('automation_panel_offers_the_workflows_statuses_when_a_run_starts', async () => {
-    const { container } = mount(() => <AutomationPanel />);
-    await flush();
-    await flush();
-    const fold = container.querySelector('#automation-run-start')!;
-    expect(fold.querySelector('summary')!.textContent).toContain('When a run starts');
-    expect(fold.querySelector('summary')!.textContent).toContain('Does not move the item');
-    const select = fold.querySelector<HTMLSelectElement>('select')!;
-    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Do not move', 'To Do', 'Done']);
-    expect(select.value).toBe('');
   });
 
   it('automation_panel_shows_a_rejected_folder_under_the_field', async () => {
@@ -772,7 +753,7 @@ describe('Settings panels', () => {
       expect(has('automation-who', 'input[aria-label="Folder"]')).toBe(true);
       expect(has('automation-who', 'textarea[aria-label="Definition of done"]')).toBe(false);
       expect(has('automation-when', '[data-testid="rung-start"]')).toBe(true);
-      expect(has('automation-when', '#automation-run-start')).toBe(true);
+      expect(has('automation-when', '#automation-run-start')).toBe(false);
       expect(has('automation-when', '#automation-finish')).toBe(true);
       expect(has('automation-merge', 'input[name="autonomy-level"]')).toBe(false); // the ladder above is the selector
       expect(has('automation-merge', 'textarea[aria-label="Public key"]')).toBe(true);

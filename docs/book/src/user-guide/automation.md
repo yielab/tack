@@ -19,8 +19,8 @@ sections in the order you set them up, with an index beside them that stays in v
 
 1. **Who.** The default agent and its model and profile, the profile each role works with, and where the
    code is and how the agent works on it.
-2. **When.** Let a task start a run by itself when it reaches a status, and say what happens to the task
-   when a run starts and when it finishes.
+2. **When.** Let a task start a run by itself when it reaches a status, and write the definition of done the
+   agent reads.
 3. **Merge.** Let Tack merge a finished change by itself, as far as you allow.
 4. **Limits.** How many tokens a day, how many automatic merges a day and how many waiting items the
    project allows, and the limit for a run whose profile sets none.
@@ -55,8 +55,7 @@ When
       When a task reaches [ To Do v ]   Keep at most [ 3 ] runs open
       (with no profile anywhere: "Choose a profile for at least one role in Teams", and all three
        controls disabled)
-   When a run starts (folded)
-   When a run finishes (folded)
+   Definition of done (folded)
 
 Merge
    (o) L3 - You merge every change yourself.
@@ -348,7 +347,7 @@ without you:
 
 These are the folded sections above the ladder. Each saves as soon as you change it.
 
-<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: where the code is, how the agent works on it, the push switch, the default profile, the column a finished run moves the task to, and the Definition of done.">
+<img src="../screenshots/automation.png" width="60%" alt="The Automation tab of a project's settings: where the code is, how the agent works on it, the push switch, the default profile and the Definition of done.">
 
 ### Where the code is
 
@@ -386,19 +385,10 @@ computer". Push is set up on the runner by an administrator; see
 and the runner does not, the run records "push skipped" instead of failing. The work is not lost either way:
 in the first mode it is on the local branch.
 
-### When a run starts
+### Definition of done
 
-**Move the item to** is the column a task moves to the moment a run on it starts, so the board stops saying
-the task waits while an agent works on it. A new project starts with the first in-progress column of its
-workflow; **Do not move** leaves the task where it is, and is what a project that existed before this
-setting keeps. A task already in that column, or in a done column, does not move: running done work again
-does not reopen it.
-
-### When a run finishes
-
-**Move the item to** is optionally the column a task moves to when a run on it finishes, in addition to
-**Needs your review**. **Do not move** is the default. The **Definition of done** is one text the agent reads
-on every run of this project.
+The **Definition of done** is one text the agent reads on every run of this project. A run never moves a task:
+its column is yours, and what the run is doing shows beside it.
 
 ### Agent and model
 

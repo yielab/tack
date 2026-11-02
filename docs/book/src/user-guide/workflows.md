@@ -103,21 +103,10 @@ Every column belongs to one category:
 |---|---|---|
 | `todo` | Not started | New items start in the first one |
 | `in_progress` | Being worked on | The item's start date is set the first time it moves in |
-| `done` | Complete | The completion date is set, and the parent is checked (see below) |
+| `done` | Complete | The completion date is set |
 
-Categories are what the Overview, [starting tasks by itself](automation.md#start) and the parent rollup read. The board shows only column names.
+Categories are what the Overview and [starting tasks by itself](automation.md#start) read. The board shows only column names.
 
----
-
-## Auto-Complete (Parent Rollup)
-
-When an item moves to a `done` column, Tack checks whether all siblings under the same parent are also done. If they are, the parent auto-moves to its own done column. This cascades up the hierarchy.
-
-**Example:**
-
-1. Epic "User Auth" has three tasks: Register, Login, Logout.
-2. Complete Register → epic unchanged (Login and Logout still open).
-3. Complete Login → epic unchanged.
-4. Complete Logout → all children done → **epic auto-completes**. ✓
-
-If the parent cannot move, for example because its workflow has no Done column, it stays where it is and the child's move still succeeds.
+A task moves only when a person moves it. Finishing the last child of an epic does not move the epic, and a
+task does not move while an agent works on it: what the agent is doing shows beside the column (see
+[Reviewing runs](reviewing-runs.md)), and the column is yours.

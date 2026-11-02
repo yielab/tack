@@ -129,9 +129,8 @@ Handler: update_item (tack-api/src/handlers/items.rs)
     │     inside one transaction calls workflow.validate_transition(old, new) and
     │     workflow.check_wip_limit(new, count)  ← both pure, no I/O in tack-core
     │  4. Calls state.events().emit(ItemMoved/ItemUpdated { ... })  ← the bus, and the WebSocket event
-    │  5. Calls propagate_parent_completion(...)  ← best-effort: completes the parent when every sibling is done
-    │  6. Calls create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
-    │  7. Calls maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
+    │  5. Calls create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
+    │  6. Calls maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
     ▼
 Repository (tack-db/src/repo/items.rs)
     │  Runs parameterised SQL via sqlx

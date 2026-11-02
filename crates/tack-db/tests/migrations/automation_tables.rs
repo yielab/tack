@@ -22,7 +22,6 @@ async fn migration_082_creates_automation_schema() {
         "push_after_run",
         "default_harness",
         "default_profile_id",
-        "on_finish_status",
         "definition_of_done",
     ];
 

@@ -158,7 +158,6 @@ async fn enqueue_request(
         "permission_policy": {"tools":["shell"],"network": false},
         "timeout_seconds": 60,
         "budgets": {"tokens": 1000},
-        "status_map_policy_id": Value::Null,
         "environment": {},
         "metadata": {},
     });
@@ -182,7 +181,6 @@ async fn enqueue_request(
             permission_policy: &field_str("permission_policy"),
             timeout_seconds: Some(60),
             budgets: &field_str("budgets"),
-            status_map_policy_id: None,
             environment: &field_str("environment"),
             metadata: &field_str("metadata"),
             request_snapshot: &snapshot_string,

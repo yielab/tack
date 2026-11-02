@@ -1,6 +1,6 @@
 //! The rule behind `POST /attempts/{attempt_id}/completion`: an attempt ends once per
-//! `completion_id`, a success moves the item per the project's finish status, and a change the
-//! verifier rejected goes back to the agent as one follow-up until a stop condition holds.
+//! `completion_id`, a success leaves the item's status to the person, and a change the verifier
+//! rejected goes back to the agent as one follow-up until a stop condition holds.
 
 use crate::common;
 use tack_protocol::Clock;
@@ -68,10 +68,7 @@ async fn an_attempt_ends_once_per_completion_id_and_other_content_conflicts() {
     let world = world().await;
     let run = running_attempt(&world, "complete-once").await;
 
-    let Completed::Committed {
-        response,
-        item_moved,
-    } = finish(
+    let Completed::Committed { response } = finish(
         &world,
         &run,
         "done-1",
@@ -84,7 +81,6 @@ async fn an_attempt_ends_once_per_completion_id_and_other_content_conflicts() {
         panic!("the first report ends the attempt");
     };
     assert_eq!(response.terminal_state, ExecutionState::Failed);
-    assert_eq!(item_moved, None);
     assert_eq!(
         execution_attempts::attempt_state(&world.repo, &run.attempt_id)
             .await
@@ -174,18 +170,30 @@ async fn item_status(world: &common::World) -> String {
 }
 
 #[tokio::test]
-async fn a_success_moves_the_item_to_the_finish_status_only_when_the_attempt_left_a_patch() {
-    for (artifacts, moved) in [
-        (json!([{"kind": "patch", "size_bytes": 12}]), true),
-        (json!([]), false),
+async fn a_success_leaves_the_items_status_alone_whatever_the_snapshot_names() {
+    for (artifacts, policy) in [
+        (json!([{"kind": "patch", "size_bytes": 12}]), json!(null)),
+        (
+            json!([{"kind": "patch", "size_bytes": 12}]),
+            json!("done_on_success"),
+        ),
+        (json!([]), json!("done_on_success")),
     ] {
         let world = world().await;
-        let project_id = project_of(&world).await;
-        seed::project_on_finish_status(&world.repo, &project_id, "In Progress").await;
-        let run = running_attempt(&world, "complete-finish").await;
+        let run = running_attempt(&world, "complete-status").await;
         let before = item_status(&world).await;
+        // A request stored before the policy was removed still carries it: read, and ignored.
+        let mut snapshot: Value = serde_json::from_str(
+            &execution_requests::request_snapshot(&world.repo, &run.request_id)
+                .await
+                .unwrap()
+                .expect("snapshot"),
+        )
+        .unwrap();
+        snapshot["status_map_policy_id"] = policy;
+        seed::execution_request_snapshot(&world.repo, &run.request_id, &snapshot.to_string()).await;
 
-        let Completed::Committed { item_moved, .. } = finish(
+        let Completed::Committed { .. } = finish(
             &world,
             &run,
             "done-1",
@@ -197,56 +205,7 @@ async fn a_success_moves_the_item_to_the_finish_status_only_when_the_attempt_lef
         else {
             panic!("the attempt ends");
         };
-        let status = item_status(&world).await;
-        if moved {
-            let moved = item_moved.expect("the item moved");
-            assert_eq!(moved.old_status, before);
-            assert_eq!(moved.new_status, "In Progress");
-            assert_eq!(status, "In Progress");
-        } else {
-            assert_eq!(item_moved, None);
-            assert_eq!(status, before);
-        }
-    }
-}
-
-#[tokio::test]
-async fn the_requests_status_map_policy_moves_the_item_to_the_first_done_status() {
-    for (policy, expected_move) in [(Some("done_on_success"), true), (None, false)] {
-        let world = world().await;
-        let run = running_attempt(&world, "complete-policy").await;
-        let before = item_status(&world).await;
-        let mut snapshot: Value = serde_json::from_str(
-            &execution_requests::request_snapshot(&world.repo, &run.request_id)
-                .await
-                .unwrap()
-                .expect("snapshot"),
-        )
-        .unwrap();
-        snapshot["status_map_policy_id"] = json!(policy);
-        seed::execution_request_snapshot(&world.repo, &run.request_id, &snapshot.to_string()).await;
-
-        let Completed::Committed { item_moved, .. } = finish(
-            &world,
-            &run,
-            "done-1",
-            ExecutionState::Succeeded,
-            json!({}),
-            no_pack,
-        )
-        .await
-        else {
-            panic!("the attempt ends");
-        };
-        if expected_move {
-            let moved = item_moved.expect("the item moved");
-            assert_eq!(moved.old_status, before);
-            assert_eq!(moved.new_status, "Done");
-            assert_eq!(item_status(&world).await, "Done");
-        } else {
-            assert_eq!(item_moved, None);
-            assert_eq!(item_status(&world).await, before);
-        }
+        assert_eq!(item_status(&world).await, before);
     }
 }
 

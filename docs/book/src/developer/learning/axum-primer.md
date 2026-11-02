@@ -244,6 +244,6 @@ Here is what happens when `PATCH /api/items/{id}` is called:
 4. **require_token** checks `Authorization: Bearer ...`; returns 401 if invalid
 5. **Axum router** matches `/api/items/{id}` → `patch(items::update_item)`
 6. **Extractors** run: `State` clones AppState; `Path` parses the UUID; `Json` deserializes the body into `UpdateItem`; if any extractor fails, request is rejected before reaching handler
-7. **update_item handler** runs: fetches old item, validates workflow transition, checks WIP limit, calls `repo.update_item()`, broadcasts WebSocket event, triggers parent auto-complete
+7. **update_item handler** runs: fetches old item, validates workflow transition, checks WIP limit, calls `repo.update_item()`, broadcasts WebSocket event, triggers the recurrence and the GitHub sync
 8. Handler returns `Ok(Json(item))` → Axum serializes to JSON, sets `Content-Type: application/json`, returns 200
 9. If any step returned `Err(ApiError::...)`, **IntoResponse** converts it to the appropriate status + JSON error body

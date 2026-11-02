@@ -106,7 +106,7 @@ fn new_request<'a>(
 ) -> NewExecutionRequest<'a> {
     let request_snapshot: &'static str = Box::leak(
         format!(
-            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"wiring-test"}},"created_at":"{now}","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/wiring.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"status_map_policy_id":null,"environment":{{}},"metadata":{{}}}}"#,
+            r#"{{"request_id":"{id}","item_id":"{item_id}","idempotency_key":"{key}","created_by":{{"source":"test","subject_id":"wiring-test"}},"created_at":"{now}","selector":{{"kind":"exact_runner","runner_id":"{RUNNER_ID}"}},"agent_profile_id":"{PROFILE_ID}","resolved_agent_profile":{{"name":"P","instructions":"work","tool_policy":{{"mode":"safe"}},"timeout_seconds":60,"budgets":{{}}}},"requested_harness_kind":"codex","requested_model": null,"repository":{{"kind":"git","remote":"https://example.test/wiring.git","base_revision":"abc123","subdirectory":null}},"permission_policy":{{"tools":[],"network":false}},"timeout_seconds":60,"budgets":{{}},"environment":{{}},"metadata":{{}}}}"#,
             now = now.to_rfc3339(),
         )
         .into_boxed_str(),
@@ -127,7 +127,6 @@ fn new_request<'a>(
         permission_policy: r#"{"tools":[],"network":false}"#,
         timeout_seconds: Some(60),
         budgets: "{}",
-        status_map_policy_id: None,
         environment: "{}",
         metadata: "{}",
         request_snapshot,

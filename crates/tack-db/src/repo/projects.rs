@@ -24,9 +24,6 @@ impl Repository {
         let workflow = workflow_for_type(&input.project_type);
         let vocab_json = decode::to_json(&vocabulary)?;
         let workflow_json = decode::to_json(&workflow)?;
-        // A run that starts means the work is under way, so a new project's item moves to the
-        // first status that says so; the setting can be cleared.
-        let on_start_status = workflow.find_first_in_progress_status().map(str::to_string);
         let project_type_str = input.project_type.to_string();
         let now_str = now.to_rfc3339();
         let code_origin = input.code_origin.unwrap_or_default();
@@ -34,8 +31,8 @@ impl Repository {
 
         sqlx::query(
             "INSERT INTO projects (id, workspace_id, name, description, project_type, vocabulary, workflow, created_at, updated_at,
-                                   code_origin, repository, default_branch, workspace_mode, on_start_status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                   code_origin, repository, default_branch, workspace_mode)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id.to_string())
         .bind(workspace_id.to_string())
@@ -50,7 +47,6 @@ impl Repository {
         .bind(&input.repository)
         .bind(&input.default_branch)
         .bind(workspace_mode.to_string())
-        .bind(&on_start_status)
         .execute(self.pool())
         .await?;
 
@@ -78,8 +74,6 @@ impl Repository {
             push_after_run: false,
             default_harness: None,
             default_profile_id: None,
-            on_finish_status: None,
-            on_start_status,
             definition_of_done: None,
             auto_start_enabled: false,
             auto_start_status: None,
@@ -94,7 +88,7 @@ impl Repository {
     pub async fn get_project(&self, id: Uuid) -> Result<Option<Project>, StoreError> {
         let row = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
-                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, on_start_status, definition_of_done,
+                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, definition_of_done,
                     auto_start_enabled, auto_start_status, auto_start_max_open, prepare_command,
                     agents_on_board, agents_create_per_set, agents_create_per_day,
                     CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
@@ -116,7 +110,7 @@ impl Repository {
     pub async fn list_projects(&self, workspace_id: Uuid) -> Result<Vec<Project>, StoreError> {
         let rows = sqlx::query_as::<_, ProjectRow>(
             "SELECT id, workspace_id, name, description, project_type, vocabulary, workflow, default_model, github_token_ref, archived, created_at, updated_at,
-                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, on_finish_status, on_start_status, definition_of_done,
+                    code_origin, repository, default_branch, workspace_mode, push_after_run, default_harness, default_profile_id, definition_of_done,
                     auto_start_enabled, auto_start_status, auto_start_max_open, prepare_command,
                     agents_on_board, agents_create_per_set, agents_create_per_day,
                     CASE WHEN auto_start_enabled = 0 AND autonomy_level = 'L3' AND EXISTS (
@@ -267,8 +261,6 @@ impl Repository {
             ("default_branch", input.default_branch),
             ("default_harness", input.default_harness),
             ("default_profile_id", input.default_profile_id),
-            ("on_finish_status", input.on_finish_status),
-            ("on_start_status", input.on_start_status),
             ("definition_of_done", input.definition_of_done),
             ("default_model", input.default_model),
             ("auto_start_status", input.auto_start_status),
@@ -322,8 +314,6 @@ struct ProjectRow {
     push_after_run: i32,
     default_harness: Option<String>,
     default_profile_id: Option<String>,
-    on_finish_status: Option<String>,
-    on_start_status: Option<String>,
     definition_of_done: Option<String>,
     auto_start_enabled: i32,
     auto_start_status: Option<String>,
@@ -358,8 +348,6 @@ impl ProjectRow {
             push_after_run: self.push_after_run != 0,
             default_harness: self.default_harness,
             default_profile_id: self.default_profile_id,
-            on_finish_status: self.on_finish_status,
-            on_start_status: self.on_start_status,
             definition_of_done: self.definition_of_done,
             auto_start_enabled: self.auto_start_enabled != 0,
             auto_start_status: self.auto_start_status,

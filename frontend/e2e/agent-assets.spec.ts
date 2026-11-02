@@ -439,7 +439,6 @@ test('attempt screenshot', async ({ page }) => {
       environment: {},
       metadata: {},
       timeout_seconds: 180,
-      status_map_policy_id: null,
     }),
   })) as { request_id: string };
   await waitForRequestState(attemptCreated.request_id, ['succeeded', 'failed'], 90_000);

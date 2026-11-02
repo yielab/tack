@@ -41,7 +41,6 @@ pub struct RunRequest {
     pub environment: Value,
     pub metadata: Value,
     pub timeout_seconds: Option<u64>,
-    pub status_map_policy_id: Option<String>,
     pub verify: Option<bool>,
     pub push_branch: Option<bool>,
     /// The autonomy level a docket run is asked for. "Run again at L3" sets `L3`; absent, docket
@@ -978,7 +977,6 @@ async fn build_snapshot(
         "permission_policy": settled.permission_policy,
         "timeout_seconds": settled.timeout_seconds,
         "budgets": input.budgets,
-        "status_map_policy_id": input.status_map_policy_id,
         "environment": input.environment,
         "metadata": input.metadata,
         "task": task,
@@ -1153,7 +1151,6 @@ pub async fn enqueue_run(
                 permission_policy: &columns.permission_policy,
                 timeout_seconds: Some(timeout_seconds),
                 budgets: &columns.budgets,
-                status_map_policy_id: input.status_map_policy_id.as_deref(),
                 environment: &columns.environment,
                 metadata: &columns.metadata,
                 request_snapshot: &columns.request_snapshot,
@@ -1199,15 +1196,6 @@ pub async fn start_run(
     principal: &str,
     mut input: RunRequest,
 ) -> Result<Started, Refusal> {
-    if let Some(id) = input.status_map_policy_id.as_deref()
-        && let Err(message) = id.parse::<tack_core::workflow::StatusMapPolicy>()
-    {
-        return Err(error(
-            StableErrorCode::InvalidRequest,
-            &message,
-            json!({"field": "status_map_policy_id"}),
-        ));
-    }
     if input.agent_profile_snapshot.is_some() {
         return Err(error(
             StableErrorCode::InvalidRequest,

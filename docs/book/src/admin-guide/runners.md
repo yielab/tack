@@ -498,12 +498,11 @@ GitHub on the sync poll; see
 [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md). An item with no link,
 or a board with no token, gets no pull request and nothing else changes.
 
-**Moving the item.** A request can carry a status policy. `done_on_success` moves the item to its
-workflow's first Done status when the attempt succeeds, and `done_on_mrp_accepted` moves it when a
-person accepts the attempt's merge-readiness pack. Without one, the item's status is never touched.
-Set it with `tack execution create --status-map-policy`, or `status_map_policy_id` in the API and the
-MCP server; the Run with agent dialog does not offer it. The move follows the workflow's ordinary
-rules, and open boards are told like after any edit.
+**The item's status.** A run never changes it: not when it starts, not when it succeeds and not when
+a person accepts the attempt's merge-readiness pack. The task stays in its column until a person moves
+it. Older scripts that still send `status_map_policy_id`, `--status-map-policy` or the project's
+`on_start_status` and `on_finish_status` keep working: the call is accepted, the value is ignored, and the
+answer says "ignored: the status is set by a person".
 
 ## Starting tasks by itself
 

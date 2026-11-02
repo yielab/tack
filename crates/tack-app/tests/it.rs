@@ -21,7 +21,6 @@ mod heartbeat;
 mod ingestion;
 mod local_runner;
 mod mark_decision_viewed;
-mod move_on_start;
 mod observe_recovery;
 mod ports;
 mod refresh;

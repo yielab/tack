@@ -242,7 +242,6 @@ tack execution create <item-id> --permission-policy '{"tools":[],"network":false
 | `--runner <id>` or `--fleet <id>` | The profile's fleet, else the only active runner. Use at most one of the two. |
 | `--timeout-seconds <n>` | The profile's time limit, else one hour. |
 | `--idempotency-key <key>` | A fresh key each call. Pass a stable one to retry the same request safely. |
-| `--status-map-policy done_on_success\|done_on_mrp_accepted` | The item's status is never touched. With a policy it moves to the first Done status when the attempt succeeds, or when its merge-readiness pack is accepted. |
 
 `--budgets`, `--environment` and `--metadata` take JSON objects.
 

@@ -94,7 +94,7 @@ async fn enqueue_via_fleet(
         },
         "permission_policy": {"tools": [], "network": false},
         "timeout_seconds": 60,
-        "budgets": {}, "status_map_policy_id": null,
+        "budgets": {},
         "environment": {}, "metadata": {}
     })
     .to_string();
@@ -115,7 +115,6 @@ async fn enqueue_via_fleet(
             permission_policy: r#"{"tools":[],"network":false}"#,
             timeout_seconds: Some(60),
             budgets: "{}",
-            status_map_policy_id: None,
             environment: "{}",
             metadata: "{}",
             request_snapshot: &snapshot,

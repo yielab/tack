@@ -164,7 +164,7 @@ agent cannot diverge in shape from the CLI's.
 | `list_executions` | read | — | `GET /api/executions` |
 | `get_execution` | read | `request_id`* | `GET /api/executions/{id}` |
 | `cancel_execution` | write | `request_id`* | `POST /api/executions/{id}/cancel` |
-| `create_execution` | write | `item_id`*, `runner_id` or `fleet_id` (at most one), `agent_profile_id`, `harness`, `timeout_seconds`, `model` (the agent's own spelling), `budgets`, `metadata`, `status_map_policy_id`, `idempotency_key` | `POST /api/executions` |
+| `create_execution` | write | `item_id`*, `runner_id` or `fleet_id` (at most one), `agent_profile_id`, `harness`, `timeout_seconds`, `model` (the agent's own spelling), `budgets`, `metadata`, `idempotency_key` | `POST /api/executions` |
 
 Everything but `item_id` is optional. Left out, the server chooses as it does for a run started
 from the board: the profile (the item's role, else the project default), its agent and fleet, the
@@ -172,7 +172,7 @@ timeout, and the model (the project's default for its default agent, else the ag
 
 `create_execution` always starts a run that asks the person before every action, with network access off and the default tool set. The request sends `permission_policy: {approvals: "ask", network: false}`; an agent cannot choose another policy. `environment`, `repository` and `agent_profile_snapshot` are refused with `unknown argument`. The server fills the repository from the item's project (its folder, default branch and workspace mode, set under Settings → Automation). The request carries `origin: "mcp"`: such a run is never merged automatically or by a move to Done, only by the Merge button.
 
-`status_map_policy_id` is `done_on_success` (the item moves to its first Done status when the attempt succeeds) or `done_on_mrp_accepted` (when its merge-readiness pack is accepted); omit it to leave the item's status untouched.
+A run never changes the item's status; a person does. A call that still sends `status_map_policy_id`, which used to move it, is accepted and the answer carries `notice: "ignored: the status is set by a person"`.
 
 Every id that goes into a request path (`project_id`, `id`, `item_id`, `request_id`) must be 1 to 64 letters, digits, `-` or `_`. Anything else is refused before any request is sent.
 
