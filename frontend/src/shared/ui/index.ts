@@ -47,6 +47,7 @@ export type { TabsProps, TabItem } from './Tabs';
 // Redesign primitives (Tack.dc.html) — token-styled atoms shared across the
 // shell, board, and drawer.
 export { default as Avatar, AvatarStack, hueFromName, initialsOf } from './Avatar';
+export { teamInitials, teamInitialsOf } from './teamInitials';
 export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 
 export { default as TypeBadge, typeKey, typeBadgeTone } from './TypeBadge';
