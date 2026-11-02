@@ -7,7 +7,7 @@ import { toast } from '../../../../shared/ui/toast';
 import { Button, Field, LoadError, Select, Switch, createConfirm } from '../../../../shared/ui';
 import { credentialState } from '../../CredentialsSettings';
 import { Block, Heading, Note, inputStyle } from './parts';
-import { DEFERRED_EVENTS, EVENT_CHOICES, WEEKDAYS, minuteOf, scheduleText, timeText, triggerSentence, zoneText } from './triggerText';
+import { DEFERRED_EVENTS, EVENT_CHOICES, WEEKDAYS, minuteOf, scheduleText, timeText, triggerSentence, zoneText } from '../../../../shared/agents/triggerText';
 
 const SCHEDULE = 'schedule';
 

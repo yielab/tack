@@ -2,16 +2,9 @@ import { type Accessor, type Component, For, Show, createSignal } from 'solid-js
 import { HelpHint } from '../../../../shared/ui';
 import { HELP } from '../../../../shared/help/texts';
 import type { Project, UpdateProject } from '../../../../shared/types';
-import type { AgentsOnBoard as Setting, RungLevel } from '../../../../shared/api/changeSets';
+import type { AgentsOnBoard as Setting } from '../../../../shared/api/changeSets';
+import { AGENT_LEVELS } from '../../../../shared/agents/levels';
 import { Block, Heading, Note, inputStyle } from './parts';
-
-/** The levels in the order they widen, each with what an agent may do there. */
-export const AGENT_LEVELS: ReadonlyArray<{ value: RungLevel; name: string; sentence: string }> = [
-  { value: 'read', name: 'Read', sentence: 'Agents read the board and talk; they change nothing.' },
-  { value: 'propose', name: 'Propose', sentence: 'Changes wait for you to apply them.' },
-  { value: 'act', name: 'Act', sentence: 'Everything but new items applies by itself: who does it, priority, move, dependencies, comments and due dates. New items wait for you.' },
-  { value: 'create', name: 'Create', sentence: 'New items apply by themselves too, up to the two limits below. Off until you choose it.' },
-];
 
 /** The most one change set can hold, and the most a day's limit may be: the server refuses more. */
 export const MAX_CREATES_PER_CHANGE_SET = 100;
