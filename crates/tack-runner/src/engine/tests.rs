@@ -13,10 +13,10 @@ use super::outcome::no_change_delivered;
 use super::*;
 use crate::client::{
     ArtifactManifestReport, ArtifactUploadGrant, AttemptLease, CancellationResponse,
-    ClaimRequestId, ClaimResult, ClaimedWork, CompletionResponse, DecisionCreateReport,
-    DecisionCreateResponse, DecisionPollReport, DecisionPollResponse, EventBatchRequest,
-    EventBatchResponse, FencingToken, LeaseResult, PendingTerminalReport, ProtocolClientError,
-    ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
+    ClaimRequestId, ClaimResult, ClaimedWork, CompletionResponse, DecisionAnsweredElsewhereReport,
+    DecisionCreateReport, DecisionCreateResponse, DecisionPollReport, DecisionPollResponse,
+    EventBatchRequest, EventBatchResponse, FencingToken, LeaseResult, PendingTerminalReport,
+    ProtocolClientError, ResolvedDecision, RunnerCredential, RunnerId, Timestamp,
 };
 use tack_protocol::execution::{
     AttemptId as DomainAttemptId, AttemptSnapshot, ExecutionRequestSnapshot, ExecutionState,
@@ -430,9 +430,14 @@ struct FakeAdapter {
     // `None` for every test that does not prove the progress path:
     // `progress_channel` hands this out once.
     progress: Arc<Mutex<Option<mpsc::Receiver<Progress>>>>,
+    // Handed out once by `answered_elsewhere_channel`, for the test proving that path.
+    elsewhere: Arc<Mutex<Option<mpsc::Receiver<AnsweredElsewhere>>>>,
 }
 
 struct InteractiveFake {
+    // When set, after the first question `wait()` says it was answered elsewhere and then asks
+    // `then_asks`, waiting for the answer to that one.
+    then: Option<(mpsc::Sender<AnsweredElsewhere>, Question)>,
     engine_side: Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
     to_engine: mpsc::Sender<Question>,
     from_engine: mpsc::Receiver<DecisionAnswer>,
@@ -476,6 +481,16 @@ impl HarnessAdapter for FakeAdapter {
                 .to_engine
                 .send(interactive.question.clone())
                 .await;
+            if let Some((told, next)) = interactive.then.take() {
+                let _ = told
+                    .send(AnsweredElsewhere {
+                        vendor_id: interactive.question.vendor_id.clone(),
+                        source: "docket".to_owned(),
+                    })
+                    .await;
+                interactive.question = next.clone();
+                let _ = interactive.to_engine.send(next).await;
+            }
             if let Some(answer) = interactive.from_engine.recv().await {
                 *interactive.received.lock().expect("fake adapter lock") = Some(answer);
             }
@@ -528,6 +543,13 @@ impl HarnessAdapter for FakeAdapter {
 
     async fn progress_channel(&self, _handle: &LocalRunHandle) -> Option<mpsc::Receiver<Progress>> {
         self.progress.lock().expect("fake adapter lock").take()
+    }
+
+    async fn answered_elsewhere_channel(
+        &self,
+        _handle: &LocalRunHandle,
+    ) -> Option<mpsc::Receiver<AnsweredElsewhere>> {
+        self.elsewhere.lock().expect("fake adapter lock").take()
     }
 }
 
@@ -748,6 +770,7 @@ fn adapter(expected_journal: PathBuf) -> FakeAdapter {
         completion_terminal_reason: default_completion_terminal_reason(),
         wait_delay: std::time::Duration::ZERO,
         interactive: Arc::new(Mutex::new(None)),
+        elsewhere: Arc::new(Mutex::new(None)),
         progress: Arc::new(Mutex::new(None)),
     }
 }
@@ -2383,6 +2406,7 @@ async fn a_resumed_attempt_waits_for_the_decision_the_board_already_holds() {
     adapter.recovery_observation = RecoveryObservation::ProcessRunning;
     adapter.resumable = true;
     adapter.interactive = Arc::new(Mutex::new(Some(InteractiveFake {
+        then: None,
         engine_side: Some((questions_rx, answers_tx)),
         to_engine: questions_tx,
         from_engine: answers_rx,
@@ -2479,6 +2503,7 @@ struct FakeDataProtocolState {
     manifests: Vec<ArtifactManifestReport>,
     uploads: Vec<(String, Vec<u8>, Option<String>)>,
     decisions_created: Vec<DecisionCreateReport>,
+    answered_elsewhere: Vec<DecisionAnsweredElsewhereReport>,
 }
 
 #[derive(Clone)]
@@ -2573,6 +2598,19 @@ impl AttemptDataProtocol for FakeDataProtocol {
             .lock()
             .expect("fake data protocol lock")
             .clone())
+    }
+
+    async fn answered_elsewhere(
+        &self,
+        _session: &RunnerSession,
+        report: DecisionAnsweredElsewhereReport,
+    ) -> Result<String, ProtocolClientError> {
+        self.state
+            .lock()
+            .expect("fake data protocol lock")
+            .answered_elsewhere
+            .push(report);
+        Ok("answered_elsewhere".to_owned())
     }
 
     async fn submit_artifact_manifest(
@@ -3047,6 +3085,7 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
         let (answers_tx, answers_rx) = mpsc::channel(1);
         let fake_adapter = FakeAdapter {
             interactive: Arc::new(Mutex::new(Some(InteractiveFake {
+                then: None,
                 engine_side: Some((questions_rx, answers_tx)),
                 to_engine: questions_tx,
                 from_engine: answers_rx,
@@ -3100,6 +3139,94 @@ async fn a_question_becomes_a_decision_and_its_answer_returns() {
         }
         std::fs::remove_dir_all(root).expect("remove temporary root");
     }
+}
+
+/// A question the harness says was answered in its own tool closes the board's decision for it,
+/// and the next question is created without waiting for the first to expire.
+#[tokio::test(start_paused = true)]
+async fn a_question_answered_elsewhere_closes_its_decision_and_lets_the_next_one_be_asked() {
+    let question = |vendor_id: &str, prompt: &str| Question {
+        vendor_id: vendor_id.to_owned(),
+        kind: "approval".to_owned(),
+        prompt: prompt.to_owned(),
+        options: vec![DecisionOption {
+            option_id: "approve_once".to_owned(),
+            label: "Approve".to_owned(),
+            description: None,
+            risks: None,
+            estimated_tokens: None,
+        }],
+        metadata: serde_json::Map::new(),
+        recommendation: None,
+    };
+    let (first, second) = (question("esc-1", "first?"), question("esc-2", "second?"));
+    let (root_dir, journal) = fresh_journal("decision-elsewhere");
+    let root = root_dir.path();
+    let claimed = work();
+    let record = prepared_record(&claimed.lease, root);
+    let (first_id, second_id) = (
+        decision_id_for(&record, &first),
+        decision_id_for(&record, &second),
+    );
+
+    // Only the second decision is ever answered, through the board.
+    let data_protocol = FakeDataProtocol::new();
+    *data_protocol.poll_response.lock().expect("lock") = DecisionPollResponse {
+        decisions: vec![ResolvedDecision {
+            decision_id: second_id.clone(),
+            state: "resolved".into(),
+            answer: Some(DecisionAnswer {
+                option_id: Some("approve_once".to_owned()),
+                text: None,
+                unanswered: false,
+            }),
+            resolved_at: None,
+            resolved_by: None,
+        }],
+        next_after: None,
+    };
+
+    let received = Arc::new(Mutex::new(None));
+    let (questions_tx, questions_rx) = mpsc::channel(1);
+    let (answers_tx, answers_rx) = mpsc::channel(1);
+    let (told_tx, told_rx) = mpsc::channel(1);
+    let fake_adapter = FakeAdapter {
+        interactive: Arc::new(Mutex::new(Some(InteractiveFake {
+            then: Some((told_tx, second.clone())),
+            engine_side: Some((questions_rx, answers_tx)),
+            to_engine: questions_tx,
+            from_engine: answers_rx,
+            question: first.clone(),
+            received: received.clone(),
+        }))),
+        elsewhere: Arc::new(Mutex::new(Some(told_rx))),
+        ..adapter(journal.journal_path(&AttemptId::new("attempt")))
+    };
+    let engine = runner_engine(protocol(claimed, false, false), fake_adapter, journal, root)
+        .with_data_protocol(Arc::new(data_protocol.clone()));
+
+    assert!(matches!(
+        engine
+            .run_once(&session(), claim_request())
+            .await
+            .expect("cycle"),
+        RunCycle::Completed { .. }
+    ));
+
+    let state = data_protocol.state.lock().expect("lock");
+    let created: Vec<_> = state
+        .decisions_created
+        .iter()
+        .map(|report| report.decision_id.clone())
+        .collect();
+    assert_eq!(created, [first_id.clone(), second_id], "both were created");
+    assert_eq!(state.answered_elsewhere.len(), 1);
+    assert_eq!(state.answered_elsewhere[0].decision_id, first_id);
+    assert_eq!(state.answered_elsewhere[0].source, "docket");
+    let answer = received.lock().expect("lock").clone().expect("answered");
+    assert_eq!(answer.option_id.as_deref(), Some("approve_once"));
+    drop(state);
+    std::fs::remove_dir_all(root).expect("remove temporary root");
 }
 
 // -----------------------------------------------------------------

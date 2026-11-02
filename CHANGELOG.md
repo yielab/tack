@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Added
 
+- A question answered at docket's own command line closes in Tack as **Answered in docket**, with a line on the timeline, and the run's next question is put to a person without waiting for the first to expire. It needs a docket that lists `settledCursor`; with an older one the question stays open until the run ends, as before.
 - A runner can tell the board that the agent's own tool took the answer to a question the board still holds open: `POST /api/runner/v1/attempts/{attempt_id}/decisions/answered-elsewhere` (an additive v1 operation, runner credential only) closes the decision as `answered_elsewhere`, naming the tool, and the run, if that was its last open question, stops waiting on it so it can ask the next. The decision shows as **Answered in docket** and can no longer be answered in Tack.
 - docket's audit entry for a task Tack cancels now names `tack` as who cancelled it instead of `http`, from a docket that lists `settledCursor`.
 - A run on a team whose budget is spent says so: "The team's budget is spent", with the command that resumes the team, instead of docket's raw text. A failed run with no more specific reason now ends with docket's own `hop_failed`. Both need a docket that lists `failureKinds`; an older one reads as before.

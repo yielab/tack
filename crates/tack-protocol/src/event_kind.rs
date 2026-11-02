@@ -22,5 +22,7 @@ pub const ESCALATION_EXPIRED: &str = "escalation.expired";
 pub const ESCALATION_DECIDED: &str = "escalation.decided";
 /// The team waits until a time and nobody is asked: a line, never a question.
 pub const ESCALATION_WAITING: &str = "escalation.waiting";
+/// A question put to a person in Tack was answered in the agent's own tool instead.
+pub const ESCALATION_ANSWERED_ELSEWHERE: &str = "escalation.answered_elsewhere";
 /// docket asked for something Tack cannot put to a person.
 pub const ESCALATION_UNREADABLE: &str = "escalation.unreadable";

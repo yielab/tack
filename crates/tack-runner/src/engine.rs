@@ -48,6 +48,16 @@ pub struct Question {
     pub metadata: serde_json::Map<String, serde_json::Value>,
 }
 
+/// The agent's own tool took the answer to a question that was put to the board, so the board's
+/// decision for it is closed and the run can ask the next one. `vendor_id` is the
+/// [`Question::vendor_id`] it was asked with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnsweredElsewhere {
+    pub vendor_id: String,
+    /// The tool that took it (`docket`).
+    pub source: String,
+}
+
 /// One step a running harness reported, for the attempt's timeline: what
 /// kind of step it was (`agent.tool_call`, `agent.model_turn`) and a line
 /// saying it. Read off a line of stdout by
@@ -145,6 +155,17 @@ async fn next_question(
     match decisions.as_mut() {
         Some((questions_rx, _)) if !already_pending => questions_rx.recv().await,
         _ => std::future::pending().await,
+    }
+}
+
+/// The next time a harness says a question was answered in its own tool, or never resolves when
+/// it has no way to say so; `None` once it has stopped saying.
+async fn next_elsewhere(
+    elsewhere: &mut Option<mpsc::Receiver<AnsweredElsewhere>>,
+) -> Option<Option<AnsweredElsewhere>> {
+    match elsewhere.as_mut() {
+        Some(told) => Some(told.recv().await),
+        None => std::future::pending().await,
     }
 }
 
@@ -271,6 +292,16 @@ pub trait HarnessAdapter: Send + Sync {
         &self,
         _handle: &LocalRunHandle,
     ) -> Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)> {
+        None
+    }
+
+    /// Where a harness says that a question it asked was answered in its own tool, not through
+    /// the board. `None` for a harness that never does. Taken once per handle, like
+    /// [`Self::decision_channels`].
+    async fn answered_elsewhere_channel(
+        &self,
+        _handle: &LocalRunHandle,
+    ) -> Option<mpsc::Receiver<AnsweredElsewhere>> {
         None
     }
 
@@ -1041,6 +1072,7 @@ where
 
         let mut decisions = self.adapter.decision_channels(handle).await;
         let mut progress = self.adapter.progress_channel(handle).await;
+        let mut elsewhere = self.adapter.answered_elsewhere_channel(handle).await;
         let mut steps: Vec<Progress> = Vec::new();
         let mut wait_future = self.adapter.wait(handle);
         let mut pending: Option<PendingDecision> = None;
@@ -1085,6 +1117,10 @@ where
                 Some(question) = next_question(state.decisions, state.pending.is_some()) => {
                     self.open_decision(session, record, &mut state, question, prompt).await;
                 }
+                Some(told) = next_elsewhere(&mut elsewhere) => match told {
+                    Some(told) => self.close_answered_elsewhere(session, record, &mut state, told).await,
+                    None => elsewhere = None,
+                },
                 Some(step) = next_step(&mut progress) => match step {
                     Some(step) => {
                         counted += step.usage.as_ref().and_then(tack_protocol::execution::Usage::counted).unwrap_or(0);

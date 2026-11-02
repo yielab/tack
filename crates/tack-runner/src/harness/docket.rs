@@ -34,9 +34,9 @@ use crate::{
     client::{AttemptState, Recommendation, Timestamp},
     config::DocketConfig,
     harness::{
-        AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer, DecisionOption,
-        ExecutionSpec, HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe, LocalRunHandle,
-        ModelSource, Progress, Question, RecoveryObservation,
+        AnsweredElsewhere, AttemptJournal, CancelObservation, CancellationEvidence, DecisionAnswer,
+        DecisionOption, ExecutionSpec, HarnessAdapter, HarnessError, HarnessOutcome, HarnessProbe,
+        LocalRunHandle, ModelSource, Progress, Question, RecoveryObservation,
         local_process::{HarnessDescriptor, ModelSelection, capability, policy_capability},
     },
 };
@@ -200,12 +200,14 @@ struct WaitSide {
     questions: mpsc::Sender<Question>,
     answers: mpsc::Receiver<DecisionAnswer>,
     progress: mpsc::Sender<Progress>,
+    elsewhere: mpsc::Sender<AnsweredElsewhere>,
 }
 
 struct Live {
     info: Arc<RunInfo>,
     decisions: Option<(mpsc::Receiver<Question>, mpsc::Sender<DecisionAnswer>)>,
     progress: Option<mpsc::Receiver<Progress>>,
+    elsewhere: Option<mpsc::Receiver<AnsweredElsewhere>>,
     wait: Option<WaitSide>,
 }
 
@@ -390,16 +392,19 @@ impl DocketAdapter {
         let (questions_tx, questions_rx) = mpsc::channel(1);
         let (answers_tx, answers_rx) = mpsc::channel(1);
         let (progress_tx, progress_rx) = mpsc::channel(PROGRESS_BUFFER);
+        let (elsewhere_tx, elsewhere_rx) = mpsc::channel(1);
         self.live.lock().await.insert(
             process_id.clone(),
             Live {
                 info: Arc::new(info),
                 decisions: Some((questions_rx, answers_tx)),
                 progress: Some(progress_rx),
+                elsewhere: Some(elsewhere_rx),
                 wait: Some(WaitSide {
                     questions: questions_tx,
                     answers: answers_rx,
                     progress: progress_tx,
+                    elsewhere: elsewhere_tx,
                 }),
             },
         );
@@ -842,6 +847,9 @@ struct Escalations {
     labels: OptionLabels,
     /// The held one has expired in docket's own record.
     expired: bool,
+    /// The held one has been settled in docket's own record (answered at its CLI, or by a
+    /// policy) while Tack still holds it open.
+    settled: bool,
     /// The highest `seq` below the first record still pending: where a restarted adapter may
     /// read from without missing a question.
     settled_through: u64,
@@ -904,6 +912,12 @@ impl DocketAdapter {
                 && matches!(record.state, EscalationState::Expired)
             {
                 found.expired = true;
+            }
+            if let Some(held) = held
+                && record.id == held.escalation
+                && matches!(record.state, EscalationState::Settled)
+            {
+                found.settled = true;
             }
             if matches!(record.state, EscalationState::Pending) {
                 open = true;
@@ -1436,6 +1450,18 @@ impl HarnessAdapter for DocketAdapter {
             .take()
     }
 
+    async fn answered_elsewhere_channel(
+        &self,
+        handle: &LocalRunHandle,
+    ) -> Option<mpsc::Receiver<AnsweredElsewhere>> {
+        self.live
+            .lock()
+            .await
+            .get_mut(&handle.process_id)?
+            .elsewhere
+            .take()
+    }
+
     async fn cancel(&self, handle: &LocalRunHandle) -> Result<CancellationEvidence, HarnessError> {
         let info = self
             .run_info(&handle.process_id)
@@ -1706,6 +1732,8 @@ impl DocketAdapter {
         let mut asked: HashSet<String> = HashSet::new();
         let mut refused: HashMap<String, u32> = HashMap::new();
         let mut pending: Option<Pending> = None;
+        // The id the held question was put to Tack under, which a refused answer suffixes.
+        let mut held_as = String::new();
         // The question last put to the person, when, and whether an answer went back to docket.
         let mut last_asked: Option<(String, DateTime<Utc>, bool)> = None;
         // What docket called the options it offered, learnt from the escalations read before the
@@ -1714,11 +1742,13 @@ impl DocketAdapter {
         loop {
             // Whatever needs a person.
             let mut expired_in_docket = false;
+            let mut settled_in_docket = false;
             if let Some(read) = self
                 .read_escalations(info, since, &asked, pending.as_ref())
                 .await
             {
                 expired_in_docket = read.expired;
+                settled_in_docket = read.settled;
                 labels.extend(read.labels);
                 for (id, sentence) in read.unaskable {
                     let _ = side.progress.try_send(Progress {
@@ -1743,7 +1773,9 @@ impl DocketAdapter {
                         question.vendor_id = format!("{}#{times}", question.vendor_id);
                     }
                     let prompt = question.prompt.clone();
+                    let vendor_id = question.vendor_id.clone();
                     if side.questions.try_send(question).is_ok() {
+                        held_as = vendor_id;
                         asked.insert(ask.escalation.clone());
                         pending = Some(ask);
                         last_asked = Some((prompt, Utc::now(), false));
@@ -1753,6 +1785,31 @@ impl DocketAdapter {
                     since = read.settled_through;
                     self.write_state(&info.attempt_id, "since", &since.to_string());
                 }
+            }
+
+            // A question put to a person that was answered in docket's own tool: the board's
+            // decision for it is closed, so the next question can be asked. Only a docket that
+            // stamps a new `seq` on a settled record (`settledCursor`) is read this way.
+            if settled_in_docket
+                && pending.is_some()
+                && self.client.has_feature("settledCursor").await
+                && side
+                    .elsewhere
+                    .try_send(AnsweredElsewhere {
+                        vendor_id: held_as.clone(),
+                        source: "docket".to_owned(),
+                    })
+                    .is_ok()
+            {
+                let asked_text = last_asked
+                    .as_ref()
+                    .map_or("a question", |(prompt, ..)| prompt);
+                let _ = side.progress.try_send(Progress {
+                    kind: event_kind::ESCALATION_ANSWERED_ELSEWHERE.to_owned(),
+                    text: format!("answered in docket, not in Tack: {asked_text}"),
+                    usage: None,
+                });
+                pending = None;
             }
 
             // The hops and escalation events since the cursor.
