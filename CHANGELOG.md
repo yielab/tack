@@ -99,6 +99,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 - The Table view is gone and the List does what it did: its header row sorts by title, type, status, priority (Critical to None), assignee, due date or run state with every child kept under its parent, **Filter…** and a run-state list narrow the rows while keeping the parents of a match, a click on a status, priority, assignee or due date (and the title's pencil) edits it in place, a **Run** column shows the item's latest run in the board's words, and **Columns** and **Compact** / **Comfortable** are remembered in this browser, carrying over what the Table had stored; `/projects/:id/table` and a remembered Table view open the List.
 - The bar under a board column's name has a legend that names each state in words next to its run-state icon ("1 Needs you  2 Running"), so it is no longer read by colour alone, and its segments are ordered as the Work row above the board is: what needs a person first.
 - In Orchestration → Flow, a team with nothing running or waiting no longer draws an empty queue bar beside its tokens; it says "Nothing running or waiting" in words instead.
+- Orchestration → Compare wraps its cells at their words in equal-width columns, with the full text as a tooltip, instead of cutting a line mid-word at the edge of a table that scrolled sideways; six teams fit beside the sidebar at 1440 px with no scrolling.
 
 ### Removed
 
