@@ -494,7 +494,12 @@ test('two-machines screenshot', async ({ page }) => {
     pathDir: string,
     stateDir: string,
   ) {
-    await page.getByLabel('Name').fill(name);
+    // Scoped to the enroll form: the page can also show "Add a manager", which has a Name field too.
+    await page
+      .locator('form')
+      .filter({ has: page.getByRole('heading', { name: 'Enroll a runner' }) })
+      .getByLabel('Name')
+      .fill(name);
     await page.waitForTimeout(200);
     await page.getByLabel('Labels (JSON object, optional)').fill(JSON.stringify(labels));
     await page.waitForTimeout(200);
