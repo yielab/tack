@@ -57,8 +57,8 @@ pub(crate) struct ExecutionCreateArgs {
     /// Execution timeout, in seconds (default: the profile's time limit, else one hour)
     #[arg(long)]
     timeout_seconds: Option<u64>,
-    /// Status-map policy ID: done_on_success or done_on_mrp_accepted
-    #[arg(long)]
+    /// Removed: a run never moves a task. Accepted, ignored, and said so.
+    #[arg(long, hide = true)]
     status_map_policy: Option<String>,
     /// Output raw JSON
     #[arg(long)]
@@ -347,10 +347,15 @@ fn cmd_execution_create(
         environment: opts.environment.as_deref(),
         metadata: opts.metadata.as_deref(),
         timeout_seconds: opts.timeout_seconds,
-        status_map_policy_id: opts.status_map_policy.as_deref(),
     };
     let body = execution::build_create_execution_body(selector.as_ref(), &args)
         .map_err(|e| anyhow::anyhow!(e))?;
+    if opts.status_map_policy.is_some() {
+        eprintln!(
+            "--status-map-policy: {}",
+            tack_core::models::STATUS_SET_BY_A_PERSON
+        );
+    }
     let resp = client.post("/executions", &body)?;
     if as_json {
         println!("{}", serde_json::to_string_pretty(&resp)?);

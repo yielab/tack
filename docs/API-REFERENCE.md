@@ -150,11 +150,11 @@ per-endpoint listing precisely so they do not get duplicated by one.
 - `GET .../attempts/{n}/mrp` returns the attempt's newest merge-readiness pack, or `404`
   when the verifier left none. `POST .../mrp/viewed` marks that a person opened it, and
   `POST .../mrp/review` records the verdict with a required reason: the first review is the
-  record and a second is a `409`. Accepting moves the item only under the
-  `done_on_mrp_accepted` status policy.
-- `status_map_policy_id` on `POST /api/executions` is `done_on_success` or
-  `done_on_mrp_accepted`; any other value is rejected. Without it the item's status is
-  never touched.
+  record and a second is a `409`. Accepting never moves the item.
+- A run never changes an item's status. `status_map_policy_id` on `POST /api/executions`, and
+  `on_start_status` and `on_finish_status` on `PATCH /api/projects/{id}`, were removed; a request
+  that still sends one is accepted and the answer carries `notice: "ignored: the status is set by a
+  person"`.
 - `GET /api/projects/{id}/metrics/factory` accepts an optional RFC 3339 `since`; every
   ratio carries its numerator and denominator, and a value that cannot be measured is
   `null` with a `null_reason`, never `0`.

@@ -116,7 +116,7 @@ If `transitions` is `None`, any move between two known statuses is allowed. This
 
 `workflow_for_type(project_type)` maps each `ProjectType` to the right preset. Adding a new project type means adding a variant to the `ProjectType` enum, a preset function, and a match arm here.
 
-The test suite in this file covers initial status selection, transition validation for open and constrained workflows, WIP limit edge cases, done-status detection, and parent-completion logic — all without any database or async runtime.
+The test suite in this file covers initial status selection, transition validation for open and constrained workflows, WIP limit edge cases, and done-status detection — all without any database or async runtime.
 
 ---
 
@@ -264,8 +264,6 @@ for the design rationale.
 - Timestamps are stored as RFC 3339 strings and parsed via `chrono::DateTime<Utc>`.
 
 **`queries/`** is the read side: one file per table (`items.rs`, `execution_requests.rs`, `execution_attempts.rs`, `agent_runners.rs`, `pull_requests.rs`, `autonomy.rs`, …), one `pub async fn` per question the rest of the program asks of it. Each takes the `Repository`, returns `Result<_, StoreError>` and answers with a row struct whose fields are the columns, under the columns' names. A test reads what a route wrote through these functions instead of writing SQL.
-
-**Notable function: `check_and_update_parent_status`** (in `items.rs`). After an item is moved to a `Done`-category status, the handler calls this function with the item's `parent_id`. It queries whether all sibling items are also in a done status, and if so, updates the parent. The `WorkflowConfig::should_complete_parent(all_siblings_done)` call in `tack-core` provides the decision logic — the repository only handles the data queries.
 
 ---
 

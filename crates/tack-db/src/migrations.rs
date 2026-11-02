@@ -163,6 +163,7 @@ fn all_migrations() -> Vec<Migration> {
         ordinary("099_agent_credentials", &MIGRATION_099[..]),
         ordinary("100_team_activity", &MIGRATION_100[..]),
         ordinary("101_change_sets", &MIGRATION_101[..]),
+        ordinary("103_drop_status_moves", &MIGRATION_103[..]),
     ]
 }
 
@@ -2003,4 +2004,13 @@ const MIGRATION_101: [&str; 6] = [
     "ALTER TABLE projects ADD COLUMN agents_on_board TEXT NOT NULL DEFAULT 'propose'",
     "ALTER TABLE projects ADD COLUMN agents_create_per_set INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN agents_create_per_day INTEGER NOT NULL DEFAULT 0",
+];
+
+// 103: a run no longer moves a task's status (Phase 86). The project's two settings and the
+// request's policy column go; a stored request snapshot that still names `status_map_policy_id`
+// is read and ignored. (102 belongs to a parallel change.)
+const MIGRATION_103: [&str; 3] = [
+    "ALTER TABLE projects DROP COLUMN on_start_status",
+    "ALTER TABLE projects DROP COLUMN on_finish_status",
+    "ALTER TABLE execution_requests DROP COLUMN status_map_policy_id",
 ];

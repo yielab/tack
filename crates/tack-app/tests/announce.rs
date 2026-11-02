@@ -17,7 +17,6 @@ use tack_core::decision::DecisionResolvedBy;
 use tack_core::principal::Principal;
 use tack_protocol::mrp::MergeReadinessPack;
 use tack_test_support::completion::{actual_execution, terminal_reason_of, usage_not_measured};
-use tack_test_support::seed;
 use uuid::Uuid;
 
 async fn project_of(world: &common::World) -> Uuid {
@@ -171,48 +170,29 @@ async fn an_answer_is_announced_once_with_the_person_who_gave_it() {
 }
 
 #[tokio::test]
-async fn a_started_run_and_the_move_it_caused_are_two_events_with_the_runners_principal() {
+async fn a_started_run_is_one_event_with_the_runners_principal() {
     let world = world().await;
     let run = running_attempt(&world, "announce-start").await;
     let (project, runner) = (project_of(&world).await, Principal::runner(RUNNER_ID));
     let events = RecordedEvents::default();
-    let moved = tack_app::runs::complete::ItemMoved {
-        project_id: project,
-        item_id: Uuid::parse_str(&world.item_id).unwrap(),
-        old_status: "Todo".into(),
-        new_status: "In Progress".into(),
-    };
 
     announce::run_started(
         &world.repo,
         &events,
         &runner,
         &AttemptId::new(&run.attempt_id),
-        Some(&moved),
     )
     .await;
 
-    let item_id = moved.item_id;
     assert_eq!(
         events.events(),
-        vec![
-            DomainEvent::new(
-                project,
-                &runner,
-                Fact::RunStarted {
-                    run: run_of(&world, &run)
-                }
-            ),
-            DomainEvent::new(
-                project,
-                &runner,
-                Fact::ItemMoved {
-                    item_id,
-                    from: "Todo".into(),
-                    to: "In Progress".into()
-                }
-            ),
-        ]
+        vec![DomainEvent::new(
+            project,
+            &runner,
+            Fact::RunStarted {
+                run: run_of(&world, &run)
+            }
+        )]
     );
 }
 
@@ -247,36 +227,4 @@ async fn a_success_finishes_a_failure_fails_and_a_replay_or_a_cancellation_says_
         });
         assert_eq!(events.events(), expected.into_iter().collect::<Vec<_>>());
     }
-}
-
-#[tokio::test]
-async fn a_success_that_moves_the_item_says_so_after_the_run_finished() {
-    let world = world().await;
-    let project = project_of(&world).await;
-    seed::project_on_finish_status(&world.repo, &project.to_string(), "In Progress").await;
-    let run = running_attempt(&world, "announce-move").await;
-    let runner = Principal::runner(RUNNER_ID);
-    let events = RecordedEvents::default();
-
-    let completed = end(
-        &world,
-        &run,
-        "done-1",
-        ExecutionState::Succeeded,
-        json!({"artifacts": [{"kind": "patch", "size_bytes": 12}]}),
-    )
-    .await;
-    announce::run_ended(
-        &world.repo,
-        &events,
-        &runner,
-        &AttemptId::new(&run.attempt_id),
-        &completed,
-    )
-    .await;
-
-    let facts: Vec<Fact> = events.events().into_iter().map(|e| e.fact).collect();
-    assert!(matches!(facts[0], Fact::RunFinished { .. }));
-    assert!(matches!(&facts[1], Fact::ItemMoved { to, .. } if to == "In Progress"));
-    assert_eq!(facts.len(), 2);
 }

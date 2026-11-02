@@ -3668,6 +3668,7 @@ dependencies = [
  "serde_json",
  "tack-api",
  "tack-app",
+ "tack-core",
  "tack-db",
  "tack-protocol",
  "tack-runner",

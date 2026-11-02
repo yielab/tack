@@ -60,29 +60,6 @@ pub async fn request_snapshot(
     )
 }
 
-/// The item a request was made for and the status-map policy its snapshot
-/// names, if any.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct RequestItemPolicy {
-    pub item_id: String,
-    pub status_map_policy_id: Option<String>,
-}
-
-/// The item and status-map policy of one request, or `None` when no request
-/// has this id.
-pub async fn item_and_status_map_policy(
-    repo: &Repository,
-    request_id: &str,
-) -> Result<Option<RequestItemPolicy>, StoreError> {
-    Ok(sqlx::query_as::<_, RequestItemPolicy>(
-        "SELECT item_id, json_extract(request_snapshot, '$.status_map_policy_id') AS status_map_policy_id \
-         FROM execution_requests WHERE id = ?",
-    )
-    .bind(request_id)
-    .fetch_optional(repo.pool())
-    .await?)
-}
-
 /// What the operator's detail of one execution request shows. `instructions` is the resolved
 /// agent profile's instructions out of the stored snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -253,31 +230,6 @@ pub async fn rework_chain(repo: &Repository, root: &str) -> Result<Vec<ChainLink
             })
         })
         .collect()
-}
-
-/// What the status map needs to know about a finished attempt.
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
-pub struct StatusMapFacts {
-    pub item_id: String,
-    /// The `status_map_policy_id` the request was stored with, when it is text.
-    pub policy_id: Option<String>,
-}
-
-/// The item and the status map policy of an attempt, or `None` when no attempt has this id.
-pub async fn status_map_facts_of_attempt(
-    repo: &Repository,
-    attempt_id: &str,
-) -> Result<Option<StatusMapFacts>, StoreError> {
-    Ok(sqlx::query_as(
-        "SELECT r.item_id AS item_id, \
-                CASE WHEN json_type(r.request_snapshot, '$.status_map_policy_id') = 'text' \
-                     THEN json_extract(r.request_snapshot, '$.status_map_policy_id') END AS policy_id \
-         FROM execution_attempts a JOIN execution_requests r ON r.id = a.request_id \
-         WHERE a.id = ?",
-    )
-    .bind(attempt_id)
-    .fetch_optional(repo.pool())
-    .await?)
 }
 
 /// How many follow-ups a rejected run of this item may start, as its project allows, or `None`

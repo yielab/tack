@@ -4144,7 +4144,7 @@
         },
         "responses": {
           "200": {
-            "description": "Updated project",
+            "description": "Updated project; a request that still names `on_start_status` or `on_finish_status` adds a `notice` saying they were ignored",
             "content": {
               "application/json": {
                 "schema": {
@@ -9352,20 +9352,6 @@
               "null"
             ]
           },
-          "on_finish_status": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The status a card moves to when its run finishes."
-          },
-          "on_start_status": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The status a card moves to when its run starts."
-          },
           "prepare": {
             "type": [
               "string",
@@ -10313,13 +10299,6 @@
             ],
             "description": "`exact_runner` or `fleet`. Omitted (with `selector_id`), the agent profile's fleet,\nelse the only active runner; with neither, `select_where_this_runs`."
           },
-          "status_map_policy_id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "`done_on_success` or `done_on_mrp_accepted`; any other id is rejected\nwith `invalid_request`. Omitted leaves the item's status untouched."
-          },
           "timeout_seconds": {
             "type": [
               "integer",
@@ -10348,6 +10327,13 @@
           "replayed"
         ],
         "properties": {
+          "notice": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present when the request named a setting that was removed: \"ignored: the status is set by\na person\"."
+          },
           "protocol_version": {
             "type": "integer",
             "format": "int32",
@@ -13942,19 +13928,6 @@
           "name": {
             "type": "string"
           },
-          "on_finish_status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_start_status": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The status an item moves to when a run of it starts."
-          },
           "prepare_command": {
             "type": [
               "string",
@@ -16974,18 +16947,6 @@
             "description": "A plain `Option<String>`, not a double-`Option`, like every other\noptional field on this DTO: an absent key leaves the stored\nreference untouched. Since there is no `null` to spell \"clear\" with\nhere, clearing is done by sending the empty string, which the\nrepository (`tack_db::repo::projects::update_project`) stores as SQL\n`NULL` rather than as a literal empty string."
           },
           "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_finish_status": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "on_start_status": {
             "type": [
               "string",
               "null"

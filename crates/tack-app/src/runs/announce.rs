@@ -8,7 +8,7 @@ use tack_db::{Repository, queries};
 use tack_protocol::execution::{AttemptId, ExecutionState};
 use uuid::Uuid;
 
-use super::complete::{Completed, ItemMoved};
+use super::complete::Completed;
 use super::create_decision::DecisionCreated;
 use super::resolve_decision::ResolveOutcome;
 use crate::events::{DomainEvent, Fact, RunRef};
@@ -38,23 +38,12 @@ async fn run_of(repo: &Repository, attempt_id: &AttemptId) -> Option<(Uuid, RunR
     found
 }
 
-fn item_moved(events: &dyn DomainEvents, principal: &Principal, moved: &ItemMoved) {
-    events.emit(DomainEvent::item_changed(
-        moved.project_id,
-        principal,
-        moved.item_id,
-        &moved.old_status,
-        &moved.new_status,
-    ));
-}
-
-/// The runner reported the attempt running, and the report moved the item, or did not.
+/// The runner reported the attempt running.
 pub async fn run_started(
     repo: &Repository,
     events: &dyn DomainEvents,
     principal: &Principal,
     attempt_id: &AttemptId,
-    moved: Option<&ItemMoved>,
 ) {
     if let Some((project_id, run)) = run_of(repo, attempt_id).await {
         events.emit(DomainEvent::new(
@@ -63,13 +52,10 @@ pub async fn run_started(
             Fact::RunStarted { run },
         ));
     }
-    if let Some(moved) = moved {
-        item_moved(events, principal, moved);
-    }
 }
 
 /// The attempt ended with a report that was just committed: a success finished the run, a
-/// failure failed it, a cancellation is neither. The board move a success caused follows.
+/// failure failed it, a cancellation is neither.
 pub async fn run_ended(
     repo: &Repository,
     events: &dyn DomainEvents,
@@ -77,11 +63,7 @@ pub async fn run_ended(
     attempt_id: &AttemptId,
     completed: &Completed,
 ) {
-    let Completed::Committed {
-        response,
-        item_moved: moved,
-    } = completed
-    else {
+    let Completed::Committed { response } = completed else {
         return;
     };
     if let Some((project_id, run)) = run_of(repo, attempt_id).await {
@@ -93,9 +75,6 @@ pub async fn run_ended(
         if let Some(fact) = fact {
             events.emit(DomainEvent::new(project_id, principal, fact));
         }
-    }
-    if let Some(moved) = moved {
-        item_moved(events, principal, moved);
     }
 }
 

@@ -1,7 +1,7 @@
 //! HTTP tests for `GET /api/executions/{id}/attempts/{n}/mrp` and its two POSTs:
 //! the pack is uploaded through the real runner artifact route with the MRP
 //! media type, then read back parsed; the first review is the record; accepting
-//! moves the item only under the `done_on_mrp_accepted` policy.
+//! never moves the item.
 
 use crate::common;
 use axum::body::{Body, to_bytes};
@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use tack_api::config::AppConfig;
 use tack_api::{AppState, router::build_router};
 use tack_db::Repository;
-use tack_test_support::{create_test_workspace, seed, setup_test_db};
+use tack_test_support::{create_test_workspace, setup_test_db};
 use tower::ServiceExt;
 
 const OPERATOR_TOKEN: &str = "e2-mrp-operator-token";
@@ -86,8 +86,6 @@ pub(crate) async fn setup_with_bus(
         )
         .await
         .expect("project");
-    // These tests follow the moves a review and a finished run make; the run's start moves nothing.
-    seed::project_on_start_status(&repo, &project.id.to_string(), None).await;
     let item = repo
         .create_item(
             project.id,
@@ -208,7 +206,6 @@ pub(crate) fn execution_request_body(
     key: &str,
     runner_id: &str,
     agent_profile_id: &str,
-    policy: Option<&str>,
 ) -> Value {
     json!({
         "item_id": item_id,
@@ -224,7 +221,6 @@ pub(crate) fn execution_request_body(
         "budgets": {},
         "environment": {},
         "metadata": {},
-        "status_map_policy_id": policy,
     })
 }
 
@@ -246,7 +242,6 @@ pub(crate) async fn request_and_claim(
     app: &axum::Router,
     item_id: &str,
     label: &str,
-    policy: Option<&str>,
 ) -> ClaimedAttempt {
     let (runner_id, auth_owned) = enroll_runner(app, &format!("{label} runner")).await;
     let auth = headers_ref(&auth_owned);
@@ -256,7 +251,7 @@ pub(crate) async fn request_and_claim(
         app,
         "POST",
         "/api/executions",
-        execution_request_body(item_id, label, &runner_id, &agent_profile_id, policy),
+        execution_request_body(item_id, label, &runner_id, &agent_profile_id),
         &operator_headers(),
     )
     .await;
@@ -386,12 +381,9 @@ async fn upload_pack(app: &axum::Router, attempt: &ClaimedAttempt) {
 
 /// A claimed attempt with the pack uploaded; returns the app, the repository,
 /// the item id and the MRP route base for attempt 1.
-async fn with_pack(
-    storage_root: &std::path::Path,
-    policy: Option<&str>,
-) -> (axum::Router, Repository, String, String) {
+async fn with_pack(storage_root: &std::path::Path) -> (axum::Router, Repository, String, String) {
     let (app, repo, item_id, _events) = setup(storage_root, None).await;
-    let attempt = request_and_claim(&app, &item_id, "e2", policy).await;
+    let attempt = request_and_claim(&app, &item_id, "e2").await;
     accept_and_start(&app, &attempt).await;
     upload_pack(&app, &attempt).await;
     let base = format!("/api/executions/{}/attempts/1/mrp", attempt.request_id);
@@ -425,7 +417,7 @@ async fn item_status(repo: &Repository, item_id: &str) -> String {
 #[tokio::test]
 async fn get_returns_the_uploaded_pack_parsed() {
     let root = tempfile::tempdir().unwrap();
-    let (app, _repo, _item, base) = with_pack(root.path(), None).await;
+    let (app, _repo, _item, base) = with_pack(root.path()).await;
 
     let (status, body) = common::send(&app, "GET", &base, Value::Null, &operator_headers()).await;
     assert_eq!(status, StatusCode::OK, "{body}");
@@ -463,7 +455,7 @@ async fn get_returns_the_uploaded_pack_parsed() {
 #[tokio::test]
 async fn a_review_with_a_blank_reason_is_400() {
     let root = tempfile::tempdir().unwrap();
-    let (app, _repo, _item, base) = with_pack(root.path(), None).await;
+    let (app, _repo, _item, base) = with_pack(root.path()).await;
     let (status, body) = review(&app, &base, "accept", "   ").await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 }
@@ -471,7 +463,7 @@ async fn a_review_with_a_blank_reason_is_400() {
 #[tokio::test]
 async fn a_second_review_is_409_and_the_first_stays() {
     let root = tempfile::tempdir().unwrap();
-    let (app, _repo, _item, base) = with_pack(root.path(), None).await;
+    let (app, _repo, _item, base) = with_pack(root.path()).await;
     let (status, body) = review(&app, &base, "reject", "tests are thin").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let (status, body) = review(&app, &base, "accept", "changed my mind").await;
@@ -482,19 +474,9 @@ async fn a_second_review_is_409_and_the_first_stays() {
 }
 
 #[tokio::test]
-async fn accept_under_the_policy_moves_the_item() {
+async fn accept_does_not_move_the_item() {
     let root = tempfile::tempdir().unwrap();
-    let (app, repo, item_id, base) = with_pack(root.path(), Some("done_on_mrp_accepted")).await;
-    assert_eq!(item_status(&repo, &item_id).await, "To Do");
-    let (status, body) = review(&app, &base, "accept", "looks right").await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    assert_eq!(item_status(&repo, &item_id).await, "Done");
-}
-
-#[tokio::test]
-async fn accept_without_the_policy_does_not_move_the_item() {
-    let root = tempfile::tempdir().unwrap();
-    let (app, repo, item_id, base) = with_pack(root.path(), None).await;
+    let (app, repo, item_id, base) = with_pack(root.path()).await;
     let (status, body) = review(&app, &base, "accept", "looks right").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(item_status(&repo, &item_id).await, "To Do");
@@ -574,7 +556,7 @@ async fn complete_with_pushed_branch(
     repo.set_github_link(item_id.parse().unwrap(), "acme/widgets", 3)
         .await
         .unwrap();
-    let attempt = request_and_claim(&app, &item_id, "h2a", None).await;
+    let attempt = request_and_claim(&app, &item_id, "h2a").await;
     accept_and_start(&app, &attempt).await;
     upload_pack(&app, &attempt).await;
     let (status, body, _) = common::send_with_raw(
@@ -695,30 +677,27 @@ async fn rejecting_a_pushed_attempt_opens_no_pull_request() {
 }
 
 #[tokio::test]
-async fn a_succeeded_run_that_moves_its_item_tells_the_board() {
+async fn a_request_that_names_the_removed_policy_is_accepted_and_told_it_was_ignored() {
     let root = tempfile::tempdir().unwrap();
-    let (app, _repo, item_id, mut events) = setup(root.path(), None).await;
-    let attempt = request_and_claim(&app, &item_id, "refresh", Some("done_on_success")).await;
-    accept_and_start(&app, &attempt).await;
-    let (status, body, _) = common::send_with_raw(
-        &app,
-        "POST",
-        &format!("/api/runner/v1/attempts/{}/completion", attempt.attempt_id),
-        completion_with_pushed_branch(&attempt),
-        &headers_ref(&attempt.auth),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let moved = loop {
-        match events.try_recv() {
-            Ok(tack_api::handlers::websocket::BoardEvent::ItemUpdated {
-                item_id: id,
-                new_status,
-                ..
-            }) if id.to_string() == item_id => break new_status,
-            Ok(_) => {}
-            Err(error) => panic!("no ItemUpdated for the item: {error:?}"),
+    let (app, repo, item_id, _events) = setup(root.path(), None).await;
+    let (runner_id, _) = enroll_runner(&app, "old caller runner").await;
+    let profile = create_agent_profile(&app, "old-caller").await;
+    for (key, names_the_policy) in [("old-caller", true), ("new-caller", false)] {
+        let mut body = execution_request_body(&item_id, key, &runner_id, &profile);
+        if names_the_policy {
+            body["status_map_policy_id"] = json!("done_on_success");
         }
-    };
-    assert_eq!(moved, "Done");
+        let (status, created, _) =
+            common::send_with_raw(&app, "POST", "/api/executions", body, &operator_headers()).await;
+        assert_eq!(status, StatusCode::OK, "{created}");
+        if names_the_policy {
+            assert_eq!(
+                created["notice"], "ignored: the status is set by a person",
+                "{created}"
+            );
+        } else {
+            assert!(created.get("notice").is_none(), "{created}");
+        }
+    }
+    assert_eq!(item_status(&repo, &item_id).await, "To Do");
 }

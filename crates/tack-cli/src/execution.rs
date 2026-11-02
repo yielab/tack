@@ -92,8 +92,6 @@ pub struct CreateExecutionArgs<'a> {
     pub environment: Option<&'a str>,
     pub metadata: Option<&'a str>,
     pub timeout_seconds: Option<u64>,
-    /// `done_on_success` or `done_on_mrp_accepted`; omit to leave the item status untouched.
-    pub status_map_policy_id: Option<&'a str>,
 }
 
 /// Already-parsed values for the same fields `CreateExecutionArgs` carries as
@@ -117,8 +115,6 @@ pub struct CreateExecutionValues<'a> {
     pub metadata: Value,
     /// Omitted, the server uses the profile's time limit, else its default.
     pub timeout_seconds: Option<u64>,
-    /// `done_on_success` or `done_on_mrp_accepted`; omit to leave the item status untouched.
-    pub status_map_policy_id: Option<&'a str>,
 }
 
 /// The single place that assembles a `POST /api/executions` body
@@ -141,7 +137,6 @@ pub fn create_execution_body(
         "budgets": values.budgets,
         "environment": values.environment,
         "metadata": values.metadata,
-        "status_map_policy_id": values.status_map_policy_id,
     });
     // An absent key is omitted, not sent as null: the server resolves it.
     if let Some(selector) = selector {
@@ -178,7 +173,6 @@ pub fn build_create_execution_body(
         environment: parse_json_field_or_empty(args.environment, "environment")?,
         metadata: parse_json_field_or_empty(args.metadata, "metadata")?,
         timeout_seconds: args.timeout_seconds,
-        status_map_policy_id: args.status_map_policy_id,
     };
     Ok(create_execution_body(selector, values))
 }
