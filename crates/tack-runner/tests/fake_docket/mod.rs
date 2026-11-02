@@ -357,9 +357,12 @@ struct World {
     /// no `capabilities`, and `?task=` is an unknown parameter docket ignores, answering every row
     /// of the set. A caller that sends it is told apart from one that does not by the request log.
     before_task_scope: bool,
-    /// A docket before `taskCurrent` and `taskCursor`: `/health` lists neither, a task has no
-    /// `rev` and no `current`, and `updatedSince` is an unknown parameter docket ignores.
-    without_task_features: bool,
+    /// A docket before `taskCurrent`: `/health` and `/status.json` do not list it and a running
+    /// task has no `current`.
+    without_task_current: bool,
+    /// A docket before `taskCursor`: the features do not list it, a task has no `rev`, and
+    /// `updatedSince` is an unknown parameter docket ignores.
+    without_task_cursor: bool,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -398,7 +401,8 @@ impl FakeDocket {
             without_shape_and_steps: false,
             without_workspace_kind: false,
             before_task_scope: false,
-            without_task_features: false,
+            without_task_current: false,
+            without_task_cursor: false,
             rev: 0,
             next_channel: None,
         }));
@@ -459,10 +463,14 @@ impl FakeDocket {
             .folder = true;
     }
 
-    /// Makes the fake a docket that sends neither `blueprint` nor `pipeline.steps`.
-    /// A docket before `taskCurrent` and `taskCursor`.
-    pub fn without_task_features(&self) {
-        self.shared.lock().unwrap().without_task_features = true;
+    /// A docket before `taskCurrent`.
+    pub fn without_task_current(&self) {
+        self.shared.lock().unwrap().without_task_current = true;
+    }
+
+    /// A docket before `taskCursor`.
+    pub fn without_task_cursor(&self) {
+        self.shared.lock().unwrap().without_task_cursor = true;
     }
 
     /// The next task posted comes from this channel (`cli`, `routine`), as docket records the
@@ -783,9 +791,7 @@ async fn handle(
         ("GET", ["health"]) => {
             let mut answer = fixture("health");
             answer["apiVersion"] = json!(state.api_version);
-            if state.without_task_features {
-                answer.as_object_mut().expect("health").remove("features");
-            }
+            answer["features"] = features(&state);
             reply(200, answer)
         }
         ("GET", ["pods"]) => pods(&state),
@@ -808,6 +814,20 @@ async fn handle(
     };
     stamp(&mut state);
     response
+}
+
+/// The `features` of `/health` and `/status.json`: a name is listed only when the fake serves the
+/// feature (docket's ADR 0037). The captured files also name features Tack does not use and the
+/// fake does not serve (`podMemory`, `readScope`, `conversation`); those are never listed.
+fn features(state: &World) -> Value {
+    let mut listed = Vec::new();
+    if !state.without_task_current {
+        listed.push("taskCurrent");
+    }
+    if !state.without_task_cursor {
+        listed.push("taskCursor");
+    }
+    json!(listed)
 }
 
 /// Gives every task that changed since it was last stamped the next value of the pod's counter,
@@ -841,6 +861,7 @@ fn status(state: &World) -> Response {
         .collect();
     let mut answer = template;
     answer["apiVersion"] = json!(state.api_version);
+    answer["features"] = features(state);
     answer["agents"] = json!(agents);
     reply(200, answer)
 }
@@ -1674,15 +1695,16 @@ fn task_record(state: &World, task: &Task) -> Value {
     record["reason"] = json!(task.script.reason);
     record["hops"] = json!(task.hops);
     let object = record.as_object_mut().expect("record");
-    if state.without_task_features {
+    if state.without_task_cursor {
         object.remove("rev");
     } else {
         object.insert("rev".to_owned(), json!(task.rev));
-        if task.status == "running"
-            && let Some(current) = current_hop(state, task)
-        {
-            object.insert("current".to_owned(), current);
-        }
+    }
+    if !state.without_task_current
+        && task.status == "running"
+        && let Some(current) = current_hop(state, task)
+    {
+        object.insert("current".to_owned(), current);
     }
     if task.status == "done" {
         record["usage"] = task.script.usage.clone();
@@ -1746,7 +1768,7 @@ fn list_tasks(state: &World, pod: &str, query: &str) -> Response {
     let since = query
         .split('&')
         .find_map(|pair| pair.strip_prefix("updatedSince="))
-        .filter(|_| !state.without_task_features);
+        .filter(|_| !state.without_task_cursor);
     let cursor = match since.map(str::parse::<u64>) {
         Some(Err(_)) => return error(400, "updatedSince is not a non-negative integer"),
         Some(Ok(cursor)) => Some(cursor),
