@@ -688,7 +688,8 @@ impl FakeDocket {
         view["state"] = json!("pending");
         view["seq"] = json!(next_seq(&state));
         view.as_object_mut().expect("a view").remove("resolution");
-        view["affordances"] = fixture("escalations-pending")["escalations"][0]["affordances"].clone();
+        view["affordances"] =
+            fixture("escalations-pending")["escalations"][0]["affordances"].clone();
         view["affordances"]["resolveUrl"] = json!(format!("/escalations/{id}"));
         state.escalations.push(Escalation {
             task: task.to_owned(),
