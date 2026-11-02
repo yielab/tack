@@ -7,9 +7,9 @@ const MUTED = { color: 'var(--color-text-secondary)' } as const;
 const TEAM_UNREPORTED = 'No computer reports this team';
 
 /** "not reported" with the reason beside it, in small muted text; on hover and for a screen reader as well. */
-const Missing: Component<{ reason: string }> = (props) => (
+const Missing: Component<{ reason: string; teams?: number }> = (props) => (
   <span data-missing="true" title={props.reason} style={{ color: 'var(--color-text-tertiary)', 'font-style': 'italic' }}>
-    not reported
+    {props.teams && props.teams > 1 ? `not reported by any of the ${props.teams} teams` : 'not reported'}
     <Show
       when={!props.reason.startsWith(TEAM_UNREPORTED)}
       fallback={<span class="sr-only">{`. ${props.reason}`}</span>}
@@ -131,7 +131,7 @@ const Compare: Component<{ model: CompareModel }> = (props) => {
                     when={!allMissing(row.cells)}
                     fallback={
                       <td colSpan={row.cells.length} data-collapsed="true" class="px-2 py-1.5 align-top" style={{ 'overflow-wrap': 'anywhere' }}>
-                        <Missing reason={reasonsOf(row.cells)} />
+                        <Missing reason={reasonsOf(row.cells)} teams={row.cells.length} />
                       </td>
                     }
                   >

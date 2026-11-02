@@ -34,6 +34,9 @@ const CHECK_GLYPH = {
   external: () => glyph(<path d="M6 3H3v10h10v-3M9 3h4v4M13 3L7.5 8.5" />),
 } as const;
 
+/** The short word under a check's glyph, so the glyph is never read alone. */
+const CHECK_WORD = { command: 'command', reviewer: 'reviewer', person: 'person', external: 'outside' } as const;
+
 /** An icon with the words a screen reader and a tooltip need. */
 const Mark: Component<{ words: string; children: JSX.Element; attr?: string }> = (props) => (
   <span role="img" aria-label={props.words} title={props.words} data-mark={props.attr} class="inline-flex flex-none items-center gap-1" style={MUTED}>
@@ -286,7 +289,7 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
         fallback={<Show when={st().tokens.length === 0}><span class="text-caption" style={FAINT}>Nothing ended today</span></Show>}
       >
         <ul aria-label={label()} class="flex min-w-0 flex-col gap-2">
-          <For each={st().tokens} fallback={<li class="text-caption" style={FAINT}>{isUpNext() ? 'Nothing waiting' : 'None'}</li>}>
+          <For each={st().tokens} fallback={<li class="text-caption" style={FAINT}>None</li>}>
             {(token) => <Token token={token} source={sourceOf(token)} />}
           </For>
         </ul>
@@ -390,8 +393,9 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
                 <>
                   <Station lane={lane()} station={station} />
                   <Show when={station.check && i() < stations().length - 1}>
-                    <li aria-hidden="true" data-testid="flow-check" data-check={station.check ?? undefined} class="flex flex-none items-center px-0.5" style={FAINT} title={station.step ? (checkText(station.step) ?? undefined) : undefined}>
+                    <li aria-hidden="true" data-testid="flow-check" data-check={station.check ?? undefined} class="flex flex-none flex-col items-center justify-center gap-0.5 px-0.5" style={FAINT} title={station.step ? (checkText(station.step) ?? undefined) : undefined}>
                       {CHECK_GLYPH[station.check!]()}
+                      <span data-testid="flow-check-word" class="text-micro">{CHECK_WORD[station.check!]}</span>
                     </li>
                   </Show>
                 </>

@@ -7,6 +7,7 @@ import {
   columnHeaderId,
   linkPath,
   navigate,
+  wrapLines,
   routesText,
   type Direction,
   type MapFix,
@@ -205,12 +206,17 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                       stroke-dasharray={node.dashed ? '6 4' : undefined}
                     />
                     <text x={node.x + 10} y={node.y + 20} font-size="13" font-weight="700" fill="var(--color-text-primary)">
-                      {clip(node.group ? `${node.group} · ${node.label}` : node.label, 21)}
+                      {clip(node.group ? `${node.group} · ${node.label}` : node.label, 24)}
                     </text>
                     <Show when={node.sub}>
-                      <text x={node.x + 10} y={node.y + 37} font-size="11" fill="var(--color-text-secondary)">
-                        {clip(node.sub!, 30)}
-                      </text>
+                      {/* A second line when the box has no fix link under it; what still does not fit is in the tooltip. */}
+                      <For each={wrapLines(node.sub!, 32, node.fix ? 1 : 2)}>
+                        {(line, i) => (
+                          <text x={node.x + 10} y={node.y + 37 + i() * 13} font-size="11" fill="var(--color-text-secondary)">
+                            {line}
+                          </text>
+                        )}
+                      </For>
                     </Show>
                     <Show when={node.tasks > 0}>
                       <text x={node.x + NODE_W - 10} y={node.y + 20} font-size="11" font-weight="700" text-anchor="end" fill="var(--color-text-secondary)">

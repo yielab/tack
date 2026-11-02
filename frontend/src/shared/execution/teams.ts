@@ -47,8 +47,10 @@ const STEP_KIND: Record<TeamStep['kind'], string> = {
 /** One step in words: "write · Lead · checked by a reviewer · sent back to write up to 2 times". */
 export function stepText(step: TeamStep): string {
   const parts: string[] = [step.name];
-  if (step.role) parts.push(step.role);
-  else if (STEP_KIND[step.kind]) parts.push(STEP_KIND[step.kind]);
+  // A step named after its role ("lead" run by Lead) says it once.
+  if (step.role) {
+    if (step.role.toLowerCase() !== step.name.toLowerCase()) parts.push(step.role);
+  } else if (STEP_KIND[step.kind]) parts.push(STEP_KIND[step.kind]);
   if (step.checked_by) parts.push(`checked by ${CHECKED_BY[step.checked_by]}`);
   if (step.sends_back_to) {
     const max = step.sends_back_max;

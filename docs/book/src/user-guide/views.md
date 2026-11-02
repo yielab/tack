@@ -77,7 +77,8 @@ no daily limit.
 **The stations.** A lane reads left to right. **Up next** holds the tasks routed to the team that have
 not started, most urgent first, the order the project takes them in; each says whether it **starts by
 itself** (and at which column) or is **by hand**, and a queued task says why it has not started. Then
-come the team's own steps, as it reported them. A check between two steps is a small mark between them:
+come the team's own steps, as it reported them. A check between two steps is a small mark between them,
+with its word under it:
 a command, a reviewer, a person or a check outside the team; a step that runs side by side with another
 is drawn as a stack. Then **Needs you** and **Ended today**, which says how
 the tasks that ended in the last day ended, such as "2 finished · 1 cancelled · 1 failed", each with its
@@ -137,7 +138,10 @@ for each line, under **Routes as text**, together with what is dashed and what i
 the team works, what it delivers, whether it runs to the end or stops for a person, its network, its
 members, which of them change the project, its steps and what checks each, which can propose items, how
 its changes are merged here, the token limit for one run and the tokens counted today. A fact a team did
-not report reads **not reported**, never a guess; hover it, or read on, for why. What a team delivers
+not report reads **not reported**, never a guess; hover it, or read on, for why. A row that no team filled is
+one line across the table that says so ("not reported by any of the 3 teams"). A step named like its role
+("lead", run by Lead) is written once. In the Map a box's second line wraps onto a third when it is long, and
+what still does not fit is in its tooltip. Every empty station of a lane reads **None**. What a team delivers
 and the limit for a run come from the profiles that name the team, and a run's limit falls back to the
 project's provisional one when the profile sets none.
 
