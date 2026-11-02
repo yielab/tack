@@ -1,4 +1,4 @@
-import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js';
+import { type Component, For, type JSX, Show, createMemo, createResource, createSignal } from 'solid-js';
 import { Badge, Button, Fold, LoadError, Modal, type DocketRunWord, type RunStateName } from '../ui';
 import { toast } from '../ui/toast';
 import { truncateMiddle } from '../ui/truncateMiddle';
