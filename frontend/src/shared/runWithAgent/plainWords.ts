@@ -64,3 +64,13 @@ export function plainLine(raw: string): { text: string; raw: string | undefined 
   const plain = plainVerdict(raw);
   return plain !== null && plain !== raw ? { text: plain, raw } : { text: raw, raw: undefined };
 }
+
+/** Why a proposal could not be read, in one sentence, or null when this build does not know the reason. */
+export function plainPlanProblem(raw: string): string | null {
+  if (/is not the ref of an earlier row/.test(raw)) return 'One names a parent that is not an earlier row in the file.';
+  if (/depends_on .* is not the ref of another row/.test(raw)) return 'One depends on a row that is not in the file.';
+  if (/two rows have this ref/.test(raw)) return 'Two rows have the same name.';
+  if (/the row has no title/.test(raw)) return 'A row has no title.';
+  if (/has no ref/.test(raw)) return 'A row has no name to refer to it by.';
+  return null;
+}

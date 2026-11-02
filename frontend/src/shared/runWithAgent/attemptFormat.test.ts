@@ -182,6 +182,21 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
   });
 });
 
+describe('a run whose proposals could not be used', () => {
+  it('is not a plain success: the badge says it and the detail names the problem, the raw reason kept', () => {
+    const raw = "'orphan': parent 'nowhere' is not the ref of an earlier row";
+    const badge = describeAttemptOutcome('succeeded', { plan_invalid: raw, outside_repository: true }).badge;
+    expect(badge?.label).toBe('Finished — proposals could not be used');
+    expect(badge?.tone).toBe('warning');
+    expect(badge?.detail).toBe('One names a parent that is not an earlier row in the file.');
+    expect(badge?.raw).toBe(raw);
+  });
+  it('a reason it cannot put in words is shown as it came', () => {
+    const badge = describeAttemptOutcome('succeeded', { plan_invalid: 'docket refused (400): bad set' }).badge;
+    expect(badge?.detail).toBe('docket refused (400): bad set');
+  });
+});
+
 describe('formatTokenCount / formatApproxCost', () => {
   it('shortens token counts without losing what matters', () => {
     expect([12, 999, 3_284, 12_500, 286_414, 1_077_873, 12_400_000].map(formatTokenCount)).toEqual([

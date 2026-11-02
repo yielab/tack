@@ -16,7 +16,7 @@
 // (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
 // same guarantee; this file is the frontend half.
 
-import { plainVerdict } from './plainWords';
+import { plainPlanProblem, plainVerdict } from './plainWords';
 import { isFolderRun } from '../execution/attempts';
 import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
 import type { Measurement } from '../execution/types';
@@ -357,7 +357,7 @@ export interface AttemptOutcome {
   /** The "Why it stopped" line, for a failed/cancelled/lost attempt only. */
   whyStopped: string | null;
   /** An override for the `succeeded` badge, when the run's artifacts qualify it. */
-  badge: { label: string; tone: StateTone; detail?: string } | null;
+  badge: { label: string; tone: StateTone; detail?: string; /** The raw line the detail says in words, for a tooltip. */ raw?: string } | null;
 }
 
 /** What a run that ended with the code `needs_human` says when the agent gave no sentence of its own. */
@@ -372,6 +372,7 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     message?: unknown;
     artifacts?: unknown;
     workspace_kept_at?: unknown;
+    plan_invalid?: unknown;
   };
   const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
   let whyStopped: string | null = null;
@@ -405,7 +406,12 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     ) as { size_bytes?: unknown } | undefined;
     const patchBytes = typeof patch?.size_bytes === 'number' ? patch.size_bytes : null;
     const kept = str(reason.workspace_kept_at);
-    if (patchBytes !== null && patchBytes > 0) {
+    const invalid = str(reason.plan_invalid);
+    if (invalid) {
+      // The run ended well, but the proposals it made could not be read: not a plain success.
+      const said = plainPlanProblem(invalid);
+      badge = { label: 'Finished — proposals could not be used', tone: 'warning', detail: said ?? invalid, raw: said ? invalid : undefined };
+    } else if (patchBytes !== null && patchBytes > 0) {
       badge = { label: 'Succeeded', tone: 'success' };
     } else if (kept) {
       badge = { label: 'Finished — changes could not be read', tone: 'warning', detail: `Workspace kept at ${kept}` };

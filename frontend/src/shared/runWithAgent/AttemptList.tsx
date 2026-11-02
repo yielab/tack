@@ -421,7 +421,7 @@ const AttemptRow: Component<{
         </Show>
         <Show when={outcome().badge?.detail}>
           {(detail) => (
-            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <p class="text-xs" title={outcome().badge?.raw} style={{ color: 'var(--color-text-secondary)' }}>
               {detail()}
             </p>
           )}
