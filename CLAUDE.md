@@ -88,6 +88,10 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   (`features.converse`: continues or replays), triggers on domain events. The Create rung exists (off by
   default, capped; amends ADR 0032 d4) and a credential may name every project. Waits on Phase 84's S, I, J.
   Six docket asks, all pulls, none blocking.
+- **Accepted 2026-11-02, no card started:** Phase 86 (`docs/plans/phase-86.md`, no ADR; amends ADR 0033 d1) — a person sets a
+  task's status and the agents report its work: the six automatic status moves are removed with their settings,
+  auto-start starts a task once and moves nothing, and the screen shows "Status" and "Work" apart. Status rules
+  (a rule builds a change set) are a future, optional idea in the roadmap.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
