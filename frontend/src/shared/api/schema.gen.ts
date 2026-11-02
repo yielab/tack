@@ -2294,6 +2294,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runner/v1/attempts/{attempt_id}/decisions/answered-elsewhere": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tell the board the agent's own tool took the answer to a decision it still holds open; the decision is closed and the attempt can ask its next question (additive v1 operation; exact path fixed by protocol.json)
+         * @description Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Attempt ID, issued at claim time (opaque) */
+                    attempt_id: string;
+                };
+                cookie?: never;
+            };
+            /** @description protocol_version: 1, plus this exchange's fixture-frozen fields */
+            requestBody: {
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            responses: {
+                /** @description Decision closed as answered_elsewhere, or reported as another road had already settled it */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+                /** @description invalid_request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description forbidden / runner_revoked */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description not_found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runner/v1/attempts/{attempt_id}/decisions/poll": {
         parameters: {
             query?: never;
@@ -4557,7 +4649,8 @@ export interface components {
         /**
          * @description The `resolved_by` of a settled decision: `{"kind": "operator", "subject_id": <principal>}`
          *     for an operator's answer, `{"kind": "system", "subject_id": "expiry"}` for a decision that
-         *     passed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`
+         *     passed its `expires_at`, `{"kind": "harness", "subject_id": <tool>}` for one the agent's own
+         *     tool took the answer to (`docket`). Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`
          *     fixes this shape, so it stays an open two-field object.
          */
         DecisionResolvedBy: {
