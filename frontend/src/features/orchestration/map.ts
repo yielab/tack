@@ -238,7 +238,8 @@ export function buildMap(input: MapInput): MapModel {
     return { key: team ? teamLaneKey(team) : agentLaneKey(kind), team, kind };
   };
 
-  // Profiles on the map: those a role, the project's default or a routed task uses.
+  // Profiles on the map: every one the install has, as the run dialog offers them; those a role, the
+  // project's default or a routed task uses come first.
   const profileOrder: AgentProfileSummary[] = [];
   const reach = (id: string | null | undefined) => {
     const p = id ? profileById.get(id) : undefined;
@@ -247,6 +248,7 @@ export function buildMap(input: MapInput): MapModel {
   for (const r of input.roles) reach(r.profileId);
   reach(input.defaultProfileId);
   for (const t of routed) reach(t.route.profile.agent_profile_id);
+  for (const p of profiles) reach(p.agent_profile_id);
 
   // ── Roles
   const roleNames = [...new Set(input.roles.map((r) => r.name))];
@@ -329,8 +331,8 @@ export function buildMap(input: MapInput): MapModel {
   for (const name of [...teamNames].sort((a, b) => a.localeCompare(b))) {
     const entry = teams.find((t) => t.name === name) ?? ({ name, profiles: [], reported: false } as TeamEntry);
     const key = teamLaneKey(name);
-    // Dashed when nothing the project can use names the team: a profile elsewhere on the install that
-    // no role of this project reaches does not make the team reachable here.
+    // Dashed when no profile names the team: a name the team reports for a profile that the list of
+    // profiles does not have does not make it reachable.
     const noProfile = !profileOrder.some((p) => teamOf(p) === name);
     const namedElsewhere = entry.profiles.map((p) => p.name);
     const stranded = nobodyIds((e) => e.route.reason === 'team_not_reported' && e.route.detail === name);
@@ -344,7 +346,7 @@ export function buildMap(input: MapInput): MapModel {
       reason: !noProfile
         ? null
         : namedElsewhere.length > 0
-          ? `${namedElsewhere.join(', ')} ${namedElsewhere.length === 1 ? 'names' : 'name'} the team ${name}, but no role of this project uses ${namedElsewhere.length === 1 ? 'it' : 'them'}, so no task can be routed to it.`
+          ? `${namedElsewhere.join(', ')} ${namedElsewhere.length === 1 ? 'names' : 'name'} the team ${name}, but ${namedElsewhere.length === 1 ? 'it is' : 'they are'} not among the profiles, so no task can be routed to it.`
           : `No profile names the team ${name}, so no task can be routed to it.`,
       fix: !noProfile
         ? null

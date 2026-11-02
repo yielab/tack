@@ -113,8 +113,10 @@ station instead of sliding to it.
 **Map**. Flow is what you see first, and Tack remembers in this browser which of the two you left on.
 
 **The Map.** Where Flow shows work as it happens, the Map shows the structure behind it: how a task finds
-its team. Four columns read from left to right, **Roles**, **Profiles**, **Teams** and **Members**. A
-line joins a role to its profile, a profile to the team (or single agent) that runs it, and a team to the
+its team. Four columns read from left to right, **Roles**, **Profiles**, **Teams** and **Members**. Every
+profile is a box, the same ones the Run with agent dialog offers, whether or not a role or a task uses it,
+so a team a profile names is never drawn as unreachable when the dialog offers it. A
+line, always drawn, joins a role to its profile, a profile to the team (or single agent) that runs it, and a team to the
 members it reported, and a line is as wide as the number of open tasks routed along it, so the busy
 routes stand out and a route nothing uses is a hairline. Under each team's name the Map says where it
 runs, on this computer or on another. The project's default profile is marked, and a task that names no
