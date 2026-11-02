@@ -98,7 +98,8 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
 
   const executionTab = drawer.getByRole('tab', { name: 'Execution' });
   await executionTab.click();
-  await expect(drawer.getByRole('tabpanel').getByText('Queued')).toBeVisible();
+  // The newest run's state is shown once, in the Work region, not repeated in the Execution panel.
+  await expect(drawer.getByRole('region', { name: 'Work' }).getByRole('status')).toContainText('Queued');
 
   // The runner claims it over the real runner-v1 wire — a background HTTP
   // call, not a UI action; the page is never reloaded or re-navigated
@@ -109,6 +110,8 @@ test('healthy exact-runner selection is claimed, and the UI reflects it without 
   // The store's bounded poll (default 4s, `shared/execution/realtime.ts`)
   // must pick up the state change on its own — no reload, no manual
   // refetch trigger from this test. The real attempts endpoint feeds this
-  // same tab; the run's one status badge is its claimed attempt's, Starting.
-  await expect(drawer.getByText('Starting', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+  // same tab; the Work region shows the claim as Running, with its attempt Starting.
+  const work = drawer.getByRole('region', { name: 'Work' });
+  await expect(work.getByRole('status')).toContainText('Running', { timeout: 10_000 });
+  await expect(work.getByTestId('latest-run-status')).toContainText('Starting');
 });

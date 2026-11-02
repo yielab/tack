@@ -315,6 +315,24 @@ const BoardColumnView: Component<{
     if (itemId) props.onItemDrop(itemId, props.column.status);
   };
 
+  // A column read down to its foot stays at its foot when its box shrinks (a banner
+  // arriving above the board, a smaller window). The scroll offset does not move on its
+  // own, so the last card would otherwise slip under the column's edge.
+  let scroller: HTMLDivElement | undefined;
+  onMount(() => {
+    if (typeof ResizeObserver === 'undefined' || !scroller) return;
+    const el = scroller;
+    let lastHeight = el.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const overflowed = el.scrollHeight > lastHeight + 2;
+      const wasAtFoot = overflowed && el.scrollHeight - el.scrollTop - lastHeight <= 2;
+      lastHeight = el.clientHeight;
+      if (wasAtFoot) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(el);
+    onCleanup(() => observer.disconnect());
+  });
+
   return (
     <section
       role="region"
@@ -368,6 +386,7 @@ const BoardColumnView: Component<{
       {/* The column's own scroll: focusable, so the keyboard can scroll it, and
           it keeps the wheel to itself instead of passing it to the board. */}
       <div
+        ref={scroller}
         role="group"
         aria-labelledby={headingId}
         tabindex={0}
