@@ -284,6 +284,16 @@ describe('Orchestration: lanes', () => {
     expect(q<HTMLAnchorElement>(lane, '[data-testid="flow-lane-name"]')!.getAttribute('href')).toBe('/agents#team-saas-notes');
   });
 
+  it('draws_no_empty_queue_bar_for_a_lane_with_nothing_running_or_waiting_and_says_so_in_words', async () => {
+    const c = await mount(threeLanes());
+    const idle = qa(c, '[data-testid="flow-lane"]').filter((lane) => lane.getAttribute('data-urgency') === 'idle');
+    expect(idle.length).toBeGreaterThan(0);
+    for (const lane of idle) {
+      expect(q(lane, '[data-testid="flow-queue"] [role="img"]')).toBeNull();
+      expect(q(lane, '[data-testid="flow-queue"]')!.textContent).toBe('Nothing running or waiting');
+    }
+  });
+
   it('writes_the_same_word_at_every_empty_station', async () => {
     const c = await mount(threeLanes());
     const empties = qa(c, '[data-lane="team:saas-notes"] [data-testid="flow-station"] ul > li.text-caption');

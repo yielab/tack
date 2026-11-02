@@ -135,25 +135,31 @@ const Facts: Component<{ lane: FlowLane }> = (props) => {
   );
 };
 
-/** Running and waiting as one bar, with the sentence beside it. */
+/**
+ * Running and waiting as one bar, with the sentence beside it. A lane with nothing running or waiting
+ * has no bar to draw, so it is the sentence alone: an empty track says nothing and reads as a broken meter.
+ */
 const QueueMeter: Component<{ lane: FlowLane }> = (props) => {
   const q = () => laneQueue(props.lane);
-  const total = () => Math.max(1, q().running + q().waiting);
+  const busy = () => q().running + q().waiting > 0;
   const words = () => `${queueText(q())}${q().reported ? '' : ' (counted on this board)'}`;
   return (
     <div class="flex min-w-0 items-center gap-2" data-testid="flow-queue">
-      <div
-        role="img"
-        aria-label={words()}
-        title={words()}
-        class="flex h-2 w-24 flex-none overflow-hidden rounded-pill"
-        style={{ 'background-color': 'var(--color-bg-subtle)', 'box-shadow': 'inset 0 0 0 1px var(--color-border-light)' }}
-      >
-        <span style={{ flex: `${q().running} 1 0`, 'background-color': 'var(--run-running-ink)' }} />
-        <span style={{ flex: `${q().waiting} 1 0`, 'background-color': 'var(--run-queued-ink)', opacity: 0.45 }} />
-        <span style={{ flex: `${q().running + q().waiting === 0 ? total() : 0} 1 0` }} />
-      </div>
-      <span aria-hidden="true" class="text-caption tabular-nums" style={MUTED}>{`${q().running} running · ${q().waiting} waiting`}</span>
+      <Show when={busy()}>
+        <div
+          role="img"
+          aria-label={words()}
+          title={words()}
+          class="flex h-2 w-24 flex-none overflow-hidden rounded-pill"
+          style={{ 'background-color': 'var(--color-bg-subtle)', 'box-shadow': 'inset 0 0 0 1px var(--color-border-light)' }}
+        >
+          <span style={{ flex: `${q().running} 1 0`, 'background-color': 'var(--run-running-ink)' }} />
+          <span style={{ flex: `${q().waiting} 1 0`, 'background-color': 'var(--run-queued-ink)', opacity: 0.45 }} />
+        </div>
+      </Show>
+      <span aria-hidden={busy() ? 'true' : undefined} title={busy() ? undefined : words()} class="text-caption tabular-nums" style={MUTED}>
+        {busy() ? `${q().running} running · ${q().waiting} waiting` : 'Nothing running or waiting'}
+      </span>
     </div>
   );
 };
