@@ -7,17 +7,19 @@ import Breadcrumb from '../shared/ui/Breadcrumb';
 import HelpButton from '../shared/ui/HelpButton';
 import { WaitingBadge } from '../shared/runWithAgent/WaitingForYou';
 import { ProjectProvider } from '../shared/state/projectContext';
-import CommandPalette, { type Command } from '../shared/ui/CommandPalette';
+import type { Command } from '../shared/ui/CommandPalette';
 import { paletteOpen, openPalette, closePalette } from '../shared/state/commandPalette';
 import { IconPlus } from '../shared/ui/icons';
 import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from '../shared/ui/destinations';
-import CreateItemModal from '../features/board/CreateItemModal';
-import CreateProjectModal from '../features/projects/CreateProjectModal';
 import { useProject } from '../shared/state/projectContext';
 import { useVocab } from '../shared/vocab/useVocab';
 import { pageOf } from './pages';
 
 const ItemDetailDrawer = lazy(() => import('../features/item-detail/ItemDetailDrawer'));
+// The palette and the create dialogs open on demand, so they stay out of the entry bundle.
+const CommandPalette = lazy(() => import('../shared/ui/CommandPalette'));
+const CreateItemModal = lazy(() => import('../features/board/CreateItemModal'));
+const CreateProjectModal = lazy(() => import('../features/projects/CreateProjectModal'));
 
 interface LayoutProps {
   children?: JSX.Element;
@@ -193,11 +195,13 @@ const LayoutInner: Component<LayoutProps> = (props) => {
       </div>
 
       {/* Global command palette */}
-      <CommandPalette
-        isOpen={paletteOpen()}
-        onClose={closePalette}
-        commands={globalCommands()}
-      />
+      <Show when={paletteOpen()}>
+        <CommandPalette
+          isOpen={paletteOpen()}
+          onClose={closePalette}
+          commands={globalCommands()}
+        />
+      </Show>
 
       {/* Context-aware create modals */}
       <Show when={showNewItem() && projectId()}>
