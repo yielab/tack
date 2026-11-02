@@ -52,7 +52,7 @@ An agent that uses Tack on its own, for example through `tack mcp`, should not h
 
 | It may | What that lets the agent do |
 |---|---|
-| **Read** | See the project, its items, comments, dependencies and roles, and the list of teams. |
+| **Read** | See the project, its items, comments, dependencies and roles, the list of teams, and what a team is doing, limited to the work it holds for projects the credential can read (the work no project started is shown only to a credential that reads every project). |
 | **Propose** | Propose a change set: a list of changes to the board, kept for a person to apply. |
 | **Act** | Everything **Propose** does, and lets the changes the project's *Agents on the board* setting allows apply at once. |
 | **Converse** | Read and write in a thread kept for the credential, and nothing else. |

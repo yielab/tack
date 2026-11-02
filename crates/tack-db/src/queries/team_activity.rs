@@ -59,3 +59,21 @@ pub async fn team_task_steps(
     .fetch_all(repo.pool())
     .await?)
 }
+
+/// The project of the item the board started each task of a team for. `None` for work the board
+/// did not start, and for a task whose item no longer exists.
+pub async fn team_task_projects(
+    repo: &Repository,
+    team: &str,
+    harness: &str,
+) -> Result<Vec<(String, Option<String>)>, StoreError> {
+    Ok(sqlx::query_as(
+        "SELECT t.task_ref, i.project_id
+         FROM team_tasks t LEFT JOIN items i ON i.id = t.on_board
+         WHERE t.team = ? AND t.harness = ?",
+    )
+    .bind(team)
+    .bind(harness)
+    .fetch_all(repo.pool())
+    .await?)
+}

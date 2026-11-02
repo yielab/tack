@@ -7729,11 +7729,21 @@
         ],
         "responses": {
           "200": {
-            "description": "What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). `supported` is `false`, with its reason, for an agent that cannot say",
+            "description": "What the team is doing: every task it holds with the step each is in and the steps it finished, the work the board did not start included (`on_board` is `null`). An agent credential gets the tasks of the projects it may read, and the work the board did not start only if it may read every project. `supported` is `false`, with its reason, for an agent that cannot say",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TeamActivityEntry"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent credential with the scope `read` on no project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
