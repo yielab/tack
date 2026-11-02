@@ -31,6 +31,13 @@
       "authentication": "runner_bearer_credential",
       "request_fixture": "activity.request.json",
       "response_fixture": "activity.response.json"
+    },
+    "decision_answered_elsewhere": {
+      "method": "POST",
+      "path": "/attempts/{attempt_id}/decisions/answered-elsewhere",
+      "authentication": "runner_bearer_credential",
+      "request_fixture": "decision.answered-elsewhere.request.json",
+      "response_fixture": "decision.answered-elsewhere.response.json"
     }
   },
   "stable_error_codes": [

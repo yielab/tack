@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 /// The `resolved_by` of a settled decision: `{"kind": "operator", "subject_id": <principal>}`
 /// for an operator's answer, `{"kind": "system", "subject_id": "expiry"}` for a decision that
-/// passed its `expires_at`. Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`
+/// passed its `expires_at`, `{"kind": "harness", "subject_id": <tool>}` for one the agent's own
+/// tool took the answer to (`docket`). Not a closed enum on purpose: nothing in `docs/contracts/runner-v1/`
 /// fixes this shape, so it stays an open two-field object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -28,6 +29,14 @@ impl DecisionResolvedBy {
         Self {
             kind: "system".to_string(),
             subject_id: "expiry".to_string(),
+        }
+    }
+
+    /// The agent's own tool took the answer, so nobody answered it in Tack.
+    pub fn harness(source: impl Into<String>) -> Self {
+        Self {
+            kind: "harness".to_string(),
+            subject_id: source.into(),
         }
     }
 }

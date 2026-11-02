@@ -2,6 +2,7 @@
 
 pub mod agent_credential;
 pub mod announce;
+pub mod answered_elsewhere;
 pub mod cancel_run;
 pub mod claim;
 pub mod complete;

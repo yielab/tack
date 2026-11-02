@@ -30,10 +30,11 @@ pub use messages::{
     AttemptTransitionRequest, AttemptTransitionResponse, CancelObservation,
     CancellationObservationRequest, CancellationObservationResponse, ClaimGranted, ClaimIdle,
     ClaimLease, ClaimRequest, ClaimResponse, CompletionRequest, CompletionResponse, DecisionAnswer,
-    DecisionCreateRequest, DecisionCreateResponse, DecisionOption, DecisionPollRequest,
-    DecisionPollResponse, DecisionRecommendation, DecisionUpdate, EnrollmentRequest,
-    EnrollmentResponse, EventBatchRequest, EventBatchResponse, EventRecord, HeartbeatRequest,
-    HeartbeatResponse, LeaseResult, RefreshRequest, RefreshResponse,
+    DecisionAnsweredElsewhereRequest, DecisionAnsweredElsewhereResponse, DecisionCreateRequest,
+    DecisionCreateResponse, DecisionOption, DecisionPollRequest, DecisionPollResponse,
+    DecisionRecommendation, DecisionUpdate, EnrollmentRequest, EnrollmentResponse,
+    EventBatchRequest, EventBatchResponse, EventRecord, HeartbeatRequest, HeartbeatResponse,
+    LeaseResult, RefreshRequest, RefreshResponse,
 };
 pub use types::{
     ActualExecution, AgentProfileId, AgentProfileSnapshot, Approvals, AttemptId, AttemptSnapshot,

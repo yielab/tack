@@ -37,13 +37,13 @@ export interface DecisionRecommendation {
   evidence_refs?: string[] | null;
 }
 
-/** `execution_decisions.state` — `pending`/`resolved`/`expired` are the only
- *  values anything in this codebase ever writes (`decisions.rs`'s own
+/** `execution_decisions.state` — `pending`/`resolved`/`expired`/`answered_elsewhere` (the agent's
+ *  own tool took the answer) are the only values anything in this codebase ever writes (`decisions.rs`'s own
  *  `UnknownState` defensive arm proves this exhaustively server-side), but
  *  this stays an open string, matching every other server-reported
  *  lifecycle value in this domain (`ExecutionSummary.state`'s own doc
  *  comment): an unrecognised value renders instead of failing to parse. */
-export type DecisionState = 'pending' | 'resolved' | 'expired' | (string & {});
+export type DecisionState = 'pending' | 'resolved' | 'expired' | 'answered_elsewhere' | (string & {});
 
 export interface DecisionAnswer {
   option_id: string;

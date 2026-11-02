@@ -35,6 +35,8 @@ mod crud;
 mod custom_fields;
 #[path = "handlers/debug_and_relations.rs"]
 mod debug_and_relations;
+#[path = "handlers/decision_answered_elsewhere.rs"]
+mod decision_answered_elsewhere;
 #[path = "handlers/digest.rs"]
 mod digest;
 #[path = "handlers/domain_events.rs"]
