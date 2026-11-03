@@ -25,8 +25,8 @@ use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamMisfit,
-    TeamNeeds, Usage, WorkspaceId as DomainWorkspaceId, team_misfits,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamMember,
+    TeamMisfit, TeamNeeds, Usage, WorkspaceId as DomainWorkspaceId, team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
 
@@ -136,6 +136,25 @@ fn in_repository(report: Option<&PodReport>) -> bool {
             .as_deref()
             .is_none_or(|dir| !dir.is_empty()),
     }
+}
+
+/// The roles of the team that can propose items, once each, in the order docket lists them.
+/// `None` when docket did not say of any member whether it can.
+fn proposers(members: Option<&[TeamMember]>) -> Option<Vec<String>> {
+    let members = members?;
+    if members.iter().all(|member| member.can_propose.is_none()) {
+        return None;
+    }
+    let mut roles: Vec<String> = Vec::new();
+    for member in members
+        .iter()
+        .filter(|member| member.can_propose == Some(true))
+    {
+        if !roles.contains(&member.role) {
+            roles.push(member.role.clone());
+        }
+    }
+    Some(roles)
 }
 
 /// Why a run did not go to `pod`, one sentence per need the team cannot meet, each with the change
@@ -1640,13 +1659,9 @@ impl HarnessAdapter for DocketAdapter {
             let pod_fetch = self.client.has_feature(POD_FETCH).await;
             return Err(rejected(misfit_sentence(&pod, &misfits, pod_fetch)));
         }
-        // A Researcher is told how to propose only when a member can; a team that did not say is
-        // told, as before.
-        let can_propose = members.as_deref().is_none_or(|members| {
-            members
-                .iter()
-                .any(|member| member.can_propose != Some(false))
-        });
+        // The roles that propose, named in the task so no other role calls the tool; a team whose
+        // members say nothing of it is told as before, naming none.
+        let proposers = proposers(members.as_deref());
         let base_ref = if in_repository {
             Some(
                 match request.metadata.get("rework_base").and_then(Value::as_str) {
@@ -1663,7 +1678,7 @@ impl HarnessAdapter for DocketAdapter {
             spec.work.lease.attempt_number,
             base_ref.as_deref(),
             request.autonomy(),
-            can_propose,
+            proposers.as_deref(),
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
             tracing::warn!(why, "docket could not be reached to post the task");

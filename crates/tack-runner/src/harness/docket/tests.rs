@@ -323,7 +323,7 @@ async fn a_failure_code_tack_does_not_translate_shows_dockets_text_labelled() {
 #[test]
 fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_write_no_file() {
     let state = crate::harness::test_support::scratch("docket-plan-channel");
-    let described = |kind: Option<&str>, with_task: bool, can_propose: bool| {
+    let described = |kind: Option<&str>, with_task: bool, proposers: Option<&[String]>| {
         let mut spec = crate::harness::test_support::spec("docket", state.path());
         let request = &mut spec.work.request;
         request.resolved_agent_profile.instructions = "Do the thing.".into();
@@ -344,13 +344,14 @@ fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_wri
             kind: "task".into(),
             source: "human".into(),
         });
-        let body = super::task::body(request, "attempt", 1, Some("main"), None, can_propose);
+        let body = super::task::body(request, "attempt", 1, Some("main"), None, proposers);
         body["description"]
             .as_str()
             .expect("description")
             .to_owned()
     };
-    let description = |kind: Option<&str>, with_task: bool| described(kind, with_task, true);
+    // A team that did not say who proposes is told as before, naming no role.
+    let description = |kind: Option<&str>, with_task: bool| described(kind, with_task, None);
     for (kind, opening) in [
         ("planner", "Propose items by calling"),
         (
@@ -381,8 +382,28 @@ fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_wri
         );
     }
     // A Researcher whose team said no member can propose is not sent after a tool it lacks.
-    let text = described(Some("researcher"), true, false);
+    let text = described(Some("researcher"), true, Some(&[]));
     assert!(!text.contains("rec__tack_proposals__add"), "{text}");
+    // Every step reads the sentence, and docket ends the task when a role calls a tool another
+    // member holds and it does not: the roles that can are named, and every other role leaves it.
+    let one = ["lead".to_owned()];
+    let text = described(Some("researcher"), true, Some(&one));
+    assert!(
+        text.starts_with(
+            "Do the thing.\n\nOnly the lead role can call rec__tack_proposals__add; any other role \
+             leaves proposing to it and never calls it. If you propose work,"
+        ),
+        "{text}"
+    );
+    let three = ["lead".to_owned(), "analyst".to_owned(), "writer".to_owned()];
+    let text = described(Some("planner"), true, Some(&three));
+    assert!(
+        text.contains(
+            "Only the lead, analyst and writer roles can call rec__tack_proposals__add; any other \
+             role leaves proposing to them and never calls it. Propose items by calling"
+        ),
+        "{text}"
+    );
 }
 
 #[test]
@@ -436,7 +457,7 @@ fn a_docket_thread_turn_is_told_the_teams_last_step_answers_and_no_reply_file_is
             kind: "task".into(),
             source: "human".into(),
         });
-        super::task::body(request, "attempt", 1, Some("main"), None, true)["description"]
+        super::task::body(request, "attempt", 1, Some("main"), None, None)["description"]
             .as_str()
             .expect("description")
             .to_owned()
@@ -485,7 +506,7 @@ fn a_docket_thread_turn_names_its_thread_so_a_change_set_can_say_where_it_came_f
             kind: "task".into(),
             source: "human".into(),
         });
-        super::task::body(request, "attempt", 1, Some("main"), None, true)["description"]
+        super::task::body(request, "attempt", 1, Some("main"), None, None)["description"]
             .as_str()
             .expect("description")
             .to_owned()
