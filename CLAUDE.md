@@ -102,6 +102,11 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   of the live suite's screenshots: a refused run reads "Not started" and a reject-review says so, the board sorts
   needs-you first, the item drawer's status is one control that opens the menu, drawer sections fold
   (`shared/ui/Fold.tsx`), and dependencies were updated (the desktop app's Tauri crates and Vitest 5 are not taken).
+- **Proposed 2026-11-03:** Phase 87 (`docs/plans/phase-87.md`, no ADR) — docket's Phase 59 (its ADR 0038):
+  a step that runs out of rounds, tool calls or time ends `step_budget` (tokens stay `budget`), says where
+  to raise the limit, keeps its patch and report, and a person chooses Continue (a new request that
+  `POST .../retry`s the same docket task) or Start over (`from_run` → `rework_base`). Every card waits on
+  docket's `/health` listing its feature (`retryContinues` is listed; `budgetOutcome` is not yet).
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
