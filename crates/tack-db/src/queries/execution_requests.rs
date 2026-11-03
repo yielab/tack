@@ -164,8 +164,10 @@ pub async fn rework_source_of_request(
 
 /// What a run's `continues` reads from the request it names (Phase 87, decision 6): the item it
 /// belongs to (a continuation is always posted on the same item — nothing a caller sends chooses
-/// it), the docket team and task its own newest attempt left stopped at
-/// (`actual_execution.additional.team`, `terminal_reason.task`), whether that attempt's own ending
+/// it), the docket team and task its own newest attempt left stopped at (`actual_execution.team`
+/// — `ActualExecution.additional` is `#[serde(flatten)]`, so docket's own `team` key sits at the
+/// top level of the stored JSON, never nested under a literal `"additional"`; `terminal_reason.task`),
+/// whether that attempt's own ending
 /// offered Continue and why not when it did not (`terminal_reason.next.continue`, decision 5's
 /// table), the tokens that attempt's own usage counted when the retry is sent, and the token limit
 /// the source request itself ran with.
@@ -198,7 +200,7 @@ pub async fn continue_source_of_request(
         "SELECT r.item_id AS item_id,
                 r.idempotency_scope AS idempotency_scope,
                 json_extract(r.request_snapshot, '$.budgets.tokens') AS limit_tokens,
-                (SELECT json_extract(a.actual_execution, '$.additional.team') FROM execution_attempts a
+                (SELECT json_extract(a.actual_execution, '$.team') FROM execution_attempts a
                   WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS pod,
                 (SELECT json_extract(a.terminal_reason, '$.task') FROM execution_attempts a
                   WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS task,
