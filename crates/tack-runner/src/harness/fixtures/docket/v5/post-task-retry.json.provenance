@@ -1,6 +1,20 @@
-constructed
+captured
 route: POST /tasks/<pod>/<id>/retry
 status: 200
-docket: docket's ADR 0038 and Phase 59 (P59-1, retryContinues); not yet captured against a running docket
+tack-sends: yes
+note: the route takes no body. Captured against a real step-budget stop (round limit, Phase 87
+card L's live proof, 2026-11-03): a build step with AGENT_LOOP_MAX_ITERATIONS=3 stopped at its
+round limit (hop.budget == {bound: "rounds", limit: 3, used: 3, source: "default", raise:
+"AGENT_LOOP_MAX_ITERATIONS", treeChanged: true}) after writing 3 of 6 requested files; this
+retry re-ran the same task and the implementer continued its session, writing the 3 remaining
+files before stopping again at the same round limit (a second step_budget, not `done` — the
+machine's round ceiling never rises between retries, so this is expected and not itself a
+finding). A `409` means the retry was already sent; Tack follows the task either way and never
+sends a second one (ADR 0038's own note: a retry cannot raise maxTokens).
+command: curl -X POST http://127.0.0.1:<port>/tasks/cardl-time/task-00000000-0000-0000-0000-000000000000/retry (bearer token from docket's --token-file)
+docket: docket 0.3.0b1 (API 6), source checkout fa06ce05 (rack-cli develop, carries P59-6/7/8)
+env: HOME and DOCKET_HOME (a throwaway folder), PATH; provider "local" over an OpenAI-compatible
+endpoint at a loopback port (llama.cpp serving a local Qwen checkpoint) — unlike the other
+captures in this directory, this one is a live model run, not a no-model refusal
 date: 2026-11-03
-note: the route takes no body (ADR 0038's own note: a retry cannot raise maxTokens). docket's shape for the answer is assumed from POST /tasks/<pod>'s own {"task": "<id>"} until Card L (docs/plans/phase-87.md) captures it for real against a live docket. A 409 means the retry was already sent; Tack follows the task either way and never sends a second one.
+redacted: the scratch folder, task ids (as an all-zero uuid)

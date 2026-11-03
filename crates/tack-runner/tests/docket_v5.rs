@@ -5189,9 +5189,9 @@ const CLIENT_ROUTES: [&str; 17] = [
 const NOT_IN_CLIENT: [&str; 0] = [];
 
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
-/// that stays running, and `current` and `updatedSince` need one; `retry` is not yet captured
-/// against a live docket (Card L, `docs/plans/phase-87.md`).
-const CONSTRUCTED_ONLY: [&str; 2] = ["GET /tasks/<pod>", "POST /tasks/<pod>/<id>/retry"];
+/// that stays running, and `current` and `updatedSince` need one. `retry` was captured against a
+/// live docket for Card L (`docs/plans/phase-87.md`) and moved out of this list.
+const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {
