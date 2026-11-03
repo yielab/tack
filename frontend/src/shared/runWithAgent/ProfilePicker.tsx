@@ -1,4 +1,4 @@
-import { type Component, type JSX, For, Show, createMemo, createResource, createUniqueId } from 'solid-js';
+import { type Component, type JSX, For, Show, createMemo, createResource, createSignal, createUniqueId } from 'solid-js';
 import {
   AGENT_KINDS,
   SINGLE_AGENT_TEXT,
@@ -6,7 +6,6 @@ import {
   agentCapabilityLines,
   agentName,
   pickHarness,
-  profileAgentText,
   runnersApi,
   teamOf,
   teamsApi,
@@ -36,6 +35,38 @@ export function agentKindOf(profile: AgentProfileSummary, teams: readonly TeamEn
   return Object.keys(policy?.tools ?? {})[0] ?? '';
 }
 
+/**
+ * Whether a profile is offered under an agent. A team's profile is offered under its team's agent, and
+ * a profile that names one agent under that one; any other under each agent its tool policy lists, or
+ * every agent when it lists none. A docket run goes to a team, so docket offers a profile without a team
+ * only while no profile names a team.
+ */
+export function offeredUnder(
+  profile: AgentProfileSummary,
+  kind: string,
+  all: readonly AgentProfileSummary[],
+  teams: readonly TeamEntry[] = [],
+): boolean {
+  const team = teamOf(profile);
+  if (team) return (teams.find((t) => t.name === team)?.harness ?? 'docket') === kind;
+  const policy = profile.tool_policy as { agent?: unknown; tools?: Record<string, unknown> } | null | undefined;
+  if (typeof policy?.agent === 'string' && policy.agent) return policy.agent === kind;
+  const listed = Object.keys(policy?.tools ?? {});
+  const runs = listed.length === 0 || listed.includes(kind);
+  return kind === 'docket' ? runs && !all.some((p) => teamOf(p)) : runs;
+}
+
+/** One agent a person can choose; a disabled one says why. */
+export interface AgentChoice {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  reason?: string;
+}
+
+/** Docket first, then the agents in the order the Agents page lists them, then any other by name. */
+export const agentRank = (kind: string) => (kind === 'docket' ? -1 : AGENT_KINDS.includes(kind) ? AGENT_KINDS.indexOf(kind) : 50);
+
 export interface ProfilePickerProps {
   /** The profile chosen, by id; null for nobody yet. */
   value: string | null;
@@ -47,6 +78,12 @@ export interface ProfilePickerProps {
   reports?: readonly HarnessCapability[];
   /** The teams any agent reports (GET /api/teams); fetched when not given. */
   teams?: readonly TeamEntry[];
+  /** The agents to choose from; when not given, every agent a computer reports or a profile names. */
+  agents?: readonly AgentChoice[];
+  /** The agent chosen, when the caller holds it (the Run dialog sends it); else the picker keeps its own. */
+  agent?: string;
+  /** A click on an agent. */
+  onAgent?: (kind: string) => void;
   /** The accessible name of the group. */
   label: string;
   /** Where the chosen profile came from ("Chosen by the role Implementer"), said under its row. */
@@ -103,10 +140,11 @@ const Muted: Component<{ children: JSX.Element; disabled?: boolean }> = (props) 
 );
 
 /**
- * Who does a task, as one compact list: every profile a radio, grouped by the team it names or, when
- * it names none, by the agent that runs it. A team shows its members as chips, where it works as an
- * icon and what its agent can do as five icons; teams no profile names collapse into one disabled row.
- * The one picker of the new-item dialog, the item's Automation row and the Run with agent dialog.
+ * Who does a task, in two steps: first the agent, then only the profiles that agent runs. Under docket
+ * the profiles are grouped by the team they name, each team with its members as chips and where it
+ * works as an icon, and the teams no profile names collapse into one disabled row; under any other agent
+ * they are one list. What the chosen agent can do is said once, as five icons.
+ * The one picker of the new-item dialog, the item's Automation row, the Flow view and the Run with agent dialog.
  */
 const ProfilePicker: Component<ProfilePickerProps> = (props) => {
   const uid = createUniqueId();
@@ -122,30 +160,62 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
       const harnesses = (r.capability_snapshot as { harnesses?: unknown } | null | undefined)?.harnesses;
       return Array.isArray(harnesses) ? (harnesses as HarnessCapability[]) : [];
     });
+  const offered = (p: AgentProfileSummary, kind: string) => offeredUnder(p, kind, props.profiles, teams());
 
-  /** Reported teams first by name, then the names only a profile uses. */
-  const teamNames = createMemo(() => {
-    const names = new Set<string>(teams().map((t) => t.name));
+  /** Every agent a computer reports or a profile names, docket first. */
+  const agents = createMemo((): readonly AgentChoice[] => {
+    if (props.agents) return [...props.agents].sort((a, b) => agentRank(a.value) - agentRank(b.value));
+    const kinds = new Set<string>(reports().map((h) => h.harness_kind));
     for (const p of props.profiles) {
       const team = teamOf(p);
-      if (team) names.add(team);
+      if (team) kinds.add(teams().find((t) => t.name === team)?.harness ?? 'docket');
+      else {
+        const policy = p.tool_policy as { agent?: unknown; tools?: Record<string, unknown> } | null | undefined;
+        if (typeof policy?.agent === 'string' && policy.agent) kinds.add(policy.agent);
+        else for (const k of Object.keys(policy?.tools ?? {})) kinds.add(k);
+      }
     }
-    return [...names].sort();
+    if (kinds.size === 0) for (const k of AGENT_KINDS) if (k !== 'docket') kinds.add(k);
+    return [...kinds].sort((a, b) => agentRank(a) - agentRank(b)).map((value) => ({ value, label: agentName(value) }));
   });
-  const entry = (name: string) => teams().find((t) => t.name === name);
-  const profilesOfTeam = (name: string) => props.profiles.filter((p) => teamOf(p) === name);
-  const namedTeams = createMemo(() => teamNames().filter((n) => profilesOfTeam(n).length > 0));
-  const bareTeams = createMemo(() => teamNames().filter((n) => profilesOfTeam(n).length === 0));
-  const kindOfTeam = (name: string) => entry(name)?.harness ?? profilesOfTeam(name).map((p) => agentKindOf(p, teams()))[0] ?? 'docket';
-  /** The agents the listed teams run on, so their shared sentence is said once for each. */
-  const teamKinds = createMemo(() => [...new Set(namedTeams().map(kindOfTeam))]);
+  const enabled = () => agents().filter((a) => !a.disabled);
+  const selected = () => props.profiles.find((p) => p.agent_profile_id === props.value);
 
-  const alone = createMemo(() => props.profiles.filter((p) => !teamOf(p)));
-  const agentKinds = createMemo(() => {
-    const kinds = [...new Set(alone().map((p) => agentKindOf(p, teams())))];
-    const rank = (k: string) => (k === '' ? 99 : AGENT_KINDS.includes(k) ? AGENT_KINDS.indexOf(k) : 50);
-    return kinds.sort((a, b) => rank(a) - rank(b));
+  // Uncontrolled, the picker opens on the chosen profile's agent, else the first agent with a profile.
+  const [own, setOwn] = createSignal<string | null>(null);
+  const agent = (): string => {
+    if (props.agent !== undefined) return props.agent;
+    const mine = own();
+    if (mine) return mine;
+    const chosen = selected();
+    const home = (chosen && enabled().find((a) => offered(chosen, a.value))) ?? enabled().find((a) => props.profiles.some((p) => offered(p, a.value)));
+    return (home ?? enabled()[0] ?? agents()[0])?.value ?? '';
+  };
+  const chooseAgent = (kind: string) => {
+    setOwn(kind);
+    props.onAgent?.(kind);
+  };
+
+  /** The profiles offered under the chosen agent, and the chosen one when no agent here offers it. */
+  const listed = createMemo(() => {
+    const kind = agent();
+    const rows = props.profiles.filter((p) => offered(p, kind));
+    const chosen = selected();
+    if (chosen && !rows.includes(chosen) && !enabled().some((a) => offered(chosen, a.value))) rows.push(chosen);
+    return rows;
   });
+  const withTeam = createMemo(() => [...new Set(listed().map(teamOf).filter((t): t is string => !!t))].sort());
+  const alone = createMemo(() => listed().filter((p) => !teamOf(p)));
+  /** The reported teams of this agent that no profile names. */
+  const bareTeams = createMemo(() =>
+    teams()
+      .filter((t) => (t.harness ?? 'docket') === agent() && !props.profiles.some((p) => teamOf(p) === t.name))
+      .map((t) => t.name)
+      .sort());
+
+  const entry = (name: string) => teams().find((t) => t.name === name);
+  const worksIn = (name: string) => entry(name)?.report?.works_in ?? null;
+  const roles = (name: string) => [...new Set((entry(name)?.report?.members ?? []).map((m) => m.role))];
   const linesOf = (kind: string) => agentCapabilityLines(kind, pickHarness(reports(), kind));
 
   const Option: Component<{ profile: AgentProfileSummary }> = (o) => {
@@ -186,123 +256,141 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
     </section>
   );
 
-  const worksIn = (name: string) => entry(name)?.report?.works_in ?? null;
-  const roles = (name: string) => [...new Set((entry(name)?.report?.members ?? []).map((m) => m.role))];
-
   return (
-    <div role="radiogroup" aria-label={props.label} data-testid="who-does-it" class="flex min-w-0 flex-col gap-2.5">
-      <Show when={props.withNobody !== false}>
-        <div class="flex items-center gap-2">
-          <input
-            id={`${uid}-nobody`}
-            type="radio"
-            name={uid}
-            value=""
-            checked={!props.value}
-            disabled={props.disabled}
-            onClick={() => props.onChange(null)}
-          />
-          <label for={`${uid}-nobody`} class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{NOBODY_YET}</label>
+    <div data-testid="who-does-it" class="flex min-w-0 flex-col gap-2.5">
+      <div role="radiogroup" aria-label="Agent" data-testid="who-agent-choice" class="flex min-w-0 flex-wrap gap-1.5">
+        <For each={agents()}>
+          {(a) => {
+            const on = () => a.value === agent();
+            return (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={on() ? 'true' : 'false'}
+                data-agent={a.value}
+                disabled={a.disabled || props.disabled}
+                title={a.reason}
+                onClick={() => chooseAgent(a.value)}
+                class="rounded-full px-3.5 py-1.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed"
+                style={{
+                  'background-color': on() ? 'var(--color-accent-soft)' : 'var(--color-bg-app)',
+                  color: a.disabled ? 'var(--color-text-tertiary)' : on() ? 'var(--color-accent-ink)' : 'var(--color-text-primary)',
+                  border: `1px solid ${on() ? 'var(--color-accent-ink)' : 'var(--color-border-light)'}`,
+                  '--tw-ring-color': 'var(--color-focus-ring)',
+                }}
+              >
+                {a.label}
+                <Show when={a.disabled && a.reason}><span class="sr-only">{`. ${a.reason}`}</span></Show>
+              </button>
+            );
+          }}
+        </For>
+      </div>
+
+      <Show when={agent()}>
+        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="who-can">
+          <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{canText(agent(), linesOf(agent()), true)}</span>
+          <span class="ml-auto"><Capabilities kind={agent()} reports={reports()} /></span>
+          <span class="w-full"><Muted>A struck-through icon is something it cannot do or did not report; hover it for why.</Muted></span>
         </div>
       </Show>
 
-      <Show when={teamKinds().length > 0}>
-        <div class="flex flex-col gap-0.5" data-testid="who-can">
-          <For each={teamKinds()}>
-            {(kind) => <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{canText(kind, linesOf(kind), true)}</span>}
-          </For>
-          <Muted>A struck-through icon is something it cannot do or did not report; hover it for why.</Muted>
-        </div>
-      </Show>
-
-      <For each={namedTeams()}>
-        {(name) => {
-          const info = () => entry(name);
-          return (
-            <Group
-              testid={`who-team-${name}`}
-              head={
-                <>
-                  <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{`Team ${name}`}</h4>
-                  <Show when={roles(name).length > 0}>
-                    <ul aria-label="Made of" class="flex min-w-0 flex-wrap gap-1" data-testid="who-members">
-                      <For each={roles(name)}>
-                        {(role) => (
-                          <li
-                            class="rounded-full px-2 text-small"
-                            style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
-                          >
-                            {role}
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </Show>
-                  <Show when={worksIn(name)}>
-                    {(where) => {
-                      const text = () => (where() === 'folder' ? 'Works in its own folder, not in the repository' : 'Works on a branch of the repository');
-                      return (
-                        <span role="img" aria-label={text()} title={text()} data-works-in={where()} style={{ color: 'var(--color-text-secondary)' }}>
-                          {where() === 'folder' ? <IconFolder size={16} /> : <IconBranch size={16} />}
-                        </span>
-                      );
-                    }}
-                  </Show>
-                  <span class="ml-auto"><Capabilities kind={kindOfTeam(name)} reports={reports()} /></span>
-                  <Show when={info() && !info()!.reported}>
-                    <Muted disabled>No computer reports this team</Muted>
-                  </Show>
-                </>
-              }
-            >
-              <For each={profilesOfTeam(name)}>{(p) => <Option profile={p} />}</For>
-            </Group>
-          );
-        }}
-      </For>
-
-      <Show when={bareTeams().length > 0}>
-        <div
-          class="flex min-w-0 items-start gap-2 pt-2.5"
-          style={{ 'border-top': '1px solid var(--color-border-light)' }}
-          aria-disabled="true"
-          data-testid="who-teams-without-profile"
-          title={bareTeams().join(', ')}
-        >
-          <input type="radio" disabled class="mt-1" aria-label={`${noProfileText(bareTeams().length)}: ${MAKE_A_PROFILE}`} />
-          <div class="min-w-0">
-            <span class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
-              {noProfileText(bareTeams().length)}{' '}
-              <A href="/agents" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>→ Agents</A>
-            </span>
-            <p class="text-small" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{bareTeams().join(', ')}</p>
+      <div role="radiogroup" aria-label={props.label} class="flex min-w-0 flex-col gap-2.5">
+        <Show when={props.withNobody !== false}>
+          <div class="flex items-center gap-2">
+            <input
+              id={`${uid}-nobody`}
+              type="radio"
+              name={uid}
+              value=""
+              checked={!props.value}
+              disabled={props.disabled}
+              onClick={() => props.onChange(null)}
+            />
+            <label for={`${uid}-nobody`} class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{NOBODY_YET}</label>
           </div>
-        </div>
-      </Show>
+        </Show>
 
-      <Show when={agentKinds().length > 0}>
-        <p class="pt-1 text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>
-          Single agents <span class="text-small font-normal" style={{ color: 'var(--color-text-tertiary)' }}>{SINGLE_AGENT_TEXT}</span>
-        </p>
-      </Show>
-      <For each={agentKinds()}>
-        {(kind) => (
-          <Group
-            testid={`who-alone-${kind || 'any'}`}
-            head={
-              <>
-                <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)' }}>{kind ? agentName(kind) : profileAgentText({})}</h4>
-                <Show when={kind}>
-                  <span class="text-small" style={{ color: 'var(--color-text-secondary)' }}>{canText(kind, linesOf(kind))}</span>
-                  <span class="ml-auto"><Capabilities kind={kind} reports={reports()} /></span>
-                </Show>
-              </>
-            }
+        <For each={withTeam()}>
+          {(name) => {
+            const info = () => entry(name);
+            return (
+              <Group
+                testid={`who-team-${name}`}
+                head={
+                  <>
+                    <h4 class="text-sm font-bold" style={{ color: 'var(--color-text-primary)', 'overflow-wrap': 'anywhere' }}>{`Team ${name}`}</h4>
+                    <Show when={roles(name).length > 0}>
+                      <ul aria-label="Made of" class="flex min-w-0 flex-wrap gap-1" data-testid="who-members">
+                        <For each={roles(name)}>
+                          {(role) => (
+                            <li
+                              class="rounded-full px-2 text-small"
+                              style={{ 'background-color': 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}
+                            >
+                              {role}
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                    <Show when={worksIn(name)}>
+                      {(where) => {
+                        const text = () => (where() === 'folder' ? 'Works in its own folder, not in the repository' : 'Works on a branch of the repository');
+                        return (
+                          <span role="img" aria-label={text()} title={text()} data-works-in={where()} style={{ color: 'var(--color-text-secondary)' }}>
+                            {where() === 'folder' ? <IconFolder size={16} /> : <IconBranch size={16} />}
+                          </span>
+                        );
+                      }}
+                    </Show>
+                    <Show when={info() && !info()!.reported}>
+                      <Muted disabled>No computer reports this team</Muted>
+                    </Show>
+                  </>
+                }
+              >
+                <For each={listed().filter((p) => teamOf(p) === name)}>{(p) => <Option profile={p} />}</For>
+              </Group>
+            );
+          }}
+        </For>
+
+        <Show when={bareTeams().length > 0}>
+          <div
+            class="flex min-w-0 items-start gap-2 pt-2.5"
+            style={{ 'border-top': '1px solid var(--color-border-light)' }}
+            aria-disabled="true"
+            data-testid="who-teams-without-profile"
+            title={bareTeams().join(', ')}
           >
-            <For each={alone().filter((p) => agentKindOf(p, teams()) === kind)}>{(p) => <Option profile={p} />}</For>
-          </Group>
-        )}
-      </For>
+            <input type="radio" disabled class="mt-1" aria-label={`${noProfileText(bareTeams().length)}: ${MAKE_A_PROFILE}`} />
+            <div class="min-w-0">
+              <span class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
+                {noProfileText(bareTeams().length)}{' '}
+                <A href="/agents" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>→ Agents</A>
+              </span>
+              <p class="text-small" style={{ color: 'var(--color-text-tertiary)', 'overflow-wrap': 'anywhere' }}>{bareTeams().join(', ')}</p>
+            </div>
+          </div>
+        </Show>
+
+        <Show when={alone().length > 0}>
+          <section class="flex min-w-0 flex-col gap-1.5" data-testid={`who-alone-${agent() || 'any'}`}>
+            <Show when={withTeam().length > 0}>
+              <p class="pt-2.5 text-small" style={{ color: 'var(--color-text-tertiary)', 'border-top': '1px solid var(--color-border-light)' }}>{SINGLE_AGENT_TEXT}</p>
+            </Show>
+            <For each={alone()}>{(p) => <Option profile={p} />}</For>
+          </section>
+        </Show>
+
+        <Show when={listed().length === 0 && bareTeams().length === 0}>
+          <p data-testid="who-agent-empty" class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
+            {`No profile runs on ${agentName(agent())} yet `}
+            <A href="/agents" class="font-semibold hover:underline" style={{ color: 'var(--color-accent-ink)' }}>→ Agents</A>
+          </p>
+        </Show>
+      </div>
 
       <p class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>{PER_TASK_CHOICE_TEXT}</p>
     </div>

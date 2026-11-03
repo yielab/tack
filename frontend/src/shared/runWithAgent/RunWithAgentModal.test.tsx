@@ -17,6 +17,12 @@ const profileRadio = (name: string): HTMLInputElement =>
     .filter((l) => l.textContent === name)
     .map((l) => document.getElementById(l.htmlFor) as HTMLInputElement)[0];
 
+/** The agent choice above the profiles. */
+const agentButton = (kind: string) =>
+  document.querySelector<HTMLButtonElement>(`[data-testid="who-agent-choice"] [data-agent="${kind}"]`)!;
+const chosenAgent = () => document.querySelector('[data-testid="who-agent-choice"] [aria-checked="true"]')?.getAttribute('data-agent');
+const agentChoices = () => [...document.querySelectorAll('[data-testid="who-agent-choice"] [data-agent]')].map((b) => [b.getAttribute('data-agent'), b.textContent]);
+
 const FLEET = { fleet_id: 'fleet-1', name: 'Primary Fleet', concurrency_limit: 5, default_policy: null };
 const PROFILE = {
   agent_profile_id: 'profile-1',
@@ -264,12 +270,10 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     await flush();
-    const agent = select('Agent');
-    expect(agent.value).toBe('docket');
-    const options = [...agent.options];
-    expect(options.find((o) => o.value === 'codex')!.disabled).toBe(true);
-    expect(options.find((o) => o.value === 'codex')!.textContent).toContain('A level applies only to a docket run');
-    expect(options.find((o) => o.value === 'docket')!.disabled).toBe(false);
+    expect(chosenAgent()).toBe('docket');
+    expect(agentButton('codex').disabled).toBe(true);
+    expect(agentButton('codex').title).toBe('A level applies only to a docket run');
+    expect(agentButton('docket').disabled).toBe(false);
     expect(document.querySelector('[data-testid="run-autonomy-note"]')!.textContent).toContain('you approve each step that needs it');
     submitButton().click();
     await flush();
@@ -359,7 +363,7 @@ describe('RunWithAgentModal', () => {
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=codex&tokens=120000');
     // The agent chosen goes up too.
-    setSelect(select('Agent'), 'claude-code');
+    agentButton('claude-code').click();
     await flush();
     await flush();
     expect(sentence()).toBe('Server says ?profile_id=profile-1&harness=claude-code&tokens=120000');
@@ -530,6 +534,23 @@ describe('RunWithAgentModal', () => {
     expect(select('Machine or group').value).toBe('exact_runner:runner-1');
   });
 
+  it('when no computer answers, the field says which and since when, and the footer links to turning execution on', async () => {
+    const silent = { ...runnerRow('runner-2', 'This computer (Pet1)', runnerCapabilitySnapshot()), online: false };
+    mount({}, { runners: [silent], fleets: [] });
+    await flush();
+    await flush();
+    const line = document.querySelector('[data-testid="run-target-silent"]')!;
+    expect(line.textContent).toContain('Agents offline');
+    expect(line.textContent).toMatch(/This computer \(Pet1\) has not answered since .+, so no run can start\./);
+    expect(line.querySelector('a')!.getAttribute('href')).toBe('/agents');
+    // No select with nothing to choose, and no "Select where this runs." repeating it.
+    expect([...document.querySelectorAll('label[for]')].some((l) => l.textContent?.includes('Machine or group'))).toBe(false);
+    expect(document.body.textContent).not.toContain('Select where this runs.');
+    const footer = document.querySelector('[data-testid="run-footer"]')!;
+    expect(footer.querySelector('a')!.textContent).toBe('Turn on agent execution →');
+    expect(footer.querySelector('[data-testid="run-start"]')).toBeNull();
+  });
+
   it('one answering runner and no group is one fixed line, "Runs on this computer" for this computer', async () => {
     mount({}, { runners: [{ ...RUNNER, name: 'This computer (dev)' }], fleets: [] });
     await flush();
@@ -538,37 +559,47 @@ describe('RunWithAgentModal', () => {
     expect(document.querySelector('label[for]')?.textContent).not.toContain('Machine or group');
   });
 
-  it('a profile pick picks its agent and says so, only while that choice stands', async () => {
+  it('an agent offers only its own profiles, and keeps the chosen one only when that agent runs it', async () => {
     const both = runnerRow('runner-9', 'Two agents', runnerCapabilitySnapshot({
       harnesses: ['codex', 'claude-code'].map((harness_kind) => ({
         harness_kind, installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', requires_model: false,
       })),
     }));
     const claudeProfile = { ...PROFILE_2, tool_policy: { tools: { 'claude-code': ['Read'] } } };
+    const codexProfile = { ...PROFILE_2, agent_profile_id: 'profile-3', name: 'Coder', tool_policy: { agent: 'codex' } };
     mount({}, {
-      runners: [both], fleets: [], agentProfiles: [PROFILE, claudeProfile],
+      runners: [both], fleets: [], agentProfiles: [PROFILE, claudeProfile, codexProfile],
       project: { ...PROJECT, default_profile_id: 'profile-1' }, runSettings: { harness: 'codex' },
     });
     await flush();
     await flush();
-    const notice = () => document.querySelector('[data-testid="profile-agent-notice"]')?.textContent;
-    expect(select('Agent').value).toBe('codex');
-    expect(notice()).toBeUndefined();
-    const pill = (name: string) => profileRadio(name);
-    pill('Fixer').click();
+    const names = () => [...document.querySelectorAll('[data-testid="who-does-it"] label')].map((l) => l.textContent);
+    // Codex is chosen: its profiles and the one that runs on any agent, not Claude Code's.
+    expect(chosenAgent()).toBe('codex');
+    expect(names()).toEqual(['Reviewer', 'Coder']);
+    expect(profileRadio('Reviewer').checked).toBe(true);
+    // A profile any agent runs stays chosen when the agent changes.
+    agentButton('claude-code').click();
     await flush();
-    expect(select('Agent').value).toBe('claude-code');
-    expect(notice()).toContain('Fixer runs on Claude Code');
-    // Choosing the agent by hand afterwards ends the notice.
-    setSelect(select('Agent'), 'codex');
+    expect(names()).toEqual(['Reviewer', 'Fixer']);
+    expect(profileRadio('Reviewer').checked).toBe(true);
+    // One the new agent does not run is let go, and the person picks again.
+    agentButton('codex').click();
     await flush();
-    expect(notice()).toBeUndefined();
+    profileRadio('Coder').click();
+    await flush();
+    agentButton('claude-code').click();
+    await flush();
+    expect(names()).toEqual(['Reviewer', 'Fixer']);
+    expect(document.querySelector('[data-testid="who-does-it"] input:checked')).toBeNull();
+    expect(document.body.textContent).toContain('Choose a profile.');
+    expect(submitButton().disabled).toBe(true);
   });
 
-  it('offers every profile in the one picker, grouped by the agent that runs it, with no Built in list', async () => {
+  it('asks for the agent first, and under it lists only that agent\'s profiles, with no Built in list', async () => {
     const mine = { ...PROFILE_2, name: 'Fixer', delivers: 'a change on a branch', tool_policy: { agent: 'codex' } };
     const builtIn = { ...PROFILE, name: 'Reviewer', builtin: true, kind: 'reviewer', summary: 'Reads the change and says what is wrong', tool_policy: { agent: 'claude-code' } };
-    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [builtIn, mine] });
+    mount({}, { runners: [RUNNER], fleets: [], agentProfiles: [builtIn, mine], project: { ...PROJECT, default_profile_id: 'profile-2' } });
     await flush();
     await flush();
     const picker = document.querySelector('[data-testid="who-does-it"]')!;
@@ -577,17 +608,17 @@ describe('RunWithAgentModal', () => {
     expect(picker.textContent).not.toContain('Nobody yet');
     expect(picker.textContent).not.toContain('Built in');
     expect(picker.textContent).not.toContain('Your profiles');
-    // Each profile sits under the agent that runs it, which is named plainly.
-    expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('Codex');
-    expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('Fixer');
-    expect(picker.querySelector('[data-testid="who-alone-codex"]')!.textContent).toContain('a change on a branch');
-    const claude = picker.querySelector('[data-testid="who-alone-claude-code"]')!;
-    expect(claude.textContent).toContain('Claude Code');
-    // Said once, above the single agents, not in each group.
-    expect(picker.textContent?.split('A single agent, no team').length).toBe(2);
-    expect(claude.textContent).toContain('Reads the change and says what is wrong');
-    // Claude Code reported nothing on this computer: said so, not guessed.
-    expect(claude.textContent).toContain('Not reported by Claude Code');
+    // The computer reports Codex; Claude Code, which a profile names, stays in the list, disabled, with the reason.
+    expect(agentChoices()).toEqual([['claude-code', 'Claude Code. Not reported by the computer this runs on'], ['codex', 'Codex']]);
+    expect(agentButton('claude-code').disabled).toBe(true);
+    expect(agentButton('claude-code').title).toBe('Not reported by the computer this runs on');
+    expect(chosenAgent()).toBe('codex');
+    // Only Codex's profile is offered, with its note; Claude Code's is not beside it.
+    const codex = picker.querySelector('[data-testid="who-alone-codex"]')!;
+    expect(codex.textContent).toContain('Fixer');
+    expect(codex.textContent).toContain('a change on a branch');
+    expect(picker.textContent).not.toContain('Reads the change and says what is wrong');
+    expect(picker.textContent).not.toContain('A single agent, no team');
     expect(picker.textContent).toContain('Each task can use a different agent; this choice is for this task.');
   });
 
@@ -606,8 +637,9 @@ describe('RunWithAgentModal', () => {
     mount({}, { runners: [runner], fleets: [], agentProfiles: [PROFILE, mine] });
     await flush();
     await flush();
-    const codex = document.querySelector('[data-testid="who-alone-codex"]')!;
-    expect(codex.textContent).toContain('Can stop a run and answer questions.');
+    // Said once, under the agent, not in each profile's row.
+    const codex = document.querySelector('[data-testid="who-can"]')!;
+    expect(codex.textContent).toContain('Codex can stop a run and answer questions.');
     const icon = (id: string) => codex.querySelector<HTMLElement>(`[data-capability="${id}"]`)!;
     // What the agent can do is a plain icon; its name says so.
     expect(icon('cancel').dataset.state).toBe('can');
@@ -632,7 +664,10 @@ describe('RunWithAgentModal', () => {
     ];
     vi.spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input).endsWith('/teams')) return Promise.resolve(new Response(JSON.stringify({ teams }), { status: 200 }));
-      return (mockFetch({ runners: [RUNNER], fleets: [], agentProfiles: [teamProfile, PROFILE_2] }) as typeof fetch)(input, init);
+      const both = runnerRow('runner-td', 'Both', runnerCapabilitySnapshot({
+        harnesses: [...runnerCapabilitySnapshot().harnesses, { ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'docket' }],
+      }));
+      return (mockFetch({ runners: [both], fleets: [], agentProfiles: [teamProfile, PROFILE_2] }) as typeof fetch)(input, init);
     }) as typeof fetch);
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1137,19 +1172,20 @@ describe('RunWithAgentModal', () => {
     await flush();
     expect(document.querySelector('[aria-label="Suggested tools"]')).toBeNull();
     expect(document.body.textContent).toContain('Codex exposes no list');
-    setSelect(select('Agent'), 'claude-code');
+    agentButton('claude-code').click();
     await flush();
     expect(document.querySelectorAll('[aria-label="Suggested tools"] input').length).toBe(8);
     expect(field('Allowed tools')).toBeTruthy();
   });
 
-  it('with only claude-code reported, the harness is claude-code — what the select shows is what is sent', async () => {
+  it('with only claude-code reported, the agent is claude-code — what the choice shows is what is sent', async () => {
     const claudeOnly = runnerRow('runner-6', 'Claude only', runnerCapabilitySnapshot({
       harnesses: [{ ...runnerCapabilitySnapshot().harnesses[0], harness_kind: 'claude-code' }],
     }));
     mount({}, { runners: [claudeOnly], fleets: [] });
     await flush();
-    expect(select('Agent').value).toBe('claude-code');
+    expect(chosenAgent()).toBe('claude-code');
+    expect(agentChoices()).toEqual([['claude-code', 'Claude Code']]);
     expect(document.body.textContent).not.toContain('Codex exposes no list');
   });
 
@@ -1159,9 +1195,8 @@ describe('RunWithAgentModal', () => {
     }));
     mount({}, { runners: [docketOnly], fleets: [] });
     await flush();
-    const options = [...select('Agent').options].map((o) => [o.value, o.textContent]);
-    expect(options).toEqual([['docket', 'Docket']]);
-    expect(select('Agent').value).toBe('docket');
+    expect(agentChoices()).toEqual([['docket', 'Docket']]);
+    expect(chosenAgent()).toBe('docket');
     expect(document.body.textContent).toContain('Docket exposes no list');
   });
 
@@ -1171,9 +1206,8 @@ describe('RunWithAgentModal', () => {
     }));
     mount({}, { runners: [unknownOnly], fleets: [] });
     await flush();
-    const options = [...select('Agent').options].map((o) => [o.value, o.textContent]);
-    expect(options).toEqual([['prill', 'prill']]);
-    expect(select('Agent').value).toBe('prill');
+    expect(agentChoices()).toEqual([['prill', 'prill']]);
+    expect(chosenAgent()).toBe('prill');
   });
 
   it('every visible field has an accessible label (native <label for>) — the keyboard/a11y path required here', async () => {
@@ -1221,7 +1255,7 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     await flush();
   }
 
-  it('groups the profiles by team, each with its members, where it works and what its agent can do, and says the shared sentence once', async () => {
+  it('groups the profiles by team, each with its members and where it works, and says what the agent can do once', async () => {
     const teams = [
       team('saas-content', { members: [{ role: 'Lead' }, { role: 'Writer' }], works_in: 'folder' }),
       team('saas-code', { members: [{ role: 'Builder' }], works_in: 'repository' }),
@@ -1240,16 +1274,16 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     // Where each works is an icon with its words.
     expect(picker.querySelector('[data-testid="who-team-saas-content"] [data-works-in="folder"]')!.getAttribute('aria-label')).toBe('Works in its own folder, not in the repository');
     expect(picker.querySelector('[data-testid="who-team-saas-code"] [data-works-in="repository"]')!.getAttribute('title')).toBe('Works on a branch of the repository');
-    // Five capability icons per team.
-    expect(code.querySelectorAll('[data-capability]').length).toBe(5);
-    // What the agent can do is said once for all the teams, not in each.
+    // What the agent can do is said once for all the teams, as five icons, not in each.
+    expect(code.querySelectorAll('[data-capability]').length).toBe(0);
+    expect(picker.querySelectorAll('[data-capability]').length).toBe(5);
     expect(picker.querySelectorAll('[data-testid="who-can"]').length).toBe(1);
     expect(picker.textContent?.split('Docket can stop a run, pick a run back up after a restart, answer questions and report usage.').length).toBe(2);
   });
 
   it('draws only a capability the agent lacks struck through, with its reason in the tooltip, and keeps a supported one’s note there', async () => {
     await mountWithTeams([team('saas-code')], { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')] });
-    const icon = (id: string) => document.querySelector<HTMLElement>(`[data-testid="who-team-saas-code"] [data-capability="${id}"]`)!;
+    const icon = (id: string) => document.querySelector<HTMLElement>(`[data-testid="who-can"] [data-capability="${id}"]`)!;
     const struck = (id: string) => icon(id).querySelector('svg path[d="M2.5 13.5L13.5 2.5"]') !== null;
     expect(['cancel', 'resume', 'decisions', 'proposals', 'usage'].filter(struck)).toEqual(['proposals']);
     expect(icon('proposals').title).toBe('Cannot propose items · No record set named tack_proposals');
@@ -1286,23 +1320,33 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     expect(note.parentElement!.querySelector('label')!.textContent).toBe('Code team');
   });
 
-  it('puts the single agents in a second group of the same shape, with their notes in the icons\' tooltips', async () => {
+  it('opens on docket when a profile names a team, and keeps a single agent\'s profiles under that agent alone', async () => {
     const mine = { ...PROFILE_2, name: 'Fixer', tool_policy: { agent: 'codex' } };
     const runner = runnerRow('runner-1', 'This computer', runnerCapabilitySnapshot({
-      harnesses: [{
-        harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
-        features: { cancel: { support: 'advisory', reason: 'sends SIGKILL to the process group' } },
-      }],
+      harnesses: [
+        { harness_kind: 'codex', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z', features: { cancel: { support: 'advisory', reason: 'sends SIGKILL to the process group' } } },
+        { harness_kind: 'docket', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z' },
+      ],
     }));
-    await mountWithTeams([team('saas-code')], { runners: [runner], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code'), mine] });
+    await mountWithTeams([team('saas-code')], {
+      runners: [runner], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code'), mine],
+      project: { ...PROJECT, default_profile_id: null },
+    });
     const picker = document.querySelector('[data-testid="who-does-it"]')!;
-    const codex = picker.querySelector('[data-testid="who-alone-codex"]')!;
-    expect(codex.querySelectorAll('[data-capability]').length).toBe(5);
-    expect(codex.querySelector<HTMLElement>('[data-capability="cancel"]')!.title).toBe('Can stop a run · sends SIGKILL to the process group');
+    // Docket comes first and is the default: its teams, and no single agent beside them.
+    expect(agentChoices().map(([kind]) => kind)).toEqual(['docket', 'codex']);
+    expect(chosenAgent()).toBe('docket');
+    expect(picker.querySelector('[data-testid="who-team-saas-code"]')).not.toBeNull();
+    expect(picker.textContent).not.toContain('Fixer');
+    // Codex: its one profile, chosen since there is nothing else to choose, and no team.
+    agentButton('codex').click();
+    await flush();
+    expect(picker.querySelector('[data-testid="who-team-saas-code"]')).toBeNull();
+    expect(picker.querySelectorAll('input[type="radio"]').length).toBe(1);
+    expect(profileRadio('Fixer').checked).toBe(true);
+    expect(picker.querySelector<HTMLElement>('[data-testid="who-can"] [data-capability="cancel"]')!.title).toBe('Can stop a run · sends SIGKILL to the process group');
     // The adapter's note is not a line of its own.
     expect([...picker.querySelectorAll('p, span')].some((e) => e.children.length === 0 && e.textContent === 'sends SIGKILL to the process group')).toBe(false);
-    expect(picker.textContent).toContain('A single agent, no team');
-    expect(picker.querySelectorAll('input[type="radio"]').length).toBe(2);
   });
 
   it('says what will happen in one line each: where, what is prepared, the checks, the sandbox and the network', async () => {
@@ -1356,6 +1400,8 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     await flush();
     const footer = document.querySelector<HTMLElement>('[data-testid="run-footer"]')!;
     expect(footer.classList.contains('sticky')).toBe(true);
+    // It sticks to the dialog's own bottom edge, past the scroll area's padding, so nothing shows below it.
+    expect(footer.classList.contains('-bottom-6')).toBe(true);
     expect([...footer.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Cancel', 'Start run']);
     expect(footer.querySelector('[data-testid="run-footer-limit"]')!.textContent).toBeTruthy();
     expect(footer.querySelector('[data-testid="run-start"]')!.textContent).toBe('Start run');

@@ -11,11 +11,11 @@ import { teamOf, type AgentProfileSummary } from '../execution';
 import type { Project } from '../types';
 import { api } from '../api';
 import { installLine } from './install';
-import { LEVEL_NEEDS_DOCKET, gateHarnessModelSelection } from './shared';
+import { gateHarnessModelSelection } from './shared';
 import { spaced } from './runLimit';
 import type { RunForm } from './RunWithAgentModal';
 import Prerequisite, { type PrerequisiteState } from './Prerequisite';
-import ProfilePicker from './ProfilePicker';
+import ProfilePicker, { type AgentChoice } from './ProfilePicker';
 
 /** Claude Code's file, shell, web and sub-agent tools, from the names `claude mcp serve`
  *  lists (docs/plans/measurements/tools-claude-code.md). The rest of that list depends on
@@ -38,13 +38,17 @@ const describeTools = (tools: string[]) => (tools.includes('*') ? 'all tools' : 
 export interface RunFlowProps {
   form: RunForm;
   setForm: SetStoreFunction<RunForm>;
-  /** A click on a profile pill, as opposed to the dialog's own choice. */
+  /** A click on a profile, as opposed to the dialog's own choice. */
   onProfilePicked: (profile: AgentProfileSummary) => void;
-  /** Said when the click replaced the agent; null otherwise. */
-  agentNotice: Accessor<string | null>;
+  /** The agents the picker offers, a disabled one with its reason. */
+  agentChoices: Accessor<AgentChoice[]>;
+  /** A click on an agent. */
+  onAgent: (kind: string) => void;
   projectId: string;
   /** The one line standing for the machine field when there is nothing to choose; null when there is. */
   fixedTarget: Accessor<string | null>;
+  /** Why nothing can be chosen when computers are on but none answers; null otherwise. */
+  silentTarget: Accessor<string | null>;
   runnersLoading: Accessor<boolean>;
   targetOptions: Accessor<ReadonlyArray<{ value: string; label: string; disabled?: boolean }>>;
   target: Accessor<string>;
@@ -60,7 +64,6 @@ export interface RunFlowProps {
   agentReports: Accessor<HarnessCapability[]>;
   creatingProfile: Accessor<boolean>;
   createDefaultProfile: () => void;
-  harnessOptions: Accessor<ReadonlyArray<{ value: string; label: string }>>;
   projectDefaultLabel: Accessor<string | null | undefined>;
   /** Every runner's report of the chosen agent: its models, its default, its documentation. */
   harnessReports: Accessor<HarnessCapability[]>;
@@ -77,8 +80,6 @@ export interface RunFlowProps {
   /** The tools the selected profile gives the selected agent; a blank tools field uses these. */
   profileTools: Accessor<string[]>;
   harnessLabel: Accessor<string>;
-  /** The run carries a level, which only a docket run takes: every other agent is shown disabled, with that reason. */
-  levelNeedsDocket?: boolean;
   /** The model as the summary line names it. */
   modelLabel: Accessor<string>;
   decisionsAttested: Accessor<boolean>;
@@ -181,8 +182,17 @@ const RunFlow: Component<RunFlowProps> = (props) => {
 
   return (
     <>
+      <Show when={props.silentTarget()}>
+        {(text) => (
+          <div data-testid="run-target-silent" role="alert" class="rounded-item px-4 py-3 text-sm" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+            <p class="font-semibold">Agents offline</p>
+            <p>{text()}</p>
+            <A href="/agents" class="font-semibold underline">Turn on agent execution →</A>
+          </div>
+        )}
+      </Show>
       <Show
-        when={props.fixedTarget()}
+        when={props.fixedTarget() || props.silentTarget()}
         fallback={
         <Select
           label="Machine or group"
@@ -195,7 +205,9 @@ const RunFlow: Component<RunFlowProps> = (props) => {
         />
         }
       >
-        {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
+        <Show when={props.fixedTarget()}>
+          {(line) => <p data-testid="run-target-fixed" class="px-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{line()}</p>}
+        </Show>
       </Show>
 
       <Show when={!props.profilesLoading() && props.form.agentProfileId && props.form.toolsText.trim() === '' && props.profileTools().length === 0}>
@@ -223,13 +235,13 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             value={props.form.agentProfileId || null}
             profiles={props.profiles()}
             reports={props.agentReports()}
+            agents={props.agentChoices()}
+            agent={props.form.harnessKind}
+            onAgent={props.onAgent}
             choiceNote={describeProfileSource(props.profileSource?.())}
             onChange={(p) => { if (!p) return; props.setForm('agentProfileId', p.agent_profile_id); props.onProfilePicked(p); }}
           />
         </FieldShell>
-        <Show when={props.agentNotice()}>
-          {(text) => <p data-testid="profile-agent-notice" class="-mt-3 px-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{text()}</p>}
-        </Show>
       </Show>
       <Show when={props.rows.profile() === 'missing'}>
         <Prerequisite state="missing" label="An agent profile exists" href="/agents" fixLabel="Add an agent profile" />
@@ -322,16 +334,6 @@ const RunFlow: Component<RunFlowProps> = (props) => {
       <details open={advanced() || modelBlocked()} onToggle={(e) => setAdvanced(e.currentTarget.open)} class="space-y-3">
         <summary class={SUMMARY_CLASS} style={{ color: 'var(--color-text-primary)' }}>Advanced for this run</summary>
         <div class="mt-3 space-y-3">
-          <Select
-            label="Agent"
-            value={props.form.harnessKind}
-            onInput={(e) => props.setForm('harnessKind', e.currentTarget.value)}
-            options={props.harnessOptions().map((h) => {
-              const blocked = props.levelNeedsDocket && h.value !== 'docket';
-              return { value: h.value, label: blocked ? `${h.label} — ${LEVEL_NEEDS_DOCKET}` : h.label, disabled: blocked };
-            })}
-            hint={props.levelNeedsDocket ? LEVEL_NEEDS_DOCKET : undefined}
-          />
           <ModelField
             agentLabel={props.harnessLabel()}
             reports={props.harnessReports()}
