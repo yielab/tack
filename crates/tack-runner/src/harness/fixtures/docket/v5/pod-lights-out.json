@@ -71,8 +71,8 @@
     }
   ],
   "settings": {
-    "budgetUsd": {
-      "value": 0.0,
+    "budgetTokens": {
+      "value": null,
       "source": "default"
     },
     "maxReworkCycles": {
@@ -154,6 +154,10 @@
     "protects": {
       "value": "",
       "source": "default"
+    },
+    "fetchDomains": {
+      "value": "",
+      "source": "default"
     }
   },
   "approvalMode": {
@@ -183,9 +187,10 @@
   },
   "network": {
     "mode": "none",
-    "scope": "default"
+    "scope": "default",
+    "enforced": false
   },
-  "budgetUnpriced": [],
+  "fetchDomains": [],
   "configSource": "",
   "configDigest": "",
   "drift": "",

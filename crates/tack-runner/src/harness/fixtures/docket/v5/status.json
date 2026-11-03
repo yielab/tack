@@ -9,7 +9,13 @@
     "settledCursor",
     "failureKinds",
     "podPause",
-    "hopTimes"
+    "hopTimes",
+    "retryContinues",
+    "budgetOutcome",
+    "networkEnforced",
+    "podWorkDir",
+    "podFetch",
+    "capabilityMissing"
   ],
   "timestamp": "2026-01-01T00:00:00Z",
   "channels": [],
@@ -23,8 +29,7 @@
       "registered": true,
       "bindings": [],
       "lastActivity": "never",
-      "costUsd": 0.0,
-      "budgetUsd": null
+      "budgetTokens": null
     },
     {
       "id": "saas-dev-lead",
@@ -35,8 +40,7 @@
       "registered": true,
       "bindings": [],
       "lastActivity": "never",
-      "costUsd": 0.0,
-      "budgetUsd": null
+      "budgetTokens": null
     },
     {
       "id": "saas-lights-implementer",
@@ -47,8 +51,7 @@
       "registered": true,
       "bindings": [],
       "lastActivity": "never",
-      "costUsd": 0.0,
-      "budgetUsd": null
+      "budgetTokens": null
     },
     {
       "id": "saas-lights-lead",
@@ -59,9 +62,7 @@
       "registered": true,
       "bindings": [],
       "lastActivity": "never",
-      "costUsd": 0.0,
-      "budgetUsd": null
+      "budgetTokens": null
     }
-  ],
-  "totalCostUsd": 0.0
+  ]
 }

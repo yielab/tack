@@ -160,9 +160,9 @@
     }
   ],
   "settings": {
-    "budgetUsd": {
-      "value": 15.0,
-      "source": "set"
+    "budgetTokens": {
+      "value": null,
+      "source": "default"
     },
     "maxReworkCycles": {
       "value": 1,
@@ -243,6 +243,10 @@
     "protects": {
       "value": "",
       "source": "default"
+    },
+    "fetchDomains": {
+      "value": "",
+      "source": "default"
     }
   },
   "approvalMode": {
@@ -288,14 +292,13 @@
   },
   "network": {
     "mode": "none",
-    "scope": "global"
+    "scope": "global",
+    "enforced": true
   },
-  "budgetUnpriced": [
-    "anthropic/claude-haiku-5-5",
-    "anthropic/claude-sonnet-5-5"
-  ],
-  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/records",
-  "configDigest": "47a1b2a9254590b2a4072945c6749176cd70f3ca098dd54170ffd7e63c9022cc",
+  "fetchDomains": [],
+  "workDir": "/scratch/notes",
+  "configSource": "/home/ox/.local/lib/docket/venv/lib/python3.11/site-packages/docket/templates/recipes/records",
+  "configDigest": "684915f612aace312c3d9a9d74a3308217cbce2ed03e75f2d952cdf0c92d16a3",
   "drift": "no",
   "profile": {
     "name": "attended",

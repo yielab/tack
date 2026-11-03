@@ -6554,6 +6554,11 @@ export interface components {
             /** @description What the member does, in the harness's own word for it, shown as data. */
             role: string;
             /**
+             * @description The hosts the member reads the web from when it does; `*` is any public host. Absent when
+             *     it reads none, or the harness did not say which.
+             */
+            web_hosts?: string[] | null;
+            /**
              * @description Whether the member can change the project's files or run commands in it (`false`: it only
              *     reads). Absent means the harness did not say, which is not the same as `false`; no field
              *     may carry a harness's own key name.
@@ -6627,6 +6632,12 @@ export interface components {
          */
         TeamReport: {
             decides?: null | components["schemas"]["TeamDecides"];
+            /**
+             * @description The folder a team that works in one writes in, as a path on the computer that runs it.
+             *     Absent for a team in a repository, or when the harness did not say; no field may carry a
+             *     harness's own key name.
+             */
+            folder?: string | null;
             /**
              * @description Who does the work: one entry per member, with the model it runs on. Absent means the
              *     harness did not say; no field may carry a harness's own key name.

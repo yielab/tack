@@ -172,6 +172,7 @@ fn member(can_propose: Option<bool>, reads_web: Option<bool>) -> TeamMember {
         can_propose,
         writes_project: None,
         reads_web,
+        web_hosts: None,
     }
 }
 

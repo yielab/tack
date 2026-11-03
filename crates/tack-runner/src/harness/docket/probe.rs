@@ -154,6 +154,9 @@ pub(super) fn member(member: PodMember) -> TeamMember {
             .as_ref()
             .and_then(|reach| reach.tools.as_ref())
             .map(|tools| tools.iter().any(|tool| tool == "fetch")),
+        web_hosts: reach
+            .and_then(|reach| reach.fetch_domains)
+            .filter(|hosts| !hosts.is_empty()),
     }
 }
 
@@ -297,6 +300,7 @@ async fn team(client: &Client, row: &PodRow, pause_listed: bool) -> Result<TeamR
             .and_then(steps),
         proposals_shared_across_tasks,
         paused,
+        folder: report.work_dir.filter(|dir| !dir.is_empty()),
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson

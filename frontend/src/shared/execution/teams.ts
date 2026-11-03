@@ -74,14 +74,24 @@ export function queueText(queue: { waiting: number; running: number }): string {
 
 /** What a member can do, in plain words, for whatever the agent reported of it: nothing is said of a
  *  fact it left out. "Reads only" and "Changes the project" are the two answers to the same question;
- *  "Can propose items" is said only when true, since a member that cannot propose is the usual case. */
+ *  what it reads of the web and "Can propose items" are said only when true, the latter always last. */
 export function memberReachText(member: TeamMember): string[] {
   const words: string[] = [];
   if (member.writes_project === true) words.push('Changes the project');
   else if (member.writes_project === false) words.push('Reads only');
+  const web = webText(member);
+  if (web) words.push(web);
   if (member.can_propose === true) words.push('Can propose items');
-  if (member.reads_web === true) words.push('Reads the web');
   return words;
+}
+
+/** What a member reads of the web, said only when the agent reported that it does: the hosts when
+ *  it named them, `*` read as any public host. */
+export function webText(member: TeamMember): string | null {
+  if (member.reads_web !== true) return null;
+  const hosts = member.web_hosts ?? [];
+  if (hosts.length === 0) return 'Reads the web';
+  return hosts.includes('*') ? 'Reads the web: any public host' : `Reads the web: ${hosts.join(', ')}`;
 }
 
 /** Why a profile's runs on `team` are refused before the team gets them, and the change in docket

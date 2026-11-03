@@ -213,6 +213,11 @@ pub struct TeamReport {
     /// team is not paused, or the harness did not say; no field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paused: Option<TeamPause>,
+    /// The folder a team that works in one writes in, as a path on the computer that runs it.
+    /// Absent for a team in a repository, or when the harness did not say; no field may carry a
+    /// harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 impl TeamReport {
@@ -311,6 +316,10 @@ pub struct TeamMember {
     /// the same as `false`; no field may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reads_web: Option<bool>,
+    /// The hosts the member reads the web from when it does; `*` is any public host. Absent when
+    /// it reads none, or the harness did not say which.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_hosts: Option<Vec<String>>,
 }
 
 /// Whether a team runs to the end alone.

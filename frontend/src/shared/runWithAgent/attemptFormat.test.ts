@@ -148,6 +148,14 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
     expect(o.whyStopped).toBe('Did not start — requested model provider "claude" is not supported by claude-code');
   });
 
+  it('a team that stopped on its own setup says so and leads with the change that closes it', () => {
+    const message =
+      "The team research stopped on a gap in its own setup: lead needs records 'tack_proposals': declare records/tack_proposals.yaml in the pod's configuration, then run `docket pod update --pod research`";
+    const o = describeAttemptOutcome('failed', { code: 'capability_missing', message });
+    expect(o.badge).toEqual({ label: 'Team setup incomplete', tone: 'warning' });
+    expect(o.whyStopped).toBe(message);
+  });
+
   it('why-it-stopped falls back to code, then to "No reason was reported"; live attempts have none', () => {
     expect(describeAttemptOutcome('cancelled', { code: 'user_cancelled' }).whyStopped).toBe('user_cancelled');
     expect(describeAttemptOutcome('lost', null).whyStopped).toBe('No reason was reported');

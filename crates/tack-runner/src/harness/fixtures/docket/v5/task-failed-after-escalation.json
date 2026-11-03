@@ -17,7 +17,6 @@
   "failureKind": "pipeline",
   "pendingApprovalIndex": null,
   "hops": [],
-  "costUsd": 0.0,
   "worktree": {
     "dir": "/scratch/home/.docket/state/workspaces/projects/saas-dev-implementer/tasks/task-00000000-0000-0000-0000-000000000000",
     "branch": "docket/saas-dev/task-00000000-0000-0000-0000-000000000000",

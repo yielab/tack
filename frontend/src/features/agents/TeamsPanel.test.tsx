@@ -145,6 +145,33 @@ describe('TeamsPanel', () => {
     expect(members.textContent).not.toMatch(/kinds|rec__|record/i);
   });
 
+  it('says which hosts a member reads the web from, before proposing, and the folder a folder team works in', async () => {
+    const team = {
+      ...FULL_TEAM,
+      report: {
+        ...FULL_TEAM.report,
+        works_in: 'folder',
+        folder: '/home/me/.docket/state/workspaces/pods/saas-code/workdir',
+        members: [
+          { role: 'Lead', can_propose: true, writes_project: false, reads_web: true, web_hosts: ['docs.python.org', '*.wikipedia.org'] },
+          { role: 'Researcher', can_propose: false, writes_project: true, reads_web: true, web_hosts: ['*'] },
+          { role: 'Writer', can_propose: false, writes_project: true, reads_web: false },
+        ],
+      },
+    };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const members = row(card(c, 'saas-code'), 'members');
+    const words = (role: string) =>
+      Array.from(members.querySelectorAll(`[data-testid="team-member-${role}"] [role="img"]`)).map((m) => m.getAttribute('aria-label'));
+    expect(words('Lead')).toEqual(['Reads only', 'Reads the web: docs.python.org, *.wikipedia.org', 'Can propose items']);
+    expect(words('Researcher')).toEqual(['Changes the project', 'Reads the web: any public host']);
+    expect(words('Writer')).toEqual(['Changes the project']);
+    expect(row(card(c, 'saas-code'), 'works-in').textContent).toContain('/home/me/.docket/state/workspaces/pods/saas-code/workdir');
+  });
+
   it('draws each member as a row: a role chip, the model and one icon for what it reaches and one for proposing', async () => {
     const team = {
       ...FULL_TEAM,
