@@ -245,13 +245,13 @@ fn unanswered_text(
 /// What a step's own budget stop says: the bound that ran out, the figures, and where a person
 /// raises it. Never called with `bound: "tokens"` (that stop keeps the run's token limit, which
 /// is Tack's own, not a sentence built from docket's `budget`).
-fn budget_message(budget: &BudgetOutcome) -> String {
+fn budget_message(budget: &BudgetOutcome, hop_error: &str) -> String {
     format!(
         "The step ran out of its {}: {} of {}. {}",
         budget_bound_phrase(&budget.bound),
         budget.used,
         budget.limit,
-        budget_source_sentence(&budget.source),
+        budget_origin_sentence(hop_error, &budget.source),
     )
 }
 
@@ -268,17 +268,27 @@ fn budget_bound_phrase(bound: &str) -> String {
     }
 }
 
-/// Where to raise the limit, by who set it (docket's `source`): `step`, `role`, `pod`, `default`
-/// or, for a task-wide token cut, `task`. Any other value is docket naming a source before Tack
-/// knows it, so the sentence stays generic rather than guessing.
-fn budget_source_sentence(source: &str) -> &'static str {
+/// Where to raise the limit. docket's own stop message already carries a
+/// `"(source: <source>; raise <key>)"` tail for a bound its machine or its pipeline sized
+/// (`agent/loop_types.py::limit_origin`); reading that key out of it, rather than keeping a
+/// table of Tack's own, means a key docket renames or retires (ADR 0038 decision 5, which is
+/// already dropping `maxIterations`/`maxToolCalls` as declarable keys) changes this sentence by
+/// itself. Falls back to a source-only sentence when the hop's `error` carries no such tail —
+/// an older docket, or a bound (`tokens`) docket's loop never tags this way.
+fn budget_origin_sentence(hop_error: &str, source: &str) -> String {
+    if let Some(start) = hop_error.find("(source:")
+        && let Some(end) = hop_error[start..].find(')')
+        && let Some((_, raise)) = hop_error[start..start + end].split_once("raise ")
+    {
+        return format!("Raise {} to allow more.", raise.trim());
+    }
     match source {
-        "step" => "Declare it on the team's pipeline step (maxIterations, maxToolCalls or timeout).",
-        "role" => "Declare it on the role.",
-        "pod" => "Raise the team's turnTimeoutS.",
-        "default" => "It is the machine's default (docket).",
-        "task" => "It is this task's token limit.",
-        _ => "docket did not say where this limit comes from.",
+        "step" => "Declared on the team's pipeline step.".to_owned(),
+        "pod" => "Raise the team's turnTimeoutS.".to_owned(),
+        "default" => "It is the machine's default.".to_owned(),
+        "task" => "It is this task's own limit.".to_owned(),
+        "" => "docket did not say where this limit comes from.".to_owned(),
+        other => format!("Set by the team's {other}."),
     }
 }
 
@@ -1307,13 +1317,13 @@ impl DocketAdapter {
                     .and_then(|hop| hop.budget.as_ref())
                     .is_some_and(|budget| budget.bound != "tokens") =>
             {
-                let budget = task
-                    .hops
-                    .last()
-                    .and_then(|hop| hop.budget.as_ref())
+                let last_hop = task.hops.last().expect("checked by this arm's own guard");
+                let budget = last_hop
+                    .budget
+                    .as_ref()
                     .expect("checked by this arm's own guard");
                 let mut reason = json!({"code": "step_budget",
-                                        "message": budget_message(budget),
+                                        "message": budget_message(budget, &last_hop.error),
                                         "task": info.task});
                 // The budget hop pinned the task's work (an Implementer hop, docket's own
                 // narrowing): the branch and its head go in, read the same way a `done` run's

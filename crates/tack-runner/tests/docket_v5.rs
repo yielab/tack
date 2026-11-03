@@ -205,14 +205,14 @@ fn hop_finished(role: &str, model: &str, cycle: u32, verdict: Value) -> Value {
 /// (`budgetOutcome`): `ok` is false, and `budget` carries the wire's own shape
 /// (`bound`/`limit`/`used`/`source`/`treeChanged`). `artifact` is left for the caller to add,
 /// as a budget hop's handoff is a report, not a verdict.
-fn hop_budget(role: &str, model: &str, cycle: u32, budget: Value) -> Value {
+fn hop_budget(role: &str, model: &str, cycle: u32, budget: Value, error: &str) -> Value {
     let mut payload = hop(role, model, cycle);
     payload["ok"] = json!(false);
     payload["verdict"] = Value::Null;
     payload["gate"] = Value::Null;
     payload["usage"] = json!({"input": 1000, "output": 200});
     payload["durationMs"] = json!(5000);
-    payload["error"] = json!("");
+    payload["error"] = json!(error);
     payload["budget"] = budget;
     payload
 }
@@ -2729,6 +2729,9 @@ async fn a_rounds_budget_stop_ends_step_budget_and_keeps_the_work() {
                 "local/local-model",
                 0,
                 budget("rounds", 20, 20, "step", true),
+                // docket's own stop text (`agent/loop_types.py::limit_origin`): Tack reads the
+                // "raise <key>" tail out of it rather than keeping its own table of keys.
+                "exceeded max_iterations=20 (source: step; raise maxIterations)",
             ),
         )],
         ..Script::default()
@@ -2741,7 +2744,7 @@ async fn a_rounds_budget_stop_ends_step_budget_and_keeps_the_work() {
     assert_eq!(reason["code"], json!("step_budget"));
     let message = reason["message"].as_str().expect("message");
     assert!(message.contains("round limit"), "{message}");
-    assert!(message.contains("maxIterations"), "{message}");
+    assert!(message.contains("Raise maxIterations"), "{message}");
     assert!(!message.to_lowercase().contains("token"), "{message}");
     let branch = reason["branch"].as_str().expect("branch");
     let head = reason["head_commit"].as_str().expect("head_commit");
@@ -2773,6 +2776,7 @@ async fn a_rounds_budget_stop_before_the_feature_keeps_todays_code() {
                 "local/local-model",
                 0,
                 budget("rounds", 20, 20, "step", true),
+                "exceeded max_iterations=20 (source: step; raise maxIterations)",
             ),
         )],
         ..Script::default()
@@ -2805,6 +2809,7 @@ async fn a_tokens_budget_stop_keeps_the_code_budget_even_with_the_feature() {
                 "local/local-model",
                 0,
                 budget("tokens", 200_000, 200_000, "task", true),
+                "exceeded token_budget=200000 (used 200000)",
             ),
         )],
         ..Script::default()
@@ -2836,6 +2841,7 @@ async fn a_budget_stop_without_a_kept_tree_names_no_branch() {
                 "local/local-model",
                 0,
                 budget("toolCalls", 10, 10, "role", false),
+                "exceeded max_tool_calls=10 (source: role; raise maxToolCalls)",
             ),
         )],
         ..Script::default()
@@ -2851,7 +2857,42 @@ async fn a_budget_stop_without_a_kept_tree_names_no_branch() {
     assert!(reason.get("base_commit").is_none());
     let message = reason["message"].as_str().expect("message");
     assert!(message.contains("tool-call limit"), "{message}");
-    assert!(message.contains("Declare it on the role."), "{message}");
+    assert!(message.contains("Raise maxToolCalls"), "{message}");
+}
+
+/// A hop's `error` with no `"(source: ...)"` tail (an older docket's text, or one that changed
+/// its wording) falls back to a sentence built from `source` alone, never a blank or a panic.
+/// This is also what ADR 0038 decision 5's amendment (deleting `maxIterations`/`maxToolCalls` as
+/// declarable keys) falls back to until docket's own text catches up on a given docket build.
+#[tokio::test]
+async fn a_budget_stops_message_falls_back_without_a_raise_tail() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("rounds", 200, 200, "default", true),
+                "exceeded max_iterations=200",
+            ),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    let reason = &outcome.terminal_reason;
+    assert_eq!(reason["code"], json!("step_budget"));
+    let message = reason["message"].as_str().expect("message");
+    assert!(message.contains("round limit"), "{message}");
+    assert!(message.contains("machine's default"), "{message}");
+    assert!(!message.contains("maxIterations"), "{message}");
 }
 
 /// A budget hop's raw verdict is never read, whatever it says: the step shows no `verdict` and
@@ -2865,6 +2906,7 @@ async fn a_budget_hops_verdict_is_never_read_and_it_reports_instead() {
         "local/local-model",
         0,
         budget("rounds", 5, 5, "role", false),
+        "exceeded max_iterations=5 (source: role; raise maxIterations)",
     );
     payload["artifact"] = json!({
         "verdict": "APPROVE",

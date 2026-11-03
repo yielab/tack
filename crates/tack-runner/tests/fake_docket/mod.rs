@@ -1815,6 +1815,9 @@ fn finish(state: &mut World, index: usize) {
             if let Some(ok) = payload.get("ok") {
                 hop["ok"] = ok.clone();
             }
+            if let Some(error) = payload.get("error") {
+                hop["error"] = error.clone();
+            }
             // `budgetOutcome`: a docket before the feature never wrote this key, whatever the
             // script gives the hop.
             if !state.without_budget_outcome
