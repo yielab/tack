@@ -12,6 +12,7 @@ import {
 import { PROJECT_DESTINATIONS, WORKSPACE_DESTINATIONS } from './destinations';
 import KbdHint from './KbdHint';
 import WaitingForYou from '../runWithAgent/WaitingForYou';
+import AgentsOffline from '../agents/AgentsOffline';
 import { sidebarRequests, waitingChangeSetsOf } from '../state/waiting';
 import { changeSetsOffReason } from '../state/changeSets';
 import { useVocab } from '../vocab/useVocab';
@@ -160,6 +161,8 @@ const Sidebar: Component = () => {
           <span style={{ 'font-family': 'var(--font-mono)', 'font-size': '0.65625rem', color: 'var(--color-text-tertiary)' }}>tack.db</span>
         </div>
       </div>
+
+      <AgentsOffline onNavigate={close} />
 
       {/* search trigger */}
       <div style={{ padding: '0 14px 14px' }}>
