@@ -1,6 +1,7 @@
 # Phase 87: a step that runs out of budget stops at a checkpoint, and a person chooses to continue or start over
 
-**Status: PROPOSED 2026-11-03.** No ADR of its own: the decisions are below. It follows docket's
+**Status: BUILT 2026-11-03, all six cards (A, B, C, D, S, L) in `develop`, live-proved against a
+real docket and a real Tack on a local model.** No ADR of its own: the decisions are below. It follows docket's
 Phase 59 (docket's ADR 0038, "a step's budget is a checkpoint, not a cliff"). Every change is read
 only when docket lists its feature in `GET /health`'s `features`, as `failureKinds` already is, and the
 in-process fake (`crates/tack-runner/tests/fake_docket/`) plays the docket before and after each one.
@@ -166,9 +167,50 @@ same change. A card runs only the tests of what it touched; the full suites run 
 | **C** — Start over from this run's work | `budgetOutcome` | **Done** (`964098f3`). `from_run` on `POST /api/executions`. The server resolves the branch from that run's evidence and sets `rework_base`. Refuses a run without kept work, or from another project, with `422` and the reason |
 | **D** — the screen | A, B, C | **Done** (`26746f18`). A new `ContinueOrStartOver` block carries the backend's own sentence and the two actions of decision 5, each disabled with its reason; mounted beside `RunLimitNote`, which steps back (its own "stopped" line stays off) whenever `next.continue` is present at all, so a tokens-bound stop is told once, not twice. `stoppedByLimit` reads the last hop's `budget.bound`. Steps with `report: true` read "Report before it stopped", never a verdict. One paragraph each in the User guide and the Administrator guide (`docs/CONFIG.md`). Not done: a dedicated "continued" label on the item's run history (today it is just another request; nothing in the plan's acceptance table requires more than the block above) |
 | **S** — the skill (git-ignored `onboarding-lab/`) | P59-4 in docket's `develop` | **Done.** `blueprint-format.md` documents `maxIterations`/`timeout` on the build step as docket-gated. `apply.sh` probes a disposable step with `docket pod validate` (cached per run; `ONBOARD_STEP_BUDGET_PROBE` overrides it in tests) and patches only a temp copy of the team, never the repo's own pipeline file — a hand-rolled line patcher, not `yaml.safe_dump`, because PyYAML 1.1 turns a bare `on:` key into `true` and would silently break every pipeline's rework trigger. `check.sh`: 46/46 (7 new). Still waiting on P59-6: `maxIterations` is a step/role key only until then |
-| **L** — live proof | A–D, S; P59-3 | docket closed Phase 59 2026-11-03 (`develop` `02056b87`): all three of its own live runs passed, shapes match this plan exactly. Still to do once D lands: `onboarding-lab/e2e/` exercises Continue and Start-over end to end, and a recaptured task record replaces the fake's hand-written hop and the constructed `post-task-retry.json` fixture in `fixtures/docket/v5/` |
+| **L** — live proof | A–D, S; P59-3 | **Done** (`8da0ca87`; its two findings fixed in `595a9e20`). A real docket (`~/Sites/rack-cli` `develop` `fa06ce05`, P59-6/7/8 merged) and a real Tack, both freshly built, over a local model (no billed calls). Below |
 
 Rounds: A; then B ∥ C; then D; S whenever P59-4 lands; L last.
+
+## Live proof (Card L, 2026-11-03)
+
+A real docket (`~/Sites/rack-cli` `develop` `fa06ce05`, P59-6/7/8 merged — `maxIterations` and
+`maxToolCalls` are gone as step or role keys, confirmed by `docket pod validate` refusing them)
+and a real Tack, both built fresh, over a free local model (llama.cpp/Qwen on loopback). Production
+Tack (`:3210`) and the maintainer's own docket (`:7399`, `~/.docket`) were never touched.
+
+**The test plan changed mid-run, for a real reason.** The original plan forced the stop with a
+tiny `maxIterations`; P59-6 deleted that key between the plan being written and Card L running it.
+Rounds and tool calls are now machine-only guards, so the live proof forced a rounds stop instead
+(`AGENT_LOOP_MAX_ITERATIONS=3` on the daemon) — the same `step_budget` code path, just a different
+bound. A genuine `time`-bound stop was attempted (five timeouts, seven real runs) and never landed
+clean: docket's own per-request deadline makes a losing round die as a retryable transport
+`timeout` before the loop's own landing ever fires, so this remains unproved against a real clock,
+not just against the fake. `tokens`, via a small `budgets.tokens` on the request, worked exactly as
+specified on the first try.
+
+**What it confirmed.** The hop's `budget` matches `wire::BudgetOutcome` field for field, including
+`raise` as a real, separate field (not just the `error` tail) on every hop — `{"bound": "rounds",
+"limit": 3, "used": 3, "source": "default", "raise": "AGENT_LOOP_MAX_ITERATIONS", "treeChanged":
+true}`. A retry on that task re-ran the step and continued its session: it wrote the files the
+first attempt had not reached, then hit the same ceiling again (expected — nothing raises a
+machine guard between retries) — the continuation mechanism itself holds. `tokens` gave
+`{"bound": "tokens", "source": "task", "raise": "maxTokens", "treeChanged": true}`, code `budget`,
+`next.continue.possible: false` with the plan's exact wording.
+
+**What it found broken, in already-merged code (both fixed the same day, `595a9e20`):**
+
+1. `continue_source_of_request`'s SQL read `actual_execution.additional.team`. `additional` is
+   `#[serde(flatten)]`, so docket's `team` key sits at the stored JSON's top level, never nested —
+   `POST .../continue` was refused `continues_not_offered` for every real run, unconditionally. Its
+   own test had seeded the wrong (nested) shape and so never caught it.
+2. A `tokens`-bound stop with `treeChanged: true` never got `branch`/`head_commit`/`base_commit`:
+   only the `step_budget` arm of `finish()` ever added them, guarded to exclude `tokens`. A real
+   run's patch was captured empty despite a genuine commit, and `from_run` against it was refused
+   `from_run_no_kept_work` — defeating decision 5's row 2 (tokens, kept work → Start over from this
+   run's work) for every token-bound stop. A shared `add_kept_branch` now covers both arms.
+
+Neither bug was visible from the fake alone: both depended on the exact shape a real `ActualExecution`
+serializes to, which the fake's hand-built JSON happened to get right by construction.
 
 ### Tests, one per case
 
