@@ -52,8 +52,9 @@ mod wire;
 
 use client::Client;
 use wire::{
-    Enqueued, Escalation, EscalationDetail, EscalationEvent, EscalationList, EscalationState,
-    HopEvent, PodReport, TaskDiff, TaskUsage, TaskView, Tokens, TraceEvent, TracePage,
+    BudgetOutcome, Enqueued, Escalation, EscalationDetail, EscalationEvent, EscalationList,
+    EscalationState, HopEvent, PodReport, TaskDiff, TaskUsage, TaskView, Tokens, TraceEvent,
+    TracePage,
 };
 
 pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
@@ -239,6 +240,46 @@ fn unanswered_text(
         }),
         if count == 1 { "" } else { "s" },
     )
+}
+
+/// What a step's own budget stop says: the bound that ran out, the figures, and where a person
+/// raises it. Never called with `bound: "tokens"` (that stop keeps the run's token limit, which
+/// is Tack's own, not a sentence built from docket's `budget`).
+fn budget_message(budget: &BudgetOutcome) -> String {
+    format!(
+        "The step ran out of its {}: {} of {}. {}",
+        budget_bound_phrase(&budget.bound),
+        budget.used,
+        budget.limit,
+        budget_source_sentence(&budget.source),
+    )
+}
+
+/// The bound's name in a sentence. `other` is not expected on the wire (docket's `bound` is a
+/// closed set of four), but a limit is still named rather than left blank if docket ever adds
+/// one Tack has not read about yet.
+fn budget_bound_phrase(bound: &str) -> String {
+    match bound {
+        "rounds" => "round limit".to_owned(),
+        "toolCalls" => "tool-call limit".to_owned(),
+        "time" => "time limit".to_owned(),
+        "tokens" => "token limit".to_owned(),
+        other => format!("{other} limit"),
+    }
+}
+
+/// Where to raise the limit, by who set it (docket's `source`): `step`, `role`, `pod`, `default`
+/// or, for a task-wide token cut, `task`. Any other value is docket naming a source before Tack
+/// knows it, so the sentence stays generic rather than guessing.
+fn budget_source_sentence(source: &str) -> &'static str {
+    match source {
+        "step" => "Declare it on the team's pipeline step (maxIterations, maxToolCalls or timeout).",
+        "role" => "Declare it on the role.",
+        "pod" => "Raise the team's turnTimeoutS.",
+        "default" => "It is the machine's default (docket).",
+        "task" => "It is this task's token limit.",
+        _ => "docket did not say where this limit comes from.",
+    }
 }
 
 /// What a person's answer will be posted as: docket's escalation and what it takes.
@@ -1254,6 +1295,47 @@ impl DocketAdapter {
                 AttemptState::Failed,
                 json!({"code": "approval_denied", "message": why, "task": info.task}),
             ),
+            // `budgetOutcome`: a step's own budget ran out, not the model's call. A `tokens`
+            // bound keeps today's code and meaning (Tack's own token limit, read below), so this
+            // arm is only reached for `rounds`, `toolCalls` or `time`. The run stays Failed
+            // either way: nothing here is verified, published or merged (decision 3).
+            _ if failure_kind == Some("budget")
+                && self.client.has_feature("budgetOutcome").await
+                && task
+                    .hops
+                    .last()
+                    .and_then(|hop| hop.budget.as_ref())
+                    .is_some_and(|budget| budget.bound != "tokens") =>
+            {
+                let budget = task
+                    .hops
+                    .last()
+                    .and_then(|hop| hop.budget.as_ref())
+                    .expect("checked by this arm's own guard");
+                let mut reason = json!({"code": "step_budget",
+                                        "message": budget_message(budget),
+                                        "task": info.task});
+                // The budget hop pinned the task's work (an Implementer hop, docket's own
+                // narrowing): the branch and its head go in, read the same way a `done` run's
+                // are, so the engine captures the patch. Without that pin, the branch carries
+                // nothing of this step and the reason names neither.
+                if budget.tree_changed {
+                    let branch = task
+                        .worktree
+                        .as_ref()
+                        .map_or("", |worktree| worktree.branch.as_str());
+                    if let Ok(head) = Self::branch_head(&info.workspace, branch).await {
+                        reason["branch"] = json!(branch);
+                        reason["head_commit"] = json!(head);
+                        reason["base_commit"] = json!(
+                            task.worktree
+                                .as_ref()
+                                .and_then(|worktree| worktree.base_commit.clone())
+                        );
+                    }
+                }
+                (AttemptState::Failed, reason)
+            }
             // Any other end is docket's, in docket's words and labelled as such.
             _ => (
                 AttemptState::Failed,

@@ -31,6 +31,17 @@ fn step(hop: &TaskHop, hop_times: bool) -> Value {
     let artifact = hop.artifact.as_ref();
     let text = |value: Option<&str>| value.filter(|value| !value.is_empty()).map(str::to_owned);
     let prompts = manifest.map_or_else(Vec::new, prompts);
+    let budget = hop.budget.as_ref();
+    // A hop that ran out of its own budget stopped before the model settled; whatever `verdict`
+    // docket sent on it is never read (the run's own decision, not the step's), so the step
+    // shows none, and `report` says why: this `summary` is what the model wrote before it
+    // stopped, not a result.
+    let verdict = if budget.is_some() {
+        None
+    } else {
+        text(artifact.and_then(|artifact| artifact.verdict.as_deref()))
+            .or_else(|| text(hop.verdict.as_deref()))
+    };
     let mut step = json!({
         "role": text(hop.role.as_deref()),
         // The model the hop was served by; the manifest names the one it was planned for.
@@ -38,14 +49,28 @@ fn step(hop: &TaskHop, hop_times: bool) -> Value {
             .or_else(|| text(manifest.and_then(|manifest| manifest.model.as_deref()))),
         "class": text(manifest.and_then(|manifest| manifest.class.as_deref())),
         "family": text(manifest.and_then(|manifest| manifest.family.as_deref())),
-        "verdict": text(artifact.and_then(|artifact| artifact.verdict.as_deref()))
-            .or_else(|| text(hop.verdict.as_deref())),
+        "verdict": verdict,
         "ok": hop.ok,
         "summary": text(artifact.and_then(|artifact| artifact.summary.as_deref())),
         "prompts": prompts,
         "assumptions": artifact.map_or_else(Vec::new, |artifact| artifact.assumptions.clone()),
         "questions": artifact.map_or_else(Vec::new, |artifact| artifact.questions.clone()),
     });
+    if let Some(budget) = budget
+        && let Some(object) = step.as_object_mut()
+    {
+        object.insert(
+            "budget".to_owned(),
+            json!({
+                "bound": budget.bound,
+                "limit": budget.limit,
+                "used": budget.used,
+                "source": budget.source,
+                "treeChanged": budget.tree_changed,
+            }),
+        );
+        object.insert("report".to_owned(), json!(true));
+    }
     if hop_times && let Some(object) = step.as_object_mut() {
         if let Some(started) = text(hop.started_at.as_deref()) {
             object.insert("startedAt".to_owned(), json!(started));

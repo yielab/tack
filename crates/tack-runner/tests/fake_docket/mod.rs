@@ -378,6 +378,9 @@ struct World {
     /// A docket before `podPause`: the features do not list it and neither the list nor a report
     /// carries `paused` or `pausedReason`. A paused team still holds its tasks `pending`.
     without_pod_pause: bool,
+    /// A docket before `budgetOutcome`: the features do not list it, and a hop's `budget` the
+    /// script carries is left off the record, as a docket before the feature never wrote one.
+    without_budget_outcome: bool,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -422,6 +425,7 @@ impl FakeDocket {
             without_settled_cursor: false,
             without_hop_times: false,
             without_pod_pause: false,
+            without_budget_outcome: false,
             rev: 0,
             next_channel: None,
         }));
@@ -515,6 +519,12 @@ impl FakeDocket {
     /// reports, and a paused team holding its tasks `pending`.
     pub fn without_pod_pause(&self) {
         self.shared.lock().unwrap().without_pod_pause = true;
+    }
+
+    /// A docket before `budgetOutcome`: no hop ever carries `budget`, whatever a script gives it,
+    /// as a docket that cannot tell a step's own budget stop from the task's token cut.
+    pub fn without_budget_outcome(&self) {
+        self.shared.lock().unwrap().without_budget_outcome = true;
     }
 
     /// Pauses the team, as a spent budget does (`reason` is `pausedReason`): the tasks posted to
@@ -977,6 +987,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_pod_pause {
         listed.push("podPause");
+    }
+    if !state.without_budget_outcome {
+        listed.push("budgetOutcome");
     }
     json!(listed)
 }
@@ -1802,6 +1815,13 @@ fn finish(state: &mut World, index: usize) {
             if let Some(ok) = payload.get("ok") {
                 hop["ok"] = ok.clone();
             }
+            // `budgetOutcome`: a docket before the feature never wrote this key, whatever the
+            // script gives the hop.
+            if !state.without_budget_outcome
+                && let Some(budget) = payload.get("budget")
+            {
+                hop["budget"] = budget.clone();
+            }
             state.tasks[index].hops.push(hop);
         }
         trace_event(state, &pod, &id, &event_type, payload);
@@ -1809,7 +1829,14 @@ fn finish(state: &mut World, index: usize) {
     for (set, row) in script.records.clone() {
         write_row(state, &pod, &set, &id, row);
     }
-    if script.status == "done"
+    // A budget hop that pinned the task's work (`treeChanged`) keeps a commit on the branch the
+    // same way a `done` task does, so the fake's one commit mechanism serves both.
+    let kept_by_budget = !state.without_budget_outcome
+        && state.tasks[index]
+            .hops
+            .iter()
+            .any(|hop| hop["budget"]["treeChanged"] == json!(true));
+    if (script.status == "done" || kept_by_budget)
         && !state.tasks[index].folder
         && let (Some((path, content)), Some(repository)) =
             (script.commit.clone(), state.repository.clone())

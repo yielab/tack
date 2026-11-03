@@ -201,6 +201,33 @@ fn hop_finished(role: &str, model: &str, cycle: u32, verdict: Value) -> Value {
     payload
 }
 
+/// A hop that stopped because its own budget ran out, not because the model settled
+/// (`budgetOutcome`): `ok` is false, and `budget` carries the wire's own shape
+/// (`bound`/`limit`/`used`/`source`/`treeChanged`). `artifact` is left for the caller to add,
+/// as a budget hop's handoff is a report, not a verdict.
+fn hop_budget(role: &str, model: &str, cycle: u32, budget: Value) -> Value {
+    let mut payload = hop(role, model, cycle);
+    payload["ok"] = json!(false);
+    payload["verdict"] = Value::Null;
+    payload["gate"] = Value::Null;
+    payload["usage"] = json!({"input": 1000, "output": 200});
+    payload["durationMs"] = json!(5000);
+    payload["error"] = json!("");
+    payload["budget"] = budget;
+    payload
+}
+
+/// A `budget` value as docket's `budgetOutcome` writes it on a hop.
+fn budget(bound: &str, limit: u64, used: u64, source: &str, tree_changed: bool) -> Value {
+    json!({
+        "bound": bound,
+        "limit": limit,
+        "used": used,
+        "source": source,
+        "treeChanged": tree_changed,
+    })
+}
+
 async fn pods_fake() -> FakeDocket {
     let fake = FakeDocket::start().await;
     fake.add_pod(POD, "lights-out", &[]);
@@ -2682,6 +2709,193 @@ async fn failure_kinds_say_why_a_task_ended_and_only_from_a_docket_that_lists_th
         let code = if listed { "hop_failed" } else { "failed" };
         assert_eq!(outcome.terminal_reason["code"], json!(code), "{listed}");
     }
+}
+
+/// `budgetOutcome`: a step that ran out of its own round limit, with its work pinned to the
+/// branch (`treeChanged`), ends `step_budget` and names the limit and where to raise it, never
+/// the token limit. The branch and head go into the reason the same way a `done` run's do.
+#[tokio::test]
+async fn a_rounds_budget_stop_ends_step_budget_and_keeps_the_work() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("rounds", 20, 20, "step", true),
+            ),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    let reason = &outcome.terminal_reason;
+    assert_eq!(reason["code"], json!("step_budget"));
+    let message = reason["message"].as_str().expect("message");
+    assert!(message.contains("round limit"), "{message}");
+    assert!(message.contains("maxIterations"), "{message}");
+    assert!(!message.to_lowercase().contains("token"), "{message}");
+    let branch = reason["branch"].as_str().expect("branch");
+    let head = reason["head_commit"].as_str().expect("head_commit");
+    assert_eq!(
+        git(
+            &scene.repository,
+            &["rev-parse", &format!("refs/heads/{branch}")]
+        ),
+        head
+    );
+    assert!(reason["base_commit"].is_string());
+}
+
+/// The same stop, read from a docket before `budgetOutcome`: `budget` keeps today's meaning (the
+/// task's own token cut), in docket's words, and the reason names no branch.
+#[tokio::test]
+async fn a_rounds_budget_stop_before_the_feature_keeps_todays_code() {
+    let fake = pods_fake().await;
+    fake.without_budget_outcome();
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("rounds", 20, 20, "step", true),
+            ),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("budget"));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!("docket said: step budget spent")
+    );
+    assert!(outcome.terminal_reason.get("branch").is_none());
+}
+
+/// A `tokens` bound keeps the code `budget` even with the feature on: that limit is Tack's own
+/// (`maxTokens` from `budgets.tokens`), never named `step_budget`.
+#[tokio::test]
+async fn a_tokens_budget_stop_keeps_the_code_budget_even_with_the_feature() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "task budget spent".to_owned(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("tokens", 200_000, 200_000, "task", true),
+            ),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    assert_eq!(outcome.terminal_reason["code"], json!("budget"));
+    assert_eq!(
+        outcome.terminal_reason["message"],
+        json!("docket said: task budget spent")
+    );
+}
+
+/// Without `treeChanged` (any role but the Implementer, docket's own narrowing), the reason
+/// names no branch, head or base: there is nothing of this step's own to show.
+#[tokio::test]
+async fn a_budget_stop_without_a_kept_tree_names_no_branch() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "reviewer",
+                "local/local-model",
+                0,
+                budget("toolCalls", 10, 10, "role", false),
+            ),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    let reason = &outcome.terminal_reason;
+    assert_eq!(reason["code"], json!("step_budget"));
+    assert!(reason.get("branch").is_none());
+    assert!(reason.get("head_commit").is_none());
+    assert!(reason.get("base_commit").is_none());
+    let message = reason["message"].as_str().expect("message");
+    assert!(message.contains("tool-call limit"), "{message}");
+    assert!(message.contains("Declare it on the role."), "{message}");
+}
+
+/// A budget hop's raw verdict is never read, whatever it says: the step shows no `verdict` and
+/// marks itself a report, and the run stays Failed (decision 4 — a Reviewer that ran out never
+/// approves).
+#[tokio::test]
+async fn a_budget_hops_verdict_is_never_read_and_it_reports_instead() {
+    let fake = pods_fake().await;
+    let mut payload = hop_budget(
+        "reviewer",
+        "local/local-model",
+        0,
+        budget("rounds", 5, 5, "role", false),
+    );
+    payload["artifact"] = json!({
+        "verdict": "APPROVE",
+        "summary": "Reviewed what there was time for.",
+    });
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        after: vec![("hop_finished".into(), payload)],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    let steps = outcome.terminal_reason["steps"]
+        .as_array()
+        .expect("steps");
+    assert_eq!(steps.len(), 1);
+    assert!(
+        steps[0].get("verdict").is_none_or(Value::is_null),
+        "{:?}",
+        steps[0]
+    );
+    assert_eq!(steps[0]["report"], json!(true));
+    assert_eq!(steps[0]["budget"]["bound"], json!("rounds"));
+    assert_eq!(
+        steps[0]["summary"],
+        json!("Reviewed what there was time for.")
+    );
 }
 
 #[tokio::test]
@@ -5914,11 +6128,12 @@ type FeatureSwitch = fn(&FakeDocket);
 
 /// The features docket added after `taskCurrent` and `taskCursor`, in the order the fake lists
 /// them, each with the switch that makes the fake a docket before it.
-const LATER_FEATURES: [(&str, FeatureSwitch); 4] = [
+const LATER_FEATURES: [(&str, FeatureSwitch); 5] = [
     ("failureKinds", FakeDocket::without_failure_kinds),
     ("settledCursor", FakeDocket::without_settled_cursor),
     ("hopTimes", FakeDocket::without_hop_times),
     ("podPause", FakeDocket::without_pod_pause),
+    ("budgetOutcome", FakeDocket::without_budget_outcome),
 ];
 
 /// Each later feature is dropped from both lists by its own switch and by no other.
