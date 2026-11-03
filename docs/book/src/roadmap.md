@@ -4,10 +4,11 @@
 > history; closed phases are archived under
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
-**Tack is delivered through Phase 86.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 87.** A project is planned and tracked on a board, a list, a
 calendar or a timeline, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
-Tack holds no model key. The run's work comes back as evidence to review, an independent
+Tack holds no model key. A step that runs out of its own budget keeps its work and lets a person
+continue it or start over from it. The run's work comes back as evidence to review, an independent
 verifier can judge it, and Tack can push the branch, open the pull request and merge it: by a
 button, when the task moves to Done, or by itself at Level 4 or 5 under the verifier's signed
 verdict. A project can start its tasks by itself, send each role's tasks to a long-lived docket
@@ -28,16 +29,10 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 86 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+Phases 73 to 87 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
 
-**Phase 87 — a step that runs out of budget stops at a checkpoint** (`docs/plans/phase-87.md`,
-proposed 2026-11-03). It follows docket's Phase 59. A stopped step says which limit stopped it and
-where to raise it, keeps its work and its report, and offers Continue (the same docket task) or Start
-over (a new one, from the kept work or clean). Cards A, B ∥ C, D, the skill's card S and the live proof
-L; each starts when docket lists the feature it reads.
-
-What remains besides it are two dependency cards:
+What remains are two dependency cards:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
   Run the desktop workflow on the branch first.
@@ -111,10 +106,20 @@ can come back as a card of its own.
 
 ## Delivered
 
-Phases 73 to 86, newest first. The detail is in each phase's plan under
+Phases 73 to 87, newest first. The detail is in each phase's plan under
 [`docs/closed-cycles/plans/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles/plans),
 each decision in its ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr),
 and what a user can now do in the [changelog](https://github.com/yielab/tack/blob/develop/CHANGELOG.md).
+
+- **Phase 87 — a step that runs out of budget stops at a checkpoint, not a cliff.** No ADR of its
+  own (it follows docket's own ADR 0038). A step that ran out of its rounds, tool calls or time ends
+  `step_budget`, names the limit and where to raise it, and keeps its patch; one that ran out of
+  tokens keeps today's `budget` code. A person then chooses **Continue** (a new request that
+  retries the same docket task) or **Start over from this run's work** (a new task based on the
+  branch it kept, with twice the token limit when tokens were what ran out). Live-proved against a
+  real docket (P59-6 to P59-8) and a real Tack on a local model; the proof found and fixed two bugs
+  the fake alone had not caught.
+  [Plan](https://github.com/yielab/tack/blob/develop/docs/closed-cycles/plans/phase-87.md).
 
 - **Phase 86 — a person sets a task's status, the agents report its work.** No ADR (it amends
   ADR 0033, decision 1). The six places that moved a status because a run did something are removed

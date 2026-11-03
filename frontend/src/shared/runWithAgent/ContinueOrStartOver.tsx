@@ -18,7 +18,7 @@ export interface ContinueOrStartOverProps {
 }
 
 /**
- * What a run a step's own budget stopped offers next (`docs/plans/phase-87.md`, decision 5's
+ * What a run a step's own budget stopped offers next (`docs/closed-cycles/plans/phase-87.md`, decision 5's
  * table, "Continue or Start over"): the backend's own sentence in red, where its kept work sits
  * when it kept any, and the two new actions — **Continue** the same docket task, or **Start over
  * from this run's work** — each always on screen and disabled with its reason when the case does

@@ -1171,7 +1171,7 @@ impl DocketAdapter {
 
     /// What `next.continue` on a budget stop says: whether a request may follow this task with
     /// `continue_task`, and if not, why (decision 5's table, "Continue or Start over" in
-    /// `docs/plans/phase-87.md`). `hop_budget` is the last hop's `budget`, when `budgetOutcome`
+    /// `docs/closed-cycles/plans/phase-87.md`). `hop_budget` is the last hop's `budget`, when `budgetOutcome`
     /// read one; without it (an older docket, or one that never wrote the key on this hop) Tack
     /// cannot tell a step's own budget stop from a confused model, so continuing is never
     /// offered — the same case as a docket without `retryContinues`.
@@ -1407,7 +1407,7 @@ impl DocketAdapter {
             // A `tokens` bound keeps code `budget` (that limit is Tack's own), but a kept tree is
             // still a kept tree: without this arm the generic catch-all below never looks, and
             // `from_run` refuses the very run decision 5's table says to offer it from first
-            // (found live, Card L, docs/plans/phase-87.md — a real tokens-bound stop left with
+            // (found live, Card L, docs/closed-cycles/plans/phase-87.md — a real tokens-bound stop left with
             // neither key despite a real commit).
             _ if failure_kind == Some("budget")
                 && self.client.has_feature("budgetOutcome").await

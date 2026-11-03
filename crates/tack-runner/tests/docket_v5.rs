@@ -2822,7 +2822,7 @@ async fn a_tokens_budget_stop_keeps_the_code_budget_even_with_the_feature() {
     let reason = &outcome.terminal_reason;
     assert_eq!(reason["code"], json!("budget"));
     assert_eq!(reason["message"], json!("docket said: task budget spent"));
-    // Card L's live proof (docs/plans/phase-87.md) found a real tokens-bound stop left with
+    // Card L's live proof (docs/closed-cycles/plans/phase-87.md) found a real tokens-bound stop left with
     // neither key despite a genuine commit: `from_run` refused the very run decision 5's table
     // says to offer it from first. The code stays `budget` (never `step_budget`); only the kept
     // branch is new here.
@@ -2984,7 +2984,7 @@ async fn a_budget_hops_verdict_is_never_read_and_it_reports_instead() {
     );
 }
 
-/// Decision 5's table ("Continue or Start over" in `docs/plans/phase-87.md`): what `next.continue`
+/// Decision 5's table ("Continue or Start over" in `docs/closed-cycles/plans/phase-87.md`): what `next.continue`
 /// on a budget stop says, and when it says nothing at all.
 #[tokio::test]
 async fn a_budget_stops_next_continue_follows_decision_fives_table() {
@@ -5190,7 +5190,7 @@ const NOT_IN_CLIENT: [&str; 0] = [];
 
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
 /// that stays running, and `current` and `updatedSince` need one. `retry` was captured against a
-/// live docket for Card L (`docs/plans/phase-87.md`) and moved out of this list.
+/// live docket for Card L (`docs/closed-cycles/plans/phase-87.md`) and moved out of this list.
 const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
 
 #[test]

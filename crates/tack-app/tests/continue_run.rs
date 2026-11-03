@@ -48,7 +48,7 @@ async fn leave_budget_stop(
             ),
             // `additional` is `#[serde(flatten)]` on `ActualExecution`, so docket's own `team`
             // key sits at the top level of the stored JSON, never nested (a real bug this test
-            // once matched instead of catching: Phase 87's live proof, docs/plans/phase-87.md).
+            // once matched instead of catching: Phase 87's live proof, docs/closed-cycles/plans/phase-87.md).
             actual_execution: Some(&json!({"team": pod}).to_string()),
         },
     )
