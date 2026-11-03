@@ -88,7 +88,7 @@ export function memberReachText(member: TeamMember): string[] {
  *  that ends it. Follows the profile's name. */
 export function misfitText(team: string, misfit: TeamMisfit): string {
   return misfit === 'no_web'
-    ? `needs the web, and this team has no network and no member that reads the web. Open its network with \`docket pod set network open --widen --pod ${team}\`, give a role \`fetch\`, or turn the network off in the profile.`
+    ? `needs the web, and this team has no network and no member that reads the web. Open its network with \`docket pod set network open --widen --pod ${team}\`, give it hosts for \`fetch\` (\`docket pod set fetchDomains <hosts> --pod ${team}\`), or turn the network off in the profile.`
     : `delivers only proposed items, and no member of this team can propose. Declare the team's \`tack_proposals\` record set and let a role write it.`;
 }
 

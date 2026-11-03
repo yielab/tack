@@ -144,8 +144,9 @@ fn misfit_sentence(pod: &str, misfits: &[TeamMisfit]) -> String {
             TeamMisfit::NoWeb => format!(
                 "The team {pod} cannot reach the web and this run needs it: docket reports its \
                  network as none and no member holds `fetch`. Open its network with `docket pod \
-                 set network open --widen --pod {pod}`, give a role `fetch` (it reaches only the \
-                 hosts in FETCH_ALLOWED_DOMAINS), or turn the network off in the profile."
+                 set network open --widen --pod {pod}`, give it hosts for `fetch` (`docket pod \
+                 set fetchDomains <hosts> --pod {pod}`, or FETCH_ALLOWED_DOMAINS on a docket \
+                 without it), or turn the network off in the profile."
             ),
             TeamMisfit::NoProposals => format!(
                 "The team {pod} cannot propose items and a Planner delivers nothing else: no \
