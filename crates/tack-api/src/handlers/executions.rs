@@ -35,6 +35,7 @@ use tack_core::run_defaults::Resolved;
 use crate::AppState;
 use tack_app::AppError;
 use tack_app::runs::cancel_run::{Cancellation, cancel_run};
+use tack_app::runs::continue_run::continue_run;
 use tack_app::runs::requeue::requeue;
 use tack_app::runs::start_run::{
     self, LimitSource, Refusal, RunRequest, Started, kind_of, profile_source_label,
@@ -718,6 +719,18 @@ pub struct RequeueResponse {
     pub replayed: bool,
 }
 
+/// Response body for `POST /api/executions/{id}/continue` — a new request that follows the same
+/// docket task the named run left stopped at its own step budget (Phase 87, decision 6), or an
+/// idempotent replay of one already made.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ContinueResponse {
+    pub protocol_version: u32,
+    pub request_id: String,
+    #[schema(example = "queued")]
+    pub state: String,
+    pub replayed: bool,
+}
+
 pub fn routes(state: OperatorExecutionState) -> Router {
     Router::new()
         .route("/executions", post(create_execution).get(list_executions))
@@ -739,7 +752,42 @@ pub fn routes(state: OperatorExecutionState) -> Router {
             "/executions/{request_id}/requeue",
             post(requeue_needs_operator),
         )
+        .route(
+            "/executions/{request_id}/continue",
+            post(continue_execution),
+        )
         .with_state(state)
+}
+
+/// `POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s
+/// run left stopped at its own step budget, instead of posting a new one (Phase 87, decision 6).
+/// Refused `not_found` when `id` names no request, `unprocessable` when its own ending never
+/// offered Continue (decision 5's table) or its token limit is fully spent.
+#[utoipa::path(
+    post,
+    path = "/api/executions/{request_id}/continue",
+    tag = "execution-operator",
+    params(("request_id" = String, Path, description = "The id of the run to continue")),
+    responses(
+        (status = 200, description = "Continuation created or idempotently replayed", body = ContinueResponse),
+        (status = 404, description = "not_found (the named run does not exist)", body = RunnerV1ErrorEnvelope),
+        (status = 409, description = "idempotency_conflict", body = RunnerV1ErrorEnvelope),
+        (status = 422, description = "unprocessable (never offered, or no tokens left)", body = RunnerV1ErrorEnvelope),
+    ),
+)]
+pub async fn continue_execution(
+    State(state): State<OperatorExecutionState>,
+    Path(request_id): Path<ExecutionRequestId>,
+) -> Result<Json<ContinueResponse>, (StatusCode, Json<Value>)> {
+    let started = continue_run(&state.repo, state.clock.now(), request_id.as_str())
+        .await
+        .map_err(refused)?;
+    Ok(Json(ContinueResponse {
+        protocol_version: 1,
+        request_id: started.request_id,
+        state: "queued".into(),
+        replayed: started.replayed,
+    }))
 }
 
 #[utoipa::path(

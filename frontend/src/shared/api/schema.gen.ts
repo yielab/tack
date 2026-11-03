@@ -800,6 +800,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/executions/{request_id}/continue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * `POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s
+         *     run left stopped at its own step budget, instead of posting a new one (Phase 87, decision 6).
+         *     Refused `not_found` when `id` names no request, `unprocessable` when its own ending never
+         *     offered Continue (decision 5's table) or its token limit is fully spent.
+         */
+        post: operations["continue_execution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/executions/{request_id}/requeue": {
         parameters: {
             query?: never;
@@ -4179,6 +4201,19 @@ export interface components {
             /** @enum {string} */
             kind: "note";
             text: string;
+        };
+        /**
+         * @description Response body for `POST /api/executions/{id}/continue` — a new request that follows the same
+         *     docket task the named run left stopped at its own step budget (Phase 87, decision 6), or an
+         *     idempotent replay of one already made.
+         */
+        ContinueResponse: {
+            /** Format: int32 */
+            protocol_version: number;
+            replayed: boolean;
+            request_id: string;
+            /** @example queued */
+            state: string;
         };
         /**
          * @description One model's tokens in the window. `tokens_in` and `tokens_out` are counted
@@ -8684,6 +8719,56 @@ export interface operations {
             };
             /** @description conflict (already terminal) */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    continue_execution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The id of the run to continue */
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Continuation created or idempotently replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContinueResponse"];
+                };
+            };
+            /** @description not_found (the named run does not exist) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                };
+            };
+            /** @description unprocessable (never offered, or no tokens left) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -983,6 +983,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::attempt_lists::review_execution_attempt,
         handlers::executions::request_cancellation,
         handlers::executions::requeue_needs_operator,
+        handlers::executions::continue_execution,
         // ── Harness-agnostic runner fleet: operator fleet/runner/profile API ──
         handlers::runner_admin::create_fleet,
         handlers::runner_admin::list_fleets,
@@ -1149,6 +1150,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::executions::CancellationRequestedResponse,
         handlers::executions::RecoveryConfirmation,
         handlers::executions::RequeueResponse,
+        handlers::executions::ContinueResponse,
         // ── AttemptSummary.model_provenance/usage_economics real shape ──────
         tack_protocol::usage_provenance::ModelProvenance,
         tack_protocol::execution::MeasurementSource,

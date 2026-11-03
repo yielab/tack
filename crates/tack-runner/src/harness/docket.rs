@@ -255,7 +255,10 @@ fn budget_message(budget: &BudgetOutcome, hop_error: &str) -> String {
         budget_bound_phrase(&budget.bound),
         budget.used,
         budget.limit,
-        budget_origin_sentence(hop_error, &budget.source),
+        match budget.raise.as_deref() {
+            Some(raise) if !raise.is_empty() => format!("Raise {raise} to allow more."),
+            _ => budget_origin_sentence(hop_error, &budget.source),
+        },
     )
 }
 
@@ -272,7 +275,8 @@ fn budget_bound_phrase(bound: &str) -> String {
     }
 }
 
-/// Where to raise the limit. docket's own stop message already carries a
+/// Where to raise the limit, when the hop's own `budget.raise` (not yet on the wire — docket ADR
+/// 0038 decision 5, planned P59-6) is absent. docket's stop message already carries a
 /// `"(source: <source>; raise <key>)"` tail for a bound its machine or its pipeline sized
 /// (`agent/loop_types.py::limit_origin`); reading that key out of it, rather than keeping a
 /// table of Tack's own, means a key docket renames or retires (ADR 0038 decision 5, which is
