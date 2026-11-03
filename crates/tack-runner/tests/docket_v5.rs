@@ -2895,6 +2895,39 @@ async fn a_budget_stops_message_falls_back_without_a_raise_tail() {
     assert!(!message.contains("maxIterations"), "{message}");
 }
 
+/// A hop's typed `budget.raise` (ADR 0038 decision 5, planned as P59-6, not yet on the wire) is
+/// read ahead of the `error` tail: once docket ships it, Tack already prefers it with no change
+/// here, and in the meantime it is simply absent from every hop a real docket writes.
+#[tokio::test]
+async fn a_budget_stops_message_prefers_a_typed_raise_over_the_error_tail() {
+    let fake = pods_fake().await;
+    let mut payload = hop_budget(
+        "implementer",
+        "local/local-model",
+        0,
+        budget("time", 1200, 1200, "step", true),
+        // A deliberately different key in the error tail, to prove `raise` wins over it.
+        "exceeded wall_clock_timeout_s=1200 (source: step; raise some_other_key)",
+    );
+    payload["budget"]["raise"] = json!("timeout");
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        after: vec![("hop_finished".into(), payload)],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    let message = outcome.terminal_reason["message"]
+        .as_str()
+        .expect("message");
+    assert!(message.contains("Raise timeout"), "{message}");
+    assert!(!message.contains("some_other_key"), "{message}");
+}
+
 /// A budget hop's raw verdict is never read, whatever it says: the step shows no `verdict` and
 /// marks itself a report, and the run stays Failed (decision 4 — a Reviewer that ran out never
 /// approves).

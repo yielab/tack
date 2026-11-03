@@ -2259,6 +2259,68 @@
         }
       }
     },
+    "/api/executions/{request_id}/continue": {
+      "post": {
+        "tags": [
+          "execution-operator"
+        ],
+        "summary": "`POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s\nrun left stopped at its own step budget, instead of posting a new one (Phase 87, decision 6).\nRefused `not_found` when `id` names no request, `unprocessable` when its own ending never\noffered Continue (decision 5's table) or its token limit is fully spent.",
+        "operationId": "continue_execution",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "description": "The id of the run to continue",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Continuation created or idempotently replayed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinueResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found (the named run does not exist)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "idempotency_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "unprocessable (never offered, or no tokens left)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunnerV1ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/executions/{request_id}/requeue": {
       "post": {
         "tags": [
@@ -10632,6 +10694,33 @@
             }
           }
         ]
+      },
+      "ContinueResponse": {
+        "type": "object",
+        "description": "Response body for `POST /api/executions/{id}/continue` — a new request that follows the same\ndocket task the named run left stopped at its own step budget (Phase 87, decision 6), or an\nidempotent replay of one already made.",
+        "required": [
+          "protocol_version",
+          "request_id",
+          "state",
+          "replayed"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "example": "queued"
+          }
+        }
       },
       "CostByModel": {
         "type": "object",

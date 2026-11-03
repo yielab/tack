@@ -311,6 +311,13 @@ pub(super) struct BudgetOutcome {
     pub used: u64,
     pub source: String,
     pub tree_changed: bool,
+    /// The one key that raises this bound (docket ADR 0038 decision 5, planned as P59-6, not yet
+    /// on the wire): `timeout`, `turnTimeoutS`, `maxTokens`, `budgetTokens`, or a machine variable
+    /// for `source: default`. Absent from a docket before the field; Tack then falls back to
+    /// parsing the same key out of the hop's own stop text (`error`), and failing that, to a
+    /// source-only sentence.
+    #[serde(default)]
+    pub raise: Option<String>,
 }
 
 /// The prompts a hop's turn was composed from (`promptManifest`), in composition order, and the

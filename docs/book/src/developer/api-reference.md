@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (117 paths, 161 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (118 paths, 162 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -1857,6 +1857,21 @@ Download a verified artifact's raw content
 | 200 | Cancelled at once when nobody holds the run; otherwise cancellation requested and not yet terminal | `CancellationRequestedResponse` |
 | 404 | not_found | `RunnerV1ErrorEnvelope` |
 | 409 | conflict (already terminal) | `RunnerV1ErrorEnvelope` |
+
+#### `POST /api/executions/{request_id}/continue`
+
+`POST /api/executions/{id}/continue`: a new request that follows the same docket task `id`'s
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `request_id` | path | `string` | yes | The id of the run to continue |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Continuation created or idempotently replayed | `ContinueResponse` |
+| 404 | not_found (the named run does not exist) | `RunnerV1ErrorEnvelope` |
+| 409 | idempotency_conflict | `RunnerV1ErrorEnvelope` |
+| 422 | unprocessable (never offered, or no tokens left) | `RunnerV1ErrorEnvelope` |
 
 #### `POST /api/executions/{request_id}/requeue`
 
