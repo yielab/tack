@@ -297,7 +297,7 @@ export const executionsApi = {
       body: JSON.stringify(input),
     }),
   /** `POST /executions/{id}/continue` — no body; refused `not_found`/`unprocessable` per
-   *  decision 5's table (`docs/plans/phase-87.md`). */
+   *  decision 5's table (`docs/closed-cycles/plans/phase-87.md`). */
   continue: (requestId: string) =>
     request<ContinueExecutionResult>(`/executions/${encodeURIComponent(requestId)}/continue`, {
       method: 'POST',

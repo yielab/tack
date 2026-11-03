@@ -13,7 +13,7 @@ export function isNearLimit(used: number | null | undefined, limit: number | nul
  *  own (the shape docket sent before Phase 87's `budgetOutcome`, or a hop whose bound really is
  *  `tokens` — Tack's own limit, read above). A step's own round, tool-call or time budget
  *  (`code: "step_budget"`, or a `budget` hop whose bound is one of those) is never a token
- *  stop — see `docs/plans/phase-87.md`, decision 1. */
+ *  stop — see `docs/closed-cycles/plans/phase-87.md`, decision 1. */
 export function stoppedByLimit(terminalReason: unknown): boolean {
   const reason = (terminalReason ?? {}) as { code?: unknown; reason?: unknown; steps?: unknown };
   const says = (word: string) => reason.code === word || reason.reason === word;
