@@ -96,6 +96,9 @@ pub(super) struct PodReport {
     /// The same pair the team's row of the list carries (`podPause`).
     pub paused: Option<bool>,
     pub paused_reason: Option<String>,
+    /// The folder a team that works in one writes in (`podWorkDir`). Absent for a team in a
+    /// repository and from a docket before the key.
+    pub work_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,12 +112,17 @@ pub(super) struct PodMember {
 }
 
 /// What a member's `capabilities` says that Tack reads: the kinds of tool the role has, the
-/// tools it holds and the record sets it can write. `records.query` and any other key are not read.
+/// tools it holds, the hosts its `fetch` reads and the record sets it can write. `records.query`
+/// and any other key are not read.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct MemberReach {
     pub kinds: Option<Vec<String>>,
     /// The tool names the role holds; docket lists `fetch` only while it offers it.
     pub tools: Option<Vec<String>>,
+    /// The hosts the member's `fetch` reads (`podFetch`); `*` is any public host. Sent only with
+    /// `fetch`.
+    pub fetch_domains: Option<Vec<String>>,
     pub records: Option<MemberRecords>,
 }
 
@@ -293,6 +301,10 @@ pub(super) struct TaskHop {
     /// model settled. Absent for any hop that is not that, and from a docket before the feature.
     #[serde(default)]
     pub budget: Option<BudgetOutcome>,
+    /// `capabilityMissing`: the gap in the team's setup that stopped the hop, absent for any hop
+    /// that met none and from a docket before the feature.
+    #[serde(default, rename = "capabilityMissing")]
+    pub capability_missing: Option<CapabilityMissing>,
     /// The hop's own raw stop text. For a budget stop this already carries docket's own
     /// `"(source: <source>; raise <key>)"` tail (`agent/loop_types.py::limit_origin`): Tack reads
     /// that tail for where to raise the limit instead of a table of its own, so a key docket
@@ -356,6 +368,15 @@ pub(super) struct PromptLayer {
     pub tokens: Option<u64>,
 }
 
+/// What docket names as missing from the team's setup: `tool`, `records` or `fetch` (a string, so
+/// a kind docket adds later still reads), the name of what is missing and the change that gives it.
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct CapabilityMissing {
+    pub kind: String,
+    pub name: String,
+    pub fix: String,
+}
+
 /// What a hop's `handoff` call said: the keys Tack reads of the hop's `artifact`. A list docket
 /// has nothing for is absent.
 #[derive(Debug, Default, Deserialize)]
@@ -368,6 +389,10 @@ pub(super) struct HopArtifact {
     pub assumptions: Vec<String>,
     #[serde(default)]
     pub questions: Vec<String>,
+    /// The files the hop's work changed; docket keeps them for a hop that failed and still kept
+    /// its work (an Implementer stopped by a budget, its transport or a gap in the team's setup).
+    #[serde(default, alias = "filesChanged")]
+    pub files_changed: Vec<String>,
 }
 
 /// `GET /tasks/<pod>/<id>/diff`.

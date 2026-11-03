@@ -415,6 +415,9 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
   let badge: AttemptOutcome['badge'] = null;
   if (state === 'failed' && reason.code === 'needs_human') {
     badge = { label: 'Needs a person', tone: 'warning' };
+  } else if (state === 'failed' && reason.code === 'capability_missing') {
+    // The team stopped on its own setup, not on the work: the message names the change that closes it.
+    badge = { label: 'Team setup incomplete', tone: 'warning' };
   } else if (state === 'succeeded') {
     const patch = (Array.isArray(reason.artifacts) ? reason.artifacts : []).find(
       (a) => a && typeof a === 'object' && (a as { kind?: unknown }).kind === 'patch',

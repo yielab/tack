@@ -296,6 +296,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             steps: None,
             proposals_shared_across_tasks: None,
             paused: None,
+            folder: None,
         },
         TeamReport {
             name: "saas-research".to_owned(),
@@ -315,6 +316,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             steps: None,
             proposals_shared_across_tasks: None,
             paused: None,
+            folder: None,
         },
         TeamReport {
             name: "saas-old".to_owned(),
@@ -331,6 +333,7 @@ fn docket_lines_state_the_api_the_daemon_and_each_team() {
             steps: None,
             proposals_shared_across_tasks: None,
             paused: None,
+            folder: None,
         },
     ]);
     assert_eq!(

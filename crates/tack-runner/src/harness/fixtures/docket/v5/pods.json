@@ -7,6 +7,11 @@
       "blueprint": "build",
       "members": 2,
       "profile": "attended",
+      "network": {
+        "mode": "none",
+        "scope": "default",
+        "enforced": false
+      },
       "queue": {
         "pending": 0,
         "running": 0,
@@ -26,6 +31,11 @@
       "blueprint": "build",
       "members": 2,
       "profile": "lights-out",
+      "network": {
+        "mode": "none",
+        "scope": "default",
+        "enforced": false
+      },
       "queue": {
         "pending": 0,
         "running": 0,

@@ -10,7 +10,13 @@
     "settledCursor",
     "failureKinds",
     "podPause",
-    "hopTimes"
+    "hopTimes",
+    "retryContinues",
+    "budgetOutcome",
+    "networkEnforced",
+    "podWorkDir",
+    "podFetch",
+    "capabilityMissing"
   ],
   "dispatch": {
     "on": true,

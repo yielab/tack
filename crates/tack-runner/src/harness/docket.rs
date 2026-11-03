@@ -138,6 +138,16 @@ fn in_repository(report: Option<&PodReport>) -> bool {
     }
 }
 
+/// Whether the task's last hop failed and kept its work: docket pins the tree of an Implementer
+/// stopped by its budget, its transport or a gap in the team's setup, and lists what it changed.
+fn kept_work(task: &TaskView) -> bool {
+    task.hops
+        .last()
+        .filter(|hop| hop.ok == Some(false))
+        .and_then(|hop| hop.artifact.as_ref())
+        .is_some_and(|artifact| !artifact.files_changed.is_empty())
+}
+
 /// The roles of the team that can propose items, once each, in the order docket lists them.
 /// `None` when docket did not say of any member whether it can.
 fn proposers(members: Option<&[TeamMember]>) -> Option<Vec<String>> {
@@ -1491,12 +1501,40 @@ impl DocketAdapter {
                     .await;
                 (AttemptState::Failed, reason)
             }
-            // Any other end is docket's, in docket's words and labelled as such.
-            _ => (
-                AttemptState::Failed,
-                json!({"code": failure_kind.unwrap_or("failed"),
-                       "message": format!("docket said: {why}"), "task": info.task}),
-            ),
+            // `capabilityMissing`: a step met a gap in the team's own setup and docket ended the
+            // task instead of asking a person. The change that closes it is the run's message.
+            _ if failure_kind == Some("capability_missing") => {
+                let mut reason = json!({"code": "capability_missing",
+                                        "message": format!(
+                                            "The team {} stopped on a gap in its own setup: {why}",
+                                            info.pod),
+                                        "task": info.task});
+                if let Some(gap) = task
+                    .hops
+                    .iter()
+                    .rev()
+                    .find_map(|hop| hop.capability_missing.as_ref())
+                {
+                    reason["missing"] = json!({"kind": gap.kind, "name": gap.name, "fix": gap.fix});
+                }
+                if kept_work(task) {
+                    self.add_kept_branch(&mut reason, task, &info.workspace)
+                        .await;
+                }
+                (AttemptState::Failed, reason)
+            }
+            // Any other end is docket's, in docket's words and labelled as such. An Implementer
+            // stopped by its transport keeps its work, which the engine captures from the branch.
+            _ => {
+                let mut reason = json!({"code": failure_kind.unwrap_or("failed"),
+                                        "message": format!("docket said: {why}"),
+                                        "task": info.task});
+                if task.status == "failed" && kept_work(task) {
+                    self.add_kept_branch(&mut reason, task, &info.workspace)
+                        .await;
+                }
+                (AttemptState::Failed, reason)
+            }
         };
         // Decision 5's table, "Continue or Start over": only a budget stop ever offers it, and
         // only docket's own last word on this hop's `budget` (or its absence) decides whether it

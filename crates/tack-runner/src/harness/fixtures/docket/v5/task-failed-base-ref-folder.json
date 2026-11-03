@@ -16,6 +16,5 @@
   "failureKind": "base_ref",
   "pendingApprovalIndex": null,
   "hops": [],
-  "costUsd": 0.0,
   "tokenBudget": 100000
 }

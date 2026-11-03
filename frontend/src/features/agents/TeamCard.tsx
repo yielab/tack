@@ -4,6 +4,7 @@ import {
   agentName,
   memberReachText,
   misfitText,
+  webText,
   networkText,
   pausedText,
   plainName,
@@ -47,6 +48,13 @@ const IconEye = () =>
   );
 const IconPencil = () => svg(<path d="M10.5 3l2.5 2.5L5.5 13H3v-2.5zM9 4.5L11.5 7" />);
 const IconArrow = () => svg(<path d="M3 8h9M9 4.5L12.5 8 9 11.5" />);
+const IconGlobe = () =>
+  svg(
+    <>
+      <circle cx="8" cy="8" r="6" />
+      <path d="M2 8h12M8 2c1.8 1.7 2.6 3.7 2.6 6S9.8 12.3 8 14C6.2 12.3 5.4 10.3 5.4 8S6.2 3.7 8 2z" />
+    </>,
+  );
 
 /** One labelled part of a card: drawn from `value` when the agent reported it, else one disabled line
  *  saying who did not. `value` is false-y only for a field the agent left out (an empty list is a report). */
@@ -179,6 +187,13 @@ const TeamCard: Component<TeamCardProps> = (props) => {
               <span class="inline-flex items-center gap-1.5 text-small" style={{ color: 'var(--color-text-secondary)' }}>
                 {where === 'repository' ? <IconBranch /> : <IconFolder />}
                 {where === 'repository' ? 'Works in this repository' : 'Works in a folder'}
+                <Show when={where === 'folder' && report()?.folder}>
+                  {(folder) => (
+                    <span data-testid="team-folder" class="min-w-0 font-mono text-caption" style={{ 'overflow-wrap': 'anywhere' }}>
+                      {folder()}
+                    </span>
+                  )}
+                </Show>
               </span>
             )}
           </Part>
@@ -195,6 +210,7 @@ const TeamCard: Component<TeamCardProps> = (props) => {
                   const words = memberReachText(m);
                   const reach = () => (m.writes_project == null ? null : words[0]);
                   const proposes = () => (m.can_propose === true ? words[words.length - 1] : null);
+                  const web = () => webText(m);
                   return (
                     <li data-testid={`team-member-${m.role}`} class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1.5 text-small">
                       <Badge tone="neutral">{m.role}</Badge>
@@ -205,6 +221,13 @@ const TeamCard: Component<TeamCardProps> = (props) => {
                         {(word) => (
                           <Mark words={word()} attr={m.writes_project ? 'changes' : 'reads'}>
                             {m.writes_project ? <IconPencil /> : <IconEye />}
+                          </Mark>
+                        )}
+                      </Show>
+                      <Show when={web()}>
+                        {(word) => (
+                          <Mark words={word()} attr="web">
+                            <IconGlobe />
                           </Mark>
                         )}
                       </Show>

@@ -494,7 +494,9 @@ async fn probe_reads_a_team_whole_when_docket_sends_every_key() {
         ]
     );
     assert_eq!(team.decides, Some(TeamDecides::ToTheEnd));
-    assert_eq!(team.network, Some(TeamNetwork::Closed));
+    // The capture's docket runs with isolation off, so its `none` is not enforced and egress is
+    // open (`networkEnforced`).
+    assert_eq!(team.network, Some(TeamNetwork::Open));
     let queue = team.queue.expect("queue");
     assert_eq!((queue.waiting, queue.running), (0, 0));
     assert_eq!(team.shape.as_deref(), Some("build"));
@@ -564,7 +566,7 @@ async fn probe_reads_a_team_without_the_two_asks_of_an_older_docket() {
         assert_eq!(team.steps, None, "{}", team.name);
         // Everything else the report carries is still read.
         assert_eq!(team.members.as_ref().map(Vec::len), Some(2));
-        assert_eq!(team.network, Some(TeamNetwork::Closed));
+        assert_eq!(team.network, Some(TeamNetwork::Open));
     }
     let content = teams.iter().find(|t| t.name == "saas-content").unwrap();
     assert_eq!(content.decides, Some(TeamDecides::AsksAPerson));
@@ -1339,9 +1341,12 @@ async fn a_team_that_cannot_do_what_the_run_needs_gets_no_task_and_the_run_says_
         Ok(_) => panic!("the run started"),
     };
 
-    // The captured team: network none, no member with `fetch`, none that writes `tack_proposals`.
+    // The captured team with its network held to none by a jail: no member with `fetch`, none
+    // that writes `tack_proposals`.
+    let closed = || json!({"mode": "none", "scope": "default", "enforced": true});
     let first = scene();
     let fake = pods_fake().await;
+    fake.set_network(POD, closed());
     let web = refused(
         adapter(&fake, &first)
             .start(&needing(&first, "researcher", true))
@@ -1393,6 +1398,7 @@ async fn a_team_that_cannot_do_what_the_run_needs_gets_no_task_and_the_run_says_
     ];
     for meet in meets {
         let (scene, fake) = (scene(), pods_fake().await);
+        fake.set_network(POD, closed());
         meet(&fake);
         adapter(&fake, &scene)
             .start(&needing(&scene, "researcher", true))
@@ -2863,6 +2869,143 @@ async fn a_rounds_budget_stop_ends_step_budget_and_keeps_the_work() {
         head
     );
     assert!(reason["base_commit"].is_string());
+}
+
+/// `podWorkDir` and `podFetch`: a team in a folder says which folder, and a member that reads the
+/// web says from which hosts; a team in a repository and a member without `fetch` say neither.
+#[tokio::test]
+async fn probe_reads_the_teams_folder_and_the_hosts_each_member_reads() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.add_folder_pod("saas-notes");
+    fake.give_fetch("saas-notes");
+    let teams = adapter(&fake, &scene).probe().await.teams.expect("teams");
+    let team = |name: &str| teams.iter().find(|team| team.name == name).expect(name);
+
+    let notes = team("saas-notes");
+    assert_eq!(
+        notes.folder.as_deref(),
+        Some("/home/docket/state/workspaces/pods/saas-notes/workdir")
+    );
+    let members = notes.members.as_ref().expect("members");
+    assert!(
+        members.iter().all(|member| member.reads_web == Some(true)
+            && member.web_hosts == Some(vec!["docs.python.org".to_owned()])),
+        "{members:?}"
+    );
+    let dev = team(POD);
+    assert_eq!(dev.folder, None);
+    assert!(
+        dev.members
+            .as_ref()
+            .expect("members")
+            .iter()
+            .all(|member| member.reads_web == Some(false) && member.web_hosts.is_none())
+    );
+}
+
+/// A hop that failed: `ok` false, docket's stop text, and the files its pinned work changed (an
+/// Implementer's only), with `extra` keys on top.
+fn hop_failed(role: &str, error: &str, files: &[&str], extra: Value) -> Value {
+    let mut payload = hop(role, "anthropic/claude-haiku-5-5", 0);
+    payload["ok"] = json!(false);
+    payload["error"] = json!(error);
+    payload["artifact"] = json!({"summary": "", "files_changed": files});
+    if let (Some(payload), Some(extra)) = (payload.as_object_mut(), extra.as_object()) {
+        payload.extend(extra.clone());
+    }
+    payload
+}
+
+/// `capabilityMissing`: a step met a gap in the team's own setup and docket ended the task without
+/// asking anyone. The run says so with docket's change that closes it, and what is missing goes in
+/// the reason. Docket's words are `task-capability-missing.json`'s.
+#[tokio::test]
+async fn a_gap_in_the_teams_setup_ends_capability_missing_with_the_fix() {
+    let fix = "declare records/tack_proposals.yaml in the pod's configuration, then run `docket pod update --pod saas-dev`";
+    let said = format!("lead needs records 'tack_proposals': {fix}");
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("capability_missing".to_owned()),
+        reason: said.clone(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_failed(
+                "lead",
+                &said,
+                &[],
+                json!({"capabilityMissing": {"kind": "records", "name": "tack_proposals", "fix": fix}}),
+            ),
+        )],
+        ..Script::default()
+    });
+    let scene = scene();
+    let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+    assert_eq!(outcome.terminal_state, AttemptState::Failed);
+    let reason = &outcome.terminal_reason;
+    assert_eq!(reason["code"], json!("capability_missing"));
+    assert_eq!(
+        reason["message"],
+        json!(format!(
+            "The team {POD} stopped on a gap in its own setup: {said}"
+        ))
+    );
+    assert_eq!(
+        reason["missing"],
+        json!({"kind": "records", "name": "tack_proposals", "fix": fix})
+    );
+    assert!(
+        reason.get("branch").is_none(),
+        "a Lead changes nothing: {reason}"
+    );
+}
+
+/// An Implementer stopped by its transport or by a gap in the team's setup keeps its work: the
+/// branch and head go into the reason, so the engine captures the patch though the run failed.
+#[tokio::test]
+async fn an_implementer_that_failed_without_a_budget_stop_keeps_its_work() {
+    for (failure_kind, extra) in [
+        ("timeout", json!({})),
+        (
+            "capability_missing",
+            json!({"capabilityMissing": {"kind": "tool", "name": "bash", "fix": "add bash to the role's tools"}}),
+        ),
+    ] {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            status: "failed".to_owned(),
+            failure_kind: Some(failure_kind.to_owned()),
+            reason: "implementer stopped".to_owned(),
+            commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+            after: vec![(
+                "hop_finished".into(),
+                hop_failed(
+                    "implementer",
+                    "implementer stopped",
+                    &["src/retry.rs"],
+                    extra,
+                ),
+            )],
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+
+        let reason = &outcome.terminal_reason;
+        assert_eq!(reason["code"], json!(failure_kind), "{reason}");
+        let branch = reason["branch"].as_str().expect("branch");
+        let head = reason["head_commit"].as_str().expect("head_commit");
+        assert_eq!(
+            git(
+                &scene.repository,
+                &["rev-parse", &format!("refs/heads/{branch}")]
+            ),
+            head,
+            "{failure_kind}"
+        );
+    }
 }
 
 /// The same stop, read from a docket before `budgetOutcome`: `budget` keeps today's meaning (the

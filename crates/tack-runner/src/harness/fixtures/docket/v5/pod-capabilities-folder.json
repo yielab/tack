@@ -172,9 +172,9 @@
     }
   ],
   "settings": {
-    "budgetUsd": {
-      "value": 15.0,
-      "source": "set"
+    "budgetTokens": {
+      "value": null,
+      "source": "default"
     },
     "maxReworkCycles": {
       "value": 1,
@@ -255,6 +255,10 @@
     "protects": {
       "value": "",
       "source": "default"
+    },
+    "fetchDomains": {
+      "value": "",
+      "source": "default"
     }
   },
   "approvalMode": {
@@ -300,14 +304,13 @@
   },
   "network": {
     "mode": "none",
-    "scope": "global"
+    "scope": "global",
+    "enforced": true
   },
-  "budgetUnpriced": [
-    "anthropic/claude-haiku-5-5",
-    "anthropic/claude-sonnet-5-5"
-  ],
+  "fetchDomains": [],
+  "workDir": "/scratch/notes",
   "configSource": "/scratch/plan-team",
-  "configDigest": "bb8efd749b86d5f0537403c02b540e775103391d6d635f9d14d34681bdd4a937",
+  "configDigest": "238291ddd1fb160d2332d5554883cf4acf297230303152843427fa58e1b5bb90",
   "drift": "no",
   "profile": {
     "name": "attended",

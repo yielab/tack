@@ -1280,8 +1280,12 @@ fn pod_report(state: &World, name: &str) -> Response {
         for member in report["members"].as_array_mut().into_iter().flatten() {
             if let Some(tools) = member["capabilities"]["tools"].as_array_mut() {
                 tools.push(json!("fetch"));
+                member["capabilities"]["fetchDomains"] = json!(["docs.python.org"]);
             }
         }
+    }
+    if pod.folder {
+        report["workDir"] = json!(format!("/home/docket/state/workspaces/pods/{name}/workdir"));
     }
     reply(200, report)
 }
@@ -1876,7 +1880,7 @@ fn finish(state: &mut World, index: usize) {
                 hop["cycle"] = payload.get("cycle").cloned().unwrap_or(json!(0));
             }
             if let Some(event) = payload.as_object_mut() {
-                for key in ["promptManifest", "artifact"] {
+                for key in ["promptManifest", "artifact", "capabilityMissing"] {
                     if let Some(value) = event.remove(key) {
                         hop[key] = value;
                     }
@@ -1909,7 +1913,15 @@ fn finish(state: &mut World, index: usize) {
             .hops
             .iter()
             .any(|hop| hop["budget"]["treeChanged"] == json!(true));
-    if (script.status == "done" || kept_by_budget)
+    // An Implementer stopped by its transport or a gap in the team's setup keeps its work too,
+    // and its hop lists the files (`artifact.files_changed`).
+    let kept_on_failure = state.tasks[index].hops.iter().any(|hop| {
+        hop["ok"] == json!(false)
+            && hop["artifact"]["files_changed"]
+                .as_array()
+                .is_some_and(|files| !files.is_empty())
+    });
+    if (script.status == "done" || kept_by_budget || kept_on_failure)
         && !state.tasks[index].folder
         && let (Some((path, content)), Some(repository)) =
             (script.commit.clone(), state.repository.clone())

@@ -17087,6 +17087,16 @@
             "type": "string",
             "description": "What the member does, in the harness's own word for it, shown as data."
           },
+          "web_hosts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "The hosts the member reads the web from when it does; `*` is any public host. Absent when\nit reads none, or the harness did not say which."
+          },
           "writes_project": {
             "type": [
               "boolean",
@@ -17229,6 +17239,13 @@
                 "description": "Whether the team runs to the end alone or stops for a person. Absent means the harness did\nnot say; no field may carry a harness's own key name."
               }
             ]
+          },
+          "folder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The folder a team that works in one writes in, as a path on the computer that runs it.\nAbsent for a team in a repository, or when the harness did not say; no field may carry a\nharness's own key name."
           },
           "members": {
             "type": [
