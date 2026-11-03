@@ -32,7 +32,15 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 Phases 73 to 87 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
 
-What remains are two dependency cards:
+**Phase 88 — a person is told what needs them** ([ADR 0035](https://github.com/yielab/tack/blob/develop/docs/adr/0035-a-person-is-told-what-needs-them.md),
+proposed 2026-11-03; plan in `docs/plans/phase-88.md`). One inbox fed by the board's own events:
+a question asked, a run failed, a change set waiting (each needs you), a run finished and an item
+due within the hour (each information). It closes itself when the situation ends, however it ends.
+The screen shows the count, a drawer, a toast and the tab's title; the desktop app the system's
+notification; and a webhook receives each one signed, retried, with its id. Phase 10's webhook
+(`item.*`, `sprint.*`, `item.due_soon`) is replaced by it. Six cards in three rounds.
+
+What remains besides it are two dependency cards:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
   Run the desktop workflow on the branch first.

@@ -110,6 +110,12 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   fixed two bugs (`continue`'s team lookup, a tokens-bound stop's missing branch) that the fake alone never
   would have caught. A genuine `time`-bound stop stays unproved live — docket's own per-request deadline
   races a round's own landing, so this needs a slower or steadier model to exercise for real.
+- **Proposed 2026-11-03:** Phase 88 (`docs/plans/phase-88.md`, ADR 0035) — a person is told what needs
+  them: one `notifications` table fed by the event bus (second subscriber after the triggers), a pure rule
+  in `tack-core` for what notifies and what closes it, a reconcile from the store at start and on `Lagged`,
+  `GET /api/notifications` + `/live` socket, sidebar count and drawer, desktop notifications, and a
+  `Channel` trait whose first implementation is the webhook with retries. Replaces Phase 10's webhook
+  (`item.*`, `sprint.*`, `item.due_soon`, `DueSoonSink`) with nothing kept. Cards A; B ∥ C ∥ D; E ∥ F.
 - **Cancelled 2026-10-27:** everything open in the roadmap that was not a card (Wave 0 of Phases 65 and 69,
   the live proof with a real install, directives from corrections, the screenshot retakes, polling). The release
   is the maintainer's own step (`docs/LAUNCH-CHECKLIST.md`). Closed plans live in `docs/closed-cycles/plans/`.
