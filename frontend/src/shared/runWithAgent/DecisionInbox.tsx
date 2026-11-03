@@ -125,6 +125,13 @@ const DecisionRow: Component<{
     const text = metadata().call;
     return typeof text === 'string' && text.trim() !== '' ? text : null;
   };
+  // One of several questions the same step asked at once; the step waits for an answer to each.
+  const part = () => {
+    const raw = metadata().part as { index?: unknown; count?: unknown } | undefined;
+    const index = typeof raw?.index === 'number' ? raw.index : null;
+    const count = typeof raw?.count === 'number' ? raw.count : null;
+    return index !== null && count !== null && count > 1 ? `Question ${index} of ${count}` : null;
+  };
   // What needs approving, said first. The text the agent was given (a whole card, fenced) is not the
   // question: it waits in a closed fold, and the question is the call, or the line that says an approval is asked.
   const prompt = () => props.decision.prompt ?? '';
@@ -166,6 +173,7 @@ const DecisionRow: Component<{
             distinct — three different tones, three different labels, never
             merged into one generic "decision" badge. */}
         <Badge tone="neutral">{props.decision.kind}</Badge>
+        <Show when={part()}>{(words) => <Badge tone="neutral">{words()}</Badge>}</Show>
         <Show when={isPending()}>
           <Badge tone="info">Pending</Badge>
         </Show>

@@ -41,6 +41,34 @@ fn a_change_to_its_own_check_is_asked_in_dockets_words_and_answered_with_a_reaso
     assert!(!pending.required && !pending.by_text);
 }
 
+/// `consultParts`: a step that asked several questions at once opens one escalation each, and the
+/// person is told which of them this is; a consult that asked one, and a docket before the
+/// feature, say nothing. The record is `escalation-consult-parts.json`'s second entry.
+#[test]
+fn one_of_several_questions_a_step_asked_says_which_it_is() {
+    let record = |part: Option<serde_json::Value>| {
+        let mut record = json!({
+            "id": "esc-p2", "kind": "consult", "state": "pending", "seq": 3, "step": "implement",
+            "role": "implementer", "prompt": "Which queue should the service use?",
+            "options": [option("a"), option("b")], "recommendation": null,
+            "requestedSchema": null, "expiresAt": null,
+            "affordances": {"options": ["a", "b"], "acceptsText": false},
+        });
+        if let Some(part) = part {
+            record["part"] = part;
+        }
+        escalation(record)
+    };
+    let (second, _) = escalation_question(&record(Some(json!({"index": 2, "count": 2}))), None)
+        .expect("a question");
+    assert_eq!(second.metadata["part"], json!({"index": 2, "count": 2}));
+    assert_eq!(second.prompt, "Which queue should the service use?");
+    for part in [Some(json!({"index": 1, "count": 1})), None] {
+        let (only, _) = escalation_question(&record(part), None).expect("a question");
+        assert!(!only.metadata.contains_key("part"), "{:?}", only.metadata);
+    }
+}
+
 #[test]
 fn a_question_that_only_declines_but_takes_text_is_offered_an_answer_first() {
     let record = json!({

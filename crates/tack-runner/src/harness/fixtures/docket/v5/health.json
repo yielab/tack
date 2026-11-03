@@ -16,7 +16,8 @@
     "networkEnforced",
     "podWorkDir",
     "podFetch",
-    "capabilityMissing"
+    "capabilityMissing",
+    "consultParts"
   ],
   "dispatch": {
     "on": true,

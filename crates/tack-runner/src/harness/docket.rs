@@ -943,6 +943,14 @@ fn escalation_question(
         metadata.insert("outward".to_owned(), true.into());
         metadata.insert("call".to_owned(), call.into());
     }
+    // One question of several the same step asked at once: the step waits for every one, so the
+    // person is told which this is. A consult that asked one says nothing.
+    if let Some(part) = record.part.filter(|part| part.count > 1) {
+        metadata.insert(
+            "part".to_owned(),
+            json!({"index": part.index, "count": part.count}),
+        );
+    }
     Ok((
         Question {
             vendor_id: record.id.clone(),

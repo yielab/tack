@@ -527,6 +527,17 @@ pub(super) struct Escalation {
     /// The approval of a call that leaves the machine (a `send`); absent otherwise.
     #[serde(default)]
     pub outward: bool,
+    /// Which of the questions one consult asked this is (`consultParts`): `{1, 1}` for a consult
+    /// that asked one, absent on every other kind and from a docket before the feature.
+    #[serde(default)]
+    pub part: Option<EscalationPart>,
+}
+
+/// One question of a consult that asked several, 1-based.
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub(super) struct EscalationPart {
+    pub index: u32,
+    pub count: u32,
 }
 
 /// `GET /escalations/<id>`: the view, and for an `outward` approval that is still pending the

@@ -171,6 +171,23 @@ describe('DecisionInbox — pending / expired / resolved are visually and semant
     expect(radios.map((r) => (r as HTMLInputElement).value)).toEqual(['allow_once', 'deny']);
   });
 
+  it('one of several questions a step asked at once says which it is; a single question says nothing', async () => {
+    const second: DecisionRecord = {
+      ...PENDING_WITH_OPTIONS,
+      decision_id: 'dec_part_2',
+      kind: 'consult',
+      prompt: 'Which queue should the service use?',
+      metadata: { part: { index: 2, count: 2 } },
+    };
+    mockFetch([second, PENDING_WITH_OPTIONS], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+    const items = [...c.querySelectorAll('li')].filter((li) => li.textContent?.includes('Pending'));
+    expect(items[0].textContent).toContain('Question 2 of 2');
+    expect(items[1].textContent).not.toContain('Question');
+  });
+
   it('an expired decision shows a distinct "Expired" badge, names the reason, and offers no resolve form', async () => {
     mockFetch([EXPIRED], () => new Response('unused'));
     const c = mount();
