@@ -18,12 +18,12 @@
 
 ## Checklist
 
-- [ ] `cargo fmt --all --check` clean
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings` clean
-- [ ] `cargo nextest run --workspace` passes (never `cargo test --workspace` — see
-      `CONTRIBUTING.md`)
+- [ ] `.githooks/pre-push` passes (fmt, clippy, crate graph, boundary suites, generated files)
+- [ ] `cargo nextest run --workspace` passes (never `cargo test --workspace`; see
+      `docs/TESTING.md`)
 - [ ] Frontend changed? `cd frontend && npm run type-check && npm test` passes, and
       `npm run gen:api` produces no diff in `schema.gen.ts` if the API response shape
       changed
-- [ ] Docs updated if this changes behavior, config, or the API (the changelog is generated from the commit messages — use `feat:`/`fix:`/… types)
+- [ ] Docs updated if this changes behavior, config, or the API, and a line added under
+      `[Unreleased]` in `CHANGELOG.md` (it is written by hand)
 - [ ] Commit messages have no AI-attribution trailers (see `CONTRIBUTING.md`)

@@ -112,6 +112,9 @@ export interface AttemptSummary {
   base_revision: string | null;
   actual_execution: unknown | null;
   terminal_reason: TerminalReason | null;
+  /** The attempt ended without ever starting work: the computer refused it or the team's ceiling did.
+   *  The server decides it (one rule); a screen reads this and never matches the reason's text. */
+  never_started?: boolean;
   usage: unknown | null;
   /** New input, cache writes and output, the figure a token limit counts; `null` when nothing was measured. */
   counted_tokens?: number | null;

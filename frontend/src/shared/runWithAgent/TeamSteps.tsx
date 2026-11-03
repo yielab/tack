@@ -50,7 +50,7 @@ function reportedSteps(profiles: AgentProfileSummary[], teams: TeamEntry[], prof
   return { steps: steps && steps.length > 0 ? steps : null, harness: entry?.harness ?? null };
 }
 
-const LABEL = { done: 'Done', running: 'Running', waiting: 'Waiting' } as const;
+const LABEL = { done: 'Done', running: 'Running', waiting: 'Not started yet' } as const;
 
 /** What a hop shows under its step: the model, the verdict, and the size of the prompts it read. */
 function hopFacts(hop: RunStep | undefined): string[] {
@@ -65,7 +65,7 @@ function hopFacts(hop: RunStep | undefined): string[] {
 }
 
 /** One node of the track: a bar in the state's colour over the step's words, so the state is also said. */
-const TrackNode: Component<{ name: string; state?: keyof typeof LABEL | null; stopped?: boolean; lines: string[]; step?: string }> = (props) => (
+const TrackNode: Component<{ name: string; state?: keyof typeof LABEL | null; stopped?: boolean; unreached?: boolean; lines: string[]; step?: string }> = (props) => (
   <li
     data-step={props.step}
     data-state={props.state ?? undefined}
@@ -80,7 +80,7 @@ const TrackNode: Component<{ name: string; state?: keyof typeof LABEL | null; st
     <div class="flex flex-wrap items-baseline gap-x-1.5">
       <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{props.name}</span>
       <Show when={props.state}>
-        {(state) => <span style={{ color: 'var(--color-text-tertiary)' }}>{props.stopped ? 'Stopped here' : LABEL[state()]}</span>}
+        {(state) => <span style={{ color: 'var(--color-text-tertiary)' }}>{props.stopped ? 'Stopped here' : props.unreached ? 'Not reached' : LABEL[state()]}</span>}
       </Show>
     </div>
     <For each={props.lines}>{(line) => <p class="mt-0.5">{line}</p>}</For>
@@ -162,6 +162,7 @@ const TeamStepsLine: Component<TeamStepsProps> = (props) => {
                     name={step.name}
                     state={step.state}
                     stopped={step.state === 'running' && props.ended}
+                    unreached={step.state === 'waiting' && props.ended}
                     lines={[...(words().length > 0 ? [words().join(' · ')] : []), ...(props.track ? [] : hopFacts(hop()))]}
                   />
                 );

@@ -110,17 +110,23 @@ const Button: Component<ButtonProps> = (props) => {
     </button>
   );
 
+  // Whether the button has a place for a reason is decided once, by whether the caller passes the prop
+  // at all, not by its value. The value comes and goes (`reason={off() ? 'why' : undefined}`) and
+  // the one `button` element cannot stand in both the plain and the wrapped place: swapping them put
+  // the wrapper inside itself and the browser refused ("The new child element contains the parent").
+  if (!('reason' in props)) return button;
+  // While there is no reason to show, the wrapper takes no box (`contents`), so the button lays out
+  // exactly as if it were unwrapped: its `w-full`, `flex-1`, `ml-auto` and margins still reach the
+  // parent's flex or grid row. Only a visible reason needs the column that stacks it under the button.
   return (
-    <Show when={local.reason !== undefined} fallback={button}>
-      <span class="inline-flex flex-col items-start gap-1">
-        {button}
-        <Show when={reasonShown()}>
-          <span id={reasonId} class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            {local.reason}
-          </span>
-        </Show>
-      </span>
-    </Show>
+    <span class={reasonShown() ? 'inline-flex flex-col items-start gap-1' : 'contents'}>
+      {button}
+      <Show when={reasonShown()}>
+        <span id={reasonId} class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          {local.reason}
+        </span>
+      </Show>
+    </span>
   );
 };
 

@@ -1,7 +1,7 @@
 # ADR 0034: a manager is a profile that works through the board — it reads every team, changes the board through change sets, and talks with you in a thread
 
 **Status: ACCEPTED 2026-11-01** (proposed and accepted the same day, with both open questions answered
-yes). Executed by Phase 85 (`docs/plans/phase-85.md`). Amends ADR 0004 (an agent becomes a principal;
+yes). Executed by Phase 85 (`docs/closed-cycles/plans/phase-85.md`). Amends ADR 0004 (an agent becomes a principal;
 Tack stays single-operator) and ADR 0032 decision 4 (decision 4's Create rung). Builds on ADR 0033: the Orchestration view is what a person sees of the teams;
 this ADR gives an agent the same knowledge and a way to act on it.
 

@@ -8,6 +8,7 @@ import { ProjectHasRunProvider } from '../../shared/state/projectHasRun';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
 import WorkTabs from '../../shared/ui/WorkTabs';
 import { flush } from '../../test/flush';
+import { stateRank } from '../../shared/runWithAgent/cardRun';
 import Orchestration from './Orchestration';
 
 type Json = Record<string, unknown>;
@@ -250,6 +251,25 @@ describe('Orchestration: lanes', () => {
     expect(working.textContent).toContain('The agent reports no steps');
   });
 
+  it('says_how_each_task_that_ended_today_ended_instead_of_counting_them_all_as_done', async () => {
+    const w = world({
+      teams: [team('saas-code', [])],
+      profiles: [profile('code-p', 'saas-code')],
+      items: [1, 2, 3, 4].map((n) => item(`e${n}`, { run_settings: { agent_profile_id: 'code-p' } })),
+      runs: [run('e1', 'succeeded', 'code-p'), run('e2', 'succeeded', 'code-p'), run('e3', 'cancelled', 'code-p'), run('e4', 'failed', 'code-p')],
+    });
+    const c = await mount(w);
+    q<HTMLButtonElement>(c, '[data-lane="team:saas-code"] [data-testid="flow-lane-toggle"]')!.click(); // a lane with nothing going on is folded
+    await flush();
+    const station = q(c, '[data-lane="team:saas-code"] [data-station="done"]')!;
+    expect(station.textContent).toContain('Ended today');
+    expect(station.textContent).not.toContain('Done today');
+    const tally = q(station, '[data-testid="flow-ended-tally"]')!;
+    expect(tally.textContent).toBe('2 finished · 1 cancelled · 1 failed');
+    // Each part carries its run-state icon with the state's words, so colour never says it alone.
+    expect(qa(tally, '[role="img"]').map((e) => e.getAttribute('aria-label'))).toEqual(['Finished', 'Cancelled', 'Failed']);
+  });
+
   it('draws_the_header_of_a_team_from_what_it_reported', async () => {
     const c = await mount(threeLanes());
     const lane = q(c, '[data-lane="team:saas-notes"]')!;
@@ -262,6 +282,29 @@ describe('Orchestration: lanes', () => {
     expect(q(lane, '[data-testid="flow-queue"] [role="img"]')!.getAttribute('aria-label')).toBe('1 waiting, 0 running (counted on this board)');
     expect(q(lane, '[data-testid="flow-tokens-meter"]')!.textContent).toContain('no daily limit');
     expect(q<HTMLAnchorElement>(lane, '[data-testid="flow-lane-name"]')!.getAttribute('href')).toBe('/agents#team-saas-notes');
+  });
+
+  it('draws_no_empty_queue_bar_for_a_lane_with_nothing_running_or_waiting_and_says_so_in_words', async () => {
+    const c = await mount(threeLanes());
+    const idle = qa(c, '[data-testid="flow-lane"]').filter((lane) => lane.getAttribute('data-urgency') === 'idle');
+    expect(idle.length).toBeGreaterThan(0);
+    for (const lane of idle) {
+      expect(q(lane, '[data-testid="flow-queue"] [role="img"]')).toBeNull();
+      expect(q(lane, '[data-testid="flow-queue"]')!.textContent).toBe('Nothing running or waiting');
+    }
+  });
+
+  it('writes_the_same_word_at_every_empty_station', async () => {
+    const c = await mount(threeLanes());
+    const empties = qa(c, '[data-lane="team:saas-notes"] [data-testid="flow-station"] ul > li.text-caption');
+    expect(empties.length).toBeGreaterThan(1);
+    expect([...new Set(empties.map((li) => li.textContent))]).toEqual(['None']);
+  });
+
+  it('names_the_check_between_two_stations_in_visible_words_beside_its_glyph', async () => {
+    const c = await mount(threeLanes());
+    const check = q(c, '[data-lane="team:saas-notes"] [data-testid="flow-check"]')!;
+    expect(q(check, '[data-testid="flow-check-word"]')!.textContent).toBe('reviewer');
   });
 
   it('says_the_check_between_two_stations_in_words_and_draws_it_as_a_glyph', async () => {
@@ -281,6 +324,14 @@ describe('Orchestration: lanes', () => {
 });
 
 describe('Orchestration: summary row', () => {
+  it('reads_the_Work_counters_in_the_order_the_Board_and_the_List_rank_runs_with_Nobody_last', async () => {
+    const c = await mount(threeLanes());
+    const filters = qa(c, '[data-testid="flow-summary"] button').map((b) => b.getAttribute('data-testid')!.replace('flow-counter-', ''));
+    expect(filters).toEqual(['needs', 'review', 'running', 'queued', 'nobody']);
+    const ranks = filters.slice(0, 4).map((f) => stateRank(f as never));
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+  });
+
   it('counts_the_tasks_and_a_counter_narrows_the_lanes', async () => {
     const c = await mount(threeLanes());
     const count = (f: string) => q(c, `[data-testid="flow-counter-${f}"]`)!.textContent!;
@@ -692,11 +743,15 @@ describe('Orchestration: Map and Compare', () => {
     expect(laneNames(c).sort()).toEqual(['idle-team', 'saas-code', 'saas-notes']);
   });
 
-  it('draws_a_link_with_no_open_task_only_while_one_of_its_boxes_is_pointed_at', async () => {
+  it('draws_every_link_and_a_link_with_no_open_task_as_a_hairline', async () => {
     const c = await mount(mapWorld());
     modeButton(c, 'map').click();
     await settle();
-    expect(qa(c, '[data-testid="map-link"]').every((l) => Number(l.getAttribute('data-tasks')) > 0)).toBe(true);
+    const links = qa(c, '[data-testid="map-link"]');
+    const idle = links.filter((l) => Number(l.getAttribute('data-tasks')) === 0);
+    expect(idle.length).toBeGreaterThan(0);
+    expect(idle.every((l) => l.getAttribute('stroke-width') === '1')).toBe(true);
+    expect(q(c, '[data-testid="map-summary"]')!.textContent).not.toContain('appears when');
   });
 
   it('writes_the_same_routes_as_text_one_line_for_each_link', async () => {
@@ -740,6 +795,21 @@ describe('Orchestration: Map and Compare', () => {
     expect(cellFor('merge', 'saas-notes').textContent).toBe('You merge (L3)');
   });
 
+  it('lets_a_compare_cell_wrap_at_its_words_inside_equal_columns_and_carries_its_full_text_as_a_tooltip', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const table = q<HTMLTableElement>(c, '[data-testid="compare"] table')!;
+    // Fixed, equal columns: a long cell wraps instead of widening the table past its frame.
+    expect(table.style.tableLayout).toBe('fixed');
+    expect(table.style.minWidth).not.toBe('max-content');
+    expect(qa(table, 'tbody th[scope="row"]').every((th) => !th.className.includes('whitespace-nowrap'))).toBe(true);
+    const step = qa(table, '[data-row="steps"] li').find((li) => li.textContent!.includes('checked by a reviewer'))!;
+    expect(step.getAttribute('title')).toBe(step.textContent);
+    const text = qa(table, '[data-row="network"] td span')[0];
+    expect(text.getAttribute('title')).toBe(text.textContent);
+  });
+
   it('reads_not_reported_for_what_a_team_left_out_with_the_reason_on_hover', async () => {
     const c = await mount(mapWorld());
     modeButton(c, 'map').click();
@@ -764,6 +834,8 @@ describe('Orchestration: Map and Compare', () => {
     const collapsed = qa(c, '[data-collapsed="true"]');
     expect(collapsed.length).toBeGreaterThan(0);
     expect(collapsed[0].getAttribute('colspan')).toBe('4');
+    // It says it is every team's, not the first column's alone.
+    expect(collapsed[0].textContent).toContain('not reported by any of the 4 teams');
     // The table is wider than its frame: the hint and the edge appear.
     const frame = q<HTMLElement>(c, '[aria-label="Teams compared"]')!;
     Object.defineProperty(frame, 'clientWidth', { configurable: true, value: 100 });

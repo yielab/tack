@@ -199,6 +199,9 @@
   --run-cancelled-ink: var(--color-text-tertiary);
   --run-cancelled-soft: var(--color-bg-subtle);
   --run-cancelled-line: color-mix(in srgb, var(--run-cancelled-ink) 30%, transparent);
+  --run-notstarted-ink: var(--run-cancelled-ink);
+  --run-notstarted-soft: var(--run-cancelled-soft);
+  --run-notstarted-line: var(--run-cancelled-line);
 
   --shadow-sm: 0 1px 2px rgb(15 40 35 / 0.06);
   --shadow-md: 0 1px 2px rgb(15 40 35 / 0.06), 0 4px 12px rgb(15 40 35 / 0.04);

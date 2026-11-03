@@ -440,3 +440,52 @@ fn a_docket_thread_turn_is_told_the_teams_last_step_answers_and_no_reply_file_is
     // A card that is not a turn is left as written.
     assert!(description(false).contains(REPLY_FILE));
 }
+
+/// A manager reaching Tack over HTTP through docket's service has no other way to learn which
+/// thread a turn belongs to: the turn's input names it and the exact fields to set.
+#[test]
+fn a_docket_thread_turn_names_its_thread_so_a_change_set_can_say_where_it_came_from() {
+    use tack_protocol::conversation::{REPLY_FILE, TURN_KEY, TurnNote};
+    let state = crate::harness::test_support::scratch("docket-turn-thread-id");
+    let input = tack_core::thread::turn_input(&tack_core::thread::window(&[]), "{}", REPLY_FILE);
+    let description = |turn: bool| {
+        let mut spec = crate::harness::test_support::spec("docket", state.path());
+        let request = &mut spec.work.request;
+        request.metadata = if turn {
+            json!({TURN_KEY: TurnNote {
+                id: "thr-42".into(),
+                turn: 1,
+                max_turns: 10,
+                message: "hello".into(),
+            }.into_metadata()})
+        } else {
+            json!({})
+        };
+        request.task = Some(tack_protocol::execution::TaskDocument {
+            instructions: "Do the thing.".into(),
+            title: "A card".into(),
+            description: Some(input.clone()),
+            comments: Vec::new(),
+            comments_left_out: 0,
+            brief: None,
+            definition_of_done: None,
+            kind: "task".into(),
+            source: "human".into(),
+        });
+        super::task::body(request, "attempt", 1, Some("main"), None)["description"]
+            .as_str()
+            .expect("description")
+            .to_owned()
+    };
+    let turn = description(true);
+    assert!(
+        turn.contains("This turn belongs to thread thr-42"),
+        "{turn}"
+    );
+    assert!(
+        turn.contains("origin `thread`, origin_ref thr-42"),
+        "{turn}"
+    );
+    // A card that is not a turn names no thread.
+    assert!(!description(false).contains("This turn belongs to thread"));
+}

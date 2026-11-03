@@ -44,8 +44,8 @@ You will see this throughout Tack's frontend. From `Board.tsx`:
 ```tsx
 const [isDragging, setIsDragging] = createSignal(false)
 
-// In JSX:
-classList={{ 'opacity-40': isDragging() }}
+// Read in a handler (and in JSX, where it creates a binding):
+const handleClick = () => { if (!isDragging()) props.onEdit(props.item); }
 ```
 
 `isDragging()` — the parens are always there. If you see a function call in JSX without obvious arguments, it is almost certainly reading a signal.
@@ -163,7 +163,7 @@ SolidJS does not use JavaScript's native ternary operator or `.map()` for contro
 // From Projects.tsx
 
 <Show when={!projects.loading} fallback={<ProjectsGridSkeleton />}>
-    <Show when={projects()?.length > 0} fallback={<EmptyState />}>
+    <Show when={projects() && projects()!.length > 0} fallback={<EmptyState />}>
         <For each={projects()}>
             {(project) => <ProjectCard project={project} />}
         </For>
@@ -253,14 +253,29 @@ When `vocabulary()` changes (after a settings save), every component that calls 
 
 ## Routing with @solidjs/router
 
-The mental model from React Router v6 transfers directly:
+The mental model from React Router v6 transfers directly. Tack declares its routes as a list of objects in `src/app/routes.tsx` and hands it to the router in `App.tsx`; each page is loaded lazily:
 
 ```tsx
-// Route definitions (from src/app/routes.tsx)
-<Route path="/projects" component={Projects} />
-<Route path="/projects/:id/board" component={Board} />
-<Route path="/projects/:id/settings" component={Settings} />
+const Board = lazy(() => import('../features/board/Board'))
+
+export const routes: RouteDefinition[] = [
+  { path: '/projects', component: guarded(Projects) },
+  {
+    path: '/projects/:id',
+    component: guarded(WorkLayout),
+    children: [
+      { path: '/board', component: guarded(Board) },
+      { path: '/list',  component: guarded(List) },
+      // ...
+    ],
+  },
+]
+
+// App.tsx
+<Router root={Layout}>{routes}</Router>
 ```
+
+`guarded(...)` wraps a page in an error boundary, so one page that fails leaves the rest of the app standing.
 
 Reading route parameters:
 

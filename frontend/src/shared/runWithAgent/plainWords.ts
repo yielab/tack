@@ -17,6 +17,9 @@ const CODE_WORDS: Record<string, string> = {
   needs_human: 'it waits for a person to decide',
 };
 
+/** The verifier's recommendations: the screen's chip already says which, so the sentence does not. */
+const DECISIONS = new Set(['reject', 'merge', 'accept', 'review']);
+
 const LEVELS = new Set(['L3', 'L4', 'L5']);
 
 /** A verdict line as a sentence, or null when it holds nothing this build knows how to say better. */
@@ -39,23 +42,33 @@ export function plainVerdict(raw: string): string | null {
       : `A person has to approve before the ${step} step.`;
   }
 
+  // What a pipeline's wait step answers when it goes on, and what docket says when it asks to start a task.
+  if (/^waited:\s*resumed$/i.test(text)) return 'It waited, then went on.';
+  if (/^docket asked:\s*pod dispatch\b/i.test(text)) return 'The agent asked to start the task.';
+
   if (/next steps/i.test(text) && /impossible/i.test(text)) {
     return 'The checks cannot be met as they are written. The next steps say what to change.';
   }
 
   // "prill: human-review — review: criterion_manual — m1": the verifier's name, its verdict, then what it found.
-  const parts = text
-    .replace(/^[a-z][\w-]*:\s+(?=[\w-]+\s+—)/i, '')
-    .split(/\s+—\s+/)
-    .map((p) => p.replace(/^(?:review|check|criterion|stage):\s*/i, '').trim())
-    .filter(Boolean);
-  const known = parts.filter((p) => p in CODE_WORDS);
-  if (known.length > 0) {
-    const rest = parts.filter((p) => !(p in CODE_WORDS));
-    const said = known.map((p) => CODE_WORDS[p]).join(', and ');
-    const first = said.charAt(0).toUpperCase() + said.slice(1);
-    return rest.length > 0 ? `${first} (${rest.join(', ')}).` : `${first}.`;
-  }
+  // Several findings arrive as clauses joined by "; ".
+  const said = text
+    .split(/;\s+/)
+    .map((clause) => {
+      const parts = clause
+        .replace(/^[a-z][\w-]*:\s+(?=[\w-]+\s+—)/i, '')
+        .split(/\s+—\s+/)
+        .map((p) => p.replace(/^(?:review|check|criterion|stage|blocking):\s*/i, '').trim())
+        .filter((p) => p !== '' && !DECISIONS.has(p));
+      const known = parts.filter((p) => p in CODE_WORDS);
+      if (known.length === 0) return null;
+      const rest = parts.filter((p) => !(p in CODE_WORDS));
+      const first = known.map((p) => CODE_WORDS[p]).join(', and ');
+      const sentence = first.charAt(0).toUpperCase() + first.slice(1);
+      return rest.length > 0 ? `${sentence} (${rest.join(', ')})` : sentence;
+    })
+    .filter((x): x is string => x !== null);
+  if (said.length > 0) return `${said.map((x, i) => (i === 0 ? x : x.charAt(0).toLowerCase() + x.slice(1))).join('; ')}.`;
   return null;
 }
 
@@ -63,4 +76,14 @@ export function plainVerdict(raw: string): string | null {
 export function plainLine(raw: string): { text: string; raw: string | undefined } {
   const plain = plainVerdict(raw);
   return plain !== null && plain !== raw ? { text: plain, raw } : { text: raw, raw: undefined };
+}
+
+/** Why a proposal could not be read, in one sentence, or null when this build does not know the reason. */
+export function plainPlanProblem(raw: string): string | null {
+  if (/is not the ref of an earlier row/.test(raw)) return 'One names a parent that is not an earlier row in the file.';
+  if (/depends_on .* is not the ref of another row/.test(raw)) return 'One depends on a row that is not in the file.';
+  if (/two rows have this ref/.test(raw)) return 'Two rows have the same name.';
+  if (/the row has no title/.test(raw)) return 'A row has no title.';
+  if (/has no ref/.test(raw)) return 'A row has no name to refer to it by.';
+  return null;
 }

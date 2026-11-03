@@ -1,5 +1,5 @@
-import { type Component, For, type JSX, Show, createEffect, createMemo, createResource, createSignal } from 'solid-js';
-import { Badge, Button, LoadError, Modal, type DocketRunWord, type RunStateName } from '../ui';
+import { type Component, For, type JSX, Show, createMemo, createResource, createSignal } from 'solid-js';
+import { Badge, Button, Fold, LoadError, Modal, type DocketRunWord, type RunStateName } from '../ui';
 import { toast } from '../ui/toast';
 import { truncateMiddle } from '../ui/truncateMiddle';
 import { api } from '../api';
@@ -10,6 +10,7 @@ import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
   describeAttemptStatus,
+  neverStarted,
   describeModelProvenance,
   formatTokenCount,
   formatWallClock,
@@ -87,22 +88,42 @@ export function attemptRunState(
   if (attempt.state === 'waiting_decision') return { state: 'needs', docket: 'Needs a person' };
   if (!isTerminalAttemptState(attempt.state)) return { state: 'running' };
   if (attempt.state === 'cancelled') return { state: 'cancelled' };
-  if (attempt.state !== 'succeeded') return needsAPerson(attempt) ? { state: 'needs', docket: 'Needs a person' } : { state: 'failed' };
+  if (attempt.state !== 'succeeded') {
+    if (needsAPerson(attempt)) return { state: 'needs', docket: 'Needs a person' };
+    return neverStarted(attempt) ? { state: 'notstarted' } : { state: 'failed' };
+  }
   if (attempt.merge?.merged || attempt.pull_request?.state === 'merged') return { state: 'done' };
   if (needsVerdict(attempt) && !review) return { state: 'review', docket: 'Needs your review' };
   // A folder team has no repository to change, so having changed nothing there is not news.
   return changedNoFile(attempt) && !isFolderRun(attempt.terminal_reason) ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
 }
 
-/** What the agent was given: its sandbox, the names of its environment variables, where it
- *  worked, and (collapsed) the exact prompt it read. */
-const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspace: string | null }> = (props) => {
-  const [opened, setOpened] = createSignal(false);
+/** The exact prompt the agent read, fetched when its fold first opens. */
+const AgentRead: Component<{ requestId: string }> = (props) => {
   const [instructions, { refetch: refetchInstructions }] = createResource(
-    () => (opened() ? props.requestId : undefined),
+    () => props.requestId,
     async (id) =>
       (await request<{ instructions?: string | null }>(`/executions/${encodeURIComponent(id)}`)).instructions ?? null,
   );
+  return (
+    <>
+      <Show when={instructions.loading}><p class="text-xs">Loading the prompt…</p></Show>
+      <Show when={instructions.error}>
+        <LoadError what="what the agent read" error={instructions.error} onRetry={() => void refetchInstructions()} />
+      </Show>
+      <Show when={!instructions.error && instructions()}>
+        {(text) => (
+          <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs"
+            style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
+        )}
+      </Show>
+    </>
+  );
+};
+
+/** What the agent was given: its sandbox, the names of its environment variables, where it
+ *  worked, and (collapsed) the exact prompt it read. */
+const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspace: string | null }> = (props) => {
   const sandbox = () => SANDBOX_TEXT[props.attempt.sandbox as keyof typeof SANDBOX_TEXT] ?? null;
   const names = () => props.attempt.environment_names ?? [];
   return (
@@ -121,19 +142,9 @@ const AgentGot: Component<{ requestId: string; attempt: AttemptSummary; workspac
           </p>
         )}
       </Show>
-      <details onToggle={(e) => setOpened(e.currentTarget.open)}>
-        <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>What the agent read</summary>
-        <Show when={instructions.loading}><p class="text-xs">Loading the prompt…</p></Show>
-        <Show when={instructions.error}>
-          <LoadError what="what the agent read" error={instructions.error} onRetry={() => void refetchInstructions()} />
-        </Show>
-        <Show when={!instructions.error && instructions()}>
-          {(text) => (
-            <pre data-testid="agent-read" class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap rounded-item px-4 py-3 text-xs"
-              style={{ 'background-color': 'var(--color-bg-panel)', color: 'var(--color-text-primary)' }}>{text()}</pre>
-          )}
-        </Show>
-      </details>
+      <Fold kind="agent-read" size="sub" title="What the agent read" lazy>
+        <AgentRead requestId={props.requestId} />
+      </Fold>
     </section>
   );
 };
@@ -205,7 +216,7 @@ const AttemptRow: Component<{
   // submitted here, then the refetched attempt's.
   const [fresh, setFresh] = createSignal<AttemptSummary['review'] | undefined>(undefined);
   const review = () => (fresh() !== undefined ? fresh() : props.attempt.review);
-  const status = () => describeAttemptStatus(props.attempt, review());
+  const status = () => describeAttemptStatus(props.attempt, review(), mrp.pack()?.recommendation.decision);
   // The merge state as last read: the prop's until a merge is pressed here, then the refetched attempt's.
   const [freshMerge, setFreshMerge] = createSignal<AttemptSummary['merge'] | undefined>(undefined);
   const merge = () => freshMerge() ?? props.attempt.merge;
@@ -337,15 +348,13 @@ const AttemptRow: Component<{
   };
   const duration = () => durationOf(props.attempt, usage().wallClockMs);
 
-  // An attempt that waits for an answer opens its activity by itself, also when it starts to wait while the page is open.
-  const [activityOpen, setActivityOpen] = createSignal(!terminal() || asking());
-  createEffect(() => {
-    if (asking()) setActivityOpen(true);
-  });
+  // An attempt that waits for an answer opens its activity by itself (the fold does), also when it starts to wait
+  // while the page is open; "Open the question" opens it too, so the question has somewhere to be.
+  const [activityKey, setActivityKey] = createSignal(0);
   let needsHeading: HTMLHeadingElement | undefined;
   let questionsHeading: HTMLHeadingElement | undefined;
   const openQuestion = () => {
-    setActivityOpen(true);
+    setActivityKey((k) => k + 1);
     const target = needsHeading ?? questionsHeading;
     target?.focus();
     target?.scrollIntoView?.({ block: 'center' });
@@ -421,7 +430,7 @@ const AttemptRow: Component<{
         </Show>
         <Show when={outcome().badge?.detail}>
           {(detail) => (
-            <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+            <p class="text-xs" title={outcome().badge?.raw} style={{ color: 'var(--color-text-secondary)' }}>
               {detail()}
             </p>
           )}
@@ -429,7 +438,7 @@ const AttemptRow: Component<{
 
         <Show when={mrp.pack()}>{(pack) => <MrpVerdict pack={pack()} />}</Show>
 
-        <Show when={terminal()}>
+        <Show when={terminal() && !neverStarted(props.attempt)}>
           <div data-testid="verdict-facts" class="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             <Show
               when={props.limit?.tokens != null && counted() !== null && !dupe()}
@@ -593,6 +602,8 @@ const AttemptRow: Component<{
       <RunSection
         id="steps"
         title="Steps"
+        fold
+        defaultOpen={!terminal() || props.attempt.state !== 'succeeded' || personNeeded()}
         summary={
           (runSteps() ?? []).length > 0
             ? `${runSteps()!.length} ${runSteps()!.length === 1 ? 'step' : 'steps'} ran.`
@@ -618,14 +629,16 @@ const AttemptRow: Component<{
         <Show when={records().length > 0}>
           <TeamRecords sets={records()} />
         </Show>
-        <details
-          data-testid="run-activity"
-          open={activityOpen()}
-          onToggle={(e) => setActivityOpen(e.currentTarget.open)}
-          class="min-w-0"
+        <Fold
+          kind="run-activity"
+          testId="run-activity"
+          size="sub"
+          title="Activity"
+          defaultOpen={!terminal() || asking()}
+          needs={asking() ? 'a question needs you' : null}
+          openRequest={activityKey()}
         >
-          <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Activity</summary>
-          <div class="mt-3 min-w-0 space-y-4">
+          <div class="min-w-0 space-y-4">
             <AgentDid
               requestId={props.requestId}
               attemptNumber={n()}
@@ -646,10 +659,10 @@ const AttemptRow: Component<{
               />
             </section>
           </div>
-        </details>
+        </Fold>
       </RunSection>
 
-      <RunSection id="files" title="Files from this run" summary={`${listed().length} ${listed().length === 1 ? 'file' : 'files'}.`}>
+      <RunSection id="files" title="Files from this run" fold defaultOpen={!terminal()} summary={`${listed().length} ${listed().length === 1 ? 'file' : 'files'}.`}>
         <Show when={!artifacts.loading} fallback={<p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Loading the files…</p>}>
           <ArtifactDownloadPanel requestId={props.requestId} attemptNumber={n()} artifacts={listed()} />
         </Show>
@@ -657,17 +670,12 @@ const AttemptRow: Component<{
 
       <SideSlot page={props.page} target={props.sideTarget}>
         <div data-testid="attempt-side" class="min-w-0 space-y-4">
-          <RunSection id="technical" title="Technical" fold>
+          <RunSection id="technical" title="Technical" summary="Ids, usage, raw log" fold>
             <Show when={terminal()}>
               <AgentGot requestId={props.requestId} attempt={props.attempt} workspace={folder()} />
-              <details data-testid="attempt-usage-fold" class="min-w-0 border-t pt-3" style={{ 'border-color': 'var(--color-border-light)' }}>
-                <summary class="cursor-pointer text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-                  Usage <span data-testid="usage-summary" class="font-normal" style={{ color: 'var(--color-text-secondary)' }}>· {usageLine()}</span>
-                </summary>
-                <div class="mt-2">
-                  <UsagePanel attempt={props.attempt} />
-                </div>
-              </details>
+              <Fold kind="run-usage" testId="attempt-usage-fold" size="sub" title="Usage" summary={usageLine()}>
+                <UsagePanel attempt={props.attempt} />
+              </Fold>
             </Show>
             <section data-testid="attempt-ids" class="space-y-1.5 text-xs">
               <h4 class="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Ids</h4>

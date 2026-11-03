@@ -1,8 +1,8 @@
 # Launch checklist
 
 What has to be true before tagging a release, and what to do after. Each item names
-the one command that checks it. Nothing here is posted, tagged, or labeled
-automatically — every step under "Publish list" is a human action.
+the one command that checks it. Nothing here is tagged or published
+automatically; every step under "Publish list" is a human action.
 
 ## Before tagging
 
@@ -23,47 +23,45 @@ automatically — every step under "Publish list" is a human action.
 
 ## Publish list — everything a human does, in order
 
-1. **Tag the release.** `main` must contain the commit first, since `release.yml` refuses a tag that
-   is not on it. The last published release is `v0.1.0-beta.9`.
+1. **Tag the release.** `main` must contain the commit first, since `release.yml` refuses a tag
+   that is not on it, or one that does not match `Cargo.toml`.
    ```bash
    git push origin develop:main && git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-   **The next tag is `v0.2.0-beta.1`.** The version is bumped in `Cargo.toml`, the desktop
-   crate, `tauri.conf.json`, `frontend/package.json` and their lockfiles, and `CHANGELOG.md`
-   has its section. The `v0.1.0-beta.10` tag (2026-10-14) is not re-cut: it points at
-   `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the
-   repository does not allow, so the run failed before it started and no release exists. Its
-   changes ship in `v0.2.0-beta.1`. Until that release is published the install commands in
-   `README.md` look up the newest published release, so they install `v0.1.0-beta.9`.
-   `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs,
-   and refuses the tag outright if it doesn't match `Cargo.toml`.
+   **The next tag is `v0.2.0-beta.1`.** The version is bumped in `Cargo.toml`, the desktop crate,
+   `tauri.conf.json`, `frontend/package.json` and their lockfiles, and `CHANGELOG.md` has its
+   section. The last published release is `v0.1.0-beta.9`. The `v0.1.0-beta.10` tag (2026-10-14)
+   points at `7535f983`, whose `release.yml` used `sigstore/cosign-installer`, an action the
+   repository does not allow, so the run failed before it started and no release exists. It is not
+   re-cut: its changes ship in `v0.2.0-beta.1`. Until that release is published the install
+   commands in `README.md` look up the newest published release, so they install `v0.1.0-beta.9`.
+   `release.yml` builds and publishes the archives, the desktop bundles and the SBOMs.
 
-2. **Write the release notes on GitHub.** The desktop app installers — `.AppImage`/`.deb`
-   (Linux), `.dmg` (macOS), `.msi` (Windows) — are the first links in the release
-   description, since the desktop app is the primary way to use Tack. The binary
-   installers (`install.sh`, `install.ps1`) and Homebrew/Scoop links follow.
-3. **Open the six `good first issue` GitHub issues** from the drafts in
-   `docs/launch/good-first-issues/`, applying the existing `good first issue` label
-   (already on the repo — `gh label list --repo yielab/tack --search "good first issue"`).
-4. **Post the four drafts** in `docs/launch/posts/` to their venues, in any order —
-   nothing about them is time-sensitive relative to each other, but all four assume
-   the tag above is already live and link to it.
-5. **Post the two Discussions topics** in `docs/launch/discussions-seed.md`, into the
-   `Q&A` and `Ideas` categories (both already exist on the repo — no category needs
-   creating).
-6. **Re-point the packaging recipes at the new release**, once its artifacts exist —
-   `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing
-   else updates them:
+2. **Write the release notes on GitHub.** The desktop app installers (`.AppImage`/`.deb` for
+   Linux, `.dmg` for macOS, `.msi` for Windows) are the first links in the release description,
+   since the desktop app is the primary way to use Tack. The binary installers (`install.sh`,
+   `install.ps1`) and the Homebrew and Scoop links follow.
+
+3. **Re-point the packaging recipes at the new release**, once its artifacts exist.
+   `packaging/{nix,homebrew,aur,scoop}` name a tag and carry its digests, and nothing else
+   updates them:
    ```bash
    scripts/sync-packaging.sh v0.2.0-beta.1   # then commit the diff
    ```
-   Until this runs they point at the previous release. A wrong digest is not a soft
-   failure: Homebrew and `makepkg` abort with a hash mismatch, which reads to a
-   stranger as a tampered download. The release workflow's own `homebrew-tap` job
-   also runs this script and opens a pull request on `yielab/homebrew-tap` with
-   `packaging/homebrew/tack.rb` (signed commit via the API, auto-merge once the
-   tap's checks pass) — but only when the repository secret `HOMEBREW_TAP_TOKEN`
-   is set; without it, the job just prints the manual steps. Either way, this
-   repo's own `packaging/` copy still needs the commit above. If the tap's checks
-   fail, the pull request stays open with the failing job attached: fix in this
-   repo, re-run `sync-packaging.sh`, and push the same branch.
+   Until this runs they point at the previous release. A wrong digest is not a soft failure:
+   Homebrew and `makepkg` abort with a hash mismatch, which reads to a stranger as a tampered
+   download. The release workflow's own `homebrew-tap` job also runs this script and opens a pull
+   request on `yielab/homebrew-tap` with `packaging/homebrew/tack.rb` (a signed commit made through
+   the API, auto-merge once the tap's checks pass), but only when the repository secret
+   `HOMEBREW_TAP_TOKEN` is set; without it, the job prints the manual steps. Either way, this
+   repository's own `packaging/` copy still needs the commit above. If the tap's checks fail, the
+   pull request stays open with the failing job attached: fix it here, re-run `sync-packaging.sh`
+   and push the same branch.
+
+   `HOMEBREW_TAP_TOKEN` is a fine-grained personal access token scoped to the single repository
+   `yielab/homebrew-tap` with **Contents: write** and **Pull requests: write** and nothing else.
+   Give it the shortest expiry the release cadence allows (90 days at most), regenerate it on
+   expiry or on any suspicion of exposure, and treat the secret's "Updated" date under Settings →
+   Secrets as the rotation record. The tap's `main` accepts no direct pushes and no bypass, even
+   for admins, so a leaked token can at most open a pull request that still has to pass the tap's
+   checks.

@@ -29,12 +29,49 @@ reads from the top down, in the same order every time: the verdict first, then w
 4. **Changes.** How many files changed and how many lines were added and removed. **Open diff** shows what
    changed; **Open folder** (or **Copy path**, when you are not in the desktop app) shows where the work is
    on this computer; **Copy branch** copies the branch name, when the agent worked on a branch.
-5. **Steps.** The team's steps as a track, one node for each with its role, model and verdict. Under it,
-   **Activity** (folded) has **What the agent did**, by tool or as a timeline, and the questions the agent
-   asked.
+5. **Steps**, in four parts.
+   - **The team's steps**, when the run's team reports them: a track of steps in order, each marked *Done*,
+     *Running* or *Waiting* as the run goes, with what checks it in words ("checked by a command", "a reviewer
+     can send it back, up to 2 times", "asks you", "checked outside the team") and, once the run has ended, the
+     model and verdict of the role that did it. A step sent back shows as *Running* again and the steps after
+     it wait again. A step that no one on the team does (a command, a question, a wait) is listed in its
+     place with no mark, because nothing in the run says where it stands. When the team or its agent reports
+     no steps, the tab says "`<Agent>` does not report its steps in advance" and the track is made of the
+     steps the run took.
+   - **What each step ran** lists each step in order: who did it (Lead, Implementer, Reviewer, or the name of
+     a role your team gave), the model it used (with "a small model" or "a strong model" when the team said
+     which), its verdict when it gave one, how long it took when docket records when its work began and ended
+     ("Took 4m 55s"; a row of alike steps shows their total, and a step that did no agent work shows nothing),
+     and, under it, what the agent assumed and what it asked when it said any. Steps that came out alike one
+     after another are one row with a count, such as "Implementer ×3". The prompts a step read are folded
+     under **Prompts used**, each with its name and version and where it came from: built in, the team's own,
+     this repository's, your settings or this task. The verifier's evidence names the model's family and the
+     steps that produced the change.
+   - **What the team recorded** shows the rows the team wrote during the run, one small table for each kind of
+     record; when a table was cut short, it says the rest are kept by the team in docket. A team that works
+     in a folder rather than a repository says so in the verdict: there is nothing to merge, and what it did
+     is the last step's summary.
+   - **Activity**, folded while the run is over and open while it goes, holds **What the agent did**, two ways.
+     **By tool** groups its steps by the tool it used, with how many times, and shows the files and commands
+     it worked on as chips. **Timeline** lists the run's events as they happened and fills while the run is
+     going: each call to the model, each tool it ran (a shell command is shown as the command), each call a
+     docket team refused and each question docket opened, who answered it and whether it expired. Only the
+     Claude Code log names its steps by tool; for any other agent **By tool** is disabled and says why, and
+     the timeline is what there is. Only docket reports its steps while the run works.
 6. **Files from this run**, one row for each with **View** and **Download**.
-7. **Technical** (folded): the request, attempt and runner ids, what the agent got and read, the usage in
-   full, the **Raw log** and whether the verifier signed its pack.
+7. **Technical**: the request, attempt and runner ids (each copies with one press), what the agent got
+   (whether it ran in an isolated sandbox, the names of its environment variables when it had any, where it
+   worked, and the exact prompt it read), the **Usage** in full (see [Usage and cost](#usage-and-cost)), the
+   **Raw log** and whether the verifier signed its pack. On the item's own page these sit in a side column.
+
+Every path on the tab is shown inside the project: `src/app.ts`, not the folder the agent was given on the
+computer that ran it.
+
+Sections 5 to 7 are folds: a header you press (with a chevron) that says in one line what is inside while it
+is shut. A run that is still going, or that did not succeed, shows its Steps open; a run that finished well
+shows Steps, Files and Technical shut, and Activity shut once the run is over. When the agent waits for an
+answer, Activity says "a question needs you" in its header and opens by itself. The browser remembers
+whether you opened or shut each kind of section, and your choice wins over these defaults.
 
 **Succeeded** is green only when the changes were captured. It is amber when a run that was not meant to
 change files changed nothing, or when the changes could not be read. A run is meant to change files when its
@@ -43,6 +80,23 @@ or Planner. (A Planner's or Researcher's write tool is for the plan file, so it 
 "The agent reported success but delivered no change to review", and the number of files the agent left
 uncommitted when there were any. A failed run leads with why it failed.
 
+A run that was turned away before the agent did anything (the computer refused it, or the team's level ceiling is
+below the level the run asked for) is shown as **Not started**, in a neutral grey, not as **Failed**, on the board's cards, the strip's counts and the List as well as here: it used nothing and
+changed nothing, so it shows no tokens or duration, its reason stands as plain text, and the one button is **Run again**.
+A run that ended asking for a person offers **Open the question** and **Run again at L3**, not a third **Run again**.
+
+A team that proposes items and ends with proposals Tack cannot use (for example, one names a parent that is not an
+earlier row in the file) is shown as **Finished — proposals could not be used**, not as a plain success, with the
+reason in words and docket's own line on hover.
+
+When the verifier recommends rejecting a run, the run's line on the item says "the verifier says reject" beside "needs your
+review", and the verdict opens with its reason ("The verifier recommends rejecting this run: …"); the run is still yours to
+accept or reject. The questions an agent lists at the end of a step are notes, not a form: Tack cannot send an answer to them, so
+put the answer in the task and run it again. A question the agent stopped to ask is answered under **Needs you**.
+
+The verifier's recommendation, the reasons for its risk and its next steps are written as sentences; the verifier's own
+line is what shows when you hover over one.
+
 ### What you see on the board
 
 After a run, the task's card on the board carries these marks. The list carries the merge and automation
@@ -50,8 +104,8 @@ badges and shows the run's state in its own column.
 
 | Badge | Meaning |
 |---|---|
-| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Done, Failed, Cancelled) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
-| **Ready for review** | The latest run left changes and nobody has accepted or rejected them |
+| A state chip on the card's second line (Queued, Running, Needs you, Ready for review, Finished, Failed, Cancelled, Not started) | Where the latest run is. Press it to open the task's Execution tab; for a run that needs you, it opens that run with its question open. A run that needs you or failed also puts a bar on the card's left edge |
+| **Ready for review** | The latest run left changes and nobody has accepted or rejected them. When the verifier recommends rejecting them the chip says so, **Ready for review · verifier says reject**; the decision is still yours |
 | **Waiting for CI to merge**, **Not merged: …** | Tack tried to merge the change and could not. Press the badge for the reason and what to do |
 | **Started by itself** | The project started the run, not a person |
 | The team's name, with its initials | The team the run's profile named |
@@ -78,8 +132,10 @@ and a line that counts them: items, sub-items and dependencies. An item that bel
 beneath it, and it is unticked when its parent is unticked. Every other change is a line in a list under the
 tree, with the item it is about named by its title. Each row has a checkbox, and each can be edited:
 
-- An item's title, description and acceptance criteria, its **Type** and **Role**, and **Who does it**, which
-  names the team that will do it once it exists. **Waits on** lists the titles of the items it must wait for,
+- An item's **Title**, **Description**, **Done when** lines (one per line, and they become the item's Done when
+  checks), its **Type** and **Role**, and **Who does it**, which names the team that will do it once it exists;
+  each field is named above it. A type the project does not have is said so under the row: the item is created
+  with its parent's type. **Waits on** lists the titles of the items it must wait for,
   each with a × to remove it, and a menu to add another.
 - A change of who does an item, its role and team; a priority; the status to move to; the text of a
   comment; a due date. A dependency has nothing to edit: untick it to leave it out.
@@ -124,7 +180,7 @@ part.
 
 #### How far an agent may go
 
-In **Settings → Automation**, the **Agents** section has the rung **Agents on the board**. It has four
+In **Settings → Automation**, the **Agents** section has the setting **Agents on the board**. It has four
 levels, and the one in use says **Set here**:
 
 | Level | What an agent may do |
@@ -134,8 +190,8 @@ levels, and the one in use says **Set here**:
 | **Act** | Everything but new items applies by itself: who does an item, priority, moves, dependencies, comments and due dates. New items wait for you. |
 | **Create** | New items apply by themselves too, up to two limits you set: how many in one change set, and how many in a day (UTC). Both are 0 until you set them, so Create is off by default and behaves like Act until you raise them. |
 
-The stricter of the rung and the agent's own credential wins: a credential that may only propose never goes
-beyond Propose, whatever the rung says. See [Agent credentials](../admin-guide/administration.md#agent-credentials).
+The stricter of this setting and the agent's own credential wins: a credential that may only propose never goes
+beyond Propose, whatever the setting says. See [Agent credentials](../admin-guide/administration.md#agent-credentials).
 
 ### Merging a reviewed run
 
@@ -150,7 +206,7 @@ When a verifier checks an attempt, it leaves a merge-readiness pack. Its parts a
 each where it is read: the recommendation and risk in the verdict, the criteria and the rest of what the
 verifier ran under **Checks**, and whether it was signed under **Technical**.
 
-<img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a succeeded attempt: Recommendation merge, Risk low, three reasons, a criteria table with every criterion passed and its evidence file, the verify command with exit code 0, mutation score, static analysis counts, a blind judge's verdicts, and Your review with a required reason before Accept or Reject.">
+<img src="../screenshots/merge-readiness.png" width="50%" alt="A merge-readiness pack on a finished run: Recommendation merge and Risk low, the box waiting for your verdict with a required reason and the Accept and Reject buttons, Checks reading 6 of 6 checks passed with a How we know line under each, Why this risk, the verify command with exit code 0, and the Changes, Steps, Files from this run and Technical sections.">
 
 It shows:
 

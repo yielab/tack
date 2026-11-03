@@ -41,6 +41,12 @@ describe('waitingRows', () => {
     expect(rows).toEqual([]);
   });
 
+  it('a run turned away before it started is not a failure to look at', () => {
+    const refused = { ...run('r1', 'a', 'failed', t(1)), never_started: true };
+    const rows = waitingRows([refused, run('r2', 'b', 'failed', t(1))], {}, { r1: t(30), r2: t(30) }, Date.parse(t(10)));
+    expect(rows.map((r) => r.requestId)).toEqual(['r2']);
+  });
+
   it('a failure counts when it ended after the last look, whatever time its run started', () => {
     const runs = [run('r1', 'a', 'failed', t(1)), run('r2', 'b', 'lost', t(1))];
     const ended = { r1: t(30) };

@@ -420,3 +420,54 @@ pub async fn open_attempts_of_runner(
     .fetch_all(repo.pool())
     .await?)
 }
+
+/// A request's newest attempt as the run list reads it: how it ended, and where the content of
+/// its newest artifact of one media type is stored.
+#[derive(Debug, Clone)]
+pub struct NewestAttemptRow {
+    pub request_id: String,
+    pub attempt_id: String,
+    pub state: ExecutionState,
+    /// The attempt's terminal reason, as stored (JSON text).
+    pub terminal_reason: Option<String>,
+    /// The stored content of the attempt's newest uploaded artifact of the media type asked for.
+    pub artifact_reference: Option<String>,
+}
+
+/// The newest attempt of each listed request, in one query for the whole batch, with the stored
+/// reference of its newest uploaded artifact of `media_type`. A request with no attempt is left out.
+pub async fn newest_attempts_of_requests(
+    repo: &Repository,
+    request_ids: &[String],
+    media_type: &str,
+) -> Result<Vec<NewestAttemptRow>, StoreError> {
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT a.request_id, a.id AS attempt_id, a.state, a.terminal_reason,
+                (SELECT x.content_reference FROM execution_artifacts x
+                  WHERE x.attempt_id = a.id AND x.media_type = ? AND x.content_reference IS NOT NULL
+                  ORDER BY x.created_at DESC, x.rowid DESC LIMIT 1) AS artifact_reference
+           FROM execution_attempts a
+          WHERE a.request_id IN (SELECT value FROM json_each(?))
+            AND a.attempt_number = (SELECT MAX(attempt_number) FROM execution_attempts WHERE request_id = a.request_id)",
+    )
+    .bind(media_type)
+    .bind(serde_json::json!(request_ids).to_string())
+    .fetch_all(repo.pool())
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(NewestAttemptRow {
+                request_id: row.get("request_id"),
+                attempt_id: row.get("attempt_id"),
+                state: state::parse(
+                    "execution_attempts",
+                    "state",
+                    &row.get::<String, _>("state"),
+                )?,
+                terminal_reason: row.get("terminal_reason"),
+                artifact_reference: row.get("artifact_reference"),
+            })
+        })
+        .collect()
+}

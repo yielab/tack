@@ -338,6 +338,60 @@ async function mountBoard(items: Item[], executions: ReturnType<typeof summary>[
 
 const titles = (c: Element) => [...c.querySelectorAll('[data-item-id] h4')].map((h) => h.textContent);
 
+describe('Board column order', () => {
+  it('a_column_lists_what_needs_a_person_first_then_what_is_going_then_the_rest_keeping_its_own_order_among_equals', async () => {
+    const items = [
+      makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),
+      makeItem({ id: 'b', title: 'Bravo', status: 'To Do' }),
+      makeItem({ id: 'c', title: 'Charlie', status: 'To Do' }),
+      makeItem({ id: 'd', title: 'Delta', status: 'To Do' }),
+      makeItem({ id: 'e', title: 'Echo', status: 'To Do', needs_review: true }),
+    ];
+    const c = await mountBoard(items, [
+      summary('r1', 'b', 'running'),
+      summary('r2', 'c', 'waiting_decision'),
+    ]);
+    expect(titles(c)).toEqual(['Charlie', 'Echo', 'Bravo', 'Alpha', 'Delta']);
+  });
+});
+
+describe('Board runs the server describes', () => {
+  const ITEMS = [
+    makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),
+    makeItem({ id: 'b', title: 'Bravo', status: 'To Do' }),
+    makeItem({ id: 'c', title: 'Charlie', status: 'To Do', needs_review: true }),
+    makeItem({ id: 'd', title: 'Delta', status: 'To Do', needs_review: true }),
+  ];
+  const RUNS = [
+    Object.assign(summary('r1', 'a', 'failed'), { never_started: true }),
+    summary('r2', 'b', 'failed'),
+    Object.assign(summary('r3', 'c', 'succeeded'), { verifier_recommendation: 'reject' }),
+    Object.assign(summary('r4', 'd', 'succeeded'), { verifier_recommendation: 'merge' }),
+  ];
+  const chip = (c: HTMLElement, id: string) => c.querySelector(`[data-item-id="${id}"] [data-testid="card-meta"] button`)!.textContent!;
+
+  it('a_run_turned_away_before_it_started_reads_Not_started_and_is_not_counted_as_failed', async () => {
+    const c = await mountBoard(ITEMS, RUNS);
+    expect(chip(c, 'a')).toContain('Not started');
+    expect(chip(c, 'a')).not.toContain('Failed');
+    expect(chip(c, 'b')).toContain('Failed');
+    const strip = c.querySelector('[data-testid="agent-strip"]')!;
+    const counts = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim().split('.')[0]);
+    expect(counts).toContain('1 Failed');
+    expect(counts).toContain('1 Not started');
+    expect(counts).toContain('2 Ready for review');
+    // It sorts after the runs that need a person or are going, never among the failed ones.
+    expect(titles(c)).toEqual(['Charlie', 'Delta', 'Bravo', 'Alpha']);
+  });
+
+  it('a_ready_for_review_run_the_verifier_says_to_reject_says_so_in_words_and_stays_in_review', async () => {
+    const c = await mountBoard(ITEMS, RUNS);
+    expect(chip(c, 'c')).toContain('Ready for review · verifier says reject');
+    expect(chip(c, 'd')).toContain('Ready for review');
+    expect(chip(c, 'd')).not.toContain('verifier says reject');
+  });
+});
+
 describe('Board agent strip and column bars', () => {
   const ITEMS = [
     makeItem({ id: 'a', title: 'Alpha', status: 'To Do' }),
@@ -355,11 +409,12 @@ describe('Board agent strip and column bars', () => {
   it('the_strip_counts_runs_by_state_with_one_chip_per_state_and_no_aggregate', async () => {
     const c = await mountBoard(ITEMS, RUNS);
     const strip = c.querySelector('[data-testid="agent-strip"]')!;
-    expect(strip.getAttribute('aria-label')).toBe('Work');
+    expect(strip.getAttribute('aria-label')).toBe('Work in this project');
+    expect(strip.textContent).toContain('Work in this project');
     const names = [...strip.querySelectorAll('button')].map((b) => b.textContent!.replace(/\s+/g, ' ').trim());
     expect(names.join(' ')).not.toContain('Your turn');
     expect(c.querySelector('[data-testid="strip-waiting"]')).toBeNull();
-    expect(names.map((n) => n.split('.')[0])).toEqual(['0 Queued', '2 Running', '1 Needs you', '0 Ready for review', '1 Failed']);
+    expect(names.map((n) => n.split('.')[0])).toEqual(['1 Needs you', '0 Ready for review', '1 Failed', '2 Running', '0 Queued']);
     // A counter with nothing in it says why it cannot be used.
     const queued = strip.querySelector<HTMLButtonElement>('[data-testid="strip-queued"]')!;
     expect(queued.disabled).toBe(true);
@@ -368,7 +423,8 @@ describe('Board agent strip and column bars', () => {
 
   it('a_counter_toggles_a_filter_on_the_board', async () => {
     const c = await mountBoard(ITEMS, RUNS);
-    expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
+    // Bravo asks for a person, so it leads its column.
+    expect(titles(c)).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
     const running = c.querySelector<HTMLButtonElement>('[data-testid="strip-running"]')!;
     running.click();
     await flush();
@@ -378,20 +434,23 @@ describe('Board agent strip and column bars', () => {
     expect(c.querySelector('section')?.textContent).toContain('2 of 3');
     c.querySelector<HTMLButtonElement>('[data-testid="strip-needs"]')!.click();
     await flush();
-    expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    expect(titles(c)).toEqual(['Bravo', 'Alpha', 'Charlie']);
     running.click();
     c.querySelector<HTMLButtonElement>('[data-testid="strip-needs"]')!.click();
     await flush();
-    expect(titles(c)).toEqual(['Alpha', 'Bravo', 'Charlie', 'Delta']);
+    expect(titles(c)).toEqual(['Bravo', 'Alpha', 'Charlie', 'Delta']);
   });
 
   it('a_column_header_has_a_mini_bar_whose_segments_are_filters_and_are_spelled_out', async () => {
     const c = await mountBoard(ITEMS, RUNS);
     const bars = [...c.querySelectorAll('[data-testid="run-mini-bar"]')];
     expect(bars.map((b) => b.getAttribute('aria-label'))).toEqual([
-      'Work in this column: 2 running, 1 needs you',
+      'Work in this column: 1 needs you, 2 running',
       'Work in this column: 1 failed',
     ]);
+    // Under each bar a legend names every state in words, in the same order, so colour is never the only cue.
+    const legends = [...c.querySelectorAll('[data-testid="run-mini-legend"]')].map((l) => [...l.querySelectorAll('li')].map((li) => li.textContent).join(' | '));
+    expect(legends).toEqual(['1Needs you | 2Running', '1Failed']);
     const segment = bars[0].querySelector<HTMLButtonElement>('[aria-label="1 needs you"]')!;
     segment.click();
     await flush();

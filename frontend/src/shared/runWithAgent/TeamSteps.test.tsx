@@ -138,6 +138,17 @@ describe('TeamSteps', () => {
     expect(step(c, 'write').textContent).not.toContain('Running');
   });
 
+  it('a step the run has not reached says so, never "Waiting" beside a working agent', async () => {
+    const live = mount({ steps: STEPS, events: () => [started('Lead')] });
+    await settle();
+    expect(step(live, 'review').textContent).toContain('Not started yet');
+    expect(step(live, 'review').textContent).not.toContain('Waiting');
+    const over = mount({ steps: STEPS, events: () => [started('Lead')], ended: true });
+    await settle();
+    expect(step(over, 'review').textContent).toContain('Not reached');
+    expect(step(over, 'review').textContent).not.toContain('Waiting');
+  });
+
   describe('the step track', () => {
     const hop = (over: Partial<RunStep>): RunStep => ({
       role: null, model: null, class: null, family: null, verdict: null, ok: null, summary: null, prompts: [], assumptions: [], questions: [], startedAt: null, finishedAt: null, cycle: null, ...over,

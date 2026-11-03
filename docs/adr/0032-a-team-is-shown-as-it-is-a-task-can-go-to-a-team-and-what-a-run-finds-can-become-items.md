@@ -1,7 +1,7 @@
 # ADR 0032: a team is shown as it is, a task can go to a team, and what a run finds can become items
 
 **Status: ACCEPTED 2026-10-31** (proposed and rewritten the same day: every decision is harness-neutral).
-Executed by Phase 83 (`docs/plans/phase-83.md`). Amends ADR 0021 decisions 4 and 8.
+Executed by Phase 83 (`docs/closed-cycles/plans/phase-83.md`). Amends ADR 0021 decisions 4 and 8.
 Leaves ADR 0031 decision 5 (Tack names no team shape) and its "Considered and not adopted" as they
 are.
 

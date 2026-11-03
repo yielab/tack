@@ -57,6 +57,7 @@ function mount(attempts: AttemptSummary[]) {
 }
 
 afterEach(() => {
+  localStorage.clear();
   while (disposers.length) disposers.pop()!();
   document.body.innerHTML = '';
   vi.restoreAllMocks();
@@ -73,15 +74,14 @@ describe('AttemptList', () => {
     document.body.appendChild(container);
     const dispose = render(() => <AttemptList requestId="exec_1" attempts={attempts()} />, container);
     disposers.push(() => { dispose(); container.remove(); });
-    const activity = () => container.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement;
-    expect(activity().open).toBe(false);
-    activity().open = true;
-    activity().dispatchEvent(new Event('toggle'));
+    const activity = () => container.querySelector('[data-testid="run-activity"] > button') as HTMLButtonElement;
+    expect(activity().getAttribute('aria-expanded')).toBe('false');
+    activity().click();
     await flush();
 
     setAttempts([attempt({ state: 'succeeded', event_checkpoint: 'chk:2', updated_at: '2026-08-06T12:06:00Z' })]);
     await flush();
-    expect(activity().open).toBe(true);
+    expect(activity().getAttribute('aria-expanded')).toBe('true');
   });
 
   it('several attempts are chips, newest first; the newest shows, and a chip picks another', async () => {
@@ -307,8 +307,8 @@ describe('AttemptList', () => {
     const c = mount([attempt()]);
     await flush();
     await flush();
-    const activity = c.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement;
-    expect(activity.open).toBe(false);
+    const activity = c.querySelector('[data-testid="run-activity"]') as HTMLElement;
+    expect(activity.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
     // An agent that asked nothing gets one grey line, not a heading over nothing.
     expect(activity.textContent).not.toContain('Questions from the agent');
     expect(activity.querySelector('[data-testid="asked-nothing"]')!.textContent).toBe('The agent has asked nothing yet');
@@ -323,7 +323,7 @@ describe('AttemptList', () => {
     // It waits for an answer, so the question has its own section and the activity is open already.
     await flush();
     expect(asking.querySelector('[data-section="needs"]')).not.toBeNull();
-    expect((asking.querySelector('[data-testid="run-activity"]') as HTMLDetailsElement).open).toBe(true);
+    expect(asking.querySelector('[data-testid="run-activity"] > button')!.getAttribute('aria-expanded')).toBe('true');
     expect([...asking.querySelectorAll('button')].some((b) => b.textContent === 'Open the question')).toBe(true);
 
     const ended = mount([attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } })]);
@@ -667,9 +667,8 @@ describe('AttemptList', () => {
       const spy = mockExecution();
       const c = mount([attempt()]);
       expect(c.querySelector('[data-testid="agent-read"]')).toBeNull();
-      const details = c.querySelector('[data-testid="agent-got"] details') as HTMLDetailsElement;
-      details.open = true;
-      details.dispatchEvent(new Event('toggle'));
+      expect(spy).not.toHaveBeenCalledWith('/api/executions/exec_1', expect.anything());
+      (c.querySelector('[data-testid="agent-got"] [data-fold="agent-read"] > button') as HTMLButtonElement).click();
       await flush();
       await flush();
       expect(spy).toHaveBeenCalledWith('/api/executions/exec_1', expect.anything());
@@ -723,9 +722,9 @@ describe('AttemptList', () => {
 
     it('the usage is folded: its summary shows the tokens and the share of the limit', () => {
       const c = mount([attempt({ usage: used as unknown as AttemptSummary['usage'], counted_tokens: 100 })]);
-      const fold = c.querySelector('[data-testid="attempt-usage-fold"]') as HTMLDetailsElement;
-      expect(fold.open).toBe(false);
-      expect(fold.querySelector('[data-testid="usage-summary"]')?.textContent).toBe('· 100 tokens counted');
+      const fold = c.querySelector('[data-testid="attempt-usage-fold"]') as HTMLElement;
+      expect(fold.querySelector('button')!.getAttribute('aria-expanded')).toBe('false');
+      expect(fold.querySelector('[data-testid="fold-summary"]')?.textContent).toBe('100 tokens counted');
       expect(fold.querySelector('[data-testid="attempt-usage"]')).not.toBeNull();
     });
 
@@ -734,7 +733,7 @@ describe('AttemptList', () => {
       document.body.appendChild(container);
       const dispose = render(() => <AttemptList requestId="exec_1" attempts={[attempt({ counted_tokens: 100 })]} limit={limit} />, container);
       disposers.push(() => { dispose(); container.remove(); });
-      expect(container.querySelector('[data-testid="usage-summary"]')?.textContent).toBe('· 100 tokens counted · 50% of its limit');
+      expect(container.querySelector('[data-testid="attempt-usage-fold"] [data-testid="fold-summary"]')?.textContent).toBe('100 tokens counted · 50% of its limit');
     });
 
     it('the ids are copyable, request and attempt', async () => {
@@ -823,8 +822,42 @@ describe('AttemptList', () => {
         expect(c.querySelector(`[data-testid="${id}"]`), id).not.toBeNull();
       }
       expect(c.querySelector('[data-testid="run-activity"]')!.querySelector('[data-testid="asked-nothing"]')).not.toBeNull();
-      // The raw level is the last, folded.
-      expect((c.querySelector('[data-section="technical"]') as HTMLDetailsElement).open).toBe(false);
+      // The raw level is the last, folded; so are the files and the steps of a run that finished well, each saying what is in it.
+      const folded = (id: string) => c.querySelector(`[data-section="${id}"] > button`)!;
+      expect(folded('technical').getAttribute('aria-expanded')).toBe('false');
+      expect(folded('files').getAttribute('aria-expanded')).toBe('false');
+      expect(folded('files').textContent).toContain('3 files.');
+      expect(folded('steps').getAttribute('aria-expanded')).toBe('false');
+      expect(folded('steps').textContent).toContain('1 step ran.');
+      // The latest result and its checks stay open.
+      expect(c.querySelector('[data-section="checks"]')!.tagName).toBe('SECTION');
+      expect(c.querySelector('[data-section="checks"] > button')).toBeNull();
+    });
+
+    it('a run that is going keeps its steps and files open, and one that failed keeps its steps open', async () => {
+      route({ artifacts: [art('a1', 'evidence', 'notes.md')] });
+      const live = mountFull(attempt({ state: 'running', ended_at: null }));
+      await settle();
+      expect(live.querySelector('[data-section="files"] > button')!.getAttribute('aria-expanded')).toBe('true');
+      expect(live.querySelector('[data-section="steps"] > button')!.getAttribute('aria-expanded')).toBe('true');
+      disposers.pop()!();
+      localStorage.clear();
+      const failed = mountFull({ ...FINISHED(), state: 'failed' });
+      await settle();
+      expect(failed.querySelector('[data-section="steps"] > button')!.getAttribute('aria-expanded')).toBe('true');
+      expect(failed.querySelector('[data-section="files"] > button')!.getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('a run that waits for an answer says in the Activity header that a question needs you, and the person can shut a fold and have it stay shut', async () => {
+      route({ decisions: [PENDING] });
+      const c = mountFull(attempt({ state: 'waiting_decision', ended_at: null }));
+      await settle();
+      const activity = c.querySelector<HTMLButtonElement>('[data-testid="run-activity"] > button')!;
+      expect(activity.getAttribute('aria-expanded')).toBe('true');
+      activity.click();
+      expect(activity.getAttribute('aria-expanded')).toBe('false');
+      expect(activity.textContent).toContain('a question needs you');
+      expect(localStorage.getItem('tack_fold:run-activity')).toBe('0');
     });
 
     it('a run that waits for an answer puts the question right after the verdict', async () => {
@@ -884,6 +917,31 @@ describe('AttemptList', () => {
       const merge = verdict.querySelector('[data-testid="verdict-merge"]')!;
       expect(merge.textContent).toContain('Not merged');
       expect([...merge.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Merge']);
+    });
+
+    it('a run the verifier says to reject is not announced as a plain success', async () => {
+      const spy = route({ artifacts: FILES });
+      const orig = spy.getMockImplementation()!;
+      spy.mockImplementation((input, init) =>
+        String(input).endsWith('/mrp')
+          ? Promise.resolve(new Response(JSON.stringify({ pack: { ...ready, recommendation: { decision: 'reject', rationale: 'prill: reject' } }, review: null }), { status: 200 }))
+          : orig(input, init),
+      );
+      const c = mountFull(FINISHED());
+      await settle();
+      expect(c.querySelector('[data-testid="run-verdict"]')!.textContent).toContain('The verifier recommends rejecting this run');
+    });
+
+    it('a run turned away before it started shows no tokens and no duration', async () => {
+      route();
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      const refused = { ...FINISHED(), state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected', message: 'ceiling L3' } };
+      const dispose = render(() => <AttemptList requestId="exec_1" attempts={[refused as never]} />, container);
+      disposers.push(() => { dispose(); container.remove(); });
+      await settle();
+      expect(container.querySelector('[data-testid="verdict-tokens"]')).toBeNull();
+      expect(container.querySelector('[data-testid="verdict-duration"]')).toBeNull();
     });
 
     it('without a limit the tokens are said in words, not drawn as a meter', async () => {
@@ -1101,6 +1159,7 @@ describe('AttemptList', () => {
       expect(attemptRunState(attempt({ state: 'waiting_decision', ended_at: null }))).toEqual({ state: 'needs', docket: 'Needs a person' });
       expect(attemptRunState(attempt({ state: 'failed', terminal_reason: { code: 'needs_human' } }))).toEqual({ state: 'needs', docket: 'Needs a person' });
       expect(attemptRunState(attempt({ state: 'failed' }))).toEqual({ state: 'failed' });
+      expect(attemptRunState(attempt({ state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected' } }))).toEqual({ state: 'notstarted' });
       expect(attemptRunState(attempt({ state: 'cancelled' }))).toEqual({ state: 'cancelled' });
       expect(attemptRunState(FINISHED())).toEqual({ state: 'review', docket: 'Needs your review' });
       expect(attemptRunState({ ...FINISHED(), review: { verdict: 'accepted', note: null, reviewed_at: 'x' } })).toEqual({ state: 'done' });

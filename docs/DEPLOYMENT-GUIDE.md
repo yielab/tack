@@ -2,7 +2,7 @@
 
 This page is for the person who installs Tack on a server or a workstation. After reading it you can
 get the binary, run it as a service behind HTTPS, check that it is healthy, and keep it updated.
-Settings are in the [Configuration Reference](https://yielab.github.io/tack/admin-guide/configuration-reference.html),
+Settings are in [Configuration](https://yielab.github.io/tack/admin-guide/configuration-reference.html),
 tokens and origins in [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html),
 backups in [Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html), and
 machines that run agents in
@@ -15,29 +15,11 @@ Deployment is therefore "run one binary behind a reverse proxy."
 
 ---
 
-## Table of Contents
-
-1. [Get the binary](#get-the-binary)
-2. [Run it](#run-it)
-3. [Systemd service (recommended)](#systemd-service-recommended)
-4. [Per-user service (no root)](#per-user-service-no-root)
-5. [Reverse proxy + HTTPS (Caddy)](#reverse-proxy--https-caddy)
-6. [Reverse proxy (nginx)](#reverse-proxy-nginx)
-7. [Docker](#docker)
-8. [Configuration](#configuration)
-9. [Backups](#backups)
-10. [Monitoring & logging](#monitoring--logging)
-11. [Security checklist](#security-checklist)
-12. [Scaling considerations](#scaling-considerations)
-13. [Maintenance](#maintenance)
-
----
-
 ## Get the binary
 
 ### Option A — download a release
 
-Prebuilt binaries for Linux (x86_64, and ARM64 from the release after `v0.1.0-beta.9`), macOS (Intel and
+Prebuilt binaries for Linux (x86_64 and ARM64), macOS (Intel and
 Apple Silicon) and Windows are attached to each [GitHub Release](https://github.com/yielab/tack/releases), along with the desktop
 app installers. Each archive contains the single `tack` executable, `LICENSE`, `README.md`, and a
 `QUICKSTART.txt`. Each release also has a separate `tack-runner` archive, for machines that only run
@@ -333,12 +315,10 @@ shell, so health-check the container from the host (`curl .../api/health`) or vi
 
 ## Configuration
 
-The server reads built-in defaults, then `tack.toml` in its working directory, then `TACK_*`
-environment variables, which win. [Configuration](https://yielab.github.io/tack/admin-guide/configuration.html)
-explains the order, shows a `tack.toml` and says how to confirm a change took effect; the
-[Configuration Reference](https://yielab.github.io/tack/admin-guide/configuration-reference.html) lists every
-setting, including the optional integrations (outbound webhooks, GitHub sync, S3-compatible cloud
-backup, tasks that projects start by themselves).
+[Configuration](https://yielab.github.io/tack/admin-guide/configuration-reference.html) explains the order
+(built-in defaults, then `tack.toml`, then `TACK_*` environment variables, which win), shows a `tack.toml`
+and lists every setting, including the optional integrations (outbound webhooks, GitHub sync, S3-compatible
+cloud backup, tasks that projects start by themselves).
 
 For a deployment you set these:
 
@@ -366,7 +346,7 @@ A snapshot covers the database only, so back up the storage directory too, or us
 bundle, which includes it. Automate with cron or a systemd timer and test a restore. Hot backup,
 staged restore, remote bundles and what each includes are in
 [Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html); the S3 setup is
-in [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html#cloud-backup-s3-compatible).
+in the same page.
 
 ---
 
@@ -511,5 +491,4 @@ If you use `journalctl` (no `TACK_LOG_FILE`), systemd already rotates the journa
 ## Support
 
 - [GitHub Issues](https://github.com/yielab/tack/issues)
-- [API Reference](https://github.com/yielab/tack/blob/develop/docs/API-REFERENCE.md)
 - [Security Policy](https://github.com/yielab/tack/blob/develop/SECURITY.md)

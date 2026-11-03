@@ -16,7 +16,7 @@
 // (`crates/tack-orch/src/usage_provenance.rs`) is the backend half of this
 // same guarantee; this file is the frontend half.
 
-import { plainVerdict } from './plainWords';
+import { plainPlanProblem, plainVerdict } from './plainWords';
 import { isFolderRun } from '../execution/attempts';
 import type { AttemptSummary, ModelProvenance, RunnerTimeCost, UsageEconomics } from '../execution/attempts';
 import type { Measurement } from '../execution/types';
@@ -265,7 +265,7 @@ export function isReviewableAttempt(attempt: Pick<AttemptSummary, 'state' | 'ter
 }
 
 type AttemptDelivery = Pick<AttemptSummary, 'state' | 'terminal_reason'> &
-  Partial<Pick<AttemptSummary, 'actual_execution' | 'pull_request'>>;
+  Partial<Pick<AttemptSummary, 'actual_execution' | 'pull_request' | 'never_started'>>;
 
 /** A run that succeeded and left nothing to merge: no patch, no kept workspace, no
  *  pushed branch and no pull request. What it delivered is the agent's answer. */
@@ -325,21 +325,36 @@ export function lastSteps(events: ReadonlyArray<{ kind: string; payload: unknown
   return lines.slice(-count);
 }
 
+/**
+ * Whether a run was turned away before the agent did anything: the computer refused it, or the
+ * team's own ceiling did. Such a run used nothing and changed nothing, so it reads "Not started",
+ * never as a failure of the work. The server decides it (`tack_core::run_outcome::never_started`,
+ * the one rule, which also sets the same flag on a run's list row), so this only reads the flag.
+ */
+export function neverStarted(attempt: { never_started?: boolean }): boolean {
+  return attempt.never_started === true;
+}
+
 /** The one status an attempt shows: its review verdict, then what its outcome
  *  says, then its lifecycle state. The run's heading shows its latest
- *  attempt's, so a run never shows two states at once. */
+ *  attempt's, so a run never shows two states at once. `recommendation` is the
+ *  verifier's call, when its pack has been read: a run it says to reject is not
+ *  announced as a plain success. */
 export function describeAttemptStatus(
   attempt: AttemptDelivery,
   review: AttemptSummary['review'] | undefined = null,
+  recommendation?: 'merge' | 'review' | 'reject',
 ): { label: string; tone: StateTone } {
   if (review && needsVerdict(attempt)) {
     return review.verdict === 'accepted' ? { label: 'Accepted', tone: 'success' } : { label: 'Rejected', tone: 'neutral' };
   }
   if (isReviewableAttempt(attempt)) {
+    if (recommendation === 'reject') return { label: 'Finished — the verifier says reject, needs your review', tone: 'warning' };
     return attemptPatchBytes(attempt.terminal_reason) > 0
       ? { label: 'Finished — needs your review', tone: 'warning' }
       : { label: 'Finished — changes could not be read, needs your review', tone: 'warning' };
   }
+  if (neverStarted(attempt)) return { label: 'Not started', tone: 'neutral' };
   const badge = describeAttemptOutcome(attempt.state, attempt.terminal_reason).badge;
   if (badge) return { label: badge.label, tone: badge.tone };
   const state = describeExecutionState(attempt.state);
@@ -357,7 +372,7 @@ export interface AttemptOutcome {
   /** The "Why it stopped" line, for a failed/cancelled/lost attempt only. */
   whyStopped: string | null;
   /** An override for the `succeeded` badge, when the run's artifacts qualify it. */
-  badge: { label: string; tone: StateTone; detail?: string } | null;
+  badge: { label: string; tone: StateTone; detail?: string; /** The raw line the detail says in words, for a tooltip. */ raw?: string } | null;
 }
 
 /** What a run that ended with the code `needs_human` says when the agent gave no sentence of its own. */
@@ -372,13 +387,14 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     message?: unknown;
     artifacts?: unknown;
     workspace_kept_at?: unknown;
+    plan_invalid?: unknown;
   };
   const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : null);
   let whyStopped: string | null = null;
   if (state === 'failed' || state === 'cancelled' || state === 'lost') {
     const text =
       str(reason.message) ??
-      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
+      (reason.code === 'timeout' ? "The run's time ran out" : reason.code === 'cancelled' ? 'It was stopped before it finished' : reason.code === 'needs_human' ? NEEDS_A_PERSON_TEXT : str(reason.code)) ??
       'No reason was reported';
     whyStopped = reason.code === 'harness_rejected' ? `Did not start — ${text}` : text;
     if (reason.reason === 'exit_status') {
@@ -405,7 +421,12 @@ export function describeAttemptOutcome(state: string, terminalReason: unknown): 
     ) as { size_bytes?: unknown } | undefined;
     const patchBytes = typeof patch?.size_bytes === 'number' ? patch.size_bytes : null;
     const kept = str(reason.workspace_kept_at);
-    if (patchBytes !== null && patchBytes > 0) {
+    const invalid = str(reason.plan_invalid);
+    if (invalid) {
+      // The run ended well, but the proposals it made could not be read: not a plain success.
+      const said = plainPlanProblem(invalid);
+      badge = { label: 'Finished — proposals could not be used', tone: 'warning', detail: said ?? invalid, raw: said ? invalid : undefined };
+    } else if (patchBytes !== null && patchBytes > 0) {
       badge = { label: 'Succeeded', tone: 'success' };
     } else if (kept) {
       badge = { label: 'Finished — changes could not be read', tone: 'warning', detail: `Workspace kept at ${kept}` };

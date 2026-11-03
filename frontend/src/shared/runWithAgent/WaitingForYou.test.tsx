@@ -125,7 +125,9 @@ describe('Waiting for you', () => {
     toggle(c).click();
     await flush();
     expect(c.querySelector('[data-testid="waiting-empty"]')!.textContent).toBe('Nothing is waiting for you.');
-    expect(badge(c).getAttribute('aria-label')).toBe('Nothing is waiting for you');
+    expect(badge(c).getAttribute('aria-label')).toBe('0: Nothing is waiting for you');
+    // Label in Name (WCAG 2.5.3): the name starts with the count the button shows.
+    expect(badge(c).getAttribute('aria-label')!.startsWith(badge(c).textContent!.trim())).toBe(true);
   });
 
   it('lists a question, a run to review and a failure since the last look, each with its dot, title, project, age and action', async () => {
@@ -176,6 +178,28 @@ describe('Waiting for you', () => {
     expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('3');
   });
 
+  it('says in words, under its name, what the count is made of and that it covers every project', async () => {
+    mockApi({
+      runs: [
+        { id: 'q', item: 'a', state: 'waiting_decision', created: minutesAgo(3), title: 'Pick a chart library' },
+        { id: 'v', item: 'b', state: 'succeeded', created: minutesAgo(50), ended: minutesAgo(20), needsReview: true, title: 'Add the export' },
+      ],
+    });
+    const c = mount();
+    await settle();
+
+    const scope = c.querySelector('[data-testid="waiting-scope"]')!;
+    expect(scope.textContent).toBe('All projects: 1 needs you, 1 ready for review');
+    expect(badge(c).title).toContain('across all projects');
+  });
+
+  it('shows no scope line when nothing waits', async () => {
+    mockApi({ runs: [{ id: 'r1', item: 'a', state: 'running', created: minutesAgo(5) }] });
+    const c = mount();
+    await settle();
+    expect(c.querySelector('[data-testid="waiting-scope"]')).toBeNull();
+  });
+
   it('the top bar badge shows the same count and announces it', async () => {
     mockApi({
       runs: [
@@ -188,6 +212,7 @@ describe('Waiting for you', () => {
 
     expect(badge(c).textContent).toBe('2');
     expect(badge(c).getAttribute('aria-label')).toBe('2 things are waiting for you');
+    expect(badge(c).getAttribute('aria-label')!.startsWith(badge(c).textContent!.trim())).toBe(true);
     expect(c.querySelector('[data-testid="waiting-count"]')!.textContent).toBe('2');
   });
 

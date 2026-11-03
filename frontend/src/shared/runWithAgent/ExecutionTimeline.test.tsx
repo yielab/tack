@@ -342,12 +342,12 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
   /** A finished run whose attempt carries the given terminal reason. */
-  function mountFinished(terminalReason: unknown) {
+  function mountFinished(terminalReason: unknown, row: Record<string, unknown> = DONE_ROW, attemptState = 'succeeded') {
     const attempt = {
       ...ATTEMPT_ROW,
       attempt_id: 'att-done',
       request_id: 'req-done',
-      state: 'succeeded',
+      state: attemptState,
       started_at: '2025-03-01T00:00:01Z',
       ended_at: '2025-03-01T00:02:00Z',
       terminal_reason: terminalReason,
@@ -357,7 +357,7 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
       if (url.includes('/artifacts')) return json({ protocol_version: 1, data: [] });
       if (url.includes('/events')) return json({ protocol_version: 1, data: [] });
       if (url.includes('/attempts')) return json({ protocol_version: 1, data: [attempt] });
-      if (url.includes('/executions')) return json({ protocol_version: 1, data: [DONE_ROW] });
+      if (url.includes('/executions')) return json({ protocol_version: 1, data: [row] });
       return json({});
     }) as typeof fetch);
     const container = document.createElement('div');
@@ -403,6 +403,12 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
     },
   ];
 
+  it('a run that has ended no longer carries the "Cancellation requested" chip: its state says how it ended', async () => {
+    const container = mountFinished({ code: 'cancelled' }, { ...DONE_ROW, state: 'cancelled', cancellation_requested_at: '2025-03-01T00:01:00Z' }, 'cancelled');
+    for (let i = 0; i < 6; i++) await flush();
+    expect(shownRun(container).textContent).not.toContain('Cancellation requested');
+  });
+
   it('a run with steps shows each one in order: its role in words, its model class, its prompts, what it assumed and asked', async () => {
     const c = mountFinished({ result: 'Done.', steps: STEPS });
     await settle();
@@ -418,12 +424,14 @@ describe('ExecutionTimeline: what each step ran and what the team recorded', () 
     expect(rows[0].textContent).toContain('The brief is current.');
     expect(rows[0].textContent).toContain('The agent asked');
     expect(rows[0].textContent).toContain('Which tone should it use?');
+    expect(rows[0].textContent).toContain('Tack cannot send an answer to these');
     expect(rows[1].textContent).toContain('Implementer');
     expect(rows[1].textContent).toContain('qwen2.5-coder:7b · a small model');
     const chips = [...rows[1].querySelectorAll('[data-testid="step-prompt"]')].map((li) => li.textContent);
     expect(chips).toEqual(['implementer 1.0.0 built in', "task this task's", "house-style 2.0.0 the team's"]);
     expect(rows[1].textContent).not.toContain('The agent assumed');
     expect(rows[1].textContent).not.toContain('The agent asked');
+    expect(rows[1].textContent).not.toContain('Tack cannot send an answer');
   });
 
   it('the prompts a step read are one closed disclosure, and a step with none has no disclosure and no sentence about it', async () => {

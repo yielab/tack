@@ -49,6 +49,7 @@ async function settle() {
 }
 
 afterEach(() => {
+  localStorage.clear();
   while (disposers.length) disposers.pop()!();
   document.body.innerHTML = '';
   vi.restoreAllMocks();
@@ -104,5 +105,30 @@ describe('AutomationRow: who does it', () => {
     (document.getElementById(label.htmlFor) as HTMLInputElement).click();
     await settle();
     expect(patches).toEqual([{ run_settings: null }]);
+  });
+
+  it('is folded when the task has a profile to go to: the header says the line, and Who does it is inside', async () => {
+    routeFetch({ roles: [], run_settings: { agent_profile_id: 'profile-1' } }, []);
+    const row = mount();
+    await settle();
+    const head = row.querySelector<HTMLButtonElement>('[data-testid="automation-row"] > button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(head.textContent).toContain('Automation');
+    expect(head.textContent).toContain('Goes to Content writer (chosen on this task)');
+    expect(head.querySelector('[data-testid="fold-needs"]')).toBeNull();
+    head.click();
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    expect(row.querySelector('[data-testid="who-does-it"]')!.closest('[hidden]')).toBeNull();
+  });
+
+  it('says in its header, and opens, when a role has no profile and a person has to pick one', async () => {
+    routeFetch({ roles: [{ name: 'Content' }], run_settings: null }, []);
+    const row = mount();
+    await settle();
+    const head = row.querySelector<HTMLButtonElement>('[data-testid="automation-row"] > button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    expect(row.querySelector('[data-testid="who-does-it"]')!.closest('[hidden]')).toBeNull();
+    head.click();
+    expect(head.textContent).toContain('needs you: the role Content has no profile');
   });
 });

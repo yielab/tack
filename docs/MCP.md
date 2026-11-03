@@ -3,8 +3,8 @@
 `tack mcp` exposes a Tack instance to AI agents (Claude Code, Codex, etc.) via the
 [Model Context Protocol](https://modelcontextprotocol.io). An agent can list
 projects, search and read items, create, update and move items, add comments, and start and
-follow runs — all through the same HTTP API the CLI uses, so **workflow validation, WIP limits,
-and parent-auto-completion still apply** and the live board updates over WebSocket.
+follow runs — all through the same HTTP API the CLI uses, so **workflow validation and WIP limits
+still apply** and the live board updates over WebSocket.
 
 ## Transport
 
@@ -159,7 +159,7 @@ set, so under one:
 - `create_execution` answers that an agent does not start a run: it says who does the item
   (`who_does_it`), and the project starts it by itself when a person has allowed that.
 
-With the operator's token nothing else changes: every tool answers as before, except that the
+With the operator's token every tool writes directly, except that the
 description of an item or the text of a comment that `create_item`, `update_item`, `move_item` and
 `add_comment` echo back is fenced as card text too.
 
@@ -185,7 +185,7 @@ timeout, and the model (the project's default for its default agent, else the ag
 
 `create_execution` always starts a run that asks the person before every action, with network access off and the default tool set. The request sends `permission_policy: {approvals: "ask", network: false}`; an agent cannot choose another policy. `environment`, `repository` and `agent_profile_snapshot` are refused with `unknown argument`. The server fills the repository from the item's project (its folder, default branch and workspace mode, set under Settings → Automation). The request carries `origin: "mcp"`: such a run is never merged automatically or by a move to Done, only by the Merge button.
 
-A run never changes the item's status; a person does. A call that still sends `status_map_policy_id`, which used to move it, is accepted and the answer carries `notice: "ignored: the status is set by a person"`.
+A run never changes the item's status; a person does. A call that sends `status_map_policy_id` is accepted, the field is ignored and the answer carries `notice: "ignored: the status is set by a person"`.
 
 Every id that goes into a request path (`project_id`, `id`, `item_id`, `request_id`) must be 1 to 64 letters, digits, `-` or `_`. Anything else is refused before any request is sent.
 

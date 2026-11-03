@@ -12,24 +12,26 @@ token system** every component relies on.
 ```
 frontend/src/
 ├── app/          App shell — Router, Layout (sidebar + top bar), routes
-├── features/     One folder per surface: board, list, table, calendar,
-│                 timeline, sprints, item-detail (incl. acceptance criteria),
-│                 dashboard (Overview and Factory metrics), projects,
-│                 settings, templates, agents
+├── features/     One folder per surface: board, list, calendar, timeline,
+│                 orchestration, sprints, item-detail, dashboard (Overview and
+│                 Factory metrics), projects, settings, templates, agents,
+│                 changesets, threads
 ├── shared/
 │   ├── ui/       The component kit (Button, Badge, Modal, Drawer, Tabs, Card,
-│   │             Switch, ConfirmDialog, CommandPalette, SearchBar, Sidebar,
-│   │             ToastContainer …) plus
-│   │             redesign primitives: Avatar/AvatarStack, TypeBadge,
-│   │             PriorityDot, WipChip, KbdHint, and the icon set (icons.tsx)
+│   │             Switch, ConfirmDialog, Fold, CommandPalette, SearchBar,
+│   │             Sidebar, ToastContainer …) plus primitives such as
+│   │             Avatar/AvatarStack, TypeBadge, PriorityDot, WipChip, KbdHint,
+│   │             RunState, LoadError, RouteBoundary and the icon set
 │   ├── state/    Context stores + signals (project, items, theme, palette,
-│   │             commandPalette, optimistic updates, toasts)
-│   ├── api/      Typed fetch client (api.*), one module per resource
+│   │             display, commandPalette, optimistic updates, toasts)
+│   ├── api/      Typed fetch client, one module per resource, and the
+│   │             generated schema.gen.ts
 │   ├── realtime/ Reconnecting board WebSocket
 │   ├── runWithAgent/ The run dialog (RunFlow), attempt list with its pull-request
 │   │             badge, decision inbox, merge-readiness panel, event timeline
 │   ├── execution/, agents/ Execution types and API calls; the Agents page's pieces
 │   ├── vocab/    Per-project terminology resolution (useVocab)
+│   ├── keyboard/, help/ Shortcuts; the links from screen text to the guides
 │   └── types/    DTOs mirroring the backend
 └── index.css     The design tokens (see below)
 ```

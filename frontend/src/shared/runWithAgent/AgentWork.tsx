@@ -290,10 +290,13 @@ function groupSteps(steps: RunStep[]): StepGroup[] {
 const StepRow: Component<{ group: StepGroup }> = (props) => {
   const step = () => props.group.step;
   const model = () => classWords(step().model, step().class);
-  const list = (title: string, items: string[]) => (
+  const list = (title: string, items: string[], note?: string) => (
     <Show when={items.length > 0}>
       <div class="space-y-1">
         <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{title}</h5>
+        <Show when={note}>
+          <p class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{note}</p>
+        </Show>
         <ul class="list-disc space-y-0.5 pl-5 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
           <For each={items}>
             {(item) => {
@@ -326,7 +329,7 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
         </Show>
       </div>
       {list('The agent assumed', step().assumptions)}
-      {list('The agent asked', step().questions)}
+      {list('The agent asked', step().questions, 'Tack cannot send an answer to these: put it in the task, then run it again.')}
       <Show when={step().prompts.length > 0}>
         <details data-testid="step-prompts-disclosure">
           <summary class="cursor-pointer text-xs font-semibold" style={{ color: 'var(--color-accent-ink)' }}>Prompts used</summary>

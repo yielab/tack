@@ -71,7 +71,7 @@ test('turning agent execution on reveals both agents installed at the shim\'s ow
   await expect(attempt).toContainText('The agent reported success but delivered no change to review', { timeout: 90_000 });
   await expect(attempt).toContainText(/runr_/);
   // The raw log is in the Technical fold, closed until asked for.
-  await attempt.locator('[data-section="technical"] > summary').click();
+  await attempt.locator('[data-section="technical"] > button').click();
   await expect(attempt.getByRole('button', { name: 'Raw log' })).toBeVisible();
 
   // Leave the machine as this test found it, for every other spec in this

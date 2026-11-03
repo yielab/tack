@@ -9236,6 +9236,7 @@
           "lease_issued_at",
           "lease_expires_at",
           "environment_names",
+          "never_started",
           "created_at",
           "updated_at",
           "usage_economics",
@@ -9325,6 +9326,10 @@
                 "description": "`tack_protocol::usage_provenance::ModelProvenance` (`matched` /\n`auto_select_observed` / `mismatched`), or `null` when the attempt\nhas not yet reported `actual_execution` — populated by\n`derive_attempt_facts`. Runtime type stays untyped `Value`;\n`#[schema(...)]` below points the *generated OpenAPI document* at the\nreal type instead of the untyped-`Value` default, which would\ngenerate an empty `{}` schema."
               }
             ]
+          },
+          "never_started": {
+            "type": "boolean",
+            "description": "The attempt ended without ever starting work: the computer refused it, or the team's\nceiling did (`tack_core::run_outcome::never_started`, the one rule)."
           },
           "pull_request": {
             "oneOf": [
@@ -12380,7 +12385,8 @@
           "state",
           "created_at",
           "waiting_behind",
-          "limit"
+          "limit",
+          "never_started"
         ],
         "properties": {
           "agent_profile_id": {
@@ -12413,6 +12419,10 @@
             "$ref": "#/components/schemas/RunLimit",
             "description": "The run's token limit and who applies it."
           },
+          "never_started": {
+            "type": "boolean",
+            "description": "The run's newest attempt ended without ever starting work, the same flag the run list\ncarries (read through `tack_app::runs::run_facts`, the one rule)."
+          },
           "protocol_version": {
             "type": "integer",
             "format": "int32",
@@ -12430,6 +12440,17 @@
           },
           "state": {
             "type": "string"
+          },
+          "verifier_recommendation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MergeDecision",
+                "description": "What the verifier's pack for the run's newest attempt recommends (`merge`, `review` or\n`reject`); null while that attempt has not succeeded, or when it left no readable pack."
+              }
+            ]
           },
           "waiting_behind": {
             "type": "array",
@@ -12483,7 +12504,8 @@
           "state",
           "created_at",
           "waiting_behind",
-          "limit"
+          "limit",
+          "never_started"
         ],
         "properties": {
           "agent_profile_id": {
@@ -12520,6 +12542,10 @@
             "$ref": "#/components/schemas/RunLimit",
             "description": "The run's token limit and who applies it."
           },
+          "never_started": {
+            "type": "boolean",
+            "description": "The run's newest attempt ended without ever starting work: the computer refused it, or the\nteam's ceiling did. A screen reads \"Not started\" from this, never a failure of the work."
+          },
           "request_id": {
             "type": "string"
           },
@@ -12532,6 +12558,17 @@
           },
           "state": {
             "type": "string"
+          },
+          "verifier_recommendation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MergeDecision",
+                "description": "What the verifier's pack for the run's newest attempt recommends (`merge`, `review` or\n`reject`); null while that attempt has not succeeded, or when it left no readable pack."
+              }
+            ]
           },
           "waiting_behind": {
             "type": "array",
@@ -13657,6 +13694,15 @@
           }
         },
         "additionalProperties": {}
+      },
+      "MergeDecision": {
+        "type": "string",
+        "description": "Merge recommendation.",
+        "enum": [
+          "merge",
+          "review",
+          "reject"
+        ]
       },
       "MergedBy": {
         "type": "object",

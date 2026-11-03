@@ -39,18 +39,18 @@ app.patch('/api/projects/:id', updateProject)
 app.delete('/api/projects/:id', deleteProject)
 ```
 
-In Axum (from `crates/tack-api/src/router.rs`):
+In Axum (the shape of `crates/tack-api/src/router.rs`, which registers each method on its own `.route(...)` line):
 ```rust
 Router::new()
-    .route("/projects",     get(list_projects).post(create_project))
-    .route("/projects/{id}", get(get_project).patch(update_project).delete(delete_project))
+    .route("/projects", get(projects::list_projects))
+    .route("/projects", post(projects::create_project))
 ```
 
 The method functions (`get`, `post`, `patch`, `delete`) are Axum's equivalents of Express's `app.get`, `app.post`, etc. Multiple methods on the same path chain with `.method(handler)`.
 
 Notice `/projects/{id}` uses curly braces — that is Axum's path parameter syntax. FastAPI also uses `{id}`; Express uses `:id`.
 
-Routes are nested under `/api` using `.nest("/api", api_router)`. This is equivalent to Express's `app.use('/api', router)` or Spring's `@RequestMapping("/api")` on a controller class.
+Routes are nested under `/api` using `.nest("/api", api)`. The runner protocol is nested beside it at `/api/runner/v1`, not inside `api`, so it never passes through the operator token check. This is equivalent to Express's `app.use('/api', router)` or Spring's `@RequestMapping("/api")` on a controller class.
 
 ---
 
@@ -63,6 +63,7 @@ A handler is just an `async fn`. Its parameters are *extractors* — types that 
 
 pub async fn create_item(
     State(state): State<AppState>,       // shared application state
+    Extension(principal): Extension<Principal>,  // who is calling, put there by a middleware
     Path(project_id): Path<Uuid>,        // URL path parameter
     Json(input): Json<CreateItem>,       // request body, deserialized from JSON
 ) -> ApiResult<Json<serde_json::Value>> {
@@ -136,27 +137,26 @@ Err(ApiError::NotFound("Item 42 not found".into()))
 `ApiResult<T>` is a type alias for `Result<T, ApiError>`. The `ApiError` type implements `IntoResponse`, which maps each error variant to the correct HTTP status:
 
 ```rust
-// From crates/tack-api/src/error.rs
+// From crates/tack-api/src/error.rs (shortened)
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let (status, message) = match &self {
-            ApiError::NotFound(msg)  => (StatusCode::NOT_FOUND, msg.clone()),
-            ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            ApiError::Core(err) => match err {
-                CoreError::ItemNotFound(_)       => (StatusCode::NOT_FOUND, ...),
-                CoreError::InvalidTransition {..} => (StatusCode::BAD_REQUEST, ...),
-                CoreError::WipLimitExceeded {..}  => (StatusCode::BAD_REQUEST, ...),
-                // ...
-            },
-            ApiError::Store(_) => (StatusCode::INTERNAL_SERVER_ERROR, ...),
+        let code = self.code();                      // a stable, machine-readable code
+        let message = match &self {
+            ApiError::NotFound(msg) | ApiError::BadRequest(msg) /* … */ => msg.clone(),
+            ApiError::Core(err) => err.to_string(),
+            // A database failure is logged in full; the client sees only this:
+            ApiError::Store(err) => { log_store_failure(err); "Internal server error".into() }
+            // …
         };
-
-        let body = json!({ "error": { "status": status.as_u16(), "message": message } });
+        let status = StatusCode::from_u16(code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+        let body = ErrorEnvelope { error: ErrorBody { status: status.as_u16(), code, message, /* … */ } };
         (status, axum::Json(body)).into_response()
     }
 }
 ```
+
+Every error body therefore has the same shape: `status`, a stable `code`, a `message`, whether it is `retryable`, the request id and, for a bad field, `details.field`. The `code` knows its HTTP status, so a variant never picks a status by hand.
 
 This is the pattern that makes handlers clean: each handler returns `?` on every fallible call, and the single `IntoResponse` impl handles the translation from domain errors to HTTP status codes.
 
@@ -173,16 +173,20 @@ pub struct AppState {
     pub config: AppConfig,
     pub workspace_id: Uuid,
     pub broadcast_tx: broadcast::Sender<BoardEvent>,
+    pub event_bus: EventBus,
+    pub webhook: Option<WebhookClient>,
+    pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
+    pub tasks: TaskTracker,
 }
 ```
 
-`AppState` is the equivalent of Express's `app.locals` (or a FastAPI `app.state`). It contains everything handlers need that is not in the request itself: the database connection pool, application config, and the WebSocket broadcast sender.
+`AppState` is the equivalent of Express's `app.locals` (or a FastAPI `app.state`). It contains everything handlers need that is not in the request itself: the repository (which wraps the database pool), the configuration, the channels that carry events to the browser and to other consumers, the optional webhook client, the embedded runner's control, and the tracker for work a handler starts after it has answered.
 
 It is registered once at startup and then cloned into every handler call:
 
 ```rust
-// main.rs — wire up state at startup:
-let state = AppState { repo, config, workspace_id, broadcast_tx };
+// tack-cli's serve.rs — wire up state at startup:
+let state = AppState { repo, config, workspace_id, broadcast_tx, /* … */ };
 let app = build_router(state);
 
 // build_router — attach state to the router:
@@ -201,36 +205,33 @@ Tack's middleware stack (bottom of `build_router` in `router.rs`):
 
 ```rust
 outer
-    .layer(DefaultBodyLimit::max(config.max_body_size_bytes))
-    .layer(SetResponseHeaderLayer::overriding(/* security headers */))
+    .layer(from_fn_with_state(state.clone(), set_session_cookie))
+    .layer(DefaultBodyLimit::max(state.config.max_body_size_bytes))
+    .layer(SetResponseHeaderLayer::overriding(/* security headers, one layer each */))
     .layer(cors)
-    .layer(TraceLayer::new_for_http().make_span_with(|req| {
-        tracing::info_span!(
-            "http_request",
-            method = %req.method(),
-            uri = %req.uri(),
-        )
-    }))
+    .layer(from_fn(request_id::with_request_id))
+    .layer(TraceLayer::new_for_http().make_span_with(/* method and path, never the query */))
     .with_state(state)
 ```
 
 Layers apply from bottom to top (the last `.layer()` call runs first on each request). In order of execution:
 
 1. `TraceLayer` — creates a tracing span per request (structured logging + timing)
-2. `CorsLayer` — handles CORS headers and preflight OPTIONS requests
-3. `SetResponseHeaderLayer` — appends security headers (`X-Frame-Options`, `X-Content-Type-Options`, etc.)
-4. `DefaultBodyLimit` — rejects request bodies exceeding `max_body_size_bytes`
+2. `with_request_id` — gives the request an id that every error body names
+3. `CorsLayer` — handles CORS headers and preflight OPTIONS requests
+4. `SetResponseHeaderLayer` — appends security headers (`X-Frame-Options`, `X-Content-Type-Options`, the content security policy, etc.)
+5. `DefaultBodyLimit` — rejects request bodies exceeding `max_body_size_bytes`
 
-The auth middleware (`require_token`) is applied specifically to the `/api` sub-router before the global layers, so the health/debug endpoints remain public:
+The auth middleware (`require_token`) is layered on the `/api` sub-router only, together with the host and cross-site checks, so it never wraps the SPA or the runner protocol. Inside it, `is_public_route` lets `/api/health` and `/api/openapi.json` through without a token:
 
 ```rust
 let api = Router::new()
     .route("/health", get(debug::health))
-    // ...all protected routes...
+    // ...all other routes...
     .layer(middleware::from_fn_with_state(state.clone(), require_token));
 ```
 
-`middleware::from_fn_with_state` creates a Tower middleware from a plain async function, with access to `AppState`. The `require_token` function reads the `Authorization: Bearer <token>` header and returns 401 if it is missing or wrong.
+`middleware::from_fn_with_state` creates a Tower middleware from a plain async function, with access to `AppState`. The `require_token` function reads the `Authorization: Bearer <token>` header (or the session cookie) and returns 401 if it is missing or wrong.
 
 ---
 
@@ -238,12 +239,12 @@ let api = Router::new()
 
 Here is what happens when `PATCH /api/items/{id}` is called:
 
-1. **TraceLayer** creates a span: `http_request{method=PATCH, uri=/api/items/abc-123}`
+1. **TraceLayer** creates a span: `http_request{method=PATCH, path=/api/items/abc-123}`
 2. **CorsLayer** checks the `Origin` header; adds CORS response headers
 3. **DefaultBodyLimit** checks the body size; rejects if over limit
-4. **require_token** checks `Authorization: Bearer ...`; returns 401 if invalid
+4. **require_token** (after the host and cross-site checks) checks `Authorization: Bearer ...`; returns 401 if invalid
 5. **Axum router** matches `/api/items/{id}` → `patch(items::update_item)`
 6. **Extractors** run: `State` clones AppState; `Path` parses the UUID; `Json` deserializes the body into `UpdateItem`; if any extractor fails, request is rejected before reaching handler
-7. **update_item handler** runs: fetches old item, validates workflow transition, checks WIP limit, calls `repo.update_item()`, broadcasts WebSocket event, triggers the recurrence and the GitHub sync
+7. **update_item handler** runs: validates the input, loads the project, calls `repo.update_item_atomically()` (which asks the workflow whether the move is allowed and counts the WIP limit inside one transaction), then `after_update` emits the domain event for the WebSocket, fires the webhook and starts the recurrence and the GitHub sync
 8. Handler returns `Ok(Json(item))` → Axum serializes to JSON, sets `Content-Type: application/json`, returns 200
 9. If any step returned `Err(ApiError::...)`, **IntoResponse** converts it to the appropriate status + JSON error body

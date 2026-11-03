@@ -1,10 +1,9 @@
 import { type Component, type JSX, createMemo, createSignal, Show } from 'solid-js';
 import Tabs, { type TabItem } from '../../shared/ui/Tabs';
-import { RunState, type DocketRunWord, type RunStateName, priorityLabel } from '../../shared/ui';
+import { Fold, RunState, type DocketRunWord, type RunStateName, priorityLabel } from '../../shared/ui';
 import type { Item } from '../../shared/types';
 import ProposeFromFile from './ProposeFromFile';
 import AutomationRow, { WhoWouldDoIt, useAutomation } from './AutomationRow';
-import DetailsFold from './DetailsFold';
 import ItemMenu from './ItemMenu';
 import ExecutionTimeline from '../../shared/runWithAgent/ExecutionTimeline';
 import LatestRunSummary from '../../shared/runWithAgent/LatestRunSummary';
@@ -171,7 +170,7 @@ const ItemBody: Component<ItemBodyProps> = (props) => {
             </Show>
           </Tabs>
           <Show when={!page()}>
-            <DetailsFold glance={glance()}>{properties()}</DetailsFold>
+            <Fold kind="details" title="Details" summary={glance()} lazy>{properties()}</Fold>
           </Show>
         </div>
 

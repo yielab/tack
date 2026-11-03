@@ -20,6 +20,7 @@ import { useProject } from '../../shared/state/projectContext';
 import { useProjectItems } from '../../shared/state/projectItemsContext';
 import { useProjectHasRun } from '../../shared/state/projectHasRun';
 import { ITEM_UPDATED_EVENT } from '../../shared/state/itemEvents';
+import { stateRank } from '../../shared/runWithAgent/cardRun';
 import { useVocab } from '../../shared/vocab/useVocab';
 import { createConfirm, EmptyState, LoadError, RunState, Skeleton, type RunStateName } from '../../shared/ui';
 import { NO_AGENT_YET } from '../../shared/ui/WorkTabs';
@@ -94,13 +95,15 @@ function loader<T>(read: () => Promise<T>): Loaded<T> {
   };
 }
 
-const COUNTERS: Array<{ filter: FlowFilter; label: string; state?: RunStateName; count: (f: Flow) => number; note?: string }> = [
+// Ranked as the Board and the List rank runs, what needs a person first; the tasks nobody will take come last.
+interface Counter { filter: FlowFilter; label: string; state?: RunStateName; count: (f: Flow) => number; note?: string }
+const COUNTERS: Counter[] = ([
+  { filter: 'queued', label: 'Queued', state: 'queued', count: (f) => f.counts.queued },
+  { filter: 'nobody', label: 'Nobody will take it', count: (f) => f.counts.nobody, note: 'Tasks that go to no lane, so nothing will start them.' },
   { filter: 'needs', label: 'Needs you', state: 'needs', count: (f) => f.counts.needs, note: 'The run asks you a question and waits for your answer.' },
   { filter: 'review', label: 'Ready for review', state: 'review', count: (f) => f.counts.review, note: 'The run finished and its work waits for you to look at it.' },
   { filter: 'running', label: 'Running', state: 'running', count: (f) => f.counts.running },
-  { filter: 'queued', label: 'Queued', state: 'queued', count: (f) => f.counts.queued },
-  { filter: 'nobody', label: 'Nobody will take it', count: (f) => f.counts.nobody, note: 'Tasks that go to no lane, so nothing will start them.' },
-];
+] as Counter[]).sort((a, b) => (a.state ? stateRank(a.state) : Infinity) - (b.state ? stateRank(b.state) : Infinity));
 
 /** The row under the title: how many tasks need you, run, wait and have nobody, and what the project and the computers can carry. */
 const Summary: Component<{

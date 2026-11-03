@@ -50,7 +50,7 @@ the refusals, and only changes which people meet them.
 
 ## How every card runs
 
-Phase 85's rules ("How every card runs" in `docs/plans/phase-85.md`): read only the files the card
+Phase 85's rules ("How every card runs" in `docs/closed-cycles/plans/phase-85.md`): read only the files the card
 names; stop and report at about 150k tokens; run only the tests of what the card touched, the full suites
 once per round on the merged tree; a card that changes the HTTP API runs `./scripts/regen-generated.sh`;
 at most two cards build at once, each in its own worktree cut from `develop`; no card opens a window;

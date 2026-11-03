@@ -19,6 +19,7 @@ export interface RunChip {
 export function chipState(tone: StateTone, words: string): RunStateName {
   if (/needs your review|no changes recorded/i.test(words)) return 'review';
   if (/needs a person|needs operator/i.test(words)) return 'needs';
+  if (/not started/i.test(words)) return 'notstarted';
   if (/cancel/i.test(words)) return 'cancelled';
   if (/queued/i.test(words)) return 'queued';
   switch (tone) {
