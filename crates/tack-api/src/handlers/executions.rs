@@ -219,6 +219,16 @@ pub struct CreateExecution {
     /// value, or none, means a person started it.
     #[serde(default)]
     pub origin: Option<String>,
+    /// A previous execution request's id, to start this run from the work it kept instead of the
+    /// project's base commit. The server reads that request's newest evidence
+    /// (`actual_execution.git.branch`) and sets `metadata.rework_base` itself, the same key a
+    /// rework already reads — a request never carries the branch directly. A name that does not
+    /// exist is `not_found` (`details.reason = "from_run_not_found"`); one that belongs to
+    /// another project, or left no branch to continue from, is `unprocessable`
+    /// (`details.reason` is `"from_run_different_project"` or `"from_run_no_kept_work"`). Absent,
+    /// `metadata.rework_base` is read only when the caller set it directly, as before.
+    #[serde(default)]
+    pub from_run: Option<String>,
 }
 
 /// Response body for `POST /api/executions` — a newly created request or an
@@ -906,6 +916,7 @@ impl TryFrom<CreateExecution> for RunRequest {
             push_branch: input.push_branch,
             autonomy: start_run::level_from(input.autonomy)?,
             origin: input.origin,
+            from_run: input.from_run,
         })
     }
 }

@@ -128,6 +128,40 @@ pub async fn requested_model_of_request(
     )
 }
 
+/// What a run's `from_run` reads from the request it names: the project its item belongs to (so a
+/// request from another project is refused) and the branch its newest attempt's evidence names
+/// (`actual_execution.git.branch`), when it named one. The same fact an automatic rework already
+/// takes from a just-finished attempt (`tack-app/src/runs/complete/rework.rs`), read here on
+/// request instead of at completion time.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct ReworkSourceRow {
+    pub project_id: String,
+    /// `None` when the request has no attempt yet, or its newest attempt's evidence named no
+    /// branch (or an empty one).
+    pub branch: Option<String>,
+}
+
+/// The project and kept-work branch of a request, for `from_run` to resolve; `None` when no
+/// request has this id.
+pub async fn rework_source_of_request(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<ReworkSourceRow>, StoreError> {
+    Ok(sqlx::query_as(
+        "SELECT i.project_id AS project_id,
+                NULLIF((SELECT json_extract(a.actual_execution, '$.git.branch')
+                          FROM execution_attempts a
+                         WHERE a.request_id = r.id AND a.actual_execution IS NOT NULL
+                         ORDER BY a.attempt_number DESC LIMIT 1), '') AS branch
+           FROM execution_requests r
+           JOIN items i ON i.id = r.item_id
+          WHERE r.id = ?",
+    )
+    .bind(request_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}
+
 /// What the limit of one request is read from: its stored snapshot, the harness that ran it
 /// (the newest attempt's, else the one requested) and its item's project.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]

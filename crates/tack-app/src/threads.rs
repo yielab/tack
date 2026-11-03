@@ -290,6 +290,7 @@ async fn begin_turn(
         push_branch: None,
         autonomy: None,
         origin: None,
+        from_run: None,
     };
     let started = start_run(repo, now, &turn_principal(thread.id), request)
         .await

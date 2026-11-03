@@ -117,6 +117,7 @@ pub fn full_request(item_id: Uuid) -> RunRequest {
         push_branch: None,
         autonomy: None,
         origin: None,
+        from_run: None,
     }
 }
 
