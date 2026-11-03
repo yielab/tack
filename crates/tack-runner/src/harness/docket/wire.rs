@@ -288,6 +288,13 @@ pub(super) struct TaskHop {
     /// model settled. Absent for any hop that is not that, and from a docket before the feature.
     #[serde(default)]
     pub budget: Option<BudgetOutcome>,
+    /// The hop's own raw stop text. For a budget stop this already carries docket's own
+    /// `"(source: <source>; raise <key>)"` tail (`agent/loop_types.py::limit_origin`): Tack reads
+    /// that tail for where to raise the limit instead of a table of its own, so a key docket
+    /// renames or retires (ADR 0038 decision 5) never goes stale on this side. Empty when the hop
+    /// wrote none.
+    #[serde(default)]
+    pub error: String,
 }
 
 /// What stopped a hop under `budgetOutcome`: the bound that ran out, the limit and what was used
