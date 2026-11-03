@@ -28,9 +28,17 @@ from the kept work or clean.
 | P59-3 | none (a `budget` on the hop) | Merged | The budget hop's `artifact.summary` is the model's report; no verdict is read from it |
 | P59-4 | none (the pipeline format's spec version) | Merged | A step declares `maxIterations`, `maxToolCalls`, `timeout`; a role declares `maxIterations`, `maxToolCalls`; the pod keeps `turnTimeoutS`; the rounds default is now 60 |
 
-**Not yet field-proven.** docket's own team (`rack-cli-85`, 2026-11-0X) says Phase 59 is merged
-and running, but **not closed**: two of its three live acceptance runs are still pending. The code
-is real; the live proof is not. Card L here waits on that close, same as it always did.
+**Field-proven.** docket closed Phase 59 2026-11-03 (`develop` at `02056b87`): all three live
+acceptance runs passed on `claude-haiku-5-5` against its reinstalled service. A step with
+`maxIterations: 4` stopped with a notice at round 3, one tool-free landing request,
+`failureKind: "budget"`, `hop.budget == {bound: "rounds", limit: 4, used: 4, source: "step",
+treeChanged: true}`, the report as `artifact.summary` and the work in the patch; retried at
+`maxIterations: 12` it finished `done`. A step with `maxIterations: 80, timeout: 1200` finished
+`done` at 42 rounds. The live `saas-dev` task from the incident (`task-0a050f9c`) was retried, its
+Implementer continued its session, then parked on a destructive ask the operator denied — it ended
+`approval_denied`, not a finished task, which is a different, expected end (ADR 0038's own case
+table lists it). Card L here can now run for real; the shapes above match this plan exactly, and
+the Implementer-only pin is confirmed unchanged.
 
 **Confirmed against docket's source (`tasks/domain/task.py`, `tasks/domain/parts.py`,
 `tasks/application/record.py`) and by the docket session directly:**
