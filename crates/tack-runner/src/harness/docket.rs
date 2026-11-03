@@ -275,8 +275,10 @@ fn budget_bound_phrase(bound: &str) -> String {
     }
 }
 
-/// Where to raise the limit, when the hop's own `budget.raise` (not yet on the wire — docket ADR
-/// 0038 decision 5, planned P59-6) is absent. docket's stop message already carries a
+/// Where to raise the limit, for the rare hop whose `budget.raise` is absent (Card L's live proof
+/// against docket `develop` `fa06ce05`, P59-6/7/8, confirms `raise` is always present today — this
+/// is a fallback, in practice near-dead code, kept for an older docket or one that regresses the
+/// field). docket's stop message also carries a
 /// `"(source: <source>; raise <key>)"` tail for a bound its machine or its pipeline sized
 /// (`agent/loop_types.py::limit_origin`); reading that key out of it, rather than keeping a
 /// table of Tack's own, means a key docket renames or retires (ADR 0038 decision 5, which is
@@ -1192,6 +1194,29 @@ impl DocketAdapter {
         json!({"possible": true})
     }
 
+    /// Adds `branch`/`head_commit`/`base_commit` to a budget stop's `reason` when the task's
+    /// worktree has a branch to read (decision 3, Phase 87): any budget-stopped hop that pinned
+    /// its tree — an Implementer's, whatever bound it hit, `tokens` included — leaves work worth
+    /// showing, not only a `step_budget` one. Card L's live proof found a tokens-bound stop with
+    /// `treeChanged: true` left with neither key, because only the `step_budget` arm ever called
+    /// this; `from_run` then refused the very run it should have offered first (decision 5's
+    /// table, row 2). Called only once the caller has already checked `budget.tree_changed`.
+    async fn add_kept_branch(&self, reason: &mut Value, task: &TaskView, workspace: &Path) {
+        let branch = task
+            .worktree
+            .as_ref()
+            .map_or("", |worktree| worktree.branch.as_str());
+        if let Ok(head) = Self::branch_head(workspace, branch).await {
+            reason["branch"] = json!(branch);
+            reason["head_commit"] = json!(head);
+            reason["base_commit"] = json!(
+                task.worktree
+                    .as_ref()
+                    .and_then(|worktree| worktree.base_commit.clone())
+            );
+        }
+    }
+
     /// The task has ended: what that makes of the attempt.
     async fn finish(
         &self,
@@ -1374,20 +1399,29 @@ impl DocketAdapter {
                 // are, so the engine captures the patch. Without that pin, the branch carries
                 // nothing of this step and the reason names neither.
                 if budget.tree_changed {
-                    let branch = task
-                        .worktree
-                        .as_ref()
-                        .map_or("", |worktree| worktree.branch.as_str());
-                    if let Ok(head) = Self::branch_head(&info.workspace, branch).await {
-                        reason["branch"] = json!(branch);
-                        reason["head_commit"] = json!(head);
-                        reason["base_commit"] = json!(
-                            task.worktree
-                                .as_ref()
-                                .and_then(|worktree| worktree.base_commit.clone())
-                        );
-                    }
+                    self.add_kept_branch(&mut reason, task, &info.workspace)
+                        .await;
                 }
+                (AttemptState::Failed, reason)
+            }
+            // A `tokens` bound keeps code `budget` (that limit is Tack's own), but a kept tree is
+            // still a kept tree: without this arm the generic catch-all below never looks, and
+            // `from_run` refuses the very run decision 5's table says to offer it from first
+            // (found live, Card L, docs/plans/phase-87.md — a real tokens-bound stop left with
+            // neither key despite a real commit).
+            _ if failure_kind == Some("budget")
+                && self.client.has_feature("budgetOutcome").await
+                && task
+                    .hops
+                    .last()
+                    .and_then(|hop| hop.budget.as_ref())
+                    .is_some_and(|budget| budget.bound == "tokens" && budget.tree_changed) =>
+            {
+                let mut reason = json!({"code": "budget",
+                                        "message": format!("docket said: {why}"),
+                                        "task": info.task});
+                self.add_kept_branch(&mut reason, task, &info.workspace)
+                    .await;
                 (AttemptState::Failed, reason)
             }
             // Any other end is docket's, in docket's words and labelled as such.

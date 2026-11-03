@@ -2802,6 +2802,7 @@ async fn a_tokens_budget_stop_keeps_the_code_budget_even_with_the_feature() {
         status: "failed".to_owned(),
         failure_kind: Some("budget".to_owned()),
         reason: "task budget spent".to_owned(),
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
         after: vec![(
             "hop_finished".into(),
             hop_budget(
@@ -2818,11 +2819,23 @@ async fn a_tokens_budget_stop_keeps_the_code_budget_even_with_the_feature() {
     let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
-    assert_eq!(outcome.terminal_reason["code"], json!("budget"));
+    let reason = &outcome.terminal_reason;
+    assert_eq!(reason["code"], json!("budget"));
+    assert_eq!(reason["message"], json!("docket said: task budget spent"));
+    // Card L's live proof (docs/plans/phase-87.md) found a real tokens-bound stop left with
+    // neither key despite a genuine commit: `from_run` refused the very run decision 5's table
+    // says to offer it from first. The code stays `budget` (never `step_budget`); only the kept
+    // branch is new here.
+    let branch = reason["branch"].as_str().expect("branch");
+    let head = reason["head_commit"].as_str().expect("head_commit");
     assert_eq!(
-        outcome.terminal_reason["message"],
-        json!("docket said: task budget spent")
+        git(
+            &scene.repository,
+            &["rev-parse", &format!("refs/heads/{branch}")]
+        ),
+        head
     );
+    assert!(reason["base_commit"].is_string());
 }
 
 /// Without `treeChanged` (any role but the Implementer, docket's own narrowing), the reason
