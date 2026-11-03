@@ -1,7 +1,7 @@
 import { type Component, For, Show } from 'solid-js';
 import { RunState, type RunStateName } from '../../shared/ui';
 import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
-import { filterOf, totalRuns, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
+import { filterOf, stateRank, totalRuns, type RunCounts, type RunFilter } from '../../shared/runWithAgent/cardRun';
 
 /** The words for each state, as the board prints them next to a count: the one set of work words. */
 const RUN_STATE_WORDS = RUN_STATE_LABEL;
@@ -11,15 +11,23 @@ const STATE_NOTE: Partial<Record<RunStateName, string>> = {
   needs: 'The run asks you a question and waits for your answer.',
   review: 'The run finished and its work waits for you to look at it.',
   failed: 'The run ended badly.',
+  notstarted: 'The run was turned away before the agent did anything, so it used nothing and changed nothing.',
 };
 
-const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateName }> = [
-  { filter: 'queued', state: 'queued' },
-  { filter: 'running', state: 'running' },
-  { filter: 'needs', state: 'needs' },
-  { filter: 'review', state: 'review' },
-  { filter: 'failed', state: 'failed' },
-];
+// In the order the List's Work column and a board column rank runs, what needs a person first, the same
+// order the Flow's Work counters read in.
+const COUNTERS: Array<{ filter: Exclude<RunFilter, 'waiting'>; state: RunStateName }> = (
+  [
+    { filter: 'queued', state: 'queued' },
+    { filter: 'running', state: 'running' },
+    { filter: 'needs', state: 'needs' },
+    { filter: 'review', state: 'review' },
+    { filter: 'failed', state: 'failed' },
+    { filter: 'notstarted', state: 'notstarted' },
+  ] as const
+)
+  .map((entry) => ({ ...entry }))
+  .sort((a, b) => stateRank(a.state) - stateRank(b.state));
 
 /**
  * One row under the board title that counts the board's runs by state, one chip per state. Each
@@ -80,15 +88,16 @@ const AgentStrip: Component<{
     <Show when={totalRuns(props.counts) > 0}>
       <div
         role="group"
-        aria-label="Work"
+        aria-label="Work in this project"
         data-testid="agent-strip"
         class="flex flex-wrap items-center gap-2"
         style={{ padding: '0 22px 10px' }}
       >
-        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task. The column is its status, which only a person changes.">
-          Work
+        <span class="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }} title="What the agents report for each task of this project. The column is its status, which only a person changes. The sidebar's Waiting for you counts every project.">
+          Work in this project
         </span>
-        <For each={COUNTERS}>
+        {/* Not started appears only once a run was turned away: five chips are the ones a person acts on. */}
+        <For each={COUNTERS.filter((entry) => entry.state !== 'notstarted' || props.counts.notstarted > 0 || props.active.has('notstarted'))}>
           {(entry) => (
             counter(entry.filter, () => props.counts[entry.state], RUN_STATE_WORDS[entry.state], entry.state, STATE_NOTE[entry.state])
           )}
@@ -99,9 +108,10 @@ const AgentStrip: Component<{
 };
 
 /**
- * A column's runs as one stacked bar, a segment per state in proportion to its cards.
- * Each segment is a button that sets the same filter the strip does. The group's
- * label spells the bar out in words, so it is not read by colour or length.
+ * A column's runs as one stacked bar, a segment per state in proportion to its cards, with a legend
+ * under it that names each state in words next to its icon, so the bar is never read by colour alone.
+ * Each segment is a button that sets the same filter the strip does. The group's label spells the
+ * bar out for a screen reader, so the legend is hidden from it.
  */
 export const RunMiniBar: Component<{
   counts: RunCounts;
@@ -111,6 +121,8 @@ export const RunMiniBar: Component<{
   const segments = () =>
     (Object.keys(RUN_STATE_WORDS) as RunStateName[])
       .filter((state) => props.counts[state] > 0)
+      // The same order as the strip above the board: what needs a person first.
+      .sort((a, b) => stateRank(a) - stateRank(b))
       .map((state) => ({ state, count: props.counts[state], filter: filterOf(state) }));
   const summary = () => segments().map((s) => `${s.count} ${RUN_STATE_WORDS[s.state].toLowerCase()}`).join(', ');
 
@@ -154,6 +166,22 @@ export const RunMiniBar: Component<{
           }}
         </For>
       </div>
+      <ul
+        aria-hidden="true"
+        data-testid="run-mini-legend"
+        class="m-0 mt-1 flex list-none flex-wrap items-center gap-x-2 gap-y-0.5 p-0 text-micro"
+        style={{ color: 'var(--color-text-secondary)' }}
+      >
+        <For each={segments()}>
+          {(segment) => (
+            <li class="inline-flex items-center gap-1 whitespace-nowrap">
+              <RunState state={segment.state} size="dot" />
+              <span class="tabular-nums">{segment.count}</span>
+              {RUN_STATE_WORDS[segment.state]}
+            </li>
+          )}
+        </For>
+      </ul>
     </Show>
   );
 };

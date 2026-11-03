@@ -1,15 +1,47 @@
-# Configuration Reference
+# Configuration
 
-Every environment variable and TOML key of the API server and the runner, one table per domain.
-This file is the single reference for them; the book renders it as the
-[Configuration Reference](https://yielab.github.io/tack/admin-guide/configuration-reference.html). Use it
-when you need the exact name, default or effect of a setting; the
-[Configuration page](https://yielab.github.io/tack/admin-guide/configuration.html) explains how the
-settings are loaded.
+This page is for the person who sets up a Tack server or a runner. After reading it you know where
+settings come from, which one wins, how to write a `tack.toml`, and the exact name and default of every
+setting.
+
+Everything is optional. Tack runs with its built-in defaults, and you change only what you need.
+
+## Where settings come from
+
+The server reads three sources. A later one overrides an earlier one:
+
+1. Built-in defaults.
+2. `tack.toml` in the directory the server starts in.
+3. Environment variables (`TACK_*`).
+
+A runner has its own settings, with its own file and variables; see [The runner](#the-runner).
+
+An example `tack.toml`:
+
+```toml
+host         = "127.0.0.1"
+port         = 3210
+database_url = "sqlite:/var/data/tack.db?mode=rwc"
+log_level    = "info"
+log_json     = false
+log_file     = "/var/log/tack/api.log"
+storage_dir  = "/var/data/tack-storage"
+# api_token  = "change-me"
+allowed_origins = ["https://pm.example.com"]
+max_body_size_bytes = 4194304   # 4 MB
+```
+
+Two things to watch. `allowed_origins` is a list in the file but a comma-separated string in the
+environment variable. And a `tack.toml` that cannot be parsed, for example because a value has the wrong
+type, is ignored as a whole without an error, and the defaults apply. A key Tack does not know is ignored
+too. After editing, confirm the change took effect, for example with `GET /api/debug/info`, which reports
+the host, port and log level.
+
+The variable form works for every setting in the tables below. The webhook, GitHub, auto-start and backup
+settings can also go in `tack.toml`, under the variable's name in lower case without `TACK_`, such as
+`github_poll_seconds`.
 
 ## The API server
-
-The server reads `tack.toml` from its working directory, then environment variables, which win:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -20,7 +52,7 @@ The server reads `tack.toml` from its working directory, then environment variab
 | `TACK_LOG_JSON` | `false` | Structured JSON logging |
 | `TACK_LOG_FILE` | _(none)_ | Write logs to this file **in addition to** stdout, in the same format `TACK_LOG_JSON` selects. Missing parent directories are created; if the directory cannot be created the server logs to stdout only rather than refusing to start. `tack service install` and the desktop app both set this so logs survive without a service manager attached |
 | `TACK_STORAGE_DIR` | `./storage` | Attachment storage directory |
-| `TACK_API_TOKEN` | _(generated)_ | Bearer token — requires `Authorization: Bearer <token>` (or the `tack_session` cookie) on all API requests. Left unset on a loopback bind, the server reads or creates `api-token` beside the database file (see below) |
+| `TACK_API_TOKEN` | _(generated)_ | Bearer token — requires `Authorization: Bearer <token>` (or the `tack_session` cookie) on all API requests. Left unset on a loopback bind, the server reads or creates `api-token` beside the database file (see below the table) |
 | `TACK_API_ALLOW_UNAUTHENTICATED_NONLOOPBACK` | `false` | Explicit opt-out for the startup refusal to bind a non-loopback address with no `TACK_API_TOKEN` set. Loopback binds are unaffected either way. Off by default: this widens who can reach an unauthenticated API, so it must be a deliberate choice |
 | `TACK_ALLOWED_ORIGINS` | `http://localhost:8080,http://127.0.0.1:8080,http://localhost:3210,http://127.0.0.1:3210` | Comma-separated allow-list of browser origins. Setting it replaces the default list. It gates CORS, and it gates the board's live WebSocket upgrade for any request whose `Origin` is not a loopback host — a bind to a loopback address (the default) additionally authorizes any loopback-hosted `Origin` on its own, so a local UI on any port (Vite's `5173` dev server included) receives live events with no configuration; a non-loopback bind, or a UI served from a non-loopback origin, still needs its origin listed here or the handshake is refused before it completes |
 | `TACK_MAX_BODY_SIZE` | `2097152` | Global request body limit in bytes (default 2 MB; upload endpoint is always 50 MB) |
@@ -29,7 +61,7 @@ The server reads `tack.toml` from its working directory, then environment variab
 | `TACK_GITHUB_TOKEN` | _(none)_ | GitHub PAT (`repo` scope). When set, item status changes are pushed back to linked GitHub issues (item done ⇄ issue closed), and the inbound poll below can start. Never logged. See [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md) |
 | `TACK_GITHUB_API_BASE` | `https://api.github.com` | GitHub API root — override for GitHub Enterprise or to point tests at a mock. Used by import, push-back, and the inbound poll |
 | `TACK_GITHUB_POLL_SECONDS` | `0` | Inbound poll interval in seconds; `0` is off. Also requires `TACK_GITHUB_TOKEN`. Moves a linked item through its project's ordinary workflow on a GitHub issue close/reopen — see [GitHub sync](https://github.com/yielab/tack/blob/develop/docs/GITHUB-SYNC.md). A project's automatic merge (Settings → Automation → Merge) runs on the same tick, so it needs both the token and the poll on |
-| `TACK_AUTO_START_SECONDS` | `30` | How often the board looks for tasks a project starts by itself (Settings → Automation → Start); `0` is off for every project, and a value that is not a whole number counts as `30`. It has its own interval and needs no GitHub token. A project starts a task that has a role when it reaches the project's start status, up to the project's cap of open runs. It runs in the board's process, not in a runner |
+| `TACK_AUTO_START_SECONDS` | `30` | How often the board looks for tasks a project starts by itself (Settings → Automation → Start); `0` is off for every project, and a value that is not a whole number counts as `30`. It has its own interval and needs no GitHub token. A project starts a task that has a role or a profile when it reaches the project's start status, up to the project's cap of open runs. It runs in the board's process, not in a runner |
 | `TACK_PRILL_PROGRAM` | `prill` | The board's own prill, looked up on `PATH`. Left unset, the board uses the program the embedded runner verifies with (`[verify] program`, when its `kind` is `prill`) before looking for `prill` on `PATH`; set, this wins. The board runs it only to check a signed pack before an automatic merge (`prill attest verify`) and to keep prill's store of packs and outcomes (`prill record`, `prill metrics`) under `<storage>/prill/`, one per repository. Without it the board says so: no automatic merge, and the Factory page shows Tack's own figures only |
 | `TACK_BACKUP_ENDPOINT` | _(none)_ | S3-compatible endpoint URL (e.g. `https://<acct>.r2.cloudflarestorage.com`); omit for AWS S3 |
 | `TACK_BACKUP_BUCKET` | _(none)_ | Bucket name — **required** to enable remote backup |
@@ -46,9 +78,11 @@ The server reads `tack.toml` from its working directory, then environment variab
 | `TACK_EXECUTION_RETENTION_INTERVAL_SECS` | `3600` | Interval, in seconds, between execution-retention sweeps |
 | `TACK_EXECUTION_HEALTH_ENABLE` | `true` | Enables the execution-domain health watch (counts of runners, queued runs, claims and events; logs a warning when a claim goes stale or an attempt reaches `needs_operator`). On by default, unlike retention above: it reads and logs only and deletes nothing |
 | `TACK_EXECUTION_HEALTH_INTERVAL_SECS` | `60` | Interval, in seconds, between execution health-watch checks |
-| `TACK_EXECUTION_DECISION_TOKEN` | _(none)_ | Separate shared secret required to resolve a scoped execution decision via `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`. Distinct from `TACK_API_TOKEN`, and the route rejects rather than falling back to the operator token. Left unset on a loopback bind, the server reads `decision-token` beside the database file (next to `api-token`), or creates it there on the first start (mode `0600`, 32 random bytes); the variable still wins. The desktop app reads the file and gives it to its window; in a browser the Inbox asks for it once per session. Never logged |
+| `TACK_EXECUTION_DECISION_TOKEN` | _(none)_ | Separate shared secret required to resolve a scoped execution decision via `POST /api/attempts/{attempt_id}/decisions/{decision_id}/resolve`. Distinct from `TACK_API_TOKEN`, and the route rejects rather than falling back to the operator token. Left unset on a loopback bind, the server reads `decision-token` beside the database file (next to `api-token`), or creates it there on the first start (mode `0600`, 32 random bytes); the variable still wins. The desktop app reads the file and gives it to its window; in a browser the page asks for it once per session. Never logged |
 
-With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from the directory of its database file, or creates it there (`0600`, one line), and requires it on every API request; the page at `/` hands it to the browser as the `tack_session` cookie. The CLI looks for the file in `<data root>/api-token` after `--token`, `TACK_API_TOKEN` and `~/.tackrc`; a server whose database lives elsewhere needs `TACK_API_TOKEN` set on both ends. An in-memory database keeps its token only in the process. See [What the Agent Can Reach](https://yielab.github.io/tack/admin-guide/what-the-agent-can-reach.html).
+With no `TACK_API_TOKEN` on a loopback bind, the server reads `api-token` from the directory of its database file, or creates it there (`0600`, one line), and requires it on every API request; the page at `/` hands it to the browser as the `tack_session` cookie. The CLI looks for the file in `<data root>/api-token` after `--token`, `TACK_API_TOKEN` and `~/.tackrc`; a server whose database lives elsewhere needs `TACK_API_TOKEN` set on both ends. An in-memory database keeps its token only in the process. See [Administration & Security](https://yielab.github.io/tack/admin-guide/administration.html#authentication).
+
+The `TACK_BACKUP_*` values are **defaults**. The cloud-backup settings except the interval can also be edited from **Settings → Cloud Backup** and are stored in the board's database; those values win. See [Backup & Restore](https://yielab.github.io/tack/admin-guide/backup-restore.html#remotecloud-backup).
 
 ## The `tack` command-line client
 
@@ -80,79 +114,43 @@ runner does not know makes it refuse to start.
 Tables `[verify]`, `[git]`, `[secrets]`, `[environment]` and `[docket]` have no environment variable;
 they are described in the sections below. Runner credentials are redacted in every log and error.
 
-The `TACK_BACKUP_*` values are **defaults**. Cloud-backup settings (endpoint, bucket, region, access/secret key, prefix, retention) can also be edited at runtime from the UI (**Settings → Cloud Backup**) and are stored in the `app_meta` table; UI values override the env defaults. `TACK_BACKUP_INTERVAL_SECS` (automatic scheduling) remains env-only and takes effect at startup. The secret key is write-only over the API — never returned to clients.
-
 ## Embedded runner (`tack serve --with-runner`)
 
-`tack serve --with-runner` (or `TACK_LOCAL_RUNNER_ENABLE=1`) runs the runner role as a
-task inside the same process as the server, speaking runner-v1 over loopback HTTP
-exactly like a remote runner would. It needs no second binary, no `tack runner
-enroll` call and no token to copy.
+`tack serve --with-runner` (or `TACK_LOCAL_RUNNER_ENABLE=1`) runs the runner inside the server's
+process, speaking runner-v1 over loopback HTTP like any remote runner. What it is and how it behaves are
+in [Installing and Operating Runners](https://yielab.github.io/tack/admin-guide/runners.html#standalone-mode-tack-serve---with-runner).
+The settings:
 
-- **Gate.** Off by default. `TACK_LOCAL_RUNNER_ENABLE` (table above) and `--with-runner`
-  are equivalent; either turns it on. Refused outright — before any socket or database
-  is opened — when the server is not bound to loopback (`TACK_HOST` other than
-  `127.0.0.1`/`localhost`/an equivalent loopback address); this is a startup error, never
-  a silent downgrade to a runner-less server, because an embedded runner executes
-  arbitrary coding-agent processes on the host serving the UI.
+- **Gate.** Off by default. `TACK_LOCAL_RUNNER_ENABLE` and `--with-runner` are equivalent; either turns
+  it on. The server refuses to start with it, before any socket or database is opened, when
+  `TACK_HOST` is not a loopback address.
 - **Turning it on and off while the board runs.** On a loopback bind, the Agents page (and
   `GET`/`PUT /api/local-runner`) turns the embedded runner on or off with no restart. The choice is
   stored in the board's database and overrides `TACK_LOCAL_RUNNER_ENABLE` from then on. On any
   non-loopback bind the two routes do not exist (a plain 404).
-- **First run.** A fresh state directory with no stored session self-provisions: it
-  creates its own pending-runner row and redeems its own one-time enrollment token
-  in-process, so no token is ever printed, copied, or configured by hand. A later start
-  against the same state directory reuses the credential already on disk instead of
-  provisioning a second runner.
-- **Configuration file.** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`)
-  names the TOML file the embedded runner loads — the same file `tack runner start --config`
-  reads, with the same precedence (file, then environment, then the state directory this
-  server scopes for it). `tack runner doctor` reads the same variable. Without the variable the
-  runner reads `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on Linux)
-  when that file exists; it lives outside the data directory, so wiping the data or starting from
-  `tack service install`'s unit keeps it. It is the only way to give the embedded runner a
-  `[verify]`, `[git]`, `[secrets]`, `[environment]` or `[docket]` table, since those have no
-  environment variable. With no file the embedded runner runs on defaults: no verifier, no branch
-  push and no docket. `GET /api/local-runner` names the file it read (`config_file`, `null` with
-  none), the Agents page says it, and `tack runner doctor` prints it first.
-- **State directory.** Defaults to `<TACK_STORAGE_DIR>/runner` — scoped to the same
-  configuration as the database, so a server started against a different
-  `TACK_DATABASE_URL` (paired, as every other per-install artifact in this crate already
-  assumes, with its own `TACK_STORAGE_DIR`) never resolves to another server's runner
-  state. `TACK_RUNNER_STATE_DIR` still overrides this default when set, exactly as it
-  does for the standalone `tack-runner` binary (whose own default remains the bare,
-  cwd-relative `.tack-runner` — it has no database or `storage_dir` to scope against).
-  Holds the runner's credential (`session.json`) and its attempt journal, both written
-  owner-only (`session.json` mode `0600`; the directory itself and journal entries
-  `0700`/`0600`). State left in the old cwd-relative default is moved there once, when the new
-  directory is missing and the old one exists; an existing new directory is never overwritten.
-- **Agent logins — Tack holds no model key.** Each agent signs in and reaches its model
-  with its own tools. Tack has no model key, endpoint or catalog; it does not read, store,
-  forward or proxy what an agent finds, embedded or standalone. There is no `[provider.*]`
-  table: a runner whose config has one refuses to start and names the table. The runner's
-  secret store (`tack runner secret set|list|remove`) stays, for `[environment]` entries and
-  `secret_reference`. `tack runner doctor` reports, per agent, whether it is signed in and which
-  models it offers; run it rather than trusting a copy here.
-
-  | Agent | Sign in with | Where the login lives | What the sandbox binds |
-  |---|---|---|---|
-  | Claude Code | `claude` ([authentication](https://code.claude.com/docs/en/authentication)) | `~/.claude` | `~/.claude` |
-  | Codex | `codex login` ([auth](https://developers.openai.com/codex/auth)) | `~/.codex` | `~/.codex` |
-  | opencode | `opencode auth login` ([providers](https://opencode.ai/docs/providers/)) | opencode's own `auth.json` | Its `auth.json` only, in a scratch `HOME`, with the `provider`, `model` and `small_model` keys copied from `opencode debug config`. Its MCP servers, plugins and permissions do not reach the run |
-  | docket | docket's own sign-in, in its own home ([docket](https://github.com/yielab/docket)) | docket's `DOCKET_HOME` | Nothing: docket is a daemon the runner talks to over HTTP and it confines its agents in its own jail (`sandbox: harness`). See `[docket]` below |
-
-  The runner forwards no new environment variables into a run. A key that lives only in a
-  shell variable does not reach an agent: use the agent's own login or config file.
-  The model a run uses is one optional string in the agent's own spelling, chosen per request
-  or per project; see [Choosing a
-  model](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-model). No
-  `TACK_*` variable names a model, provider or endpoint, and the API server never holds a
-  model credential.
+- **Configuration file.** `tack serve --runner-config <path>` (or `TACK_LOCAL_RUNNER_CONFIG`) names the
+  TOML file the embedded runner loads, the same file `tack runner start --config` reads. Without it the
+  runner reads `<per-user config dir>/tack/runner.toml` (`~/.config/tack/runner.toml` on Linux) when
+  that file exists. It is the only way to give the embedded runner a `[verify]`, `[git]`, `[secrets]`,
+  `[environment]` or `[docket]` table, since those have no environment variable. With no file it runs on
+  defaults: no verifier, no branch push and no docket. `GET /api/local-runner` names the file it read
+  (`config_file`, `null` with none), and `tack runner doctor` prints it first.
+- **State directory.** `<TACK_STORAGE_DIR>/runner`, so two boards never share one runner's state.
+  `TACK_RUNNER_STATE_DIR` overrides it, as it does for the standalone `tack-runner` binary, whose own
+  default is the folder `.tack-runner`. It holds the runner's credential (`session.json`, mode `0600`)
+  and its attempt journal (entries `0600`, the directory `0700`).
+- **Agent logins.** Tack holds no model key. Each agent signs in with its own command; the table is in
+  [Installing and Operating Runners](https://yielab.github.io/tack/admin-guide/runners.html#local-credential-handling).
+  The runner forwards no new environment variables into a run, so a key that lives only in a shell
+  variable does not reach an agent. The model a run uses is one optional string in the agent's own
+  spelling, chosen per request or per project; see [Choosing a
+  model](https://yielab.github.io/tack/user-guide/running-agents.html#choosing-a-model). No `TACK_*`
+  variable names a model, provider or endpoint. A runner whose settings file has a `[provider.*]` table
+  refuses to start and names the table.
 - **Log visibility.** The default filter is `tack={level},tower_http={level}`: a target directive
-  matches by prefix, so `tack` covers every Tack crate, the embedded runner's self-provisioning,
-  enrollment, claim and completion lines among them, and `TACK_LOG_LEVEL` sets their level. The
-  per-request trace is `debug`, so it appears only at that level; a failed request is `error`.
-  `RUST_LOG` still wins when set.
+  matches by prefix, so `tack` covers every Tack crate, the embedded runner's enrollment, claim and
+  completion lines among them, and `TACK_LOG_LEVEL` sets their level. The per-request trace is `debug`,
+  so it appears only at that level; a failed request is `error`. `RUST_LOG` still wins when set.
 
 ## Runner verifier (`[verify]`)
 
@@ -289,16 +287,8 @@ binary = "docket"              # starts `docket start --dispatch` with the runne
 | `binary` | _(none)_ | The docket program; lets the runner start the daemon |
 | `base_url` | _(none)_ | A daemon already running at this URL; the runner starts nothing |
 
-With `binary` and no `base_url`, the runner looks at `GET /health` first and starts the daemon only
-when nothing answers. The command is `docket start --dispatch --bind 127.0.0.1 --port <port>`, plus
-`--token-file` when set. Its whole environment is `PATH`, `HOME` and `DOCKET_HOME`. Its output goes to
-`<state_dir>/logs/docket-daemon.log`. When it exits the runner restarts it after 2 seconds, doubling
-up to a minute; a daemon that stays up for more than 30 seconds starts the wait over. When the runner
-stops it sends the daemon one `SIGTERM` and waits five seconds. With `base_url` the runner never
-starts a daemon. `tack runner doctor` prints the API version, whether the daemon answers and one line
-per team (`lights-out`, or `attended` with docket's fix). The
-[Installing and Operating Runners](https://yielab.github.io/tack/admin-guide/runners.html#docket-teams)
-page explains the teams.
+How the runner starts and watches the daemon, and how teams are checked, is in
+[Installing and Operating Runners](https://yielab.github.io/tack/admin-guide/runners.html#docket-teams).
 
 A profile, not the runner's file, names a team: `tool_policy.docket.team`. With none, the team is
 named for the project's folder.

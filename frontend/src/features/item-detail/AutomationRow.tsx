@@ -6,7 +6,7 @@ import { noPlaceToRun } from '../../shared/runWithAgent/shared';
 import ProfilePicker from '../../shared/runWithAgent/ProfilePicker';
 import { useAutoStart } from '../../shared/state/autoStart';
 import { toast } from '../../shared/ui/toast';
-import { HelpHint, LoadError } from '../../shared/ui';
+import { Fold, HelpHint, LoadError } from '../../shared/ui';
 import { HELP } from '../../shared/help/texts';
 import type { Item, Role } from '../../shared/types';
 import type { components } from '../../shared/api/schema.gen';
@@ -151,6 +151,12 @@ const AutomationRow: Component<{ item: Item; automation?: Automation; whoShownAb
       toast.error(err instanceof Error ? err.message : 'Could not save who does this task.');
     }
   };
+  // What a person has to do before this task can go: pick a profile for a role that has none.
+  const needsYou = () => {
+    const c = chosen();
+    const role = c && !c.profileId ? c.d.roles.find((r) => !r.agent_profile_id)?.name : null;
+    return role ? `needs you: the role ${role} has no profile` : null;
+  };
   return (
     <>
       <Show when={resource.error}>
@@ -158,20 +164,23 @@ const AutomationRow: Component<{ item: Item; automation?: Automation; whoShownAb
       </Show>
       <Show when={sentence(props.whoShownAbove?.() ?? false)}>
         {(text) => (
-          <div
-            data-testid="automation-row"
-            class="flex min-w-0 flex-col gap-1.5 border-t pt-2.5 text-xs"
+          <Fold
+            kind="automation"
+            testId="automation-row"
+            size="sub"
+            title="Automation"
+            summary={text()}
+            needs={needsYou()}
+            class="border-t pt-2.5"
             style={{ color: 'var(--color-text-secondary)', 'border-color': 'var(--color-border-light)' }}
           >
-            <div class="flex min-w-0 items-center gap-1.5">
-              <span class="font-semibold">Automation</span>
-              <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>{text()}</span>
-              <HelpHint label="Automation" help={HELP.automationRow} />
-            </div>
-            <Show when={(chosen()?.d.profiles.length ?? 0) > 0}>
-              <details data-testid="automation-who-does-it">
-                <summary class="cursor-pointer text-small font-semibold">Who does it</summary>
-                <div class="mt-2">
+            <div class="flex min-w-0 flex-col gap-1.5 text-xs">
+              <div class="flex min-w-0 items-center gap-1.5">
+                <span class="min-w-0" style={{ 'overflow-wrap': 'anywhere' }}>{text()}</span>
+                <HelpHint label="Automation" help={HELP.automationRow} />
+              </div>
+              <Show when={(chosen()?.d.profiles.length ?? 0) > 0}>
+                <div data-testid="automation-who-does-it">
                   <ProfilePicker
                     label="Who does it"
                     value={chosen()?.onTask ?? null}
@@ -179,9 +188,9 @@ const AutomationRow: Component<{ item: Item; automation?: Automation; whoShownAb
                     onChange={(p) => void choose(p ? p.agent_profile_id : null)}
                   />
                 </div>
-              </details>
-            </Show>
-          </div>
+              </Show>
+            </div>
+          </Fold>
         )}
       </Show>
     </>

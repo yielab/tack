@@ -268,6 +268,13 @@ pub struct ExecutionSummary {
     /// The latest hop the run's newest attempt reported; null when the agent reports no hops
     /// (every agent but docket) or the attempt has not reached its first one.
     pub latest_hop: Option<LatestHop>,
+    /// The run's newest attempt ended without ever starting work: the computer refused it, or the
+    /// team's ceiling did. A screen reads "Not started" from this, never a failure of the work.
+    pub never_started: bool,
+    /// What the verifier's pack for the run's newest attempt recommends (`merge`, `review` or
+    /// `reject`); null while that attempt has not succeeded, or when it left no readable pack.
+    #[schema(value_type = Option<tack_protocol::mrp::MergeDecision>)]
+    pub verifier_recommendation: Option<tack_protocol::mrp::MergeDecision>,
 }
 
 /// Whether a hop's latest event says it began or ended.
@@ -516,6 +523,13 @@ pub struct ExecutionDetailResponse {
     pub agent_profile_id: Option<String>,
     /// The agent the run asked for; null when it left the choice to the computer.
     pub requested_harness_kind: Option<String>,
+    /// The run's newest attempt ended without ever starting work, the same flag the run list
+    /// carries (read through `tack_app::runs::run_facts`, the one rule).
+    pub never_started: bool,
+    /// What the verifier's pack for the run's newest attempt recommends (`merge`, `review` or
+    /// `reject`); null while that attempt has not succeeded, or when it left no readable pack.
+    #[schema(value_type = Option<tack_protocol::mrp::MergeDecision>)]
+    pub verifier_recommendation: Option<tack_protocol::mrp::MergeDecision>,
 }
 
 /// One attempt as reported by `GET /api/executions/{id}/attempts` — every
@@ -546,6 +560,9 @@ pub struct AttemptSummary {
     /// reported one, else `null`.
     pub actual_execution: Option<Value>,
     pub terminal_reason: Option<TerminalReason>,
+    /// The attempt ended without ever starting work: the computer refused it, or the team's
+    /// ceiling did (`tack_core::run_outcome::never_started`, the one rule).
+    pub never_started: bool,
     /// `tack_protocol::execution::Usage` once reported, else `null` — never a
     /// fabricated zero.
     pub usage: Option<Value>,
@@ -1042,9 +1059,26 @@ pub async fn list_executions(
                 Some((hop.request_id, found))
             })
             .collect();
+    let ports = state.app.as_ref().map(|app| app.ports());
+    let mut facts = tack_app::runs::run_facts::run_facts(
+        &state.repo,
+        ports.as_ref().map(|ports| ports.artifacts.as_ref()),
+        &ids,
+    )
+    .await
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not read the runs' newest attempts");
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not read the runs' newest attempts",
+            json!({}),
+        )
+    })?;
     let data: Vec<ExecutionSummary> = rows
         .into_iter()
         .map(|row| {
+            let run_facts = facts.remove(&row.id).unwrap_or_default();
             let (behind, waiting_behind) =
                 if row.state == ExecutionState::Queued && row.waiting_reason.is_none() {
                     waiting_behind(
@@ -1058,6 +1092,8 @@ pub async fn list_executions(
                     (None, Vec::new())
                 };
             ExecutionSummary {
+                never_started: run_facts.never_started,
+                verifier_recommendation: run_facts.verifier_recommendation,
                 latest_hop: hops.remove(&row.id),
                 limit: limits
                     .remove(&row.id)
@@ -1338,8 +1374,28 @@ pub async fn get_execution(
         })?
         .remove(&request_id)
         .unwrap_or_else(|| limit_source(&Value::Null, None, None));
+    let ports = state.app.as_ref().map(|app| app.ports());
+    let run_facts = tack_app::runs::run_facts::run_facts(
+        &state.repo,
+        ports.as_ref().map(|ports| ports.artifacts.as_ref()),
+        std::slice::from_ref(&request_id),
+    )
+    .await
+    .map_err(|failure| {
+        tracing::error!(error = %failure, "Could not read the run's newest attempt");
+        error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StableErrorCode::InternalError,
+            "Could not read the run's newest attempt",
+            json!({}),
+        )
+    })?
+    .remove(&request_id)
+    .unwrap_or_default();
     Ok(Json(ExecutionDetailResponse {
         protocol_version: 1,
+        never_started: run_facts.never_started,
+        verifier_recommendation: run_facts.verifier_recommendation,
         request_id,
         limit,
         item_id: row.item_id,
@@ -1537,7 +1593,16 @@ fn attempt_summary(
         .and_then(|report| report.get("sandbox"))
         .and_then(Value::as_str)
         .map(str::to_owned);
+    let never_started = tack_core::run_outcome::never_started(
+        attempt.state,
+        attempt
+            .terminal_reason
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+            .as_ref(),
+    );
     AttemptSummary {
+        never_started,
         environment_names,
         sandbox,
         pull_request,

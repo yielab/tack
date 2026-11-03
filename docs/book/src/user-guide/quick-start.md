@@ -46,8 +46,11 @@ Or download the `.msi` from the [releases page](https://github.com/yielab/tack/r
 ```sh
 git clone https://github.com/yielab/tack.git && cd tack
 docker build -t tack:latest .
-docker run -d --name tack -p 3210:3210 -v tack-data:/data tack:latest
+docker run -d --name tack -p 3210:3210 -v tack-data:/data \
+  -e TACK_API_TOKEN='a-long-random-secret' tack:latest
 ```
+
+The container listens on every interface, so Tack refuses to start without `TACK_API_TOKEN`. Choose a long random value. The web page gets the token by itself; for the `tack` command, set the same `TACK_API_TOKEN` on your side.
 
 See [Deployment → Docker](../admin-guide/deployment.md#docker) for the compose file and configuration.
 
@@ -108,35 +111,24 @@ Ready to put it on a network or add a token? See [Administration & Security](../
 
 ## Hand a task to an agent
 
-Nothing here runs an agent until you turn one on: the server is a full project manager first, and **Run with agent** says "Agent execution is off" until then. Three steps, none of which asks for a model name or a repository address:
+Nothing here runs an agent until you turn one on: **Run with agent** says "Agent execution is off" until then. Three steps, none of which asks for a model name or a repository address:
 
 1. **Turn agents on for this computer.** Open **Agents** in the sidebar and click **Turn on**. It starts at once, with no restart. Sign in to the agent you want with the agent's own command (for example `claude`); the page tells you which agents are installed and whether each is signed in. See [Agents on this computer](running-agents.md#agents-on-this-computer).
 2. **Tell the project where its code is.** If you answered **Does this project have code?** when you created it, this is done; otherwise open **Settings → Automation**. See [Where the agent works](automation.md#where-the-agent-works).
 3. **Open a task and click Run with agent**, then **Start run**. The defaults are the recommended ones. See [The Run with agent dialog](running-agents.md#the-run-with-agent-dialog).
 
-<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: a one-line summary of who runs it and where, the text the agent will read, two switches, and an Advanced section.">
+<img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: the profile to run as, a What will happen summary of the agent, branch, checks and network, two switches, collapsed What the agent will read and Advanced sections, and a Start run button.">
 
-When the run ends, the task's **Execution** tab shows the attempt. If the agent changed anything, the task is marked **Needs your review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal instead, see [Running from the command line](running-agents.md#running-from-the-command-line).
-
-To start the server with agents already on, run `tack serve --with-runner`; see [Standalone mode](../admin-guide/runners.md#standalone-mode-tack-serve---with-runner).
+When the run ends, the task's **Execution** tab shows the attempt. If the agent changed anything, the task is marked **Needs your review** until you press **Accept** or **Reject**; see [Reviewing a Run](reviewing-runs.md). To start a run from a terminal, see [Running from the command line](running-agents.md#running-from-the-command-line). To start the server with agents already on, run `tack serve --with-runner`.
 
 ---
 
 ## Run from source
 
-For contributing to Tack or running with hot reload. You need the Rust toolchain from [rustup](https://rustup.rs) and Node.js 22 or later.
-
-```sh
-git clone https://github.com/yielab/tack.git
-cd tack
-make dev      # API server on http://127.0.0.1:3210 and the Vite dev server on http://localhost:5173
-make build    # the single binary, with the web UI embedded, in target/release/tack
-```
-
-Open the Vite address in a browser while developing; it forwards every `/api` request to the server. Setup, the project layout and the pull request process are in the [contributing guide](https://github.com/yielab/tack/blob/develop/CONTRIBUTING.md).
+To contribute or to run with hot reload, follow the [contributing guide](https://github.com/yielab/tack/blob/develop/CONTRIBUTING.md): it lists the toolchain, the layout and the pull request process.
 
 ---
 
 ## Settings and environment
 
-Tack reads its port, database location, log level and access token from settings you give the server when it starts. The defaults suit a single computer: the server listens on `127.0.0.1:3210` and makes its own access token, which your browser and the `tack` command pick up without being told. The [Configuration](../admin-guide/configuration.md) page lists every setting, and [Administration & Security](../admin-guide/administration.md) covers tokens, allowed origins, webhooks and cloud backup.
+Tack reads its port, database location, log level and access token from settings you give the server when it starts. The defaults suit a single computer: the server listens on `127.0.0.1:3210` and makes its own access token, which your browser and the `tack` command pick up without being told. The [Configuration](../admin-guide/configuration-reference.md) page lists every setting, and [Administration & Security](../admin-guide/administration.md) covers tokens, allowed origins, webhooks and cloud backup.

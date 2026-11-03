@@ -9,6 +9,7 @@ import { agentName } from '../../shared/execution/agents';
 import type { TeamEntry, TeamReport, TeamStep } from '../../shared/execution/teams';
 import { agentKindOf } from '../../shared/runWithAgent/ProfilePicker';
 import { cardRun, countStates, passesFilters, type CardRun, type RunFilter } from '../../shared/runWithAgent/cardRun';
+import type { RunStateName } from '../../shared/ui';
 import type { components } from '../../shared/api/schema.gen';
 import type { Dependency, Item } from '../../shared/types';
 
@@ -162,6 +163,7 @@ export function stationFor(run: CardRun | undefined, hop: LatestHop | null | und
     case 'done':
     case 'failed':
     case 'cancelled':
+    case 'notstarted':
       return 'done';
     case 'running': {
       const at = stepIndexOf(steps, hop);
@@ -199,10 +201,16 @@ export function stationLabel(key: StationKey, steps: readonly TeamStep[]): strin
     case 'review':
       return 'ready for review';
     case 'done':
-      return 'done today';
+      return 'ended today';
     default:
       return steps[Number(key.slice(5))]?.name ?? 'working';
   }
+}
+
+/** How the tasks at the last station ended, in the order a person reads it; a state nobody ended in is left out. */
+export function endedTally(tokens: ReadonlyArray<{ run: Pick<CardRun, 'state'> | undefined }>): Array<{ state: RunStateName; count: number }> {
+  const counted = countStates(tokens.map((t) => t.run?.state));
+  return (['done', 'cancelled', 'failed', 'notstarted'] as const).flatMap((state) => (counted[state] > 0 ? [{ state, count: counted[state] }] : []));
 }
 
 // ── The flow: lanes, stations, tokens ───────────────────────────────────────────────────────────
@@ -522,7 +530,7 @@ export function buildFlow(input: FlowInput): Flow {
     stations.push({ key: 'needs-you', label: 'Needs you', tokens: by('needs-you'), step: null, check: null });
     // A run to review is not a question: it stands at its own station, which shows only when it has one.
     if (by('review').length > 0) stations.push({ key: 'review', label: 'Ready for review', tokens: by('review'), step: null, check: null });
-    stations.push({ key: 'done', label: 'Done today', tokens: by('done'), step: null, check: null });
+    stations.push({ key: 'done', label: 'Ended today', tokens: by('done'), step: null, check: null });
     lane.stations = stations;
     const counted = countStates(mine.map((t) => t.run?.state));
     lane.counts = { needs: counted.needs, review: counted.review, running: counted.running, queued: counted.queued };

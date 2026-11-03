@@ -146,6 +146,15 @@ describe('LatestRunSummary', () => {
     expect(card.querySelector('[data-testid="review-reject"]')?.textContent).toBe('Reject…');
   });
 
+  it('a machine line as the agent\'s last words is said in a sentence, the raw line on hover', async () => {
+    const answer = { ...ATTEMPT, terminal_reason: { result: 'waited: resumed' }, merge: { enabled: false, reason: 'No branch was pushed' } };
+    const c = mount([RUN], () => {}, [answer]);
+    for (let i = 0; i < 4; i++) await flush();
+    const said = c.querySelector('[data-testid="latest-run-said"]')!;
+    expect(said.textContent).toBe('It waited, then went on.');
+    expect(said.getAttribute('title')).toBe('waited: resumed');
+  });
+
   it('a run that changed no file shows the answer as what it delivered and offers Accept, not Merge', async () => {
     const answer = { ...ATTEMPT, terminal_reason: { result: 'The answer is 42.' }, merge: { enabled: false, reason: 'No branch was pushed' } };
     const c = mount([RUN], () => {}, [answer]);
@@ -431,6 +440,50 @@ describe('LatestRunSummary: the Now panel in each state', () => {
     expect(c.querySelector('[data-testid="latest-run-why"]')!.textContent).toBe("The run's time ran out");
     expect(filled(panel(c))).toEqual(['See why it failed']);
     expect(buttonsOf(panel(c)).map((b) => b.textContent)).toContain('Run again');
+  });
+
+  it('a run the verifier says to reject is still Ready for review, and the line under it says what the verifier called, read from the run and not from its pack', async () => {
+    artifacts = [{ artifact_id: 'a3', kind: 'mrp', name: 'pack.json', media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-10-08T12:02:00Z' }];
+    const c = mount([{ ...RUN, verifier_recommendation: 'reject' }]);
+    await settle();
+    expect(banner(c)).toBe('Ready for reviewNeeds your review');
+    expect(c.querySelector('[data-testid="latest-run-status"]')!.textContent).toContain('the verifier says reject');
+    const asked = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(asked.some((url) => url.endsWith('/mrp'))).toBe(false);
+  });
+
+  it('a run with no recommendation on its summary says nothing about the verifier', async () => {
+    artifacts = [{ artifact_id: 'a3', kind: 'mrp', name: 'pack.json', media_type: null, size_bytes: 10, content_verified: true, created_at: '2026-10-08T12:02:00Z' }];
+    const c = mount([{ ...RUN, verifier_recommendation: null }]);
+    await settle();
+    expect(banner(c)).toBe('Ready for reviewNeeds your review');
+    expect(c.querySelector('[data-testid="latest-run-status"]')!.textContent).not.toContain('the verifier says');
+  });
+
+  it('a run whose summary says it never started reads Not started, whatever its attempt carries', async () => {
+    const refused = { ...ATTEMPT, state: 'failed', terminal_reason: { code: 'harness_rejected', message: 'This team may go no further than L3' } };
+    const c = mount([{ ...RUN, state: 'failed', never_started: true }], () => {}, [refused]);
+    await settle();
+    expect(banner(c)).toBe('Not started');
+    expect(filled(panel(c))).toEqual(['Run again']);
+  });
+
+  it('a run turned away before it started says Not started, and Run again is its one action', async () => {
+    const refused = { ...ATTEMPT, state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected', message: 'This team may go no further than L3' } };
+    const c = mount([{ ...RUN, state: 'failed' }], () => {}, [refused]);
+    await settle();
+    expect(banner(c)).toBe('Not started');
+    expect(c.querySelector('[data-testid="latest-run-why"]')!.textContent).toContain('This team may go no further than L3');
+    expect(filled(panel(c))).toEqual(['Run again']);
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).not.toContain('See why it failed');
+    expect(c.querySelector('[data-testid="latest-run-usage"]')).toBeNull();
+  });
+
+  it('a run that ended asking for a person offers the question and Run again at L3, and no second plain Run again', async () => {
+    const asked = { ...ATTEMPT, state: 'failed', terminal_reason: { code: 'needs_human' }, rerun_at_l3: { enabled: true, reason: null } };
+    const c = mount([{ ...RUN, state: 'failed' }], () => {}, [asked]);
+    await settle();
+    expect(buttonsOf(panel(c)).map((b) => b.textContent)).toEqual(['Run again at L3', 'Open the question']);
   });
 
   it('a merged run says Finished, and Run again is the filled button, once', async () => {

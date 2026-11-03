@@ -16,8 +16,9 @@ A user page that needs a setting points to the Administrator Guide for how to se
 
 | Page | Read it to |
 |---|---|
-| This page | See the layering, the item model, a request's path and the directory map |
+| This page | See the layering, the item model, a request's path and the live board channel |
 | [Crate Tour](crate-tour.md) | Find the file that owns a behaviour, crate by crate |
+| [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md) | Check a crate's boundary and the implementation rules that hold across crates |
 | [Runs, Teams and Automation](runs-and-teams.md) | Follow an automatic run from a waiting task to a merge, and see how docket teams, the ceiling, usage and recurrence are built |
 | [The Runner Contract](runner-contract.md) | Write or change a runner, or an adapter for an agent |
 | [The Project File Format](project-file.md) | Produce, check or extend the file that carries a whole project |
@@ -37,7 +38,7 @@ A user page that needs a setting points to the Administrator Guide for how to se
 4. Read the six records listed in [Architecture Decisions](decisions.md#reading-order-for-newcomers).
 5. Before your first change, read [Testing](testing.md) and run `.githooks/pre-push`.
 
-> `docs/ARCHITECTURE.md` condenses the crate boundaries, the API structure and the database highlights in one file, and is the authority on any fact the two disagree on. This page is the narrative walkthrough.
+> `docs/ARCHITECTURE.md` states each crate's boundary and the rules that hold across crates, and is the authority when it and this guide disagree. This page is the narrative walkthrough.
 
 ## Why a board and a runner
 
@@ -76,14 +77,14 @@ of linking against it. `scripts/arch-facts.sh` prints the crate, route, migratio
 
 **What this means in practice:**
 
-- `tack-protocol` is the runner-v1 contract: the types the board and a runner exchange, the attempt lifecycle, capabilities, the merge-readiness pack and one `Clock`. It depends on nothing else in the workspace, and the server and the runner share it and nothing more. See [Crate Tour](crate-tour.md#tack-protocol).
-- `tack-core` has zero I/O. It cannot open a file, touch a database, or make a network call. It only contains pure Rust structs, enums, and functions: planning and runs policy. You can run every test in it without a database process.
-- `tack-orch` is pure too: the runner scheduler and the model-policy resolver over plain values, with no database, no clock and no HTTP. See [Crate Tour](crate-tour.md#tack-orch).
-- `tack-db` is the only crate that names `sqlx`. Commands are `Repository` methods, read models are functions in `queries/`, and every call fails with `StoreError`, so no SQL driver type crosses its edge. `Repository::pool()` is public only behind the `raw-pool` feature, which `tack-test-support` alone enables.
-- `tack-app` is the application layer. It holds the use cases of a run (`runs/`) and every background tick (`tick()` is one pass, which tests call; `spawn()` hands it to the loop helper `tack serve` runs). It names `reqwest`, never `axum` or `sqlx`, and reaches back into what still lives in `tack-api` through three small traits in `tack_app::ports` (`Verifier`, `Artifacts`, `DomainEvents`).
-- `tack-api` is the only crate that names `axum`: HTTP concerns (status codes, request extraction, CORS) live here, and a handler extracts, calls a `tack-app` use case or a `tack-db` method, maps the error and responds. It names `tack-db` because `AppState.repo` is the `Repository` and `ApiError` wraps `StoreError`.
-- `tack-cli` is the single `tack` binary and the composition root: `serve.rs` builds the `Repository`, hands it to the server and spawns the ticks. It also depends on `tack-runner` so that `--with-runner` and `tack runner doctor` can use the runner's code. Its **client** commands only talk to a running server over HTTP — they never open the database directly. This means the CLI works whether the server is local or on a remote machine.
-- `tack-runner` is a separate binary entirely. It depends on `tack-protocol` and `tack-core` for the shared types, and never on `tack-db` or `tack-api`; it speaks the runner-v1 protocol to `tack-api` over loopback or the network, the same way a remote runner would.
+- `tack-protocol`, `tack-core` and `tack-orch` do no I/O. `tack-core` holds the planning and runs policy as pure structs, enums and functions, so every test in it runs without a database.
+- `tack-db` is the only crate that names `sqlx`. Commands are `Repository` methods, read models are functions in `queries/`, and every call fails with `StoreError`.
+- `tack-app` holds the use cases of a run and every background tick. It reaches back into what still lives in `tack-api` through the traits in `tack_app::ports`.
+- `tack-api` is the only crate that names `axum`. A handler extracts, calls a `tack-app` use case or a `tack-db` method, maps the error and responds.
+- `tack-cli` is the single `tack` binary and the composition root: `serve.rs` builds the `Repository`, hands it to the server and spawns the ticks. Its client commands only talk to a running server over HTTP, so the CLI works whether the server is local or remote.
+- `tack-runner` is a separate binary. It speaks runner-v1 to `tack-api` over loopback or the network, the same way a remote runner does, and never depends on `tack-db` or `tack-api`.
+
+Each crate's boundary, in full, is in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md); the file-by-file walk is the [Crate Tour](crate-tour.md).
 
 **Why bother?** The layering prevents the kind of "everything knows about everything" entanglement that makes codebases brittle. It also means:
 
@@ -128,9 +129,10 @@ Handler: update_item (tack-api/src/handlers/items.rs)
     │  3. Calls repo.update_item_atomically(id, input, &workflow, expected_version), which
     │     inside one transaction calls workflow.validate_transition(old, new) and
     │     workflow.check_wip_limit(new, count)  ← both pure, no I/O in tack-core
-    │  4. Calls state.events().emit(ItemMoved/ItemUpdated { ... })  ← the bus, and the WebSocket event
-    │  5. Calls create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
-    │  6. Calls maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
+    │  4. after_update(...) then: state.events().emit(DomainEvent::item_changed(...))  ← the bus,
+    │     and with it the WebSocket event; the webhook fires
+    │  5. create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
+    │  6. maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
     ▼
 Repository (tack-db/src/repo/items.rs)
     │  Runs parameterised SQL via sqlx
@@ -189,9 +191,10 @@ The real-time board feature uses a Tokio broadcast channel. Here is the architec
 AppState
   └── broadcast_tx: broadcast::Sender<BoardEvent>   (capacity: 100)
 
-On any mutating API call:
-  handler calls broadcast_event(&state, BoardEvent::ItemUpdated { ... })
-    └── state.broadcast_tx.send(event)  ← non-blocking, drops if no subscribers
+On an item change:
+  handler emits a DomainEvent through state.events()
+    └── the adapter in tack-api/src/ports.rs calls broadcast_event(&state, BoardEvent::ItemUpdated { ... })
+          └── state.broadcast_tx.send(event)  ← non-blocking, drops if no subscribers
 
 On WebSocket connection (GET /api/projects/{id}/boards/live):
   handler upgrades the connection
@@ -201,115 +204,10 @@ On WebSocket connection (GET /api/projects/{id}/boards/live):
   tokio::select! on both tasks — whichever ends first, the other is aborted
 ```
 
-The broadcast channel is the pub/sub backbone. Every handler that modifies an item emits a domain event, and the adapter in `tack-api/src/ports.rs` sends the browser's share of it through `broadcast_event()`; every WebSocket connection subscribes to the channel and filters events by `project_id` before forwarding them to the client.
+The broadcast channel is the pub/sub backbone. Every handler that modifies an item emits a domain event, and the adapter sends the browser's share of it; a run or a decision has no browser message. Every WebSocket connection subscribes to the channel and filters events by `project_id` before forwarding them to the client.
 
 **Important properties:**
 
 - **Fire and forget.** `broadcast_tx.send()` returns immediately whether or not there are subscribers. If nobody is listening, the event is dropped. This keeps the write path fast.
 - **Per-project filtering happens in the send task.** The channel carries events for all projects; each WebSocket connection only forwards events that match its `project_id`. This keeps the channel logic simple while allowing one channel to serve many concurrent connections.
 - **No persistence.** Events are not stored. A client that disconnects and reconnects will not receive missed events — it will simply see the current board state on the next page load.
-
----
-
-## 6. Directory Map
-
-```
-.
-├── crates/
-│   ├── tack-protocol/     The runner-v1 contract; depends on nothing in the workspace
-│   │   └── src/
-│   │       ├── execution/   Types, lifecycle validation, capabilities
-│   │       ├── mrp.rs       The merge-readiness pack, mrp-v1
-│   │       ├── prepare.rs, usage_provenance.rs, clock.rs
-│   │
-│   ├── tack-core/         Pure domain logic; no I/O
-│   │   └── src/
-│   │       ├── models.rs        All domain structs and DTOs
-│   │       ├── workflow.rs      WorkflowConfig, validation, presets
-│   │       ├── vocabulary.rs    VocabularyMap, resolve(), presets
-│   │       ├── dependency.rs    DependencyGraph, cycle detection
-│   │       ├── autonomy.rs      Merge policy: Level, Facts, Hold, evaluate
-│   │       ├── auto_start.rs    Which waiting tasks a project starts now (pick)
-│   │       ├── run_defaults.rs  Which profile a run gets (resolve, Source)
-│   │       ├── recurrence.rs    When a repeating task's next one is due
-│   │       ├── rate_card.rs     Pricing a model's tokens
-│   │       ├── outline.rs       The outline and the project file's types; resolve
-│   │       ├── outline/bundle.rs  check (a file against a board) and to_bundle (export)
-│   │       ├── brief.rs         Item briefs
-│   │       ├── error.rs         CoreError enum
-│   │       └── lib.rs           Re-exports
-│   │
-│   ├── tack-db/           SQLite persistence; the only crate that names sqlx
-│   │   └── src/
-│   │       ├── lib.rs       init_pool() — WAL mode, foreign keys on
-│   │       ├── error.rs     StoreError — NotFound, Conflict, Corrupt, Sql
-│   │       ├── migrations.rs Ordered migrations as embedded SQL strings
-│   │       ├── repo.rs      Repository struct — delegates to submodules
-│   │       ├── repo/        Commands: one file or directory per aggregate (items, projects, execution/, …)
-│   │       └── queries/     Read models: one file per table
-│   │
-│   ├── tack-orch/         Pure runs policy; no database, no clock
-│   │   └── src/
-│   │       ├── scheduler/   Deterministic runner selection
-│   │       └── model_policy/ Which model a run asks for
-│   │
-│   ├── tack-app/          Use cases and background ticks
-│   │   └── src/
-│   │       ├── runs/        One use case per verb (claim, heartbeat, start_run, complete, …)
-│   │       ├── auto_start.rs, github_sync.rs, remote_backup.rs, due_soon.rs,
-│   │       │   retention.rs, observability.rs  Ticks: tick() is one pass, spawn() starts the loop
-│   │       ├── autonomy.rs, merge.rs  Gathering merge facts and merging
-│   │       ├── ports.rs     The Verifier, Artifacts and DomainEvents traits: what tack-app needs back from tack-api
-│   │       ├── events.rs    DomainEvent, Fact, the in-process EventBus and the RecordedEvents a test reads
-│   │       ├── scheduler_wiring.rs, model_policy_wiring.rs  The live callers of tack-orch
-│   │       ├── local_runner/ The embedded runner as the rest of Tack sees it
-│   │       └── error.rs     AppError
-│   │
-│   ├── tack-api/          Axum HTTP server + WebSocket (a library)
-│   │   └── src/
-│   │       ├── lib.rs, server.rs  prepare() before the database opens; serve(state): router, listen
-│   │       ├── router.rs    All routes + AppState + middleware wiring
-│   │       ├── config.rs    AppConfig — TOML / env var loading
-│   │       ├── error.rs     ApiError → HTTP status code mapping
-│   │       ├── debug.rs     /api/health, /api/debug/* endpoints
-│   │       ├── middleware.rs Token gate, origin and host checks
-│   │       ├── ports.rs     Implements tack_app::ports over AppState
-│   │       └── handlers/    One file per entity group + websocket.rs
-│   │
-│   ├── tack-cli/          CLI (clap), talks to API over HTTP
-│   │   └── src/
-│   │       ├── main.rs      The clap command tree; cmd/ holds the command bodies
-│   │       ├── serve.rs     Composition root of `tack serve`: builds the Repository, spawns the ticks
-│   │       ├── client.rs    TackClient — thin reqwest wrapper
-│   │       ├── config.rs    ~/.tackrc reader/writer
-│   │       ├── doctor.rs    `tack runner doctor`, including docket's teams
-│   │       ├── mcp.rs       `tack mcp` — the stdio MCP server
-│   │       ├── mcp/         its tools, one table entry each, by domain
-│   │       ├── service.rs   `tack service` — systemd/launchd unit management
-│   │       └── vocab.rs     Fetch and cache project vocabulary
-│   │
-│   ├── tack-runner/       Separate binary; pull-based execution runner
-│   │   └── src/
-│   │       ├── main.rs, bootstrap.rs  Startup, config, registry, the docket daemon
-│   │       ├── config.rs    Runner configuration, including [docket]
-│   │       ├── engine.rs    Claim → prepare → run → report loop
-│   │       ├── active.rs    The leases in flight, for several attempts at once
-│   │       ├── transport.rs HTTP client; the slot loop and the one heartbeat
-│   │       ├── harness/     Adapters per coding agent (codex, claude_code, opencode; docket/ over HTTP)
-│   │       ├── journal.rs   Local attempt journal for crash recovery
-│   │       └── workspace.rs Per-attempt working directory + credentials
-│   │
-│   ├── tack-test-support/ setup_test_db(), seed, ControllableClock, fixtures
-│   │
-│   └── tack-desktop/      Tauri shell; excluded from the workspace above
-│       └── src/            Supervises `tack` as a bundled sidecar process
-│
-├── frontend/                SolidJS + TypeScript + Tailwind v4
-│   └── src/
-│       ├── app/             Router, layout, route definitions
-│       ├── features/        One directory per feature (board, projects, settings, agents, …)
-│       ├── shared/          Reusable UI components, state helpers
-│       └── test/            Vitest setup
-│
-└── docs/book/               mdBook documentation: the three guides and the roadmap
-```

@@ -3,6 +3,7 @@ import {
   NOT_MEASURED_TEXT,
   describeAttemptOutcome,
   describeAttemptStatus,
+  neverStarted,
   readAttemptUsage,
   formatApproxCost,
   formatCountedTokens,
@@ -182,6 +183,27 @@ describe('describeAttemptOutcome — the card leads with the outcome', () => {
   });
 });
 
+describe('a run that was stopped', () => {
+  it('says it was stopped, not the bare code', () => {
+    expect(describeAttemptOutcome('cancelled', { code: 'cancelled' }).whyStopped).toBe('It was stopped before it finished');
+  });
+});
+
+describe('a run whose proposals could not be used', () => {
+  it('is not a plain success: the badge says it and the detail names the problem, the raw reason kept', () => {
+    const raw = "'orphan': parent 'nowhere' is not the ref of an earlier row";
+    const badge = describeAttemptOutcome('succeeded', { plan_invalid: raw, outside_repository: true }).badge;
+    expect(badge?.label).toBe('Finished — proposals could not be used');
+    expect(badge?.tone).toBe('warning');
+    expect(badge?.detail).toBe('One names a parent that is not an earlier row in the file.');
+    expect(badge?.raw).toBe(raw);
+  });
+  it('a reason it cannot put in words is shown as it came', () => {
+    const badge = describeAttemptOutcome('succeeded', { plan_invalid: 'docket refused (400): bad set' }).badge;
+    expect(badge?.detail).toBe('docket refused (400): bad set');
+  });
+});
+
 describe('formatTokenCount / formatApproxCost', () => {
   it('shortens token counts without losing what matters', () => {
     expect([12, 999, 3_284, 12_500, 286_414, 1_077_873, 12_400_000].map(formatTokenCount)).toEqual([
@@ -227,6 +249,24 @@ describe('describeAttemptStatus — one status per attempt', () => {
     );
     expect(describeAttemptStatus({ state: 'running', terminal_reason: null })).toEqual({ label: 'Running', tone: 'primary' });
     expect(describeAttemptStatus({ state: 'leased', terminal_reason: null }).label).toBe('Starting');
+  });
+});
+
+describe('a verifier that says reject, and a run that never started', () => {
+  const patch = { artifacts: [{ kind: 'patch', size_bytes: 40 }] };
+  it('a reviewable run the verifier says to reject is not announced as a plain success', () => {
+    expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, null, 'reject').label).toBe(
+      'Finished — the verifier says reject, needs your review',
+    );
+    expect(describeAttemptStatus({ state: 'succeeded', terminal_reason: patch }, null, 'merge').label).toBe('Finished — needs your review');
+  });
+  it('a run turned away before the agent did anything is Not started, neutral, not Failed', () => {
+    // The server decides it (one rule in Rust); an attempt is read by its flag, never by its message.
+    expect(describeAttemptStatus({ state: 'failed', never_started: true, terminal_reason: { code: 'harness_rejected', message: 'x' } })).toEqual({ label: 'Not started', tone: 'neutral' });
+    expect(neverStarted({ never_started: true })).toBe(true);
+    expect(neverStarted({ never_started: false })).toBe(false);
+    expect(neverStarted({})).toBe(false);
+    expect(describeAttemptStatus({ state: 'failed', terminal_reason: { message: 'run refused: ceiling L3 (needs approval)' } }).label).not.toBe('Not started');
   });
 });
 

@@ -1,5 +1,5 @@
 import { A, useParams, useLocation, useNavigate } from '@solidjs/router';
-import { createSignal, createEffect, on, onCleanup, Show, For, createResource, type Component } from 'solid-js';
+import { createSignal, createEffect, on, onCleanup, onMount, Show, For, createResource, type Component } from 'solid-js';
 import { api } from '../api';
 import { getLastLens } from '../state/lastView';
 import { openPalette } from '../state/commandPalette';
@@ -137,6 +137,28 @@ const Sidebar: Component = () => {
     close();
   };
 
+  // The nav scrolls when the window is shorter than its links; a fade under its lower edge says there
+  // is more below (the links last in the list, such as Agents and Settings, are cut by that edge).
+  let navEl: HTMLElement | undefined;
+  const [moreBelow, setMoreBelow] = createSignal(false);
+  const measureNav = () => {
+    if (navEl) setMoreBelow(navEl.scrollHeight - navEl.scrollTop - navEl.clientHeight > 1);
+  };
+  onMount(() => {
+    if (!navEl) return;
+    measureNav();
+    navEl.addEventListener('scroll', measureNav, { passive: true });
+    const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measureNav);
+    resize?.observe(navEl);
+    const mutation = typeof MutationObserver === 'undefined' ? undefined : new MutationObserver(measureNav);
+    mutation?.observe(navEl, { childList: true, subtree: true });
+    onCleanup(() => {
+      navEl?.removeEventListener('scroll', measureNav);
+      resize?.disconnect();
+      mutation?.disconnect();
+    });
+  });
+
   const inner = (
     <div style={{ display: 'flex', 'flex-direction': 'column', height: '100%' }}>
       {/* brand */}
@@ -179,7 +201,8 @@ const Sidebar: Component = () => {
       </div>
 
       {/* nav */}
-      <nav aria-label="Main" style={{ flex: 1, 'overflow-y': 'auto', padding: '0 14px' }}>
+      <div style={{ position: 'relative', flex: 1, 'min-height': 0, display: 'flex', 'flex-direction': 'column' }}>
+      <nav ref={navEl} aria-label="Main" style={{ flex: 1, 'min-height': 0, 'overflow-y': 'auto', padding: '0 14px' }}>
         <WaitingForYou projects={projects()} onNavigate={close} />
         <Show when={currentProjectId()}>
           <SectionLabel label="Project" />
@@ -234,6 +257,17 @@ const Sidebar: Component = () => {
           {(d) => <NavButton href={d.path('')} end={d.end} icon={d.icon} label={d.label(t)} onClick={close} />}
         </For>
       </nav>
+      <Show when={moreBelow()}>
+        <div
+          data-testid="nav-more"
+          aria-hidden="true"
+          style={{
+            position: 'absolute', left: 0, right: 0, bottom: 0, height: '34px', 'pointer-events': 'none',
+            background: 'linear-gradient(to bottom, transparent, var(--color-bg-sidebar))',
+          }}
+        />
+      </Show>
+      </div>
 
       {/* footer: theme + display settings + identity */}
       <div style={{ padding: '10px 18px 16px', display: 'flex', 'flex-direction': 'column', gap: '14px' }}>

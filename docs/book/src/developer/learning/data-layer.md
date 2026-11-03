@@ -192,10 +192,10 @@ END;
 The FTS search query that uses this:
 
 ```rust
-// From repo/items.rs
-"SELECT i.* FROM items i
+// From repo/items.rs (the search query; {columns} is the item column list)
+"SELECT {columns} FROM items i
  JOIN items_fts fts ON i.rowid = fts.rowid
- WHERE i.project_id = ? AND items_fts MATCH ?
+ WHERE i.project_id = ? AND i.hidden = 0 AND items_fts MATCH ?
  ORDER BY rank
  LIMIT 50"
 ```

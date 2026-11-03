@@ -18,7 +18,7 @@ import {
   type WaitingRow,
 } from '../state/waiting';
 import { sessionDecisionToken } from '../state/decisionSession';
-import { DecisionTokenField } from './DecisionInbox';
+import DecisionTokenField from './DecisionTokenField';
 import { relativeTimeFromIso } from './shared';
 import { tallySentence } from './cardRun';
 
@@ -32,7 +32,14 @@ const breakdown = (): string => {
   ]
     .filter(Boolean)
     .join('; ');
-  return parts ? `${waitingSentence(waitingCount())}: ${parts}` : waitingSentence(waitingCount());
+  return parts ? `${waitingSentence(waitingCount())} across all projects: ${parts}` : waitingSentence(waitingCount());
+};
+
+/** The count in the words the board's Work strip uses, with its scope: the strip counts one project, this counts them all. */
+const scopeLine = (): string => {
+  const changes = waitingChangeSets().length;
+  const parts = [tallySentence(waitingTally()), changes > 0 ? `${changes} ${changes === 1 ? 'change set' : 'change sets'} to apply` : ''].filter(Boolean);
+  return parts.length > 0 ? `All projects: ${parts.join(', ')}` : '';
 };
 
 /** The sentence the count stands for, read aloud and shown on hover. */
@@ -184,7 +191,17 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
         }}
       >
         <IconComment size={16} />
-        <span style={{ flex: 1, 'text-align': 'left' }}>Waiting for you</span>
+        <span style={{ flex: 1, 'text-align': 'left', 'min-width': 0 }}>
+          Waiting for you
+          <Show when={scopeLine()}>
+            <span
+              data-testid="waiting-scope"
+              style={{ display: 'block', 'font-size': '0.6875rem', 'font-weight': 400, 'line-height': 1.3, color: 'var(--color-text-secondary)' }}
+            >
+              {scopeLine()}
+            </span>
+          </Show>
+        </span>
         <span data-testid="waiting-count" aria-hidden="true" style={countStyle(waitingCount())}>
           {waitingCount()}
         </span>
@@ -268,6 +285,12 @@ const WaitingForYou: Component<{ projects: Project[] | undefined; onNavigate: ()
   );
 };
 
+/**
+ * The badge's accessible name. Its visible text is the count, so the name begins with it
+ * (WCAG 2.5.3 Label in Name) — the sentence alone says "Nothing" where the screen shows "0".
+ */
+export const badgeLabel = (count: number): string => (count === 0 ? `0: ${waitingSentence(0)}` : waitingSentence(count));
+
 /** The top bar's indicator: the same count, and a press brings the list into view. */
 export const WaitingBadge: Component = () => {
   useWaiting();
@@ -280,7 +303,7 @@ export const WaitingBadge: Component = () => {
       type="button"
       data-testid="waiting-badge"
       onClick={reveal}
-      aria-label={waitingSentence(waitingCount())}
+      aria-label={badgeLabel(waitingCount())}
       title={breakdown()}
       class="inline-flex items-center gap-1.5"
       style={{

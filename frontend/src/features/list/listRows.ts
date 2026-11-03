@@ -1,6 +1,8 @@
 import type { Item, Priority, UpdateItem } from '../../shared/types';
 import { typeKey } from '../../shared/ui/TypeBadge';
-import type { CardRun } from '../../shared/runWithAgent/cardRun';
+import { runRank, type CardRun } from '../../shared/runWithAgent/cardRun';
+
+export { runRank };
 
 // The List's rows as data: which columns exist, how siblings sort, what a
 // filter lets through. Kept apart from the component so each can be tested
@@ -20,22 +22,6 @@ const PRIORITY_RANK: Record<string, number> = {
 
 /** Every priority an item can take, most urgent first. */
 export const PRIORITIES: Priority[] = ['critical', 'high', 'medium', 'low', 'none'];
-
-/** What needs a person comes first, then what is going, then what is over; no run last. */
-const RUN_RANK: Record<string, number> = {
-  needs: 0,
-  review: 1,
-  failed: 2,
-  running: 3,
-  queued: 4,
-  done: 5,
-  cancelled: 6,
-};
-
-/** Where a run sorts: the item's newest run, or after every run when it has none. */
-export function runRank(run: CardRun | undefined): number {
-  return run ? (RUN_RANK[run.state] ?? 99) : 100;
-}
 
 function cellValue(item: Item, key: SortKey, runOf?: (item: Item) => CardRun | undefined): string | number {
   if (key === 'run') return runRank(runOf?.(item));

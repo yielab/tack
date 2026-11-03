@@ -3,7 +3,7 @@
 **An open-source project manager that can assign tasks to AI agents.**
 
 <p align="center">
-  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, and two cards carrying an agent run's live state, Asking you and Finished" />
+  <img src="docs/screenshots/board.png" width="98%" alt="The Tack board: Kanban columns with WIP limits, a run button on every card, a strip counting the work that needs you, and two cards carrying an agent run's state, Needs you and Finished" />
 </p>
 
 <p align="center">
@@ -111,9 +111,9 @@ one is signed in, and runs a test. The [tutorial](https://yielab.github.io/tack/
 - **Agent runs.** Progress shows on the task while the agent works. With *Ask before each
   action*, it waits for your answer on the task. A run that changed files waits for your
   review.
-- **Verification and delivery.** A verifier of your choice, a program of your own or a tool
-  such as prill, can check the change against the acceptance criteria. The runner can push
-  the work as a branch and, for a task linked to a GitHub issue, Tack opens the pull request.
+- **Verification and delivery.** A verifier of your choice, an independent tool or a program of
+  your own, can check the change against the acceptance criteria. The runner can push the work as
+  a branch and, for a task linked to a GitHub issue, Tack opens the pull request.
 - **Recovery.** A run interrupted by a crash isn't lost or started again. It waits for
   your decision.
 - **Integrations.** A CLI, a REST API, an MCP server and two-way sync with GitHub issues.
@@ -142,7 +142,7 @@ each of these, and [SECURITY.md](SECURITY.md) says how to report a vulnerability
 | Let a project work by itself (teams, auto-start, repeating tasks, merging) | [Automating a project](https://yielab.github.io/tack/user-guide/automation.html) · [Merging](https://yielab.github.io/tack/user-guide/merging.html) |
 | Organize work on the board | [Items](https://yielab.github.io/tack/user-guide/items.html) · [Views](https://yielab.github.io/tack/user-guide/views.html) · [Workflows](https://yielab.github.io/tack/user-guide/workflows.html) |
 | Move a whole project in and out of one file | [Import, export and project files](https://yielab.github.io/tack/user-guide/import-export.html) |
-| Install, secure and operate a server and its runners | [Administrator Guide](https://yielab.github.io/tack/admin-guide/index.html) · [Configuration](https://yielab.github.io/tack/admin-guide/configuration.html) · [Backup and restore](https://yielab.github.io/tack/admin-guide/backup-restore.html) |
+| Install, secure and operate a server and its runners | [Administrator Guide](https://yielab.github.io/tack/admin-guide/index.html) · [Configuration](https://yielab.github.io/tack/admin-guide/configuration-reference.html) · [Backup and restore](https://yielab.github.io/tack/admin-guide/backup-restore.html) |
 | Use Tack from the terminal or other tools | [CLI](https://yielab.github.io/tack/user-guide/cli.html) · [API](https://yielab.github.io/tack/developer/api-reference.html) · [MCP](docs/MCP.md) |
 | Build on or contribute to Tack | [Developer Guide](https://yielab.github.io/tack/developer/index.html) · [Architecture decisions](https://yielab.github.io/tack/developer/decisions.html) |
 | See what changed and what's next | [Changelog](CHANGELOG.md) · [Roadmap](https://yielab.github.io/tack/roadmap.html) |
@@ -163,7 +163,7 @@ Building from source needs [Rust 1.94+](https://rustup.rs/) and
 
 ```bash
 git clone https://github.com/yielab/tack.git && cd tack
-git config core.hooksPath .githooks   # the same checks as CI, before every push
+./scripts/setup-git.sh                # once: the pre-push checks CI also runs
 make dev                              # API + Vite hot reload
 make test && make e2e                 # unit/integration and browser tests
 ```

@@ -12,7 +12,7 @@ change Tack's code or integrate with it, read the [Developer Guide](../developer
 1. **Install and deploy.** Get the binary, run it as a service and put a reverse proxy in front of
    it. See [Deployment](deployment.md).
 2. **Configure.** Set the address, the data directories and the logging.
-   See [Configuration](configuration.md) and the [Configuration Reference](configuration-reference.md).
+   See [Configuration](configuration-reference.md).
 3. **Secure.** Decide who can reach the board, which origins may use it and what the agent can
    touch. See [Administration & Security](administration.md) and
    [What the Agent Can Reach](what-the-agent-can-reach.md).
@@ -28,9 +28,9 @@ change Tack's code or integrate with it, read the [Developer Guide](../developer
 |---|---|
 | Run Tack as a service, behind HTTPS | [Deployment](deployment.md) |
 | Run Tack in Docker | [Deployment](deployment.md#docker) |
-| Change the port, the database path or the log file | [Configuration](configuration.md) |
-| Look up a `TACK_*` variable or a runner setting | [Configuration Reference](configuration-reference.md) |
+| Change the port, the database path or the log file, or look up a `TACK_*` variable or a runner setting | [Configuration](configuration-reference.md) |
 | Require a token, set the allowed origins or expose Tack on a network | [Administration & Security](administration.md) |
+| Give an agent its own key to the board | [Agent credentials](administration.md#agent-credentials) |
 | Send events to a webhook | [Administration & Security](administration.md#webhooks) |
 | Let agents run on this computer | [Installing and Operating Runners](runners.md#the-three-ways-to-attach-a-runner) |
 | Run agents on another machine | [Installing and Operating Runners](runners.md#enrolling-a-runner) |
@@ -38,7 +38,7 @@ change Tack's code or integrate with it, read the [Developer Guide](../developer
 | Use docket teams | [Installing and Operating Runners](runners.md#docket-teams) |
 | Let projects start tasks by themselves | [Installing and Operating Runners](runners.md#starting-tasks-by-itself) |
 | Know what an agent can read, write and reach | [What the Agent Can Reach](what-the-agent-can-reach.md) |
-| Back up, or restore after a loss | [Backup & Restore](backup-restore.md) |
+| Back up, send backups to cloud storage, or restore after a loss | [Backup & Restore](backup-restore.md) |
 | Fix a run that is stuck in `needs_operator` | [Recovery Runbook](recovery-runbook.md) |
 
 ## What runs where
@@ -59,4 +59,4 @@ spare machine, and the board only has to be reachable from it.
 
 The board also calls one program of its own: [prill](https://github.com/yielab/prill), looked up
 with `TACK_PRILL_PROGRAM`, to check a signed pack before an automatic merge. Without it, projects
-cannot merge by themselves. See [Configuration Reference](configuration-reference.md).
+cannot merge by themselves. See [Configuration](configuration-reference.md).

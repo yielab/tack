@@ -1500,6 +1500,58 @@ async fn a_nested_plan_with_dependencies_creates_the_tree_and_the_blockers() {
 }
 
 #[tokio::test]
+async fn an_accepted_entry_with_sub_items_keeps_its_own_done_when_lines() {
+    let (app, _) = common::test_app().await;
+    let pid = common::create_project(&app, "P", "software").await;
+    let parent_id = common::create_item(&app, pid, "Research").await;
+    let (status, body) = common::send(
+        &app,
+        "POST",
+        &format!("/api/items/{parent_id}/subtasks-from-plan"),
+        json!({
+            "artifact_id": "plan-artifact-2",
+            "subtasks": [
+                {"title": "Sharing feature", "acceptance": ["Both child items are done", "Access can be revoked"]},
+                {"title": "Permission model", "acceptance": ["A design note lists the roles"], "parent": 0},
+                {"title": "Share and revoke", "acceptance": ["An owner can share a note"], "parent": 0, "depends_on": [1]}
+            ]
+        }),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let created = body["created"].as_array().unwrap();
+    let texts = |brief: &Value| -> Vec<String> {
+        brief["acceptance"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["text"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    for (entry, want) in [
+        (
+            0,
+            vec!["Both child items are done", "Access can be revoked"],
+        ),
+        (1, vec!["A design note lists the roles"]),
+        (2, vec!["An owner can share a note"]),
+    ] {
+        let id = created[entry]["id"].as_str().unwrap();
+        let (status, brief) = common::send(
+            &app,
+            "GET",
+            &format!("/api/items/{id}/brief"),
+            Value::Null,
+            &[],
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{brief}");
+        assert_eq!(texts(&brief), want, "entry {entry}: {brief}");
+    }
+}
+
+#[tokio::test]
 async fn a_plan_with_no_artifact_id_is_a_file_the_person_uploaded() {
     let (app, _) = common::test_app().await;
     let pid = common::create_project(&app, "P", "software").await;

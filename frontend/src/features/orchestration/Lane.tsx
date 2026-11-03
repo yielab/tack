@@ -1,13 +1,14 @@
 import { type Component, type JSX, For, Show, createEffect, createMemo, createSignal } from 'solid-js';
 import { A } from '@solidjs/router';
-import { Avatar, Badge } from '../../shared/ui';
+import { Avatar, Badge, RunState } from '../../shared/ui';
+import { RUN_STATE_LABEL } from '../../shared/ui/RunState';
 import { memberReachText, networkText, queueText, type TeamMember } from '../../shared/execution';
 import { checkText } from '../../shared/runWithAgent/teamSteps';
 import { runTally, tallySentence } from '../../shared/runWithAgent/cardRun';
 import UsageMeter from '../../shared/runWithAgent/UsageMeter';
 import { spaced } from '../../shared/runWithAgent/runLimit';
 import { IconBranch, IconFolder, IconWho } from '../../shared/runWithAgent/runDialogIcons';
-import { laneQueue, moveTarget, type FlowLane, type FlowStation, type FlowToken } from './flow';
+import { endedTally, laneQueue, moveTarget, type FlowLane, type FlowStation, type FlowToken } from './flow';
 import { useFlowUi } from './context';
 import Token from './Token';
 
@@ -32,6 +33,9 @@ const CHECK_GLYPH = {
   person: () => <IconWho />,
   external: () => glyph(<path d="M6 3H3v10h10v-3M9 3h4v4M13 3L7.5 8.5" />),
 } as const;
+
+/** The short word under a check's glyph, so the glyph is never read alone. */
+const CHECK_WORD = { command: 'command', reviewer: 'reviewer', person: 'person', external: 'outside' } as const;
 
 /** An icon with the words a screen reader and a tooltip need. */
 const Mark: Component<{ words: string; children: JSX.Element; attr?: string }> = (props) => (
@@ -131,25 +135,31 @@ const Facts: Component<{ lane: FlowLane }> = (props) => {
   );
 };
 
-/** Running and waiting as one bar, with the sentence beside it. */
+/**
+ * Running and waiting as one bar, with the sentence beside it. A lane with nothing running or waiting
+ * has no bar to draw, so it is the sentence alone: an empty track says nothing and reads as a broken meter.
+ */
 const QueueMeter: Component<{ lane: FlowLane }> = (props) => {
   const q = () => laneQueue(props.lane);
-  const total = () => Math.max(1, q().running + q().waiting);
+  const busy = () => q().running + q().waiting > 0;
   const words = () => `${queueText(q())}${q().reported ? '' : ' (counted on this board)'}`;
   return (
     <div class="flex min-w-0 items-center gap-2" data-testid="flow-queue">
-      <div
-        role="img"
-        aria-label={words()}
-        title={words()}
-        class="flex h-2 w-24 flex-none overflow-hidden rounded-pill"
-        style={{ 'background-color': 'var(--color-bg-subtle)', 'box-shadow': 'inset 0 0 0 1px var(--color-border-light)' }}
-      >
-        <span style={{ flex: `${q().running} 1 0`, 'background-color': 'var(--run-running-ink)' }} />
-        <span style={{ flex: `${q().waiting} 1 0`, 'background-color': 'var(--run-queued-ink)', opacity: 0.45 }} />
-        <span style={{ flex: `${q().running + q().waiting === 0 ? total() : 0} 1 0` }} />
-      </div>
-      <span aria-hidden="true" class="text-caption tabular-nums" style={MUTED}>{`${q().running} running · ${q().waiting} waiting`}</span>
+      <Show when={busy()}>
+        <div
+          role="img"
+          aria-label={words()}
+          title={words()}
+          class="flex h-2 w-24 flex-none overflow-hidden rounded-pill"
+          style={{ 'background-color': 'var(--color-bg-subtle)', 'box-shadow': 'inset 0 0 0 1px var(--color-border-light)' }}
+        >
+          <span style={{ flex: `${q().running} 1 0`, 'background-color': 'var(--run-running-ink)' }} />
+          <span style={{ flex: `${q().waiting} 1 0`, 'background-color': 'var(--run-queued-ink)', opacity: 0.45 }} />
+        </div>
+      </Show>
+      <span aria-hidden={busy() ? 'true' : undefined} title={busy() ? undefined : words()} class="text-caption tabular-nums" style={MUTED}>
+        {busy() ? `${q().running} running · ${q().waiting} waiting` : 'Nothing running or waiting'}
+      </span>
     </div>
   );
 };
@@ -243,9 +253,25 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
               onClick={() => setUnfolded((v) => !v)}
             >
               {`${unfolded() ? '▾' : '▸'} ${st().label}`}
-              <span class="tabular-nums" style={{ 'margin-left': '0.4rem' }}>{st().tokens.length}</span>
             </button>
           </h4>
+          <Show when={st().tokens.length > 0}>
+            <span data-testid="flow-ended-tally" class="flex min-w-0 flex-wrap items-center gap-x-0.5 text-caption" style={MUTED}>
+              <For each={endedTally(st().tokens)}>
+                {(part, i) => (
+                  <>
+                    <Show when={i() > 0}>
+                      <span aria-hidden="true">{" · "}</span>
+                    </Show>
+                    <span class="inline-flex items-center gap-1">
+                      <RunState state={part.state} size="dot" />
+                      {`${part.count} ${RUN_STATE_LABEL[part.state].toLowerCase()}`}
+                    </span>
+                  </>
+                )}
+              </For>
+            </span>
+          </Show>
         </Show>
         <Show when={st().step}>
           {(step) => (
@@ -269,7 +295,7 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
         fallback={<Show when={st().tokens.length === 0}><span class="text-caption" style={FAINT}>Nothing ended today</span></Show>}
       >
         <ul aria-label={label()} class="flex min-w-0 flex-col gap-2">
-          <For each={st().tokens} fallback={<li class="text-caption" style={FAINT}>{isUpNext() ? 'Nothing waiting' : 'None'}</li>}>
+          <For each={st().tokens} fallback={<li class="text-caption" style={FAINT}>None</li>}>
             {(token) => <Token token={token} source={sourceOf(token)} />}
           </For>
         </ul>
@@ -281,7 +307,7 @@ const Station: Component<{ lane: FlowLane; station: FlowStation }> = (props) => 
 /**
  * One team's lane, or one single agent's: a header that says who it is and how it works, and below it
  * the places a task stands as it goes: Up next, the team's own steps (a check between two of them is
- * a small glyph), Needs you and Done today. A lane with nothing going on folds to its header.
+ * a small glyph), Needs you and Ended today. A lane with nothing going on folds to its header.
  */
 const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props) => {
   const lane = () => props.lane;
@@ -373,8 +399,9 @@ const FlowLaneView: Component<{ lane: FlowLane; limit: number | null }> = (props
                 <>
                   <Station lane={lane()} station={station} />
                   <Show when={station.check && i() < stations().length - 1}>
-                    <li aria-hidden="true" data-testid="flow-check" data-check={station.check ?? undefined} class="flex flex-none items-center px-0.5" style={FAINT} title={station.step ? (checkText(station.step) ?? undefined) : undefined}>
+                    <li aria-hidden="true" data-testid="flow-check" data-check={station.check ?? undefined} class="flex flex-none flex-col items-center justify-center gap-0.5 px-0.5" style={FAINT} title={station.step ? (checkText(station.step) ?? undefined) : undefined}>
                       {CHECK_GLYPH[station.check!]()}
+                      <span data-testid="flow-check-word" class="text-micro">{CHECK_WORD[station.check!]}</span>
                     </li>
                   </Show>
                 </>

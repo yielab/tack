@@ -3,13 +3,17 @@ import type { CompareCell, CompareModel } from './map';
 
 const MUTED = { color: 'var(--color-text-secondary)' } as const;
 
+/** Widths, in rem, of the row-label column and of each team's column: six teams fit beside the sidebar at 1440 px before the table scrolls inside its frame. */
+const LABEL_REM = 9;
+const COLUMN_REM = 10;
+
 /** What a column header already says of a team no computer reports; the cells under it need not say it again. */
 const TEAM_UNREPORTED = 'No computer reports this team';
 
 /** "not reported" with the reason beside it, in small muted text; on hover and for a screen reader as well. */
-const Missing: Component<{ reason: string }> = (props) => (
+const Missing: Component<{ reason: string; teams?: number }> = (props) => (
   <span data-missing="true" title={props.reason} style={{ color: 'var(--color-text-tertiary)', 'font-style': 'italic' }}>
-    not reported
+    {props.teams && props.teams > 1 ? `not reported by any of the ${props.teams} teams` : 'not reported'}
     <Show
       when={!props.reason.startsWith(TEAM_UNREPORTED)}
       fallback={<span class="sr-only">{`. ${props.reason}`}</span>}
@@ -22,17 +26,19 @@ const Missing: Component<{ reason: string }> = (props) => (
 /** One value: a sentence, a list, or "not reported" with its reason. */
 const Cell: Component<{ cell: CompareCell; ordered: boolean }> = (props) => (
   <Switch>
-    <Match when={props.cell.kind === 'text' && props.cell}>{(c) => <span>{(c() as { text: string }).text}</span>}</Match>
+    <Match when={props.cell.kind === 'text' && props.cell}>
+      {(c) => <span title={(c() as { text: string }).text}>{(c() as { text: string }).text}</span>}
+    </Match>
     <Match when={props.cell.kind === 'list' && props.cell}>
       {(c) => {
         const items = () => (c() as { items: string[] }).items;
         return props.ordered ? (
           <ol class="flex min-w-0 list-decimal flex-col gap-0.5 pl-4">
-            <For each={items()}>{(item) => <li>{item}</li>}</For>
+            <For each={items()}>{(item) => <li title={item}>{item}</li>}</For>
           </ol>
         ) : (
           <ul class="flex min-w-0 flex-col gap-0.5">
-            <For each={items()}>{(item) => <li>{item}</li>}</For>
+            <For each={items()}>{(item) => <li title={item}>{item}</li>}</For>
           </ul>
         );
       }}
@@ -99,7 +105,13 @@ const Compare: Component<{ model: CompareModel }> = (props) => {
     <Show when={props.model.teams.length > 0}>
       <div class="relative min-w-0">
       <div ref={edges.ref} onScroll={edges.measure} class="min-w-0 overflow-x-auto" role="region" aria-label="Teams compared" tabindex="0">
-        <table class="w-full border-collapse text-left text-small" style={{ 'min-width': 'max-content' }}>
+        {/* Fixed columns of one width, so a long cell wraps at its words inside its column instead of
+            widening the table; only when there are more teams than the frame can hold does it scroll. */}
+        <table class="w-full border-collapse text-left text-small" style={{ 'table-layout': 'fixed', 'min-width': `${LABEL_REM + COLUMN_REM * props.model.teams.length}rem` }}>
+          <colgroup>
+            <col style={{ width: `${LABEL_REM}rem` }} />
+            <For each={props.model.teams}>{() => <col />}</For>
+          </colgroup>
           <thead>
             <tr>
               <th scope="col" class="px-2 py-1.5 align-bottom">
@@ -111,7 +123,7 @@ const Compare: Component<{ model: CompareModel }> = (props) => {
                     scope="col"
                     data-testid="compare-team"
                     class="px-2 py-1.5 align-bottom font-bold"
-                    style={{ 'min-width': '11rem', 'max-width': '18rem', 'overflow-wrap': 'anywhere', color: 'var(--color-text-primary)' }}
+                    style={{ 'overflow-wrap': 'break-word', color: 'var(--color-text-primary)' }}
                   >
                     {team.name}
                     <Show when={!team.reported}>
@@ -126,18 +138,18 @@ const Compare: Component<{ model: CompareModel }> = (props) => {
             <For each={props.model.rows}>
               {(row) => (
                 <tr data-testid="compare-row" data-row={row.key} style={{ 'border-top': '1px solid var(--color-border-light)' }}>
-                  <th scope="row" class="whitespace-nowrap px-2 py-1.5 align-top font-semibold" style={MUTED}>{row.label}</th>
+                  <th scope="row" class="px-2 py-1.5 align-top font-semibold" style={{ ...MUTED, 'overflow-wrap': 'break-word' }}>{row.label}</th>
                   <Show
                     when={!allMissing(row.cells)}
                     fallback={
-                      <td colSpan={row.cells.length} data-collapsed="true" class="px-2 py-1.5 align-top" style={{ 'overflow-wrap': 'anywhere' }}>
-                        <Missing reason={reasonsOf(row.cells)} />
+                      <td colSpan={row.cells.length} data-collapsed="true" class="px-2 py-1.5 align-top" style={{ 'overflow-wrap': 'break-word' }}>
+                        <Missing reason={reasonsOf(row.cells)} teams={row.cells.length} />
                       </td>
                     }
                   >
                     <For each={row.cells}>
                       {(cell) => (
-                        <td class="px-2 py-1.5 align-top" style={{ 'overflow-wrap': 'anywhere', color: 'var(--color-text-primary)' }}>
+                        <td class="px-2 py-1.5 align-top" style={{ 'overflow-wrap': 'break-word', color: 'var(--color-text-primary)' }}>
                           <Cell cell={cell} ordered={row.key === 'steps'} />
                         </td>
                       )}

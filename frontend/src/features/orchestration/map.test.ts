@@ -4,10 +4,13 @@ import type { TeamEntry, TeamMember, TeamStep } from '../../shared/execution/tea
 import type { Item } from '../../shared/types';
 import { buildFlow, type FlowInput, type RoleProfile } from './flow';
 import {
+  NODE_H,
+  NODE_W,
   NO_ROLE_ID,
   buildCompare,
   buildMap,
   clip,
+  wrapLines,
   columnHeaderId,
   countCrossings,
   linkPath,
@@ -210,8 +213,24 @@ describe('buildMap: links are as wide as the open tasks routed along them', () =
     const d = linkPath(model, l);
     const a = node(model, l.from);
     const b = node(model, l.to);
-    expect(d.startsWith(`M${a.x + 184},`)).toBe(true);
-    expect(d.endsWith(`${b.x},${b.y + 31}`)).toBe(true);
+    expect(d.startsWith(`M${a.x + NODE_W},`)).toBe(true);
+    expect(d.endsWith(`${b.x},${b.y + NODE_H / 2}`)).toBe(true);
+  });
+});
+
+describe('buildMap: every profile and every route is drawn', () => {
+  it('lists_a_profile_no_role_default_or_task_reaches_and_joins_it_to_its_team', () => {
+    const { input } = world();
+    const spare = profile('lights-p', 'saas-lights');
+    const m = buildMap({ ...input, profiles: [...input.profiles, spare], teams: [...input.teams, team('saas-lights', { profiles: [{ id: 'lights-p', name: 'lights-p' }] })] });
+    expect(ids(m, 'profiles')).toContain('profile:lights-p');
+    expect(link(m, 'profile:lights-p>team:saas-lights')).toMatchObject({ tasks: 0, width: 1 });
+    expect(node(m, 'team:saas-lights').dashed).toBe(false);
+    expect(node(m, 'profile:lights-p').dashed).toBe(false);
+  });
+
+  it('still_draws_a_team_dashed_when_no_profile_at_all_names_it', () => {
+    expect(node(world().model, 'team:orphan').dashed).toBe(true);
   });
 });
 
@@ -268,7 +287,7 @@ describe('buildMap: what is dashed, marked or unrouted', () => {
     expect(node(model, 'team:saas-notes').dashed).toBe(false);
   });
 
-  it('draws_a_team_that_only_a_profile_the_project_does_not_use_names_dashed_with_the_fix_in_the_Teams_settings', () => {
+  it('draws_a_team_that_only_a_profile_missing_from_the_list_names_dashed_with_the_fix_in_the_Teams_settings', () => {
     const unused = buildMap({
       ...world().input,
       teams: [...world().input.teams, team('elsewhere', { profiles: [{ agent_profile_id: 'far', name: 'far' }] } as Partial<TeamEntry>)],
@@ -276,7 +295,7 @@ describe('buildMap: what is dashed, marked or unrouted', () => {
     const elsewhere = node(unused, 'team:elsewhere');
     expect(elsewhere.dashed).toBe(true);
     expect(elsewhere.fix).toEqual({ to: 'automation-teams', text: 'Settings → Automation → Teams' });
-    expect(elsewhere.reason).toContain('no role of this project uses it');
+    expect(elsewhere.reason).toContain('is not among the profiles');
   });
 
   it('puts_a_member_under_its_team', () => {
@@ -395,6 +414,17 @@ describe('clip', () => {
   });
 });
 
+describe('wrapLines', () => {
+  it('breaks_at_a_space_and_cuts_only_what_does_not_fit_in_the_last_line', () => {
+    expect(wrapLines('Chosen on the task, or the default', 20, 2)).toEqual(['Chosen on the task,', 'or the default']);
+    expect(wrapLines('short', 20, 2)).toEqual(['short']);
+    expect(wrapLines('one two three four five six seven', 10, 2)).toEqual(['one two', 'three fou…']);
+    expect(wrapLines('anthropic/claude-haiku-5-5 · Changes the project', 30, 2)).toEqual(['anthropic/claude-haiku-5-5 ·', 'Changes the project']);
+    expect(wrapLines('x'.repeat(30), 10, 2)).toEqual(['xxxxxxxxxx'.slice(0, 10), 'xxxxxxxxx…']);
+    expect(wrapLines('anything', 20, 1)).toEqual(['anything']);
+  });
+});
+
 describe('buildCompare: the teams side by side', () => {
   const profiles = [
     profile('notes-p', 'saas-notes', undefined, { delivers: 'a change on a branch', limits: { budgets: { tokens: 1_600_000 } } }),
@@ -457,6 +487,17 @@ describe('buildCompare: the teams side by side', () => {
     expect(at('merge', 'saas-notes')).toEqual({ kind: 'text', text: 'You merge (L3)' });
     expect(at('limit', 'saas-notes')).toEqual({ kind: 'text', text: '1 600 000 tokens' });
     expect(at('today', 'saas-notes')).toEqual({ kind: 'text', text: '12 000 tokens' });
+  });
+
+  it('says_a_step_named_like_its_role_once', () => {
+    const same = buildCompare({
+      flow: flowOf({ profiles: [], teams: [] }),
+      teams: [team('saas-lights', {}, { steps: [{ name: 'lead', kind: 'agent', role: 'Lead' }, { name: 'implement', kind: 'agent', role: 'implementer', checked_by: 'command' }] })],
+      profiles: [],
+      autonomy: null,
+    });
+    const steps = same.rows.find((r) => r.key === 'steps')!.cells[0] as { items: string[] };
+    expect(steps.items).toEqual(['lead', 'implement · implementer · checked by a command']);
   });
 
   it('says_not_reported_with_the_reason_for_a_fact_a_team_left_out', () => {

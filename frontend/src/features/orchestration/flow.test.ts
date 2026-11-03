@@ -5,6 +5,7 @@ import { cardRun } from '../../shared/runWithAgent/cardRun';
 import type { Dependency, Item } from '../../shared/types';
 import {
   ageText,
+  endedTally,
   candidateIds,
   laneQueue,
   blockersOf,
@@ -205,6 +206,18 @@ describe('stationFor: where a task stands in a team', () => {
   it('puts_a_run_that_asks_at_Needs_you_and_one_to_review_at_Ready_for_review', () => {
     expect(stationFor(cardRun({ request_id: 'r', state: 'waiting_decision', cancellation_requested_at: null }, false), hop('Lead'), STEPS)).toBe('needs-you');
     expect(stationFor(cardRun({ request_id: 'r', state: 'succeeded', cancellation_requested_at: null }, true), null, STEPS)).toBe('review');
+  });
+
+  it('counts_what_ended_by_how_it_ended_and_leaves_out_a_state_nobody_ended_in', () => {
+    const ended = (state: 'done' | 'failed' | 'cancelled') => ({ run: { state } });
+    const tally = endedTally([ended('done'), ended('failed'), ended('done'), ended('cancelled'), { run: undefined }] as never);
+    expect(tally).toEqual([
+      { state: 'done', count: 2 },
+      { state: 'cancelled', count: 1 },
+      { state: 'failed', count: 1 },
+    ]);
+    expect(endedTally([ended('failed')] as never)).toEqual([{ state: 'failed', count: 1 }]);
+    expect(endedTally([])).toEqual([]);
   });
 
   it('puts_ended_runs_in_Done', () => {

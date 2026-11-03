@@ -359,6 +359,7 @@ through a browser. The suite, in `frontend/e2e/`:
 | Spec | Journey |
 | --- | --- |
 | `smoke.spec.ts` | Every primary surface renders without a blank screen or a page error |
+| `chrome-reachable.spec.ts` | At a laptop height the sidebar reaches its last links and the run dialog's footer is the last thing in the dialog |
 | `journey.spec.ts`, `table.spec.ts` | An item is created, appears on the board and in the list, opens with its title, and an inline edit persists; the drawer's Expand opens the item's page with its breadcrumb, properties, tabs and Copy link |
 | `brief.spec.ts` | A checklist line and a machine check on an item survive a reload |
 | `run-with-agent.spec.ts` | "Run with agent" from the board, the item and the sprint: required fields block submit, a run is created and shows up without navigation, the project's model default is sent unchanged |
@@ -375,36 +376,23 @@ files in the directory are recorders, not tests — `screenshots.spec.ts`, `reco
 `agent-assets.spec.ts` and `tutorial-assets.spec.ts` produce the README's and the book's images
 and GIFs, each through its own config. The default config ignores them and CI never runs them.
 
-**Live docket and prill suite.** `docket-prill.spec.ts` is not versioned: it lives in the
-git-ignored `onboarding-lab/e2e/` with `docket-prill-e2e.sh`, which builds `tack` with the SPA
-embedded, runs docket and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`) in a
-scratch `HOME`, and drives a project through the UI the way a person would. CI never runs it
-and never needs docket or prill; the three meet only here. A test that needs a model can fail on
-the local model alone, so read the log before blaming Tack. The script lists its knobs at the top;
-`DOCKET_PRILL_SKIP_BUILD=1` reuses the last build.
-
-The suite has four teams. Three work in the fixture repository and call the local model
-(`saas-code`, `saas-content`, `saas-lights`); the fourth, `saas-notes`, works in a plain folder
-and runs no model: its pipeline is one wait of 25 seconds. Test 16 sends it a task through the
-board and asserts docket received no `baseRef` and no `prepare`, ended the task `done` with no
-branch, and that the run card and the Agents page show the team's steps. Test 17 holds a task of
-that team open during the wait and writes three rows in its `tack_proposals` set through docket's
-own records port (no model writes them), then asserts the attempt's `plan` artifact, accepts it
-through `POST /items/{id}/subtasks-from-plan` and checks the three items, their nesting, their
-blocker, their roles and their profile. It also asserts docket answered the team with `blueprint`
-and `pipeline.steps`. The rest of the suite is a real model's work and can fail on the model alone.
+**Live docket and prill suite.** `docket-prill-e2e.sh` and its `docket-prill.spec.ts` are not
+versioned: they live in the git-ignored `onboarding-lab/e2e/`. The script builds `tack` with the SPA
+embedded, runs docket and prill from their own source trees (`DOCKET_SRC`, `PRILL_SRC`) in a scratch
+`HOME`, and drives a project through the UI the way a person would, including a manager that works
+through the board with an agent credential. CI never runs it and never needs docket or prill; the
+three meet only here. A test that needs a model can fail on the local model alone, so read the log
+before blaming Tack. The knobs are listed at the top of the script.
 
 `docket-prill-e2e.sh --check` needs no model and no container. It runs
-`scripts/capture-docket-fixtures.sh` against a real docket, compares the keys of docket's answers
-with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`, compares
+`scripts/capture-docket-fixtures.sh` against a real docket and compares the keys of docket's answers
+with the fixtures under `crates/tack-runner/src/harness/fixtures/docket/`. It compares
 `docs/contracts/mrp-v1/fixtures/prill/` with prill's own contract fixtures, runs the
 `briefing_schema` test (`#[ignore]`d in CI because it needs `prill` on `PATH`), and runs the fake
-docket's tests against the captures, so a key docket sends that the fake does not, or the reverse,
-fails by name. It exits non-zero when anything drifted. What the captures cannot reach stays
-`constructed`: it needs a model's reply, an agent's call that leaves the machine, or a deadline of
-docket's that is hours long (`task-failed-approval-expired`), and each says so in its provenance.
-The refusals of a folder team (a `baseRef` or a `prepare` sent to it, `failureKind` `base_ref` and
-`prepare`) need none of those and are captured.
+docket's tests against the captures, so a key that docket sends and the fake does not, or the
+reverse, fails by name. It exits non-zero when anything drifted. What a capture cannot reach stays
+`constructed`, and its provenance says why: it needs a model's reply, an agent's call that leaves
+the machine, or a deadline of docket's that is hours long.
 
 **A flaky E2E test.** CI retries a failed test once, only to record a trace and a video; a
 test that passes on the retry still fails the run (`failOnFlakyTests`). The same day, mark it

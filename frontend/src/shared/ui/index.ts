@@ -41,13 +41,16 @@ export type { ConfirmOptions, ConfirmDialogProps } from './ConfirmDialog';
 export { default as Drawer } from './Drawer';
 export type { DrawerProps } from './Drawer';
 
+export { default as Fold, readFoldOpen } from './Fold';
+export type { FoldProps } from './Fold';
+
 export { default as Tabs } from './Tabs';
 export type { TabsProps, TabItem } from './Tabs';
 
 // Redesign primitives (Tack.dc.html) — token-styled atoms shared across the
 // shell, board, and drawer.
 export { default as Avatar, AvatarStack, hueFromName, initialsOf } from './Avatar';
-export { teamInitials, teamInitialsOf } from './teamInitials';
+export { teamInitials } from './teamInitials';
 export type { AvatarProps, AvatarStackProps, AvatarSize } from './Avatar';
 
 export { default as TypeBadge, typeKey, typeBadgeTone } from './TypeBadge';

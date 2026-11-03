@@ -4,6 +4,7 @@ import { toast } from '../ui/toast';
 import { useExecutionStore } from '../state/executionContext';
 import { artifactsApi, attemptsApi, folderRunSummary, isFolderRun, readRunSteps, type AttemptSummary } from '../execution';
 import type { WaitingBehind } from '../execution/api';
+import { plainLine } from './plainWords';
 import {
   changedNoFile,
   countPatchFiles,
@@ -12,6 +13,7 @@ import {
   formatCountedTokens,
   formatWallClock,
   isTerminalAttemptState,
+  neverStarted,
   lastSteps,
   needsVerdict,
   readAttemptUsage,
@@ -63,20 +65,22 @@ export function primaryNowAction(input: {
   askingBehind: boolean;
   /** The run was stopped on purpose: there is nothing to explain, so what to do next is to run it again. */
   cancelled?: boolean;
+  /** The run was turned away before the agent did anything: the reason is already on the card, so the one thing to do is run it again. */
+  refused?: boolean;
 }): NowAction | null {
   if (!input.hasRun) return 'run';
   switch (input.kind) {
     case 'queued': return input.askingBehind ? 'answer' : null;
     case 'running': return input.asking ? 'answer' : null;
     case 'review': return 'review';
-    case 'failed': return input.cancelled ? 'again' : 'why';
+    case 'failed': return input.cancelled || input.refused ? 'again' : 'why';
     case 'merged':
     case 'done': return 'again';
   }
 }
 
 /** Status words the banner already says, so the line under it does not repeat them. */
-const SAID_BY_BANNER = new Set(['Queued', 'Running', 'Failed', 'Cancelled', 'Needs a person']);
+const SAID_BY_BANNER = new Set(['Queued', 'Running', 'Failed', 'Cancelled', 'Not started', 'Needs a person']);
 
 const EXCERPT_CHARS = 220;
 const ANSWER_CHARS = 600;
@@ -137,7 +141,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   const status = (): { label: string; tone: StateTone } => {
     const a = attempt();
     if (kind() === 'merged') return { label: 'Merged', tone: 'success' };
-    if (a) return describeAttemptStatus(a, review());
+    if (a) return describeAttemptStatus(a, review(), recommendation());
     const s = describeExecutionState(latest()?.state ?? 'queued');
     return { label: s.label, tone: s.tone };
   };
@@ -152,6 +156,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
       case 'review': return { state: 'review', docket: 'Needs your review' };
       case 'failed':
         if (needsPerson()) return { state: 'needs', docket: 'Needs a person' };
+        if (refused()) return { state: 'notstarted' };
         return { state: raw === 'cancelled' ? 'cancelled' : 'failed' };
       case 'merged': return { state: 'done' };
       case 'done': return noChange() && !folder() ? { state: 'done', docket: 'no changes recorded' } : { state: 'done' };
@@ -182,7 +187,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   };
   const usageLine = () => {
     const a = attempt();
-    if (!a || !finished()) return null;
+    if (!a || !finished() || refused()) return null;
     const u = readAttemptUsage(a);
     const parts: string[] = [];
     const tokens = formatCountedTokens(u);
@@ -194,6 +199,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   // The agent stopped to ask a person, or ended because it needed one: one state, with the question one press away.
   const asking = () => (attempt()?.state ?? latest()?.state) === 'waiting_decision';
   const needsPerson = () => asking() || needsAPerson(attempt());
+  // Turned away before it started: the run's own summary says so (the server's one rule); a server that
+  // predates the field is read from the attempt, which carries the same flag.
+  const refused = () => latest()?.never_started ?? (attempt() ? neverStarted(attempt()!) : false);
   const failedReason = () => (latest()?.state === 'failed' ? latest()?.waiting_reason || null : null);
   const waitingReason = () => (latest()?.state === 'queued' ? latest()?.waiting_reason || null : null);
   // When the wait is a full computer, the sentence names its limit and the tasks that hold it:
@@ -246,7 +254,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   const metaLine = () => {
     const a = attempt();
-    if (!a || !finished()) return null;
+    if (!a || !finished() || refused()) return null;
     const parts: string[] = [];
     const ms = readAttemptUsage(a).wallClockMs;
     if (ms !== null) parts.push(formatWallClock(ms, true));
@@ -275,6 +283,9 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   // Known to have no pack: only then are Accept and Reject… shown here.
   const inlineReview = () => !hasPack.loading && hasPack() === false;
+  // The verifier's call, as the run's own summary states it (the server reads the pack once for the
+  // whole list); nothing here opens the pack.
+  const recommendation = () => latest()?.verifier_recommendation ?? undefined;
 
   // While it runs: its last steps, reloaded every few seconds.
   const live = () => kind() === 'running' && attempt() !== undefined;
@@ -322,7 +333,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
   );
   const openPrimary = (label: string) => <Button size="md" data-testid="now-primary" onClick={() => props.onOpen()}>{label}</Button>;
   const primary = () =>
-    primaryNowAction({ hasRun: !!latest(), kind: kind(), asking: asking(), askingBehind: !!askingBehind(), cancelled: runState().state === 'cancelled' });
+    primaryNowAction({ hasRun: !!latest(), kind: kind(), asking: asking(), askingBehind: !!askingBehind(), cancelled: runState().state === 'cancelled', refused: refused() });
   const runAgain = (variant: 'primary' | 'ghost') => (
     <RunWithAgentButton
       itemId={props.itemId}
@@ -439,7 +450,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                 fallback={<p class="text-sm" style={muted()}>The run did not finish.</p>}
               >
                 {(why) => (
-                  <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: needsAPerson(attempt()) ? 'var(--color-text-primary)' : 'var(--color-danger-600)' }}>
+                  <p data-testid={whyStopped() ? 'latest-run-why' : 'latest-run-failure'} class="text-sm" style={{ color: needsAPerson(attempt()) || refused() ? 'var(--color-text-primary)' : 'var(--color-danger-600)' }}>
                     {why()}
                   </p>
                 )}
@@ -465,7 +476,12 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                     <Show when={noChange()}>
                       <p class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>{folder() ? 'What it did' : 'What it delivered'}</p>
                     </Show>
-                    <p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>
+                    <Show
+                      when={plainLine(text()).raw}
+                      fallback={<p data-testid="latest-run-said" class="text-sm" style={muted()}>“{text()}”</p>}
+                    >
+                      {(raw) => <p data-testid="latest-run-said" title={raw()} class="text-sm" style={muted()}>{plainLine(text()).text}</p>}
+                    </Show>
                   </>
                 )}
               </Show>
@@ -590,7 +606,7 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
               {/* Another run is possible from every state that is not in flight, drawn as the quietest
                   button when something else is what to do now. A queued or running run (or one waiting
                   for an answer) is the run; a second one beside it would only compete. */}
-              <Show when={primary() !== 'again' && kind() !== 'queued' && kind() !== 'running'}>{runAgain('ghost')}</Show>
+              <Show when={primary() !== 'again' && kind() !== 'queued' && kind() !== 'running' && !(kind() === 'failed' && needsPerson())}>{runAgain('ghost')}</Show>
             </div>
 
             <Show when={finished() && !noChange() && kind() !== 'failed' && !isMerged() && attempt()?.merge}>

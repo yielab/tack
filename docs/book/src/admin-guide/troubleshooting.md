@@ -52,7 +52,7 @@ TACK_PORT=4000 tack serve
 
 Open the board at the address you started, for example `http://127.0.0.1:4000`. If you run Tack as a
 service, set the port in the service's environment. `TACK_PORT` and `TACK_HOST` are in the
-[Configuration Reference](configuration-reference.md).
+[Configuration](configuration-reference.md).
 
 ---
 
@@ -235,7 +235,7 @@ or the board has no `TACK_GITHUB_TOKEN`. A pull request needs both of those last
 **What to do.** On the runner's machine, run `tack runner doctor`. Its last lines say whether the verifier is
 on and found. Set the missing section as described in
 [After a succeeded attempt](runners.md#after-a-succeeded-attempt) and the
-[Configuration Reference](configuration-reference.md), then run the task again.
+[Configuration](configuration-reference.md), then run the task again.
 
 ---
 
@@ -434,5 +434,5 @@ which the desktop app uses, holds another `tack.db`, the board says so as it sta
 Start it from that folder, or set `TACK_DATABASE_URL`, to use the other one.
 
 **For more detail.** Raise the level for every part with `RUST_LOG=tack=debug`, or for one part only,
-as in [Configuration](configuration.md). `RUST_LOG` replaces the default, so name every part you want
+as in [Configuration](configuration-reference.md#debugging). `RUST_LOG` replaces the default, so name every part you want
 to keep. A runner's credential is never written to the log.

@@ -55,6 +55,7 @@ const RUN_FILTERS: { value: RunFilter; label: string }[] = [
   { value: 'needs', label: RUN_STATE_LABEL.needs },
   { value: 'review', label: RUN_STATE_LABEL.review },
   { value: 'failed', label: RUN_STATE_LABEL.failed },
+  { value: 'notstarted', label: RUN_STATE_LABEL.notstarted },
 ];
 
 /** Space between rows and inside them, by density. */
@@ -765,7 +766,7 @@ function ItemRow(props: {
 
                 <Match when={col.key === 'run'}>
                   <Show when={props.run} fallback={<span class="text-small text-content-subtle" aria-label="No run">—</span>}>
-                    {(run) => <RunState state={run().state} docket={run().docket} />}
+                    {(run) => <RunState state={run().state} docket={run().docket} note={run().note} />}
                   </Show>
                 </Match>
 

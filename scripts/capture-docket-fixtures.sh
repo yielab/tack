@@ -317,13 +317,13 @@ rec task-failed-pipeline GET "/tasks/saas-dev/$TASK_ID" yes "a task refused at c
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = pipeline ] || die "the task failed, but not on its pipeline: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"
 rec task-diff-failed GET "/tasks/saas-dev/$TASK_ID/diff" yes "the diff of a task that never started"; expect 200 task-diff
-rec task-cancel-finished POST "/tasks/saas-dev/$TASK_ID/cancel" yes "cancel of a task that has ended" --body '{"reason":"the capture"}'; expect 409 cancel
+OPTIONAL_KEYS=actor rec task-cancel-finished POST "/tasks/saas-dev/$TASK_ID/cancel" yes "cancel of a task that has ended" --body '{"reason":"the capture","actor":"tack"}'; expect 409 cancel
 sleep 2
 rec traces-after-failure GET /traces/saas-dev yes "the events of the tasks refused at claim, a second after the last (docket holds back the newest second)"; expect 200 traces
 
 # ── Routes for tasks docket does not know ─────────────────────────────────────
 rec task-unknown GET /tasks/saas-dev/task-unknown yes "a task docket does not know"; expect 404 task-unknown
-rec task-cancel-unknown POST /tasks/saas-dev/task-unknown/cancel yes "cancel of a task docket does not know" --body '{"reason":"the capture"}'; expect 404 cancel-unknown
+OPTIONAL_KEYS=actor rec task-cancel-unknown POST /tasks/saas-dev/task-unknown/cancel yes "cancel of a task docket does not know" --body '{"reason":"the capture","actor":"tack"}'; expect 404 cancel-unknown
 rec task-diff-unknown GET /tasks/saas-dev/task-unknown/diff yes "the diff of a task docket does not know"; expect 404 diff-unknown
 
 # trace_cursor: docket holds back the events of the last second, so wait it out, then print the
@@ -387,7 +387,7 @@ PARKED_BODY=$(jq -cn '{description: "Capture only: capture-needs-approval holds 
 PARKED=$(curl -s -m 30 -K "$CURL_AUTH" -H 'Content-Type: application/json' -d "$PARKED_BODY" "$BASE/tasks/saas-dev")
 [ "$(jq -r '.status' <<<"$PARKED")" = waiting_approval ] || die "the policy did not hold the second enqueue: $PARKED"
 PARKED_ID=$(jq -r '.task' <<<"$PARKED")
-rec cancel-accepted POST "/tasks/saas-dev/$PARKED_ID/cancel" yes "cancel of a task that waits on a person: status cancelled, and its escalation is closed" --body '{"reason":"the capture"}'; expect 200 cancel
+OPTIONAL_KEYS=actor rec cancel-accepted POST "/tasks/saas-dev/$PARKED_ID/cancel" yes "cancel of a task that waits on a person: status cancelled, and its escalation is closed" --body '{"reason":"the capture","actor":"tack"}'; expect 200 cancel
 
 # ── A task at L5 whose pipeline asks a person: needs_human, no model ───────────
 # The lights-out team's ceiling is L5, and docket runs a lights-out team only once its profile is

@@ -42,6 +42,8 @@ const ATTEMPT = {
 };
 
 let runs: unknown[] = [];
+/** The project's items as the list endpoint answers them. */
+let projectItems: unknown[] = [];
 let autoStart = false;
 /** Why auto-start has not started the item, as the server answers it; null lists nothing. */
 let oneRunner = false;
@@ -49,6 +51,7 @@ let waitingReason: { code: string; text: string } | null = null;
 
 function jsonOf(url: string): unknown {
   if (url.endsWith(`/api/items/${ITEM.id}`)) return { item: ITEM, roles: [], dependencies: [] };
+  if (/\/projects\/p1\/items\?/.test(url)) return { data: projectItems, total: projectItems.length, page: 1, per_page: 200 };
   if (url.includes('/dependencies')) return [];
   if (url.includes('/sprints')) return [];
   if (url.includes('/agent-profiles')) return { protocol_version: 1, data: [PROFILE] };
@@ -66,6 +69,7 @@ function jsonOf(url: string): unknown {
 
 beforeEach(() => {
   runs = [];
+  projectItems = [];
   localStorage.clear();
   vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) =>
     Promise.resolve(
@@ -120,7 +124,7 @@ describe('ItemBody', () => {
       container.querySelector('[aria-label="Item title"]'),
       container.querySelector('[data-testid="now-panel"]'),
       container.querySelector('[role="tablist"]'),
-      container.querySelector('[data-testid="details-fold"]'),
+      container.querySelector('[data-fold="details"]'),
     ] as Element[];
     expect(order.every(Boolean)).toBe(true);
     for (let i = 1; i < order.length; i++) {
@@ -130,11 +134,36 @@ describe('ItemBody', () => {
     dispose();
   });
 
+  it('a parent lists its sub-items and a sub-item names its parent, in the drawer that sits outside the items context', async () => {
+    projectItems = [
+      ITEM,
+      { ...ITEM, id: 'kid-1', title: 'First child', status: 'todo', parent_id: ITEM.id },
+      { ...ITEM, id: 'kid-2', title: 'Second child', status: 'todo', parent_id: ITEM.id },
+    ];
+    const { container, dispose } = await mount('drawer');
+    const kids = container.querySelector('[data-testid="item-children"]')!;
+    expect(kids.textContent).toContain('Sub-items');
+    expect([...kids.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['First child', 'Second child']);
+    dispose();
+  });
+
   it('an item with no run says who would do it, under its one Run with agent button', async () => {
     const { container, dispose } = await mount('drawer');
     expect(container.querySelector('[data-testid="now-who"]')?.textContent).toBe('Would go to Code agent · team saas-code');
     expect([...container.querySelectorAll('button')].filter((b) => b.textContent === 'Run with agent')).toHaveLength(1);
     expect(container.querySelector('[role="tab"] [role="img"]')).toBeNull();
+    dispose();
+  });
+
+  it('the Details fold is shut with the priority, assignee and due date in its header, and the Automation line is shut with its sentence', async () => {
+    const { container, dispose } = await mount('drawer');
+    const details = container.querySelector<HTMLButtonElement>('[data-fold="details"] > button')!;
+    expect(details.getAttribute('aria-expanded')).toBe('false');
+    expect(details.textContent).toContain('Details');
+    expect(details.textContent).toContain('High · Ana');
+    const automation = container.querySelector<HTMLButtonElement>('[data-fold="automation"] > button')!;
+    expect(automation.getAttribute('aria-expanded')).toBe('false');
+    expect(automation.textContent).toContain("By hand: this project doesn't start tasks by itself");
     dispose();
   });
 
@@ -220,7 +249,7 @@ describe('ItemBody', () => {
 
   it('the page keeps its side column of properties, with no Details fold', async () => {
     const { container, dispose } = await mount('page');
-    expect(container.querySelector('[data-testid="details-fold"]')).toBeNull();
+    expect(container.querySelector('[data-fold="details"]')).toBeNull();
     const properties = container.querySelector('aside section[aria-label="Properties"]')!;
     expect(properties.textContent).toContain('Priority');
     expect(container.querySelector('[data-testid="now-panel"]')!.closest('aside')).toBeNull();

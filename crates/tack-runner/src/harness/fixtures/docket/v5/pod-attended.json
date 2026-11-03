@@ -198,5 +198,6 @@
   "repoConfigDir": "/scratch/repo/.docket",
   "readOnly": [
     "/scratch/toolchain/node"
-  ]
+  ],
+  "paused": false
 }
