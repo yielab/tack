@@ -29,7 +29,15 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 ## Open
 
 Phases 73 to 86 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
-and it is not a card. What remains are two dependency cards:
+and it is not a card.
+
+**Phase 87 — a step that runs out of budget stops at a checkpoint** (`docs/plans/phase-87.md`,
+proposed 2026-11-03). It follows docket's Phase 59. A stopped step says which limit stopped it and
+where to raise it, keeps its work and its report, and offers Continue (the same docket task) or Start
+over (a new one, from the kept work or clean). Cards A, B ∥ C, D, the skill's card S and the live proof
+L; each starts when docket lists the feature it reads.
+
+What remains besides it are two dependency cards:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
   Run the desktop workflow on the branch first.
