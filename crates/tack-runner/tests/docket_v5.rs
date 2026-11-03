@@ -1366,6 +1366,23 @@ async fn a_team_that_cannot_do_what_the_run_needs_gets_no_task_and_the_run_says_
         fake.requests_to("POST", "/tasks").is_empty(),
         "no task is posted"
     );
+    assert!(
+        web.contains("FETCH_ALLOWED_DOMAINS") && !web.contains("fetchDomains"),
+        "{web}"
+    );
+    // A docket whose pods declare their own hosts is told that first: it opens only reading.
+    fake.with_pod_fetch();
+    let scoped = refused(
+        adapter(&fake, &first)
+            .start(&needing(&first, "researcher", true))
+            .await,
+    );
+    assert!(
+        scoped.contains(&format!("docket pod set fetchDomains <host> --pod {POD}"))
+            && scoped.find("fetchDomains") < scoped.find("network open --widen")
+            && !scoped.contains("FETCH_ALLOWED_DOMAINS"),
+        "{scoped}"
+    );
 
     // Each need met the way docket meets it: an open network, a member with `fetch`, a set the
     // members write. A Researcher on a team that cannot propose runs, told nothing of proposals.

@@ -388,6 +388,9 @@ struct World {
     /// A docket before `retryContinues`: the features do not list it, and `POST .../retry` is not
     /// served (the fake answers `404`, as a docket without the route would).
     without_retry_continues: bool,
+    /// A docket with `podFetch` (its Phase 61): `/health` lists it. Off by default, as no docket
+    /// captured so far serves it.
+    pod_fetch: bool,
     /// What a retried task does next, scripted ahead of the `POST .../retry` that reads it: the
     /// hops it adds, on top of the ones the task already has, and the status it settles at. A
     /// retry with none scripted finishes the task `done` with no further hop, as a step that
@@ -439,6 +442,7 @@ impl FakeDocket {
             without_pod_pause: false,
             without_budget_outcome: false,
             without_retry_continues: false,
+            pod_fetch: false,
             next_retry_script: None,
             rev: 0,
             next_channel: None,
@@ -547,6 +551,11 @@ impl FakeDocket {
     /// `404`, as a docket without the route would.
     pub fn without_retry_continues(&self) {
         self.shared.lock().unwrap().without_retry_continues = true;
+    }
+
+    /// A docket whose pods declare their own `fetch` hosts: `/health` lists `podFetch`.
+    pub fn with_pod_fetch(&self) {
+        self.shared.lock().unwrap().pod_fetch = true;
     }
 
     /// What the next `POST .../retry` does to the task it is sent to: the hops it adds and the
@@ -1036,6 +1045,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_retry_continues {
         listed.push("retryContinues");
+    }
+    if state.pod_fetch {
+        listed.push("podFetch");
     }
     json!(listed)
 }
