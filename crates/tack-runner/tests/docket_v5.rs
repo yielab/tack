@@ -1414,6 +1414,16 @@ async fn a_team_that_cannot_do_what_the_run_needs_gets_no_task_and_the_run_says_
         .start(&needing(&scene, "planner", false))
         .await
         .expect("a team whose members propose takes a Planner's task");
+    // Every step reads the task, so the roles that can propose are named in it.
+    let posted = fake.requests_to("POST", "/tasks");
+    let description = posted[0].body["description"].as_str().unwrap_or_default();
+    assert!(
+        description.contains(
+            "Only the lead and implementer roles can call rec__tack_proposals__add; any other role \
+             leaves proposing to them and never calls it."
+        ),
+        "{description}"
+    );
 }
 
 /// A slow docket answering for one team holds up that team's run and no other: the fast team's

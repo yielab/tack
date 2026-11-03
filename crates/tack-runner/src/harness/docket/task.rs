@@ -209,7 +209,7 @@ fn task_fields(task: &TaskDocument, request: &ExecutionRequestSnapshot) -> Value
 /// or commit the task starts from, and `None` for a team that works in a folder: docket refuses
 /// a `baseRef` or a `prepare` it has no worktree for, so such a task carries neither. `autonomy`
 /// is the level a person asked this run for, sent as it is; docket decides when there is none.
-/// `team_can_propose` is false only when docket said no member of the team can propose.
+/// `proposers` are the roles docket said can propose, `None` when it did not say.
 ///
 /// The card goes once, as `task` fields, and `description` holds only the profile's instructions
 /// and the card's fenced text. No `brief` is sent: docket's "Task brief" (`pod-dispatch.spec.md`)
@@ -222,13 +222,13 @@ pub(super) fn body(
     attempt_number: u32,
     base_ref: Option<&str>,
     autonomy: Option<AutonomyLevel>,
-    team_can_propose: bool,
+    proposers: Option<&[String]>,
 ) -> Value {
     let docket = request.resolved_agent_profile.tool_policy.get("docket");
     // A Planner or Researcher proposes through the team's `tack_proposals` records, never a file:
     // the sentence that says so follows the profile's instructions.
-    let channel = super::super::docket_plan_channel(request, team_can_propose);
-    let instructions = |instructions: &str| match channel {
+    let channel = super::super::docket_plan_channel(request, proposers);
+    let instructions = |instructions: &str| match &channel {
         Some(channel) => format!("{instructions}\n\n{channel}"),
         None => instructions.to_owned(),
     };

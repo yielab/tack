@@ -169,18 +169,40 @@ const DOCKET_PROPOSALS: &str = "Propose items by calling rec__tack_proposals__ad
 const DOCKET_RESEARCH_PROPOSALS: &str = "If you propose work, propose each item by calling rec__tack_proposals__add once per item, parent before its children. ref is a short unique name in this task; parent and depends_on name earlier refs; acceptance is one sentence per line; title is required. If the tool returns an error, fix the call and repeat it. Do not write a tack-plan.json file.";
 
 /// The sentence a docket task carries for how a Planner or Researcher proposes items, `None` for
-/// any other profile. A Researcher whose team has no member that can propose is told nothing,
-/// so it is not sent after a tool it does not hold; a Planner's team that cannot never gets the
-/// task.
+/// any other profile. Every step of the team reads it, and docket ends the task when a role calls
+/// a tool another member holds and it does not, so `proposers` (the roles the team says can
+/// propose; `None` when it did not say) are named and every other role is told to leave it. A
+/// Researcher whose team has no such role is told nothing, so it is not sent after a tool it does
+/// not hold; a Planner's team that has none never gets the task.
 pub(crate) fn docket_plan_channel(
     request: &ExecutionRequestSnapshot,
-    team_can_propose: bool,
-) -> Option<&'static str> {
-    match profile_kind(request) {
-        "planner" => Some(DOCKET_PROPOSALS),
-        "researcher" if team_can_propose => Some(DOCKET_RESEARCH_PROPOSALS),
-        _ => None,
-    }
+    proposers: Option<&[String]>,
+) -> Option<String> {
+    let channel = match profile_kind(request) {
+        "planner" => DOCKET_PROPOSALS,
+        "researcher" if proposers.is_none_or(|roles| !roles.is_empty()) => {
+            DOCKET_RESEARCH_PROPOSALS
+        }
+        _ => return None,
+    };
+    Some(match proposers {
+        Some(roles) if !roles.is_empty() => format!("{} {channel}", only_these_propose(roles)),
+        _ => channel.to_owned(),
+    })
+}
+
+/// "Only the lead and writer roles can call …": the roles that propose, and that every other role
+/// leaves it to them.
+fn only_these_propose(roles: &[String]) -> String {
+    let named = match roles {
+        [one] => format!("the {one} role"),
+        [rest @ .., last] => format!("the {} and {last} roles", rest.join(", ")),
+        [] => unreachable!("called with at least one role"),
+    };
+    format!(
+        "Only {named} can call rec__tack_proposals__add; any other role leaves proposing to {} and never calls it.",
+        if roles.len() == 1 { "it" } else { "them" }
+    )
 }
 
 /// The prompt a local agent (Claude Code, Codex, opencode) is given: the composed instructions,
