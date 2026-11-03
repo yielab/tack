@@ -6,6 +6,7 @@ pub mod answered_elsewhere;
 pub mod cancel_run;
 pub mod claim;
 pub mod complete;
+pub mod continue_run;
 pub mod create_decision;
 pub mod enroll;
 pub mod expire_decisions;

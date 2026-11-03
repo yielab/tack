@@ -197,6 +197,10 @@ struct RunInfo {
     in_repository: bool,
     /// The run is one turn of a thread, which answers with the last step's summary.
     turn: bool,
+    /// This run continues a task another run already started (decision 6, Phase 87): the tokens
+    /// that task had used (`input`, `output`) when the retry was sent, read back out of the
+    /// task's own cumulative `usage` so the attempt counts only its own new hops.
+    baseline_usage: Option<(u64, u64)>,
 }
 
 /// The ends of the channels `wait` drives.
@@ -1127,8 +1131,19 @@ impl DocketAdapter {
                 additional: BTreeMap::from([("team".to_owned(), json!(info.pod))]),
             },
             usage: Usage {
-                tokens_in: measurement(usage.and_then(|usage| usage.total.input)),
-                tokens_out: measurement(usage.and_then(|usage| usage.total.output)),
+                // A continuation's task carries the whole task's usage, old hops included
+                // (decision 6): its own baseline, what the task had already used when the retry
+                // was sent, is taken back out so the run counts only its new hops.
+                tokens_in: measurement(
+                    usage
+                        .and_then(|usage| usage.total.input)
+                        .map(|input| input.saturating_sub(info.baseline_usage.map_or(0, |b| b.0))),
+                ),
+                tokens_out: measurement(
+                    usage.and_then(|usage| usage.total.output).map(|output| {
+                        output.saturating_sub(info.baseline_usage.map_or(0, |b| b.1))
+                    }),
+                ),
                 duration_ms: measurement(Some(elapsed)),
                 cost_usd: measurement(None),
                 additional,
@@ -1148,6 +1163,31 @@ impl DocketAdapter {
         }
     }
 
+    /// What `next.continue` on a budget stop says: whether a request may follow this task with
+    /// `continue_task`, and if not, why (decision 5's table, "Continue or Start over" in
+    /// `docs/plans/phase-87.md`). `hop_budget` is the last hop's `budget`, when `budgetOutcome`
+    /// read one; without it (an older docket, or one that never wrote the key on this hop) Tack
+    /// cannot tell a step's own budget stop from a confused model, so continuing is never
+    /// offered — the same case as a docket without `retryContinues`.
+    async fn continue_offer(&self, hop_budget: Option<&BudgetOutcome>) -> Value {
+        const UPDATE_DOCKET: &str = "This team's docket cannot continue a step. Update docket.";
+        let Some(budget) = hop_budget else {
+            return json!({"possible": false, "why": UPDATE_DOCKET});
+        };
+        if budget.bound == "tokens" {
+            return json!({"possible": false,
+                           "why": "The task's token limit is spent, and continuing cannot raise it."});
+        }
+        if !budget.tree_changed {
+            return json!({"possible": false,
+                           "why": "The step changed nothing; the task may be unclear. Reword it before running again."});
+        }
+        if !self.client.has_feature("retryContinues").await {
+            return json!({"possible": false, "why": UPDATE_DOCKET});
+        }
+        json!({"possible": true})
+    }
+
     /// The task has ended: what that makes of the attempt.
     async fn finish(
         &self,
@@ -1163,7 +1203,7 @@ impl DocketAdapter {
         // alike; its hops carry their own `error`, the task has none.
         let why = task.reason.as_deref().unwrap_or_default();
         let failure_kind = task.failure_kind.as_deref();
-        let (state, reason) = match task.status.as_str() {
+        let (state, mut reason) = match task.status.as_str() {
             // A team in a folder leaves no branch: what it did is what its last step handed off,
             // and there is nothing for the engine to capture or merge.
             "done" if task.worktree.is_none() && !info.in_repository => {
@@ -1353,6 +1393,18 @@ impl DocketAdapter {
                        "message": format!("docket said: {why}"), "task": info.task}),
             ),
         };
+        // Decision 5's table, "Continue or Start over": only a budget stop ever offers it, and
+        // only docket's own last word on this hop's `budget` (or its absence) decides whether it
+        // is possible, and why not.
+        if failure_kind == Some("budget")
+            && let Some(object) = reason.as_object_mut()
+        {
+            let hop_budget = task.hops.last().and_then(|hop| hop.budget.as_ref());
+            object.insert(
+                "next".to_owned(),
+                json!({"continue": self.continue_offer(hop_budget).await}),
+            );
+        }
         let mut outcome = self.outcome(info, state, reason, Some(task), model).await;
         // What the team wrote in this task, beside the steps. The task has ended, so no row
         // changes under the read.
@@ -1431,6 +1483,16 @@ impl HarnessAdapter for DocketAdapter {
 
     async fn start(&self, spec: &ExecutionSpec) -> Result<LocalRunHandle, HarnessError> {
         let request = &spec.work.request;
+        // `continue_task`: this request follows a task another run already started (decision 6,
+        // Phase 87), instead of posting a new one. The app layer put it there once it read the
+        // stopped run's own team and task; nothing here looks either up on its own.
+        if let Some(process_id) = request
+            .metadata
+            .get("continue_task")
+            .and_then(Value::as_str)
+        {
+            return self.start_continuation(spec, process_id).await;
+        }
         let attempt_id = spec.work.lease.attempt_id.as_str().to_owned();
         let pod = Self::team(spec)?;
         let repository = spec.work.workspace_repository().map_err(|error| {
@@ -1520,6 +1582,7 @@ impl HarnessAdapter for DocketAdapter {
                 api: Some(api),
                 in_repository,
                 turn: TurnNote::of(&request.metadata).is_some(),
+                baseline_usage: None,
             })
             .await)
     }
@@ -1686,6 +1749,89 @@ impl HarnessAdapter for DocketAdapter {
                 api,
                 in_repository,
                 turn: TurnNote::of(&spec.work.request.metadata).is_some(),
+                // A restart during a continuation (decision 6's "Restarts") still has to count
+                // only the new hops: the baseline travels in the request's own metadata, the same
+                // way `start_continuation` reads it the first time.
+                baseline_usage: baseline_usage_of(&spec.work.request.metadata),
+            })
+            .await)
+    }
+}
+
+/// The `input`/`output` a continuation's own metadata carries under `continue_baseline_usage`
+/// (`{"input": …, "output": …}`), when the request has one. Absent for every request that is
+/// not a continuation.
+fn baseline_usage_of(metadata: &Value) -> Option<(u64, u64)> {
+    let usage = metadata.get("continue_baseline_usage")?;
+    Some((
+        usage.get("input")?.as_u64()?,
+        usage.get("output")?.as_u64()?,
+    ))
+}
+
+impl DocketAdapter {
+    /// A request that continues a step another run's task already stopped at (decision 6, Phase
+    /// 87), instead of posting a new task: `process_id` is that run's own `pod/task`, the same
+    /// shape `register` keys a live run by. Needs both `retryContinues` (the route itself) and
+    /// `budgetOutcome` (without it docket cannot tell a step's own budget stop from a confused
+    /// model, so the work it kept is not there to continue either); missing either rejects the
+    /// request before docket is asked to retry anything, the same way an unknown team does. A
+    /// `409` means the retry was already sent — by this run under a fencing token that never
+    /// reached completion, or by another one entirely — and the task is followed as it is, never
+    /// retried a second time.
+    async fn start_continuation(
+        &self,
+        spec: &ExecutionSpec,
+        process_id: &str,
+    ) -> Result<LocalRunHandle, HarnessError> {
+        let request = &spec.work.request;
+        let attempt_id = spec.work.lease.attempt_id.as_str().to_owned();
+        let (pod, task) = process_id
+            .split_once('/')
+            .filter(|(pod, task)| !pod.is_empty() && !task.is_empty())
+            .ok_or_else(|| {
+                rejected(format!(
+                    "continue_task {process_id:?} does not name a team and a task"
+                ))
+            })?;
+        if !self.client.has_feature("retryContinues").await
+            || !self.client.has_feature("budgetOutcome").await
+        {
+            return Err(rejected(
+                "This team's docket cannot continue a step. Update docket.".to_owned(),
+            ));
+        }
+        let reply = self.client.retry_task(pod, task).await.map_err(|why| {
+            tracing::warn!(why, "docket could not be reached to retry the task");
+            HarnessError::Process
+        })?;
+        match reply.status {
+            // `200`/`201`: the retry was taken. `409`: it already had been — the task is followed
+            // either way, never retried again.
+            200 | 201 | 409 => {}
+            401 => return Err(rejected("docket refused the runner's token".to_owned())),
+            _ => {
+                return Err(rejected(format!(
+                    "docket refused the retry: {}",
+                    reply.error()
+                )));
+            }
+        }
+        let api = probe::status(&self.client).await.map_err(rejected)?.api;
+        let in_repository = self.has_repository(pod).await;
+        Ok(self
+            .register(RunInfo {
+                pod: pod.to_owned(),
+                task: task.to_owned(),
+                attempt_id,
+                workspace: spec.workspace.path.clone(),
+                started_at: Utc::now(),
+                timeout: Duration::from_secs(request.timeout_seconds),
+                refused: None,
+                api: Some(api),
+                in_repository,
+                turn: TurnNote::of(&request.metadata).is_some(),
+                baseline_usage: baseline_usage_of(&request.metadata),
             })
             .await)
     }

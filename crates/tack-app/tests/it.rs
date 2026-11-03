@@ -13,6 +13,7 @@ mod cancel_run;
 mod change_sets;
 mod claim;
 mod complete;
+mod continue_run;
 mod create_decision;
 mod due_soon;
 mod enroll;

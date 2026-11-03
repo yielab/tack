@@ -381,6 +381,14 @@ struct World {
     /// A docket before `budgetOutcome`: the features do not list it, and a hop's `budget` the
     /// script carries is left off the record, as a docket before the feature never wrote one.
     without_budget_outcome: bool,
+    /// A docket before `retryContinues`: the features do not list it, and `POST .../retry` is not
+    /// served (the fake answers `404`, as a docket without the route would).
+    without_retry_continues: bool,
+    /// What a retried task does next, scripted ahead of the `POST .../retry` that reads it: the
+    /// hops it adds, on top of the ones the task already has, and the status it settles at. A
+    /// retry with none scripted finishes the task `done` with no further hop, as a step that
+    /// simply ran to its end on the retry would.
+    next_retry_script: Option<Script>,
     /// The change counter of the tasks.
     rev: u64,
     /// The channel of the next task posted; `http` unless a test says another (a person at the
@@ -426,6 +434,8 @@ impl FakeDocket {
             without_hop_times: false,
             without_pod_pause: false,
             without_budget_outcome: false,
+            without_retry_continues: false,
+            next_retry_script: None,
             rev: 0,
             next_channel: None,
         }));
@@ -525,6 +535,20 @@ impl FakeDocket {
     /// as a docket that cannot tell a step's own budget stop from the task's token cut.
     pub fn without_budget_outcome(&self) {
         self.shared.lock().unwrap().without_budget_outcome = true;
+    }
+
+    /// A docket before `retryContinues`: `/health` does not list it, and `POST .../retry` answers
+    /// `404`, as a docket without the route would.
+    pub fn without_retry_continues(&self) {
+        self.shared.lock().unwrap().without_retry_continues = true;
+    }
+
+    /// What the next `POST .../retry` does to the task it is sent to: the hops it adds and the
+    /// status it settles at, the same shape a task's first script is given. Scripted once; a
+    /// second retry of the same or another task without scripting one first finishes `done` with
+    /// no further hop.
+    pub fn continue_task(&self, script: Script) {
+        self.shared.lock().unwrap().next_retry_script = Some(script);
     }
 
     /// Pauses the team, as a spent budget does (`reason` is `pausedReason`): the tasks posted to
@@ -954,6 +978,7 @@ async fn handle(
         ("GET", ["tasks", pod]) => list_tasks(&state, pod, &query),
         ("GET", ["tasks", pod, id]) => get_task(&state, pod, id),
         ("POST", ["tasks", pod, id, "cancel"]) => cancel_task(&mut state, pod, id),
+        ("POST", ["tasks", pod, id, "retry"]) => retry_task(&mut state, pod, id),
         ("GET", ["tasks", pod, id, "diff"]) => diff(&state, pod, id),
         ("GET", ["traces", pod]) => traces(&state, pod, &query),
         ("GET", ["escalations"]) => escalations(&state, &query),
@@ -990,6 +1015,9 @@ fn features(state: &World) -> Value {
     }
     if !state.without_budget_outcome {
         listed.push("budgetOutcome");
+    }
+    if !state.without_retry_continues {
+        listed.push("retryContinues");
     }
     json!(listed)
 }
@@ -1953,7 +1981,12 @@ fn task_record(state: &World, task: &Task) -> Value {
     {
         object.insert("current".to_owned(), current);
     }
-    if task.status == "done" {
+    // A budget stop is not a settled task, but it still names the task's cumulative usage so
+    // far — the figure a continuation's own baseline is read from (decision 6, Phase 87) — the
+    // same way a `done` task's record does.
+    if task.status == "done"
+        || (task.status == "failed" && task.script.failure_kind.as_deref() == Some("budget"))
+    {
         record["usage"] = task.script.usage.clone();
     }
     let object = record.as_object_mut().expect("record");
@@ -2078,6 +2111,41 @@ fn cancel_task(state: &mut World, pod: &str, id: &str) -> Response {
         restamp(state, at);
     }
     let mut answer = fixture("cancel-accepted");
+    answer["task"] = json!(id);
+    reply(200, answer)
+}
+
+/// `POST /tasks/<pod>/<id>/retry`: re-runs the step a task stopped at (its own budget exhausted)
+/// and continues the same session — the same one task, never a new one. `409` when the task is
+/// already `pending` or `running`: the retry was already sent, and the caller follows the task as
+/// it is rather than sending another.
+fn retry_task(state: &mut World, pod: &str, id: &str) -> Response {
+    if state.without_retry_continues {
+        return error(404, "the fake: this docket does not serve /retry");
+    }
+    let Some(index) = state.tasks.iter().position(|t| t.pod == pod && t.id == id) else {
+        return refusal(
+            "task-cancel-unknown",
+            &[("saas-dev", pod), ("task-unknown", id)],
+        );
+    };
+    let status = state.tasks[index].status.clone();
+    if matches!(status.as_str(), "pending" | "running") {
+        return error(
+            409,
+            "the task is already running; the retry was already sent",
+        );
+    }
+    let script = state.next_retry_script.take().unwrap_or_else(|| Script {
+        status: "done".to_owned(),
+        ..Script::default()
+    });
+    state.tasks[index].script = script;
+    state.tasks[index].gate_open = true;
+    // Reuses the task's own start/finish machinery: `finish` appends the new script's `after`
+    // hops onto the ones the task already has, so nothing of the earlier try is lost.
+    start_task(state, index);
+    let mut answer = fixture("post-task-retry");
     answer["task"] = json!(id);
     reply(200, answer)
 }
