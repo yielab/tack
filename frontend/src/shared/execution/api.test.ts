@@ -226,6 +226,31 @@ describe('executionsApi', () => {
     });
     expect(result.state).toBe('queued');
   });
+
+  it('continue() POSTs to /continue with no body and returns the new request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ protocol_version: 1, request_id: 'exec_2', state: 'queued', replayed: false }),
+    );
+    const result = await executionsApi.continue('exec_1');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/executions/exec_1/continue');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).body).toBeUndefined();
+    expect(result).toEqual({ protocol_version: 1, request_id: 'exec_2', state: 'queued', replayed: false });
+  });
+
+  it('continue() rejects with ApiError carrying the unprocessable code when the run never offered it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { status: 422, code: 'unprocessable', message: 'This run never offered Continue', request_id: 'r', retryable: false, details: {} },
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const err = await executionsApi.continue('exec_1').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(422);
+  });
 });
 
 describe('fleetsApi', () => {

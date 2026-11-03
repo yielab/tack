@@ -168,7 +168,7 @@ function mockFetch(
   }) as typeof fetch;
 }
 
-function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3' }) {
+function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3'; fromRun?: string }) {
   const [open, setOpen] = createSignal(true);
   (Host as unknown as { lastSetOpen?: (v: boolean) => void }).lastSetOpen = setOpen;
   return (
@@ -189,6 +189,7 @@ function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (i
               onCreated={props.onCreated}
               capabilities={props.capabilities}
               autonomy={props.autonomy}
+              fromRun={props.fromRun}
             />
           )}
         />
@@ -198,7 +199,7 @@ function Host(props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (i
 }
 
 function mount(
-  props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3' } = {},
+  props: { capabilities?: () => RunnerCapabilities[]; onCreated?: (id: string) => void; autonomy?: 'L3'; fromRun?: string } = {},
   fetchOpts: Parameters<typeof mockFetch>[0] = {},
 ) {
   vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch(fetchOpts));
@@ -279,6 +280,24 @@ describe('RunWithAgentModal', () => {
     await flush();
     await flush();
     expect(lastCreateBody).toMatchObject({ requested_harness_kind: 'docket', autonomy: 'L3' });
+  });
+
+  it('a fromRun prop sends from_run on the created request (decision 7, "Start over from this run\'s work")', async () => {
+    mount({ fromRun: 'req-stopped-1' }, { runners: [RUNNER], fleets: [] });
+    await flush();
+    await flush();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).toMatchObject({ from_run: 'req-stopped-1' });
+    teardown();
+    mount({}, { runners: [RUNNER], fleets: [] });
+    await flush();
+    await flush();
+    submitButton().click();
+    await flush();
+    await flush();
+    expect(lastCreateBody).not.toHaveProperty('from_run');
   });
 
   it('a failed list of profiles is said as one with Try again, not offered as no profile', async () => {

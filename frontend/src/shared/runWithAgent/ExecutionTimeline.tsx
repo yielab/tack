@@ -12,7 +12,8 @@ import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } fr
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
-import { stoppedByLimit } from './runLimit';
+import ContinueOrStartOver from './ContinueOrStartOver';
+import { hasBudgetStopOffer, stoppedByLimit } from './runLimit';
 
 export interface ExecutionTimelineProps {
   itemId: string;
@@ -340,11 +341,28 @@ const RequestRow: Component<{
           <RunLimitNote
             limit={limit()}
             running={!isTerminalStateString(state())}
-            stopped={state() === 'failed' && stoppedByLimit(latestAttempt()?.terminal_reason)}
+            stopped={
+              state() === 'failed' &&
+              stoppedByLimit(latestAttempt()?.terminal_reason) &&
+              !hasBudgetStopOffer(latestAttempt()?.terminal_reason)
+            }
             testId="run-limit"
             itemId={props.itemId}
             itemTitle={props.itemTitle}
             projectId={props.projectId}
+          />
+        )}
+      </Show>
+
+      <Show when={!props.nowShown && latestAttempt()}>
+        {(attempt) => (
+          <ContinueOrStartOver
+            attempt={attempt()}
+            tokenLimit={summary()?.limit?.tokens}
+            itemId={props.itemId}
+            itemTitle={props.itemTitle}
+            projectId={props.projectId}
+            onCreated={props.onCreated}
           />
         )}
       </Show>

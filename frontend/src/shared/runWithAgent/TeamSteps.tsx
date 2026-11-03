@@ -52,13 +52,15 @@ function reportedSteps(profiles: AgentProfileSummary[], teams: TeamEntry[], prof
 
 const LABEL = { done: 'Done', running: 'Running', waiting: 'Not started yet' } as const;
 
-/** What a hop shows under its step: the model, the verdict, and the size of the prompts it read. */
+/** What a hop shows under its step: the model, the verdict (never for a budget hop's own report —
+ *  it is unfinished work, not a result), and the size of the prompts it read. */
 function hopFacts(hop: RunStep | undefined): string[] {
   if (!hop) return [];
   const promptTokens = hop.prompts.reduce((sum, p) => sum + (p.tokens ?? 0), 0);
   return [
     classWords(hop.model, hop.class),
-    hop.verdict ? `Verdict: ${hop.verdict}` : null,
+    !hop.report && hop.verdict ? `Verdict: ${hop.verdict}` : null,
+    hop.report ? 'Report before it stopped' : null,
     hopDurationText(hopMilliseconds(hop)),
     promptTokens > 0 ? `${formatTokenCount(promptTokens)} prompt tokens` : null,
   ].filter((x): x is string => !!x);

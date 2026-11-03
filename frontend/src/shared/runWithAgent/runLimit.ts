@@ -1,3 +1,5 @@
+import { readContinueOffer } from '../execution';
+
 /** A running run's token count turns amber at this share of its limit. */
 export const RUN_LIMIT_WARNING = 0.8;
 
@@ -7,10 +9,32 @@ export function isNearLimit(used: number | null | undefined, limit: number | nul
 }
 
 /** Whether an attempt's `terminal_reason` says its token limit stopped it: the runner's
- *  `token_limit`, or docket's `budget`. */
+ *  `token_limit`, or docket's `budget` when the hop it stopped at carries no step bound of its
+ *  own (the shape docket sent before Phase 87's `budgetOutcome`, or a hop whose bound really is
+ *  `tokens` — Tack's own limit, read above). A step's own round, tool-call or time budget
+ *  (`code: "step_budget"`, or a `budget` hop whose bound is one of those) is never a token
+ *  stop — see `docs/plans/phase-87.md`, decision 1. */
 export function stoppedByLimit(terminalReason: unknown): boolean {
-  const reason = (terminalReason ?? {}) as { code?: unknown; reason?: unknown };
-  return ['token_limit', 'budget'].some((word) => reason.code === word || reason.reason === word);
+  const reason = (terminalReason ?? {}) as { code?: unknown; reason?: unknown; steps?: unknown };
+  const says = (word: string) => reason.code === word || reason.reason === word;
+  if (says('token_limit')) return true;
+  if (says('step_budget')) return false;
+  if (!says('budget')) return false;
+  const steps = Array.isArray(reason.steps) ? reason.steps : [];
+  const last = steps[steps.length - 1] as { budget?: { bound?: unknown } } | null | undefined;
+  const bound = last && typeof last === 'object' ? last.budget?.bound : undefined;
+  return bound === undefined || bound === null || bound === 'tokens';
+}
+
+/** Whether `terminal_reason` already carries docket's `next.continue` (Phase 87's
+ *  `budgetOutcome`) — regardless of whether it reads `possible: true` or `false`. When it does,
+ *  `ContinueOrStartOver` owns the "stopped" telling for this attempt (decision 5: "Start over
+ *  from this run's work, with twice the limit" **replaces** "Run again with more" for a tokens
+ *  stop that kept work); `RunLimitNote`'s own "Stopped at its limit" block must not also show,
+ *  or the two repeat each other. A docket too old to send `next` at all leaves this false, and
+ *  `RunLimitNote` keeps telling that stop exactly as it always has. */
+export function hasBudgetStopOffer(terminalReason: unknown): boolean {
+  return readContinueOffer(terminalReason) !== null;
 }
 
 /** The limit "Run again with more" starts the Run dialog with: twice the old one. */

@@ -318,7 +318,9 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
         <Show when={model()}>
           {(m) => <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{m()}</span>}
         </Show>
-        <Show when={step().verdict}>
+        {/* A budget hop's own report is unfinished work, not a result: it never carries a verdict here,
+            even when the wire still has one — the step's stop is said by "Report before it stopped" below. */}
+        <Show when={!step().report && step().verdict}>
           {(v) => {
             const said = plainLine(v());
             return <span title={said.raw}><Badge tone="neutral">Verdict: {said.text}</Badge></span>;
@@ -328,6 +330,14 @@ const StepRow: Component<{ group: StepGroup }> = (props) => {
           {(text) => <span data-testid="step-duration" class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{text()}</span>}
         </Show>
       </div>
+      <Show when={step().report && step().summary}>
+        {(summary) => (
+          <div data-testid="step-report" class="space-y-1">
+            <h5 class="text-xs font-semibold" style={{ color: 'var(--color-text-primary)' }}>Report before it stopped</h5>
+            <p class="whitespace-pre-wrap text-sm" style={{ color: 'var(--color-text-secondary)' }}>{summary()}</p>
+          </div>
+        )}
+      </Show>
       {list('The agent assumed', step().assumptions)}
       {list('The agent asked', step().questions, 'Tack cannot send an answer to these: put it in the task, then run it again.')}
       <Show when={step().prompts.length > 0}>
