@@ -284,6 +284,26 @@ pub(super) struct TaskHop {
     pub finished_at: Option<String>,
     #[serde(default)]
     pub cycle: Option<u32>,
+    /// `budgetOutcome`: the hop stopped because a step's own budget ran out, not because the
+    /// model settled. Absent for any hop that is not that, and from a docket before the feature.
+    #[serde(default)]
+    pub budget: Option<BudgetOutcome>,
+}
+
+/// What stopped a hop under `budgetOutcome`: the bound that ran out, the limit and what was used
+/// of it, who set the limit (`step`, `role`, `pod`, `default`, or `task` for a task-wide token
+/// cut; any other value is docket naming a source Tack does not know yet), and whether the
+/// stopped hop's work stayed on the task's branch. `bound` is one of `rounds`, `toolCalls`,
+/// `tokens` or `time`, kept as a string rather than a closed enum so a fifth docket adds later
+/// still deserializes.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct BudgetOutcome {
+    pub bound: String,
+    pub limit: u64,
+    pub used: u64,
+    pub source: String,
+    pub tree_changed: bool,
 }
 
 /// The prompts a hop's turn was composed from (`promptManifest`), in composition order, and the
