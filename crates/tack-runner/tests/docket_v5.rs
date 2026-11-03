@@ -2923,9 +2923,7 @@ async fn a_budget_hops_verdict_is_never_read_and_it_reports_instead() {
     let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
 
     assert_eq!(outcome.terminal_state, AttemptState::Failed);
-    let steps = outcome.terminal_reason["steps"]
-        .as_array()
-        .expect("steps");
+    let steps = outcome.terminal_reason["steps"].as_array().expect("steps");
     assert_eq!(steps.len(), 1);
     assert!(
         steps[0].get("verdict").is_none_or(Value::is_null),
