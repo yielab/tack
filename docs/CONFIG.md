@@ -293,6 +293,13 @@ How the runner starts and watches the daemon, and how teams are checked, is in
 A profile, not the runner's file, names a team: `tool_policy.docket.team`. With none, the team is
 named for the project's folder.
 
+A team's steps can also run out of their own budget — rounds, tool calls or time, as against the
+tokens limit above, which stays Tack's own. Where that limit is raised depends on who set it: one
+on a single step is a key on that step, in the team's own pipeline; one on a role applies to every
+step that role runs; a time limit with neither falls back to the team's own turn timeout; and
+anything still unset is this installation's own machine default. The run that stopped always names
+which of these applies, so there is no table to keep in sync here.
+
 ## Debugging
 
 ```bash

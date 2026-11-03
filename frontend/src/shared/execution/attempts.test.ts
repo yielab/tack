@@ -1,6 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { tokenStore } from '../api/client';
-import { attemptsApi, folderRunSummary, isFolderRun, readRunRecords, readRunSteps } from './attempts';
+import {
+  attemptsApi,
+  folderRunSummary,
+  isFolderRun,
+  readContinueOffer,
+  readKeptWork,
+  readRunRecords,
+  readRunSteps,
+} from './attempts';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -131,5 +139,56 @@ describe('what the run was made of', () => {
     expect(folderRunSummary(folder)).toBe('Wrote the brief.');
     expect(isFolderRun({ result: 'x' })).toBe(false);
     expect(folderRunSummary({ summary: null })).toBeNull();
+  });
+
+  it('readRunSteps reads a hop\'s budget and report flag, and drops its verdict when report is set', () => {
+    const steps = readRunSteps({
+      steps: [
+        {
+          role: 'implementer', verdict: 'APPROVE', report: true, summary: 'Wrote half the module.',
+          budget: { bound: 'rounds', limit: 20, used: 20, source: 'step', treeChanged: true, raise: 'maxIterations' },
+        },
+        { role: 'lead' },
+      ],
+    });
+    expect(steps![0]).toMatchObject({
+      verdict: null,
+      report: true,
+      budget: { bound: 'rounds', limit: 20, used: 20, source: 'step', treeChanged: true, raise: 'maxIterations' },
+    });
+    expect(steps![1]).toMatchObject({ budget: null, report: false });
+  });
+
+  it('readRunSteps reads a budget with no raise and no source as null/empty, not crashing on a malformed one', () => {
+    const steps = readRunSteps({ steps: [{ role: 'implementer', budget: { bound: 'time', limit: 300, used: 300 } }] });
+    expect(steps![0].budget).toMatchObject({ bound: 'time', limit: 300, used: 300, source: '', treeChanged: false, raise: null });
+    const malformed = readRunSteps({ steps: [{ role: 'implementer', budget: { bound: 'time' } }] });
+    expect(malformed![0].budget).toBeNull();
+  });
+});
+
+describe('readContinueOffer', () => {
+  it('is null without a next.continue — every ending that is not a step\'s own budget stop', () => {
+    expect(readContinueOffer({ code: 'hop_failed' })).toBeNull();
+    expect(readContinueOffer(null)).toBeNull();
+  });
+
+  it('reads possible and why straight off the backend\'s own words', () => {
+    expect(readContinueOffer({ next: { continue: { possible: true } } })).toEqual({ possible: true, why: null });
+    expect(readContinueOffer({ next: { continue: { possible: false, why: 'Update docket.' } } })).toEqual({
+      possible: false,
+      why: 'Update docket.',
+    });
+  });
+});
+
+describe('readKeptWork', () => {
+  it('is null without both a branch and a head commit', () => {
+    expect(readKeptWork({ code: 'step_budget' })).toBeNull();
+    expect(readKeptWork({ branch: 'tack/attempt-1' })).toBeNull();
+  });
+
+  it('reads the branch when both are present', () => {
+    expect(readKeptWork({ branch: 'tack/attempt-1', head_commit: 'abc123' })).toEqual({ branch: 'tack/attempt-1' });
   });
 });

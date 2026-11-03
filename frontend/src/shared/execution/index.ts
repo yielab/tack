@@ -19,6 +19,7 @@ export type {
   Usage,
   StableErrorCode,
   RunStep,
+  RunStepBudget,
   RunStepPrompt,
   RunRecordSet,
   TeamStepReport,
@@ -32,6 +33,7 @@ export type {
   CreateExecutionInput,
   CreateExecutionResult,
   CancelExecutionResult,
+  ContinueExecutionResult,
   RequeueExecutionInput,
   RequeueExecutionResult,
   FleetSummary,
@@ -62,8 +64,17 @@ export type {
   EventSummary,
   EventListResult,
   TerminalReason,
+  ContinueOffer,
 } from './attempts';
-export { attemptsApi, readRunSteps, readRunRecords, isFolderRun, folderRunSummary } from './attempts';
+export {
+  attemptsApi,
+  readRunSteps,
+  readRunRecords,
+  isFolderRun,
+  folderRunSummary,
+  readContinueOffer,
+  readKeptWork,
+} from './attempts';
 
 export type {
   DecisionOption,

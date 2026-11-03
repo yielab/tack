@@ -151,7 +151,7 @@ describe('TeamSteps', () => {
 
   describe('the step track', () => {
     const hop = (over: Partial<RunStep>): RunStep => ({
-      role: null, model: null, class: null, family: null, verdict: null, ok: null, summary: null, prompts: [], assumptions: [], questions: [], startedAt: null, finishedAt: null, cycle: null, ...over,
+      role: null, model: null, class: null, family: null, verdict: null, ok: null, summary: null, prompts: [], assumptions: [], questions: [], startedAt: null, finishedAt: null, cycle: null, budget: null, report: false, ...over,
     });
 
     it('is one node per step, in order, each saying its state in words and not by its bar alone', async () => {
@@ -184,6 +184,24 @@ describe('TeamSteps', () => {
       expect(step(c, 'review').textContent).toContain('Verdict: approved');
       // A step nobody with a role does has no hop to show.
       expect(step(c, 'tests').textContent).not.toContain('Verdict');
+    });
+
+    it('a budget hop never shows a verdict, even one on the wire, and names its summary as a report', async () => {
+      const hops = [
+        hop({
+          role: 'lead',
+          model: 'model-x',
+          verdict: 'APPROVE',
+          summary: 'Wrote half the module.',
+          report: true,
+          budget: { bound: 'rounds', limit: 20, used: 20, source: 'step', treeChanged: true, raise: 'maxIterations' },
+        }),
+      ];
+      const c = mount({ steps: STEPS, events: () => [started('Lead'), finished('Lead')], hops });
+      await settle();
+      const write = step(c, 'write').textContent!;
+      expect(write).not.toContain('Verdict');
+      expect(write).toContain('Report before it stopped');
     });
 
     it('says how long a hop took when both its instants are known, and nothing when either is missing', async () => {

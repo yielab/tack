@@ -23,12 +23,13 @@ import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
+import ContinueOrStartOver from './ContinueOrStartOver';
 import RunWithAgentButton from './RunWithAgentButton';
 import RunWithAgentModal from './RunWithAgentModal';
 import TeamStepsLine, { runWho } from './TeamSteps';
 import UsageMeter from './UsageMeter';
 import { parseRunLog } from './runLog';
-import { stoppedByLimit } from './runLimit';
+import { hasBudgetStopOffer, stoppedByLimit } from './runLimit';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso, type StateTone } from './shared';
 
 export interface LatestRunSummaryProps {
@@ -515,7 +516,11 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                   <RunLimitNote
                     limit={limit()}
                     running={false}
-                    stopped={kind() === 'failed' && stoppedByLimit(attempt()?.terminal_reason)}
+                    stopped={
+                      kind() === 'failed' &&
+                      stoppedByLimit(attempt()?.terminal_reason) &&
+                      !hasBudgetStopOffer(attempt()?.terminal_reason)
+                    }
                     testId="latest-run-limit"
                     itemId={props.itemId}
                     itemTitle={props.itemTitle}
@@ -523,6 +528,19 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                     onCreated={props.onCreated}
                   />
                 </>
+              )}
+            </Show>
+
+            <Show when={kind() === 'failed' && attempt()}>
+              {(a) => (
+                <ContinueOrStartOver
+                  attempt={a()}
+                  tokenLimit={latest()?.limit?.tokens}
+                  itemId={props.itemId}
+                  itemTitle={props.itemTitle}
+                  projectId={props.projectId}
+                  onCreated={props.onCreated}
+                />
               )}
             </Show>
 

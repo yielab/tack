@@ -95,6 +95,11 @@ describe('buildCreateExecutionInput', () => {
     expect(input.requested_model).toBe('opaque/model-alpha');
   });
 
+  it('from_run is sent only when the form names a run to start from (decision 7)', () => {
+    expect(buildCreateExecutionInput(values({ fromRun: 'req-1' })).from_run).toBe('req-1');
+    expect('from_run' in buildCreateExecutionInput(values())).toBe(false);
+  });
+
   it('two different entry points building from equal form values produce byte-identical payloads', () => {
     // Proof that all three surfaces create the same payload shape, with no
     // divergent DTOs between entry points — Board/item-detail/Sprint all end

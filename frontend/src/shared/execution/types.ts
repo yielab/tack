@@ -289,6 +289,19 @@ export interface RunStepPrompt {
   tokens: number | null;
 }
 
+/** A step's own budget, read off the hop that ran out of it (Phase 87, docket's `budgetOutcome`):
+ *  the bound that ran out (`rounds`, `toolCalls`, `time` or `tokens`), the figures, who set it
+ *  (`step`, `role`, `pod` or `default`), whether the stop kept the step's work (docket pins the
+ *  tree only for an Implementer hop), and where to raise it when docket says. */
+export interface RunStepBudget {
+  bound: string;
+  limit: number;
+  used: number;
+  source: string;
+  treeChanged: boolean;
+  raise: string | null;
+}
+
 /** One hop of a docket task, in order. `prompts` is `[]` for a hop with no manifest. */
 export interface RunStep {
   role: string | null;
@@ -308,6 +321,12 @@ export interface RunStep {
   startedAt: string | null;
   finishedAt: string | null;
   cycle: number | null;
+  /** Present only on the hop a step's own budget stopped; `null` on every other hop. */
+  budget: RunStepBudget | null;
+  /** This hop's `summary` is its report of unfinished work, not a result — a budget stop (`budget`
+   *  is set) asked the model to say what it had done instead of continuing. Never read a `verdict`
+   *  off a hop with this true, even when the wire carries one. */
+  report: boolean;
 }
 
 /** Where a step of a team's reported steps stands in a run, read from the run's own events. */

@@ -85,6 +85,16 @@ below the level the run asked for) is shown as **Not started**, in a neutral gre
 changed nothing, so it shows no tokens or duration, its reason stands as plain text, and the one button is **Run again**.
 A run that ended asking for a person offers **Open the question** and **Run again at L3**, not a third **Run again**.
 
+A step can also run out of its own budget — the rounds, tool calls or time it was allowed to take, as against
+the tokens limit above — instead of finishing cleanly. Its sentence names the limit that stopped it and where
+to raise it. When that step had already written something, the run keeps its branch, so **Changes** still
+shows the diff even though the run stays **Failed**: nothing after that step verified, published or merged it.
+Two new choices follow, each shown even when it does not apply right now, with the reason why: **Continue**
+picks the very step back up, in the same session it was already in, when docket can; **Start over from this
+run's work** starts a fresh run from the branch the stopped one kept (doubling the token limit in its place,
+when tokens were what ran out). A step that changed nothing offers neither — there is nothing of its own to
+continue or start from, so reword the task and run it again clean.
+
 A team that proposes items and ends with proposals Tack cannot use (for example, one names a parent that is not an
 earlier row in the file) is shown as **Finished — proposals could not be used**, not as a plain success, with the
 reason in words and docket's own line on hover.

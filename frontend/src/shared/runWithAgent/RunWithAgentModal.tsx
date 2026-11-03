@@ -440,6 +440,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       verify: verifyConfigured() ? form.verify : undefined,
       pushBranch: pushConfigured() ? form.pushBranch : undefined,
       autonomy: props.autonomy,
+      fromRun: props.fromRun,
     };
   };
 

@@ -21,7 +21,7 @@
 
 import { requestWithHeaders } from '../api/client';
 import type { components } from '../api/schema.gen';
-import type { Measurement, RunRecordSet, RunStep, RunStepPrompt } from './types';
+import type { Measurement, RunRecordSet, RunStep, RunStepBudget, RunStepPrompt } from './types';
 
 /** `executions.rs`'s `TerminalReason`: the five named keys the UI reads, plus whatever else the runner sent. */
 export type TerminalReason = components['schemas']['TerminalReason'];
@@ -176,6 +176,22 @@ const plainText = (v: unknown): string | null => (typeof v === 'string' && v.tri
 const plainTexts = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && x.trim() !== '') : [];
 
+/** A hop's `budget` (Phase 87, `budgetOutcome`): `null` for a hop that ran clean, or when the
+ *  value on the wire is not the shape docket sends. */
+function readHopBudget(value: unknown): RunStepBudget | null {
+  if (!isRecord(value)) return null;
+  const bound = plainText(value.bound);
+  if (bound === null || typeof value.limit !== 'number' || typeof value.used !== 'number') return null;
+  return {
+    bound,
+    limit: value.limit,
+    used: value.used,
+    source: plainText(value.source) ?? '',
+    treeChanged: value.treeChanged === true,
+    raise: plainText(value.raise),
+  };
+}
+
 /** The hops of a docket task, in order; `undefined` when the run has none (a run from before the
  *  field existed, or a task with no hops). Read defensively: a key the run lacks reads as absent. */
 export function readRunSteps(terminalReason: unknown): RunStep[] | undefined {
@@ -186,7 +202,8 @@ export function readRunSteps(terminalReason: unknown): RunStep[] | undefined {
     model: plainText(step.model),
     class: plainText(step.class),
     family: plainText(step.family),
-    verdict: plainText(step.verdict),
+    // A budget hop's own report is never a verdict, even when the wire still carries one.
+    verdict: step.report === true ? null : plainText(step.verdict),
     ok: typeof step.ok === 'boolean' ? step.ok : null,
     summary: plainText(step.summary),
     prompts: Array.isArray(step.prompts)
@@ -204,6 +221,8 @@ export function readRunSteps(terminalReason: unknown): RunStep[] | undefined {
     startedAt: plainText(step.startedAt),
     finishedAt: plainText(step.finishedAt),
     cycle: typeof step.cycle === 'number' ? step.cycle : null,
+    budget: readHopBudget(step.budget),
+    report: step.report === true,
   }));
 }
 
@@ -227,6 +246,33 @@ export function isFolderRun(terminalReason: unknown): boolean {
 /** A folder team's result: what its last step said it did. */
 export function folderRunSummary(terminalReason: unknown): string | null {
   return isRecord(terminalReason) ? plainText(terminalReason.summary) : null;
+}
+
+// ─── A step's own budget stop (`code: "step_budget"` or `"budget"` with `next`, Phase 87) ────
+
+/** Whether a new request may follow this run's own docket task instead of starting fresh
+ *  (decision 6), and if not, why, in the backend's own words. Read from `terminal_reason.next.
+ *  continue`, which docket.rs writes only for a step's own budget stop (code `step_budget` or
+ *  `budget`); `null` for every other ending, including one from a docket too old to say. */
+export interface ContinueOffer {
+  possible: boolean;
+  why: string | null;
+}
+
+export function readContinueOffer(terminalReason: unknown): ContinueOffer | null {
+  const next = isRecord(terminalReason) && isRecord(terminalReason.next) ? terminalReason.next : undefined;
+  const c = next && isRecord(next.continue) ? next.continue : undefined;
+  if (!c || typeof c.possible !== 'boolean') return null;
+  return { possible: c.possible, why: plainText(c.why) };
+}
+
+/** The branch a budget stop kept its work on, read straight off `terminal_reason` the same way a
+ *  `done` run's is (`branch`/`head_commit`, decision 3); `null` when the stop pinned nothing —
+ *  docket keeps the tree only for an Implementer hop. */
+export function readKeptWork(terminalReason: unknown): { branch: string } | null {
+  if (!isRecord(terminalReason)) return null;
+  const branch = plainText(terminalReason.branch);
+  return branch !== null && plainText(terminalReason.head_commit) !== null ? { branch } : null;
 }
 
 export const attemptsApi = {
