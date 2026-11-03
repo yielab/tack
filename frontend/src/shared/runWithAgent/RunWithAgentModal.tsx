@@ -1,5 +1,5 @@
 import { createStore } from 'solid-js/store';
-import { type Component, createSignal, createResource, createMemo, createEffect, onCleanup, Show } from 'solid-js';
+import { type Component, batch, createSignal, createResource, createMemo, createEffect, onCleanup, Show } from 'solid-js';
 import { A } from '@solidjs/router';
 import { LoadError, Modal } from '../ui';
 import { toast } from '../ui/toast';
@@ -7,17 +7,18 @@ import { BOOK } from '../help/routes';
 import { api, ApiError } from '../api';
 import type { AgentContextRun } from '../api/briefs';
 import {
-  fleetsApi, agentProfilesApi, runnersApi, listReportedHarnessKinds,
+  fleetsApi, agentProfilesApi, runnersApi, listReportedHarnessKinds, teamOf,
   type AgentProfileSummary, type RunnerCapabilities, type RunnerSummary,
 } from '../execution';
 import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
-  isAnsweringRunner, silentRunnerLabel, profileAgents, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
-  isDecisionsAttested, profileNetworkFor, profileToolsFor, LEVEL_NEEDS_DOCKET,
+  isAnsweringRunner, silentRunnerLabel, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
+  isDecisionsAttested, profileNetworkFor, profileToolsFor, silentRunnersText, LEVEL_NEEDS_DOCKET,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow from './RunFlow';
+import { agentKindOf, agentRank, offeredUnder, type AgentChoice } from './ProfilePicker';
 import { summarizeModels } from './models';
 import { agentSafety, LEVEL_MEANING } from '../help/texts';
 
@@ -97,10 +98,10 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [creatingProfile, setCreatingProfile] = createSignal(false);
   const [submitting, setSubmitting] = createSignal(false);
   const [form, setForm] = createStore<RunForm>(initialForm());
-  // Set only by a click on a profile pill: an auto-selected profile is not remembered.
+  // Set only by a person's click on a profile or an agent: an auto-selected profile is not remembered.
   const [profilePicked, setProfilePicked] = createSignal(false);
-  // What a click on a profile did to the agent; shown only while that choice stands.
-  const [agentSwitch, setAgentSwitch] = createSignal<{ profileId: string; harness: string; text: string } | null>(null);
+  // Whether the project's and the task's settings are in the form yet.
+  const [settingsDone, setSettingsDone] = createSignal(false);
   // The profile the server would choose for this item and why; the dialog does not choose it.
   const [resolved] = createResource(
     () => (props.isOpen ? props.itemId : undefined),
@@ -141,11 +142,13 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // A fresh form (and idempotency key) on every open, so a leftover selection
   // is never resubmitted against another item.
   let settingsApplied = false;
+  let profileSettled = false;
   createEffect(() => {
     if (!props.isOpen) return;
     settingsApplied = false;
+    profileSettled = false;
+    setSettingsDone(false);
     setProfilePicked(false);
-    setAgentSwitch(null);
     setForm(initialForm());
     if (props.initialTokenLimit) setForm({ tokenLimit: String(props.initialTokenLimit), tokenLimitEdited: true });
   });
@@ -166,6 +169,9 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
       ? { value: `exact_runner:${r.runner_id}`, label: r.name }
       : { value: `exact_runner:${r.runner_id}`, label: silentRunnerLabel(r.name, r.last_heartbeat_at), disabled: true }),
   ]);
+  // Computers are on but none answers: nothing can be chosen, so the field says which and since when.
+  const silentTarget = (): string | null =>
+    settled() && answeringRunners().length === 0 && activeRunners().length > 0 ? silentRunnersText(activeRunners()) : null;
   // One answering machine and no group: nothing to choose, so the field is a line saying where it runs.
   const fixedTarget = (): string | null => {
     if (!shouldHideTargetPicker(activeRunners().length, fleetsData().length)) return null;
@@ -206,6 +212,23 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (props.autonomy && harnessOptions().some((h) => h.value === 'docket') && form.harnessKind !== 'docket') setForm('harnessKind', 'docket');
   });
 
+  // The agents the picker offers: what the computer reports, docket first. An agent a profile names that the
+  // computer does not report stays, disabled with the reason, so its profiles are not silently gone.
+  const agentChoices = createMemo((): AgentChoice[] => {
+    const choices: AgentChoice[] = harnessOptions().map((h) => {
+      const blocked = !!props.autonomy && h.value !== 'docket';
+      return { value: h.value, label: h.label, disabled: blocked, reason: blocked ? LEVEL_NEEDS_DOCKET : undefined };
+    });
+    for (const p of agentProfilesData()) {
+      const kind = agentKindOf(p, []);
+      const named = kind && (teamOf(p) || (p.tool_policy as { agent?: unknown } | null)?.agent === kind);
+      if (named && !choices.some((c) => c.value === kind)) {
+        choices.push({ value: kind, label: HARNESS_KINDS.find((h) => h.value === kind)?.label ?? kind, disabled: true, reason: 'Not reported by the computer this runs on' });
+      }
+    }
+    return choices.sort((a, b) => agentRank(a.value) - agentRank(b.value));
+  });
+
   const selectedAgentProfile = createMemo(() => agentProfilesData().find((p) => p.agent_profile_id === form.agentProfileId));
   const timeoutDefault = () => agentContext()?.limits.timeoutSeconds ?? initialForm().timeoutSeconds;
   const typedTools = () => form.toolsText.split(',').map((t) => t.trim()).filter(Boolean);
@@ -213,25 +236,44 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   // A blank field means the profile's tools; an empty list would leave the agent none.
   const runTools = () => (typedTools().length > 0 ? typedTools() : profileTools());
 
+  // The server's choice fills the profile once; after a person picks an agent, an empty profile stays empty.
   createEffect(() => {
-    if (!props.isOpen || form.agentProfileId) return;
+    if (!props.isOpen || profileSettled || form.agentProfileId) return;
     const profiles = agentProfilesData();
     const chosen = resolved()?.id;
-    if (chosen && profiles.some((p) => p.agent_profile_id === chosen)) setForm('agentProfileId', chosen);
+    if (chosen && profiles.some((p) => p.agent_profile_id === chosen)) {
+      profileSettled = true;
+      setForm('agentProfileId', chosen);
+    }
+  });
+
+  // The agent follows the profile: one the chosen agent does not run moves the dialog to the first agent that does.
+  createEffect(() => {
+    const profile = selectedAgentProfile();
+    if (!profile || !settingsDone()) return;
+    const profiles = agentProfilesData();
+    if (offeredUnder(profile, form.harnessKind, profiles)) return;
+    const home = agentChoices().find((a) => !a.disabled && offeredUnder(profile, a.value, profiles));
+    if (home) setForm('harnessKind', home.value);
   });
 
   /** Where the shown profile came from, while it is still the server's choice. */
   const profileSource = () => (resolved()?.id === form.agentProfileId ? resolved()?.source ?? null : null);
 
-  /** A click on a profile picks the agent it is written for, when this computer offers that agent. */
-  const pickProfile = (profile: AgentProfileSummary) => {
-    setProfilePicked(true);
-    const agents = profileAgents(profile).filter((kind) => harnessOptions().some((h) => h.value === kind));
-    if (agents.length === 0 || agents.includes(form.harnessKind)) return;
-    const label = (kind: string) => harnessOptions().find((h) => h.value === kind)?.label ?? kind;
-    const [next, was] = [agents[0], form.harnessKind];
-    setForm('harnessKind', next);
-    setAgentSwitch({ profileId: profile.agent_profile_id, harness: next, text: `${profile.name} runs on ${label(next)}, so the agent is now ${label(next)} instead of ${label(was)}.` });
+  /** A click on an agent: its profiles are the ones offered, and the profile stays only when it is one of them. */
+  const chooseAgent = (kind: string) => {
+    profileSettled = true;
+    const profiles = agentProfilesData();
+    const current = selectedAgentProfile();
+    // In one batch, so the agent never stands beside a profile it does not run.
+    batch(() => {
+      setForm('harnessKind', kind);
+      if (current && offeredUnder(current, kind, profiles)) return;
+      // One profile there is no choice to make; with more, the person picks.
+      const here = profiles.filter((p) => offeredUnder(p, kind, profiles));
+      setForm('agentProfileId', here.length === 1 ? here[0].agent_profile_id : '');
+      setProfilePicked(here.length === 1);
+    });
   };
 
   const createDefaultProfile = async () => {
@@ -256,13 +298,18 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const chosenHarnessReports = createMemo(() =>
     capabilities().flatMap((c) => c.harnesses).filter((h) => h.harness_kind === form.harnessKind));
   const modelsReport = createMemo(() => summarizeModels(chosenHarnessReports()));
-  // Start from the project's values, then overlay what this task remembered.
+  // Start from the project's values, then overlay what this task remembered. With neither naming an agent,
+  // docket is the default when a profile names a team.
   createEffect(() => {
     if (!props.isOpen || settingsApplied || project.loading || item.loading || liveRunners.loading || agentProfiles.loading) return;
     settingsApplied = true;
+    setSettingsDone(true);
     const p = project();
     const saved = item.error === undefined ? item()?.run_settings : null;
     if (p?.default_harness) setForm('harnessKind', p.default_harness);
+    else if (typeof saved?.harness !== 'string' && agentProfilesData().some((profile) => teamOf(profile)) && harnessOptions().some((h) => h.value === 'docket')) {
+      setForm('harnessKind', 'docket');
+    }
     if (typeof p?.push_after_run === 'boolean') setForm('pushBranch', p.push_after_run);
     if (!saved) return;
     if (typeof saved.harness === 'string') setForm('harnessKind', saved.harness);
@@ -311,7 +358,8 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const structuralErrors = createMemo((): string[] => {
     const errors: string[] = [];
-    if (!form.selectorId.trim()) errors.push('Select where this runs.');
+    // With no computer answering, the field itself says so; this line would only repeat it.
+    if (!form.selectorId.trim() && !silentTarget()) errors.push('Select where this runs.');
     if (!form.agentProfileId) errors.push('Choose a profile.');
     if (!form.harnessKind) errors.push('Select an agent.');
     else if (props.autonomy && form.harnessKind !== 'docket') errors.push(`${LEVEL_NEEDS_DOCKET}.`);
@@ -358,7 +406,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
 
   const state = (missing: boolean): 'ok' | 'missing' => (missing ? 'missing' : 'ok');
   const rows = {
-    runner: () => state(settled() && activeRunners().length === 0),
+    runner: () => state(settled() && answeringRunners().length === 0),
     harness: () => {
       const cap = targetHarnessCapability();
       return state(settled() && !!form.selectorId && (!cap || cap.probe_error != null));
@@ -482,10 +530,12 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
           <RunFlow
             form={form}
             setForm={setForm}
-            onProfilePicked={pickProfile}
-            agentNotice={() => { const s = agentSwitch(); return s && s.profileId === form.agentProfileId && s.harness === form.harnessKind ? s.text : null; }}
+            onProfilePicked={() => setProfilePicked(true)}
+            agentChoices={agentChoices}
+            onAgent={chooseAgent}
             projectId={props.projectId}
             fixedTarget={fixedTarget}
+            silentTarget={silentTarget}
             runnersLoading={() => liveRunners.loading}
             targetOptions={targetOptions}
             target={() => (form.selectorId ? `${form.selectorKind}:${form.selectorId}` : '')}
@@ -503,7 +553,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             agentReports={agentReports}
             creatingProfile={creatingProfile}
             createDefaultProfile={createDefaultProfile}
-            harnessOptions={harnessOptions}
             projectDefaultLabel={projectDefaultLabel}
             harnessReports={chosenHarnessReports}
             gate={modelGate}
@@ -513,7 +562,6 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             limitSentence={limitLine}
             profileSource={profileSource}
             profileTools={profileTools}
-            levelNeedsDocket={!!props.autonomy}
             harnessLabel={() => harnessOptions().find((h) => h.value === form.harnessKind)?.label ?? form.harnessKind}
             modelLabel={() => runModel() ?? (modelsReport().requiresModel ? 'no model chosen' : "the agent's default")}
             decisionsAttested={decisionsAttested}

@@ -15,7 +15,6 @@
 // `tack-runner`) exclusively — it has no other "run an agent" concept to
 // stay compatible with.
 
-import { teamOf } from '../execution';
 import type {
   CreateExecutionInput,
   RunnerCapabilities,
@@ -334,9 +333,23 @@ export function isAnsweringRunner(runner: { state: string; online?: boolean }): 
 
 /** A runner that does not answer, in words: since when its last heartbeat says. */
 export function silentRunnerLabel(name: string, lastHeartbeatAt: string | null): string {
-  const at = lastHeartbeatAt ? new Date(lastHeartbeatAt) : null;
-  const since = at && !Number.isNaN(at.getTime()) ? at.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : null;
+  const since = heartbeatSince(lastHeartbeatAt);
   return `${name} (not answering${since ? ` since ${since}` : ''})`;
+}
+
+function heartbeatSince(lastHeartbeatAt: string | null): string | null {
+  const at = lastHeartbeatAt ? new Date(lastHeartbeatAt) : null;
+  return at && !Number.isNaN(at.getTime()) ? at.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : null;
+}
+
+/** Why no run can start while no computer answers, in one sentence naming each and since when. */
+export function silentRunnersText(runners: ReadonlyArray<{ name: string; last_heartbeat_at: string | null }>): string {
+  if (runners.length === 0) return 'No computer runs agents, so no run can start.';
+  const one = (r: { name: string; last_heartbeat_at: string | null }) => {
+    const since = heartbeatSince(r.last_heartbeat_at);
+    return since ? `${r.name} has not answered since ${since}` : `${r.name} does not answer`;
+  };
+  return `${runners.map(one).join('; ')}, so no run can start.`;
 }
 
 /**
@@ -356,13 +369,6 @@ export function noPlaceToRun(
   if (candidates.length === 1) return null;
   if (candidates.length === 0) return 'no computer is connected to run it';
   return `${candidates.length} computers could run it and its profile names no group of computers to choose from`;
-}
-
-/** The agents a profile is written for: its docket team means docket, else the agents it lists tools for. */
-export function profileAgents(profile: { tool_policy?: unknown }): string[] {
-  if (teamOf(profile)) return ['docket'];
-  const tools = (profile.tool_policy as { tools?: unknown } | null | undefined)?.tools;
-  return tools && typeof tools === 'object' ? Object.keys(tools) : [];
 }
 
 /** Whether the target picker gives way to one fixed line and the one active runner

@@ -13,6 +13,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Added
 
+- **Agents offline** in the sidebar: while computers are set up but none answers, a warning names each one and when it was last heard, and links to turning agent execution on. The Run with agent dialog says the same in place of the machine field, with the link in its footer, instead of an empty list and "Select where this runs."
 - A run's steps say how long each took ("Took 4m 55s") on the Execution tab and under each step of the track, from a docket that lists `hopTimes`; steps that did no agent work, and a docket without the feature, show nothing as before.
 - A team docket has paused (its budget is spent) shows "Paused: budget spent" on its card in Agents → Teams, and a run sent to it says on its timeline that it waits and that `docket run --pod <team> --resume` resumes the team; there is no button, as docket has no route that resumes a team. Needs a docket that lists `podPause`; an older one reads as before.
 - A question answered at docket's own command line closes in Tack as **Answered in docket**, with a line on the timeline, and the run's next question is put to a person without waiting for the first to expire. It needs a docket that lists `settledCursor`; with an older one the question stays open until the run ends, as before.
@@ -39,6 +40,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Changed
 - The screen names a task's **Status** (its column, which only a person changes) and its **Work** (what its newest run reports) apart: the task's header says Status and its panel says Work, the Board's strip is titled Work, the List's Work column sits beside Status and sorts and filters by work, and a finished run reads **Finished** so that no work word equals a column name; Settings → Automation no longer has **When a run starts** or **When a run finishes**, and says a run never changes the status.
+- The Run with agent dialog asks for the agent first, then the profile: a row of agents (Docket first, and the default when a profile names a team), and under the chosen one only its profiles, with what that agent can do said once. Docket's profiles are grouped by team; teams and single agents are no longer one mixed list, and the agent is no longer chosen again under Advanced. The same picker, agent first, is used when you create an item, in an item's Automation row and in the Flow view.
 - Settings → Automation: the ladder is where you pick the level (each rung is the control), and the Merge block no longer repeats the levels or the reasons L4 and L5 are off.
 - A board card that auto-start holds or started names the item it is part of ("Part of: …"), and the "Started by itself" chip is neutral instead of the colour of "Ready for review".
 - Team avatars on the board read the part of the name that tells teams apart (saas-code, saas-content, saas-lights are CO, CN, LI) instead of all reading "SA".
@@ -86,6 +88,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- The Run with agent dialog's footer no longer lets the dialog's content show beneath it while it scrolls.
 - A thread's turn on a docket team no longer asks the agent to write `tack-reply.md`, a file docket's agent cannot write; its task says the team's last step answers.
 - An agent credential can read what a team is doing (`GET /api/teams/{id}/activity`, the `team_activity` tool of `tack mcp`) instead of being refused: it sees the tasks the team holds for projects it may read, and the work the board did not start only if it may read every project.
 - A thread's turn on a docket team now ends with an answer: the thread shows what the team's last step handed off, for a team in a repository and for one in a folder, instead of "the agent finished without leaving a reply".

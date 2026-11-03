@@ -175,19 +175,21 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
 
 <img src="../screenshots/run-with-agent.png" width="60%" alt="The Run with agent dialog: one summary line saying which agent runs the task, in which profile, on which model and where it works; the section What the agent will read; two switches, Ask before each action and Web tools; and a collapsed Advanced section.">
 
-- **Who does it** is one compact list of every profile, each a radio button, grouped by the team it names
-  or, for a profile with no team, by the agent that runs it (Claude Code, Codex, OpenCode or Docket). A team
-  shows who is in it as small chips, an icon for where it works (a branch of your repository, or its own
-  folder) and five icons for what its agent can do: stop a run, pick it back up after a restart, answer
-  questions, propose items and report usage. What the agent can do is said once above the teams. Only
-  something the agent cannot do, or did not report, is drawn crossed out; hover it for the reason. Teams
-  that no profile names yet are one greyed row, "3 teams have no profile yet", with a link to the Agents
-  page. Single agents are a second group of the same shape. The profile the task's role chose is already
-  selected and says so under its row ("Chosen by the role X"; the other sources are "Project default", "Saved
-  on this task", "The built-in Implementer", or "More than one role has a profile, so the project default is
-  used"). [Teams](automation.md#teams) explains how a role chooses. Choosing a profile also picks the agent it
-  is written for, when this computer offers that agent, and a line says so when it replaces the agent the
-  task had.
+- **Who does it** asks for the agent first, then the profile. The agents are a row of pills, Docket first,
+  then Claude Code, Codex and OpenCode: each one the computer reports, and any agent a profile names that the
+  computer does not report, greyed with the reason. Docket is chosen when a profile names a team, unless the
+  project or the task names another agent. Under the chosen agent you see only its profiles, each a radio
+  button, and one line with five icons for what that agent can do: stop a run, pick it back up after a
+  restart, answer questions, propose items and report usage. Only something the agent cannot do, or did not
+  report, is drawn crossed out; hover it for the reason. Under Docket the profiles are grouped by team; a team
+  shows who is in it as small chips and an icon for where it works (a branch of your repository, or its own
+  folder), and the teams that no profile names yet are one greyed row, "3 teams have no profile yet", with a
+  link to the Agents page. Under any other agent the profiles are one list. A profile that runs on any agent
+  is under each of them; changing the agent keeps it, and lets go of a profile the new agent does not run, so
+  you pick again (or, when the agent has only one profile, it is picked for you). The profile the task's role
+  chose is already selected, under its agent, and says so under its row ("Chosen by the role X"; the other
+  sources are "Project default", "Saved on this task", "The built-in Implementer", or "More than one role has
+  a profile, so the project default is used"). [Teams](automation.md#teams) explains how a role chooses.
 - **What will happen** is one line each, with an icon: which profile runs the task and on which model; where
   the agent works ("on a new branch of your repo", "in the folder, directly"; a profile whose team works in
   its own folder on this computer says "in the team's own folder on this computer, not in this repository");
@@ -196,7 +198,10 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   model and place link to where you change them.
 - **Machine or group.** Lists this computer and the other machines by name, then the groups. A machine that
   has stopped answering is shown disabled, with the time it was last heard. With one machine answering and
-  no group there is nothing to choose, so the field is one line, "Runs on this computer".
+  no group there is nothing to choose, so the field is one line, "Runs on this computer". When no machine
+  answers, the field is a warning instead, **Agents offline**, naming each machine and when it was last
+  heard, with a link to turn agent execution on; the footer gives the same link in place of **Start run**.
+  The sidebar shows the same **Agents offline** warning on every page while it lasts.
 - **What the agent will read** shows the real text it will be given: the profile's instructions, the task's
   title and description, its acceptance criteria, the project's **Definition of done**, and anything in the
   task's collapsed **For the agent** block. See [Working with Items](items.md#acceptance-criteria-and-for-the-agent).
@@ -211,7 +216,7 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   turns those tools off, but the agent's shell can still reach the network. A line under the switches says
   whether the agent is sandboxed or has your user's access to this machine; see
   [What the Agent Can Reach](../admin-guide/what-the-agent-can-reach.md).
-- **Advanced.** The computer, the agent, the model, the allowed tools, the **Token limit** and the
+- **Advanced.** The model, the allowed tools, the **Token limit** and the
   timeout (both filled from the profile; clear the token limit to run without one), and the steps after a
   run (verify, push). A step that is not available is shown disabled with the reason beside it, and
   **Verify the result** and **Push the branch** say which part of the runner's setup turns them on; that is
