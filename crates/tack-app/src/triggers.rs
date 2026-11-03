@@ -451,6 +451,7 @@ async fn begin_run(
         push_branch: None,
         autonomy: None,
         origin: None,
+        from_run: None,
     };
     let started = start_run(repo, now, &run_principal(trigger.id), request)
         .await

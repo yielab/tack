@@ -12,8 +12,9 @@ use support::{
 use tack_app::runs::start_run::start_run;
 use tack_core::models::{CodeOrigin, CreateRole, UpdateProject, UpdateRole, WorkspaceMode};
 use tack_protocol::SystemClock;
-use tack_protocol::execution::{AutonomyLevel, StableErrorCode};
-use tack_test_support::seed;
+use tack_protocol::execution::{AutonomyLevel, ExecutionState, StableErrorCode};
+use tack_test_support::seed::{self, AttemptSeed};
+use tack_test_support::{create_test_workspace, make_item, make_project};
 
 async fn add_role(board: &support::Board, name: &str, profile: &str) {
     let role = board
@@ -604,4 +605,112 @@ fn a_request_body_names_a_runner_or_a_fleet_or_nothing() {
         level_from(Some("l4".into())).unwrap_err().details["field"],
         "autonomy"
     );
+}
+
+/// Plants an attempt of `request_id`, under `runner-active`, whose evidence is `actual_execution`
+/// (a raw JSON object literal, not a typed `ActualExecution`: only `$.git.branch` is read).
+async fn leave_evidence(board: &support::Board, request_id: &str, actual_execution: Value) {
+    seed::execution_attempt(
+        &board.repo,
+        AttemptSeed {
+            id: &format!("attempt-{request_id}"),
+            request_id,
+            runner_id: "runner-active",
+            state: ExecutionState::Failed,
+            at: "2026-01-01T00:00:00Z",
+            usage: None,
+            actual_execution: Some(&actual_execution.to_string()),
+        },
+    )
+    .await;
+}
+
+/// A full request (named profile, machine and repository) under its own idempotency key, so
+/// several can be started on the same item without replaying one another.
+fn keyed_request(item_id: uuid::Uuid, key: &str) -> tack_app::runs::start_run::RunRequest {
+    let mut request = full_request(item_id);
+    request.idempotency_key = key.into();
+    request
+}
+
+#[tokio::test]
+async fn from_run_sets_rework_base_to_the_branch_its_evidence_kept() {
+    let board = board().await;
+    let stopped = start(&board, keyed_request(board.item_id, "stopped-1"))
+        .await
+        .unwrap();
+    leave_evidence(
+        &board,
+        &stopped.request_id,
+        json!({"git": {"branch": "attempt-branch"}}),
+    )
+    .await;
+
+    let mut continuing = keyed_request(board.item_id, "continue-1");
+    continuing.from_run = Some(stopped.request_id.clone());
+    let started = start(&board, continuing).await.unwrap();
+
+    let snapshot = snapshot(&board.repo, &started).await;
+    assert_eq!(snapshot["metadata"]["rework_base"], "attempt-branch");
+}
+
+#[tokio::test]
+async fn from_run_is_refused_when_its_run_left_no_branch_to_continue_from() {
+    let board = board().await;
+    let no_evidence = start(&board, keyed_request(board.item_id, "no-evidence"))
+        .await
+        .unwrap();
+    // Ran, but reported no git branch at all (an agent that never named one, or reported
+    // nothing of the kind `$.git.branch` would read).
+    leave_evidence(&board, &no_evidence.request_id, json!({"result": "ok"})).await;
+
+    let mut continuing = keyed_request(board.item_id, "continue-no-evidence");
+    continuing.from_run = Some(no_evidence.request_id.clone());
+    let refusal = start(&board, continuing).await.unwrap_err();
+
+    assert_eq!(refusal.status(), 422);
+    assert_eq!(refusal.details["field"], "from_run");
+    assert_eq!(refusal.details["reason"], "from_run_no_kept_work");
+}
+
+#[tokio::test]
+async fn from_run_is_refused_when_it_names_a_run_of_another_project() {
+    let board = board().await;
+    let other_workspace = create_test_workspace(&board.repo).await;
+    let other_project = make_project(&board.repo, other_workspace).await;
+    let other_item = make_item(&board.repo, &other_project).await;
+    seed::execution_request(
+        &board.repo,
+        "exec_other-project-run",
+        &other_item.id.to_string(),
+        "runner-active",
+        "2026-01-01T00:00:00Z",
+    )
+    .await;
+    leave_evidence(
+        &board,
+        "exec_other-project-run",
+        json!({"git": {"branch": "someone-elses-branch"}}),
+    )
+    .await;
+
+    let mut continuing = keyed_request(board.item_id, "continue-cross-project");
+    continuing.from_run = Some("exec_other-project-run".into());
+    let refusal = start(&board, continuing).await.unwrap_err();
+
+    assert_eq!(refusal.status(), 422);
+    assert_eq!(refusal.details["field"], "from_run");
+    assert_eq!(refusal.details["reason"], "from_run_different_project");
+}
+
+#[tokio::test]
+async fn from_run_is_refused_when_it_names_no_request() {
+    let board = board().await;
+    let mut continuing = keyed_request(board.item_id, "continue-unknown");
+    continuing.from_run = Some("exec_does-not-exist".into());
+    let refusal = start(&board, continuing).await.unwrap_err();
+
+    assert_eq!(refusal.status(), 404);
+    assert_eq!(refusal.details["field"], "from_run");
+    assert_eq!(refusal.details["reason"], "from_run_not_found");
 }

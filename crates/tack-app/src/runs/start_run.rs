@@ -48,6 +48,12 @@ pub struct RunRequest {
     pub autonomy: Option<AutonomyLevel>,
     /// `mcp` marks a run an agent started through `tack mcp`.
     pub origin: Option<String>,
+    /// A previous request to start over from the work it kept. Present, the server reads that
+    /// request's newest evidence and sets `metadata.rework_base` to its branch itself — a caller
+    /// never sends the branch directly. Refused `not_found` when the named request does not
+    /// exist; `unprocessable` when it belongs to another project or left no branch to continue
+    /// from.
+    pub from_run: Option<String>,
 }
 
 /// The permissions a caller asks for. It is the protocol's [`PermissionPolicy`] but for
@@ -459,6 +465,50 @@ async fn load_project(repo: &Repository, project_id: Uuid) -> Result<models::Pro
                 json!({"resource": "project"}),
             )
         })
+}
+
+/// The branch `from_run` resolves to: the project its named request's item belongs to must be
+/// this run's own, and that request's newest attempt must have left a branch — the same fact an
+/// automatic rework already takes from a just-finished attempt
+/// (`tack-app/src/runs/complete/rework.rs`), read here on request for any run that has already
+/// ended instead of only the one that just did. Never trusts a branch the caller sent; `from_run`
+/// is the only way in.
+async fn rework_base_of_run(
+    repo: &Repository,
+    from_run: &str,
+    project_id: Uuid,
+) -> Result<String, Refusal> {
+    let source = queries::execution_requests::rework_source_of_request(repo, from_run)
+        .await
+        .map_err(|failure| {
+            tracing::error!(error = %failure, "Could not read from_run's evidence");
+            error(
+                StableErrorCode::InternalError,
+                "Could not read from_run's evidence",
+                json!({}),
+            )
+        })?
+        .ok_or_else(|| {
+            error(
+                StableErrorCode::NotFound,
+                "from_run does not name an execution request",
+                json!({"field": "from_run", "reason": "from_run_not_found"}),
+            )
+        })?;
+    if source.project_id != project_id.to_string() {
+        return Err(error(
+            StableErrorCode::Unprocessable,
+            "from_run names a run of another project",
+            json!({"field": "from_run", "reason": "from_run_different_project"}),
+        ));
+    }
+    source.branch.ok_or_else(|| {
+        error(
+            StableErrorCode::Unprocessable,
+            "from_run's run left no work to continue from",
+            json!({"field": "from_run", "reason": "from_run_no_kept_work"}),
+        )
+    })
 }
 
 /// A remote as compared between the request and the project: no trailing `/`
@@ -1222,6 +1272,12 @@ pub async fn start_run(
     // from what the caller sent.
     if input.metadata.is_null() {
         input.metadata = json!({});
+    }
+    if let Some(from_run) = input.from_run.take() {
+        let branch = rework_base_of_run(repo, &from_run, item.project_id).await?;
+        if let Some(metadata) = input.metadata.as_object_mut() {
+            metadata.insert("rework_base".into(), json!(branch));
+        }
     }
     if let Some(metadata) = input.metadata.as_object_mut() {
         metadata.insert(

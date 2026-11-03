@@ -10850,6 +10850,13 @@
             "description": "A run's limits. `tokens` absent: the profile's `limits.budgets.tokens`, else no limit;\n`null`: no limit for this run even when the profile has one; a positive integer: that\nmany. `0`, a negative number or a non-number is refused (`invalid_request`, field\n`budgets.tokens`). `cost_usd` was removed and is refused (`field_removed`)."
           },
           "environment": {},
+          "from_run": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A previous execution request's id, to start this run from the work it kept instead of the\nproject's base commit. The server reads that request's newest evidence\n(`actual_execution.git.branch`) and sets `metadata.rework_base` itself, the same key a\nrework already reads — a request never carries the branch directly. A name that does not\nexist is `not_found` (`details.reason = \"from_run_not_found\"`); one that belongs to\nanother project, or left no branch to continue from, is `unprocessable`\n(`details.reason` is `\"from_run_different_project\"` or `\"from_run_no_kept_work\"`). Absent,\n`metadata.rework_base` is read only when the caller set it directly, as before."
+          },
           "idempotency_key": {
             "type": "string"
           },

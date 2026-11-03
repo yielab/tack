@@ -298,6 +298,7 @@ async fn start(
         push_branch: None,
         autonomy: None,
         origin: None,
+        from_run: None,
     };
     match start_run(repo, clock.now(), PRINCIPAL, input).await {
         Ok(created) if !created.replayed => {}

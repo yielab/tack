@@ -107,6 +107,7 @@ pub async fn start_test_run(
         push_branch: None,
         autonomy: None,
         origin: None,
+        from_run: None,
     };
     let resolved_profile = json!({
         "name": profile.name,
