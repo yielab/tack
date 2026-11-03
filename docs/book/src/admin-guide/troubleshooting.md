@@ -27,6 +27,7 @@ file that was refused, are in the [User Guide's troubleshooting page](../user-gu
 | docket shows as absent, or the daemon is not started | [docket is absent and the daemon does not start](#docket-is-absent-and-the-daemon-does-not-start) |
 | A team is reported as attended and tasks stay at L3 | [A team is attended](#a-team-is-attended) |
 | A docket run is running and nothing moves, and the timeline says the team is paused | [A team is paused](#a-team-is-paused) |
+| A docket run ends **Not started** with "Not sent to docket", or Agents → Teams says a profile is refused on a team | [A team cannot do what the run needs](#a-team-cannot-do-what-the-run-needs) |
 | A queued run shows "Waiting: …", or failed after thirty minutes | [A queued run says why it waits](#a-queued-run-says-why-it-waits) |
 | Projects with auto-start on never start a task | [Auto-start does not tick](#auto-start-does-not-tick) |
 | A run shows "Needs operator" and says the computer stopped answering | [A run says the computer stopped answering](#a-run-says-the-computer-stopped-answering) |
@@ -328,6 +329,34 @@ lists `podPause` in `GET /health` says so; with an older docket the run shows no
 `docket run --pod <team> --resume`. Tack has no button for it, because docket has no route over HTTP that
 resumes a team. The waiting tasks start by themselves once the team runs, and the run continues. If you would
 rather give up, stop the run from its card.
+
+---
+
+## A team cannot do what the run needs
+
+**What you see.** A docket run ends **Not started** and its reason begins "Not sent to docket", or the
+team's card in **Agents → Teams** says under its profiles that one of them is refused there:
+
+```text
+Not sent to docket. The team saas-research cannot reach the web and this run needs it: docket reports
+its network as none and no member holds `fetch`. ...
+```
+
+**Cause.** Before docket gets the task, Tack reads what the team says it can do. The run stops there
+when the team has no network and no member that reads the web while the run needs the web (the profile's
+network is on, or the person turned it on for the run), or when the profile is a Planner and no member of
+the team can propose items. Otherwise the team would start, find it cannot, and stop to ask a person for
+something only its own setup can give. Nothing was sent and no token was spent.
+
+**What to do.** Make the change the reason names, with docket's own commands, on the runner's machine:
+
+- The web: `docket pod set network open --widen --pod <team>` (it asks for a yes), or give a role
+  `fetch` with the hosts it may reach in `FETCH_ALLOWED_DOMAINS`. If the run does not need the web, turn the
+  network off in the profile instead.
+- Proposals: declare the team's `tack_proposals` record set and let a role write it, then apply the team.
+
+Then start the run again. A Researcher is not refused for proposals: it runs, and is told how to propose
+only when its team can.
 
 ---
 

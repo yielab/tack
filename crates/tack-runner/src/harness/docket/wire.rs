@@ -108,11 +108,13 @@ pub(super) struct PodMember {
     pub capabilities: Option<Value>,
 }
 
-/// What a member's `capabilities` says that Tack reads: the kinds of tool the role has and the
-/// record sets it can write. `tools`, `records.query` and any other key are not read.
+/// What a member's `capabilities` says that Tack reads: the kinds of tool the role has, the
+/// tools it holds and the record sets it can write. `records.query` and any other key are not read.
 #[derive(Debug, Deserialize)]
 pub(super) struct MemberReach {
     pub kinds: Option<Vec<String>>,
+    /// The tool names the role holds; docket lists `fetch` only while it offers it.
+    pub tools: Option<Vec<String>>,
     pub records: Option<MemberRecords>,
 }
 
@@ -129,6 +131,9 @@ pub(super) struct PodMemberModel {
 #[derive(Debug, Deserialize)]
 pub(super) struct PodNetwork {
     pub mode: String,
+    /// Whether a jail holds the team to `mode`; `false` leaves egress open whatever `mode` says.
+    /// Absent from a docket that does not send it.
+    pub enforced: Option<bool>,
 }
 
 /// `pipeline` of a pod's report: `source` is docket's; `steps` is the second ask of ADR 0032 and

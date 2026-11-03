@@ -320,6 +320,10 @@ struct Pod {
     /// Why the team is paused (`pausedReason`), `None` while it runs. A task posted to a paused
     /// team stays `pending` until the team is resumed.
     paused: Option<String>,
+    /// What `network` answers instead of the capture's `none`.
+    network: Option<Value>,
+    /// Every member holds `fetch`, as docket lists it while FETCH_ALLOWED_DOMAINS names a host.
+    fetch: bool,
 }
 
 struct World {
@@ -480,6 +484,8 @@ impl FakeDocket {
                     .collect(),
                 read_only: None,
                 paused: None,
+                network: None,
+                fetch: false,
             },
         );
     }
@@ -659,6 +665,18 @@ impl FakeDocket {
         let mut world = self.shared.lock().unwrap();
         let pod = world.pods.get_mut(name).expect("a pod added first");
         pod.read_only = Some(paths.map(|p| p.iter().map(|s| (*s).to_owned()).collect()));
+    }
+
+    /// What the pod's `network` answers instead of the capture's `{"mode": "none"}`.
+    pub fn set_network(&self, name: &str, network: Value) {
+        let mut world = self.shared.lock().unwrap();
+        world.pods.get_mut(name).expect("a pod added first").network = Some(network);
+    }
+
+    /// Every member of the pod holds `fetch`.
+    pub fn give_fetch(&self, name: &str) {
+        let mut world = self.shared.lock().unwrap();
+        world.pods.get_mut(name).expect("a pod added first").fetch = true;
     }
 
     /// The repository docket commits a task's branch in.
@@ -1243,6 +1261,16 @@ fn pod_report(state: &World, name: &str) -> Response {
             }
         }
     }
+    if let Some(network) = &pod.network {
+        report["network"] = network.clone();
+    }
+    if pod.fetch {
+        for member in report["members"].as_array_mut().into_iter().flatten() {
+            if let Some(tools) = member["capabilities"]["tools"].as_array_mut() {
+                tools.push(json!("fetch"));
+            }
+        }
+    }
     reply(200, report)
 }
 
@@ -1428,6 +1456,8 @@ fn post_pod(state: &mut World, body: &Value) -> Response {
             violations: Vec::new(),
             read_only: None,
             paused: None,
+            network: None,
+            fetch: false,
         },
     );
     reply(

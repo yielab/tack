@@ -317,13 +317,13 @@ async fn a_failure_code_tack_does_not_translate_shows_dockets_text_labelled() {
     );
 }
 
-/// A docket Planner or Researcher is told to propose through its team's `tack_proposals` records
-/// and to write no file; any other profile gets the instructions as they are. The local agents get
-/// the file sentence instead (`harness::tests`).
+/// A docket Planner is told to propose through its team's `tack_proposals` records and a
+/// Researcher to do so if it proposes, both to write no file; any other profile gets the
+/// instructions as they are. The local agents get the file sentence instead (`harness::tests`).
 #[test]
 fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_write_no_file() {
     let state = crate::harness::test_support::scratch("docket-plan-channel");
-    let description = |kind: Option<&str>, with_task: bool| {
+    let described = |kind: Option<&str>, with_task: bool, can_propose: bool| {
         let mut spec = crate::harness::test_support::spec("docket", state.path());
         let request = &mut spec.work.request;
         request.resolved_agent_profile.instructions = "Do the thing.".into();
@@ -344,17 +344,26 @@ fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_wri
             kind: "task".into(),
             source: "human".into(),
         });
-        let body = super::task::body(request, "attempt", 1, Some("main"), None);
+        let body = super::task::body(request, "attempt", 1, Some("main"), None, can_propose);
         body["description"]
             .as_str()
             .expect("description")
             .to_owned()
     };
-    for kind in ["planner", "researcher"] {
+    let description = |kind: Option<&str>, with_task: bool| described(kind, with_task, true);
+    for (kind, opening) in [
+        ("planner", "Propose items by calling"),
+        (
+            "researcher",
+            "If you propose work, propose each item by calling",
+        ),
+    ] {
         for with_task in [true, false] {
             let text = description(Some(kind), with_task);
             assert!(
-                text.starts_with("Do the thing.\n\nPropose items by calling rec__tack_proposals__add once per item,"),
+                text.starts_with(&format!(
+                    "Do the thing.\n\n{opening} rec__tack_proposals__add once per item,"
+                )),
                 "{kind} {with_task}: {text}"
             );
             assert!(
@@ -371,6 +380,9 @@ fn a_docket_planner_or_researcher_is_told_to_propose_through_the_records_and_wri
             "{kind:?}: {text}"
         );
     }
+    // A Researcher whose team said no member can propose is not sent after a tool it lacks.
+    let text = described(Some("researcher"), true, false);
+    assert!(!text.contains("rec__tack_proposals__add"), "{text}");
 }
 
 #[test]
@@ -424,7 +436,7 @@ fn a_docket_thread_turn_is_told_the_teams_last_step_answers_and_no_reply_file_is
             kind: "task".into(),
             source: "human".into(),
         });
-        super::task::body(request, "attempt", 1, Some("main"), None)["description"]
+        super::task::body(request, "attempt", 1, Some("main"), None, true)["description"]
             .as_str()
             .expect("description")
             .to_owned()
@@ -473,7 +485,7 @@ fn a_docket_thread_turn_names_its_thread_so_a_change_set_can_say_where_it_came_f
             kind: "task".into(),
             source: "human".into(),
         });
-        super::task::body(request, "attempt", 1, Some("main"), None)["description"]
+        super::task::body(request, "attempt", 1, Some("main"), None, true)["description"]
             .as_str()
             .expect("description")
             .to_owned()

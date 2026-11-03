@@ -13,7 +13,10 @@ use tack_protocol::execution::{
 
 use super::{
     client::Client,
-    wire::{MemberReach, PodList, PodMember, PodReport, PodRow, PodStep, RecordList, StatusAnswer},
+    wire::{
+        MemberReach, PodList, PodMember, PodNetwork, PodReport, PodRow, PodStep, RecordList,
+        StatusAnswer,
+    },
 };
 
 /// The oldest operator API version this harness speaks; a later one is accepted too. It is the
@@ -129,9 +132,10 @@ async fn record_sets(client: &Client, name: &str) -> Option<(Vec<TeamRecordSet>,
 }
 
 /// What a member's role reaches, in Tack's words: whether it can propose items (its role writes
-/// the proposals' record set) and whether it can change the project (a tool of the `write` or
-/// `exec` kind). A member whose `capabilities` is absent or cannot be read says neither.
-fn member(member: PodMember) -> TeamMember {
+/// the proposals' record set), whether it can change the project (a tool of the `write` or
+/// `exec` kind) and whether it reads the web (it holds `fetch`, which runs outside the jail). A
+/// member whose `capabilities` is absent or cannot be read says none of them.
+pub(super) fn member(member: PodMember) -> TeamMember {
     let reach: Option<MemberReach> = member
         .capabilities
         .and_then(|raw| serde_json::from_value(raw).ok());
@@ -146,6 +150,23 @@ fn member(member: PodMember) -> TeamMember {
             .as_ref()
             .and_then(|reach| reach.kinds.as_ref())
             .map(|kinds| kinds.iter().any(|kind| kind == "write" || kind == "exec")),
+        reads_web: reach
+            .as_ref()
+            .and_then(|reach| reach.tools.as_ref())
+            .map(|tools| tools.iter().any(|tool| tool == "fetch")),
+    }
+}
+
+/// How far the team reaches, in Tack's words. A `none` that docket says no jail enforces is open,
+/// as docket itself words it; a mode Tack has no word for stays unsaid.
+pub(super) fn network(network: Option<&PodNetwork>) -> Option<TeamNetwork> {
+    let network = network?;
+    match network.mode.as_str() {
+        "none" if network.enforced == Some(false) => Some(TeamNetwork::Open),
+        "none" => Some(TeamNetwork::Closed),
+        "limited" => Some(TeamNetwork::Limited),
+        "open" => Some(TeamNetwork::Open),
+        _ => None,
     }
 }
 
@@ -264,14 +285,7 @@ async fn team(client: &Client, row: &PodRow, pause_listed: bool) -> Result<TeamR
             .members
             .map(|members| members.into_iter().map(member).collect()),
         decides: None,
-        network: report
-            .network
-            .and_then(|network| match network.mode.as_str() {
-                "none" => Some(TeamNetwork::Closed),
-                "limited" => Some(TeamNetwork::Limited),
-                "open" => Some(TeamNetwork::Open),
-                _ => None,
-            }),
+        network: network(report.network.as_ref()),
         queue: row.queue.as_ref().map(|queue| TeamQueue {
             waiting: queue.pending + queue.waiting_approval + queue.waiting_input,
             running: queue.running,

@@ -122,8 +122,8 @@ export type {
 } from './store';
 export { createExecutionStore } from './store';
 
-export type { TeamEntry, TeamMember, TeamReport, TeamStep } from './teams';
-export { teamsApi, teamChoices, stepText, networkText, queueText, memberReachText, teamProposes, pausedText, plainName, SHARED_PROPOSALS_TEXT } from './teams';
+export type { TeamEntry, TeamMember, TeamMisfit, TeamReport, TeamStep } from './teams';
+export { teamsApi, teamChoices, stepText, networkText, queueText, memberReachText, misfitText, teamProposes, pausedText, plainName, SHARED_PROPOSALS_TEXT } from './teams';
 
 export type { AgentCapabilityId, AgentCapabilityLine } from './agents';
 export {

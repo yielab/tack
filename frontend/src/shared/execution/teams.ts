@@ -9,6 +9,7 @@ export type TeamReport = components['schemas']['TeamReport'];
 export type TeamStep = components['schemas']['TeamStep'];
 export type TeamMember = components['schemas']['TeamMember'];
 export type TeamList = components['schemas']['TeamList'];
+export type TeamMisfit = components['schemas']['TeamMisfit'];
 
 export const teamsApi = {
   /** Every team any agent reports, then the names only profiles use. */
@@ -79,7 +80,16 @@ export function memberReachText(member: TeamMember): string[] {
   if (member.writes_project === true) words.push('Changes the project');
   else if (member.writes_project === false) words.push('Reads only');
   if (member.can_propose === true) words.push('Can propose items');
+  if (member.reads_web === true) words.push('Reads the web');
   return words;
+}
+
+/** Why a profile's runs on `team` are refused before the team gets them, and the change in docket
+ *  that ends it. Follows the profile's name. */
+export function misfitText(team: string, misfit: TeamMisfit): string {
+  return misfit === 'no_web'
+    ? `needs the web, and this team has no network and no member that reads the web. Open its network with \`docket pod set network open --widen --pod ${team}\`, give a role \`fetch\`, or turn the network off in the profile.`
+    : `delivers only proposed items, and no member of this team can propose. Declare the team's \`tack_proposals\` record set and let a role write it.`;
 }
 
 /** The one sentence a team whose proposals are kept for all its tasks together is owed. */

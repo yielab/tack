@@ -17076,6 +17076,13 @@
             ],
             "description": "The model the member runs on. Absent means the harness did not say."
           },
+          "reads_web": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the member can read web pages through a tool that reaches the web whatever the\nteam's network (`false`: it has none). Absent means the harness did not say, which is not\nthe same as `false`; no field may carry a harness's own key name."
+          },
           "role": {
             "type": "string",
             "description": "What the member does, in the harness's own word for it, shown as data."
@@ -17088,6 +17095,14 @@
             "description": "Whether the member can change the project's files or run commands in it (`false`: it only\nreads). Absent means the harness did not say, which is not the same as `false`; no field\nmay carry a harness's own key name."
           }
         }
+      },
+      "TeamMisfit": {
+        "type": "string",
+        "description": "A need of a profile that the team it names says it cannot meet. A run that has one ends before\nthe team gets the task, because the team would stop and ask a person for what only its own\nsetup can give.",
+        "enum": [
+          "no_web",
+          "no_proposals"
+        ]
       },
       "TeamNetwork": {
         "type": "string",
@@ -17116,6 +17131,13 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "misfits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeamMisfit"
+            },
+            "description": "What the profile needs that the team says it cannot do; a run of it ends before the team\ngets the task. Empty when the team meets every need, or did not say enough to tell."
           },
           "name": {
             "type": "string"

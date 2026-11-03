@@ -250,6 +250,26 @@ describe('TeamsPanel', () => {
     expect(profileEditRequest()).toBe('ap_r');
   });
 
+  it('says which profile is refused on a team, what it lacks and the change in docket that ends it', async () => {
+    const team = {
+      ...FULL_TEAM,
+      profiles: [
+        { id: 'ap_p', name: 'Planner', misfits: ['no_web', 'no_proposals'] },
+        { id: 'ap_i', name: 'Implementer', misfits: [] },
+      ],
+    };
+    mockApi([team, { ...FULL_TEAM, name: 'fits' }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const lines = Array.from(card(c, 'saas-code').querySelectorAll('[data-testid="team-misfit"]')).map((l) => l.textContent);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('Planner is refused here:');
+    expect(lines[0]).toContain('docket pod set network open --widen --pod saas-code');
+    expect(lines[1]).toContain('no member of this team can propose');
+    expect(card(c, 'fits').querySelector('[data-testid="team-misfit"]')).toBeNull();
+  });
+
   it('explains the limit of proposals kept for all tasks together, only for a team that reports it', async () => {
     const shared = { ...FULL_TEAM, report: { ...FULL_TEAM.report, proposals_shared_across_tasks: true } };
     const apart = { ...FULL_TEAM, name: 'apart', report: { ...FULL_TEAM.report, name: 'apart', proposals_shared_across_tasks: false } };

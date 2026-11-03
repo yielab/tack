@@ -164,3 +164,65 @@ fn an_agents_own_features_ride_beside_its_report_and_round_trip() {
     let back: HarnessCapability = serde_json::from_value(wire).expect("parse back");
     assert_eq!(back.features(), Some(declared));
 }
+
+fn member(can_propose: Option<bool>, reads_web: Option<bool>) -> TeamMember {
+    TeamMember {
+        role: "researcher".to_owned(),
+        model: None,
+        can_propose,
+        writes_project: None,
+        reads_web,
+    }
+}
+
+#[test]
+fn a_team_with_no_network_and_no_member_that_reads_the_web_cannot_serve_a_run_that_needs_it() {
+    let web = TeamNeeds::of("researcher", true);
+    let closed = Some(TeamNetwork::Closed);
+    let none_read = [member(None, Some(false)), member(None, Some(false))];
+    assert_eq!(
+        team_misfits(closed, Some(&none_read), web),
+        [TeamMisfit::NoWeb]
+    );
+    // One member that reads the web, a network that is not closed, or a run that does not
+    // need the web is enough.
+    let one_reads = [member(None, Some(false)), member(None, Some(true))];
+    assert!(team_misfits(closed, Some(&one_reads), web).is_empty());
+    assert!(team_misfits(Some(TeamNetwork::Open), Some(&none_read), web).is_empty());
+    assert!(team_misfits(Some(TeamNetwork::Limited), Some(&none_read), web).is_empty());
+    assert!(team_misfits(closed, Some(&none_read), TeamNeeds::of("researcher", false)).is_empty());
+}
+
+#[test]
+fn only_what_the_harness_said_is_a_misfit() {
+    let needs = TeamNeeds {
+        web: true,
+        proposals: true,
+    };
+    let unsaid = [member(None, None)];
+    assert_eq!(
+        team_misfits(None, Some(&[member(Some(false), Some(false))]), needs),
+        [TeamMisfit::NoProposals],
+        "a network the harness did not report is not a closed one"
+    );
+    assert!(team_misfits(Some(TeamNetwork::Closed), Some(&unsaid), needs).is_empty());
+    assert!(team_misfits(Some(TeamNetwork::Closed), None, needs).is_empty());
+    assert!(team_misfits(Some(TeamNetwork::Closed), Some(&[]), needs).is_empty());
+}
+
+#[test]
+fn a_planner_needs_a_member_that_can_propose_and_a_researcher_does_not() {
+    let none_can = [member(Some(false), None), member(Some(false), None)];
+    let one_can = [member(Some(false), None), member(Some(true), None)];
+    let planner = TeamNeeds::of("planner", false);
+    assert_eq!(
+        team_misfits(None, Some(&none_can), planner),
+        [TeamMisfit::NoProposals]
+    );
+    assert!(team_misfits(None, Some(&one_can), planner).is_empty());
+    assert!(team_misfits(None, Some(&none_can), TeamNeeds::of("researcher", false)).is_empty());
+    assert_eq!(
+        serde_json::to_value([TeamMisfit::NoWeb, TeamMisfit::NoProposals]).expect("serialize"),
+        serde_json::json!(["no_web", "no_proposals"])
+    );
+}

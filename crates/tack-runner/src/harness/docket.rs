@@ -25,8 +25,8 @@ use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
     ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
-    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, Usage,
-    WorkspaceId as DomainWorkspaceId,
+    HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, TeamActivity, TeamMisfit,
+    TeamNeeds, Usage, WorkspaceId as DomainWorkspaceId, team_misfits,
 };
 use tokio::sync::{Mutex, mpsc};
 
@@ -116,6 +116,45 @@ fn rejected(reason: String) -> HarnessError {
         "request rejected before start"
     );
     HarnessError::Rejected { reason }
+}
+
+/// Whether a team works in a repository: `workspaceKind` when docket sends it, else what
+/// `repoConfigDir` says. A team that could not be read is taken to have one, as every team did
+/// before.
+fn in_repository(report: Option<&PodReport>) -> bool {
+    let Some(report) = report else {
+        return true;
+    };
+    match report.workspace_kind.as_deref() {
+        Some("workdir") => false,
+        Some(_) => true,
+        None => report
+            .repo_config_dir
+            .as_deref()
+            .is_none_or(|dir| !dir.is_empty()),
+    }
+}
+
+/// Why a run did not go to `pod`, one sentence per need the team cannot meet, each with the change
+/// in docket that meets it.
+fn misfit_sentence(pod: &str, misfits: &[TeamMisfit]) -> String {
+    let lines: Vec<String> = misfits
+        .iter()
+        .map(|misfit| match misfit {
+            TeamMisfit::NoWeb => format!(
+                "The team {pod} cannot reach the web and this run needs it: docket reports its \
+                 network as none and no member holds `fetch`. Open its network with `docket pod \
+                 set network open --widen --pod {pod}`, give a role `fetch` (it reaches only the \
+                 hosts in FETCH_ALLOWED_DOMAINS), or turn the network off in the profile."
+            ),
+            TeamMisfit::NoProposals => format!(
+                "The team {pod} cannot propose items and a Planner delivers nothing else: no \
+                 member can write the record set `tack_proposals`. Declare it in the team's \
+                 `records/tack_proposals.yaml`, let a role write it and apply the team."
+            ),
+        })
+        .collect();
+    format!("Not sent to docket. {}", lines.join(" "))
 }
 
 fn measurement<T>(value: Option<T>) -> Measurement<T> {
@@ -507,20 +546,16 @@ impl DocketAdapter {
     /// docket sends it, else `repoConfigDir` (`""` for a folder). Anything docket does not say
     /// counts as yes: a folder team is the one thing it has to say outright.
     async fn has_repository(&self, pod: &str) -> bool {
-        let Ok(reply) = self.client.pod(pod).await else {
-            return true;
-        };
+        in_repository(self.read_team(pod).await.as_ref())
+    }
+
+    /// `GET /pods/<pod>`, or `None` when docket does not answer it or its answer cannot be read.
+    async fn read_team(&self, pod: &str) -> Option<PodReport> {
+        let reply = self.client.pod(pod).await.ok()?;
         if reply.status != 200 {
-            return true;
+            return None;
         }
-        let Ok(report) = reply.read::<PodReport>() else {
-            return true;
-        };
-        match report.workspace_kind.as_deref() {
-            Some("workdir") => false,
-            Some(_) => true,
-            None => report.repo_config_dir.is_none_or(|dir| !dir.is_empty()),
-        }
+        reply.read::<PodReport>().ok()
     }
 
     /// The commit the request's base revision names in the repository, which
@@ -1565,9 +1600,39 @@ impl HarnessAdapter for DocketAdapter {
         }
 
         let api = probe::status(&self.client).await.map_err(rejected)?.api;
+        let team = self.read_team(&pod).await;
         // A team in a folder has no commit to start from and no install to make: docket refuses
         // the task that names either, so neither the base nor the rework branch is worked out.
-        let in_repository = self.has_repository(&pod).await;
+        let in_repository = in_repository(team.as_ref());
+        // What the team says it can do, read now and not from the last probe: a need it cannot
+        // meet ends the run here, before the team spends a token to ask a person for it.
+        let (network, members) = match team {
+            Some(report) => (
+                probe::network(report.network.as_ref()),
+                report
+                    .members
+                    .map(|members| members.into_iter().map(probe::member).collect::<Vec<_>>()),
+            ),
+            None => (None, None),
+        };
+        let misfits = team_misfits(
+            network,
+            members.as_deref(),
+            TeamNeeds::of(
+                super::profile_kind(request),
+                request.permission_policy.network,
+            ),
+        );
+        if !misfits.is_empty() {
+            return Err(rejected(misfit_sentence(&pod, &misfits)));
+        }
+        // A Researcher is told how to propose only when a member can; a team that did not say is
+        // told, as before.
+        let can_propose = members.as_deref().is_none_or(|members| {
+            members
+                .iter()
+                .any(|member| member.can_propose != Some(false))
+        });
         let base_ref = if in_repository {
             Some(
                 match request.metadata.get("rework_base").and_then(Value::as_str) {
@@ -1584,6 +1649,7 @@ impl HarnessAdapter for DocketAdapter {
             spec.work.lease.attempt_number,
             base_ref.as_deref(),
             request.autonomy(),
+            can_propose,
         );
         let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
             tracing::warn!(why, "docket could not be reached to post the task");
