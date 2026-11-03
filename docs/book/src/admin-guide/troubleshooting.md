@@ -350,10 +350,11 @@ something only its own setup can give. Nothing was sent and no token was spent.
 
 **What to do.** Make the change the reason names, with docket's own commands, on the runner's machine:
 
-- The web: `docket pod set network open --widen --pod <team>` (it asks for a yes), or give the team the
-  hosts its `fetch` may read with `docket pod set fetchDomains <hosts> --pod <team>` (a docket without that
-  setting reads them from `FETCH_ALLOWED_DOMAINS`, for every team). If the run does not need the web, turn
-  the network off in the profile instead.
+- The web: give the team the hosts its `fetch` reads with `docket pod set fetchDomains <host> --pod <team>`
+  (`'*' --widen` for any host); a docket without that setting reads them from `FETCH_ALLOWED_DOMAINS`, for
+  every team. `docket pod set network open --widen --pod <team>` also works, but it opens the team's
+  commands, steps and MCP servers to every host, which is more than reading the web needs. If the run does
+  not need the web, turn the network off in the profile instead.
 - Proposals: declare the team's `tack_proposals` record set and let a role write it, then apply the team.
 
 Then start the run again. A Researcher is not refused for proposals: it runs, and is told how to propose

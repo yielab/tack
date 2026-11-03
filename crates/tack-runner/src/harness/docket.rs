@@ -78,6 +78,9 @@ pub static DESCRIPTOR: HarnessDescriptor = HarnessDescriptor {
 /// The feature of `GET /health` under which a team's `paused` is sent.
 const POD_PAUSE: &str = "podPause";
 
+/// The feature of `GET /health` under which a pod declares the hosts its `fetch` reads.
+const POD_FETCH: &str = "podFetch";
+
 /// How often a running task's trace, inbox and record are read.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
@@ -136,17 +139,26 @@ fn in_repository(report: Option<&PodReport>) -> bool {
 }
 
 /// Why a run did not go to `pod`, one sentence per need the team cannot meet, each with the change
-/// in docket that meets it.
-fn misfit_sentence(pod: &str, misfits: &[TeamMisfit]) -> String {
+/// in docket that meets it. With `podFetch` a pod reads the web through its own `fetch` hosts, which
+/// opens no more than reading; the whole network, which also opens `bash`, steps and MCP servers to
+/// every host, comes second.
+fn misfit_sentence(pod: &str, misfits: &[TeamMisfit], pod_fetch: bool) -> String {
     let lines: Vec<String> = misfits
         .iter()
         .map(|misfit| match misfit {
+            TeamMisfit::NoWeb if pod_fetch => format!(
+                "The team {pod} cannot reach the web and this run needs it: docket reports its \
+                 network as none and no member holds `fetch`. Give it the hosts it reads with \
+                 `docket pod set fetchDomains <host> --pod {pod}` (`'*' --widen` for any host), \
+                 open its whole network with `docket pod set network open --widen --pod {pod}`, \
+                 or turn the network off in the profile."
+            ),
             TeamMisfit::NoWeb => format!(
                 "The team {pod} cannot reach the web and this run needs it: docket reports its \
-                 network as none and no member holds `fetch`. Open its network with `docket pod \
-                 set network open --widen --pod {pod}`, give it hosts for `fetch` (`docket pod \
-                 set fetchDomains <hosts> --pod {pod}`, or FETCH_ALLOWED_DOMAINS on a docket \
-                 without it), or turn the network off in the profile."
+                 network as none and no member holds `fetch`. Name the hosts `fetch` reads in \
+                 docket's FETCH_ALLOWED_DOMAINS (every team's), open the team's network with \
+                 `docket pod set network open --widen --pod {pod}`, or turn the network off in \
+                 the profile."
             ),
             TeamMisfit::NoProposals => format!(
                 "The team {pod} cannot propose items and a Planner delivers nothing else: no \
@@ -1625,7 +1637,8 @@ impl HarnessAdapter for DocketAdapter {
             ),
         );
         if !misfits.is_empty() {
-            return Err(rejected(misfit_sentence(&pod, &misfits)));
+            let pod_fetch = self.client.has_feature(POD_FETCH).await;
+            return Err(rejected(misfit_sentence(&pod, &misfits, pod_fetch)));
         }
         // A Researcher is told how to propose only when a member can; a team that did not say is
         // told, as before.
