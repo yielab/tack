@@ -19,16 +19,39 @@ Tack must say which limit stopped the step and where to raise it, show the work 
 offer the person two ways on: **Continue** the same docket task, or **Start over** with a new one,
 from the kept work or clean.
 
-## What docket has (read 2026-11-03, docket `develop` at `3b16b8e4`)
+## What docket has (read 2026-11-03, docket `develop`; all five P59 cards DONE)
 
 | docket card | Feature | State | What Tack reads |
 |---|---|---|---|
 | P59-1 | `retryContinues` | Merged, listed | `POST /tasks/<pod>/<id>/retry` re-runs the failed step and continues its session. Before it, a retry skipped the failed step and could settle `done` with unverified work |
-| P59-2 | `budgetOutcome` | TODO | `failureKind: "budget"` for any step bound; the hop carries `budget: {bound, limit, used, source, treeChanged}`; a failed hop's work is committed on the task's branch |
-| P59-3 | none (a `budget` on the hop) | TODO | The budget hop's `artifact.summary` is the model's report; no verdict is read from it |
-| P59-4 | none (the pipeline format's spec version) | TODO | A step declares `maxIterations`, `maxToolCalls`, `timeout`; a role declares `maxIterations`, `maxToolCalls`; the pod keeps `turnTimeoutS`; the rounds default goes from 20 to 60 |
+| P59-2 | `budgetOutcome` | Merged, listed | `failureKind: "budget"` for any step bound; the hop carries `budget: {bound, limit, used, source, treeChanged}`; **only an Implementer hop's work is committed** (below) |
+| P59-3 | none (a `budget` on the hop) | Merged | The budget hop's `artifact.summary` is the model's report; no verdict is read from it |
+| P59-4 | none (the pipeline format's spec version) | Merged | A step declares `maxIterations`, `maxToolCalls`, `timeout`; a role declares `maxIterations`, `maxToolCalls`; the pod keeps `turnTimeoutS`; the rounds default is now 60 |
 
-Two facts shape the decisions:
+**Not yet field-proven.** docket's own team (`rack-cli-85`, 2026-11-0X) says Phase 59 is merged
+and running, but **not closed**: two of its three live acceptance runs are still pending. The code
+is real; the live proof is not. Card L here waits on that close, same as it always did.
+
+**Confirmed against docket's source (`tasks/domain/task.py`, `tasks/domain/parts.py`,
+`tasks/application/record.py`) and by the docket session directly:**
+
+- The wire names are exactly `bound: rounds | toolCalls | tokens | time`, `limit`, `used`,
+  `source: step | role | pod | default`, plus **`task`** for a `tokens` stop when the task itself
+  set `maxTokens` (`_budget_outcome`'s own `source = "task" if …`) — one more source value than the
+  ADR's four. `treeChanged` is the one camelCase key (pydantic `by_alias=True` on every `/tasks`
+  response, confirmed in `interfaces/http/routes/tasks.py`); the rest stay as written.
+- **`treeChanged` is narrower than ADR decision 2 reads.** `_keeps_its_work` pins the tree only for
+  a hop whose **role is `implementer`** and whose failure is `budget_exhausted`; every other role
+  (a Reviewer included) is never pinned, so its hop's `budget.treeChanged` is always `false`.
+  docket's own session flagged this as a deliberate narrowing, not yet escalated past "flagged to
+  the maintainer" — Tack reads what ships, not what the ADR proposed. This folds cleanly into
+  decision 5's table: a non-Implementer budget stop always falls into the `treeChanged: false` row.
+- `timeout` is transport/request-only now and still retried in place; the loop's own wall clock is
+  `budget_exhausted` with `bound: "time"`, tried once. Matches the ADR as written.
+- Retry's continuation message carries the previous stop, the report and up to 20 changed paths,
+  as decision 6 assumed.
+
+Two facts from the ADR text still shape the decisions:
 
 - **`POST .../retry` takes no body.** The task's `maxTokens` is task-wide and cannot be raised on a
   retry, so a step stopped by tokens cannot be continued with more.
@@ -78,6 +101,12 @@ budget stop from a confused model, and the kept work is not there to continue.
 | Any bound; `treeChanged: false` | **Edit the task** (the item's description), then Start over clean | Start over clean | Disabled: "The step changed nothing; the task may be unclear. Reword it before running again." |
 | A docket without `retryContinues` or `budgetOutcome` | Start over (today's Run again) | — | Disabled: "This team's docket cannot continue a step. Update docket." |
 | Any other failure (`hop_failed`, `needs_human`, `prepare`, …) | Today's choices | — | Not shown; Tack never calls `POST .../retry` |
+
+**`treeChanged: true` only ever happens for an Implementer hop** (docket's own `_keeps_its_work`
+pins no other role). So the first row is reached only by a build step; a Reviewer or any other
+role that runs out of budget always lands in the `treeChanged: false` row. For that role the
+"reword the task" framing is still right in spirit (there is nothing of its own to continue), so
+Tack's sentence there stays generic rather than naming the role.
 
 **Why Continue is a new request and not a second attempt of the same one.** An attempt is the engine
 retrying the same request under the same snapshot (`UNIQUE(request_id, attempt_number)`). Spending
