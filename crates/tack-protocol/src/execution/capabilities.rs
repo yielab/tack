@@ -215,6 +215,68 @@ pub struct TeamReport {
     pub paused: Option<TeamPause>,
 }
 
+impl TeamReport {
+    /// What a profile needs that this team says it cannot do; see [`team_misfits`].
+    pub fn misfits(&self, needs: TeamNeeds) -> Vec<TeamMisfit> {
+        team_misfits(self.network, self.members.as_deref(), needs)
+    }
+}
+
+/// What a profile needs from the team it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TeamNeeds {
+    /// The run reaches the web: the profile's network, or the run's own when it says.
+    pub web: bool,
+    /// The run's whole delivery is items proposed for a person to accept (a Planner).
+    pub proposals: bool,
+}
+
+impl TeamNeeds {
+    /// What a profile of `kind` needs, given whether its run reaches the web. A Planner delivers
+    /// only proposals; a Researcher may propose and delivers its findings either way.
+    pub fn of(kind: &str, web: bool) -> Self {
+        Self {
+            web,
+            proposals: kind == "planner",
+        }
+    }
+}
+
+/// A need of a profile that the team it names says it cannot meet. A run that has one ends before
+/// the team gets the task, because the team would stop and ask a person for what only its own
+/// setup can give.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum TeamMisfit {
+    /// The run reaches the web, and the team has no network and no member that reads the web.
+    NoWeb,
+    /// The run proposes items, and no member of the team can.
+    NoProposals,
+}
+
+/// What a profile needs that a team with this network and these members says it cannot do. Only
+/// what the harness said counts: an absent network or member list, or a member that did not say,
+/// is never a misfit.
+pub fn team_misfits(
+    network: Option<TeamNetwork>,
+    members: Option<&[TeamMember]>,
+    needs: TeamNeeds,
+) -> Vec<TeamMisfit> {
+    let members = members.filter(|members| !members.is_empty());
+    let none_can = |can: fn(&TeamMember) -> Option<bool>| {
+        members.is_some_and(|members| members.iter().all(|member| can(member) == Some(false)))
+    };
+    let mut misfits = Vec::new();
+    if needs.web && network == Some(TeamNetwork::Closed) && none_can(|member| member.reads_web) {
+        misfits.push(TeamMisfit::NoWeb);
+    }
+    if needs.proposals && none_can(|member| member.can_propose) {
+        misfits.push(TeamMisfit::NoProposals);
+    }
+    misfits
+}
+
 /// Why a team is paused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
@@ -244,6 +306,11 @@ pub struct TeamMember {
     /// may carry a harness's own key name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub writes_project: Option<bool>,
+    /// Whether the member can read web pages through a tool that reaches the web whatever the
+    /// team's network (`false`: it has none). Absent means the harness did not say, which is not
+    /// the same as `false`; no field may carry a harness's own key name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reads_web: Option<bool>,
 }
 
 /// Whether a team runs to the end alone.

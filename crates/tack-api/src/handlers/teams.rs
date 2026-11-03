@@ -13,7 +13,7 @@ use utoipa::{IntoParams, ToSchema};
 use tack_core::principal::{Capability, Principal, may};
 use tack_db::queries;
 use tack_protocol::execution::{
-    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, TeamReport,
+    ActivityTask, CapabilitySupport, CurrentStep, FinishedStep, TeamMisfit, TeamNeeds, TeamReport,
 };
 
 use crate::error::{ApiError, ApiResult};
@@ -25,6 +25,10 @@ use crate::router::AppState;
 pub struct TeamProfile {
     pub id: String,
     pub name: String,
+    /// What the profile needs that the team says it cannot do; a run of it ends before the team
+    /// gets the task. Empty when the team meets every need, or did not say enough to tell.
+    #[serde(default)]
+    pub misfits: Vec<TeamMisfit>,
 }
 
 /// One team: what an agent reported about it, or only the name a profile gives it.
@@ -58,6 +62,12 @@ fn named_team(tool_policy: &str) -> Option<(String, Option<String>)> {
     let team = policy.get("docket")?.get("team")?.as_str()?;
     let agent = policy.get("agent").and_then(Value::as_str);
     (!team.is_empty()).then(|| (team.to_owned(), agent.map(str::to_owned)))
+}
+
+/// Whether a profile's role reaches the network, as its tool policy stores it.
+fn profile_network(tool_policy: &str) -> bool {
+    serde_json::from_str::<Value>(tool_policy)
+        .is_ok_and(|policy| tack_core::run_defaults::profile_network(&policy))
 }
 
 /// GET /api/teams
@@ -118,11 +128,21 @@ pub async fn list_teams(State(state): State<AppState>) -> ApiResult<Json<TeamLis
         let line = TeamProfile {
             id: profile.id,
             name: profile.name,
+            misfits: Vec::new(),
         };
+        let needs = TeamNeeds::of(&profile.kind, profile_network(&profile.tool_policy));
         let mut found = false;
         for ((kind, name), entry) in &mut reported {
             if *name == team && agent.as_ref().is_none_or(|agent| agent == kind) {
-                entry.profiles.push(line.clone());
+                let misfits = entry
+                    .report
+                    .as_ref()
+                    .map(|report| report.misfits(needs))
+                    .unwrap_or_default();
+                entry.profiles.push(TeamProfile {
+                    misfits,
+                    ..line.clone()
+                });
                 found = true;
             }
         }

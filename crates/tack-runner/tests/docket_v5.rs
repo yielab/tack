@@ -1319,6 +1319,86 @@ async fn a_400_on_the_pod_fails_the_attempt_with_the_bodys_text_and_posts_no_tas
     );
 }
 
+/// A run that needs what its team says it cannot do ends before docket gets the task, with the
+/// change in docket that meets it, instead of a team that stops to ask a person for it.
+#[tokio::test]
+async fn a_team_that_cannot_do_what_the_run_needs_gets_no_task_and_the_run_says_the_fix() {
+    let needing = |scene: &Scene, kind: &str, network: bool| {
+        let mut spec = spec(scene, "attempt-1", 1);
+        let request = &mut spec.work.request;
+        request.permission_policy.network = network;
+        request
+            .resolved_agent_profile
+            .additional
+            .insert("kind".into(), json!(kind));
+        spec
+    };
+    let refused = |outcome: Result<_, HarnessError>| match outcome {
+        Err(HarnessError::Rejected { reason }) => reason,
+        Err(other) => panic!("refused for another reason: {other:?}"),
+        Ok(_) => panic!("the run started"),
+    };
+
+    // The captured team: network none, no member with `fetch`, none that writes `tack_proposals`.
+    let first = scene();
+    let fake = pods_fake().await;
+    let web = refused(
+        adapter(&fake, &first)
+            .start(&needing(&first, "researcher", true))
+            .await,
+    );
+    assert!(
+        web.contains(&format!("The team {POD} cannot reach the web"))
+            && web.contains(&format!("docket pod set network open --widen --pod {POD}")),
+        "{web}"
+    );
+    let plan = refused(
+        adapter(&fake, &first)
+            .start(&needing(&first, "planner", false))
+            .await,
+    );
+    assert!(
+        plan.contains(&format!("The team {POD} cannot propose items"))
+            && !plan.contains("cannot reach the web"),
+        "{plan}"
+    );
+    assert!(
+        fake.requests_to("POST", "/tasks").is_empty(),
+        "no task is posted"
+    );
+
+    // Each need met the way docket meets it: an open network, a member with `fetch`, a set the
+    // members write. A Researcher on a team that cannot propose runs, told nothing of proposals.
+    let meets: [fn(&FakeDocket); 3] = [
+        |fake| fake.set_network(POD, json!({"mode": "open", "scope": "pod-grant"})),
+        |fake| fake.give_fetch(POD),
+        |fake| fake.set_network(POD, json!({"mode": "none", "enforced": false})),
+    ];
+    for meet in meets {
+        let (scene, fake) = (scene(), pods_fake().await);
+        meet(&fake);
+        adapter(&fake, &scene)
+            .start(&needing(&scene, "researcher", true))
+            .await
+            .expect("a team that reaches the web takes the task");
+        let posted = fake.requests_to("POST", "/tasks");
+        assert_eq!(posted.len(), 1);
+        assert!(
+            !posted[0].body["description"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("rec__tack_proposals__add"),
+            "a Researcher is not sent after a tool its team lacks"
+        );
+    }
+    let (scene, fake) = (scene(), pods_fake().await);
+    fake.add_record_set_scoped(POD, "tack_proposals", "Items", &["ref", "title"], "task");
+    adapter(&fake, &scene)
+        .start(&needing(&scene, "planner", false))
+        .await
+        .expect("a team whose members propose takes a Planner's task");
+}
+
 /// A slow docket answering for one team holds up that team's run and no other: the fast team's
 /// run starts while the slow team's `POST /pods` is still unanswered.
 #[tokio::test]

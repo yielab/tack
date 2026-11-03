@@ -6545,6 +6545,12 @@ export interface components {
             can_propose?: boolean | null;
             /** @description The model the member runs on. Absent means the harness did not say. */
             model?: string | null;
+            /**
+             * @description Whether the member can read web pages through a tool that reaches the web whatever the
+             *     team's network (`false`: it has none). Absent means the harness did not say, which is not
+             *     the same as `false`; no field may carry a harness's own key name.
+             */
+            reads_web?: boolean | null;
             /** @description What the member does, in the harness's own word for it, shown as data. */
             role: string;
             /**
@@ -6554,6 +6560,13 @@ export interface components {
              */
             writes_project?: boolean | null;
         };
+        /**
+         * @description A need of a profile that the team it names says it cannot meet. A run that has one ends before
+         *     the team gets the task, because the team would stop and ask a person for what only its own
+         *     setup can give.
+         * @enum {string}
+         */
+        TeamMisfit: "no_web" | "no_proposals";
         /**
          * @description How far a team's agents can reach over the network.
          * @enum {string}
@@ -6567,6 +6580,11 @@ export interface components {
         /** @description A profile that names a team. */
         TeamProfile: {
             id: string;
+            /**
+             * @description What the profile needs that the team says it cannot do; a run of it ends before the team
+             *     gets the task. Empty when the team meets every need, or did not say enough to tell.
+             */
+            misfits?: components["schemas"]["TeamMisfit"][];
             name: string;
         };
         /** @description The work a team holds now. */

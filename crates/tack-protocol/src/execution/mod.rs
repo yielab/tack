@@ -18,8 +18,8 @@ pub use capabilities::{
     CapabilityLimits, CapabilitySupport, CapabilityValue, Concurrency, DocsLinks,
     EmbeddedCapabilitySnapshot, FeatureCapabilities, HarnessCapability, ModelListSource,
     ModelsReport, RunnerCapabilities, SignInReport, SignInState, TeamDecides, TeamMember,
-    TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck,
-    TeamStepKind, TeamViolation, WorksIn,
+    TeamMisfit, TeamNeeds, TeamNetwork, TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep,
+    TeamStepCheck, TeamStepKind, TeamViolation, WorksIn, team_misfits,
 };
 pub use lifecycle::{
     LifecycleError, TransitionActor, lease_held, sources, terminal, validate_transition,

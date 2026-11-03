@@ -3,6 +3,7 @@ import { Badge, Button } from '../../shared/ui';
 import {
   agentName,
   memberReachText,
+  misfitText,
   networkText,
   pausedText,
   plainName,
@@ -331,6 +332,14 @@ const TeamCard: Component<TeamCardProps> = (props) => {
               )}
             </For>
           </ul>
+          <For each={entry().profiles.flatMap((p) => (p.misfits ?? []).map((misfit) => ({ name: p.name, misfit })))}>
+            {(line) => (
+              <p data-testid="team-misfit" class="w-full text-caption" style={{ color: 'var(--color-text-secondary)', 'overflow-wrap': 'anywhere' }}>
+                <strong style={{ color: 'var(--color-text-primary)' }}>{line.name} is refused here:</strong> it{' '}
+                {misfitText(entry().name, line.misfit)}
+              </p>
+            )}
+          </For>
         </Show>
         <Show when={entry().reported && entry().harness && entry().profiles.length === 0}>
           <Button type="button" size="sm" variant="secondary" loading={props.busy} disabled={props.anyBusy} onClick={props.onMakeProfile}>

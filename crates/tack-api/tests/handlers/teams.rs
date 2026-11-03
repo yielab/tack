@@ -99,7 +99,7 @@ async fn teams_join_two_runners_and_a_name_only_a_profile_uses() {
     );
     assert_eq!(
         writers["profiles"],
-        json!([{"id": "p1", "name": "Writer"}]),
+        json!([{"id": "p1", "name": "Writer", "misfits": []}]),
         "{got}"
     );
 
@@ -115,7 +115,76 @@ async fn teams_join_two_runners_and_a_name_only_a_profile_uses() {
     assert_eq!(ghosts["report"], Value::Null, "{got}");
     assert_eq!(
         ghosts["profiles"],
-        json!([{"id": "p2", "name": "Ghost"}]),
+        json!([{"id": "p2", "name": "Ghost", "misfits": []}]),
+        "{got}"
+    );
+}
+
+/// A profile whose team says it cannot do what the profile needs is listed with each misfit, so the
+/// Teams page says it before a run is refused for it.
+#[tokio::test]
+async fn a_profile_lists_what_its_team_says_it_cannot_do() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    let repo = &b.state.repo;
+    let member = |can_propose: bool, reads_web: bool| json!({"role": "researcher", "can_propose": can_propose, "reads_web": reads_web});
+    seed::agent_runner_reporting(
+        repo,
+        "ru1",
+        &snapshot(json!([harness(
+            "docket",
+            "2026-08-06T11:00:00Z",
+            Some(json!([
+                {"name": "closed", "profile": "attended", "violations": [], "network": "none",
+                 "members": [member(false, false), member(false, false)]},
+                {"name": "fetches", "profile": "attended", "violations": [], "network": "none",
+                 "members": [member(true, false), member(false, true)]}
+            ]))
+        )])),
+    )
+    .await;
+    seed::agent_profile_of_kind_for_team(repo, "p1", "Closed planner", "closed", "planner", true)
+        .await;
+    seed::agent_profile_of_kind_for_team(repo, "p2", "Offline", "closed", "researcher", false)
+        .await;
+    seed::agent_profile_of_kind_for_team(repo, "p3", "Fetching", "fetches", "planner", true).await;
+
+    let (_, got) = common::send(
+        &b.app,
+        "GET",
+        "/api/teams",
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    let misfits = |team: &str| -> Vec<(String, Value)> {
+        got["teams"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["name"] == team)
+            .unwrap()["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["name"].as_str().unwrap().to_owned(), p["misfits"].clone()))
+            .collect()
+    };
+    assert_eq!(
+        misfits("closed"),
+        [
+            (
+                "Closed planner".to_owned(),
+                json!(["no_web", "no_proposals"])
+            ),
+            ("Offline".to_owned(), json!([])),
+        ],
+        "{got}"
+    );
+    assert_eq!(
+        misfits("fetches"),
+        [("Fetching".to_owned(), json!([]))],
         "{got}"
     );
 }

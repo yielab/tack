@@ -164,10 +164,23 @@ fn plan_channel(kind: &str) -> Option<&'static str> {
 /// parent, depends_on, acceptance), in docket's own wording, and writes no file.
 const DOCKET_PROPOSALS: &str = "Propose items by calling rec__tack_proposals__add once per item, parent before its children. ref is a short unique name in this task; parent and depends_on name earlier refs; acceptance is one sentence per line; title is required. If the tool returns an error, fix the call and repeat it. Do not write a tack-plan.json file.";
 
+/// What a docket Researcher is told: the same channel, used only if it proposes, as a local
+/// Researcher is told of its file.
+const DOCKET_RESEARCH_PROPOSALS: &str = "If you propose work, propose each item by calling rec__tack_proposals__add once per item, parent before its children. ref is a short unique name in this task; parent and depends_on name earlier refs; acceptance is one sentence per line; title is required. If the tool returns an error, fix the call and repeat it. Do not write a tack-plan.json file.";
+
 /// The sentence a docket task carries for how a Planner or Researcher proposes items, `None` for
-/// any other profile.
-pub(crate) fn docket_plan_channel(request: &ExecutionRequestSnapshot) -> Option<&'static str> {
-    matches!(profile_kind(request), "planner" | "researcher").then_some(DOCKET_PROPOSALS)
+/// any other profile. A Researcher whose team has no member that can propose is told nothing,
+/// so it is not sent after a tool it does not hold; a Planner's team that cannot never gets the
+/// task.
+pub(crate) fn docket_plan_channel(
+    request: &ExecutionRequestSnapshot,
+    team_can_propose: bool,
+) -> Option<&'static str> {
+    match profile_kind(request) {
+        "planner" => Some(DOCKET_PROPOSALS),
+        "researcher" if team_can_propose => Some(DOCKET_RESEARCH_PROPOSALS),
+        _ => None,
+    }
 }
 
 /// The prompt a local agent (Claude Code, Codex, opencode) is given: the composed instructions,
