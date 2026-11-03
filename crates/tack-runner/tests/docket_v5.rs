@@ -2938,6 +2938,415 @@ async fn a_budget_hops_verdict_is_never_read_and_it_reports_instead() {
     );
 }
 
+/// Decision 5's table ("Continue or Start over" in `docs/plans/phase-87.md`): what `next.continue`
+/// on a budget stop says, and when it says nothing at all.
+#[tokio::test]
+async fn a_budget_stops_next_continue_follows_decision_fives_table() {
+    // Bound rounds/toolCalls/time, treeChanged true, both features: possible.
+    {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            status: "failed".to_owned(),
+            failure_kind: Some("budget".to_owned()),
+            reason: "step budget spent".to_owned(),
+            after: vec![(
+                "hop_finished".into(),
+                hop_budget(
+                    "implementer",
+                    "local/local-model",
+                    0,
+                    budget("rounds", 20, 20, "step", true),
+                    "",
+                ),
+            )],
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+        assert_eq!(
+            outcome.terminal_reason["next"]["continue"],
+            json!({"possible": true})
+        );
+    }
+    // Bound tokens, treeChanged true: never possible, whatever the feature.
+    {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            status: "failed".to_owned(),
+            failure_kind: Some("budget".to_owned()),
+            reason: "task budget spent".to_owned(),
+            after: vec![(
+                "hop_finished".into(),
+                hop_budget(
+                    "implementer",
+                    "local/local-model",
+                    0,
+                    budget("tokens", 200_000, 200_000, "task", true),
+                    "",
+                ),
+            )],
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+        assert_eq!(
+            outcome.terminal_reason["next"]["continue"],
+            json!({"possible": false,
+                   "why": "The task's token limit is spent, and continuing cannot raise it."})
+        );
+    }
+    // treeChanged false (any role but the Implementer): never possible, the step changed nothing.
+    {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            status: "failed".to_owned(),
+            failure_kind: Some("budget".to_owned()),
+            reason: "step budget spent".to_owned(),
+            after: vec![(
+                "hop_finished".into(),
+                hop_budget(
+                    "reviewer",
+                    "local/local-model",
+                    0,
+                    budget("toolCalls", 10, 10, "role", false),
+                    "",
+                ),
+            )],
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+        assert_eq!(
+            outcome.terminal_reason["next"]["continue"],
+            json!({"possible": false,
+                   "why": "The step changed nothing; the task may be unclear. Reword it before running again."})
+        );
+    }
+    // Without budgetOutcome: Tack cannot tell a budget stop from a confused model.
+    {
+        let fake = pods_fake().await;
+        fake.without_budget_outcome();
+        fake.script(Script {
+            status: "failed".to_owned(),
+            failure_kind: Some("budget".to_owned()),
+            reason: "step budget spent".to_owned(),
+            after: vec![(
+                "hop_finished".into(),
+                hop_budget(
+                    "implementer",
+                    "local/local-model",
+                    0,
+                    budget("rounds", 20, 20, "step", true),
+                    "",
+                ),
+            )],
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+        assert_eq!(
+            outcome.terminal_reason["next"]["continue"],
+            json!({"possible": false,
+                   "why": "This team's docket cannot continue a step. Update docket."})
+        );
+    }
+    // budgetOutcome is on but retryContinues is not: the work is there, but docket cannot
+    // continue the step over its own route.
+    {
+        let fake = pods_fake().await;
+        fake.without_retry_continues();
+        fake.script(Script {
+            status: "failed".to_owned(),
+            failure_kind: Some("budget".to_owned()),
+            reason: "step budget spent".to_owned(),
+            after: vec![(
+                "hop_finished".into(),
+                hop_budget(
+                    "implementer",
+                    "local/local-model",
+                    0,
+                    budget("rounds", 20, 20, "step", true),
+                    "",
+                ),
+            )],
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+        assert_eq!(
+            outcome.terminal_reason["next"]["continue"],
+            json!({"possible": false,
+                   "why": "This team's docket cannot continue a step. Update docket."})
+        );
+    }
+    // Any other failure: the key is not offered at all, not even as `false`.
+    {
+        let fake = pods_fake().await;
+        fake.script(Script {
+            status: "failed".to_owned(),
+            reason: "the hop failed".to_owned(),
+            ..Script::default()
+        });
+        let scene = scene();
+        let (outcome, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+        assert!(outcome.terminal_reason.get("next").is_none());
+    }
+}
+
+/// The metadata key a continuing request carries: `pod/task`, the same shape `register` keys a
+/// live run by.
+fn continue_task_metadata(pod: &str, task: &str, used: (u64, u64)) -> Value {
+    json!({
+        "continue_task": format!("{pod}/{task}"),
+        "continue_baseline_usage": {"input": used.0, "output": used.1},
+    })
+}
+
+/// Decision 6, Phase 87: a continuing request follows the same docket task with exactly one
+/// `POST .../retry` — no new task is ever posted for it — and counts only the hops the retry
+/// itself added, never what the first try had already spent.
+#[tokio::test]
+async fn continuing_a_budget_stop_sends_one_retry_follows_the_task_and_counts_only_new_hops() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        commit: Some(("src/retry.rs".into(), "pub fn retry() {}\n".into())),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("rounds", 20, 20, "step", true),
+                "",
+            ),
+        )],
+        usage: json!({"input": 1000, "output": 200, "byModel": {}}),
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let (first, _) = run_to_end(&adapter, &spec(&scene, "attempt-1", 1)).await;
+    assert_eq!(first.terminal_reason["code"], json!("step_budget"));
+    assert_eq!(
+        first.terminal_reason["next"]["continue"],
+        json!({"possible": true})
+    );
+    let task = first.terminal_reason["task"]
+        .as_str()
+        .expect("task")
+        .to_owned();
+
+    fake.continue_task(Script {
+        status: "done".to_owned(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_finished(
+                "implementer",
+                "local/local-model",
+                1,
+                json!("the step finished"),
+            ),
+        )],
+        // The task's own usage is cumulative: the first try's 1000/200 plus the retry's own.
+        usage: json!({"input": 1500, "output": 300, "byModel": {}}),
+        ..Script::default()
+    });
+    let mut continuing = spec(&scene, "attempt-2", 1);
+    continuing.work.request.metadata = continue_task_metadata(POD, &task, (1000, 200));
+    let (second, _) = run_to_end(&adapter, &continuing).await;
+
+    assert_eq!(second.terminal_state, AttemptState::Succeeded);
+    assert_eq!(second.terminal_reason["task"], json!(task), "same task");
+    assert_eq!(second.usage.tokens_in.value, Some(500));
+    assert_eq!(second.usage.tokens_out.value, Some(100));
+
+    let new_tasks = fake.requests_to("POST", &format!("/tasks/{POD}"));
+    assert_eq!(
+        new_tasks
+            .iter()
+            .filter(|request| request.path == format!("/tasks/{POD}"))
+            .count(),
+        1,
+        "exactly the first attempt's own task, never a second one"
+    );
+    let retries: Vec<_> = fake
+        .requests()
+        .into_iter()
+        .filter(|request| request.method == "POST" && request.path.ends_with("/retry"))
+        .collect();
+    assert_eq!(retries.len(), 1, "{retries:?}");
+    assert_eq!(retries[0].path, format!("/tasks/{POD}/{task}/retry"));
+}
+
+/// Without `retryContinues` or `budgetOutcome`, a request that names `continue_task` is refused
+/// before docket is ever asked to retry anything.
+#[tokio::test]
+async fn continuing_without_the_features_is_refused_and_sends_no_retry() {
+    for without in ["retryContinues", "budgetOutcome"] {
+        let fake = pods_fake().await;
+        match without {
+            "retryContinues" => fake.without_retry_continues(),
+            _ => fake.without_budget_outcome(),
+        }
+        let scene = scene();
+        let adapter = adapter(&fake, &scene);
+        let mut continuing = spec(&scene, "attempt-1", 1);
+        continuing.work.request.metadata =
+            continue_task_metadata(POD, "task-does-not-matter", (0, 0));
+        let refused = adapter.start(&continuing).await;
+        assert!(
+            matches!(&refused, Err(HarnessError::Rejected { reason }) if reason.contains("Update docket")),
+            "{without}: {refused:?}"
+        );
+        assert!(
+            fake.requests_to("POST", "/tasks").is_empty(),
+            "{without}: {:?}",
+            fake.requests()
+        );
+    }
+}
+
+/// A `409` from `POST .../retry` means the retry was already sent — by this same call landing
+/// twice, or by another attempt of the request — and the run follows the task exactly as it
+/// would have otherwise, never sending a second retry nor failing the run.
+#[tokio::test]
+async fn a_409_from_retry_is_followed_not_resent_or_failed() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("rounds", 20, 20, "step", true),
+                "",
+            ),
+        )],
+        usage: json!({"input": 1000, "output": 200, "byModel": {}}),
+        ..Script::default()
+    });
+    let scene = scene();
+    let adapter = adapter(&fake, &scene);
+    let (first, _) = run_to_end(&adapter, &spec(&scene, "attempt-1", 1)).await;
+    let task = first.terminal_reason["task"]
+        .as_str()
+        .expect("task")
+        .to_owned();
+
+    // The task never settles by itself: a running retry still answers `409` to a second one.
+    fake.continue_task(Script {
+        gate: Gate::Hold,
+        ..Script::default()
+    });
+    let mut first_continuation = spec(&scene, "attempt-2", 1);
+    first_continuation.work.request.metadata = continue_task_metadata(POD, &task, (1000, 200));
+    adapter
+        .start(&first_continuation)
+        .await
+        .expect("the first continuation starts");
+
+    let mut second_continuation = spec(&scene, "attempt-3", 1);
+    second_continuation.work.request.metadata = continue_task_metadata(POD, &task, (1000, 200));
+    adapter
+        .start(&second_continuation)
+        .await
+        .expect("a 409 still follows the task rather than failing");
+
+    let retries: Vec<_> = fake
+        .requests()
+        .into_iter()
+        .filter(|request| request.method == "POST" && request.path.ends_with("/retry"))
+        .collect();
+    assert_eq!(
+        retries.len(),
+        2,
+        "one retry per attempt, never resent: {retries:?}"
+    );
+}
+
+/// A runner restart during a continuation follows the same task: `resume` never calls `/retry`
+/// again, and the baseline that travelled in the request's own metadata still counts only the new
+/// hops once the retried step finishes.
+#[tokio::test]
+async fn a_restart_during_a_continuation_follows_the_task_without_a_second_retry() {
+    let fake = pods_fake().await;
+    fake.script(Script {
+        status: "failed".to_owned(),
+        failure_kind: Some("budget".to_owned()),
+        reason: "step budget spent".to_owned(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_budget(
+                "implementer",
+                "local/local-model",
+                0,
+                budget("rounds", 20, 20, "step", true),
+                "",
+            ),
+        )],
+        usage: json!({"input": 1000, "output": 200, "byModel": {}}),
+        ..Script::default()
+    });
+    let scene = scene();
+    let (first, _) = run_to_end(&adapter(&fake, &scene), &spec(&scene, "attempt-1", 1)).await;
+    let task = first.terminal_reason["task"]
+        .as_str()
+        .expect("task")
+        .to_owned();
+
+    fake.continue_task(Script {
+        status: "done".to_owned(),
+        after: vec![(
+            "hop_finished".into(),
+            hop_finished(
+                "implementer",
+                "local/local-model",
+                1,
+                json!("the step finished"),
+            ),
+        )],
+        usage: json!({"input": 1500, "output": 300, "byModel": {}}),
+        ..Script::default()
+    });
+    let mut continuing = spec(&scene, "attempt-2", 1);
+    continuing.work.request.metadata = continue_task_metadata(POD, &task, (1000, 200));
+
+    // The runner goes away mid-retry and a fresh one picks the journal back up.
+    let before = adapter(&fake, &scene);
+    let handle = before.start(&continuing).await.expect("starts");
+    assert_eq!(
+        fake.requests_to("POST", &format!("/tasks/{POD}/{task}/retry"))
+            .len(),
+        1
+    );
+
+    let mut journal = tack_runner::client::AttemptJournal::prepared(
+        &continuing.work.lease,
+        continuing.workspace.journal(),
+    );
+    journal.process_id = Some(handle.process_id.clone());
+    let after = adapter(&fake, &scene);
+    let resumed = after.resume(&continuing, &journal).await.expect("resumes");
+    let outcome = after.wait(&resumed).await.expect("waits");
+
+    assert_eq!(outcome.terminal_state, AttemptState::Succeeded);
+    assert_eq!(outcome.usage.tokens_in.value, Some(500));
+    assert_eq!(outcome.usage.tokens_out.value, Some(100));
+    assert_eq!(
+        fake.requests_to("POST", &format!("/tasks/{POD}/{task}/retry"))
+            .len(),
+        1,
+        "resume never sends a second retry"
+    );
+}
+
 #[tokio::test]
 async fn a_failed_install_fails_the_attempt_with_dockets_reason_and_no_work() {
     let fake = pods_fake().await;
@@ -4710,7 +5119,7 @@ async fn a_pod_added_after_start_is_in_the_next_refresh_and_an_unchanged_report_
 
 /// Every route `src/harness/docket/client.rs` sends, as its provenance files
 /// name it.
-const CLIENT_ROUTES: [&str; 16] = [
+const CLIENT_ROUTES: [&str; 17] = [
     "GET /status.json",
     "GET /health",
     "GET /pods",
@@ -4722,6 +5131,7 @@ const CLIENT_ROUTES: [&str; 16] = [
     "GET /tasks/<pod>",
     "GET /tasks/<pod>/<id>",
     "POST /tasks/<pod>/<id>/cancel",
+    "POST /tasks/<pod>/<id>/retry",
     "GET /tasks/<pod>/<id>/diff",
     "GET /traces/<pod>",
     "GET /escalations",
@@ -4733,8 +5143,9 @@ const CLIENT_ROUTES: [&str; 16] = [
 const NOT_IN_CLIENT: [&str; 0] = [];
 
 /// Routes with no capture, only an answer built from the spec: the capture script queues no task
-/// that stays running, and `current` and `updatedSince` need one.
-const CONSTRUCTED_ONLY: [&str; 1] = ["GET /tasks/<pod>"];
+/// that stays running, and `current` and `updatedSince` need one; `retry` is not yet captured
+/// against a live docket (Card L, `docs/plans/phase-87.md`).
+const CONSTRUCTED_ONLY: [&str; 2] = ["GET /tasks/<pod>", "POST /tasks/<pod>/<id>/retry"];
 
 #[test]
 fn every_route_the_client_sends_has_a_captured_file() {
@@ -6168,12 +6579,13 @@ type FeatureSwitch = fn(&FakeDocket);
 
 /// The features docket added after `taskCurrent` and `taskCursor`, in the order the fake lists
 /// them, each with the switch that makes the fake a docket before it.
-const LATER_FEATURES: [(&str, FeatureSwitch); 5] = [
+const LATER_FEATURES: [(&str, FeatureSwitch); 6] = [
     ("failureKinds", FakeDocket::without_failure_kinds),
     ("settledCursor", FakeDocket::without_settled_cursor),
     ("hopTimes", FakeDocket::without_hop_times),
     ("podPause", FakeDocket::without_pod_pause),
     ("budgetOutcome", FakeDocket::without_budget_outcome),
+    ("retryContinues", FakeDocket::without_retry_continues),
 ];
 
 /// Each later feature is dropped from both lists by its own switch and by no other.

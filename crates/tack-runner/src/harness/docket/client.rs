@@ -236,6 +236,15 @@ impl Client {
             .await
     }
 
+    /// `POST /tasks/<pod>/<id>/retry`, no body: re-runs the step the task stopped at (its own
+    /// budget exhausted, `retryContinues`) and continues the same session, rather than settling
+    /// the task as it stood. A `409` means the retry had already been sent; the caller follows
+    /// the task either way.
+    pub async fn retry_task(&self, pod: &str, id: &str) -> Result<Reply, String> {
+        self.send(Method::POST, &["tasks", pod, id, "retry"], &[], None)
+            .await
+    }
+
     /// `GET /tasks/<pod>/<id>/diff`.
     pub async fn task_diff(&self, pod: &str, id: &str) -> Result<Reply, String> {
         self.send(Method::GET, &["tasks", pod, id, "diff"], &[], None)

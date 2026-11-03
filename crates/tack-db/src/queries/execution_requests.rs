@@ -162,6 +162,62 @@ pub async fn rework_source_of_request(
     .await?)
 }
 
+/// What a run's `continues` reads from the request it names (Phase 87, decision 6): the item it
+/// belongs to (a continuation is always posted on the same item — nothing a caller sends chooses
+/// it), the docket team and task its own newest attempt left stopped at
+/// (`actual_execution.additional.team`, `terminal_reason.task`), whether that attempt's own ending
+/// offered Continue and why not when it did not (`terminal_reason.next.continue`, decision 5's
+/// table), the tokens that attempt's own usage counted when the retry is sent, and the token limit
+/// the source request itself ran with.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct ContinueSourceRow {
+    pub item_id: String,
+    pub idempotency_scope: String,
+    /// `None` when the newest attempt named no docket team (an agent that is not docket, or one
+    /// that never got as far as naming one).
+    pub pod: Option<String>,
+    /// `None` when the newest attempt named no docket task.
+    pub task: Option<String>,
+    /// `1`/`0`/`NULL` as `json_extract` reads a JSON boolean; `Some(1)` is the only "yes".
+    pub possible: Option<i64>,
+    pub why: Option<String>,
+    /// `None` when the attempt reported no counted tokens, which is not the same as zero.
+    pub tokens_in: Option<i64>,
+    pub tokens_out: Option<i64>,
+    /// `None` when the source request carries no token limit of its own.
+    pub limit_tokens: Option<i64>,
+}
+
+/// The facts `continue_run` resolves a continuation from, read from the request's newest attempt;
+/// `None` when no request has this id.
+pub async fn continue_source_of_request(
+    repo: &Repository,
+    request_id: &str,
+) -> Result<Option<ContinueSourceRow>, StoreError> {
+    Ok(sqlx::query_as(
+        "SELECT r.item_id AS item_id,
+                r.idempotency_scope AS idempotency_scope,
+                json_extract(r.request_snapshot, '$.budgets.tokens') AS limit_tokens,
+                (SELECT json_extract(a.actual_execution, '$.additional.team') FROM execution_attempts a
+                  WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS pod,
+                (SELECT json_extract(a.terminal_reason, '$.task') FROM execution_attempts a
+                  WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS task,
+                (SELECT json_extract(a.terminal_reason, '$.next.continue.possible') FROM execution_attempts a
+                  WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS possible,
+                (SELECT json_extract(a.terminal_reason, '$.next.continue.why') FROM execution_attempts a
+                  WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS why,
+                (SELECT json_extract(a.usage, '$.tokens_in.value') FROM execution_attempts a
+                  WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS tokens_in,
+                (SELECT json_extract(a.usage, '$.tokens_out.value') FROM execution_attempts a
+                  WHERE a.request_id = r.id ORDER BY a.attempt_number DESC LIMIT 1) AS tokens_out
+           FROM execution_requests r
+          WHERE r.id = ?",
+    )
+    .bind(request_id)
+    .fetch_optional(repo.pool())
+    .await?)
+}
+
 /// What the limit of one request is read from: its stored snapshot, the harness that ran it
 /// (the newest attempt's, else the one requested) and its item's project.
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]

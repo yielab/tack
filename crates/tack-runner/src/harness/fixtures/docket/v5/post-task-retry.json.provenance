@@ -1,0 +1,6 @@
+constructed
+route: POST /tasks/<pod>/<id>/retry
+status: 200
+docket: docket's ADR 0038 and Phase 59 (P59-1, retryContinues); not yet captured against a running docket
+date: 2026-11-03
+note: the route takes no body (ADR 0038's own note: a retry cannot raise maxTokens). docket's shape for the answer is assumed from POST /tasks/<pod>'s own {"task": "<id>"} until Card L (docs/plans/phase-87.md) captures it for real against a live docket. A 409 means the retry was already sent; Tack follows the task either way and never sends a second one.
