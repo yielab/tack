@@ -548,7 +548,7 @@ describe('Settings panels', () => {
       const apply = btn(teams, "Apply the repository's teams");
       expect(apply.disabled).toBe(true);
       const why = teams.querySelector('#' + CSS.escape(apply.getAttribute('aria-describedby')!))!;
-      expect(why.textContent).toBe("Tack cannot run this on the team's computer from the board yet.");
+      expect(why.textContent).toBe('No computer reports docket. Install it on a computer that runs a runner.');
       // No command and no variable on the screen: a link to the Administrator Guide instead.
       expect(teams.textContent).not.toMatch(/docket (init|setup)|TACK_/);
     });

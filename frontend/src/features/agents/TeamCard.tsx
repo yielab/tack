@@ -562,8 +562,8 @@ const TeamCard: Component<TeamCardProps> = (props) => {
           <Show when={report()?.paused}>
             {(paused) => (
               <p data-testid="team-paused" class="text-caption" style={MUTED}>
-                <strong style={{ color: 'var(--color-text-primary)' }}>{pausedText(entry().name, paused()).headline}.</strong>{' '}
-                {pausedText(entry().name, paused()).resume}
+                <strong style={{ color: 'var(--color-text-primary)' }}>{pausedText(entry(), paused()).headline}.</strong>{' '}
+                {pausedText(entry(), paused()).resume}
               </p>
             )}
           </Show>

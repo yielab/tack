@@ -513,7 +513,7 @@ const Orchestration: Component = () => {
                 fallback={
                   <Show when={mapModel() && compareModel()}>
                     <div class="flex min-w-0 flex-col gap-4" data-testid="orchestration-map-mode">
-                      <MapView model={mapModel()!} projectId={projectId()} onSelect={showInFlow} />
+                      <MapView model={mapModel()!} projectId={projectId()} onSelect={showInFlow} onApplied={reload} />
                       <Compare model={compareModel()!} />
                     </div>
                   </Show>

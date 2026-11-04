@@ -7,6 +7,7 @@ import { toast } from '../../../../shared/ui/toast';
 import { HELP } from '../../../../shared/help/texts';
 import { BOOK } from '../../../../shared/help/routes';
 import type { Project, Role } from '../../../../shared/types';
+import { ShapeSelect, createTeamApply } from '../../../../shared/teamApply/teamApply';
 import { Block, Heading, Note, inputStyle } from './parts';
 
 interface Props {
@@ -27,7 +28,7 @@ interface Props {
 const Teams: Component<Props> = (props) => {
   const [fleetList, { refetch: refetchFleets }] = createResource(() => fleetsApi.list().then((r) => r.data.data ?? []));
   const fleets = () => (fleetList.error ? [] : fleetList());
-  const [teamList] = createResource(() => teamsApi.list());
+  const [teamList, { refetch: refetchTeams }] = createResource(() => teamsApi.list());
   /** The profiles under the team each names: teams an agent reports first, then names only profiles use. */
   const groups = () => {
     const named = props.profiles().filter((p) => teamOf(p));
@@ -45,6 +46,18 @@ const Teams: Component<Props> = (props) => {
     const line = props.settings()?.teams?.find((t) => t.name === team);
     return !line || line.profile === 'unknown' ? null : line.caps_at ? 'needs a person' : 'lights-out';
   };
+  /** The teams this project's roles work with that no computer reports: the ones the repository's folder can make. */
+  const missingTeams = () => {
+    const ids = [...props.roles().map((r) => r.agent_profile_id), props.project()?.default_profile_id];
+    const named = ids.map((id) => teamOf(props.profiles().find((p) => p.agent_profile_id === id)));
+    return teamChoices(teamList.error ? [] : (teamList() ?? []), named).notReported.filter((team) => named.includes(team));
+  };
+  const teams = createTeamApply({
+    projectId: () => props.project()?.id,
+    active: () => missingTeams().length > 0,
+    onApplied: () => void refetchTeams(),
+  });
+  const applyReason = () => teams.gate().reason ?? (missingTeams().length === 0 ? 'Every team the roles use is already reported by a computer.' : undefined);
   const profile = (id: string | null | undefined) => props.profiles().find((p) => p.agent_profile_id === id);
 
   /** "saas-content · lights-out · this computer" for the chosen profile; empty without one. */
@@ -147,8 +160,10 @@ const Teams: Component<Props> = (props) => {
           type="button"
           variant="secondary"
           size="sm"
-          disabled
-          reason="Tack cannot run this on the team's computer from the board yet."
+          loading={teams.making().length > 0}
+          disabled={!teams.gate().enabled || missingTeams().length === 0 || teams.making().length > 0}
+          reason={applyReason()}
+          onClick={() => void teams.apply(missingTeams().map((name) => ({ name, shape: teams.shapeOf(name) })))}
         >
           Apply the repository's teams
         </Button>
@@ -156,6 +171,19 @@ const Teams: Component<Props> = (props) => {
           How to set up a team there
         </a>
       </div>
+      <Show when={teams.gate().enabled && missingTeams().length > 0}>
+        <ul data-testid="missing-teams" aria-label="Teams the repository can make" class="flex flex-col gap-1">
+          <For each={missingTeams()}>
+            {(name) => (
+              <li class="flex flex-wrap items-center gap-3 text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                <span class="min-w-24 font-semibold">{name}</span>
+                <ShapeSelect name={name} teams={teams} />
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <teams.Host />
     </Block>
   );
 };

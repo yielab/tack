@@ -8,6 +8,7 @@ import Button from './Button';
 import CopyFix from './CopyFix';
 import Modal from './Modal';
 import { ProjectContext } from '../state/projectContext';
+import { CreateTeam, createTeamApply } from '../teamApply/teamApply';
 
 /** How many items the preview names before summing up the rest. */
 const PREVIEW_ITEMS = 8;
@@ -37,6 +38,12 @@ const ImportFromFile: Component<{ target: ImportTarget; onDone?: () => void; chi
   const [busy, setBusy] = createSignal(false);
   const [pending, setPending] = createSignal<PendingImport | null>(null);
   let input: HTMLInputElement | undefined;
+  // A team is made in a project, so a file that starts one has no place for it yet.
+  const teams = createTeamApply({
+    projectId: () => (props.target.kind === 'project' ? props.target.id : undefined),
+    active: () => (pending()?.preview?.missing ?? []).some((gap) => gap.kind === 'team'),
+    noProject: 'A team is made in a project: create the project from this file first.',
+  });
 
   const send = (job: PendingImport, dryRun: boolean) => {
     const target = props.target;
@@ -145,11 +152,17 @@ const ImportFromFile: Component<{ target: ImportTarget; onDone?: () => void; chi
                                 <span style={{ color: 'var(--color-text-tertiary)' }}> · {gap.shape}</span>
                               </Show>
                             </span>
-                            <CopyFix fix={gap.fix} what={gap.name} />
+                            <span class="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+                              <CopyFix fix={gap.fix} what={gap.name} />
+                              <Show when={gap.kind === 'team'}>
+                                <CreateTeam name={gap.name} shape={gap.shape} teams={teams} />
+                              </Show>
+                            </span>
                           </li>
                         )}
                       </For>
                     </ul>
+                    <teams.Host />
                   </div>
                 </Show>
                 <p>

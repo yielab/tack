@@ -1,6 +1,7 @@
 import { type Component, For, Show, createSignal } from 'solid-js';
 import { A, useNavigate } from '@solidjs/router';
 import { CopyFix } from '../../shared/ui';
+import { CreateTeam, createTeamApply } from '../../shared/teamApply/teamApply';
 import {
   NODE_H,
   NODE_W,
@@ -45,9 +46,14 @@ function nodeWords(node: MapNode): string {
  * where it is; a box or a column title opens Flow narrowed to it. Each box is a stop of the keyboard
  * (arrow keys move between them), and the same routes are written out under "Routes as text".
  */
-const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: string) => void }> = (props) => {
+const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: string) => void; onApplied?: () => void }> = (props) => {
   const go = useNavigate();
   const model = () => props.model;
+  const teams = createTeamApply({
+    projectId: () => props.projectId,
+    active: () => model().missing.some((gap) => gap.kind === 'team'),
+    onApplied: () => props.onApplied?.(),
+  });
   let svg: SVGSVGElement | undefined;
   const firstStop = () => columnHeaderId('roles');
   const [stop, setStop] = createSignal<string>(firstStop());
@@ -264,13 +270,19 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                     <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
                       {gap.kind === 'team' ? 'Team' : 'Agent'} {gap.name}
                     </span>
-                    <CopyFix fix={gap.fix} what={gap.name} />
+                    <span class="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1">
+                      <CopyFix fix={gap.fix} what={gap.name} />
+                      <Show when={gap.kind === 'team'}>
+                        <CreateTeam name={gap.name} teams={teams} />
+                      </Show>
+                    </span>
                   </li>
                 )}
               </For>
             </ul>
           </section>
         </Show>
+        <teams.Host />
 
         <details data-testid="map-routes" class="min-w-0">
           <summary class="cursor-pointer text-small font-bold" style={{ color: 'var(--color-text-primary)' }}>Routes as text</summary>

@@ -13,7 +13,7 @@ import {
 import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
-  isAnsweringRunner, silentRunnerLabel, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
+  isAnsweringRunner, runnerSummaryToCapabilities, silentRunnerLabel, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
   isDecisionsAttested, profileNetworkFor, profileToolsFor, silentRunnersText, LEVEL_NEEDS_DOCKET, webToolsLockedReason,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
@@ -39,15 +39,6 @@ const initialForm = () => ({
   verify: true, pushBranch: true,
 });
 export type RunForm = ReturnType<typeof initialForm>;
-
-/** Adapts one `GET /runners` row to the `RunnerCapabilities` shape the gate
- *  expects (protocol/runner version live in sibling columns there). `null` for
- *  a runner with no complete parsed snapshot — skipped, never faked. */
-function runnerSummaryToCapabilities(runner: RunnerSummary): RunnerCapabilities | null {
-  const snap = runner.capability_snapshot as Omit<RunnerCapabilities, 'protocol_version' | 'runner_version'> | null;
-  if (!snap || !Array.isArray(snap.harnesses) || !snap.concurrency || !snap.limits) return null;
-  return { ...snap, protocol_version: runner.protocol_version, runner_version: runner.runner_version ?? '' };
-}
 
 /** The ONE shared "Run with agent" modal — Board, item-detail and Sprint all
  *  mount it, so all three create the same payload. State and gates live here;
