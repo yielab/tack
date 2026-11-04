@@ -151,6 +151,10 @@ starts on too, for any agent but docket. A profile that says nothing else is off
 the switch itself keeps its own choice. A run with the switch off drops the web tools from the tools
 the profile names and keeps the rest; it is refused only when the web tools were the only ones named.
 opencode reaches the network on every run, so its switch is always on.
+A docket team's web is the team's own, not the profile's: the switch asks docket for the network but does
+not give it. A run with the switch off also takes docket's `fetch` tool away from the team, because the
+network restriction only cuts docket's jail and `fetch` runs outside it. What a team reads is on its sheet
+in Agents → Teams (**Web**), in docket's own words.
 
 ## MCP
 

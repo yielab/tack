@@ -112,6 +112,9 @@ pub(super) struct PodReport {
     /// What the team may spend and has (`podResume`), kept as it came and read on its own so a
     /// budget Tack cannot read costs the budget and never the team.
     pub budget: Option<Value>,
+    /// How the team reads the web (`webRead`), kept as it came and read on its own so a mode Tack
+    /// has no word for costs the sentence and never the team. Absent from a docket before it.
+    pub web_read: Option<Value>,
 }
 
 /// `GET /pods/<pod>/memory`: the entries, each kept as it came and read on its own so an entry
@@ -172,6 +175,16 @@ pub(super) struct PodMethod {
     #[serde(default)]
     pub missing_roles: Vec<String>,
     pub error: Option<String>,
+}
+
+/// `webRead` of a team's report: docket's own sentence for how the team reads the web.
+#[derive(Debug, Deserialize)]
+pub(super) struct PodWebRead {
+    pub mode: String,
+    #[serde(default)]
+    pub reason: String,
+    #[serde(default)]
+    pub fix: String,
 }
 
 /// One entry of `needs`.

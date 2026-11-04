@@ -619,6 +619,25 @@ describe('TeamsPanel sheet', () => {
     expect(c.querySelector('[data-testid="no-team-claude-code"]')).toBeNull();
   });
 
+  it('says how the team reads the web, and the fix when it reads none', async () => {
+    const closed = { mode: 'closed', reason: 'a folder team reads no web without the jail', fix: 'docket setup sandbox on' };
+    mockApi([{ ...FULL_TEAM, report: { ...FULL_TEAM.report, web_read: closed } }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const web = card(c, 'saas-code').querySelector('[data-testid="team-web"]')!;
+    expect(web.textContent).toContain('None: a folder team reads no web without the jail');
+    expect(web.textContent).toContain('To fix: docket setup sandbox on');
+    const open = { mode: 'open', reason: 'a folder team under the jail reads any public host', fix: '' };
+    mockApi([{ ...FULL_TEAM, report: { ...FULL_TEAM.report, web_read: open } }]);
+    const d = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const read = card(d, 'saas-code').querySelector('[data-testid="team-web"]')!;
+    expect(read.textContent).toContain('Any public host: a folder team under the jail reads any public host');
+    expect(read.textContent).not.toContain('To fix');
+  });
+
   it('says a need that only degrades the work is not a blocker', async () => {
     const needs = [{ kind: 'service', name: 'PDFs are read', fix: 'docket setup sandbox on', satisfied: false, blocking: false }];
     mockApi([{ ...SOLO, report: { ...SOLO.report, needs } }]);

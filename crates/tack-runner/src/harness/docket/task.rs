@@ -8,6 +8,9 @@ use tack_protocol::prepare::PrepareSetting;
 /// What docket's `gate` gets when a criterion does not say how long.
 const GATE_TIMEOUT_SECONDS: u64 = 600;
 
+/// docket's tool that reads a page of the web, which runs outside the jail.
+const FETCH_TOOL: &str = "fetch";
+
 fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
@@ -319,10 +322,15 @@ pub(super) fn body(
         body.insert("autonomy".into(), json!(level.as_str()));
     }
     let mut restrictions = Map::new();
-    let denied: Vec<&str> = docket
+    let mut denied: Vec<&str> = docket
         .and_then(|docket| docket.get("denied_tools")?.as_array())
         .map(|tools| tools.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
+    // `network: none` only cuts the jail, and `fetch` runs outside it: a profile that turns the
+    // network off must also take `fetch` away, or the team keeps reading the web.
+    if !request.permission_policy.network && !denied.contains(&FETCH_TOOL) {
+        denied.push(FETCH_TOOL);
+    }
     if !denied.is_empty() {
         restrictions.insert("deniedTools".into(), json!(denied));
     }

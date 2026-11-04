@@ -373,6 +373,47 @@ fn each_need_the_team_says_is_unmet_is_one_misfit() {
 }
 
 #[test]
+fn what_the_harness_says_of_the_web_counts_before_the_network_and_the_members_do() {
+    let web = |mode| TeamWebRead {
+        mode,
+        reason: "why".to_owned(),
+        fix: String::new(),
+    };
+    let needs = TeamNeeds::of("researcher", true, None);
+    // No network and no member that reads: the old rule refuses the run.
+    let members = [TeamMember {
+        role: "lead".to_owned(),
+        model: None,
+        can_propose: None,
+        writes_project: None,
+        reads_web: Some(false),
+        web_hosts: None,
+    }];
+    let facts = |web_read| TeamFacts {
+        network: Some(TeamNetwork::Closed),
+        members: Some(&members),
+        web_read,
+        ..TeamFacts::default()
+    };
+    assert_eq!(team_misfits(facts(None), &needs), [TeamMisfit::NoWeb]);
+    // The harness's own answer wins, either way.
+    let (open, listed, closed) = (
+        web(TeamWebMode::Open),
+        web(TeamWebMode::Listed),
+        web(TeamWebMode::Closed),
+    );
+    assert!(team_misfits(facts(Some(&open)), &needs).is_empty());
+    assert!(team_misfits(facts(Some(&listed)), &needs).is_empty());
+    assert_eq!(
+        team_misfits(facts(Some(&closed)), &needs),
+        [TeamMisfit::NoWeb]
+    );
+    // A run that does not need the web is never refused for it.
+    let offline = TeamNeeds::of("researcher", false, None);
+    assert!(team_misfits(facts(Some(&closed)), &offline).is_empty());
+}
+
+#[test]
 fn only_a_blocking_need_refuses_and_one_that_does_not_say_blocks() {
     let degrading = TeamNeed {
         blocking: Some(false),

@@ -10,14 +10,14 @@ use tack_protocol::execution::{
     MemoryEvidence, ModelListSource, ModelsReport, SignInReport, SignInState, TeamBudget,
     TeamDecides, TeamDelivers, TeamMember, TeamMemory, TeamMethod, TeamNeed, TeamNetwork,
     TeamPause, TeamQueue, TeamRecordSet, TeamReport, TeamStep, TeamStepCheck, TeamStepKind,
-    TeamViolation, WorksIn,
+    TeamViolation, TeamWebMode, TeamWebRead, WorksIn,
 };
 
 use super::{
     client::Client,
     wire::{
         MemberReach, MemoryItem, MemoryList, PodBudget, PodList, PodMember, PodMethod, PodNeed,
-        PodNetwork, PodReport, PodRow, PodStep, RecordList, StatusAnswer,
+        PodNetwork, PodReport, PodRow, PodStep, PodWebRead, RecordList, StatusAnswer,
     },
 };
 
@@ -160,6 +160,26 @@ pub(super) fn member(member: PodMember) -> TeamMember {
             .and_then(|reach| reach.fetch_domains)
             .filter(|hosts| !hosts.is_empty()),
     }
+}
+
+/// How the team reads the web, in docket's own sentence (`webRead`). Absent from a docket that does
+/// not list the feature, and when the answer cannot be read: the team's report never fails for it.
+pub(super) fn web_read(report: &mut PodReport, listed: bool) -> Option<TeamWebRead> {
+    let raw = report.web_read.take().filter(|_| listed)?;
+    let read: PodWebRead = serde_json::from_value(raw)
+        .inspect_err(|why| tracing::warn!(%why, "docket's webRead could not be read"))
+        .ok()?;
+    let mode = match read.mode.as_str() {
+        "open" => TeamWebMode::Open,
+        "listed" => TeamWebMode::Listed,
+        "none" => TeamWebMode::Closed,
+        _ => return None,
+    };
+    Some(TeamWebRead {
+        mode,
+        reason: read.reason,
+        fix: read.fix,
+    })
 }
 
 /// How far the team reaches, in Tack's words. A `none` that docket says no jail enforces is open,
@@ -417,6 +437,7 @@ struct Listed {
     resume: bool,
     memory: bool,
     memory_decide: bool,
+    web_read: bool,
 }
 
 impl Listed {
@@ -427,6 +448,7 @@ impl Listed {
             resume: client.has_feature(super::POD_RESUME).await,
             memory: client.has_feature(super::MEMORY_STATUS).await,
             memory_decide: client.has_feature(super::MEMORY_DECIDE).await,
+            web_read: client.has_feature(super::WEB_READ).await,
         }
     }
 }
@@ -442,6 +464,7 @@ async fn team(client: &Client, row: &PodRow, listed: Listed) -> Result<TeamRepor
     let mut report: PodReport = reply.read()?;
     let contract = contract(&mut report, listed.contract);
     let budget = budget(&mut report, listed.resume);
+    let web_read = web_read(&mut report, listed.web_read);
     let memory = memory(client, name, listed).await;
     let works_in = works_in(row, &report);
     let (records, proposals_shared_across_tasks) = match record_sets(client, name).await {
@@ -488,6 +511,7 @@ async fn team(client: &Client, row: &PodRow, listed: Listed) -> Result<TeamRepor
         needs: contract.needs,
         budget,
         memory,
+        web_read,
     };
     team.decides = Some(if capped(&team) {
         TeamDecides::AsksAPerson

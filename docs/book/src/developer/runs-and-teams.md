@@ -100,6 +100,7 @@ docket 0.3.0-beta.1 lists 21 features, and the tree after it a 22nd (`memoryDeci
 | `networkEnforced` | `network.enforced` on a team and each member | reads the key |
 | `podWorkDir` | `workDir` on a folder team | reads the key |
 | `podFetch` | `fetchDomains` on a team and on each member that holds `fetch` | used in the sentence that says how to give a team the web; the members' hosts: reads the key |
+| `webRead` | `webRead {mode, reason, fix}` on a team and `blocking` on each need | used: the refusal quotes `reason` and `fix`; `TeamReport.web_read`; a need with `blocking: false` refuses nothing |
 | `capabilityMissing` | `capabilityMissing` on a hop and `failureKind: capability_missing` | reads the key |
 | `consultParts` | `part: {index, count}` on the escalations of a consult with several questions | reads the key |
 | `pipelineChecked` | a task naming a pipeline the team cannot staff is refused at claim | used, not probed: Tack refuses such a run before sending from the team's reported `methods[].missingRoles`, and docket's refusal, if it comes (`failureKind: pipeline`, no hop), ends the run with the code `pipeline` and docket's sentence, so it reads Not started |

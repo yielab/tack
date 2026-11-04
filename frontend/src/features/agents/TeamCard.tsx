@@ -12,6 +12,7 @@ import {
   misfitText,
   webText,
   networkText,
+  webReadText,
   pausedText,
   plainName,
   queueText,
@@ -469,6 +470,21 @@ const TeamCard: Component<TeamCardProps> = (props) => {
               <Rule id="network" label="Network" agent={agent()} value={report()?.network}>
                 {(network) => networkText(network)}
               </Rule>
+              {/* Said only by an agent that says it: an older docket adds no "Not reported" line. */}
+              <Show when={report()?.web_read}>
+                {(web) => (
+                  <Rule id="web" label="Web" agent={agent()} value={web()}>
+                    {(read) => (
+                      <>
+                        <span>{webReadText(read)}</span>
+                        <Show when={read.mode === 'closed' && read.fix}>
+                          <p class="text-caption" style={MUTED}>To fix: {read.fix}</p>
+                        </Show>
+                      </>
+                    )}
+                  </Rule>
+                )}
+              </Show>
             </Show>
             <Rule id="proposals" label="Proposes" agent={agent()} value={proposal()}>
               {(line) => (
