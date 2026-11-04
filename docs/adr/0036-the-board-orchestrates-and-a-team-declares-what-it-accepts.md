@@ -1,6 +1,6 @@
 # ADR 0036: the board orchestrates and a team declares what it accepts — one owner per concept, a method chosen per task, a limit at each level with its owner
 
-**Status: PROPOSED 2026-11-03.** To be executed by Phase 89 (`docs/plans/phase-89.md`). Builds on
+**Status: ACCEPTED 2026-11-04 and built.** Executed by Phase 89 (`docs/plans/phase-89.md`). Builds on
 ADR 0021 (every run goes to a team), ADR 0024 (limits in tokens, each naming who applies it), ADR 0030
 decision 5 (Tack configures no prompt, service or secret for a team), ADR 0032 (a team is shown as
 it is; a person always accepts a plan) and ADR 0034 (a manager works through the board). Amends

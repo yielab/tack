@@ -115,7 +115,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   `Inbox`, a reconcile from the store at start and on `Lagged`), `GET /api/notifications` + `/live` socket, sidebar bell,
   drawer, title count, desktop notifications and tray count, and a `Channel` trait whose first implementation is the webhook with
   retries. Phase 10's webhook is gone.
-- **In progress 2026-11-04 (cards A and C built):** Phase 89 (`docs/plans/phase-89.md`, ADR 0036) — the board orchestrates, a team
+- **Built 2026-11-04, in `develop` (live proof against docket pending):** Phase 89 (`docs/plans/phase-89.md`, ADR 0036) — the board orchestrates, a team
   declares what it accepts: one owner per concept; `TeamReport` gains a contract (`delivers`, `methods[]` with
   missing roles, `needs[]`) and the fit check grows from two facts to five; one router (`GET
   /api/projects/{id}/routing`) for every screen; a parent shows its children's progress and moves nothing;
