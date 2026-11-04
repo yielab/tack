@@ -313,7 +313,7 @@ impl Repository {
     }
 
     /// Return all incomplete items whose `due_date` falls in `[from, to)`.
-    /// Used by the background webhook task to fire `item.due_soon` events.
+    /// Used by the hourly due-soon pass to open its notifications.
     pub async fn list_items_due_soon(
         &self,
         from: chrono::DateTime<chrono::Utc>,
