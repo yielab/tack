@@ -15,6 +15,7 @@
 - [Command Palette & Search](user-guide/command-palette.md)
 - [Appearance](user-guide/appearance.md)
 - [Running Agents on Tasks](user-guide/running-agents.md)
+- [A Team](user-guide/teams.md)
 - [Reviewing a Run](user-guide/reviewing-runs.md)
 - [Automating a Project](user-guide/automation.md)
 - [Merging from Tack](user-guide/merging.md)
