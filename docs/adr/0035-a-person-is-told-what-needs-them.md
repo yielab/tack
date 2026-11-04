@@ -27,6 +27,12 @@ is one inbox, with no routing by user.
 | 4 | **The person reads it on the screen, live.** `GET /api/notifications` (open, or recent), `POST …/{id}/read`, `POST …/read-all`, and one WebSocket, `GET /api/notifications/live`, that says what opened or closed and how many are open. The web shows a count in the sidebar, an inbox drawer, a toast for a needs-you that arrives while the tab is open, the count in the tab's title, and — when the person turns it on — the browser's own notification while the tab is hidden. The desktop app sends the same through the system's notifications and shows the count on the tray. The live socket replaces the 3-second poll of the questions list | You hear the question the moment it is asked, on whatever Tack is open |
 | 5 | **A channel is how the inbox leaves the machine, and the webhook is the first.** `Channel { name, send(&Notification) -> Result<(), Undelivered> }` in `tack-app`. A delivery row per (notification, channel): tried when the notification opens, retried with a backoff of 30 s doubling to 6 hours, at most 8 times, then **failed** with its last error, shown in Settings. The webhook channel keeps Phase 10's transport and signature (`TACK_WEBHOOK_URL`, `TACK_WEBHOOK_SECRET`, `X-Tack-Signature`) and sends `notification.<kind>` with the notification's `id`, so a receiver deduplicates on it. **Phase 10's events are removed**: `item.created`, `item.updated`, `item.deleted`, `sprint.*` and `item.due_soon` are no longer sent, the handlers fire nothing, and `DueSoonSink` goes | A webhook receiver (ntfy, Slack, n8n) gets what needs you, at least once, signed; it no longer gets every edit |
 
+*(Amended 2026-11-04, Phase 91.)* Decision 1 gains one fact that is not on the bus: an entry a docket
+team waits to have approved for its memory (docket's `memoryStatus`) is **needs you**, keyed
+`memory:<team>:<id>`, opened and closed by the reconcile from the team's report, closed when the entry
+is no longer pending however it was decided. docket decides an entry only with its own command, so the
+notification gives that command until docket offers a route.
+
 **Why now.** Phases 85 to 87 made a run stop and wait on a person in more ways (a decision, a change
 set, a step's budget), and the audit of 2026-11-03 found that the person learns of none of them
 unless the tab is open and the right view is showing: the bus already emits `DecisionOpened`,

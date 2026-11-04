@@ -32,13 +32,31 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 Phases 73 to 90 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
 
-**Phase 91 — what docket offers, Tack uses or says why not** ([ADR 0037](https://github.com/yielab/tack/blob/develop/docs/adr/0037-what-docket-offers-tack-uses-or-says-why-not.md),
-opened 2026-11-04; plan in `docs/plans/phase-91.md`). docket 0.3.0-beta.1 lists 21 features and Tack used
-16. A thread on a docket team continues one task turn by turn instead of replaying; what a team waits to
-learn opens a notification and its sheet shows what it learnt, with docket's commands to decide it
-until docket offers a route; docket's check of a named method is the one check, read by Tack; the
-read-only token is not used, with the reason; a question in parts is proved against the fake; and Tack
-names docket's next version, 0.3.0-beta.1, instead of one that was never released. Four cards in two rounds.
+**Phase 91 — what docket offers, Tack uses or says why not** (2026-11-04, no plan file, no ADR: it
+amends ADR 0034's note on `conversation` and ADR 0035's decision 1). docket 0.3.0-beta.1 lists 21
+features and Tack used 16. Four cards, in two rounds (D, then A ∥ B ∥ C):
+
+- **A — a thread on a docket team continues.** When the team lists `conversation`, a thread's first turn
+  is one task sent with `conversation: {maxTurns}` (the thread's cap, at most 20); each later turn
+  answers that task's `turn` escalation with `reply` and the new message; closing the thread answers
+  `close`; the team's `converse` reads `continues`. A `conversation_needs_one_step` refusal sends that
+  turn as today's replay and the team reads `replays` with docket's reason. The fake answers turns as
+  docket does, and also a consult in two parts (the run waits until both are answered), which Tack
+  already shows but nothing proved.
+- **B — what a team waits to learn needs you.** When the team lists `memoryStatus`, the team's report
+  carries its memory (pending and accepted entries). A pending entry opens a **needs-you** notification
+  that closes when the entry is decided; the team's sheet shows what it learnt and what waits, with
+  docket's `docket pod memory approve` and `refuse` commands to copy and **Approve**/**Refuse** shown
+  disabled with that reason. docket is asked for a route to decide an entry, probed when it comes.
+- **C — docket's check of a named method is read as a refusal.** A task docket refuses at claim with
+  `failureKind: pipeline` (its `pipelineChecked`) reads **Not started** with docket's reason, as a
+  `capability_missing` refusal does; Tack's own refusal before sending reads only the team's reported
+  missing roles (ADR 0036, decision 3).
+- **D — Tack names docket 0.3.0-beta.1.** Every "docket 0.2.0-beta.6", a version that was never tagged,
+  becomes docket's declared next release, 0.3.0-beta.1, in the messages, the doctor and the guides.
+
+docket's read-only token (`readScope`) is not used: every call goes through the runner, which must hold
+the full token to start tasks, so a second token in the same process limits nothing.
 
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
 file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
