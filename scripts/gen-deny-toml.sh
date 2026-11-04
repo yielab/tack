@@ -118,7 +118,6 @@ ignore = [
   { id = "RUSTSEC-2025-0081", reason = "unic-char-property 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
   { id = "RUSTSEC-2025-0080", reason = "unic-common 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
-  { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version 0.9.0, pulled in by urlpattern 0.3.0 (pinned by tauri-utils 2.9.3); urlpattern 0.6.0 already dropped it for icu_properties. Reviewed 2026-09-07, next review 2027-03-07." },
 EOF
 zbus_ignores >> crates/tack-desktop/deny.toml
