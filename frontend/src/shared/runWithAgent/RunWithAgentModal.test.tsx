@@ -1334,6 +1334,33 @@ describe('the Run with agent dialog picks a team in one glance', () => {
     expect(icon('resume').title).toBe('Can pick a run back up after a restart · by task id');
   });
 
+  it('says why the team would refuse the run before Start and keeps Start disabled while it does', async () => {
+    const refused = { ...team('saas-code', { delivers: 'report' }), profiles: [{ id: 'p-2', name: 'Code team', misfits: ['no_repository'] }] };
+    await mountWithTeams([refused], { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')], project: { ...PROJECT, default_profile_id: 'p-2' } });
+    const footer = document.querySelector<HTMLElement>('[data-testid="run-footer"]')!;
+    const sentence = footer.querySelector('[data-testid="run-misfit"]')!;
+    expect(sentence.textContent).toContain("Not sent: Code team changes the project's repository, and saas-code hands back a report, not a branch");
+    const start = footer.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!;
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute('aria-describedby')).toBe(sentence.id);
+    // The sentence stands before Start in the footer.
+    expect(sentence.compareDocumentPosition(start) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('lets the run start when the team takes it', async () => {
+    const fits = { ...team('saas-code'), profiles: [{ id: 'p-2', name: 'Code team', misfits: [] }] };
+    await mountWithTeams([fits], { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')], project: { ...PROJECT, default_profile_id: 'p-2' } });
+    expect(document.querySelector('[data-testid="run-misfit"]')).toBeNull();
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="run-start"]')!.disabled).toBe(false);
+  });
+
+  it('does not hold a run back for the web when the run turns Web tools off', async () => {
+    const needsWeb = { ...team('saas-code'), profiles: [{ id: 'p-2', name: 'Code team', misfits: ['no_web'] }] };
+    await mountWithTeams([needsWeb], { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')], project: { ...PROJECT, default_profile_id: 'p-2' } });
+    expect(document.querySelector('[data-testid="run-dialog-network"]')!.textContent).toContain('Web tools off');
+    expect(document.querySelector('[data-testid="run-misfit"]')).toBeNull();
+  });
+
   it('collapses the teams no profile names into one disabled row that links to Agents', async () => {
     const teams = [team('a-team'), team('b-team'), team('c-team'), team('saas-code')];
     await mountWithTeams(teams, { runners: [DOCKET_RUNNER], fleets: [], agentProfiles: [teamProfile('p-2', 'Code team', 'saas-code')] });

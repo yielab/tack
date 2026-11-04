@@ -7,6 +7,7 @@ import {
   createExecutionRealtime,
   executionsApi,
   routingApi,
+  podsOnly,
   runnersApi,
   teamsApi,
   type AgentProfileSummary,
@@ -176,7 +177,8 @@ const Orchestration: Component = () => {
   const [ask, ConfirmHost] = createConfirm();
 
   const runs = loader(() => executionsApi.listByProject(projectId()).then((r) => (r.data.data ?? []) as ExecutionSummary[]));
-  const teams = loader<TeamEntry[]>(() => teamsApi.list());
+  // A local agent is a team of one on the Agents page; here it is a lane of its own, drawn from the routes.
+  const teams = loader<TeamEntry[]>(() => teamsApi.list().then(podsOnly));
   const profiles = loader<AgentProfileSummary[]>(() => agentProfilesApi.list().then((r) => r.data.data ?? []));
   const roles = loader(() => api.roles.list(projectId()));
   const routing = loader(() => routingApi.list(projectId()));

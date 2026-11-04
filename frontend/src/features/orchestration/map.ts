@@ -18,6 +18,7 @@ import {
   type TeamReport,
 } from '../../shared/execution/teams';
 import { spaced } from '../../shared/runWithAgent/runLimit';
+import { missingHarnessFix, missingTeamFix } from '../../shared/execution/missing';
 import { agentKindOf } from '../../shared/runWithAgent/ProfilePicker';
 import type { components } from '../../shared/api/schema.gen';
 import { agentLaneKey, mergeRung, teamLaneKey, type Flow, type FlowScope, type FlowToken, type RoleProfile, type Route } from './flow';
@@ -62,6 +63,8 @@ export interface MapNode {
   /** Why it is dashed, in a sentence. */
   reason: string | null;
   fix: MapFix | null;
+  /** Greyed: a team or an agent the board expects and no computer reports. */
+  missing: boolean;
   /** The team a member belongs to, so a member is read under its team; null for every other kind. */
   group: string | null;
   /** The profile the project uses when a task says nothing else. */
@@ -97,8 +100,19 @@ export interface MapColumnInfo {
   y: number;
 }
 
+/** A team or an agent the structure expects and no computer reports, with what ends the gap. */
+export interface MapMissing {
+  /** The box it greys. */
+  nodeId: string;
+  kind: 'team' | 'harness';
+  name: string;
+  fix: string;
+}
+
 export interface MapModel {
   nodes: MapNode[];
+  /** What no computer reports, once each. */
+  missing: MapMissing[];
   links: MapLink[];
   columns: MapColumnInfo[];
   width: number;
@@ -223,7 +237,11 @@ export function buildMap(input: MapInput): MapModel {
 
   const nodes: MapNode[] = [];
   const links = new Map<string, MapLink>();
-  const addNode = (n: Omit<MapNode, 'row' | 'x' | 'y' | 'group'> & { group?: string | null }) => nodes.push({ ...n, group: n.group ?? null, row: 0, x: 0, y: 0 });
+  const addNode = (n: Omit<MapNode, 'row' | 'x' | 'y' | 'group' | 'missing'> & { group?: string | null; missing?: boolean }) =>
+    nodes.push({ ...n, group: n.group ?? null, missing: n.missing ?? false, row: 0, x: 0, y: 0 });
+  const gaps: MapMissing[] = [];
+  // The agents the routes say no computer reports: a task whose profile runs one is taken by nobody.
+  const absentAgents = new Set(flow.nobody.flatMap((e) => (e.route.reason === 'harness_not_reported' && e.route.detail ? [e.route.detail] : [])));
   const addLink = (from: string, to: string, tasks: number) => {
     const id = `${from}>${to}`;
     const prior = links.get(id);
@@ -357,14 +375,22 @@ export function buildMap(input: MapInput): MapModel {
       tasks: open.filter((t) => t.route.lane === key).length,
       stranded: stranded.length,
       scope: scopeOf('team', `the team ${name}`, laneKeys.has(key) ? [key] : [], stranded),
+      missing: !entry.reported,
     });
+    if (!entry.reported) gaps.push({ nodeId: key, kind: 'team', name, fix: missingTeamFix(name) });
   }
   const agents = new Map<string, string>();
+  const kinds = new Map<string, string>();
   for (const profile of profileOrder) {
     const target = targetOf(profile);
-    if (!target.team && !agents.has(target.key)) agents.set(target.key, target.kind ? agentName(target.kind) : 'Agent');
+    if (!target.team && !agents.has(target.key)) {
+      agents.set(target.key, target.kind ? agentName(target.kind) : 'Agent');
+      kinds.set(target.key, target.kind);
+    }
   }
   for (const [key, name] of agents) {
+    const absent = absentAgents.has(kinds.get(key) ?? '');
+    if (absent) gaps.push({ nodeId: key, kind: 'harness', name: kinds.get(key)!, fix: missingHarnessFix(kinds.get(key)!) });
     addNode({
       id: key,
       column: 'teams',
@@ -378,6 +404,7 @@ export function buildMap(input: MapInput): MapModel {
       tasks: open.filter((t) => t.route.lane === key).length,
       stranded: 0,
       scope: scopeOf('team', `the agent ${name}`, laneKeys.has(key) ? [key] : [], []),
+      missing: absent,
     });
   }
 
@@ -454,6 +481,7 @@ export function buildMap(input: MapInput): MapModel {
   const rows = Math.max(1, ...ordered.map((ids) => ids.length));
   return {
     nodes: ordered.flatMap((ids) => ids.map((id) => byId.get(id)!)),
+    missing: gaps,
     links: all,
     columns,
     width: PAD * 2 + MAP_COLUMNS.length * NODE_W + (MAP_COLUMNS.length - 1) * COL_GAP,
@@ -568,6 +596,8 @@ export function routesText(model: MapModel): RouteGroup[] {
     const lines: RouteLine[] = [];
     if (n.isDefault) lines.push({ id: `default:${n.id}`, text: `${n.label} is the project's default profile: a task with no role and no profile of its own goes to it.`, fix: null });
     if (n.dashed && n.reason) lines.push({ id: `dashed:${n.id}`, text: n.reason, fix: n.fix });
+    const gap = model.missing.find((m) => m.nodeId === n.id);
+    if (gap) lines.push({ id: `missing:${n.id}`, text: gap.kind === 'team' ? `No computer reports the team ${gap.name}. To make it: ${gap.fix}` : gap.fix, fix: null });
     if (n.stranded > 0) lines.push({ id: `stranded:${n.id}`, text: `${n.stranded} ${n.stranded === 1 ? 'task' : 'tasks'} nobody will take because of ${n.label}.`, fix: null });
     return lines;
   });

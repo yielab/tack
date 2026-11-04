@@ -412,6 +412,8 @@ export interface CreateAgentProfileResult {
   protocol_version: number;
   agent_profile_id: string;
   name: string;
+  /** What was saved that deserves a second look, such as a method the team has no member for. */
+  warnings?: string[];
 }
 
 /** What a profile's last successful runs counted; `proposal` once `n` reaches `runs_needed`. */
@@ -434,7 +436,7 @@ export const agentProfilesApi = {
       body: JSON.stringify(input),
     }),
   update: (id: string, patch: Partial<CreateAgentProfileInput>) =>
-    request<unknown>(`/agent-profiles/${encodeURIComponent(id)}`, {
+    request<{ warnings?: string[] } | undefined>(`/agent-profiles/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),

@@ -5,6 +5,7 @@ import { type ImportFileKind, type OutlineResult, importFileKind } from '../api/
 import { BOOK } from '../help/routes';
 import { toast } from './toast';
 import Button from './Button';
+import CopyFix from './CopyFix';
 import Modal from './Modal';
 import { ProjectContext } from '../state/projectContext';
 
@@ -128,6 +129,28 @@ const ImportFromFile: Component<{ target: ImportTarget; onDone?: () => void; chi
                       )}
                     </For>
                   </ul>
+                </Show>
+                <Show when={(preview().missing ?? []).length > 0}>
+                  <div data-testid="import-missing">
+                    <p style={{ color: 'var(--color-text-primary)' }}>
+                      The file expects what no computer reports yet. Nothing is created from it; this is what to do.
+                    </p>
+                    <ul class="mt-1 flex flex-col gap-2">
+                      <For each={preview().missing}>
+                        {(gap) => (
+                          <li data-testid="import-missing-entry" data-kind={gap.kind} class="flex flex-col gap-1">
+                            <span style={{ color: 'var(--color-text-primary)' }}>
+                              {gap.kind === 'team' ? 'Team' : 'Agent'} {gap.name}
+                              <Show when={gap.shape}>
+                                <span style={{ color: 'var(--color-text-tertiary)' }}> · {gap.shape}</span>
+                              </Show>
+                            </span>
+                            <CopyFix fix={gap.fix} what={gap.name} />
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
                 </Show>
                 <p>
                   <Show when={props.target.kind === 'new'}>A new project. </Show>

@@ -598,58 +598,22 @@ describe('Settings panels', () => {
       expect(rung(container, 'teams').querySelector('[data-testid="team-row"]')!.textContent).toContain('saas-content · lights-out · this computer');
     });
 
-    it('a_team_row_says_which_folders_its_sandbox_reads_and_what_to_do_when_there_are_none', async () => {
-      roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
-      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: ['/home/x/.nvm/versions/node/v22.17.1', '/home/x/venv'] }];
-      const { container, dispose } = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      const reads = () => Array.from(rung(container, 'teams').querySelectorAll('[data-testid="team-reads"]')).map((e) => e.textContent);
-      expect(reads()[0]).toBe('Its sandbox also reads /home/x/.nvm/versions/node/v22.17.1, /home/x/venv, and cannot change them.');
-      dispose();
-
-      // Nothing granted: the row says so, and what an operator does about a team that runs tests.
-      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: [] }];
-      const none = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      const text = rung(none.container, 'teams').querySelector('[data-testid="team-reads"]')!.textContent!;
-      expect(text).toContain('reads only its own work');
-      expect(text).toContain('needs its toolchain granted');
-      none.dispose();
-
-      // A docket that does not say adds no line, rather than claiming "nothing".
-      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, read_only: null }];
-      const unknown = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      expect(rung(unknown.container, 'teams').querySelector('[data-testid="team-reads"]')).toBeNull();
-    });
-
-    it('a_team_row_says_when_the_team_works_in_a_folder_and_what_records_it_keeps', async () => {
+    it('a_team_row_points_to_the_teams_sheet_instead_of_repeating_it', async () => {
       roles = [{ ...ROLE, agent_profile_id: 'prof1' }];
       autonomy.teams = [{
-        name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder',
-        records: [
-          { name: 'leads', description: 'People found', rows: 2 },
-          { name: 'listings', description: 'Places looked at', rows: 1 },
-        ],
+        name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'folder', read_only: ['/home/x/venv'],
+        records: [{ name: 'leads', description: 'People found', rows: 2 }],
       }];
-      const { container, dispose } = mount(() => <AutomationPanel />);
+      const { container } = mount(() => <AutomationPanel />);
       await flush();
       await flush();
       const row = rung(container, 'teams').querySelector('[data-testid="team-row"]')!;
-      expect(row.querySelector('[data-testid="team-works-in"]')!.textContent).toBe('Works in a folder, not in this repository.');
-      expect(row.querySelector('[data-testid="team-records"]')!.textContent).toBe('Keeps leads · 2 rows, listings · 1 row.');
-      dispose();
-
-      // A team in a repository, or one whose computer does not say, adds neither line.
-      autonomy.teams = [{ name: 'saas-content', profile: 'lights-out', caps_at: null, fix: null, works_in: 'repository', records: [] }];
-      const repo = mount(() => <AutomationPanel />);
-      await flush();
-      await flush();
-      expect(rung(repo.container, 'teams').querySelector('[data-testid="team-works-in"]')).toBeNull();
-      expect(rung(repo.container, 'teams').querySelector('[data-testid="team-records"]')).toBeNull();
+      const link = Array.from(row.querySelectorAll('a')).find((a) => a.textContent === 'Read the sheet of saas-content')!;
+      expect(link.getAttribute('href')).toBe('/agents#team-saas-content');
+      // What the sheet answers is not written out a second time here.
+      expect(row.querySelector('[data-testid="team-reads"]')).toBeNull();
+      expect(row.querySelector('[data-testid="team-works-in"]')).toBeNull();
+      expect(row.querySelector('[data-testid="team-records"]')).toBeNull();
     });
 
     it('a_lights_out_team_line_renders_a_tick_in_the_ceiling', async () => {

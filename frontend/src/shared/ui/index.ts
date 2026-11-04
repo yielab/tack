@@ -4,6 +4,8 @@
 export { default as Button } from './Button';
 export type { ButtonProps, ButtonVariant, ButtonSize } from './Button';
 
+export { default as CopyFix } from './CopyFix';
+
 export { default as Badge } from './Badge';
 export type { BadgeProps, BadgeTone } from './Badge';
 

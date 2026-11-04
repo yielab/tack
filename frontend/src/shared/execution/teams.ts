@@ -10,6 +10,8 @@ export type TeamStep = components['schemas']['TeamStep'];
 export type TeamMember = components['schemas']['TeamMember'];
 export type TeamList = components['schemas']['TeamList'];
 export type TeamMisfit = components['schemas']['TeamMisfit'];
+export type TeamMethod = components['schemas']['TeamMethod'];
+export type TeamNeed = components['schemas']['TeamNeed'];
 
 export const teamsApi = {
   /** Every team any agent reports, then the names only profiles use. */
@@ -23,12 +25,24 @@ export function supervisionText(profile: string | null | undefined): string | nu
   return profile === 'lights-out' ? 'Lights-out' : 'Attended';
 }
 
+/** Whether the entry is a local agent counted as a team: named after its agent and with no
+ *  supervision setting, which only a team of several members has. */
+export function isTeamOfOne(entry: TeamEntry): boolean {
+  return entry.reported && !!entry.harness && entry.name === entry.harness && !entry.report?.profile;
+}
+
+/** The teams a profile can name: a local agent is a team of one for the sheet, but a profile reaches
+ *  it by running that agent, never by naming it as a team. */
+export function podsOnly(entries: readonly TeamEntry[]): TeamEntry[] {
+  return entries.filter((e) => !isTeamOfOne(e));
+}
+
 /** The names a Team field offers: the reported teams first, then names only profiles use. */
 export function teamChoices(
   entries: readonly TeamEntry[],
   alsoNamed: readonly (string | null | undefined)[] = [],
 ): { reported: string[]; notReported: string[] } {
-  const reported = new Set(entries.filter((e) => e.reported).map((e) => e.name));
+  const reported = new Set(podsOnly(entries).filter((e) => e.reported).map((e) => e.name));
   const notReported = new Set(entries.filter((e) => !e.reported).map((e) => e.name));
   for (const name of alsoNamed) if (name && !reported.has(name)) notReported.add(name);
   return {
@@ -101,12 +115,62 @@ export function webText(member: TeamMember): string | null {
   return hosts.includes('*') ? 'Reads the web: any public host' : `Reads the web: ${hosts.join(', ')}`;
 }
 
-/** Why a profile's runs on `team` are refused before the team gets them, and the change in docket
- *  that ends it. Follows the profile's name. */
-export function misfitText(team: string, misfit: TeamMisfit): string {
-  return misfit === 'no_web'
-    ? `needs the web, and this team has no network and no member that reads the web. Give it the hosts it reads with \`docket pod set fetchDomains <host> --pod ${team}\`, open its whole network with \`docket pod set network open --widen --pod ${team}\`, or turn the network off in the profile.`
-    : `delivers only proposed items, and no member of this team can propose. Declare the team's \`tack_proposals\` record set and let a role write it.`;
+/** Why a profile's runs on `team` are refused before the team gets them, and the change that ends
+ *  it, as the end of a sentence that begins with the profile: "Planner is refused here: it ...".
+ *  `report` is the team's own report, for the fix a need carries. */
+export function misfitText(team: string, misfit: TeamMisfit, report?: TeamReport | null): string {
+  if (misfit === 'no_web') {
+    return `needs the web, and this team has no network and no member that reads the web. Give it the hosts it reads with \`docket pod set fetchDomains <host> --pod ${team}\`, open its whole network with \`docket pod set network open --widen --pod ${team}\`, or turn the network off in the profile.`;
+  }
+  if (misfit === 'no_proposals') {
+    return `delivers only proposed items, and no member of this team can propose. Declare the team's \`tack_proposals\` record set and let a role write it.`;
+  }
+  if (misfit === 'no_repository') {
+    const hands = report?.delivers === 'records' ? 'rows in its record sets' : 'a report';
+    return `changes the project's repository, and ${team} hands back ${hands}, not a branch. Point the profile at a team that delivers a branch, or make it a Researcher.`;
+  }
+  if ('unknown_method' in misfit) {
+    const offered = (report?.methods ?? []).map((m) => m.name);
+    return `names the method ${misfit.unknown_method.name}, which ${team} does not have${offered.length > 0 ? `. It has ${offered.join(', ')}` : ''}. Choose one it has, or leave the method out.`;
+  }
+  if ('steps_skipped' in misfit) {
+    const { method, roles } = misfit.steps_skipped;
+    return `names the method ${method}, which would skip steps on ${team}: no member plays ${roles.join(', ')}. Add ${roles.length === 1 ? 'that member' : 'those members'} to the team, or choose another method.`;
+  }
+  const need = (report?.needs ?? []).find((n) => n.name === misfit.needs_unmet.name);
+  const fix = need?.fix ? ` ${need.fix}` : '';
+  return need?.kind === 'sign_in'
+    ? `runs ${team}, which is not signed in on the runner.${fix}`
+    : `needs ${misfit.needs_unmet.name}, and ${team} says that is not met yet.${fix}`;
+}
+
+/** The sentence before Start on Run with agent: the profile cannot go to its team, and why. */
+export function notSentText(profile: string, team: string, misfit: TeamMisfit, report?: TeamReport | null): string {
+  return `Not sent: ${profile} ${misfitText(team, misfit, report)}`;
+}
+
+/** The unmet needs of a team, each with what the operator does about it. A need the team did not
+ *  report is never listed; a model is named per run, so it is left to the run. */
+export function unmetNeeds(report: TeamReport | null | undefined): TeamNeed[] {
+  return (report?.needs ?? []).filter((n) => !n.satisfied);
+}
+
+/** What a team hands back when a task ends, in a person's words. */
+export function deliversText(delivers: NonNullable<TeamReport['delivers']>): string {
+  return delivers === 'branch'
+    ? 'Hands back a branch of the repository to review and merge'
+    : delivers === 'report'
+      ? 'Hands back a report: there is nothing to merge'
+      : 'Keeps rows in its record sets: there is nothing to merge';
+}
+
+/** The method names a profile gives to kinds of card (`docket.pipeline_by_type`), in the order written. */
+export function methodsByType(policy: unknown): Array<{ type: string; method: string }> {
+  const byType = (policy as { docket?: { pipeline_by_type?: unknown } } | null | undefined)?.docket?.pipeline_by_type;
+  if (!byType || typeof byType !== 'object') return [];
+  return Object.entries(byType as Record<string, unknown>)
+    .filter((e): e is [string, string] => typeof e[1] === 'string')
+    .map(([type, method]) => ({ type, method }));
 }
 
 /** The one sentence a team whose proposals are kept for all its tasks together is owed. */

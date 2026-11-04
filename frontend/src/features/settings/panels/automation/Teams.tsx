@@ -57,51 +57,16 @@ const Teams: Component<Props> = (props) => {
     return [team ?? 'no team', team ? stateOf(team) : null, machine].filter(Boolean).join(' · ');
   };
 
-  /** What the team's sandbox reads besides its own work, in words; null while nothing reports it.
-   *  `grant` is set when it reads nothing else, and a team that runs tests needs its toolchain granted. */
-  const readsOf = (id: string | null | undefined) => {
-    const team = teamOf(profile(id));
-    const paths = team ? props.settings()?.teams?.find((t) => t.name === team)?.read_only : null;
-    if (!paths) return null;
-    return paths.length
-      ? { text: `Its sandbox also reads ${paths.join(', ')}, and cannot change them.`, grant: false }
-      : { text: 'Its sandbox reads only its own work. A team that runs tests needs its toolchain granted.', grant: true };
-  };
-
-  const ReadsNote = (p: { id: string | null | undefined }) => (
-    <Show when={readsOf(p.id)}>
-      {(reads) => (
-        <Note testid="team-reads">
-          {reads().text}
-          <Show when={reads().grant}>
-            {' '}
-            <a href={BOOK.toolchain} target="_blank" rel="noreferrer" class="underline">The Administrator Guide shows how.</a>
-          </Show>
-        </Note>
+  /** The team's sheet on the Agents page: where it works, what it keeps and what its sandbox reads are there. */
+  const SheetLink = (p: { id: string | null | undefined }) => (
+    <Show when={teamOf(profile(p.id))}>
+      {(team) => (
+        <a href={`/agents#team-${encodeURIComponent(team())}`} class="w-fit text-xs underline" style={{ color: 'var(--color-text-secondary)' }}>
+          Read the sheet of {team()}
+        </a>
       )}
     </Show>
   );
-
-  /** Where the team works and what it keeps, in words; nothing while the computer does not say. */
-  const WorkNotes = (p: { id: string | null | undefined }) => {
-    const team = () => {
-      const name = teamOf(profile(p.id));
-      return name ? props.settings()?.teams?.find((t) => t.name === name) : undefined;
-    };
-    const sets = () => team()?.records?.filter((set) => set.name) ?? [];
-    return (
-      <>
-        <Show when={team()?.works_in === 'folder'}>
-          <Note testid="team-works-in">Works in a folder, not in this repository.</Note>
-        </Show>
-        <Show when={sets().length > 0}>
-          <Note testid="team-records">
-            Keeps {sets().map((set) => `${set.name} · ${set.rows} ${set.rows === 1 ? 'row' : 'rows'}`).join(', ')}.
-          </Note>
-        </Show>
-      </>
-    );
-  };
 
   const saveRole = async (role: Role, value: string) => {
     try {
@@ -164,8 +129,7 @@ const Teams: Component<Props> = (props) => {
               <ProfileSelect label={`Profile for ${role.name}`} value={role.agent_profile_id} onChange={(v) => void saveRole(role, v)} />
             </div>
             <Show when={line(role.agent_profile_id)}>{(text) => <Note>{text()}</Note>}</Show>
-            <WorkNotes id={role.agent_profile_id} />
-            <ReadsNote id={role.agent_profile_id} />
+            <SheetLink id={role.agent_profile_id} />
           </div>
         )}
       </For>
@@ -175,8 +139,7 @@ const Teams: Component<Props> = (props) => {
           <ProfileSelect label="Profile for a task with no role" value={props.project()?.default_profile_id} onChange={(v) => props.onDefaultProfile(v || null)} />
         </div>
         <Show when={line(props.project()?.default_profile_id)}>{(text) => <Note>{text()}</Note>}</Show>
-        <WorkNotes id={props.project()?.default_profile_id} />
-        <ReadsNote id={props.project()?.default_profile_id} />
+        <SheetLink id={props.project()?.default_profile_id} />
       </div>
       <div class="flex flex-wrap items-start gap-3">
         <a href="/agents#profiles" class="py-1 text-sm underline" style={{ color: 'var(--color-text-secondary)' }}>Manage profiles →</a>

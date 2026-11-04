@@ -8,6 +8,7 @@ import {
   pickHarness,
   runnersApi,
   teamOf,
+  isTeamOfOne,
   teamsApi,
   type AgentCapabilityLine,
   type AgentProfileSummary,
@@ -209,7 +210,7 @@ const ProfilePicker: Component<ProfilePickerProps> = (props) => {
   /** The reported teams of this agent that no profile names. */
   const bareTeams = createMemo(() =>
     teams()
-      .filter((t) => (t.harness ?? 'docket') === agent() && !props.profiles.some((p) => teamOf(p) === t.name))
+      .filter((t) => !isTeamOfOne(t) && (t.harness ?? 'docket') === agent() && !props.profiles.some((p) => teamOf(p) === t.name))
       .map((t) => t.name)
       .sort());
 
