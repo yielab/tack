@@ -119,6 +119,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 - Orchestration → Compare wraps its cells at their words in equal-width columns, with the full text as a tooltip, instead of cutting a line mid-word at the edge of a table that scrolled sideways; six teams fit beside the sidebar at 1440 px with no scrolling.
 - A team's avatar on a board card reads the same wherever it is drawn: its initials come from its name alone (`saas-code` is SC, `saas-lights` SL), not from which other teams happen to be on the board, so it no longer changes from SA to CO as teams are added; two teams that read alike are told apart by the avatar's colour.
 - The book's Configuration and Configuration Reference pages are one page (the old Configuration address redirects), the Talking with a Manager page is now Managers and Threads and carries how to add a manager and its triggers, and the cloud backup setup moved from Administration & Security to Backup & Restore.
+- The User Guide has a page, **A Team**, that answers the six things a person asks of any team (what it is for, who is in it, what happens to a card, when it asks, how far it goes, how to send it work) from what the Agents page shows; the Developer Guide's Crate Tour lists the four words that mean one thing on the board and another in a docket team.
 
 ### Removed
 

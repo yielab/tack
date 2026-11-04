@@ -89,6 +89,8 @@ offers; see [CLI](cli.md#runner).
 - **docket.** A run goes to a team. Each docket team is a long-lived group with its own members, models,
   checks and way of working, kept by docket itself. Tack sends the task to the team, follows what the team
   does, shows its steps on the task's timeline, relays its questions to you, and cancels it if you do.
+  [A Team](teams.md) answers the six things you ask of any team: what it is for, who is in it, what happens to
+  a card, when it asks, how far it goes and how to send it work.
   A profile names its team; a profile with no team uses a team named for the project's folder, which Tack
   creates when it does not exist. docket works on a new branch of your folder: choose that under
   [Where the agent works](automation.md#where-the-agent-works). docket keeps its own sign-in and

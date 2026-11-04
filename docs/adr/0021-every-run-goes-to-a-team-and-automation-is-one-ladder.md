@@ -6,6 +6,26 @@ ADR 0015 decision 1 (what the project's Automation tab holds). Reads docket ADR 
 operator API version 5 as the contract on the other side.
 **Amended by ADR 0024:** decision 7's dollar budget is gone; limits are in tokens.
 
+**Amended 2026-11-03 by ADR 0036** (the text below keeps what was decided; these four lines say what
+the tree does today):
+
+1. Decision 2's apply route (`POST /pods/<p>/apply` from the Teams rung) was never built. "Apply the
+   repository's teams" is a disabled button with its reason; ADR 0036 decision 8 settles how it comes
+   back, through the runner.
+2. Decision 2's pod named for the repository folder is created by `POST /pods {ensure: true}` with
+   no blueprint, so it is docket's own default code team, whatever docket calls it (ADR 0031
+   decision 5).
+3. Decision 1's gate is the first acceptance criterion docket can run: a `command` that expects
+   success, a `test`, or failing those a `file` or `absent` check. The definition of done in prose is
+   never a gate (ADR 0030).
+4. Decision 4's auto-start no longer moves the task to the in-progress column: it starts a task that
+   has never run, once, and moves nothing (Phase 86).
+
+**Rung names.** The screen has five sections, in this order: **Who**, **When**, **Merge**, **Limits**,
+**Agents**. What this ADR calls the Teams rung is **Who**, the Start rung is **When**, and the Ceiling
+rung is the ceiling marked on the ladder at the top of the screen and in **Merge**. **Limits** (ADR 0024)
+and **Agents** (ADR 0034) came after. The tables below use the original names.
+
 **Decide:** that Tack sends every run of the docket agent to a **team** that already exists and
 keeps existing (a docket pod with its own members, models per role, pipeline and gates), over HTTP,
 instead of starting a throwaway agent per run; that a project's **role** says which agent profile,

@@ -548,6 +548,17 @@ tests are `#[ignore]`d and never required in CI; `harness/fixtures/fake_harness.
 driven by `TACK_FAKE_HARNESS_MODE`, is the always-runnable path every required test
 uses instead. docket is tested against an in-process fake in `tests/fake_docket/`.
 
+### Words with two meanings
+
+Tack and docket use four words for different things. The screens and the docs keep them apart; code that reads both sides should too.
+
+| Word | One meaning | The other |
+|---|---|---|
+| profile | Tack's agent profile (`agent_profiles`): instructions, tools, limits, and the team or agent it runs with | docket's supervision, attended or lights-out; `TeamReport.profile` carries it, and the Teams screen words it as whether the team runs to the end or stops to ask |
+| role | A project role (`roles`): the area of the board a card belongs to, which points at a profile | A team member's job (`TeamMember.role`, `TeamStep.role`): who inside the team does a step |
+| pipeline | A team's method: the ordered steps one task goes through inside a team, which `tool_policy.docket.pipeline_by_type` picks by item type | The board's workflow (`workflow.rs`): the statuses a card moves through, which only a person changes |
+| step | A step of a team's method, as `TeamStep` reports it | docket's hop: one member's turn on a task, which the run's `steps` value keeps with its prompts and times (`docket/steps.rs`) |
+
 ---
 
 ## `tack-cli`
