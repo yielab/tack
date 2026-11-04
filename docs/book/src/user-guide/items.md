@@ -165,7 +165,7 @@ The record of every time an agent was handed this item. Its tab carries the late
   Execution tab, together with the pack's review. A run that changed no file shows the agent's answer as what it
   delivered and offers **Accept**, not **Merge**.
 - **Needs you** puts the question first, with its answers already open: choose one and press
-  **Resolve** without leaving the panel, or press **Answer the question**. A question the agent asks after the page was opened appears
+  **Send answer** without leaving the panel, or press **Answer the question**. A question the agent asks after the page was opened appears
   by itself.
 - **Failed** says why it stopped, with **See why it failed** as the filled button. A run that is finished or merged says when, and **Run again** is the filled button. **Queued** says why the run still waits
   (for example, that the computer it asked for has not answered) and offers **Run on another

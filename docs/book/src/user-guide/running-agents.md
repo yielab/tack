@@ -349,8 +349,12 @@ refused, and the agent carries on.
 A question waits first in the **Now** panel, with its answers open, and on the task's Execution tab, in the run's **Needs you** section, which appears by itself while the run waits for you. A question asked while you already have the task open appears without a reload. Each question
 shows its kind, so a tool permission reads differently from a choice the agent wants you to make. An option
 can carry a short description, its risks and a rough cost in tokens. When the agent has a preferred answer,
-that option is preselected and marked **Recommended**, with the reason and the files it looked at beneath it.
-Nothing is applied until you press **Resolve**, and you can pick any option.
+that option comes first, preselected and marked **Recommended**, with its reason beneath it. Nothing is applied until you press
+**Send answer**, and you can pick any option. When a question takes text, the field opens under the choice it
+belongs to and is named for what is asked: **Your answer** for a question, **Reason** under a refusal. It is
+marked as required only when the question requires it, and a question that takes none shows no field. A question that
+takes only text is its field, with nothing to choose. **Decline** is a plain button beside **Send answer**, not a
+choice, and needs no text.
 
 Some of docket's steps are not questions at all. A step that waits until a set time shows on the timeline as
 *The team waits until 14:00. Nobody needs to answer.*; there is nothing to press, and the run's time limit

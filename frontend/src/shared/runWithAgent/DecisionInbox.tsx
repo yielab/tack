@@ -1,6 +1,6 @@
-import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from 'solid-js';
+import { type Component, For, Show, createEffect, createResource, onCleanup, onMount } from 'solid-js';
 import { onInboxChange } from '../state/notifications';
-import { Badge, Button, EmptyState, Field, LoadError } from '../ui';
+import { Badge, EmptyState, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import {
   decisionsApi,
@@ -14,7 +14,7 @@ import {
   type ResolveDecisionResult,
 } from '../execution';
 import DecisionTokenField from './DecisionTokenField';
-import RadioRow from './RadioRow';
+import AnswerBox from './AnswerBox';
 import { isTerminalAttemptState } from './attemptFormat';
 import { truncateMiddle } from '../ui/truncateMiddle';
 
@@ -101,21 +101,12 @@ const DecisionRow: Component<{
   onResolved?: (result: ResolveDecisionResult) => void;
   onView: (decisionId: string) => void;
 }> = (props) => {
-  const recommendedId = () => {
-    const id = props.decision.recommendation?.option_id;
-    return id && props.decision.options.some((o) => o.option_id === id) ? id : '';
-  };
-  const [optionId, setOptionId] = createSignal(recommendedId());
-  const [text, setText] = createSignal('');
-  const [busy, setBusy] = createSignal(false);
-
   const isPending = () => props.decision.state === 'pending';
   const isExpired = () => props.decision.state === 'expired';
   const isResolved = () => props.decision.state === 'resolved';
   // The agent's own tool took the answer (docket, at its own CLI): nothing here can answer it.
   const isAnsweredElsewhere = () => props.decision.state === 'answered_elsewhere';
   const answeredIn = () => props.decision.resolved_by?.subject_id || 'the agent\'s own tool';
-  const hasOptions = () => props.decision.options.length > 0;
   // An approval of an action that leaves the team (an email, a post, a write to a service) is
   // marked by the runner, and carries the whole action while it is pending.
   const metadata = () => (props.decision.metadata && typeof props.decision.metadata === 'object' ? (props.decision.metadata as Record<string, unknown>) : {});
@@ -141,23 +132,8 @@ const DecisionRow: Component<{
     if (isPending() && !props.decision.viewed_at) props.onView(props.decision.decision_id);
   });
 
-  const submit = async (e: Event) => {
-    e.preventDefault();
-    if (!optionId().trim() || busy()) return;
-    setBusy(true);
-    try {
-      await resolveAndNotify(
-        props.attemptId,
-        props.decision.decision_id,
-        { option_id: optionId().trim(), text: text().trim() || null },
-        props.onResolved,
-      );
-    } catch {
-      /* already toasted by resolveAndNotify */
-    } finally {
-      setBusy(false);
-    }
-  };
+  const send = (answer: DecisionAnswer) =>
+    resolveAndNotify(props.attemptId, props.decision.decision_id, answer, props.onResolved);
 
   return (
     <li
@@ -285,86 +261,7 @@ const DecisionRow: Component<{
       </Show>
 
       <Show when={isPending()}>
-        <form class="space-y-3" onSubmit={submit}>
-          <Show
-            when={hasOptions()}
-            fallback={
-              <Field
-                label="Answer (option id)"
-                value={optionId()}
-                onInput={(e) => setOptionId(e.currentTarget.value)}
-                required
-                hint="This question has no fixed options — type any answer."
-              />
-            }
-          >
-            <fieldset class="flex flex-col gap-2">
-              <legend class="mb-2 text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
-                Choose an answer
-              </legend>
-              <For each={props.decision.options}>
-                {(opt) => (
-                  <RadioRow
-                    name={`decision-${props.decision.decision_id}`}
-                    value={opt.option_id}
-                    checked={optionId() === opt.option_id}
-                    onChange={() => setOptionId(opt.option_id)}
-                  >
-                    <span class="font-semibold">{opt.label}</span>
-                    <Show when={opt.option_id === recommendedId()}>
-                      <span class="ml-2 text-micro font-bold uppercase tracking-[0.1em]" style={{ color: 'var(--color-accent-ink)' }}>
-                        Recommended
-                      </span>
-                    </Show>
-                    <Show when={opt.description}>
-                      <span class="block text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                        {opt.description}
-                      </span>
-                    </Show>
-                    <Show when={opt.risks && opt.risks.length > 0}>
-                      <span class="block text-xs" style={{ color: 'var(--color-danger-600)' }}>
-                        Risks: {opt.risks!.join('; ')}
-                      </span>
-                    </Show>
-                    <Show when={opt.estimated_tokens != null}>
-                      <span class="block text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                        About {opt.estimated_tokens!.toLocaleString('en-US')} tokens
-                      </span>
-                    </Show>
-                  </RadioRow>
-                )}
-              </For>
-            </fieldset>
-            <Show when={recommendedId()}>
-              <p class="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                Recommended: <span style={{ 'font-family': 'var(--font-mono)' }}>{recommendedId()}</span>
-                <Show when={props.decision.recommendation?.rationale}>
-                  {' — '}
-                  {props.decision.recommendation?.rationale}
-                </Show>
-                <Show when={(props.decision.recommendation?.evidence_refs ?? []).length > 0}>
-                  {' '}
-                  (evidence: {props.decision.recommendation?.evidence_refs?.join(', ')})
-                </Show>
-              </p>
-            </Show>
-          </Show>
-          <Field
-            label="Details (optional)"
-            value={text()}
-            onInput={(e) => setText(e.currentTarget.value)}
-          />
-          <div class="flex flex-wrap items-center gap-2">
-            <Button type="submit" size="sm" disabled={busy() || !optionId().trim()} loading={busy()}>
-              Resolve
-            </Button>
-            <Show when={!optionId().trim()}>
-              <span class="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                Select or enter an answer to enable Resolve.
-              </span>
-            </Show>
-          </div>
-        </form>
+        <AnswerBox decision={props.decision} onSend={send} />
       </Show>
     </li>
   );

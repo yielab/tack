@@ -39,6 +39,11 @@ fn a_change_to_its_own_check_is_asked_in_dockets_words_and_answered_with_a_reaso
     assert_eq!(ids, ["approve_once", "deny"]);
     assert_eq!(pending.property, "reason");
     assert!(!pending.required && !pending.by_text);
+    // The reason belongs to the refusal, and nothing else takes text.
+    assert_eq!(
+        question.metadata["text"],
+        json!({"label": "Reason", "required": false, "options": ["deny"]})
+    );
 }
 
 /// `consultParts`: a step that asked several questions at once opens one escalation each, and the
@@ -88,6 +93,10 @@ fn a_question_that_only_declines_but_takes_text_is_offered_an_answer_first() {
     assert!(pending.by_text && pending.required);
     assert_eq!(pending.options, ["decline"]);
     assert_eq!(pending.property, "answer");
+    assert_eq!(
+        question.metadata["text"],
+        json!({"label": "Your answer", "required": true, "options": ["accept"]})
+    );
 }
 
 #[test]

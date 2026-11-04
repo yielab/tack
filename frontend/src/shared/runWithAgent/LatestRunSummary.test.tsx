@@ -222,7 +222,7 @@ describe('LatestRunSummary', () => {
     for (let i = 0; i < 6; i++) await flush();
     const card = c.querySelector('[data-testid="latest-run"]')!;
     expect(card.textContent).toContain('Which chart library should it add?');
-    expect(card.querySelector('button[type="submit"]')?.textContent).toBe('Resolve');
+    expect(card.querySelector('button[type="submit"]')?.textContent).toBe('Send answer');
     expect(card.querySelectorAll('input[type="radio"]').length).toBe(2);
     // Before the card's own lines, and not behind a toggle.
     const question = card.querySelector('form')!;
