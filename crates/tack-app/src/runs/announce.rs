@@ -9,6 +9,7 @@ use tack_db::{Repository, queries};
 use tack_protocol::execution::{AttemptId, ExecutionState};
 use uuid::Uuid;
 
+use super::answered_elsewhere::AnsweredElsewhere;
 use super::complete::Completed;
 use super::create_decision::DecisionCreated;
 use super::resolve_decision::ResolveOutcome;
@@ -163,6 +164,37 @@ pub async fn decision_resolved(
     ) {
         return;
     }
+    resolved(repo, events, principal, attempt_id, decision_id).await;
+}
+
+/// The agent's own tool took the answer, and the board closed the question just now. Whoever
+/// answers it, the question is no longer open, so a person is no longer told of it.
+pub async fn decision_answered_elsewhere(
+    repo: &Repository,
+    events: &dyn DomainEvents,
+    principal: &Principal,
+    attempt_id: &AttemptId,
+    decision_id: &str,
+    settled: &AnsweredElsewhere,
+) {
+    if matches!(
+        settled,
+        AnsweredElsewhere::Settled {
+            closed_now: true,
+            ..
+        }
+    ) {
+        resolved(repo, events, principal, attempt_id, decision_id).await;
+    }
+}
+
+async fn resolved(
+    repo: &Repository,
+    events: &dyn DomainEvents,
+    principal: &Principal,
+    attempt_id: &AttemptId,
+    decision_id: &str,
+) {
     if let Some((project_id, run)) = run_of(repo, attempt_id).await {
         events.emit(DomainEvent::new(
             project_id,

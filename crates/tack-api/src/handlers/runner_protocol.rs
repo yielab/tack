@@ -1684,6 +1684,17 @@ pub async fn decision_answered_elsewhere(
         tracing::error!(error = %failure, "Could not close the decision");
         internal_error("Could not close the decision")
     })?;
+    if let Some(app) = state.app.as_ref() {
+        runs::announce::decision_answered_elsewhere(
+            &state.repo,
+            app.events().as_ref(),
+            &Principal::runner(principal.runner_id.as_str()),
+            &attempt_id,
+            &decision_id,
+            &settled,
+        )
+        .await;
+    }
     match settled {
         runs::answered_elsewhere::AnsweredElsewhere::NotFound => Err(protocol_error(
             StatusCode::NOT_FOUND,

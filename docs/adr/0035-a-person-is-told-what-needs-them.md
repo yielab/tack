@@ -33,6 +33,12 @@ team waits to have approved for its memory (docket's `memoryStatus`) is **needs 
 is no longer pending however it was decided. docket decides an entry only with its own command, so the
 notification gives that command until docket offers a route.
 
+*(Amended 2026-11-04, after the live suite.)* Decision 3's reconcile also runs **every 30 seconds**, not only at
+start and after `Lagged`: some endings are announced by no fact (a question docket closed in its own tool
+emitted nothing; a question that expired; a failed run run again under a new request), and the store is the
+truth. A question docket closes is now also announced as `DecisionResolved`, so that road closes at once. A
+notification's title names the item it is about, written where the store is read (the rule stays pure).
+
 **Why now.** Phases 85 to 87 made a run stop and wait on a person in more ways (a decision, a change
 set, a step's budget), and the audit of 2026-11-03 found that the person learns of none of them
 unless the tab is open and the right view is showing: the bus already emits `DecisionOpened`,
