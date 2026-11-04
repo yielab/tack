@@ -4,7 +4,7 @@
 > history; closed phases are archived under
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
-**Tack is delivered through Phase 87.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 88.** A project is planned and tracked on a board, a list, a
 calendar or a timeline, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. A step that runs out of its own budget keeps its work and lets a person
@@ -29,19 +29,11 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 87 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+Phases 73 to 88 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
 
-**Phase 88 — a person is told what needs them** ([ADR 0035](https://github.com/yielab/tack/blob/develop/docs/adr/0035-a-person-is-told-what-needs-them.md),
-proposed 2026-11-03; plan in `docs/plans/phase-88.md`). One inbox fed by the board's own events:
-a question asked, a run failed, a change set waiting (each needs you), a run finished and an item
-due within the hour (each information). It closes itself when the situation ends, however it ends.
-The screen shows the count, a drawer, a toast and the tab's title; the desktop app the system's
-notification; and a webhook receives each one signed, retried, with its id. Phase 10's webhook
-(`item.*`, `sprint.*`, `item.due_soon`) is replaced by it. Six cards in three rounds.
-
 **Phase 89 — the board orchestrates and a team declares what it accepts** ([ADR 0036](https://github.com/yielab/tack/blob/develop/docs/adr/0036-the-board-orchestrates-and-a-team-declares-what-it-accepts.md),
-proposed 2026-11-03; plan in `docs/plans/phase-89.md`). One owner per concept: the board decides what
+in progress since 2026-11-04: cards A (one router, the parent follows its children) and C (words and the amended ADRs) are built; plan in `docs/plans/phase-89.md`). One owner per concept: the board decides what
 is done and by whom, the team decides how. A team's report gains its contract (what it delivers, the
 methods it can run and the roles each lacks, what its work still needs) and a card is refused before
 sending when the team cannot do what it needs — not only the web and proposals of today but the
@@ -75,12 +67,10 @@ file, no ADR; from the seven runs of one research task; both cards built in `dev
   the same refusal reads Not started on one chip and Failed on the next. The fallback reads the
   run's `never_started` as the board's card does.
 
-What remains besides them are two dependency cards:
+What remains besides them is one dependency card:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
   Run the desktop workflow on the branch first.
-- **Vitest 5** (4.1 to 5.0.3, with `@vitest/coverage-v8`). It is a major version and its pull request fails the
-  frontend check; the card finds what breaks and takes it on the lowest toolchain it needs.
 
 ## Future, not planned
 
@@ -154,6 +144,14 @@ Phases 73 to 87, newest first. The detail is in each phase's plan under
 each decision in its ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr),
 and what a user can now do in the [changelog](https://github.com/yielab/tack/blob/develop/CHANGELOG.md).
 
+- **Phase 88 — a person is told what needs them.** ADR 0035. One inbox fed by the board's own events:
+  a question a run asks, a run that fails and a change set an agent proposes each need you; a run that
+  finishes and an item due within the hour inform you. It closes itself when the situation ends, however
+  it ends, and is repaired from the store at start and after a lost event. The web shows a bell with the
+  count, a drawer, a notice and the count in the tab's title (and the browser's notification when the tab
+  is hidden, if you turn it on); the desktop app sends the system's notification and counts on the tray;
+  a webhook receives each one signed, retried with backoff and with its id, and Settings → Automation
+  shows each channel's state. Phase 10's webhook (`item.*`, `sprint.*`, `item.due_soon`) is gone.
 - **Phase 87 — a step that runs out of budget stops at a checkpoint, not a cliff.** No ADR of its
   own (it follows docket's own ADR 0038). A step that ran out of its rounds, tool calls or time ends
   `step_budget`, names the limit and where to raise it, and keeps its patch; one that ran out of

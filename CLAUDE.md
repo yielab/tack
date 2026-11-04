@@ -110,13 +110,12 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   fixed two bugs (`continue`'s team lookup, a tokens-bound stop's missing branch) that the fake alone never
   would have caught. A genuine `time`-bound stop stays unproved live — docket's own per-request deadline
   races a round's own landing, so this needs a slower or steadier model to exercise for real.
-- **Proposed 2026-11-03:** Phase 88 (`docs/plans/phase-88.md`, ADR 0035) — a person is told what needs
-  them: one `notifications` table fed by the event bus (second subscriber after the triggers), a pure rule
-  in `tack-core` for what notifies and what closes it, a reconcile from the store at start and on `Lagged`,
-  `GET /api/notifications` + `/live` socket, sidebar count and drawer, desktop notifications, and a
-  `Channel` trait whose first implementation is the webhook with retries. Replaces Phase 10's webhook
-  (`item.*`, `sprint.*`, `item.due_soon`, `DueSoonSink`) with nothing kept. Cards A; B ∥ C ∥ D; E ∥ F.
-- **Proposed 2026-11-03:** Phase 89 (`docs/plans/phase-89.md`, ADR 0036) — the board orchestrates, a team
+- **Built 2026-11-04, in `develop`:** Phase 88 (`docs/plans/phase-88.md`, ADR 0035, accepted) — a person is told what needs them:
+  one `notifications` table fed by the event bus (the rule is `tack-core/src/notification.rs`, the write path `tack-app`'s
+  `Inbox`, a reconcile from the store at start and on `Lagged`), `GET /api/notifications` + `/live` socket, sidebar bell,
+  drawer, title count, desktop notifications and tray count, and a `Channel` trait whose first implementation is the webhook with
+  retries. Phase 10's webhook is gone.
+- **In progress 2026-11-04 (cards A and C built):** Phase 89 (`docs/plans/phase-89.md`, ADR 0036) — the board orchestrates, a team
   declares what it accepts: one owner per concept; `TeamReport` gains a contract (`delivers`, `methods[]` with
   missing roles, `needs[]`) and the fit check grows from two facts to five; one router (`GET
   /api/projects/{id}/routing`) for every screen; a parent shows its children's progress and moves nothing;
