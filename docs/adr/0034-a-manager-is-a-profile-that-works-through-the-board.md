@@ -128,7 +128,8 @@ written, Tack follows docket's shape:
   `continues`, the thread's cap cannot be sent as is.
   *(2026-11-04, Phase 91.)* A docket team that lists `conversation` now `continues`: a thread's first
   turn is the task, sent with `maxTurns` = the thread's cap or 20, whichever is lower; every later turn
-  answers its `turn` escalation, and closing the thread answers `close`. A team whose method has more
+  answers its `turn` escalation; the conversation ends when docket ends it (its `maxTurns`, or its `turn`
+  escalation expiring), since the board's closing of a thread reaches no runner. A team whose method has more
   than one step answers `conversation_needs_one_step`, and its threads replay as before.
 - **The cursor (ask 2) is opaque:** a decimal integer in a string today, not the trace cursor's shape.
   **Pod memory (ask 3) comes wrapped,** `{entries: [...]}`.

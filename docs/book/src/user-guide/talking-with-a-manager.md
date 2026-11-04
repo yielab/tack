@@ -75,7 +75,7 @@ form stays greyed out and says so, with a link to the Agents page.
 When you send a message, the profile runs once to answer it. That run is a **turn**. It reads the digest of
 the project, your latest messages in full and the earlier ones as their first line, and then it writes its
 answer, which appears in the thread under the profile's name. When the profile belongs to a docket team, the
-answer is what the team's last step handed off.
+answer is what the team's last step handed off. A docket team whose docket can keep a conversation going keeps the context itself: your thread is one conversation in docket and each message continues it, so the earlier turns are not sent again. If docket has ended the conversation (it took its twenty turns, or it was closed there), your next message starts a new one from the thread so far, and the turn says so.
 
 While the turn runs, the thread shows it as work in progress under your message. If the agent needs an
 answer from you before it can go on, the question appears right there, and you answer it in the thread. A

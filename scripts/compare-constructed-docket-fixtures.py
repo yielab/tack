@@ -146,6 +146,41 @@ def real_answers():
         found["escalations-consult"] = scene.get("/escalations?since=0")
         first_id = found["escalations-consult"]["escalations"][0]["id"]
         found["escalation-accepted-consult"] = scene.service.post(f"/escalations/{first_id}", {"optionId": "a", "actor": "tack"})[1]
+    found.update(conversation_answers())
+    return found
+
+
+def conversation_answers():
+    """A conversation task's turns and a consult of two questions, as docket sends them. (Its refusal and
+    a method the team cannot staff are captured by capture-docket-fixtures.sh: no model is needed.)"""
+    found = {}
+    turns = {"implementer": [say("First answer."), say("Second answer."), say("Third answer.")]}
+    with Scene("turns", turns, SOLO) as scene:
+        task = scene.post("turn-1", conversation={"maxTurns": 2})
+        found["task-waiting-turn"] = scene.wait(task, "waiting_input")
+        found["escalations-turn"] = scene.get("/escalations?since=0")
+        turn_id = found["escalations-turn"]["escalations"][0]["id"]
+        found["escalation-accepted-turn"] = scene.service.post(
+            f"/escalations/{turn_id}", {"optionId": "reply", "content": {"text": "And now?"}, "actor": "tack"})[1]
+        found["task-done-turn"] = scene.wait(task, "done")
+    with Scene("close", turns, SOLO) as scene:
+        task = scene.post("turn-close", conversation={"maxTurns": 5})
+        scene.wait(task, "waiting_input")
+        turn_id = scene.get("/escalations?since=0")["escalations"][0]["id"]
+        found["escalation-accepted-turn-close"] = scene.service.post(
+            f"/escalations/{turn_id}", {"optionId": "close", "actor": "tack"})[1]
+        found["task-done-turn-close"] = scene.wait(task, "done")
+    asking = {"implementer": [call("consult", "k1", questions=[question(1), question(2)]), write_file("x.txt", "x\n"), say("Done.")]}
+    with Scene("parts", asking, SOLO) as scene:
+        scene.world.docket("pod", "set", "consultMode", "park", "--pod", scene.pod)
+        task = scene.post("parts-1")
+        scene.wait(task, "waiting_input")
+        found["escalations-consult-parts"] = scene.get("/escalations?since=0")
+        first, second = [e["id"] for e in found["escalations-consult-parts"]["escalations"]]
+        found["escalation-accepted-consult-part-1"] = scene.service.post(f"/escalations/{first}", {"optionId": "a", "actor": "tack"})[1]
+        found["task-after-part-1"] = scene.get(f"/tasks/{scene.pod}/{task}")
+        found["escalation-accepted-consult-part-2"] = scene.service.post(f"/escalations/{second}", {"optionId": "b", "actor": "tack"})[1]
+        found["task-after-part-2"] = scene.get(f"/tasks/{scene.pod}/{task}")
     return found
 
 
@@ -195,6 +230,15 @@ PAIRS = {
         "pipeline", "baseRef", "externalRef", "idempotencyKey", "gate", "maxTokens", "restrictions", "autonomy", "task")}),
     "escalations-consult": ("escalations-consult", set()),
     "escalation-accepted-consult": ("escalation-accepted-consult", {".resolution.content.note"}),
+    # A conversation task between its turns, its last turn, the turn's escalation and the two ways
+    # to answer it.
+    "escalations-turn": ("escalations-turn", set()),
+    "escalation-accepted-turn": ("escalation-accepted-turn", set()),
+    "escalation-accepted-turn-close": ("escalation-accepted-turn-close", set()),
+    "task-waiting-turn": ("task-waiting-turn", ECHO),
+    "task-done-turn": ("task-done-turn", ECHO),
+    # A consult of two questions: each is its own record with its part.
+    "escalations-consult-parts": ("escalations-consult-parts", set()),
 }
 
 

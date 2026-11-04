@@ -1,0 +1,9 @@
+{
+  "description": "Capture only: a thread continued as one docket task.",
+  "externalRef": "capture-thread/attempt-1",
+  "idempotencyKey": "capture-thread-1",
+  "baseRef": "main",
+  "conversation": {
+    "maxTurns": 5
+  }
+}

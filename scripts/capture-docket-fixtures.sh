@@ -317,6 +317,14 @@ OPTIONAL_KEYS=pipeline rec post-task-minimal POST /tasks/saas-dev yes "the four 
 MINIMAL_ID=$(jq -r '.task' <<<"$LAST_BODY")
 
 wait_for saas-dev "$MINIMAL_ID" failed
+# A thread's first turn sent as a conversation to a team whose method has several steps: docket
+# enqueues nothing and answers 400 with a code.
+CONVERSATION_BODY=$(jq -cn '{description: "Capture only: a thread continued as one docket task.",
+  externalRef: "capture-thread/attempt-1", idempotencyKey: "capture-thread-1", baseRef: "main",
+  conversation: {maxTurns: 5}}')
+OPTIONAL_KEYS=conversation rec post-task-conversation-needs-one-step POST /tasks/saas-dev yes "a thread's first turn sent with conversation to a team whose pipeline has several steps: 400 with code conversation_needs_one_step, and nothing is enqueued" --body "$CONVERSATION_BODY"; expect 400 conversation-needs-one-step
+[ "$(jq -r '.code' <<<"$LAST_BODY")" = conversation_needs_one_step ] || die "the refusal carries no conversation_needs_one_step code: $LAST_BODY"
+
 rec task-failed-pipeline GET "/tasks/saas-dev/$TASK_ID" yes "a task refused at claim: the sentence is in reason and the kind in failureKind; there is no error key"; expect 200 task
 [ "$(jq -r '.failureKind' <<<"$LAST_BODY")" = pipeline ] || die "the task failed, but not on its pipeline: $LAST_BODY"
 [ "$(jq '.hops | length' <<<"$LAST_BODY")" = 0 ] || die "a hop ran; this capture must spend nothing: $LAST_BODY"

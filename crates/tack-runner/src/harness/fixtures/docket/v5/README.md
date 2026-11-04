@@ -323,6 +323,7 @@ the script captures it. The features are named in `GET /health` exactly as above
 | `post-pods-old-fields` | `POST /pods` | 400 | captured |
 | `post-pods-shape` | `POST /pods` | 201 | captured |
 | `post-task-autonomy-l5` | `POST /tasks/<pod>` | 201 | captured |
+| `post-task-conversation-needs-one-step` | `POST /tasks/<pod>` | 400 | captured |
 | `post-task-created` | `POST /tasks/<pod>` | 201 | captured |
 | `post-task-existing` | `POST /tasks/<pod>` | 200 | captured |
 | `post-task-folder-base-ref` | `POST /tasks/<pod>` | 201 | captured |
@@ -365,6 +366,7 @@ the script captures it. The features are named in `GET /health` exactly as above
 | `task-cancel-unknown` | `POST /tasks/<pod>/<id>/cancel` | 404 | captured |
 | `task-diff-failed` | `GET /tasks/<pod>/<id>/diff` | 200 | captured |
 | `task-diff-unknown` | `GET /tasks/<pod>/<id>/diff` | 404 | captured |
+| `task-done-turn` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-done` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-failed-after-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
 | `task-failed-approval-expired` | `GET /tasks/<pod>/<id>` | 200 | constructed |
@@ -378,6 +380,7 @@ the script captures it. The features are named in `GET /health` exactly as above
 | `task-usage-by-model` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-usage-cached` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-waiting-escalation` | `GET /tasks/<pod>/<id>` | 200 | captured |
+| `task-waiting-turn` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `task-with-manifest` | `GET /tasks/<pod>/<id>` | 200 | constructed |
 | `traces-after-failure` | `GET /traces/<pod>` | 200 | captured |
 | `traces-empty` | `GET /traces/<pod>` | 200 | captured |
@@ -405,6 +408,18 @@ hours, and the script waits for nothing.
 keys of the contract and the budget; the fake takes those keys out for a docket before the feature
 (`podContract`, `podResume`).
 
+A conversation task (`conversation: {maxTurns}`, one-step pipeline only) is the one task whose turns
+need a model. `post-task-conversation-needs-one-step` is captured: a team whose pipeline has several steps
+answers `400` with `code: conversation_needs_one_step` and enqueues nothing. The turns themselves are
+answers of a real docket on a scripted model, read by `scripts/compare-constructed-docket-fixtures.py`:
+`task-waiting-turn` (waiting between two turns, `conversation {maxTurns, turns}`), `escalations-turn` (the
+escalation of kind `turn`: `prompt` is the turn's answer, options `reply` and `close`, `policy` and
+`onExpiry` `deny`), `escalation-accepted-turn` (a `reply` with `content {text}`: `appliedAt` stays null and
+the task goes on), `escalation-accepted-turn-close` (a `close`: `appliedAt` is stamped, the task is `done`;
+Tack never sends it, docket's CLI and sweep do) and `task-done-turn` (the last turn, which reaches `maxTurns` and ends the task).
+`escalations-consult-parts` is one consult call of two questions: two records with `part {index, count}`, the
+task staying `waiting_input` until both are answered.
+
 `captured` was recorded by the script against a real docket; `constructed` is built as its
 provenance says. A script run replaces every capture; the constructed files stay.
 
@@ -418,7 +433,8 @@ provenance says. A script run replaces every capture; the constructed files stay
   `413` for bodies over 1 MiB, and `409` for a task that ran in place.
 - `restrictions.policies` validation, `baseRef` failures other than an unresolvable ref, and
   `pipeline` resolution: the fake stores the name and never fails a task with
-  `failureKind: "pipeline"` on its own; a test scripts that.
+  `failureKind: "pipeline"` on its own; a test scripts that. A conversation task's turns are the fake's
+  own (`with_conversation`), made of the real answers above.
 - A task's full lifecycle (running, parked on a consult or an input, done) is constructed; no
   capture runs a model. A consult or an input answered, `check_changed`, an expired question and
   `L4` or `L5` pauses decided by `recommendation` are constructed or absent.

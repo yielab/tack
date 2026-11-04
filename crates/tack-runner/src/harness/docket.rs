@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 use tack_protocol::conversation::{ConverseMode, REPLY_REASON_KEY, TurnNote};
 use tack_protocol::event_kind;
 use tack_protocol::execution::{
-    ActualExecution, CapabilitySupport, FeatureCapabilities, HarnessCapability,
+    ActualExecution, CapabilitySupport, CapabilityValue, FeatureCapabilities, HarnessCapability,
     HarnessKind as DomainHarnessKind, Measurement, MeasurementSource, OperationOutcome,
     TeamActivity, TeamFacts, TeamMember, TeamMisfit, TeamNeeds, TeamReport, Usage,
     WorkspaceId as DomainWorkspaceId, team_misfits,
@@ -90,6 +90,19 @@ const POD_RESUME: &str = "podResume";
 
 /// The feature of `GET /health` under which a pod declares the hosts its `fetch` reads.
 const POD_FETCH: &str = "podFetch";
+
+/// The feature of `GET /health` under which a task can continue turn by turn: it is sent with
+/// `conversation: {maxTurns}` and each turn ends on an escalation of kind `turn`.
+const CONVERSATION: &str = "conversation";
+
+/// The most turns docket takes for one conversation task (`MAX_CONVERSATION_TURNS`).
+const MAX_CONVERSATION_TURNS: u32 = 20;
+
+/// The kind of the escalation a conversation task waits on between two turns.
+const TURN_KIND: &str = "turn";
+
+/// The `code` of the `400` docket answers to a conversation task whose method has several steps.
+const CONVERSATION_NEEDS_ONE_STEP: &str = "conversation_needs_one_step";
 
 /// How often a running task's trace, inbox and record are read.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -265,7 +278,18 @@ fn measurement<T>(value: Option<T>) -> Measurement<T> {
     }
 }
 
-/// What docket offers over its API.
+/// Why a turn is a new task: the way every team converses, and the way one whose docket does not
+/// list `conversation` has to.
+const REPLAYS: &str = "every turn is a new task given the conversation so far, and its reply is \
+     the summary of the team's last step";
+
+/// How a thread with a team continues when docket lists `conversation`.
+const CONTINUES: &str = "a thread is one docket task that continues turn by turn: each turn \
+     answers the task's `turn` escalation, and its reply is the summary of the team's last step; \
+     a team whose method has several steps replays instead";
+
+/// What docket offers over its API, as every docket does. `converse` is the way every team can,
+/// by replaying; [`probe`](HarnessProbe::probe) raises it for a docket that lists `conversation`.
 fn capabilities() -> FeatureCapabilities {
     FeatureCapabilities {
         cancel: capability(
@@ -302,11 +326,7 @@ fn capabilities() -> FeatureCapabilities {
             "the team's task list, with the step each task is in and the steps it finished, \
              including the work its CLI, a routine or another channel gave it",
         )),
-        converse: Some(ConverseMode::Replays.capability(
-            "every turn is a new task given the conversation so far, and its reply is the summary \
-             of the team's last step; docket's own continuing task (an escalation of kind \
-             `turn`, ADR 0037 decision 4) is not used yet",
-        )),
+        converse: Some(ConverseMode::Replays.capability(REPLAYS)),
         additional: policy_capability(
             CapabilitySupport::Supported,
             "the profile's denied tools and the network flag become the task's restrictions, \
@@ -336,6 +356,14 @@ struct RunInfo {
     /// that task had used (`input`, `output`) when the retry was sent, read back out of the
     /// task's own cumulative `usage` so the attempt counts only its own new hops.
     baseline_usage: Option<(u64, u64)>,
+    /// How this run's thread converses, when it differs from replaying: continuing the thread's
+    /// task, or replaying because docket refused the task as a conversation.
+    converse: Option<CapabilityValue>,
+    /// The thread this run is a turn of, when it is one.
+    thread: Option<String>,
+    /// A line for the timeline before anything else: a turn that could not continue its task
+    /// says it starts a new one.
+    notice: Option<String>,
 }
 
 /// The ends of the channels `wait` drives.
@@ -1049,6 +1077,11 @@ struct Escalations {
     /// The highest `seq` below the first record still pending: where a restarted adapter may
     /// read from without missing a question.
     settled_through: u64,
+    /// docket's ids of the conversation's `turn` records, settled or not: its answers are the
+    /// turn's reply and its reply is the next message, neither a question for a person.
+    turns: Vec<String>,
+    /// A `turn` record is pending: the conversation waits for the next message.
+    parked: bool,
 }
 
 impl DocketAdapter {
@@ -1115,9 +1148,14 @@ impl DocketAdapter {
             {
                 found.settled = true;
             }
+            if record.kind == TURN_KIND {
+                found.turns.push(record.id.clone());
+            }
             if matches!(record.state, EscalationState::Pending) {
                 open = true;
-                if record.kind == WAIT_KIND {
+                if record.kind == TURN_KIND {
+                    found.parked = true;
+                } else if record.kind == WAIT_KIND {
                     if !asked.contains(&record.id) {
                         found.waits.push((record.id.clone(), record.expires_at));
                     }
@@ -1260,7 +1298,13 @@ impl DocketAdapter {
                 .as_str()
                 .to_owned(),
                 model,
-                capability_snapshot: capabilities(),
+                capability_snapshot: {
+                    let mut features = capabilities();
+                    if let Some(converse) = &info.converse {
+                        features.converse = Some(converse.clone());
+                    }
+                    features
+                },
                 // Overwritten by the engine, which owns workspace facts.
                 workspace_id: DomainWorkspaceId::new(""),
                 base_revision: String::new(),
@@ -1646,7 +1690,11 @@ impl HarnessProbe for DocketAdapter {
     }
 
     async fn probe(&self) -> HarnessCapability {
-        probe::probe(&self.client, capabilities()).await
+        let mut features = capabilities();
+        if self.client.has_feature(CONVERSATION).await {
+            features.converse = Some(ConverseMode::Continues.capability(CONTINUES));
+        }
+        probe::probe(&self.client, features).await
     }
 
     fn declared_capabilities(&self) -> FeatureCapabilities {
@@ -1792,44 +1840,96 @@ impl HarnessAdapter for DocketAdapter {
         // The roles that propose, named in the task so no other role calls the tool; a team whose
         // members say nothing of it is told as before, naming none.
         let proposers = proposers(members.as_deref());
-        let base_ref = if in_repository {
-            Some(
-                match request.metadata.get("rework_base").and_then(Value::as_str) {
-                    Some(branch) if !branch.is_empty() => branch.to_owned(),
-                    _ => Self::base_commit(spec).await,
-                },
-            )
-        } else {
-            None
-        };
-        let body = task::body(
-            request,
-            &attempt_id,
-            spec.work.lease.attempt_number,
-            base_ref.as_deref(),
-            request.autonomy(),
-            proposers.as_deref(),
-        );
-        let reply = self.client.enqueue_task(&pod, body).await.map_err(|why| {
-            tracing::warn!(why, "docket could not be reached to post the task");
-            HarnessError::Process
-        })?;
-        let (task, refused) = match reply.status {
-            200 | 201 => match reply.read::<Enqueued>() {
-                Ok(enqueued) => (enqueued.task, None),
-                Err(why) => {
-                    tracing::warn!(why, "docket's answer to the task names no task");
-                    return Err(HarnessError::Process);
+        // A thread on a team whose docket lists `conversation` is one task that continues turn by
+        // turn: the first turn sends it, each later one answers its `turn` escalation.
+        let note = TurnNote::of(&request.metadata);
+        let conversing = note.is_some() && self.client.has_feature(CONVERSATION).await;
+        let mut notice = None;
+        let mut continued = None;
+        if conversing && let Some(note) = note.as_ref().filter(|note| note.turn > 1) {
+            match self.answer_turn(&pod, note, &attempt_id).await? {
+                Turn::Answered(task) => continued = Some(task),
+                Turn::Starts(why) => notice = Some(why),
+            }
+        }
+        let (task, refused, converse) = match continued {
+            Some(task) => (
+                task,
+                None,
+                Some(ConverseMode::Continues.capability(CONTINUES)),
+            ),
+            None => {
+                let base_ref = if in_repository {
+                    Some(
+                        match request.metadata.get("rework_base").and_then(Value::as_str) {
+                            Some(branch) if !branch.is_empty() => branch.to_owned(),
+                            _ => Self::base_commit(spec).await,
+                        },
+                    )
+                } else {
+                    None
+                };
+                let mut body = task::body(
+                    request,
+                    &attempt_id,
+                    spec.work.lease.attempt_number,
+                    base_ref.as_deref(),
+                    request.autonomy(),
+                    proposers.as_deref(),
+                );
+                let max_turns = note
+                    .as_ref()
+                    .filter(|_| conversing)
+                    .map(|note| note.max_turns.clamp(1, MAX_CONVERSATION_TURNS));
+                if let Some(max_turns) = max_turns {
+                    body["conversation"] = json!({"maxTurns": max_turns});
                 }
-            },
-            // The task is never retried: the attempt fails with docket's words.
-            400 | 422 => (format!("rejected-{attempt_id}"), Some(reply.error())),
-            401 => return Err(rejected("docket refused the runner's token".to_owned())),
-            _ => {
-                return Err(rejected(format!(
-                    "docket refused the task: {}",
-                    reply.error()
-                )));
+                let mut converse = max_turns.map(|_| ConverseMode::Continues.capability(CONTINUES));
+                let mut replayed = false;
+                let mut reply = self.send_task(&pod, &body).await?;
+                // A team whose method has several steps cannot continue: nothing was enqueued, so
+                // the same task goes again as today's replay, and the run says why.
+                if max_turns.is_some()
+                    && reply.status == 400
+                    && reply.body["code"] == json!(CONVERSATION_NEEDS_ONE_STEP)
+                {
+                    converse = Some(ConverseMode::Replays.capability(&format!(
+                        "{REPLAYS}; docket would not continue this team's task: {}",
+                        reply.error()
+                    )));
+                    replayed = true;
+                    // A team that replays has no conversation to restart.
+                    notice = None;
+                    if let Some(object) = body.as_object_mut() {
+                        object.remove("conversation");
+                    }
+                    reply = self.send_task(&pod, &body).await?;
+                }
+                let (task, refused) = match reply.status {
+                    200 | 201 => match reply.read::<Enqueued>() {
+                        Ok(enqueued) => (enqueued.task, None),
+                        Err(why) => {
+                            tracing::warn!(why, "docket's answer to the task names no task");
+                            return Err(HarnessError::Process);
+                        }
+                    },
+                    // The task is never retried: the attempt fails with docket's words.
+                    400 | 422 => (format!("rejected-{attempt_id}"), Some(reply.error())),
+                    401 => return Err(rejected("docket refused the runner's token".to_owned())),
+                    _ => {
+                        return Err(rejected(format!(
+                            "docket refused the task: {}",
+                            reply.error()
+                        )));
+                    }
+                };
+                if let Some(note) = note
+                    .as_ref()
+                    .filter(|_| max_turns.is_some() && !replayed && refused.is_none())
+                {
+                    self.write_thread(&note.id, &ThreadTask::new(&pod, &task));
+                }
+                (task, refused, converse)
             }
         };
 
@@ -1844,8 +1944,11 @@ impl HarnessAdapter for DocketAdapter {
                 refused,
                 api: Some(api),
                 in_repository,
-                turn: TurnNote::of(&request.metadata).is_some(),
+                turn: note.is_some(),
                 baseline_usage: None,
+                converse,
+                thread: note.map(|note| note.id),
+                notice,
             })
             .await)
     }
@@ -2016,8 +2119,178 @@ impl HarnessAdapter for DocketAdapter {
                 // only the new hops: the baseline travels in the request's own metadata, the same
                 // way `start_continuation` reads it the first time.
                 baseline_usage: baseline_usage_of(&spec.work.request.metadata),
+                converse: None,
+                thread: TurnNote::of(&spec.work.request.metadata).map(|note| note.id),
+                notice: None,
             })
             .await)
+    }
+}
+
+/// Where a thread's docket task is, between the turns that continue it.
+struct ThreadTask {
+    pod: String,
+    task: String,
+    /// Where the trace and its finished hops stood when the last turn ended, so the next turn
+    /// shows only its own.
+    cursor: String,
+    hops: usize,
+}
+
+impl ThreadTask {
+    fn new(pod: &str, task: &str) -> Self {
+        Self {
+            pod: pod.to_owned(),
+            task: task.to_owned(),
+            cursor: String::new(),
+            hops: 0,
+        }
+    }
+}
+
+/// What a thread's later turn found of its conversation.
+enum Turn {
+    /// The message answered the task's `turn` escalation; this is the task.
+    Answered(String),
+    /// There was no task to continue; a new one starts, and the sentence says why.
+    Starts(String),
+}
+
+impl DocketAdapter {
+    /// Where a thread's docket task is kept, beside the attempts' progress.
+    fn thread_path(&self, thread: &str) -> PathBuf {
+        let safe: String = thread
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        self.state_dir
+            .join("docket")
+            .join(format!("thread-{safe}.json"))
+    }
+
+    fn read_thread(&self, thread: &str) -> Option<ThreadTask> {
+        let value: Value =
+            serde_json::from_slice(&std::fs::read(self.thread_path(thread)).ok()?).ok()?;
+        Some(ThreadTask {
+            pod: value["pod"].as_str()?.to_owned(),
+            task: value["task"].as_str()?.to_owned(),
+            cursor: value["cursor"].as_str().unwrap_or_default().to_owned(),
+            hops: usize::try_from(value["hops"].as_u64().unwrap_or(0)).unwrap_or(0),
+        })
+    }
+
+    fn write_thread(&self, thread: &str, kept: &ThreadTask) {
+        let path = self.thread_path(thread);
+        let value = json!({"pod": kept.pod, "task": kept.task,
+                           "cursor": kept.cursor, "hops": kept.hops});
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| {
+                let partial = path.with_extension("json.partial");
+                std::fs::write(&partial, value.to_string())?;
+                std::fs::rename(&partial, &path)
+            });
+        if written.is_err() {
+            tracing::warn!(
+                harness = DESCRIPTOR.kind,
+                "the thread's task could not be saved"
+            );
+        }
+    }
+
+    /// A turn ended on the conversation's `turn` escalation: where the trace stands is kept for the
+    /// thread's next turn.
+    fn keep_thread_position(&self, info: &RunInfo, relay: &TraceRelay) {
+        let Some(thread) = &info.thread else { return };
+        if let Some(mut kept) = self.read_thread(thread)
+            && kept.task == info.task
+        {
+            kept.cursor.clone_from(&relay.cursor);
+            kept.hops = relay.hops_finished;
+            self.write_thread(thread, &kept);
+        }
+    }
+
+    /// `POST /tasks/<pod>`.
+    async fn send_task(&self, pod: &str, body: &Value) -> Result<client::Reply, HarnessError> {
+        self.client
+            .enqueue_task(pod, body.clone())
+            .await
+            .map_err(|why| {
+                tracing::warn!(why, "docket could not be reached to post the task");
+                HarnessError::Process
+            })
+    }
+
+    /// A later turn of a thread whose team continues: the message answers the pending `turn`
+    /// escalation of the thread's task. Without a task to answer (the runner never held one, the
+    /// conversation ended at its cap or was closed, the task was cancelled) a new one starts and
+    /// the turn says so.
+    async fn answer_turn(
+        &self,
+        pod: &str,
+        note: &TurnNote,
+        attempt_id: &str,
+    ) -> Result<Turn, HarnessError> {
+        let starts = |why: &str| {
+            Ok(Turn::Starts(format!(
+                "This thread's docket task {why}, so a new conversation starts from the thread so far."
+            )))
+        };
+        let Some(kept) = self.read_thread(&note.id).filter(|kept| kept.pod == pod) else {
+            return starts("is not known to this runner");
+        };
+        let reply = self
+            .client
+            .escalations(0, Some(&kept.task))
+            .await
+            .map_err(|why| {
+                tracing::warn!(why, "docket could not be reached to read the thread's task");
+                HarnessError::Process
+            })?;
+        let waiting = (reply.status == 200)
+            .then(|| reply.read::<EscalationList>().ok())
+            .flatten()
+            .and_then(|list| {
+                list.escalations
+                    .into_iter()
+                    .rev()
+                    .filter_map(|raw| serde_json::from_value::<Escalation>(raw).ok())
+                    .find(|record| {
+                        record.kind == TURN_KIND && matches!(record.state, EscalationState::Pending)
+                    })
+            });
+        let Some(waiting) = waiting else {
+            return starts("is no longer waiting for a message");
+        };
+        let body = json!({"optionId": "reply", "content": {"text": note.message}, "actor": "tack"});
+        match self.client.resolve(&waiting.id, body).await {
+            Ok(reply) if reply.status == 200 => {}
+            // Settled between the read and the answer: the conversation ended.
+            Ok(reply) if matches!(reply.status, 404 | 409) => {
+                return starts("ended as the message was sent");
+            }
+            Ok(reply) => {
+                return Err(rejected(format!(
+                    "docket did not take the message: {}",
+                    reply.error()
+                )));
+            }
+            Err(why) => {
+                tracing::warn!(why, "docket could not be reached to answer the turn");
+                return Err(HarnessError::Process);
+            }
+        }
+        self.write_state(attempt_id, "cursor", &kept.cursor);
+        self.write_state(attempt_id, "hops", &kept.hops.to_string());
+        Ok(Turn::Answered(kept.task))
     }
 }
 
@@ -2095,6 +2368,9 @@ impl DocketAdapter {
                 in_repository,
                 turn: TurnNote::of(&request.metadata).is_some(),
                 baseline_usage: baseline_usage_of(&request.metadata),
+                converse: None,
+                thread: TurnNote::of(&request.metadata).map(|note| note.id),
+                notice: None,
             })
             .await)
     }
@@ -2110,6 +2386,8 @@ struct TraceRelay {
     cursor: String,
     served_model: Option<String>,
     hops_finished: usize,
+    /// Escalations whose events say nothing on the timeline: the conversation's `turn` records.
+    quiet: HashSet<String>,
 }
 
 impl TraceRelay {
@@ -2118,6 +2396,7 @@ impl TraceRelay {
             cursor,
             served_model: None,
             hops_finished,
+            quiet: HashSet::new(),
         }
     }
 }
@@ -2158,6 +2437,12 @@ impl DocketAdapter {
                 let step = match &event {
                     TraceEvent::HopStarted(hop) => Some(hop_progress(false, hop)),
                     TraceEvent::HopFinished(hop) => Some(hop_progress(true, hop)),
+                    _ if event
+                        .escalation()
+                        .is_some_and(|id| relay.quiet.contains(id)) =>
+                    {
+                        None
+                    }
                     other => escalation_progress(other, labels),
                 };
                 if let Some(step) = step
@@ -2251,6 +2536,13 @@ impl DocketAdapter {
                 )
                 .await);
         }
+        if let Some(notice) = &info.notice {
+            let _ = side.progress.try_send(Progress {
+                kind: event_kind::AGENT_CONVERSATION_RESTARTED.to_owned(),
+                text: notice.clone(),
+                usage: None,
+            });
+        }
         // The attempt's clock bounds the agent's work; a task docket holds for a person is not
         // working, so the time between two polls that both saw it waiting is not counted.
         let mut deadline = tokio::time::Instant::now() + info.timeout;
@@ -2280,12 +2572,15 @@ impl DocketAdapter {
             // Whatever needs a person.
             let mut expired_in_docket = false;
             let mut settled_in_docket = false;
+            let mut parked = false;
             if let Some(read) = self
                 .read_escalations(info, since, &asked, pending.as_ref())
                 .await
             {
                 expired_in_docket = read.expired;
                 settled_in_docket = read.settled;
+                parked = read.parked;
+                relay.quiet.extend(read.turns);
                 labels.extend(read.labels);
                 for (id, sentence) in read.unaskable {
                     let _ = side.progress.try_send(Progress {
@@ -2386,6 +2681,28 @@ impl DocketAdapter {
                         model,
                         &side.progress,
                         pending.as_ref().and_then(|held| held.expires_at),
+                        last_asked.as_ref(),
+                    )
+                    .await);
+            }
+            // A conversation's turn is over when its task waits on the `turn` escalation: the
+            // attempt ends with the turn's reply, and the task stays for the thread's next message.
+            if parked
+                && let Some(view) = task.as_ref().filter(|view| view.status == "waiting_input")
+            {
+                self.settle_trace(info, view, &mut relay, &labels, &side.progress)
+                    .await;
+                self.keep_thread_position(info, &relay);
+                let model = relay.served_model.take();
+                let mut ended = view.clone();
+                ended.status = "done".to_owned();
+                return Ok(self
+                    .finish(
+                        info,
+                        &ended,
+                        model,
+                        &side.progress,
+                        None,
                         last_asked.as_ref(),
                     )
                     .await);

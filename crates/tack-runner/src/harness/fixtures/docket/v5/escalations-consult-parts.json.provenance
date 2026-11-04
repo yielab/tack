@@ -1,0 +1,9 @@
+constructed
+route: GET /escalations
+status: 200
+tack-sends: yes
+built-from: an answer of a real run of docket on a scripted model, as scripts/compare-constructed-docket-fixtures.py reads it over HTTP
+docket: docket 0.3.0b1 (API 6), source checkout 2462c872, run on a scripted model
+date: 2026-11-04
+note: one consult call of two questions: two records for the same task, step and role, each with part {index, count} (consultParts); the task stays waiting_input until both are answered; not captured by the capture script, because a consult needs a model's call; ids, times and paths are redacted as the captures are, the second record taking esc-000000000001 so the two differ
+checked: the keys equal those of a real run of docket 0.3.0b1 (source checkout 2462c872), found by scripts/compare-constructed-docket-fixtures.py on 2026-11-04
