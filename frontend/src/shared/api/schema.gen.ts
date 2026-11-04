@@ -5686,7 +5686,7 @@ export interface components {
         /**
          * @description The situation a notification is about, so the same situation is never open twice and the
          *     fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
-         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<team>:<entry>`.
+         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`, `children:<parent>`, `memory:<project>:<team>:<entry>`.
          */
         Key: string;
         /**

@@ -16,10 +16,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
+use uuid::Uuid;
 
 use tack_core::event::{DomainEvent, Fact, RunRef};
 use tack_core::notification::{Key, Kind, Level, Notice, closes, memory_waiting, notice};
 use tack_core::principal::Principal;
+use tack_core::run_defaults::named_team;
 use tack_db::Repository;
 use tack_db::repo::notifications::WaitingRun;
 use tack_protocol::Clock;
@@ -146,6 +148,8 @@ async fn waiting(repo: &Repository, clock: &dyn Clock) -> Result<Vec<Notice>, Ap
 /// What the active runners report of one team: whose report it is and what it says of memory.
 struct ReportedTeam {
     name: String,
+    /// The agent that runs it.
+    kind: String,
     runner: String,
     reported_at: chrono::DateTime<chrono::Utc>,
     memory: Option<tack_protocol::execution::TeamMemory>,
@@ -173,6 +177,7 @@ async fn reported_teams(repo: &Repository) -> Result<Vec<ReportedTeam>, AppError
                     key,
                     ReportedTeam {
                         name: team.name,
+                        kind: kind.clone(),
                         runner: runner.id.clone(),
                         reported_at: harness.probed_at,
                         memory: team.memory,
@@ -184,10 +189,34 @@ async fn reported_teams(repo: &Repository) -> Result<Vec<ReportedTeam>, AppError
     Ok(newest.into_values().collect())
 }
 
+/// The projects that use each team, from the profiles their roles and their default name
+/// (`run_defaults::named_team`, the join the list of teams makes). A profile that names an agent
+/// uses only that agent's team.
+async fn team_users(
+    repo: &Repository,
+    teams: &[ReportedTeam],
+) -> Result<HashSet<(Uuid, String, String)>, AppError> {
+    let mut users = HashSet::new();
+    for (project, policy) in repo.project_profile_policies().await? {
+        let policy: serde_json::Value = serde_json::from_str(&policy).unwrap_or_default();
+        let Some((name, agent)) = named_team(&policy) else {
+            continue;
+        };
+        for team in teams.iter().filter(|team| team.name == name) {
+            if agent.as_ref().is_none_or(|agent| *agent == team.kind) {
+                users.insert((project, team.kind.clone(), name.clone()));
+            }
+        }
+    }
+    Ok(users)
+}
+
 /// Makes the needs-you notifications for what teams wait to have approved say what the teams
-/// report: one open for each pending entry, none for an entry that is no longer pending or for a
-/// team that no longer reports. A team whose report carries no memory (its docket does not offer
-/// it, or the read failed) says nothing, so what is open for it stays. Idempotent, by the key.
+/// report: for each project that uses a team, one open for each pending entry, none for an entry
+/// that is no longer pending, for a team that no longer reports or for a project that no longer
+/// uses the team. A team no project uses opens nothing. A team whose report carries no memory (its
+/// docket does not offer it, or the read failed) says nothing, so what is open for it stays.
+/// Idempotent, by the key.
 pub async fn reconcile_memory(repo: &Repository, inbox: &Inbox) -> Result<Reconciled, AppError> {
     let open: Vec<_> = inbox
         .open_notifications(u32::MAX)
@@ -198,11 +227,20 @@ pub async fn reconcile_memory(repo: &Repository, inbox: &Inbox) -> Result<Reconc
     let teams = reported_teams(repo).await?;
     let mut done = Reconciled::default();
     let mut holding: HashSet<Key> = HashSet::new();
-    if let Some(project) = repo.filing_project().await? {
-        for team in &teams {
-            for entry in team.memory.iter().flat_map(|memory| &memory.pending) {
-                let notice =
-                    memory_waiting(project, &team.name, &entry.id, &entry.subject, &team.runner);
+    let users = team_users(repo, &teams).await?;
+    for team in &teams {
+        for entry in team.memory.iter().flat_map(|memory| &memory.pending) {
+            for (project, ..) in users
+                .iter()
+                .filter(|(_, kind, name)| *kind == team.kind && *name == team.name)
+            {
+                let notice = memory_waiting(
+                    *project,
+                    &team.name,
+                    &entry.id,
+                    &entry.subject,
+                    &team.runner,
+                );
                 holding.insert(notice.key.clone());
                 if inbox.open(&notice).await?.is_some() {
                     done.opened += 1;
@@ -211,12 +249,17 @@ pub async fn reconcile_memory(repo: &Repository, inbox: &Inbox) -> Result<Reconc
         }
     }
     for notification in open {
-        let silent = notification.key.memory_team().is_some_and(|name| {
-            teams.iter().any(|team| team.name == name)
-                && !teams
+        let silent = notification
+            .key
+            .memory_use()
+            .is_some_and(|(project, name)| {
+                users
                     .iter()
-                    .any(|team| team.name == name && team.memory.is_some())
-        });
+                    .any(|(user, _, team)| *user == project && team == name)
+                    && !teams
+                        .iter()
+                        .any(|team| team.name == name && team.memory.is_some())
+            });
         if !holding.contains(&notification.key) && !silent && inbox.close(&notification.key).await?
         {
             done.closed += 1;

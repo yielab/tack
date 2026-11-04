@@ -78,7 +78,10 @@ decide. The sheet shows both under **What it has learnt** (newest first, an entr
 button: `docket pod memory approve <id> --pod <team>` and `docket pod memory refuse <id> --pod <team> --reason "<why>"`.
 **Approve** and **Refuse** are on the sheet too, greyed, saying that docket decides this with its own command for
 now. A waiting entry is also in your **Inbox**, as **Needs you**: pressing it opens the team's sheet, and it
-closes once the entry is decided, however you decided it. The board hears of a change when the computer next
+closes once the entry is decided, however you decided it. A team's memory asks you in the projects that use that
+team: a project uses it when one of its roles, or its default profile, runs a profile that names the team, and
+the inbox then has one line for that project. A team no project uses asks nobody, and the sheet still shows its
+memory. Changing the role away from the team closes the line. The board hears of a change when the computer next
 reports its teams, which takes a few minutes. A team whose docket does not offer this shows no memory.
 
 When a team asks, the question waits in the **Now** panel and on the task's Execution tab, under **Needs you**.
