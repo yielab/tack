@@ -4,7 +4,7 @@
 > history; closed phases are archived under
 > [`docs/closed-cycles/`](https://github.com/yielab/tack/tree/develop/docs/closed-cycles).
 
-**Tack is delivered through Phase 88.** A project is planned and tracked on a board, a list, a
+**Tack is delivered through Phase 90.** A project is planned and tracked on a board, a list, a
 calendar or a timeline, with or without agents, and its teams at work are drawn on the Orchestration view. A task can be handed to an agent on
 your computer (Claude Code, Codex, opencode or docket), which brings its own sign-in and model;
 Tack holds no model key. A step that runs out of its own budget keeps its work and lets a person
@@ -29,24 +29,8 @@ it; and GitHub. Each still works alone, and without a verifier a project stays a
 
 ## Open
 
-Phases 73 to 88 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
+Phases 73 to 90 are built and in `develop`. Tagging `v0.2.0-beta.1` is the maintainer's own step,
 and it is not a card.
-
-**Phase 89 — the board orchestrates and a team declares what it accepts** ([ADR 0036](https://github.com/yielab/tack/blob/develop/docs/adr/0036-the-board-orchestrates-and-a-team-declares-what-it-accepts.md),
-in progress since 2026-11-04: cards A (one router, the parent follows its children) and C (words and the amended ADRs) are built; plan in `docs/plans/phase-89.md`). One owner per concept: the board decides what
-is done and by whom, the team decides how. A team's report gains its contract (what it delivers, the
-methods it can run and the roles each lacks, what its work still needs) and a card is refused before
-sending when the team cannot do what it needs — not only the web and proposals of today but the
-repository, the method and the needs. One routing function serves every screen; a parent card reads
-how many children are done and tells the inbox when the last one finishes, moving nothing. Each
-limit — run, step, team — is shown with who applies it, and a team paused on its budget is resumed
-from the board. A business structure is a template: roles as departments and the teams it expects,
-compared with what docket reports; "Digital business" is the first, and the repository's teams are
-applied through the runner with the person approving docket's commands. Everything a person needs
-to run a project works with any agent Tack runs — a profile with no team is a team of one, filled
-from what its runner reports; docket adds members, methods, step and team limits and folder teams,
-reported and probed, never required. Four additive asks go to docket, each probed as a feature.
-Seven cards in five rounds.
 
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
 file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
@@ -144,6 +128,23 @@ Phases 73 to 87, newest first. The detail is in each phase's plan under
 each decision in its ADR under [`docs/adr/`](https://github.com/yielab/tack/tree/develop/docs/adr),
 and what a user can now do in the [changelog](https://github.com/yielab/tack/blob/develop/CHANGELOG.md).
 
+- **Phase 89 — the board orchestrates and a team declares what it accepts.** ADR 0036. One owner per
+  concept: the board decides what is done and by whom, the team decides how. One router
+  (`GET /api/projects/{id}/routing`) serves Flow, Map and the item page; a parent card reads how many
+  children are done, names the teams or agents involved and tells the inbox when the last one
+  finishes, moving nothing. A team's report carries its contract (what it delivers, the methods it can
+  run and the roles each lacks, what its work still needs); a profile with no team is a team of one,
+  filled from what its runner reports, so every rule works with any agent and docket adds members,
+  methods and folder teams when it reports them. A run is refused before it is sent when its team
+  cannot do what it needs (the web, proposals, a repository, a method, an unmet need), and a profile's
+  method is checked when it is saved. Agents → Teams shows each team as a sheet of six answers; each
+  run says who applies each limit (run, step, team) and a team paused on its budget is resumed from
+  the board; "Digital business" is a template of six departments with the teams it expects, compared with
+  what docket reports, and the repository's teams are applied through the runner with the person
+  approving the commands docket lists. Everything docket-specific is probed as a feature and built
+  against the fake; none of it has been run against a live docket that reports `podContract`,
+  `podShape` or `podResume`. The board now has a channel to ask a runner for something
+  (`POST /operations/poll`, `/operations/{id}/result`), additive in runner v1.
 - **Phase 88 — a person is told what needs them.** ADR 0035. One inbox fed by the board's own events:
   a question a run asks, a run that fails and a change set an agent proposes each need you; a run that
   finishes and an item due within the hour inform you. It closes itself when the situation ends, however

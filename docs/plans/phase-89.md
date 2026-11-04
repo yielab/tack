@@ -1,6 +1,6 @@
 # Phase 89: the board orchestrates and a team declares what it accepts
 
-**Status: PROPOSED 2026-11-03.** Executes ADR 0036
+**Status: BUILT 2026-11-04** (cards A to G; the live proof against a docket that reports the four features is still to do). Executes ADR 0036
 (`docs/adr/0036-the-board-orchestrates-and-a-team-declares-what-it-accepts.md`): read its decision
 table first; this file says only how. Seven cards in five rounds, grouped by the files they touch so
 one agent reads a file once. Three cards wait on a docket feature and probe it at runtime; the others
