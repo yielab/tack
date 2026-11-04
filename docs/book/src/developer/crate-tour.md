@@ -323,7 +323,7 @@ Opens a thread (a conversation between a person and a profile, ADR 0034 decision
 
 ### Ticks
 
-Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`, `triggers`) is a module with `tick()`, one pass that tests call with a fake clock so nothing sleeps, and `spawn()`, which hands that pass to `background::Loops`. `tack-cli/src/serve.rs` owns the `Loops` and stops them all when the server returns. The rules for a loop (one owner per table, shared cancellation, a use case started after answering goes on `AppState::tasks`) are in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md). `loop_config.rs` holds the loops' settings, which `tack-api`'s `AppConfig` flattens into `tack.toml`. The autonomy pass (`autonomy::tick`, with `merge.rs`) runs after each GitHub poll; `pull_request.rs` opens the pull request an accepted attempt asks for.
+Every timer-driven loop (`auto_start`, `github_sync`, `remote_backup`, `due_soon`, `retention`, `observability`, `triggers`, `notifications::delivery`) is a module with `tick()`, one pass that tests call with a fake clock so nothing sleeps, and `spawn()`, which hands that pass to `background::Loops`. `tack-cli/src/serve.rs` owns the `Loops` and stops them all when the server returns. The rules for a loop (one owner per table, shared cancellation, a use case started after answering goes on `AppState::tasks`) are in [`docs/ARCHITECTURE.md`](https://github.com/yielab/tack/blob/develop/docs/ARCHITECTURE.md). `loop_config.rs` holds the loops' settings, which `tack-api`'s `AppConfig` flattens into `tack.toml`. The autonomy pass (`autonomy::tick`, with `merge.rs`) runs after each GitHub poll; `pull_request.rs` opens the pull request an accepted attempt asks for.
 
 ### `retention.rs` and `observability.rs`
 
@@ -382,7 +382,6 @@ pub struct AppState {
     pub workspace_id: Uuid,
     pub broadcast_tx: broadcast::Sender<BoardEvent>,          // the browser's share of the events
     pub event_bus: tack_app::events::EventBus,                // every consumer of a domain event
-    pub webhook: Option<WebhookClient>,                       // None when TACK_WEBHOOK_URL is unset
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,    // the embedded runner's seam
     pub tasks: TaskTracker,                                   // work started after answering
 }

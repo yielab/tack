@@ -234,6 +234,39 @@ async fn a_delivery_taken_is_not_due_again() {
 }
 
 #[tokio::test]
+async fn a_channel_reports_what_waits_what_gave_up_and_the_last_error() {
+    let repo = setup_test_db().await;
+    let workspace = create_test_workspace(&repo).await;
+    let project = make_project(&repo, workspace).await.id;
+    let now = Utc::now();
+    assert!(repo.channel_statuses().await.unwrap().is_empty());
+
+    let mut ids = Vec::new();
+    for (i, id) in ["d-1", "d-2", "d-3"].into_iter().enumerate() {
+        let opened = repo
+            .insert_open_notification(
+                &question(project, id),
+                &webhook(),
+                now + Duration::seconds(i as i64),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        ids.push(opened.id);
+    }
+    repo.delivery_done(ids[0], "webhook", now).await.unwrap();
+    repo.delivery_failed(ids[1], "webhook", None, "status 404")
+        .await
+        .unwrap();
+
+    let statuses = repo.channel_statuses().await.unwrap();
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].channel, "webhook");
+    assert_eq!((statuses[0].pending, statuses[0].failed), (1, 1));
+    assert_eq!(statuses[0].last_error.as_deref(), Some("status 404"));
+}
+
+#[tokio::test]
 async fn what_is_settled_is_forgotten_and_what_still_waits_is_not() {
     let repo = setup_test_db().await;
     let workspace = create_test_workspace(&repo).await;

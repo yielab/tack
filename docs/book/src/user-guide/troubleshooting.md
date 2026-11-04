@@ -117,7 +117,7 @@ For ports, tokens and allowed origins, [Administration & Security](../admin-guid
 
 ### Is my data sent anywhere?
 
-Tack itself sends nothing to Anthropic or to any Tack-operated service. Projects, items and comments live in a database on the machine that runs the server. Outbound traffic happens only for features you set up: a webhook, a GitHub or Linear import, a cloud backup. When you run an agent, that agent talks to its own provider with its own sign-in, as it would if you ran it by hand; Tack holds no model key.
+Tack itself sends nothing to Anthropic or to any Tack-operated service. Projects, items and comments live in a database on the machine that runs the server. Outbound traffic happens only for features you set up: a webhook for what needs you, a GitHub or Linear import, a cloud backup. When you run an agent, that agent talks to its own provider with its own sign-in, as it would if you ran it by hand; Tack holds no model key.
 
 ### Can I use Tack offline?
 

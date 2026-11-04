@@ -153,8 +153,7 @@ per-endpoint listing precisely so they do not get duplicated by one.
   `CreateSprint` field.
 - `PATCH /api/sprints/{id}` — full replacement of `name`/`goal`/`start_date`/
   `end_date`: omitting a field clears it rather than leaving it alone.
-- `PATCH /api/sprints/{id}/status` — the only route that moves status; fires the
-  sprint's lifecycle webhooks.
+- `PATCH /api/sprints/{id}/status` — the only route that moves status.
 
 **Roles, profiles, auto-start and the ceiling**
 - `PATCH /api/roles/{id}` may set `agent_profile_id`. `POST /api/executions` may omit

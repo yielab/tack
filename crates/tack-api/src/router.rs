@@ -33,7 +33,6 @@ use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
     set_session_cookie,
 };
-use crate::webhook::WebhookClient;
 use tack_app::local_runner::LocalRunnerControl;
 
 /// Shared application state passed to all handlers.
@@ -47,8 +46,6 @@ pub struct AppState {
     /// Where the board's domain events go for every consumer that subscribes (see
     /// [`AppState::events`]); `broadcast_tx` carries only the browser's share of them.
     pub event_bus: tack_app::events::EventBus,
-    /// Optional outbound webhook client (None when TACK_WEBHOOK_URL is unset)
-    pub webhook: Option<WebhookClient>,
     /// What needs a person: the one write path of the inbox, shared with the loops that fill it.
     pub notifications: tack_app::notifications::Inbox,
     /// Seam to an embedded runner living in the same process — see
@@ -124,6 +121,7 @@ fn local_runner_routes() -> Router<AppState> {
 fn notification_routes() -> Router<AppState> {
     Router::new()
         .route("/notifications", get(notifications::list_notifications))
+        .route("/notifications/channels", get(notifications::get_channels))
         .route(
             "/notifications/read-all",
             post(notifications::read_all_notifications),

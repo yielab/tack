@@ -118,18 +118,6 @@ pub async fn create_item(
         },
     ));
 
-    if let Some(wh) = &state.webhook {
-        wh.fire(
-            "item.created",
-            serde_json::json!({
-                "event": "item.created",
-                "timestamp": Utc::now().to_rfc3339(),
-                "project_id": project_id,
-                "item": &item,
-            }),
-        );
-    }
-
     Ok(Json(serde_json::to_value(item).unwrap()))
 }
 
@@ -286,7 +274,7 @@ pub async fn update_item(
 }
 
 /// Everything that follows a saved change to an item, the person's route and a change set's
-/// alike: the board's event channel (and with it the WebSocket) and the webhook hear of it, a
+/// alike: the board's event channel (and with it the WebSocket) hears of it, a
 /// closed recurring task makes the next one, a linked GitHub issue follows, and into Done the
 /// finished run is merged when the project asks for it. `over_mcp` says the
 /// change came over MCP, which the merge holds back for a person.
@@ -305,18 +293,6 @@ pub(crate) async fn after_update(
         old_status,
         &item.status,
     ));
-
-    if let Some(wh) = &state.webhook {
-        wh.fire(
-            "item.updated",
-            serde_json::json!({
-                "event": "item.updated",
-                "timestamp": Utc::now().to_rfc3339(),
-                "project_id": item.project_id,
-                "item": item,
-            }),
-        );
-    }
 
     // A recurring task that was just closed makes the next one.
     create_next_recurrence(state, principal, &project.workflow, item, old_status).await;
@@ -488,18 +464,6 @@ pub async fn delete_item(
         &principal,
         Fact::ItemDeleted { item_id: id },
     ));
-
-    if let Some(wh) = &state.webhook {
-        wh.fire(
-            "item.deleted",
-            serde_json::json!({
-                "event": "item.deleted",
-                "timestamp": Utc::now().to_rfc3339(),
-                "project_id": item.project_id,
-                "item_id": id,
-            }),
-        );
-    }
 
     Ok(Json(serde_json::json!({"deleted": true})))
 }

@@ -34,7 +34,6 @@ pub(crate) async fn app() -> Router {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

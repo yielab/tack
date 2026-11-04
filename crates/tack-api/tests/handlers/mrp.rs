@@ -66,7 +66,6 @@ pub(crate) async fn setup_with_bus(
         workspace_id,
         broadcast_tx: tx,
         event_bus: bus.clone(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

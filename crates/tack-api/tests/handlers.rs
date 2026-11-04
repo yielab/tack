@@ -57,6 +57,8 @@ mod metrics;
 mod missing_parents;
 #[path = "handlers/mrp.rs"]
 mod mrp;
+#[path = "handlers/notification_channels.rs"]
+mod notification_channels;
 #[path = "handlers/notifications.rs"]
 mod notifications;
 #[path = "handlers/operator_read_routes.rs"]

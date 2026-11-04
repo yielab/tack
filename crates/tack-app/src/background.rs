@@ -7,9 +7,11 @@
 use std::any::Any;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::FutureExt;
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::{MissedTickBehavior, interval, timeout};
 use tokio_util::sync::CancellationToken;
@@ -44,11 +46,36 @@ impl Loops {
     /// cutting it off would only leave the next start to redo it. A pass that is late is not
     /// repeated to catch up. A panic ends the loop and is logged with its name. `every` must not
     /// be zero.
-    pub fn spawn_tick<F, Fut>(
+    pub fn spawn_tick<F, Fut>(&mut self, name: &'static str, start: Start, every: Duration, tick: F)
+    where
+        F: FnMut() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.spawn_loop(name, start, every, None, tick);
+    }
+
+    /// [`Loops::spawn_tick`] that also makes a pass the moment `wake` is pinged, for a loop whose
+    /// work can arrive between ticks. Pings that come while a pass runs make one more pass.
+    pub fn spawn_woken<F, Fut>(
         &mut self,
         name: &'static str,
         start: Start,
         every: Duration,
+        wake: Arc<Notify>,
+        tick: F,
+    ) where
+        F: FnMut() -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.spawn_loop(name, start, every, Some(wake), tick);
+    }
+
+    fn spawn_loop<F, Fut>(
+        &mut self,
+        name: &'static str,
+        start: Start,
+        every: Duration,
+        wake: Option<Arc<Notify>>,
         mut tick: F,
     ) where
         F: FnMut() -> Fut + Send + 'static,
@@ -66,6 +93,12 @@ impl Loops {
                     tokio::select! {
                         () = stop.cancelled() => break,
                         _ = timer.tick() => {}
+                        () = async {
+                            match &wake {
+                                Some(wake) => wake.notified().await,
+                                None => std::future::pending().await,
+                            }
+                        } => {}
                     }
                     tick().await;
                 }

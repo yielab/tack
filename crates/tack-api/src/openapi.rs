@@ -903,6 +903,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         handlers::notifications::list_notifications,
         handlers::notifications::read_notification,
         handlers::notifications::read_all_notifications,
+        handlers::notifications::get_channels,
         handlers::threads::create_thread,
         handlers::threads::list_threads,
         handlers::threads::get_thread,
@@ -1052,6 +1053,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
         tack_core::change_set::Origin,
         tack_core::change_set::AgentsOnBoard,
         tack_core::change_set::RungLevel,
+        handlers::notifications::NotificationChannel,
         tack_core::digest::Digest,
         tack_core::notification::Notification,
         tack_core::notification::Kind,
@@ -1246,6 +1248,7 @@ impl OpenApi for ExecutionOperatorExtrasApiDoc {
     tags(
         (name = "system", description = "Health and debug probes."),
         (name = "projects", description = "Projects: the top-level container for work."),
+        (name = "notifications", description = "What needs a person, and the channels it leaves through."),
         (name = "digest", description = "A computed, bounded summary of the projects a caller may read."),
         (name = "notifications", description = "What needs a person: an inbox of open and settled notifications, and a live socket that tells when it changes."),
         (name = "threads", description = "Conversations between a person and a profile; each message starts a turn."),

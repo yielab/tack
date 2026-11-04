@@ -74,6 +74,15 @@ pub struct DueDelivery {
     pub attempts: u32,
 }
 
+/// How a channel's deliveries stand: waiting for a try, given up on, and the last error seen.
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+pub struct ChannelStatus {
+    pub channel: String,
+    pub pending: u32,
+    pub failed: u32,
+    pub last_error: Option<String>,
+}
+
 #[derive(sqlx::FromRow)]
 struct DueRow {
     #[sqlx(flatten)]
@@ -331,6 +340,27 @@ impl Repository {
         .execute(self.pool())
         .await?;
         Ok(())
+    }
+
+    /// Every channel that has deliveries, with how many wait and how many were given up on. The
+    /// last error is the newest notification's that has one: a delivery that went through clears
+    /// its own.
+    #[instrument(skip(self))]
+    pub async fn channel_statuses(&self) -> Result<Vec<ChannelStatus>, StoreError> {
+        Ok(sqlx::query_as::<_, ChannelStatus>(
+            "SELECT d.channel AS channel,
+                    CAST(COALESCE(SUM(d.delivered_at IS NULL AND d.next_at IS NOT NULL), 0) AS INTEGER) AS pending,
+                    CAST(COALESCE(SUM(d.delivered_at IS NULL AND d.next_at IS NULL), 0) AS INTEGER) AS failed,
+                    (SELECT e.last_error
+                     FROM notification_deliveries e JOIN notifications m ON m.id = e.notification_id
+                     WHERE e.channel = d.channel AND e.last_error IS NOT NULL
+                     ORDER BY m.created_at DESC LIMIT 1) AS last_error
+             FROM notification_deliveries d
+             GROUP BY d.channel
+             ORDER BY d.channel",
+        )
+        .fetch_all(self.pool())
+        .await?)
     }
 
     /// Forgets what was settled before `cutoff`: a notification resolved by then, or an info one

@@ -11,9 +11,8 @@ use tack_api::LocalRunnerControl;
 use tack_api::config::AppConfig;
 use tack_api::router::AppState;
 use tack_api::server::prepare;
-use tack_api::webhook::WebhookClient;
 use tack_app::background::{Loops, STOP_GRACE};
-use tack_app::notifications::Inbox;
+use tack_app::notifications::{Inbox, delivery};
 use tack_db::{Repository, init_pool, migrations, repo};
 use tack_protocol::{Clock, SystemClock};
 use tokio::sync::oneshot;
@@ -49,21 +48,22 @@ pub async fn run(
         );
     }
 
-    // The channels a new notification is queued for: the webhook, when one is set.
-    let channels = config
-        .webhook_url
-        .iter()
-        .map(|_| "webhook".to_string())
-        .collect();
-    let notifications = Inbox::new(repo.clone(), Arc::new(SystemClock), channels);
-
     // WebSocket update fan-out; capacity 100 messages.
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
 
-    let webhook = config.webhook_url.clone().map(|url| {
-        info!(url=%url, "Webhook delivery enabled");
-        WebhookClient::new(url, config.webhook_secret.clone())
-    });
+    // The channels a notification leaves through, and the one inbox that queues it for each.
+    let channels = config.loops.channels();
+    let notifications = Inbox::new(
+        repo.clone(),
+        Arc::new(SystemClock),
+        config
+            .loops
+            .channel_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    );
+    let delivery_wake = notifications.queued();
 
     let mut loops = Loops::new();
 
@@ -73,13 +73,12 @@ pub async fn run(
         workspace_id,
         broadcast_tx,
         event_bus: Default::default(),
-        webhook,
         notifications,
         local_runner,
         tasks: TaskTracker::new(),
     };
 
-    // The loops the configuration turns on.
+    // The loops the configuration turns on, and the one that delivers the inbox to its channels.
     state.config.loops.start(
         &mut loops,
         &state.repo,
@@ -87,6 +86,13 @@ pub async fn run(
         state.ports(),
         state.config.backup_config(),
         state.notifications.clone(),
+    );
+    delivery::spawn(
+        &mut loops,
+        state.repo.clone(),
+        Arc::new(SystemClock),
+        channels,
+        delivery_wake,
     );
 
     let served = tack_api::serve(state, ready_tx).await;

@@ -83,7 +83,6 @@ pub async fn test_app_with_state(
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner,
         tasks: Default::default(),
     };
@@ -124,7 +123,6 @@ pub async fn test_app_with_file_db_and_config(db_url: &str, config: AppConfig) -
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

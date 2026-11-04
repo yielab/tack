@@ -1218,7 +1218,6 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
         workspace_id: Uuid::new_v4(),
         broadcast_tx: broadcast::channel(16).0,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -1301,7 +1300,6 @@ async fn agent_context_includes_the_projects_definition_of_done() {
         workspace_id: Uuid::new_v4(),
         broadcast_tx: broadcast::channel(16).0,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -1478,7 +1476,6 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
         workspace_id: Uuid::new_v4(),
         broadcast_tx: tokio::sync::broadcast::channel(16).0,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -1597,7 +1594,6 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
         workspace_id: Uuid::new_v4(),
         broadcast_tx: tokio::sync::broadcast::channel(16).0,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -2499,7 +2495,6 @@ async fn auto_start_board() -> (Repository, tack_api::AppState, String, Uuid) {
         workspace_id: workspace,
         broadcast_tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

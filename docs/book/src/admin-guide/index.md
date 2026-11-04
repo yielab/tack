@@ -31,7 +31,7 @@ change Tack's code or integrate with it, read the [Developer Guide](../developer
 | Change the port, the database path or the log file, or look up a `TACK_*` variable or a runner setting | [Configuration](configuration-reference.md) |
 | Require a token, set the allowed origins or expose Tack on a network | [Administration & Security](administration.md) |
 | Give an agent its own key to the board | [Agent credentials](administration.md#agent-credentials) |
-| Send events to a webhook | [Administration & Security](administration.md#webhooks) |
+| Send what needs you to a webhook | [Administration & Security](administration.md#webhooks) |
 | Let agents run on this computer | [Installing and Operating Runners](runners.md#the-three-ways-to-attach-a-runner) |
 | Run agents on another machine | [Installing and Operating Runners](runners.md#enrolling-a-runner) |
 | Run several attempts at once | [Installing and Operating Runners](runners.md#running-several-attempts-at-once) |
