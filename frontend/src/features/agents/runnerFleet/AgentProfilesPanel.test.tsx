@@ -220,6 +220,46 @@ describe('AgentProfilesPanel', () => {
     expect(items[1].textContent).toContain('Delete');
   });
 
+  it('lets a person choose what a profile does, and a built-in keeps its own', async () => {
+    const profiles = [
+      { agent_profile_id: 'ap_m', name: 'scout', instructions: 'Look.', tool_policy: {}, limits: {}, kind: 'custom', builtin: false },
+      { agent_profile_id: 'ap_b', name: 'Planner', instructions: 'Plan.', tool_policy: {}, limits: {}, kind: 'planner', builtin: true },
+    ];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      const body = method !== 'GET' ? {} : String(input).endsWith('/api/teams') ? { teams: [] } : { protocol_version: 1, data: profiles };
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const { container } = mount();
+    await flush();
+    await flush();
+    const edit = (name: string) =>
+      Array.from(container.querySelectorAll('li')).find((li) => li.textContent?.includes(name))!
+        .querySelectorAll('button');
+    Array.from(edit('scout')).find((b) => b.textContent === 'Edit')!.click();
+    await flush();
+    const kind = container.querySelector<HTMLSelectElement>('[data-testid="profile-kind"]')!;
+    expect(kind.disabled).toBe(false);
+    expect(kind.value).toBe('custom');
+    expect(Array.from(kind.options).map((o) => o.value)).toEqual(['custom', 'implementer', 'reviewer', 'researcher', 'planner']);
+    expect(Array.from(kind.options).find((o) => o.value === 'researcher')!.textContent).toBe('Researcher: Investigates and reports; may propose work');
+    kind.value = 'researcher';
+    kind.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    await flush();
+    const patch = fetchMock.mock.calls.find((c) => (c[1] as RequestInit)?.method === 'PATCH')!;
+    expect(JSON.parse((patch[1] as RequestInit).body as string).kind).toBe('researcher');
+
+    // A built-in profile shows its kind, cannot change it, and says why.
+    Array.from(edit('Planner')).find((b) => b.textContent === 'Edit')!.click();
+    await flush();
+    const builtin = container.querySelector<HTMLSelectElement>('[data-testid="profile-kind"]')!;
+    expect(builtin.disabled).toBe(true);
+    expect(builtin.value).toBe('planner');
+    expect(container.textContent).toContain('A built-in profile keeps what it does.');
+  });
+
   it('says what a built-in profile is, with its description and the agent that runs it', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const body = String(input).endsWith('/api/teams')

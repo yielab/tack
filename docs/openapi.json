@@ -11928,6 +11928,13 @@
           "instructions": {
             "type": "string"
           },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the profile does: `implementer`, `reviewer`, `researcher`, `planner` or `custom`\n(the default). It decides whether a run needs a repository."
+          },
           "limits": {},
           "name": {
             "type": "string"
@@ -11940,10 +11947,14 @@
         "required": [
           "protocol_version",
           "agent_profile_id",
-          "name"
+          "name",
+          "kind"
         ],
         "properties": {
           "agent_profile_id": {
+            "type": "string"
+          },
+          "kind": {
             "type": "string"
           },
           "name": {
@@ -19626,6 +19637,13 @@
               "string",
               "null"
             ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What the profile does, from the same list as on create. A built-in profile keeps its own."
           },
           "limits": {},
           "name": {

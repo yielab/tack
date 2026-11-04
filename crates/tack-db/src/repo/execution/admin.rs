@@ -31,6 +31,7 @@ pub struct AgentProfilePatch<'a> {
     pub tool_policy: Option<&'a str>,
     pub limits: Option<&'a str>,
     pub summary: Option<&'a str>,
+    pub kind: Option<&'a str>,
     pub fleet_id: Option<Option<&'a str>>,
     pub delivers: Option<Option<&'a str>>,
 }
@@ -89,8 +90,9 @@ impl Repository {
         })
     }
 
-    /// Adds an agent profile, placed in `fleet_id` and given a `delivers` line
-    /// when either is named, in one transaction. A taken name is
+    /// Adds an agent profile, placed in `fleet_id`, given a `delivers` line and
+    /// the `kind` it does (the column's default, `custom`, when absent)
+    /// when any is named, in one transaction. A taken name is
     /// `Conflict("profile_name_taken")`.
     #[instrument(skip(self, input))]
     pub async fn create_agent_profile_placed(
@@ -98,6 +100,7 @@ impl Repository {
         input: NewAgentProfile<'_>,
         fleet_id: Option<&str>,
         delivers: Option<&str>,
+        kind: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         let now = now.to_rfc3339();
@@ -111,10 +114,13 @@ impl Repository {
         .execute(&mut *tx)
         .await
         .map_err(|err| conflict_on_unique(err, "profile_name_taken"))?;
-        if fleet_id.is_some() || delivers.is_some() {
-            sqlx::query("UPDATE agent_profiles SET fleet_id = ?, delivers = ? WHERE id = ?")
+        if fleet_id.is_some() || delivers.is_some() || kind.is_some() {
+            sqlx::query(
+                "UPDATE agent_profiles SET fleet_id = ?, delivers = ?, kind = COALESCE(?, kind) WHERE id = ?",
+            )
                 .bind(fleet_id)
                 .bind(delivers)
+                .bind(kind)
                 .bind(input.id)
                 .execute(&mut *tx)
                 .await?;
@@ -143,7 +149,7 @@ impl Repository {
         let done = sqlx::query(
             "UPDATE agent_profiles SET name = COALESCE(?, name), instructions = COALESCE(?, instructions), \
              tool_policy = COALESCE(?, tool_policy), limits = COALESCE(?, limits), \
-             summary = COALESCE(?, summary), \
+             summary = COALESCE(?, summary), kind = COALESCE(?, kind), \
              fleet_id = CASE WHEN ? = 1 THEN ? ELSE fleet_id END, \
              delivers = CASE WHEN ? = 1 THEN ? ELSE delivers END, updated_at = ? WHERE id = ?",
         )
@@ -152,6 +158,7 @@ impl Repository {
         .bind(patch.tool_policy)
         .bind(patch.limits)
         .bind(patch.summary)
+        .bind(patch.kind)
         .bind(set_fleet)
         .bind(fleet_id)
         .bind(set_delivers)

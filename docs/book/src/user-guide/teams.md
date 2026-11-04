@@ -125,7 +125,10 @@ Dollars are never a limit.
 The sheet lists the roles of the chosen project that send work to the team, and the profiles that use it; press a
 profile to edit it. A card goes to a team through a profile, and a profile through a role:
 
-1. Create or choose a profile whose **Team** field names the team.
+1. Create or choose a profile whose **Team** field names the team. **What this profile does** says whether a
+   run of it changes the repository. Custom (the choice for a new profile), Implementer and Reviewer work in it;
+   Researcher and Planner do not. A team that delivers a report, with no repository, takes only a profile that
+   does not work in it: the built-in Planner and Researcher, or one of your own set to either.
 2. Under **Settings → Automation → Who**, point a role of your project at that profile.
 3. A card with that role goes to that team: when you press **Run with agent**, which says "Chosen by the role" and
    the role's name, or by itself, if **When** starts tasks by itself.

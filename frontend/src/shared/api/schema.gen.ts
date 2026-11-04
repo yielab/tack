@@ -4823,12 +4823,18 @@ export interface components {
             /** @description The fleet a run with this profile goes to when it names no selector. */
             fleet_id?: string | null;
             instructions: string;
+            /**
+             * @description What the profile does: `implementer`, `reviewer`, `researcher`, `planner` or `custom`
+             *     (the default). It decides whether a run needs a repository.
+             */
+            kind?: string | null;
             limits?: unknown;
             name: string;
             tool_policy?: unknown;
         };
         CreateProfileResponse: {
             agent_profile_id: string;
+            kind: string;
             name: string;
             /** Format: int32 */
             protocol_version: number;
@@ -7623,6 +7629,8 @@ export interface components {
             /** @description Omitted leaves the fleet untouched; JSON `null` clears it. */
             fleet_id?: string | null;
             instructions?: string | null;
+            /** @description What the profile does, from the same list as on create. A built-in profile keeps its own. */
+            kind?: string | null;
             limits?: unknown;
             name?: string | null;
             summary?: string | null;
