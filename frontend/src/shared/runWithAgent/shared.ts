@@ -18,6 +18,7 @@
 import type {
   CreateExecutionInput,
   RunnerCapabilities,
+  RunnerSummary,
   HarnessCapability,
 } from '../execution';
 
@@ -334,6 +335,15 @@ export function isActiveRunnerState(state: string): boolean {
  *  (the scheduler's window), so the dialog keeps no second threshold. A row without it counts as answering. */
 export function isAnsweringRunner(runner: { state: string; online?: boolean }): boolean {
   return isActiveRunnerState(runner.state) && runner.online !== false;
+}
+
+/** Adapts one `GET /runners` row to the `RunnerCapabilities` shape the gates expect (protocol/runner
+ *  version live in sibling columns there). `null` for a runner with no complete parsed snapshot:
+ *  skipped, never faked. */
+export function runnerSummaryToCapabilities(runner: RunnerSummary): RunnerCapabilities | null {
+  const snap = runner.capability_snapshot as Omit<RunnerCapabilities, 'protocol_version' | 'runner_version'> | null;
+  if (!snap || !Array.isArray(snap.harnesses) || !snap.concurrency || !snap.limits) return null;
+  return { ...snap, protocol_version: runner.protocol_version, runner_version: runner.runner_version ?? '' };
 }
 
 /** A runner that does not answer, in words: since when its last heartbeat says. */

@@ -134,19 +134,24 @@ you choose a profile for a role.
 
 ### The Apply button
 
-**Apply the repository's teams** makes the teams the project's repository holds, in `.docket/teams/`, on
-the computer that holds the project's folder. The board does not reach that computer itself: it asks a
+**Apply the repository's teams** makes the teams the project's roles work with that no computer reports yet,
+from the folders the project's repository holds in `.docket/teams/`, on the computer that holds the project's
+folder. Under the button each missing team has the shape it is made from (`build` unless you choose another).
+The Orchestration Map and the preview of an imported project file list the same missing teams, each with a
+**Create** button beside its command that makes just that one. The board does not reach that computer itself: it asks a
 computer that runs docket, which makes each team from its shape and applies the team's folder. The button
 is enabled when a computer reports a docket that can do that. Otherwise it stays on the screen, disabled,
-and says why (no computer reports docket, or the docket on your computers is too old and needs updating);
+and says why (no computer reports docket, the docket on your computers is too old and needs updating, or
+every team the roles use is already reported);
 the link beside it, **How to set up a team there**, opens the
 [Administrator Guide](../admin-guide/runners.md#docket-teams) for making a team by hand. The project's code
 must be a folder on that computer.
 
 When a team's folder would run commands on the computer (an install command, a command it is allowed to
 run, open network access), docket stops and lists them. The board shows the list with a code: read the
-commands, and confirm with the code if you agree, and the computer then applies the team. If no computer
-answers within half a minute, the team is not applied and the board says so. **Manage profiles** links to
+commands, and confirm if you agree, and the computer then applies the team. If you cancel, the team is not
+made. A team docket refuses shows docket's reason beside the button. If no computer answers within half a
+minute, the team is not applied and the board says so. **Manage profiles** links to
 the profiles on the Agents page.
 
 A project with no roles says: "This project has no roles yet. Add them under Roles."

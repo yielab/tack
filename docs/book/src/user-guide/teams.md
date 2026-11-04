@@ -84,8 +84,9 @@ Three limits apply at three levels, and each says who applies it:
   [Reviewing a Run](reviewing-runs.md).
 - **The team.** A team may have a budget of its own in docket: the tokens it may spend, what it has spent and
   the span they are counted over. When it is spent the team is **Paused: budget spent**: it starts nothing, and a
-  task sent to it waits. **Resume team** lets it start again, and the waiting tasks go on. It is there when your
-  docket can resume a team from the board; with an older one, the sheet shows docket's own command instead.
+  task sent to it waits. **Resume team** on the team's sheet lets it start again, and the waiting tasks go on. It works when your
+  docket can resume a team from the board; with an older one the button is disabled and says so, and the sheet
+  shows docket's own command instead. If docket refuses, the sheet shows its sentence.
 
 A task's **Limits** section lists the levels that apply to that run, each with who applies it: the run's tokens
 ("applied by Tack's runner" for a single agent, "applied by docket" for a team), the step's own bounds when a

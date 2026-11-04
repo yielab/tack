@@ -20,6 +20,7 @@ import type { RunnerSummary } from '../../shared/execution/api';
 import { harnessesOf } from './runnerObservations';
 import { requestProfileEdit } from './profileEditRequest';
 import TeamCard, { type TeamSheetContext } from './TeamCard';
+import ResumeTeam from './ResumeTeam';
 
 /**
  * Teams: one sheet per team any agent reports (`GET /api/teams`), a local agent being a team of one, each
@@ -28,7 +29,7 @@ import TeamCard, { type TeamSheetContext } from './TeamCard';
  * for the project chosen at the top. Under the teams, the profiles that run no agent of their own.
  */
 const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) => {
-  const [teams, { refetch: refetchTeams }] = createResource(() => teamsApi.list());
+  const [teams, { refetch: refetchTeams, mutate: mutateTeams }] = createResource(() => teamsApi.list());
   const [profiles, { refetch: refetchProfiles }] = createResource(() => agentProfilesApi.list());
   const [busy, setBusy] = createSignal<string | null>(null);
   const [projects] = createResource(() => api.projects.list().catch(() => []));
@@ -165,6 +166,16 @@ const TeamsPanel: Component<{ runners?: readonly RunnerSummary[] }> = (props) =>
                 onMakeProfile={() => void makeProfile(entry)}
                 profiles={rows()}
                 context={contextOf(entry)}
+                actions={
+                  <ResumeTeam
+                    entry={entry}
+                    onResumed={(report) =>
+                      report
+                        ? mutateTeams((all) => (all ?? []).map((e) => (e.name === entry.name && e.harness === entry.harness ? { ...e, report } : e)))
+                        : void refetchTeams()
+                    }
+                  />
+                }
               />
             );
           }}

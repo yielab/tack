@@ -83,6 +83,8 @@ interface World {
   /** What `/routing` answers when the test says it differently from the rule `routing()` stands in for. */
   routed?: Json[];
   patches: Array<{ id: string; body: Json }>;
+  /** The bodies posted to `/teams/apply`. */
+  applied?: Json[];
   project: Json;
 }
 
@@ -152,6 +154,11 @@ async function mount(w: World) {
     }
     if (url.includes('/items?')) return json({ data: w.items, total: w.items.length, page: 1, per_page: 200 });
     if (url.includes('/executions?')) return json({ protocol_version: 1, data: w.runs });
+    if (url.endsWith('/teams/apply')) {
+      const body = JSON.parse(String(init?.body)) as { teams: Array<{ name: string }> };
+      (w.applied ??= []).push(body);
+      return json(body.teams.map((t) => ({ team: t.name, state: 'applied' })));
+    }
     if (url.endsWith('/routing')) return json(w.routed ?? routing(w));
     if (url.endsWith('/teams')) return json({ teams: w.teams });
     if (url.includes('/agent-profiles')) return json({ protocol_version: 1, data: w.profiles });
@@ -743,6 +750,38 @@ describe('Orchestration: Map and Compare', () => {
     q<HTMLButtonElement>(entries[0], 'button[aria-label="Copy the fix for lonely"]')!.click();
     await flush();
     expect(written).toEqual(['docket init lonely']);
+  });
+
+  it('offers_Create_beside_the_command_of_a_missing_team_disabled_with_its_reason_until_a_computer_lists_podShape', async () => {
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const entry = qa(c, '[data-testid="map-missing-entry"]')[0];
+    const create = q<HTMLButtonElement>(entry, 'button[aria-label="Create the team lonely"]')!;
+    expect(create.disabled).toBe(true);
+    expect(entry.textContent).toContain('No computer reports docket');
+  });
+
+  it('creates_a_missing_team_from_the_shape_chosen_and_reads_the_teams_again', async () => {
+    const w = mapWorld();
+    w.runners = [{
+      runner_id: 'r1', name: 'This computer (ox)', state: 'active', online: true, total_capacity: 1, available_capacity: 1, protocol_version: 1, runner_version: '1',
+      capability_snapshot: { harnesses: [{ harness_kind: 'docket', installed_version: '', api_version: '6', probe_error: null, probed_at: '', api_features: ['podShape'] }], concurrency: { max_concurrent: 1 }, limits: {} },
+    }];
+    const c = await mount(w);
+    modeButton(c, 'map').click();
+    await settle();
+    const entry = qa(c, '[data-testid="map-missing-entry"]')[0];
+    const shape = q<HTMLSelectElement>(entry, 'select[aria-label="Shape of lonely"]')!;
+    shape.value = 'routine';
+    shape.dispatchEvent(new Event('change', { bubbles: true }));
+    const create = q<HTMLButtonElement>(entry, 'button[aria-label="Create the team lonely"]')!;
+    expect(create.disabled).toBe(false);
+    w.teams = w.teams.map((t) => (t.name === 'lonely' ? team('lonely', null, { profiles: [], reported: true, report: { name: 'lonely' } }) : t));
+    create.click();
+    await settle();
+    expect(w.applied).toEqual([{ teams: [{ name: 'lonely', shape: 'routine' }] }]);
+    expect(qa(c, '[data-testid="map-missing-entry"]')).toHaveLength(0);
   });
 
   it('moves_between_nodes_with_the_arrow_keys', async () => {

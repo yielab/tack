@@ -78,10 +78,12 @@ interface Project {
 
 const PROJECT_ID = '11111111-1111-1111-1111-111111111111';
 
-function mockApi(teams: unknown[], profiles: unknown[] = PROFILES, project?: Project) {
+function mockApi(teams: unknown[], profiles: unknown[] = PROFILES, project?: Project, extra?: (url: string, method: string) => Response | undefined) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     const method = (init as RequestInit | undefined)?.method ?? 'GET';
+    const answered = extra?.(url, method);
+    if (answered) return Promise.resolve(answered);
     if (project && url.endsWith('/api/projects')) return Promise.resolve(new Response(JSON.stringify([{ id: PROJECT_ID, name: 'Shop', default_profile_id: 'ap_i' }]), { status: 200 }));
     if (project && url.endsWith(`/api/projects/${PROJECT_ID}/autonomy`)) return Promise.resolve(new Response(JSON.stringify(project.autonomy), { status: 200 }));
     if (project && url.endsWith(`/api/projects/${PROJECT_ID}/roles`)) return Promise.resolve(new Response(JSON.stringify(project.roles), { status: 200 }));
@@ -352,6 +354,65 @@ describe('TeamsPanel', () => {
     expect(unnamed.textContent).not.toContain('budget');
     expect(unnamed.textContent).toContain('docket run --pod other --resume');
     expect(card(c, 'running').querySelector('[data-testid="team-paused"]')).toBeNull();
+    expect(card(c, 'running').querySelector('[data-testid="team-actions"]')!.textContent).not.toContain('Resume team');
+  });
+
+  describe('Resume team', () => {
+    const BUDGET = { tokens: 1000, used: 1000, window: 'day' };
+    const paused = (budget?: unknown) => ({ ...FULL_TEAM, report: { ...FULL_TEAM.report, paused: 'budget', budget } });
+    const resumeButton = (c: HTMLElement) => card(c, 'saas-code').querySelector<HTMLButtonElement>('button[aria-label="Resume team saas-code"]')!;
+
+    it('is disabled with its reason when the agent has no way to resume the team, and the note keeps the command', async () => {
+      mockApi([paused()]);
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      expect(resumeButton(c).disabled).toBe(true);
+      expect(card(c, 'saas-code').querySelector('[data-testid="team-actions"]')!.textContent).toContain('Docket does not offer this yet');
+      expect(card(c, 'saas-code').querySelector('[data-testid="team-paused"]')!.textContent).toContain('docket run --pod saas-code --resume');
+    });
+
+    it('resumes through the board, points the note at the button, and shows the report the answer carries', async () => {
+      const calls: string[] = [];
+      mockApi([paused(BUDGET)], PROFILES, undefined, (url, method) => {
+        if (!url.endsWith('/api/teams/docket/saas-code/resume')) return undefined;
+        calls.push(method);
+        return new Response(JSON.stringify({ team: 'saas-code', harness: 'docket', runner: 'This computer', report: { ...FULL_TEAM.report, budget: BUDGET } }), { status: 200 });
+      });
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      expect(card(c, 'saas-code').querySelector('[data-testid="team-paused"]')!.textContent).toContain('Press Resume team');
+      expect(resumeButton(c).disabled).toBe(false);
+      resumeButton(c).click();
+      await flush();
+      await flush();
+      expect(calls).toEqual(['POST']);
+      expect(card(c, 'saas-code').querySelector('[data-testid="team-paused"]')).toBeNull();
+      expect(card(c, 'saas-code').querySelector('button[aria-label="Resume team saas-code"]')).toBeNull();
+    });
+
+    it('is busy while the call is out and shows the sentence the agent refused with', async () => {
+      let answer: (r: Response) => void = () => {};
+      let calls = 0;
+      const fetchSpy = mockApi([paused(BUDGET)]);
+      const base = fetchSpy.getMockImplementation()!;
+      fetchSpy.mockImplementation((input, init) =>
+        String(input).endsWith('/resume') ? (calls++, new Promise<Response>((resolve) => { answer = resolve; })) : base(input, init));
+      const c = mount([runner([DOCKET])]);
+      await flush();
+      await flush();
+      resumeButton(c).click();
+      resumeButton(c).click();
+      await flush();
+      expect(resumeButton(c).getAttribute('aria-busy')).toBe('true');
+      expect(calls).toBe(1);
+      answer(new Response(JSON.stringify({ error: { code: 'conflict', message: 'docket has not listed podResume. Resume it with `docket run --pod saas-code --resume`.' } }), { status: 409 }));
+      await flush();
+      await flush();
+      expect(card(c, 'saas-code').querySelector('[data-testid="team-resume-refused"]')!.textContent).toContain('docket has not listed podResume');
+      expect(resumeButton(c).getAttribute('aria-busy')).toBeNull();
+    });
   });
 
   it('shows a disabled "Not reported by" line for each field the agent did not report', async () => {

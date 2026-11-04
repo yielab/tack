@@ -3,6 +3,7 @@
 
 import type { components } from '../api/schema.gen';
 import { request } from '../api/client';
+import { agentName } from './agents';
 
 export type TeamEntry = components['schemas']['TeamEntry'];
 export type TeamReport = components['schemas']['TeamReport'];
@@ -183,12 +184,21 @@ export function methodsByType(policy: unknown): Array<{ type: string; method: st
 export const SHARED_PROPOSALS_TEXT =
   "This team's proposals are kept for all its tasks together: a name used in one task cannot be used again in another until the team's proposal list is recreated.";
 
-/** What a paused team is owed: the fact in a few words and the one way to end it. Tack has no
- *  control to resume a team (the agent has no route for it), so the sentence is the reason. */
-export function pausedText(name: string, paused: NonNullable<TeamReport['paused']>): { headline: string; resume: string } {
+/** Whether the board can lift a team's pause now. The agent lists `podResume` exactly when it reports the
+ *  team's `budget`, so a pause with no budget is one only the agent's own command ends. */
+export function resumeGate(entry: TeamEntry): { enabled: boolean; reason: string | null } {
+  if (!entry.harness) return { enabled: false, reason: 'No computer reports this team.' };
+  if (!entry.report?.budget) return { enabled: false, reason: `${agentName(entry.harness)} does not offer this yet: resume the team with its own command.` };
+  return { enabled: true, reason: null };
+}
+
+/** What a paused team is owed: the fact in a few words and the one way to end it. */
+export function pausedText(entry: TeamEntry, paused: NonNullable<TeamReport['paused']>): { headline: string; resume: string } {
   return {
     headline: paused === 'budget' ? 'Paused: budget spent' : 'Paused',
-    resume: `Resume it with \`docket run --pod ${name} --resume\`; its queued tasks wait until then.`,
+    resume: resumeGate(entry).enabled
+      ? 'Press Resume team to let it claim tasks again; its queued tasks wait until then.'
+      : `Resume it with \`docket run --pod ${entry.name} --resume\`; its queued tasks wait until then.`,
   };
 }
 
