@@ -271,6 +271,12 @@ Every run says its limit and who applies it, in one line:
 The dialog prints the same line under **Token limit** before you start, and it changes as you edit the
 limit, clear it or choose another agent.
 
+On a task that has run, the **Limits** section under that line says who applies each limit that bears on the
+run: the run's tokens ("Applied by Tack's runner" for Claude Code and opencode, "Applied by docket" for a team),
+the step's own rounds, tool calls or time when a step ran out of one and where to raise it, and the team's
+budget with what it has spent. A run on a single agent has the first only. See
+[A team](teams.md#how-far-does-it-go).
+
 #### A limit learnt from a profile's own runs
 
 When you edit an agent profile, a line under **Token limit per run** tells what its last successful runs

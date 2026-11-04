@@ -12,10 +12,16 @@ export type TeamList = components['schemas']['TeamList'];
 export type TeamMisfit = components['schemas']['TeamMisfit'];
 export type TeamMethod = components['schemas']['TeamMethod'];
 export type TeamNeed = components['schemas']['TeamNeed'];
+export type TeamBudget = components['schemas']['TeamBudget'];
+export type TeamResumed = components['schemas']['TeamResumed'];
 
 export const teamsApi = {
   /** Every team any agent reports, then the names only profiles use. */
   list: async (): Promise<TeamEntry[]> => (await request<Partial<TeamList>>('/teams')).teams ?? [],
+  /** Lets a team that stopped on its budget claim tasks again, through the runner that reports it.
+   *  Answers with the team as its agent reports it afterwards; a refusal carries the agent's sentence. */
+  resume: (harness: string, name: string) =>
+    request<TeamResumed>(`/teams/${encodeURIComponent(harness)}/${encodeURIComponent(name)}/resume`, { method: 'POST' }),
 };
 
 /** What a team's `profile` is called on the board: its Supervision. Lights-out is the one profile that

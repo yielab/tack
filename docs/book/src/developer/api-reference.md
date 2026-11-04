@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (123 paths, 167 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (126 paths, 170 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -857,6 +857,21 @@ GET /api/teams
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Every team any active runner reports, once per name and agent, with the profiles that name it; plus the names profiles use that no runner reports | `TeamList` |
+
+#### `POST /api/teams/{harness}/{name}/resume`
+
+POST /api/teams/{harness}/{name}/resume
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `harness` | path | `string` | yes | The agent that runs the team, as `GET /api/teams` names it |
+| `name` | path | `string` | yes | The team's name |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The agent let the team claim tasks again; its report afterwards | `TeamResumed` |
+| 404 | not_found (no active runner reports a team of that name for that agent) | — |
+| 409 | conflict (the agent refused, with its reason, or the runner did not answer in time) | `ErrorEnvelope` |
 
 #### `GET /api/teams/{id}/activity`
 
@@ -2326,6 +2341,36 @@ Report liveness, capacity, and active-attempt state in one fenced batch
 | Status | Meaning | Schema |
 |---|---|---|
 | 200 | Renewed lease facts per reported attempt | — |
+| 400 | invalid_request | `RunnerV1ErrorEnvelope` |
+| 401 | unauthorized | `RunnerV1ErrorEnvelope` |
+| 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
+| 409 | conflict / idempotency_conflict / invalid_transition / stale_lease | `RunnerV1ErrorEnvelope` |
+
+#### `POST /api/runner/v1/operations/poll`
+
+Ask for what a person asked of this runner's harnesses from the board, each handed out once (additive v1 operation; exact path fixed by protocol.json)
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The operations waiting for the runner; empty when none | — |
+| 400 | invalid_request | `RunnerV1ErrorEnvelope` |
+| 401 | unauthorized | `RunnerV1ErrorEnvelope` |
+| 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |
+| 404 | not_found | `RunnerV1ErrorEnvelope` |
+| 409 | conflict / idempotency_conflict / invalid_transition / stale_lease | `RunnerV1ErrorEnvelope` |
+
+#### `POST /api/runner/v1/operations/{operation_id}/result`
+
+Tell the board how an operation ended, to the request that waits for it (additive v1 operation; exact path fixed by protocol.json)
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `operation_id` | path | `string` | yes | Operation ID, issued when the board hands the operation out (opaque) |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Result handed to the waiting request; 404 when nothing waits | — |
 | 400 | invalid_request | `RunnerV1ErrorEnvelope` |
 | 401 | unauthorized | `RunnerV1ErrorEnvelope` |
 | 403 | forbidden / runner_revoked | `RunnerV1ErrorEnvelope` |
