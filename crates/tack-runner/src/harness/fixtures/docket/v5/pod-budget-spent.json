@@ -195,6 +195,11 @@
     "enforced": true
   },
   "fetchDomains": [],
+  "webRead": {
+    "mode": "none",
+    "reason": "no host is allowed",
+    "fix": "docket pod set fetchDomains <host> --pod saas-budget"
+  },
   "needs": [],
   "delivers": [
     "branch"

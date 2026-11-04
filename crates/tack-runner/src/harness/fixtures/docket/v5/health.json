@@ -23,7 +23,8 @@
     "podContract",
     "podResume",
     "memoryStatus",
-    "memoryDecide"
+    "memoryDecide",
+    "webRead"
   ],
   "dispatch": {
     "on": true,

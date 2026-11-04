@@ -641,7 +641,7 @@ mkdir -p "$SCRATCH/contract"
   || die "docket pod update web-research failed; see $SCRATCH/pod-update-web.log"
 mkdir -p "$DOCKET_HOME/config/pods/saas-contract/pipelines"
 printf 'not: [valid\n' >"$DOCKET_HOME/config/pods/saas-contract/pipelines/capture-broken.yaml"
-rec pod-contract GET /pods/saas-contract yes "a team in a folder with a bound pipeline: delivers is a list (report), methods lists every pipeline a task may name (default on the bound one, missingRoles for a step the roster cannot fill, error for a file that does not load) and needs holds the three unmet needs the web-research recipe records"; expect 200 pod-contract
+rec pod-contract GET /pods/saas-contract yes "a team in a folder with a bound pipeline: delivers is a list (report), methods lists every pipeline a task may name (default on the bound one, missingRoles for a step the roster cannot fill, error for a file that does not load) and needs holds the three needs the web-research recipe records (met under the jail, each with whether it blocks)"; expect 200 pod-contract
 
 # A team over its budget: a day window, a cap of 1000 and 2500 tokens spent today. docket counts a
 # pod's tokens from its sessions' per-day usage, which only a model writes, so one session record is

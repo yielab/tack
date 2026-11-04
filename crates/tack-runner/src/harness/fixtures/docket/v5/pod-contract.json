@@ -17,6 +17,7 @@
         ],
         "tools": [
           "consult",
+          "fetch",
           "glob",
           "grep",
           "read",
@@ -26,6 +27,9 @@
           "write": [],
           "query": false
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -47,6 +51,7 @@
         ],
         "tools": [
           "consult",
+          "fetch",
           "glob",
           "grep",
           "read",
@@ -56,6 +61,9 @@
           "write": [],
           "query": false
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -81,6 +89,7 @@
           "bash",
           "consult",
           "edit",
+          "fetch",
           "glob",
           "grep",
           "process_output",
@@ -93,6 +102,9 @@
           "write": [],
           "query": false
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -118,6 +130,7 @@
           "bash",
           "consult",
           "edit",
+          "fetch",
           "glob",
           "grep",
           "process_output",
@@ -130,6 +143,9 @@
           "write": [],
           "query": false
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -153,6 +169,7 @@
         "tools": [
           "consult",
           "edit",
+          "fetch",
           "glob",
           "grep",
           "read",
@@ -163,6 +180,9 @@
           "write": [],
           "query": false
         },
+        "fetchDomains": [
+          "*"
+        ],
         "notComputed": [
           "mcp",
           "service"
@@ -364,24 +384,32 @@
     "enforced": true
   },
   "fetchDomains": [],
+  "webRead": {
+    "mode": "open",
+    "reason": "a folder team under the jail reads any public host",
+    "fix": ""
+  },
   "needs": [
     {
       "kind": "fetch-hosts",
       "name": "fetch-hosts",
-      "fix": "docket pod set fetchDomains <hosts> --pod saas-contract",
-      "satisfied": false
+      "fix": "",
+      "satisfied": true,
+      "blocking": true
     },
     {
       "kind": "search-host",
       "name": "search-host",
-      "fix": "docket pod set fetchDomains 'html.duckduckgo.com' --pod saas-contract",
-      "satisfied": false
+      "fix": "",
+      "satisfied": true,
+      "blocking": false
     },
     {
       "kind": "isolation",
       "name": "isolation",
       "fix": "",
-      "satisfied": true
+      "satisfied": true,
+      "blocking": false
     }
   ],
   "delivers": [
@@ -520,8 +548,8 @@
     "windowStart": null
   },
   "workDir": "/scratch/home/.docket/state/workspaces/pods/saas-contract/workdir",
-  "configSource": "/home/ox/Sites/rack-cli/src/docket/templates/recipes/web-research",
-  "configDigest": "58212bf7e4f5927ce240adf2dc6320c74701263da8f4b99e33c815802dbab5f6",
+  "configSource": "/home/ox/.local/lib/docket/venv/lib/python3.11/site-packages/docket/templates/recipes/web-research",
+  "configDigest": "6d860fe8c961dfbdf23e4b71a44e35cf3fecd8e63d123e1daed232f2974124be",
   "drift": "no",
   "profile": {
     "name": "attended",
