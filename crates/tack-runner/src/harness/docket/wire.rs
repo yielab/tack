@@ -181,6 +181,9 @@ pub(super) struct PodNeed {
     pub name: String,
     pub fix: String,
     pub satisfied: bool,
+    /// Whether the work cannot go on without it; absent from a docket before `webRead`.
+    #[serde(default)]
+    pub blocking: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

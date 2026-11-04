@@ -272,6 +272,7 @@ fn need(kind: &str, name: &str, satisfied: bool) -> TeamNeed {
         name: name.to_owned(),
         fix: "do it".to_owned(),
         satisfied,
+        blocking: None,
     }
 }
 
@@ -368,6 +369,36 @@ fn each_need_the_team_says_is_unmet_is_one_misfit() {
             },
         ],
         "a model is met by the run naming one, which is checked per run"
+    );
+}
+
+#[test]
+fn only_a_blocking_need_refuses_and_one_that_does_not_say_blocks() {
+    let degrading = TeamNeed {
+        blocking: Some(false),
+        ..need("service", "pdf reader", false)
+    };
+    let blocking = TeamNeed {
+        blocking: Some(true),
+        ..need("service", "fetch hosts", false)
+    };
+    let silent = need("service", "smtp", false);
+    let needs = [degrading, blocking, silent];
+    let team = TeamFacts {
+        needs: Some(&needs),
+        ..TeamFacts::default()
+    };
+    assert_eq!(
+        team_misfits(team, &TeamNeeds::default()),
+        [
+            TeamMisfit::NeedsUnmet {
+                name: "fetch hosts".to_owned()
+            },
+            TeamMisfit::NeedsUnmet {
+                name: "smtp".to_owned()
+            },
+        ],
+        "an unmet need that docket says only degrades the work refuses nothing"
     );
 }
 

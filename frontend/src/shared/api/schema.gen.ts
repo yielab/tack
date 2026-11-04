@@ -7227,13 +7227,22 @@ export interface components {
                 method: string;
             };
         } | {
-            /** @description The team says one of its needs is not met. */
+            /**
+             * @description The team says one of its needs is not met, and that the work cannot go on without it (a
+             *     need that only degrades the work is a warning, not a misfit).
+             */
             needs_unmet: {
                 name: string;
             };
         };
         /** @description One thing a team's work still needs, and how to give it. */
         TeamNeed: {
+            /**
+             * @description Whether the work cannot go on without it. `Some(false)` is a need whose absence only
+             *     degrades the work (a research team that cannot read PDFs): it is shown as a warning and
+             *     never refuses a run. Absent from a harness that does not say, which Tack reads as blocking.
+             */
+            blocking?: boolean | null;
             /** @description What the operator does to meet it. */
             fix: string;
             /**

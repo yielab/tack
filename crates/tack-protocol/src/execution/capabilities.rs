@@ -298,6 +298,7 @@ impl TeamReport {
                 name: "signed in".to_owned(),
                 fix,
                 satisfied: sign_in.state == SignInState::SignedIn,
+                blocking: None,
             });
         }
         if capability.requires_model && capability.default_model.is_none() {
@@ -309,6 +310,7 @@ impl TeamReport {
                     .clone()
                     .unwrap_or_else(|| "Name a model in the profile.".to_owned()),
                 satisfied: false,
+                blocking: None,
             });
         }
         TeamReport {
@@ -424,6 +426,11 @@ pub struct TeamNeed {
     pub fix: String,
     /// Whether it is met now.
     pub satisfied: bool,
+    /// Whether the work cannot go on without it. `Some(false)` is a need whose absence only
+    /// degrades the work (a research team that cannot read PDFs): it is shown as a warning and
+    /// never refuses a run. Absent from a harness that does not say, which Tack reads as blocking.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking: Option<bool>,
 }
 
 /// What a profile needs from the team it names.
@@ -472,7 +479,8 @@ pub enum TeamMisfit {
     StepsSkipped { method: String, roles: Vec<String> },
     /// The task names a method the team lists but whose file does not load.
     MethodBroken { method: String, error: String },
-    /// The team says one of its needs is not met.
+    /// The team says one of its needs is not met, and that the work cannot go on without it (a
+    /// need that only degrades the work is a warning, not a misfit).
     NeedsUnmet { name: String },
 }
 
@@ -532,7 +540,7 @@ pub fn team_misfits(facts: TeamFacts<'_>, needs: &TeamNeeds) -> Vec<TeamMisfit> 
         }
     }
     for need in facts.needs.unwrap_or_default() {
-        if !need.satisfied && need.kind != NEED_MODEL {
+        if !need.satisfied && need.kind != NEED_MODEL && need.blocking != Some(false) {
             misfits.push(TeamMisfit::NeedsUnmet {
                 name: need.name.clone(),
             });

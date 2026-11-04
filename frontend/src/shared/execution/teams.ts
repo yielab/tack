@@ -174,6 +174,17 @@ export function unmetNeeds(report: TeamReport | null | undefined): TeamNeed[] {
   return (report?.needs ?? []).filter((n) => !n.satisfied);
 }
 
+/** The unmet needs of a team that only degrade its work (docket says `blocking: false`): they refuse
+ *  nothing, so the run is sent and the person is told what it will lack. */
+export function degradedNeeds(report: TeamReport | null | undefined): TeamNeed[] {
+  return unmetNeeds(report).filter((n) => n.blocking === false && n.kind !== 'model');
+}
+
+/** What a run will lack because of a need that only degrades the team's work. */
+export function degradedText(team: string, needs: TeamNeed[]): string {
+  return needs.map((n) => `${team}: ${n.name} is not met, and the run goes on without it.${n.fix ? ` ${n.fix}` : ''}`).join(' ');
+}
+
 /** What a team hands back when a task ends, in a person's words. */
 export function deliversText(delivers: NonNullable<TeamReport['delivers']>): string {
   return delivers === 'branch'

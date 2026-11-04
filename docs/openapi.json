@@ -18536,14 +18536,14 @@
           },
           {
             "type": "object",
-            "description": "The team says one of its needs is not met.",
+            "description": "The team says one of its needs is not met, and that the work cannot go on without it (a\nneed that only degrades the work is a warning, not a misfit).",
             "required": [
               "needs_unmet"
             ],
             "properties": {
               "needs_unmet": {
                 "type": "object",
-                "description": "The team says one of its needs is not met.",
+                "description": "The team says one of its needs is not met, and that the work cannot go on without it (a\nneed that only degrades the work is a warning, not a misfit).",
                 "required": [
                   "name"
                 ],
@@ -18568,6 +18568,13 @@
           "satisfied"
         ],
         "properties": {
+          "blocking": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the work cannot go on without it. `Some(false)` is a need whose absence only\ndegrades the work (a research team that cannot read PDFs): it is shown as a warning and\nnever refuses a run. Absent from a harness that does not say, which Tack reads as blocking."
+          },
           "fix": {
             "type": "string",
             "description": "What the operator does to meet it."

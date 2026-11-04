@@ -358,7 +358,7 @@ the team can propose items, when the run changes the repository and the team del
 when the profile names a way of working the team does not have, cannot run in full or whose file does not
 load, or when the team says
 one of its needs is not met (a service it still has to be given, or an agent that is not signed in on the
-runner). Otherwise the team would start, find it cannot, and stop to ask a person for something only its
+runner); a need the team says only degrades its work does not refuse the run. Otherwise the team would start, find it cannot, and stop to ask a person for something only its
 own setup can give. Nothing was sent and no token was spent.
 
 **What to do.** Make the change the reason names, with docket's own commands, on the runner's machine:

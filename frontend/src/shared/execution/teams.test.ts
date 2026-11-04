@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, type TeamEntry, type TeamReport } from './teams';
+import { budgetSpent, isTeamOfOne, methodsByType, misfitText, notSentText, pausedText, podsOnly, resumedText, runnableFirst, teamChoices, unmetNeeds, degradedNeeds, degradedText, type TeamEntry, type TeamReport } from './teams';
 
 const pod = (name: string, report: Partial<TeamReport> = {}): TeamEntry =>
   ({ name, harness: 'docket', reported: true, profiles: [], report: { name, profile: 'attended', ...report } }) as TeamEntry;
@@ -83,6 +83,21 @@ describe('what a report says about the work', () => {
     const report = { name: 'x', needs: [{ kind: 'k', name: 'a', fix: 'f', satisfied: true }, { kind: 'k', name: 'b', fix: 'g', satisfied: false }] } as TeamReport;
     expect(unmetNeeds(report).map((n) => n.name)).toEqual(['b']);
     expect(unmetNeeds(undefined)).toEqual([]);
+  });
+
+  it('tells_a_need_that_only_degrades_the_work_from_one_that_blocks_it', () => {
+    const report = {
+      name: 'x',
+      needs: [
+        { kind: 'k', name: 'hosts', fix: 'f', satisfied: false, blocking: true },
+        { kind: 'k', name: 'pdfs', fix: 'docket setup sandbox on', satisfied: false, blocking: false },
+        { kind: 'k', name: 'old docket', fix: 'g', satisfied: false },
+        { kind: 'k', name: 'search', fix: 'h', satisfied: true, blocking: false },
+      ],
+    } as TeamReport;
+    expect(degradedNeeds(report).map((n) => n.name)).toEqual(['pdfs']);
+    expect(degradedText('fab-research', degradedNeeds(report))).toBe('fab-research: pdfs is not met, and the run goes on without it. docket setup sandbox on');
+    expect(degradedNeeds(undefined)).toEqual([]);
   });
 
   it('reads_the_method_a_profile_gives_to_each_kind_of_card', () => {

@@ -321,6 +321,7 @@ pub(super) fn contract(report: &mut PodReport, listed: bool) -> Contract {
                         name: need.name,
                         fix: need.fix,
                         satisfied: need.satisfied,
+                        blocking: need.blocking,
                     })
                     .collect()
             }),

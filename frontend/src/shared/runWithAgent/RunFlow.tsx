@@ -98,6 +98,8 @@ export interface RunFlowProps {
   canSubmit: Accessor<boolean>;
   /** Why the profile's team would refuse this run, in a sentence; null when it takes it. */
   misfit?: Accessor<string | null>;
+  /** What the team lacks without refusing the run, in a sentence; null when nothing. */
+  degraded?: Accessor<string | null>;
   onClose: () => void;
 }
 
@@ -470,6 +472,17 @@ const RunFlow: Component<RunFlowProps> = (props) => {
               id="run-misfit"
               data-testid="run-misfit"
               role="alert"
+              class="min-w-0 basis-full rounded-item px-3 py-2 text-small"
+              style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}
+            >
+              {text()}
+            </p>
+          )}
+        </Show>
+        <Show when={!props.misfit?.() && props.degraded?.()}>
+          {(text) => (
+            <p
+              data-testid="run-degraded"
               class="min-w-0 basis-full rounded-item px-3 py-2 text-small"
               style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}
             >

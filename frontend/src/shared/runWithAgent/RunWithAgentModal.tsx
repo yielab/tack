@@ -7,7 +7,7 @@ import { BOOK } from '../help/routes';
 import { api, ApiError } from '../api';
 import type { AgentContextRun } from '../api/briefs';
 import {
-  fleetsApi, agentProfilesApi, runnersApi, teamsApi, listReportedHarnessKinds, teamOf, notSentText,
+  fleetsApi, agentProfilesApi, runnersApi, teamsApi, listReportedHarnessKinds, teamOf, notSentText, degradedNeeds, degradedText,
   type AgentProfileSummary, type TeamEntry, type RunnerCapabilities, type RunnerSummary,
 } from '../execution';
 import { useExecutionStore } from '../state/executionContext';
@@ -424,6 +424,18 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     return null;
   });
 
+  // What the team lacks without that stopping the run: said before Start, which stays available.
+  const degraded = createMemo(() => {
+    const id = form.agentProfileId;
+    if (!id) return null;
+    for (const entry of teams() ?? []) {
+      if (!entry.profiles.some((p) => p.id === id)) continue;
+      const needs = degradedNeeds(entry.report);
+      return needs.length > 0 ? degradedText(entry.name, needs) : null;
+    }
+    return null;
+  });
+
   const canSubmit = createMemo(() => project()?.code_origin !== 'none' && failed() === null && structuralErrors().length === 0 && modelGate().allowed && !missingRow() && misfit() === null && !submitting());
 
   const buildValues = (): RunWithAgentFormValues => {
@@ -584,6 +596,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             submitting={submitting}
             canSubmit={canSubmit}
             misfit={misfit}
+            degraded={degraded}
             onClose={props.onClose}
           />
         </form>

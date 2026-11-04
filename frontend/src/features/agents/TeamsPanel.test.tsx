@@ -619,6 +619,19 @@ describe('TeamsPanel sheet', () => {
     expect(c.querySelector('[data-testid="no-team-claude-code"]')).toBeNull();
   });
 
+  it('says a need that only degrades the work is not a blocker', async () => {
+    const needs = [{ kind: 'service', name: 'PDFs are read', fix: 'docket setup sandbox on', satisfied: false, blocking: false }];
+    mockApi([{ ...SOLO, report: { ...SOLO.report, needs } }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const need = card(c, 'claude-code').querySelector('[data-testid="team-needs"] li')!;
+    expect(need.getAttribute('data-blocking')).toBe('no');
+    expect(need.textContent).toContain('Runs without it, with less: PDFs are read.');
+    expect(need.textContent).toContain('docket setup sandbox on');
+    expect(need.textContent).not.toContain('The operator still has to');
+  });
+
   it('lists the methods a task can name first, and says why the others cannot run', async () => {
     const broken = { name: 'capture-broken', source: 'pod:capture-broken', default: false, missing_roles: [], error: 'YAML parse error: while parsing a flow sequence\n  in "<unicode string>"' };
     const team = { ...FULL_TEAM, report: { ...FULL_TEAM.report, methods: [broken, ...FULL_TEAM.report.methods] } };
