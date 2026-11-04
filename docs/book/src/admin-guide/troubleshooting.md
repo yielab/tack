@@ -325,10 +325,12 @@ the **Agents** page, the team's card under Teams says "Paused: budget spent".
 starts nothing: the tasks sent to it, and every task queued behind them, stay waiting. Only a docket that
 lists `podPause` in `GET /health` says so; with an older docket the run shows no such line.
 
-**What to do.** Resume the team with docket's own command, on the runner's machine:
-`docket run --pod <team> --resume`. Tack has no button for it, because docket has no route over HTTP that
-resumes a team. The waiting tasks start by themselves once the team runs, and the run continues. If you would
-rather give up, stop the run from its card.
+**What to do.** Press **Resume team** on the team's card in **Agents → Teams**. Tack asks the runner that
+reports the team, which asks docket, so it answers within a few seconds and says so if the runner is busy
+or offline. The button works when `GET /health` lists `podResume`; with an older docket the board says that
+and the answer is docket's own command, on the runner's machine: `docket run --pod <team> --resume`. The
+waiting tasks start by themselves once the team runs, and the run continues. If you would rather give up,
+stop the run from its card.
 
 ---
 

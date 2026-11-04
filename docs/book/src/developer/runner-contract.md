@@ -24,7 +24,7 @@ Whoever creates the request, the server writes the instructions the harness is g
 
 ## The protocol surface
 
-The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outside the operator token check. `docs/openapi.json` lists 16 operations there, all authenticated with the runner's own hashed bearer credential:
+The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outside the operator token check. `docs/openapi.json` lists 18 operations there, all authenticated with the runner's own hashed bearer credential:
 
 | Group | Operations |
 |---|---|
@@ -32,8 +32,9 @@ The runner protocol is mounted at `/api/runner/v1` as a sibling of `/api`, outsi
 | Work | `claim`, `heartbeat` |
 | One attempt | `accept`, `start`, `events`, `decisions`, `decisions/poll`, `decisions/answered-elsewhere`, `artifacts`, `artifacts/{artifact_id}/content` (PUT, the bytes), `completion`, `cancellation-observation`, `recovery-observation` |
 | Team activity | `activity` (additive: the tasks a harness's teams hold that changed) |
+| Team operations | `operations/poll`, `operations/{operation_id}/result` (additive: what a person asked of a harness's team from the board, and how it went) |
 
-Fifteen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The fixtures under `docs/contracts/runner-v1/` are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the list, so a changed or added fixture fails there until the pin is updated.
+Seventeen of them carry a JSON body with `protocol_version`; the content upload carries the artifact's bytes. The fixtures under `docs/contracts/runner-v1/` are pinned by FNV-1a hash in `crates/tack-protocol/tests/runner_contract/fixtures.rs`, which asserts the list, so a changed or added fixture fails there until the pin is updated.
 
 ### Several attempts at once
 

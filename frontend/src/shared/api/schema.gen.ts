@@ -3128,6 +3128,187 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/runner/v1/operations/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ask for what a person asked of this runner's harnesses from the board, each handed out once (additive v1 operation; exact path fixed by protocol.json)
+         * @description Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            /** @description protocol_version: 1, plus this exchange's fixture-frozen fields */
+            requestBody: {
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            responses: {
+                /** @description The operations waiting for the runner; empty when none */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+                /** @description invalid_request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description forbidden / runner_revoked */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description not_found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/runner/v1/operations/{operation_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tell the board how an operation ended, to the request that waits for it (additive v1 operation; exact path fixed by protocol.json)
+         * @description Authenticated by a hashed `Authorization: Bearer` runner credential (`runner_bearer_credential` per docs/contracts/runner-v1/protocol.json) — never the operator token, and never substitutable for it. Every field, limit and error shape is frozen by docs/contracts/runner-v1/ (protocol.json, limits.json, lifecycle-transitions.json, and this exchange's paired *.request.json/*.response.json fixtures); this document deliberately does not re-specify them as a second, driftable shape.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description Operation ID, issued when the board hands the operation out (opaque) */
+                    operation_id: string;
+                };
+                cookie?: never;
+            };
+            /** @description protocol_version: 1, plus this exchange's fixture-frozen fields */
+            requestBody: {
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            responses: {
+                /** @description Result handed to the waiting request; 404 when nothing waits */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+                /** @description invalid_request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description forbidden / runner_revoked */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description not_found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+                /** @description conflict / idempotency_conflict / invalid_transition / stale_lease */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RunnerV1ErrorEnvelope"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/runner/v1/refresh": {
         parameters: {
             query?: never;
@@ -3391,6 +3572,27 @@ export interface paths {
         get: operations["list_teams"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/teams/{harness}/{name}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * POST /api/teams/{harness}/{name}/resume
+         * @description Letting a team spend its budget again is a person's call, so the route is the operator's
+         *     alone (`agent_access`).
+         */
+        post: operations["resume_team"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6731,6 +6933,23 @@ export interface components {
             tasks: components["schemas"]["ActivityTask"][];
             team: string;
         };
+        /** @description What a team may spend: the harness applies it, Tack shows it. */
+        TeamBudget: {
+            /**
+             * Format: int64
+             * @description The tokens the team may spend in the span; absent when the team has no limit.
+             */
+            tokens?: number | null;
+            /**
+             * Format: int64
+             * @description The tokens it has spent in the span.
+             */
+            used: number;
+            /** @description How long the span lasts, in the harness's word for it (`lifetime`, `day`). */
+            window: string;
+            /** @description When the current span began; absent for a span that never restarts. */
+            window_start?: string | null;
+        };
         /**
          * @description Whether a team runs to the end alone.
          * @enum {string}
@@ -6946,6 +7165,7 @@ export interface components {
          *     own key name; a harness's own labels arrive only as data (`shape`).
          */
         TeamReport: {
+            budget?: null | components["schemas"]["TeamBudget"];
             decides?: null | components["schemas"]["TeamDecides"];
             delivers?: null | components["schemas"]["TeamDelivers"];
             /**
@@ -7011,6 +7231,14 @@ export interface components {
             steps?: components["schemas"]["TeamStep"][] | null;
             violations?: components["schemas"]["TeamViolation"][];
             works_in?: null | components["schemas"]["WorksIn"];
+        };
+        /** @description What a runner's harness said after it was asked to resume a team. */
+        TeamResumed: {
+            harness: string;
+            report?: null | components["schemas"]["TeamReport"];
+            /** @description The runner that asked the harness. */
+            runner: string;
+            team: string;
         };
         /** @description One step of the way a team handles a task. */
         TeamStep: {
@@ -12241,6 +12469,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamList"];
+                };
+            };
+        };
+    };
+    resume_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent that runs the team, as `GET /api/teams` names it */
+                harness: string;
+                /** @description The team's name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent let the team claim tasks again; its report afterwards */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamResumed"];
+                };
+            };
+            /** @description not_found (no active runner reports a team of that name for that agent) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description conflict (the agent refused, with its reason, or the runner did not answer in time) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

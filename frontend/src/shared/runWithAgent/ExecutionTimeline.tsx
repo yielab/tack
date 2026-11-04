@@ -12,6 +12,7 @@ import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } fr
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
+import RunLimits from './RunLimits';
 import ContinueOrStartOver from './ContinueOrStartOver';
 import { hasBudgetStopOffer, stoppedByLimit } from './runLimit';
 
@@ -355,6 +356,15 @@ const RequestRow: Component<{
             projectId={props.projectId}
           />
         )}
+      </Show>
+
+      <Show when={!props.nowShown && summary()?.limit}>
+        <RunLimits
+          limit={summary()?.limit}
+          terminalReason={latestAttempt()?.terminal_reason}
+          profileId={runWho(summary()).profileId}
+          agentKind={runWho(summary()).agentKind}
+        />
       </Show>
 
       <Show when={!props.nowShown && latestAttempt()}>

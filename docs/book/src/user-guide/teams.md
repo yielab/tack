@@ -82,9 +82,15 @@ Three limits apply at three levels, and each says who applies it:
 - **A step.** The rounds, tool calls and time one step may take are docket's own guards. A step that runs out
   says which limit stopped it and where to raise it, and you choose **Continue** or **Start over**. See
   [Reviewing a Run](reviewing-runs.md).
-- **The team.** A team may have a budget of its own in docket. When it is spent the team is **Paused: budget
-  spent**: it starts nothing, and a task sent to it waits. Tack has no button for it yet; resume the team with
-  the docket command the sheet shows, and the waiting tasks go on.
+- **The team.** A team may have a budget of its own in docket: the tokens it may spend, what it has spent and
+  the span they are counted over. When it is spent the team is **Paused: budget spent**: it starts nothing, and a
+  task sent to it waits. **Resume team** lets it start again, and the waiting tasks go on. It is there when your
+  docket can resume a team from the board; with an older one, the sheet shows docket's own command instead.
+
+A task's **Limits** section lists the levels that apply to that run, each with who applies it: the run's tokens
+("applied by Tack's runner" for a single agent, "applied by docket" for a team), the step's own bounds when a
+step ran out of one, and the team's budget. A level the agent did not report is not listed, so a run on a single
+agent shows one.
 
 For the project you chose, the sheet also says whether the team's tasks stay at a level where a person merges, and
 what to change if you want otherwise, and the most the project can reach with the teams it uses. It names the

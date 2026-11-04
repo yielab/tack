@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ApiError, tokenStore } from '../api/client';
 import { executionsApi, fleetsApi, agentProfilesApi, runnersApi } from './api';
+import { teamsApi } from './teams';
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -329,5 +330,22 @@ describe('runnersApi', () => {
     );
     await runnersApi.revokeEnrollmentToken('runr_1', 'ent_1');
     expect(fetchMock.mock.calls[0][0]).toBe('/api/runners/runr_1/enrollment-tokens/ent_1/revoke');
+  });
+});
+
+describe('teamsApi', () => {
+  it('resume() posts to the team of that agent, both names URL-encoded, and returns its answer', async () => {
+    const answer = { team: 'saas dev', harness: 'docket', runner: 'ru', report: null };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(answer));
+    await expect(teamsApi.resume('docket', 'saas dev')).resolves.toEqual(answer);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/teams/docket/saas%20dev/resume');
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST');
+  });
+
+  it('resume() fails with the sentence the agent refused with', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ error: { status: 409, code: 'conflict', message: 'This docket cannot resume a team from the board.' } }, { status: 409 }),
+    );
+    await expect(teamsApi.resume('docket', 'saas-dev')).rejects.toThrow('cannot resume a team');
   });
 });

@@ -23,6 +23,7 @@ import MergeButton from './MergeButton';
 import ReviewActions from './ReviewActions';
 import RerunAtL3, { needsAPerson } from './RerunAtL3';
 import RunLimitNote from './RunLimitNote';
+import RunLimits from './RunLimits';
 import ContinueOrStartOver from './ContinueOrStartOver';
 import RunWithAgentButton from './RunWithAgentButton';
 import RunWithAgentModal from './RunWithAgentModal';
@@ -526,6 +527,12 @@ const LatestRunSummary: Component<LatestRunSummaryProps> = (props) => {
                     itemTitle={props.itemTitle}
                     projectId={props.projectId}
                     onCreated={props.onCreated}
+                  />
+                  <RunLimits
+                    limit={limit()}
+                    terminalReason={attempt()?.terminal_reason}
+                    profileId={runWho(latest()).profileId}
+                    agentKind={runWho(latest()).agentKind}
                   />
                 </>
               )}
