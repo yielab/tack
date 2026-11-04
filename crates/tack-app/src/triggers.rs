@@ -233,6 +233,8 @@ async fn happened_of(
             format!("decision {decision_id}"),
             run(r),
         ),
+        // A change set is waited for on a timer (`ChangeSetWaiting`), not announced when it is made.
+        Fact::ChangeSetProposed { .. } | Fact::ChangeSetSettled { .. } => return Ok(None),
     };
     if repo.item_is_hidden(item).await? {
         return Ok(None);

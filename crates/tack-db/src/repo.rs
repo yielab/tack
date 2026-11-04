@@ -13,6 +13,7 @@ pub mod execution;
 pub mod github_links;
 pub mod items;
 pub mod metrics;
+pub mod notifications;
 pub mod prill_records;
 pub mod projects;
 pub mod pull_requests;

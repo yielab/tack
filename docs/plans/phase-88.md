@@ -1,6 +1,6 @@
 # Phase 88: a person is told what needs them
 
-**Status: PROPOSED 2026-11-03.** Executes ADR 0035 (`docs/adr/0035-a-person-is-told-what-needs-them.md`):
+**Status: IN PROGRESS (opened 2026-11-03).** Card A is built in `develop` (round 1); B ∥ C ∥ D next. The ADR's two open questions took the proposed answers (a finished run is info; card F stays in this phase). Executes ADR 0035 (`docs/adr/0035-a-person-is-told-what-needs-them.md`):
 read its decision table first; this file says only how. Phase 10's webhook is **replaced, not kept**:
 every card that touches its code deletes it and leaves no compatibility path.
 

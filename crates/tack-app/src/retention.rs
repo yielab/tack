@@ -20,6 +20,9 @@ use crate::AppError;
 use crate::background::{Loops, Start};
 use crate::runs::expire_decisions::expire_decisions;
 
+/// A settled notification is forgotten after this many days (ADR 0035, decision 2).
+pub const NOTIFICATION_KEEP_DAYS: i64 = 30;
+
 /// Default retention window in days, which `LoopConfig::execution_retention_days` starts from.
 pub const DEFAULT_RETENTION_DAYS: u32 = 90;
 
@@ -58,6 +61,9 @@ pub struct Outcome {
     /// flag rather than a looser one of their own, so expiry never runs more permissively than
     /// the deletion it is bundled with; a need to expire under other conditions is a new flag.
     pub decisions_expired: u64,
+    /// Notifications resolved, or read when they only informed, more than
+    /// [`NOTIFICATION_KEEP_DAYS`] days ago.
+    pub notifications_forgotten: u64,
 }
 
 /// One pass: the two purges and the decision expiry all run even when one fails, so one failing
@@ -79,17 +85,29 @@ pub async fn tick(
         .await
         .map_err(AppError::from);
     let decisions_expired = expire_decisions(repo, now).await;
+    let notifications_forgotten = repo
+        .purge_settled_notifications(now - Duration::days(NOTIFICATION_KEEP_DAYS))
+        .await
+        .map_err(AppError::from);
 
-    match (replays, events, decisions_expired) {
-        (Ok(replays), Ok(events), Ok(decisions_expired)) => Ok(Outcome {
-            replays,
-            events,
-            decisions_expired,
-        }),
-        (replays, events, decisions) => {
-            let mut errors = [replays.err(), events.err(), decisions.err()]
-                .into_iter()
-                .flatten();
+    match (replays, events, decisions_expired, notifications_forgotten) {
+        (Ok(replays), Ok(events), Ok(decisions_expired), Ok(notifications_forgotten)) => {
+            Ok(Outcome {
+                replays,
+                events,
+                decisions_expired,
+                notifications_forgotten,
+            })
+        }
+        (replays, events, decisions, notifications) => {
+            let mut errors = [
+                replays.err(),
+                events.err(),
+                decisions.err(),
+                notifications.err(),
+            ]
+            .into_iter()
+            .flatten();
             let first = errors.next().expect("one step failed");
             for other in errors {
                 warn!(error = %other, "execution retention: another step failed too");
@@ -140,6 +158,12 @@ fn log(outcome: &Outcome) {
         );
     } else {
         debug!("execution retention: no stale terminal events to purge");
+    }
+    if outcome.notifications_forgotten > 0 {
+        info!(
+            notifications_forgotten = outcome.notifications_forgotten,
+            "execution retention: settled notifications forgotten"
+        );
     }
     if outcome.decisions_expired > 0 {
         info!(
