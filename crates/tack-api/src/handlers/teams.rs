@@ -500,7 +500,7 @@ pub async fn resume_team(
             team,
             harness,
             runner: asked.runner,
-            report,
+            report: report.map(|report| *report),
         })),
         OperationOutcome::Refused { reason } => Err(ApiError::Conflict(reason)),
     }

@@ -237,7 +237,9 @@ pub async fn do_team_operation(
     match operation {
         TeamOperation::ResumeTeam { harness, team } => {
             match adapters.resume_team(harness.as_str(), &team).await {
-                Ok(team) => OperationOutcome::Done { team },
+                Ok(team) => OperationOutcome::Done {
+                    team: team.map(Box::new),
+                },
                 Err(reason) => OperationOutcome::Refused { reason },
             }
         }

@@ -46,7 +46,7 @@ pub enum OperationOutcome {
     /// It was done. `team` is the team's report as the harness gave it afterwards, when it did.
     Done {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        team: Option<TeamReport>,
+        team: Option<Box<TeamReport>>,
     },
     /// The runner did not do it, with the sentence a person reads.
     Refused { reason: String },

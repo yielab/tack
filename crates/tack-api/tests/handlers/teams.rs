@@ -731,14 +731,16 @@ async fn resuming_a_team_asks_the_runner_that_reports_it_and_answers_with_its_re
     .unwrap();
     let runner = tokio::spawn(async move {
         let queue = tack_app::runner_operations::operations();
-        let mut answers = vec![
-            OperationOutcome::Done { team: Some(report) },
+        let answers = vec![
+            OperationOutcome::Done {
+                team: Some(Box::new(report)),
+            },
             OperationOutcome::Refused {
                 reason: "docket cannot resume a team from the board".to_owned(),
             },
         ]
         .into_iter();
-        while let Some(answer) = answers.next() {
+        for answer in answers {
             let handed = loop {
                 let handed = queue.take("ru-resume");
                 if let Some(first) = handed.into_iter().next() {
