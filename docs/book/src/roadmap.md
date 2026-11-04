@@ -167,9 +167,12 @@ and what a user can now do in the [changelog](https://github.com/yielab/tack/blo
   run says who applies each limit (run, step, team) and a team paused on its budget is resumed from
   the board; "Digital business" is a template of six departments with the teams it expects, compared with
   what docket reports, and the repository's teams are applied through the runner with the person
-  approving the commands docket lists. Everything docket-specific is probed as a feature and built
-  against the fake; none of it has been run against a live docket that reports `podContract`,
-  `podShape` or `podResume`. The board now has a channel to ask a runner for something
+  approving the commands docket lists. Everything docket-specific is probed as a feature, and
+  was checked on 2026-11-04 against the answers of a real docket (0.3.0-beta.1, API 6) recorded as the fake's
+  fixtures: docket sends `delivers` as a list, a method that does not load carries an `error`, a
+  budget's window is `none`, `day` or `week`, **Resume team** clears the pause but not the spent budget (the
+  team is paused again within seconds until the budget is raised), and a team made from a shape takes
+  the folder it works in as `location`, so Tack sends it only for `build`. The board now has a channel to ask a runner for something
   (`POST /operations/poll`, `/operations/{id}/result`), additive in runner v1.
 - **Phase 88 — a person is told what needs them.** ADR 0035. One inbox fed by the board's own events:
   a question a run asks, a run that fails and a change set an agent proposes each need you; a run that
