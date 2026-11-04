@@ -18,7 +18,7 @@ team, repeat tasks, and travel whole in one file.
 `v0.2.0-beta.1`, which carries Phases 66 to 82: the version is bumped and the changelog section
 is written, and it waits for the maintainer to tag it
 ([`docs/LAUNCH-CHECKLIST.md`](https://github.com/yielab/tack/blob/develop/docs/LAUNCH-CHECKLIST.md)).
-Phases 83 to 86 are under `[Unreleased]` in the changelog. The `v0.1.0-beta.10` tag (2026-10-14)
+Phases 83 to 91 are under `[Unreleased]` in the changelog. The `v0.1.0-beta.10` tag (2026-10-14)
 never had a release and is not re-cut; its changes ship in `v0.2.0-beta.1`.
 
 **Where this is going.** Tack keeps the same three neighbours it never contains: an agent
