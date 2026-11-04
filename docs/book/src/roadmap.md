@@ -51,6 +51,26 @@ file, no ADR; from the seven runs of one research task; both cards built in `dev
   the same refusal reads Not started on one chip and Failed on the next. The fallback reads the
   run's `never_started` as the board's card does.
 
+**Phase 92 — a question is answered in one place** (2026-11-04, no plan file, no ADR; from task
+4C9BAB, where the person could not tell where to type their answer). One card:
+
+- **A — the answer box, redesigned as one piece.** Today the choices come first, the text field is
+  one line under them called "Details (optional)", the recommendation is a line with a raw option id
+  below that, and a question with no choices asks for an "option id". When the question takes text
+  (docket's `acceptsText`) the text is often the answer, and nothing on the screen says so. Rethink
+  it from the person's side, in this order: the question; the choices, the recommended one first and
+  marked once with its reason as its own line; the field where they write, opening under the choice
+  it belongs to, named for what is asked ("Your answer"), required when the question requires it and
+  absent when it takes none; one primary button that says what it does ("Send answer"), with Decline
+  a plain secondary action and not a choice card. Risks and token estimates are a quiet line on the
+  choice, not red blocks, and the screen adds no sentence that is not a label or a verb: the question
+  does the explaining. The words are the product's own ("question", "answer"; no "resolve", no
+  "option id"). The same component serves approvals (Approve once, Approve for this task, Deny with a
+  reason) and inputs, so the three read alike. Done when a person with a question that takes text
+  answers it without searching for the field, by keyboard too; the order, the field's label and the
+  button's words are pinned by component tests; and the live suite's locators and the tutorial's
+  screenshot of a question are updated.
+
 What remains besides them is one dependency card:
 
 - **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
