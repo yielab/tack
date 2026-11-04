@@ -4911,7 +4911,7 @@ export interface components {
          * @description The kinds of thing a trigger can wait for.
          * @enum {string}
          */
-        EventKind: "item_created" | "item_updated" | "item_moved" | "item_deleted" | "run_started" | "run_finished" | "run_failed" | "run_waiting" | "decision_opened" | "decision_resolved" | "change_set_waiting";
+        EventKind: "item_created" | "item_updated" | "item_moved" | "item_deleted" | "run_started" | "run_finished" | "run_failed" | "run_waiting" | "decision_opened" | "decision_resolved" | "change_set_waiting" | "change_set_proposed" | "change_set_settled";
         EventListResponse: {
             data: components["schemas"]["EventSummary"][];
             /** Format: int32 */
