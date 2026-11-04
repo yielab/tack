@@ -52,7 +52,8 @@ file, no ADR; from the seven runs of one research task; both cards built in `dev
   run's `never_started` as the board's card does.
 
 **Phase 92 — a question is answered in one place** (2026-11-04, no plan file, no ADR; from task
-4C9BAB, where the person could not tell where to type their answer). One card:
+4C9BAB, where the person could not tell where to type their answer). One card, built in `develop` the
+same day except the screenshot `decision-inbox.png`, which waits for the next billed recording:
 
 - **A — the answer box, redesigned as one piece.** Today the choices come first, the text field is
   one line under them called "Details (optional)", the recommendation is a line with a raw option id

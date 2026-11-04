@@ -1025,6 +1025,37 @@ fn escalation_question(
     };
     let required = schema.is_some_and(|schema| schema.required.contains(&property));
     let mut metadata = serde_json::Map::new();
+    // Where the answer's text goes, so the screen opens its field under the choice it belongs to
+    // and nowhere else: a refusal takes a reason, a question that offers only to decline takes
+    // the answer itself, and a question that takes text takes it with any choice but declining.
+    let reason = REASON_KINDS.contains(&kind.as_str());
+    let text_options: Vec<&str> = if by_text {
+        vec![TEXT_ANSWER]
+    } else if reason {
+        docket_ids
+            .iter()
+            .map(String::as_str)
+            .filter(|id| *id == "deny")
+            .collect()
+    } else if record.affordances.accepts_text {
+        docket_ids
+            .iter()
+            .map(String::as_str)
+            .filter(|id| *id != "decline")
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if !text_options.is_empty() {
+        metadata.insert(
+            "text".to_owned(),
+            json!({
+                "label": if reason { "Reason" } else { "Your answer" },
+                "required": required && !reason,
+                "options": text_options,
+            }),
+        );
+    }
     for (key, value) in [
         ("step", &record.step),
         ("role", &record.role),

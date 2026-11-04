@@ -242,15 +242,15 @@ describe('DecisionInbox — pending / expired / resolved are visually and semant
 });
 
 describe('DecisionInbox — disabled controls name their reason', () => {
-  it('the Resolve button for a pending decision starts disabled with a visible reason, until an answer is chosen', async () => {
+  it('the Send answer button for a pending decision starts disabled with a visible reason, until an answer is chosen', async () => {
     mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
     const c = mount();
     await flush();
     await flush();
 
-    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
     expect(resolveBtn.disabled).toBe(true);
-    expect(c.textContent).toContain('Select or enter an answer to enable Resolve.');
+    expect(c.textContent).toContain('Pick one to send');
 
     const allowRadio = [...c.querySelectorAll('input[type="radio"]')].find(
       (r) => (r as HTMLInputElement).value === 'allow_once',
@@ -259,6 +259,146 @@ describe('DecisionInbox — disabled controls name their reason', () => {
     allowRadio.dispatchEvent(new Event('change', { bubbles: true }));
 
     expect(resolveBtn.disabled).toBe(false);
+  });
+});
+
+describe('DecisionInbox — the answer box reads in one order', () => {
+  const TEXT_ONLY: DecisionRecord = {
+    ...PENDING_WITH_OPTIONS,
+    decision_id: 'dec_text',
+    kind: 'input',
+    prompt: 'Which queue should the service use?',
+    options: [
+      { option_id: 'accept', label: 'Answer' },
+      { option_id: 'decline', label: 'Decline' },
+    ],
+    metadata: { text: { label: 'Your answer', required: true, options: ['accept'] } },
+  };
+  const APPROVAL: DecisionRecord = {
+    ...PENDING_WITH_OPTIONS,
+    decision_id: 'dec_approval',
+    kind: 'approval',
+    options: [
+      { option_id: 'approve_once', label: 'Approve once' },
+      { option_id: 'approve_task', label: 'Approve for this task' },
+      { option_id: 'deny', label: 'Deny with a reason' },
+    ],
+    recommendation: { option_id: 'approve_task', rationale: 'The same command ran twice already.' },
+    metadata: { text: { label: 'Reason', required: false, options: ['deny'] } },
+  };
+  const buttons = (c: HTMLElement) => [...c.querySelectorAll('button')].map((b) => b.textContent);
+
+  it('a question that takes text is its field, named for what is asked, then Send answer, then Decline as a plain action', async () => {
+    mockFetch([TEXT_ONLY], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    const form = c.querySelector('form') as HTMLFormElement;
+    expect(form.querySelector('input[type="radio"]')).toBeNull();
+    const field = form.querySelector('input:not([type="radio"])') as HTMLInputElement;
+    expect(form.querySelector(`label[for="${field.id}"]`)?.textContent).toContain('Your answer');
+    expect(field.required).toBe(true);
+    const labels = [...form.querySelectorAll('button')].map((b) => b.textContent);
+    expect(labels).toEqual(['Send answer', 'Decline']);
+    expect(form.textContent).not.toMatch(/option id|Details|Resolve/);
+    // The field comes before the buttons, so the keyboard reaches it first.
+    const order = [...form.querySelectorAll('input, button')];
+    expect(order.indexOf(field)).toBeLessThan(order.indexOf(form.querySelector('button')!));
+  });
+
+  it('Send answer waits for the required text, and sends the answer as the text of the choice', async () => {
+    const fetchMock = mockFetch([TEXT_ONLY], () =>
+      jsonOk({ protocol_version: 1, decision_id: 'dec_text', state: 'resolved', answer: { option_id: 'accept', text: 'redis' }, resolved_at: '2026-08-06T12:05:00Z', resolved_by: { kind: 'operator', subject_id: 'operator:local' }, replayed: false }),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+
+    const send = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    const field = c.querySelector('form input:not([type="radio"])') as HTMLInputElement;
+    field.value = ' redis ';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(send.disabled).toBe(false);
+    send.click();
+    await flush();
+    await flush();
+
+    const call = fetchMock.mock.calls.find((c2) => String(c2[0]).includes('/resolve'));
+    expect(JSON.parse((call?.[1] as RequestInit).body as string)).toEqual({ answer: { option_id: 'accept', text: 'redis' } });
+  });
+
+  it('Decline sends the way out with no text, and needs none', async () => {
+    const fetchMock = mockFetch([TEXT_ONLY], () =>
+      jsonOk({ protocol_version: 1, decision_id: 'dec_text', state: 'resolved', answer: { option_id: 'decline', text: null }, resolved_at: '2026-08-06T12:05:00Z', resolved_by: { kind: 'operator', subject_id: 'operator:local' }, replayed: false }),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+
+    [...c.querySelectorAll('button')].find((b) => b.textContent === 'Decline')!.click();
+    await flush();
+    await flush();
+
+    const call = fetchMock.mock.calls.find((c2) => String(c2[0]).includes('/resolve'));
+    expect(JSON.parse((call?.[1] as RequestInit).body as string)).toEqual({ answer: { option_id: 'decline', text: null } });
+  });
+
+  it('an approval puts the recommended choice first, marks it once with its reason, and opens the reason field only under the refusal', async () => {
+    mockFetch([APPROVAL], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    const radios = [...c.querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(radios.map((r) => r.value)).toEqual(['approve_task', 'approve_once', 'deny']);
+    expect(radios[0].checked).toBe(true);
+    expect(c.textContent?.match(/Recommended/g)).toHaveLength(1);
+    expect(c.textContent).toContain('The same command ran twice already.');
+    expect(c.textContent).not.toContain('Recommended: ');
+    expect(c.querySelector('form input:not([type="radio"])')).toBeNull();
+
+    radios[2].checked = true;
+    radios[2].dispatchEvent(new Event('change', { bubbles: true }));
+    await flush();
+    const field = c.querySelector('form input:not([type="radio"])') as HTMLInputElement;
+    expect(c.querySelector(`label[for="${field.id}"]`)?.textContent).toContain('Reason');
+    expect(field.required).toBe(false);
+    // Under the refusal, right after it and before the next control.
+    expect(radios[2].closest('label')!.nextElementSibling?.contains(field)).toBe(true);
+    expect(document.activeElement).toBe(field);
+    expect(buttons(c)).toContain('Send answer');
+  });
+
+  it('a question that takes no text has no field at all', async () => {
+    mockFetch([PENDING_WITH_OPTIONS], () => new Response('unused'));
+    const c = mount();
+    await flush();
+    await flush();
+
+    expect(c.querySelector('form input:not([type="radio"])')).toBeNull();
+  });
+
+  it('a question with no choices is its field, named Your answer, and sends what is typed', async () => {
+    const fetchMock = mockFetch([{ ...PENDING_WITH_OPTIONS, decision_id: 'dec_free', options: [] }], () =>
+      jsonOk({ protocol_version: 1, decision_id: 'dec_free', state: 'resolved', answer: { option_id: 'blue', text: null }, resolved_at: '2026-08-06T12:05:00Z', resolved_by: { kind: 'operator', subject_id: 'operator:local' }, replayed: false }),
+    );
+    const c = mount();
+    await flush();
+    await flush();
+
+    const field = c.querySelector('form input:not([type="radio"])') as HTMLInputElement;
+    expect(c.querySelector(`label[for="${field.id}"]`)?.textContent).toContain('Your answer');
+    expect(c.textContent).not.toContain('option id');
+    field.value = 'blue';
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer')!.click();
+    await flush();
+    await flush();
+
+    const call = fetchMock.mock.calls.find((c2) => String(c2[0]).includes('/resolve'));
+    expect(JSON.parse((call?.[1] as RequestInit).body as string)).toEqual({ answer: { option_id: 'blue', text: null } });
   });
 });
 
@@ -319,7 +459,7 @@ describe('DecisionInbox — keyboard accessibility of the resolve interaction', 
     denyRadio.checked = true;
     denyRadio.dispatchEvent(new Event('change', { bubbles: true }));
 
-    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
     resolveBtn.focus();
     expect(document.activeElement).toBe(resolveBtn);
     resolveBtn.click();
@@ -346,7 +486,7 @@ describe('DecisionInbox — resolve outcomes are each named distinctly', () => {
     const allowRadio = [...c.querySelectorAll('input[type="radio"]')][0] as HTMLInputElement;
     allowRadio.checked = true;
     allowRadio.dispatchEvent(new Event('change', { bubbles: true }));
-    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
     resolveBtn.click();
     await flush();
     await flush();
@@ -364,7 +504,7 @@ describe('DecisionInbox — resolve outcomes are each named distinctly', () => {
     const allowRadio = [...c.querySelectorAll('input[type="radio"]')][0] as HTMLInputElement;
     allowRadio.checked = true;
     allowRadio.dispatchEvent(new Event('change', { bubbles: true }));
-    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
     resolveBtn.click();
     await flush();
     await flush();
@@ -393,7 +533,7 @@ describe('DecisionInbox — resolve outcomes are each named distinctly', () => {
     const allowRadio = [...c.querySelectorAll('input[type="radio"]')][0] as HTMLInputElement;
     allowRadio.checked = true;
     allowRadio.dispatchEvent(new Event('change', { bubbles: true }));
-    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
     resolveBtn.click();
     await flush();
     await flush();
@@ -446,7 +586,7 @@ describe('DecisionInbox — the consultation pack', () => {
     await flush();
     await flush();
     // A resolve refetches the list and hands the row a new object.
-    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Resolve') as HTMLButtonElement;
+    const resolveBtn = [...c.querySelectorAll('button')].find((b) => b.textContent === 'Send answer') as HTMLButtonElement;
     resolveBtn.click();
     await flush();
     await flush();
@@ -580,7 +720,7 @@ describe('DecisionInbox — the consultation pack', () => {
       await flush();
       await flush();
       expect(running.textContent).toContain('Allow this agent');
-      expect(running.querySelector('button[type="submit"]')?.textContent).toBe('Resolve');
+      expect(running.querySelector('button[type="submit"]')?.textContent).toBe('Send answer');
       expect(spy.mock.calls.length).toBeGreaterThan(first);
     });
 
