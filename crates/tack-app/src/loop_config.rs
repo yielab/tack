@@ -14,8 +14,8 @@ use tack_protocol::Clock;
 use tracing::{info, warn};
 
 use crate::background::Loops;
-use crate::due_soon::DueSoonSink;
 use crate::github_sync::GitHub;
+use crate::notifications::{Inbox, subscriber};
 use crate::ports::Ports;
 use crate::remote_backup::BackupConfig;
 use crate::{
@@ -197,8 +197,7 @@ impl LoopConfig {
 
     /// Adds every loop this configuration turns on to `loops`. `ports` is what the loops reach
     /// outside the store, `backup` the files a backup bundle is made from (see
-    /// [`Self::backup_config`]), and `due_soon` where the hourly announcement goes, `None` when
-    /// no webhook is there to hear it.
+    /// [`Self::backup_config`]), and `inbox` the notifications the loops write.
     pub fn start(
         &self,
         loops: &mut Loops,
@@ -206,7 +205,7 @@ impl LoopConfig {
         clock: Arc<dyn Clock>,
         ports: Ports,
         backup: BackupConfig,
-        due_soon: Option<Arc<dyn DueSoonSink>>,
+        inbox: Inbox,
     ) {
         if let Some(interval) = self.backup_interval() {
             // The destination can come from UI-saved settings too, so the loop spawns whenever an
@@ -235,6 +234,16 @@ impl LoopConfig {
         // without triggers.
         triggers::spawn(loops, repo.clone(), clock.clone(), ports.events.clone());
 
+        // The inbox: fed by the board's events and checked against the store; always on, and idle
+        // while nothing waits on a person.
+        subscriber::spawn(
+            loops,
+            repo.clone(),
+            clock.clone(),
+            inbox.clone(),
+            ports.events.clone(),
+        );
+
         // Inbound GitHub poll: starts nothing when polling is off or no token is set.
         github_sync::spawn(
             loops,
@@ -244,9 +253,14 @@ impl LoopConfig {
             Duration::from_secs(self.github_poll_seconds),
         );
 
-        if let Some(sink) = due_soon {
-            due_soon::spawn(loops, repo.clone(), clock.clone(), sink, due_soon::INTERVAL);
-        }
+        // Items due within the hour are announced in the inbox.
+        due_soon::spawn(
+            loops,
+            repo.clone(),
+            clock.clone(),
+            inbox,
+            due_soon::INTERVAL,
+        );
 
         // Purges stale replay bookkeeping and terminal events and expires overdue decisions; off
         // unless the operator opts in, since it deletes rows.

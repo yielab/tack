@@ -773,6 +773,7 @@ pub async fn create_subtasks_from_plan(
     let proposed = change_sets::propose(
         &state.repo,
         &tack_protocol::SystemClock,
+        state.events().as_ref(),
         Proposal {
             project: parent.project_id,
             principal: &principal,

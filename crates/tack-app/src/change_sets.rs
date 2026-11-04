@@ -12,6 +12,7 @@ use tack_core::change_set::{
     BoardView, ChangeSet, ChangeSetStatus, ExistingItem, ItemRef, OpState, Operation, Origin,
     Verdict, ceiling_of, decide, describe, validate,
 };
+use tack_core::event::{DomainEvent, Fact};
 use tack_core::models::{DependencyType, Project};
 use tack_core::principal::Principal;
 use tack_db::Repository;
@@ -21,6 +22,7 @@ use tack_protocol::Clock;
 use uuid::Uuid;
 
 use crate::AppError;
+use crate::ports::DomainEvents;
 
 /// The longest reason a change set carries.
 const MAX_REASON: usize = 2_000;
@@ -193,12 +195,46 @@ fn start_of_day(now: DateTime<Utc>) -> DateTime<Utc> {
         .and_utc()
 }
 
+/// Whether any operation of `set` still waits for a person.
+fn waits(set: &ChangeSet) -> bool {
+    set.ops.iter().any(|op| op.state == OpState::Waiting)
+}
+
+/// Tells the listeners that `set` waits for a person, when something in it does. A set the rung
+/// let through whole never waited, so it is not announced.
+fn announce_proposed(events: &dyn DomainEvents, proposer: &Principal, set: &ChangeSet) {
+    if waits(set) {
+        events.emit(DomainEvent::new(
+            set.project,
+            proposer,
+            Fact::ChangeSetProposed {
+                change_set_id: set.id.to_string(),
+                item_id: set.anchor,
+            },
+        ));
+    }
+}
+
+/// Tells the listeners that `set` waits for nobody any more, once a decision left nothing waiting.
+fn announce_settled(events: &dyn DomainEvents, decider: &Principal, set: &ChangeSet) {
+    if !waits(set) {
+        events.emit(DomainEvent::new(
+            set.project,
+            decider,
+            Fact::ChangeSetSettled {
+                change_set_id: set.id.to_string(),
+            },
+        ));
+    }
+}
+
 /// Keeps a change set and applies what the rung (or a person's own plan) lets through. A set
 /// that fails any check is refused whole, with every reason, and kept nowhere. The same
 /// idempotency key on a project answers the first change set again.
 pub async fn propose(
     repo: &Repository,
     clock: &dyn Clock,
+    events: &dyn DomainEvents,
     proposal: Proposal<'_>,
 ) -> Result<Proposed, AppError> {
     let project = repo
@@ -281,6 +317,7 @@ pub async fn propose(
         .map(|(index, _)| index)
         .collect();
     if selected.is_empty() {
+        announce_proposed(events, proposal.principal, &kept);
         return Ok(Proposed {
             change_set: kept,
             made: true,
@@ -311,11 +348,14 @@ pub async fn propose(
         )
         .await;
     match applied {
-        Ok(change_set) => Ok(Proposed {
-            change_set,
-            made: true,
-            applied_now: selected,
-        }),
+        Ok(change_set) => {
+            announce_proposed(events, proposal.principal, &change_set);
+            Ok(Proposed {
+                change_set,
+                made: true,
+                applied_now: selected,
+            })
+        }
         Err(error) => {
             // Refused whole: a proposal that cannot land leaves no change set behind.
             repo.discard_change_set(kept.id).await?;
@@ -330,6 +370,7 @@ pub async fn propose(
 pub async fn apply(
     repo: &Repository,
     clock: &dyn Clock,
+    events: &dyn DomainEvents,
     id: Uuid,
     actor: &Principal,
     application: Application,
@@ -399,28 +440,32 @@ pub async fn apply(
     .await?;
     let resolutions = validate(&operations, &selected, &board, &made)
         .map_err(|problems| invalid(describe(&problems)))?;
-    repo.apply_change_set(
-        id,
-        &ApplyPlan {
-            workflow: &project.workflow,
-            selected: &selected,
-            edits: &application.edits,
-            resolutions: &resolutions,
-            writer: &set.principal,
-            author: set.principal_name.as_deref(),
-            decided_by: &actor.label(),
-            now: clock.now(),
-            auto_creates: 0,
-        },
-    )
-    .await
-    .map_err(apply_failure)
+    let applied = repo
+        .apply_change_set(
+            id,
+            &ApplyPlan {
+                workflow: &project.workflow,
+                selected: &selected,
+                edits: &application.edits,
+                resolutions: &resolutions,
+                writer: &set.principal,
+                author: set.principal_name.as_deref(),
+                decided_by: &actor.label(),
+                now: clock.now(),
+                auto_creates: 0,
+            },
+        )
+        .await
+        .map_err(apply_failure)?;
+    announce_settled(events, actor, &applied);
+    Ok(applied)
 }
 
 /// Turns down what still waits in a change set, with a reason.
 pub async fn reject(
     repo: &Repository,
     clock: &dyn Clock,
+    events: &dyn DomainEvents,
     id: Uuid,
     actor: &Principal,
     reason: &str,
@@ -432,9 +477,12 @@ pub async fn reject(
         )));
     }
     repo.get_change_set(id).await?.ok_or(AppError::NotFound)?;
-    repo.reject_change_set(id, reason, &actor.label(), clock.now())
+    let rejected = repo
+        .reject_change_set(id, reason, &actor.label(), clock.now())
         .await
-        .map_err(apply_failure)
+        .map_err(apply_failure)?;
+    announce_settled(events, actor, &rejected);
+    Ok(rejected)
 }
 
 /// Replaces one waiting operation with another of its kind. The edit is not checked against the

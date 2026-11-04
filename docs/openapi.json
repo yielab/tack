@@ -12540,7 +12540,9 @@
           "run_waiting",
           "decision_opened",
           "decision_resolved",
-          "change_set_waiting"
+          "change_set_waiting",
+          "change_set_proposed",
+          "change_set_settled"
         ]
       },
       "EventListResponse": {

@@ -51,10 +51,14 @@ pub enum EventKind {
     /// A change set has waited for a person longer than the filter's `after_seconds`. Time
     /// caused it, not a principal: Tack announces it once per change set.
     ChangeSetWaiting,
+    /// An agent proposed a change set that waits for a person.
+    ChangeSetProposed,
+    /// A change set no longer waits: it was applied or rejected.
+    ChangeSetSettled,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 11] = [
+    pub const ALL: [EventKind; 13] = [
         EventKind::ItemCreated,
         EventKind::ItemUpdated,
         EventKind::ItemMoved,
@@ -66,6 +70,8 @@ impl EventKind {
         EventKind::DecisionOpened,
         EventKind::DecisionResolved,
         EventKind::ChangeSetWaiting,
+        EventKind::ChangeSetProposed,
+        EventKind::ChangeSetSettled,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -81,6 +87,8 @@ impl EventKind {
             EventKind::DecisionOpened => "decision_opened",
             EventKind::DecisionResolved => "decision_resolved",
             EventKind::ChangeSetWaiting => "change_set_waiting",
+            EventKind::ChangeSetProposed => "change_set_proposed",
+            EventKind::ChangeSetSettled => "change_set_settled",
         }
     }
 
@@ -98,6 +106,8 @@ impl EventKind {
             EventKind::DecisionOpened => "a decision was opened",
             EventKind::DecisionResolved => "a decision was answered",
             EventKind::ChangeSetWaiting => "a change set is waiting for a person",
+            EventKind::ChangeSetProposed => "a change set was proposed",
+            EventKind::ChangeSetSettled => "a change set was applied or rejected",
         }
     }
 

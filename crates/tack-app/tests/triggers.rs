@@ -420,3 +420,56 @@ async fn a_trigger_must_name_a_profile_that_exists_and_say_how_it_waits() {
     triggers::delete(&board.repo, made.id).await.unwrap();
     assert!(board.repo.get_trigger(made.id).await.unwrap().is_none());
 }
+
+#[tokio::test]
+async fn a_change_set_proposed_or_settled_is_an_event_a_trigger_can_wait_for() {
+    let board = board_with_harness().await;
+    let clock = clock();
+    let proposed = |event| Source::Event {
+        event,
+        filter: Filter::default(),
+    };
+    trigger(
+        &board,
+        &clock,
+        "Proposed",
+        proposed(EventKind::ChangeSetProposed),
+        5,
+        None,
+    )
+    .await;
+    trigger(
+        &board,
+        &clock,
+        "Settled",
+        proposed(EventKind::ChangeSetSettled),
+        5,
+        None,
+    )
+    .await;
+    let agent = Principal::agent("credential-9", Vec::new());
+    let said = |fact| DomainEvent::new(board.project_id, &agent, fact);
+
+    let kept = triggers::observe(
+        &board.repo,
+        &clock,
+        &said(Fact::ChangeSetProposed {
+            change_set_id: "set-1".into(),
+            item_id: None,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(kept, 1, "only the trigger for proposals keeps it");
+
+    let kept = triggers::observe(
+        &board.repo,
+        &clock,
+        &said(Fact::ChangeSetSettled {
+            change_set_id: "set-1".into(),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(kept, 1, "only the trigger for settled sets keeps it");
+}
