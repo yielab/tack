@@ -142,10 +142,14 @@ can come back as a card of its own.
   stored (ADR 0013, decision 7).
 - Measuring docket's polling, and the retakes of `agents-flow.gif` and `recovery-demo.gif`. The
   outdated `agents.png` and the two desktop screenshots were removed instead of retaken.
-- Four limits that stay as limits, each already shown in the product with its reason: "Apply the
-  repository's teams" is disabled; only docket stops a run at its token limit; the tokens a
-  verifier spends count whole, cache included; only docket reports a running agent's steps on its
-  timeline.
+- Limits that stay as limits, each shown in the product with its reason: only docket stops a run at
+  its token limit; the tokens a verifier spends count whole, cache included; only docket reports a
+  running agent's steps on its timeline; a team's pending memory reaches the inbox in about five
+  minutes (the runner looks at docket again every 300 s, the board reads the reports every 30 s) and
+  is decided with docket's own command until docket offers a route (`memoryDecide`, asked of docket
+  on 2026-11-04); closing a thread in Tack does not close its docket conversation, which ends by its
+  own turn cap or when its `turn` question expires; **Resume team** clears a pause but not the spent
+  budget, so a team out of budget is paused again until the budget is raised.
 
 ---
 
