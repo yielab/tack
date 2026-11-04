@@ -101,7 +101,7 @@ per-project vocabulary, an MCP server (`tack mcp`), a Tauri desktop app.
   says so; docket has no route to resume it) and `hopTimes` (a step says how long it took). Plus the third audit
   of the live suite's screenshots: a refused run reads "Not started" and a reject-review says so, the board sorts
   needs-you first, the item drawer's status is one control that opens the menu, drawer sections fold
-  (`shared/ui/Fold.tsx`), and dependencies were updated (the desktop app's Tauri crates and Vitest 5 are not taken).
+  (`shared/ui/Fold.tsx`), and dependencies were updated (Vitest 5 is not taken).
 - **Built 2026-11-03, in `develop`:** Phase 87 (`docs/closed-cycles/plans/phase-87.md`, no ADR) — docket's Phase 59 (its ADR
   0038): a step that runs out of rounds, tool calls or time ends `step_budget` (tokens stay `budget`), says
   where to raise the limit, keeps its patch and report, and a person chooses Continue (a new request that

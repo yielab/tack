@@ -72,11 +72,6 @@ same day except the screenshot `decision-inbox.png`, which waits for the next bi
   button's words are pinned by component tests; and the live suite's locators and the tutorial's
   screenshot of a question are updated.
 
-What remains besides them is one dependency card:
-
-- **The desktop app's Tauri crates** (`dialog` and `shell`, behind their JS packages already updated).
-  Run the desktop workflow on the branch first.
-
 ## Future, not planned
 
 Phase 76 and status rules are the only ones. They have no date, no owner and no card in progress;
