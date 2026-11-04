@@ -41,6 +41,7 @@ async fn real_app(storage_dir: &std::path::Path) -> (axum::Router, Repository) {
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             storage_dir: storage_dir.to_string_lossy().into_owned(),

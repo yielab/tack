@@ -11,11 +11,17 @@ use axum::http::{Request, StatusCode};
 use serde_json::{Value, json};
 use tack_api::handlers::websocket::BoardEvent;
 use tack_api::{AppState, LocalRunnerControl, config::AppConfig, router::build_router};
+use tack_app::notifications::Inbox;
 use tack_db::repo::execution::RequestSelection;
 use tack_db::{Repository, init_pool, migrations};
 use tokio::sync::broadcast;
 use tower::ServiceExt;
 use uuid::Uuid;
+
+/// The inbox a test state carries: no channel to queue a notification for.
+pub fn inbox(repo: &Repository) -> Inbox {
+    Inbox::new(repo.clone(), Arc::new(tack_protocol::SystemClock), vec![])
+}
 
 /// An in-process router has no HTTP layer to supply `Host`, so a request
 /// that carries none gets `Host: localhost`; one that has it keeps it.
@@ -49,6 +55,16 @@ pub async fn test_app_with_local_runner(
     config: AppConfig,
     local_runner: Option<Arc<dyn LocalRunnerControl>>,
 ) -> (Router, Uuid) {
+    let (app, _, workspace_id) = test_app_with_state(config, local_runner).await;
+    (app, workspace_id)
+}
+
+/// Same as `test_app_with_local_runner`, additionally returning the `AppState` the router was
+/// built from: the handle a test needs to drive what the server's own loops would (the inbox).
+pub async fn test_app_with_state(
+    config: AppConfig,
+    local_runner: Option<Arc<dyn LocalRunnerControl>>,
+) -> (Router, AppState, Uuid) {
     let repo = tack_test_support::setup_test_db().await;
 
     let workspace_id = tack_test_support::seed::workspace(&repo, "CI Workspace", "{}").await;
@@ -61,6 +77,7 @@ pub async fn test_app_with_local_runner(
         ..config
     };
     let state = AppState {
+        notifications: inbox(&repo),
         repo,
         config,
         workspace_id,
@@ -71,7 +88,11 @@ pub async fn test_app_with_local_runner(
         tasks: Default::default(),
     };
 
-    (with_default_host(build_router(state)), workspace_id)
+    (
+        with_default_host(build_router(state.clone())),
+        state,
+        workspace_id,
+    )
 }
 
 /// Build a test app backed by a file-based SQLite database.
@@ -97,6 +118,7 @@ pub async fn test_app_with_file_db_and_config(db_url: &str, config: AppConfig) -
 
     let (tx, _rx) = broadcast::channel::<BoardEvent>(16);
     let state = AppState {
+        notifications: inbox(&repo),
         repo,
         config,
         workspace_id,

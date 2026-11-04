@@ -43,6 +43,7 @@ async fn board(storage: &std::path::Path, loop_cap: i64) -> Board {
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(OPERATOR_TOKEN.into()),

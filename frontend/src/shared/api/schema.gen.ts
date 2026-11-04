@@ -1179,6 +1179,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GET /api/notifications */
+        get: operations["list_notifications"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/notifications/read-all */
+        post: operations["read_all_notifications"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** POST /api/notifications/{id}/read */
+        post: operations["read_notification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -5324,6 +5375,17 @@ export interface components {
             custom: string;
         };
         /**
+         * @description The situation a notification is about, so the same situation is never open twice and the
+         *     fact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,
+         *     `finished:<request>`, `due:<item>:<yyyy-mm-dd>`.
+         */
+        Key: string;
+        /**
+         * @description What happened that a person is told about.
+         * @enum {string}
+         */
+        Kind: "decision" | "run_failed" | "change_set" | "run_finished" | "due_soon";
+        /**
          * @description The step of a docket run an attempt is in, read from the text of its latest hop event so a
          *     screen finds the step on the team's list without fetching the events.
          */
@@ -5345,6 +5407,11 @@ export interface components {
              */
             verdict?: string | null;
         };
+        /**
+         * @description How much a notification asks of a person.
+         * @enum {string}
+         */
+        Level: "needs_you" | "info";
         LinearImportRequest: {
             /** @description Linear personal API key (create at https://linear.app/settings/api). */
             api_key: string;
@@ -5458,6 +5525,37 @@ export interface components {
         };
         /** @enum {string} */
         MrpVerdict: "accept" | "reject";
+        /** @description A notice as the inbox keeps it. */
+        Notification: {
+            cause: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            item_id?: string | null;
+            key: components["schemas"]["Key"];
+            kind: components["schemas"]["Kind"];
+            level: components["schemas"]["Level"];
+            /** Format: uuid */
+            project_id: string;
+            /** Format: date-time */
+            read_at?: string | null;
+            request_id?: string | null;
+            /** Format: date-time */
+            resolved_at?: string | null;
+            title: string;
+        };
+        NotificationList: {
+            notifications: components["schemas"]["Notification"][];
+            /**
+             * Format: int64
+             * @description How many notifications are open, whatever `limit` cut.
+             */
+            open: number;
+        };
+        /** @enum {string} */
+        NotificationState: "open" | "all";
         /** @description What an applied operation did, in the words the plan's answer has always used. */
         OpResult: {
             /**
@@ -5855,6 +5953,10 @@ export interface components {
              * @description `null` when `null_reason` is set.
              */
             value?: number | null;
+        };
+        ReadAll: {
+            /** @description How many were unread. */
+            read: number;
         };
         ReasonCount: {
             code: string;
@@ -9890,6 +9992,96 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description `open` (the default): what still asks something of the person. `all`: everything kept,
+                 *     newest first.
+                 */
+                state: components["schemas"]["NotificationState"];
+                /**
+                 * @description How many to return, 50 by default and 500 at most. `0` returns none, for a caller that
+                 *     wants only `open`.
+                 */
+                limit: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The notifications, newest first, and how many are open */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationList"];
+                };
+            };
+            /** @description `state` or `limit` is not what it should be */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    read_all_notifications: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Every unread notification is read now */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadAll"];
+                };
+            };
+        };
+    };
+    read_notification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The notification */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Marked read; one that is read already, or not there, changes nothing */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `id` is not an id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
             };
         };
     };

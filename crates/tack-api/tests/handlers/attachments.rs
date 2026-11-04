@@ -246,6 +246,7 @@ async fn app_at(storage_dir: &Path) -> (Router, Repository, Uuid) {
     let workspace_id = tack_test_support::create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             storage_dir: storage_dir.display().to_string(),

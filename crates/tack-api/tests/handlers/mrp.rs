@@ -49,6 +49,7 @@ pub(crate) async fn setup_with_bus(
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, events) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(OPERATOR_TOKEN.into()),

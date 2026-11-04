@@ -1212,6 +1212,7 @@ async fn agent_context_reads_the_editors_html_description_as_text() {
     use tack_api::{AppState, config::AppConfig};
     use tokio::sync::broadcast;
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig::default(),
         workspace_id: Uuid::new_v4(),
@@ -1294,6 +1295,7 @@ async fn agent_context_includes_the_projects_definition_of_done() {
     use tack_api::{AppState, config::AppConfig};
     use tokio::sync::broadcast;
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig::default(),
         workspace_id: Uuid::new_v4(),
@@ -1470,6 +1472,7 @@ async fn agent_context_fences_card_text_and_composes_with_the_named_profile() {
 
     use tack_api::{AppState, config::AppConfig};
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig::default(),
         workspace_id: Uuid::new_v4(),
@@ -1588,6 +1591,7 @@ async fn agent_context_limit_follows_the_dialogs_field_and_agent() {
     .expect("profile b");
     use tack_api::{AppState, config::AppConfig};
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig::default(),
         workspace_id: Uuid::new_v4(),
@@ -2486,6 +2490,7 @@ async fn auto_start_board() -> (Repository, tack_api::AppState, String, Uuid) {
         .workspace_id;
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = tack_api::AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: tack_api::config::AppConfig {
             database_url: "sqlite::memory:".into(),

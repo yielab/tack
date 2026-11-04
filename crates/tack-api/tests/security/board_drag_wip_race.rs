@@ -30,6 +30,7 @@ async fn app_with_state() -> (Router, AppState) {
         ..AppConfig::default()
     };
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config,
         workspace_id,

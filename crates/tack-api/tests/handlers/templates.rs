@@ -582,6 +582,7 @@ async fn setup_with_pool() -> (Router, Repository) {
         ..AppConfig::default()
     };
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config,
         workspace_id,
@@ -612,6 +613,7 @@ async fn setup_without_workspace() -> Router {
         ..AppConfig::default()
     };
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config,
         workspace_id,
@@ -647,6 +649,7 @@ async fn setup_with_builtins() -> (Router, Repository) {
         ..AppConfig::default()
     };
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config,
         workspace_id,

@@ -351,6 +351,7 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app =
         crate::common::with_default_host(tack_api::router::build_router(tack_api::AppState {
+            notifications: crate::common::inbox(&repo),
             repo,
             config: loopback_config(),
             workspace_id,
@@ -413,6 +414,7 @@ async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app =
         crate::common::with_default_host(tack_api::router::build_router(tack_api::AppState {
+            notifications: crate::common::inbox(&repo),
             repo,
             config: loopback_config(),
             workspace_id,

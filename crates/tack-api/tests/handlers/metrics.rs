@@ -112,6 +112,7 @@ async fn seeded_rows_yield_the_expected_ratios() {
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app = crate::common::with_default_host(build_router(AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(TOKEN.into()),
@@ -443,6 +444,7 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app = crate::common::with_default_host(build_router(AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(TOKEN.into()),
@@ -556,6 +558,7 @@ async fn a_decision_answered_elsewhere_counts_as_answered() {
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app = crate::common::with_default_host(build_router(AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(TOKEN.into()),
@@ -678,6 +681,7 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = |program: String| AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(TOKEN.into()),
@@ -859,6 +863,7 @@ async fn an_escalation_decided_alone_is_counted_beside_decisions_and_never_insid
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let app = crate::common::with_default_host(build_router(AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(TOKEN.into()),

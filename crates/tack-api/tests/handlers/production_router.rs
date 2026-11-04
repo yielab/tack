@@ -38,6 +38,7 @@ const OPERATOR_TOKEN: &str = "c5-operator-secret-token";
 async fn app_state(config: AppConfig, repo: Repository, workspace_id: Uuid) -> AppState {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             database_url: "sqlite::memory:".to_string(),

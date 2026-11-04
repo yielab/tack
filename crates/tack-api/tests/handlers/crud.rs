@@ -2069,6 +2069,7 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
 
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
     let state = tack_api::AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             loops: tack_app::loop_config::LoopConfig {
@@ -2260,6 +2261,7 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
 
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
     let state = tack_api::AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             loops: tack_app::loop_config::LoopConfig {
@@ -2382,6 +2384,7 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
 
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
     let state = tack_api::AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             loops: tack_app::loop_config::LoopConfig {
@@ -2515,6 +2518,7 @@ async fn pull_request_poll_state_and_item(gh_uri: String) -> (tack_api::AppState
     .expect("store the pull request");
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
     let state = tack_api::AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             loops: tack_app::loop_config::LoopConfig {

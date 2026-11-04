@@ -34,6 +34,7 @@ async fn fresh_database() -> (Repository, Uuid) {
 async fn router_for(repo: Repository, workspace_id: Uuid) -> axum::Router {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             api_token: Some(OPERATOR_TOKEN.into()),
