@@ -13,6 +13,8 @@ import {
   isExecutionOff,
   isDecisionsAttested,
   resolveRunModel,
+  profileNetworkFor,
+  webToolsLockedReason,
   type RunWithAgentFormValues,
 } from './shared';
 import type { RunnerCapabilities, HarnessCapability } from '../execution';
@@ -318,5 +320,21 @@ describe('noPlaceToRun', () => {
     expect(noPlaceToRun([silent, silent], undefined)).toContain('2 computers');
     expect(noPlaceToRun([], null)).toBe('no computer is connected to run it');
     expect(noPlaceToRun([{ state: 'revoked' }], null)).toBe('no computer is connected to run it');
+  });
+});
+
+describe('the Web tools default', () => {
+  it('reads the profile\'s answer for the chosen agent and defaults to off', () => {
+    const profile = { default_network: { 'claude-code': true, codex: false } };
+    expect(profileNetworkFor(profile, 'claude-code')).toBe(true);
+    expect(profileNetworkFor(profile, 'codex')).toBe(false);
+    expect(profileNetworkFor(profile, 'opencode')).toBe(false);
+    expect(profileNetworkFor({}, 'claude-code')).toBe(false);
+    expect(profileNetworkFor(undefined, 'claude-code')).toBe(false);
+  });
+
+  it('is locked on, with its reason, only for opencode', () => {
+    expect(webToolsLockedReason('opencode')).toBe('opencode reaches the network on every run');
+    expect(webToolsLockedReason('claude-code')).toBeNull();
   });
 });

@@ -237,10 +237,11 @@ pub(crate) async fn permissions_for(
         .as_ref()
         .and_then(|policy| serde_json::from_value(policy["tools"][harness.as_str()].clone()).ok())
         .unwrap_or_default();
-    // Nobody ticks a box here, so the profile's role says whether the run may reach the network.
+    // Nobody ticks a box here, so the profile's role and its tools for this agent say whether the
+    // run may reach the network.
     let network = policy
         .as_ref()
-        .is_some_and(tack_core::run_defaults::profile_network);
+        .is_some_and(|policy| tack_core::run_defaults::profile_network_for(policy, &harness));
     // The Run dialog's rule: auto where the machine sandboxes this agent, ask
     // where it does not. Absent `approvals` means auto, so it is set only when
     // some eligible machine reports no sandbox for the agent.

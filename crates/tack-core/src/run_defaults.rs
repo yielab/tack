@@ -143,6 +143,36 @@ pub fn profile_network(tool_policy: &serde_json::Value) -> bool {
     tool_policy.get("network").and_then(|v| v.as_bool()) == Some(true)
 }
 
+/// Whether a run of `agent` with this profile asks for the network when its request does not
+/// say. The profile's `network` flag, or, for any agent but docket (whose pipeline decides and
+/// whose team-fit check reads the flag alone), the profile's tools for that agent being `*` or
+/// naming WebFetch or WebSearch (in any case, as the runner matches them). opencode reaches the
+/// network on every run, so for it this is always true.
+pub fn profile_network_for(tool_policy: &serde_json::Value, agent: &str) -> bool {
+    match agent {
+        "opencode" => true,
+        "docket" => profile_network(tool_policy),
+        _ => profile_network(tool_policy) || names_web_tools(&tools_for(tool_policy, agent)),
+    }
+}
+
+/// The tool names a profile gives one agent (`tool_policy.tools[agent]`), or none.
+fn tools_for<'a>(tool_policy: &'a serde_json::Value, agent: &str) -> Vec<&'a str> {
+    tool_policy["tools"][agent]
+        .as_array()
+        .map(|tools| tools.iter().filter_map(|t| t.as_str()).collect())
+        .unwrap_or_default()
+}
+
+/// Whether these tools reach the web: `*`, WebFetch or WebSearch.
+fn names_web_tools(names: &[&str]) -> bool {
+    names.iter().any(|name| {
+        *name == "*"
+            || name.eq_ignore_ascii_case("WebFetch")
+            || name.eq_ignore_ascii_case("WebSearch")
+    })
+}
+
 /// What a profile's `tool_policy.network` may hold: a boolean or absent.
 pub fn check_network(tool_policy: &serde_json::Value) -> Result<(), String> {
     match tool_policy.get("network") {
@@ -187,10 +217,7 @@ pub fn profile_capabilities(tool_policy: &serde_json::Value) -> ProfileCapabilit
     if agent == "docket" {
         return every;
     }
-    let names: Vec<&str> = tool_policy["tools"][agent]
-        .as_array()
-        .map(|tools| tools.iter().filter_map(|t| t.as_str()).collect())
-        .unwrap_or_default();
+    let names = tools_for(tool_policy, agent);
     if names.contains(&"*") {
         return every;
     }
@@ -441,6 +468,36 @@ mod tests {
                 "{bad}"
             );
             assert!(!profile_network(&bad));
+        }
+    }
+
+    #[test]
+    fn a_runs_default_network_follows_the_tools_of_its_agent() {
+        use serde_json::json;
+        let researcher =
+            json!({"tools": {"claude-code": ["Read", "Grep", "webfetch", "WebSearch"]}});
+        let writer = json!({"tools": {"claude-code": ["Read", "Edit"], "codex": ["*"]}});
+        let flagged = json!({"network": true, "tools": {"claude-code": ["Read"]}});
+        for (policy, agent, network) in [
+            // Tools that name the web, in any case, mean the network for that agent.
+            (&researcher, "claude-code", true),
+            (&researcher, "codex", false),
+            (&writer, "claude-code", false),
+            (&writer, "codex", true),
+            // The flag alone still counts, for every agent.
+            (&flagged, "claude-code", true),
+            (&flagged, "docket", true),
+            // docket reads the flag and never the tools; opencode always reaches the network.
+            (&researcher, "docket", false),
+            (&json!({"tools": {"docket": ["*"]}}), "docket", false),
+            (&json!({}), "opencode", true),
+            (&json!({}), "claude-code", false),
+        ] {
+            assert_eq!(
+                profile_network_for(policy, agent),
+                network,
+                "{agent} {policy}"
+            );
         }
     }
 

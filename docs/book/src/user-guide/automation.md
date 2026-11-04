@@ -192,7 +192,7 @@ does not hold it back. Its activity says "Started by itself: it reached To Do wi
 a task with no role, "Started by itself: it reached To Do with no role, and goes to the team saas-content"
 (or to the agent, such as Codex, when the profile names no team).
 The agent works with the tools its profile allows. Web tools are on
-only when the profile says its role needs the network. The run lasts as long as the profile's time limit
+only when the profile says its role needs the network or its tools for the agent include the web tools. The run lasts as long as the profile's time limit
 allows, and one hour when it sets none.
 
 **It asks before each action unless every machine that could run it sandboxes the agent.** On a machine

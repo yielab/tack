@@ -382,6 +382,8 @@ export interface AgentProfileSummary {
   changes_files?: boolean;
   runs_commands?: boolean;
   uses_network?: boolean;
+  /** Read only, from the server: for each agent, whether a run with this profile starts with the network. */
+  default_network?: Record<string, boolean>;
 }
 
 /** What a profile's `tool_policy.docket.team` names, or null. */

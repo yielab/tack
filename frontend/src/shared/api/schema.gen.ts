@@ -3667,6 +3667,13 @@ export interface components {
             builtin: boolean;
             /** @description Read only: whether its tools can change files, derived from `tool_policy`. */
             readonly changes_files: boolean;
+            /**
+             * @description Read only: for each agent, whether a run with this profile starts with the network when its
+             *     request does not say (`tack_core::run_defaults::profile_network_for`).
+             */
+            default_network: {
+                [key: string]: boolean;
+            };
             /** @description One line on what the profile delivers: "a change on a branch", "a document in a folder", "an answer". */
             delivers?: string | null;
             fleet_id?: string | null;

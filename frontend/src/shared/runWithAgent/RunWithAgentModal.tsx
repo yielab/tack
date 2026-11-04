@@ -14,7 +14,7 @@ import { useExecutionStore } from '../state/executionContext';
 import {
   HARNESS_KINDS, buildCreateExecutionInput, generateIdempotencyKey, gateHarnessModelSelection, isActiveRunnerState,
   isAnsweringRunner, silentRunnerLabel, shouldHideTargetPicker, isExecutionOff, resolveRunModel,
-  isDecisionsAttested, profileNetworkFor, profileToolsFor, silentRunnersText, LEVEL_NEEDS_DOCKET,
+  isDecisionsAttested, profileNetworkFor, profileToolsFor, silentRunnersText, LEVEL_NEEDS_DOCKET, webToolsLockedReason,
   type RunWithAgentFormValues, type RunWithAgentModalProps,
 } from './shared';
 import RunFlow from './RunFlow';
@@ -324,12 +324,15 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
     if (typeof saved.model === 'string') setForm('model', saved.model);
   });
 
-  // The Web tools box starts at what the chosen profile's role needs; a value the task remembers or
-  // the person sets wins, and until then it follows the profile.
-  const defaultNetwork = () => profileNetworkFor(selectedAgentProfile()?.tool_policy);
+  // The Web tools box starts at what the server says a run of the chosen agent with the chosen profile
+  // needs; a value the task remembers or the person sets wins, and until then it follows them. An
+  // agent that always reaches the network has the box on and shut.
+  const defaultNetwork = () => profileNetworkFor(selectedAgentProfile(), form.harnessKind);
+  const networkLocked = () => webToolsLockedReason(form.harnessKind);
   let networkChosen = false;
   createEffect(() => { if (props.isOpen) networkChosen = false; });
   createEffect(() => { if (!networkChosen) setForm('allowNetwork', defaultNetwork()); });
+  createEffect(() => { if (networkLocked()) setForm('allowNetwork', true); });
 
   const decisionsAttested = createMemo(() => isDecisionsAttested(targetHarnessCapability()));
 
@@ -569,6 +572,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             sandboxLine={sandboxLine}
             onApprovals={() => { approvalsChosen = true; }}
             onNetwork={() => { networkChosen = true; }}
+            networkLocked={networkLocked}
             verifyConfigured={verifyConfigured}
             pushConfigured={pushConfigured}
             errors={structuralErrors}

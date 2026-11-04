@@ -289,14 +289,24 @@ impl HarnessGrammar for ClaudeCodeGrammar {
         let request = &run.spec.work.request;
         let policy = &request.permission_policy;
         let tools = tools(run);
+        let had_tools = !tools.is_empty();
         let all_tools = tools.iter().any(|tool| tool == PermissionPolicy::ALL_TOOLS);
-        let names_network_tool = tools
-            .iter()
-            .any(|tool| NETWORK_TOOLS.contains(&tool.to_ascii_lowercase().as_str()));
-        if !policy.network && names_network_tool {
+        let is_network_tool =
+            |tool: &str| NETWORK_TOOLS.contains(&tool.to_ascii_lowercase().as_str());
+        // Without the network the web tools are taken out of the list, as `*` does; a list that
+        // names only them leaves the agent nothing, and that is refused.
+        let tools: Vec<String> = if policy.network {
+            tools
+        } else {
+            tools
+                .into_iter()
+                .filter(|tool| !is_network_tool(tool))
+                .collect()
+        };
+        if !policy.network && tools.is_empty() && had_tools {
             return Err(rejected(
-                "permission_policy denies network but names a network tool \
-                 (WebFetch/WebSearch), a self-contradictory request"
+                "permission_policy denies network and the only tools it names \
+                 (WebFetch/WebSearch) need the network"
                     .to_owned(),
             ));
         }
@@ -358,9 +368,7 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             let every: Vec<&str> = EVERY_TOOL
                 .iter()
                 .copied()
-                .filter(|tool| {
-                    policy.network || !NETWORK_TOOLS.contains(&tool.to_ascii_lowercase().as_str())
-                })
+                .filter(|tool| policy.network || !is_network_tool(tool))
                 .collect();
             args.push(every.join(","));
         } else {
@@ -452,8 +460,8 @@ impl HarnessGrammar for ClaudeCodeGrammar {
             additional: policy_capability(
                 CapabilitySupport::Advisory,
                 "the tool list is enforced through --tools; `network: false` leaves WebFetch and \
-                 WebSearch out of every tool and rejects a request naming them, and does not stop \
-                 the Bash tool from reaching the network",
+                 WebSearch out of every tool, and rejects a request whose only tools they are, and \
+                 does not stop the Bash tool from reaching the network",
             ),
         }
     }

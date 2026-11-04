@@ -422,9 +422,15 @@ export function profileToolsFor(toolPolicy: unknown, harness: string): string[] 
   return Array.isArray(tools) ? tools.filter((t): t is string => typeof t === 'string' && t.trim() !== '') : [];
 }
 
-/** Whether a profile says its role needs the network (`tool_policy.network`); the Web tools box starts there. */
-export function profileNetworkFor(toolPolicy: unknown): boolean {
-  return (toolPolicy as { network?: unknown } | null)?.network === true;
+/** Whether a run of this agent with the profile starts with the network, as the server reads it
+ *  (`default_network` on the profile); the Web tools box starts there. */
+export function profileNetworkFor(profile: { default_network?: Record<string, boolean> } | undefined, harness: string): boolean {
+  return profile?.default_network?.[harness] === true;
+}
+
+/** Why the Web tools box cannot be turned off, or null when it can. */
+export function webToolsLockedReason(harness: string): string | null {
+  return harness === 'opencode' ? 'opencode reaches the network on every run' : null;
 }
 
 export function isDecisionsAttested(harness: HarnessCapability | undefined): boolean {

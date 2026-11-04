@@ -1096,7 +1096,7 @@ describe('RunWithAgentModal', () => {
   });
 
   it('the_web_tools_box_starts_at_the_profiles_network_and_a_remembered_or_touched_value_wins', async () => {
-    const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', tool_policy: { network: true } };
+    const researcher = { ...PROFILE, agent_profile_id: 'profile-net', name: 'Researcher', tool_policy: { network: true }, default_network: { codex: true } };
     const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
     const pick = (name: string) => (profileRadio(name)).click();
     const opts = { runners: [RUNNER], fleets: [], agentProfiles: [PROFILE, researcher], project: { ...PROJECT, default_profile_id: null } };
@@ -1138,6 +1138,31 @@ describe('RunWithAgentModal', () => {
     mount({}, { ...opts, runSettings: { agent_profile_id: 'profile-net', network: false } });
     await flush(); await flush();
     expect(web().checked).toBe(false);
+  });
+
+  it('the_web_tools_box_follows_the_servers_default_for_the_chosen_agent_and_opencode_locks_it_on', async () => {
+    const web = () => ([...document.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Web tools')!.querySelector('input') as HTMLInputElement);
+    // Tools that name the web are a default of the server's, not a rule the dialog repeats.
+    const researcher = { ...PROFILE, agent_profile_id: 'profile-web', name: 'Researcher', tool_policy: { tools: { codex: ['WebFetch'] } }, default_network: { codex: true, opencode: true } };
+    const codex = runnerRow('runner-9', 'Box', runnerCapabilitySnapshot());
+    mount({}, { runners: [codex], fleets: [], agentProfiles: [PROFILE, researcher], project: { ...PROJECT, default_profile_id: null, default_harness: 'codex' } });
+    await flush(); await flush();
+    profileRadio('Researcher').click();
+    await flush();
+    expect(web().checked).toBe(true);
+    expect(web().disabled).toBe(false);
+    teardown();
+    // opencode reaches the network on every run: the box is on, shut, and says why.
+    const opencode = runnerRow('runner-10', 'Box', runnerCapabilitySnapshot({ harnesses: [{
+      harness_kind: 'opencode', installed_version: '1.0.0', probe_error: null, probed_at: '2026-08-06T12:00:00Z',
+    }] }));
+    mount({}, { runners: [opencode], fleets: [], agentProfiles: [PROFILE, researcher], project: { ...PROJECT, default_profile_id: null, default_harness: 'opencode' }, runSettings: { network: false } });
+    await flush(); await flush();
+    profileRadio('Reviewer').click();
+    await flush();
+    expect(web().checked).toBe(true);
+    expect(web().disabled).toBe(true);
+    expect(document.querySelector('[data-testid="web-tools-locked"]')!.textContent).toContain('opencode reaches the network on every run');
   });
 
   it('an agent with no sandbox that cannot ask says it does not run here, and Run stays off', async () => {
