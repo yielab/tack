@@ -2063,6 +2063,24 @@ async fn a_need_the_team_says_is_unmet_ends_the_run_with_its_fix() {
     assert!(fake.requests_to("POST", "/tasks").is_empty());
 }
 
+#[tokio::test]
+async fn a_need_docket_says_only_degrades_the_work_does_not_end_the_run() {
+    let scene = scene();
+    let fake = pods_fake().await;
+    fake.with_pod_contract();
+    fake.set_contract(
+        POD,
+        json!({"needs": [
+            {"kind": "service", "name": "pdf reader", "fix": "docket setup sandbox on", "satisfied": false, "blocking": false},
+        ]}),
+    );
+    adapter(&fake, &scene)
+        .start(&naming_method(&scene, "implementer", "tdd"))
+        .await
+        .expect("an unmet need that only degrades the work refuses nothing");
+    assert_eq!(fake.requests_to("POST", "/tasks").len(), 1);
+}
+
 /// A slow docket answering for one team holds up that team's run and no other: the fast team's
 /// run starts while the slow team's `POST /pods` is still unanswered.
 #[tokio::test]

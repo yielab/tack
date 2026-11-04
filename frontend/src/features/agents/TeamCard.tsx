@@ -488,8 +488,12 @@ const TeamCard: Component<TeamCardProps> = (props) => {
             <ul data-testid="team-needs" aria-label="What the team's work needs" class="flex flex-col gap-1 text-small">
               <For each={report()?.needs ?? []}>
                 {(need) => (
-                  <li data-satisfied={need.satisfied ? 'yes' : 'no'} style={{ 'overflow-wrap': 'anywhere', color: need.satisfied ? 'var(--color-text-secondary)' : 'var(--color-text-primary)' }}>
-                    <Show when={need.satisfied} fallback={<strong>The operator still has to: {need.name}.</strong>}>
+                  <li data-satisfied={need.satisfied ? 'yes' : 'no'} data-blocking={need.blocking === false ? 'no' : 'yes'} style={{ 'overflow-wrap': 'anywhere', color: need.satisfied ? 'var(--color-text-secondary)' : need.blocking === false ? 'var(--color-warning-700)' : 'var(--color-text-primary)' }}>
+                    <Show when={need.satisfied} fallback={
+                      <Show when={need.blocking === false} fallback={<strong>The operator still has to: {need.name}.</strong>}>
+                        <strong>Runs without it, with less: {need.name}.</strong>
+                      </Show>
+                    }>
                       Ready: {need.name}.
                     </Show>
                     <Show when={!need.satisfied && need.fix}>

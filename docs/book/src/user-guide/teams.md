@@ -67,7 +67,8 @@ given, and how long it took. See [Reviewing a Run](reviewing-runs.md).
 The sheet gives the team's **Supervision**, says **Runs to the end by itself** or **Stops to ask a person**, with
 what to change in docket so that it runs to the end, and says whether it reaches the network and whether it
 proposes items. What the team's work still needs reads "The operator still has to…" with what to do, for example
-signing an agent in on the runner's computer; a need already met reads "Ready". A team that stops to ask limits how far Tack may merge by itself: see
+signing an agent in on the runner's computer; a need already met reads "Ready". A need the team says only makes its work poorer, such as a research team that cannot read PDFs, reads "Runs without it, with less…" and
+does not stop a run: Run with agent says what the run will lack and still starts. A team that stops to ask limits how far Tack may merge by itself: see
 [The ceiling](automation.md#ceiling).
 
 A docket team also learns about its work. After a task it may note a fact about the repository: a file that is
