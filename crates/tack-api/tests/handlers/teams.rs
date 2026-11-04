@@ -780,3 +780,78 @@ async fn resuming_a_team_asks_the_runner_that_reports_it_and_answers_with_its_re
     );
     runner.await.unwrap();
 }
+
+/// What a person says a profile does decides whether a team that delivers a report fits it: a
+/// profile that investigates or plans needs no repository, one that changes code (or says
+/// nothing) does.
+#[tokio::test]
+async fn a_profile_that_does_not_change_code_fits_a_team_that_delivers_a_report() {
+    let root = tempfile::tempdir().unwrap();
+    let prill = fake_prill(root.path());
+    let b = board(root.path(), None, &prill).await;
+    seed::agent_runner_reporting(
+        &b.state.repo,
+        "ru1",
+        &snapshot(json!([harness(
+            "docket",
+            "2026-11-04T09:00:00Z",
+            Some(json!([
+                {"name": "notes", "profile": "attended", "violations": [], "delivers": "report",
+                 "members": [{"role": "researcher", "can_propose": true, "reads_web": false}]}
+            ]))
+        )])),
+    )
+    .await;
+    for (name, kind) in [
+        ("Digger", Some("researcher")),
+        ("Drafter", Some("planner")),
+        ("Coder", Some("implementer")),
+        ("Plain", None),
+    ] {
+        let mut body = json!({"name": name, "instructions": "x", "tool_policy": {"docket": {"team": "notes"}}});
+        if let Some(kind) = kind {
+            body["kind"] = json!(kind);
+        }
+        let (status, created) = common::send(
+            &b.app,
+            "POST",
+            "/api/agent-profiles",
+            body,
+            &operator_headers(),
+        )
+        .await;
+        assert_eq!(status.as_u16(), 200, "{created}");
+        assert_eq!(created["kind"], kind.unwrap_or("custom"), "{created}");
+    }
+    let (_, got) = common::send(
+        &b.app,
+        "GET",
+        "/api/teams",
+        Value::Null,
+        &operator_headers(),
+    )
+    .await;
+    let notes = got["teams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|team| team["name"] == "notes")
+        .unwrap();
+    let mut misfits: Vec<(String, Value)> = notes["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap().to_owned(), p["misfits"].clone()))
+        .collect();
+    misfits.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        misfits,
+        [
+            ("Coder".to_owned(), json!(["no_repository"])),
+            ("Digger".to_owned(), json!([])),
+            ("Drafter".to_owned(), json!([])),
+            ("Plain".to_owned(), json!(["no_repository"])),
+        ],
+        "{got}"
+    );
+}

@@ -365,13 +365,16 @@ export const fleetsApi = {
 
 // ── Agent profiles ─────────────────────────────────────────────────────────
 
+/** What a profile does; it decides whether a run needs a repository. */
+export type ProfileKind = 'implementer' | 'reviewer' | 'researcher' | 'planner' | 'custom';
+
 export interface AgentProfileSummary {
   agent_profile_id: string;
   name: string;
   instructions: string;
   tool_policy: unknown;
   limits: unknown;
-  kind?: 'implementer' | 'reviewer' | 'researcher' | 'planner' | 'custom';
+  kind?: ProfileKind;
   builtin?: boolean;
   summary?: string;
   /** One line on what the profile delivers: "a change on a branch", "an answer". */
@@ -406,12 +409,15 @@ export interface CreateAgentProfileInput {
   summary?: string;
   /** `null` clears the line on an update. */
   delivers?: string | null;
+  /** What the profile does; left out, a new profile is `custom` and an updated one keeps its own. */
+  kind?: ProfileKind;
 }
 
 export interface CreateAgentProfileResult {
   protocol_version: number;
   agent_profile_id: string;
   name: string;
+  kind?: ProfileKind;
   /** What was saved that deserves a second look, such as a method the team has no member for. */
   warnings?: string[];
 }

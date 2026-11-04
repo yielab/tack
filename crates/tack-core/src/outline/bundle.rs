@@ -28,7 +28,8 @@ use crate::workflow::{
 };
 
 const PRESETS: &str = "scrum, kanban, simple, construction, legal, research, event";
-const PROFILE_KINDS: [&str; 5] = ["implementer", "reviewer", "researcher", "planner", "custom"];
+/// The kinds a profile that is not built in may take: a file, the API and the profile editor all check against these.
+pub const PROFILE_KINDS: [&str; 5] = ["implementer", "reviewer", "researcher", "planner", "custom"];
 
 /// An agent profile as the board holds it.
 #[derive(Debug, Clone)]

@@ -370,7 +370,8 @@ own setup can give. Nothing was sent and no token was spent.
   not need the web, turn the network off in the profile instead.
 - Proposals: declare the team's `tack_proposals` record set and let a role write it, then apply the team.
 - The repository: point the profile at a team that works in the repository, or give the card's role a Planner
-  or Researcher profile, which change nothing in it.
+  or Researcher profile, which change nothing in it. A profile of your own is one of those when its **What
+  this profile does** (in the profile's form) says so; a new one is Custom, which changes the repository.
 - A way of working: name one of the team's own in the profile, or give the team the member it lacks and apply
   it. The reason names the roles that are missing, or the first line of the error when the method's file does
   not load (check it with `docket pod validate`).

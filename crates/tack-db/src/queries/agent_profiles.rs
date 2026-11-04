@@ -92,11 +92,11 @@ pub struct ProfileCandidateRow {
 
 /// The id of the implementer profile, when one exists.
 pub async fn implementer_profile_id(repo: &Repository) -> Result<Option<String>, StoreError> {
-    Ok(
-        sqlx::query_scalar("SELECT id FROM agent_profiles WHERE kind = 'implementer'")
-            .fetch_optional(repo.pool())
-            .await?,
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM agent_profiles WHERE kind = 'implementer' AND builtin = 1",
     )
+    .fetch_optional(repo.pool())
+    .await?)
 }
 
 /// Every agent profile, with its fleet and tool policy.

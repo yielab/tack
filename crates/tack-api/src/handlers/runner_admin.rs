@@ -11,6 +11,7 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use tack_core::outline::bundle::PROFILE_KINDS;
 use tack_db::queries::{agent_fleets, agent_profiles};
 use tack_db::repo::execution::{
     AddFleetMemberOutcome, EnrollmentToken, NewAgentProfile, NewRunner,
@@ -85,6 +86,10 @@ pub struct CreateProfile {
     /// One line on what the profile delivers; empty or absent is no line.
     #[serde(default)]
     pub delivers: Option<String>,
+    /// What the profile does: `implementer`, `reviewer`, `researcher`, `planner` or `custom`
+    /// (the default). It decides whether a run needs a repository.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 fn empty() -> Value {
     json!({})
@@ -210,6 +215,7 @@ pub struct CreateProfileResponse {
     pub protocol_version: u32,
     pub agent_profile_id: String,
     pub name: String,
+    pub kind: String,
     /// What the profile was saved with that deserves a second look, such as a method the team
     /// names no member for.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -270,6 +276,8 @@ pub struct UpdateProfile {
     #[serde(default, deserialize_with = "set_or_clear")]
     #[schema(value_type = Option<String>)]
     pub delivers: Option<Option<String>>,
+    /// What the profile does, from the same list as on create. A built-in profile keeps its own.
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -962,6 +970,7 @@ pub async fn create_profile(
         Some(&input.tool_policy),
         input.fleet_id.as_deref(),
         input.delivers.as_deref(),
+        input.kind.as_deref(),
     )
     .await?;
     check_limits(&input.limits)?;
@@ -989,6 +998,7 @@ pub async fn create_profile(
         .as_deref()
         .map(str::trim)
         .filter(|d| !d.is_empty());
+    let kind = input.kind.as_deref().map(str::trim);
     let result = state
         .repo
         .create_agent_profile_placed(
@@ -1001,6 +1011,7 @@ pub async fn create_profile(
             },
             input.fleet_id.as_deref(),
             delivers,
+            kind,
             state.clock.now(),
         )
         .await;
@@ -1009,6 +1020,7 @@ pub async fn create_profile(
             protocol_version: 1,
             agent_profile_id: id,
             name: input.name,
+            kind: kind.unwrap_or("custom").to_owned(),
             warnings,
         })),
         Err(StoreError::Conflict(_)) => Err(error(
@@ -1120,13 +1132,24 @@ fn check_limits(limits: &Value) -> Result<(), (StatusCode, Json<Value>)> {
     })
 }
 
-/// 400 when `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, `tool_policy.docket.pipeline_by_type` names a method the profile's agent or team does not have, or `fleet_id` names no fleet. Answers with what deserves a second look (a method the team names no member for).
+/// 400 when `kind` is not one a profile may take, `delivers` is not one short line, `tool_policy.agent` is not a known agent kind, `tool_policy.network` is not a boolean, `tool_policy.docket.team` is not docket's project id, `tool_policy.docket.pipeline_by_type` names a method the profile's agent or team does not have, or `fleet_id` names no fleet. Answers with what deserves a second look (a method the team names no member for).
 async fn check_profile_fields(
     repo: &Repository,
     tool_policy: Option<&Value>,
     fleet_id: Option<&str>,
     delivers: Option<&str>,
+    kind: Option<&str>,
 ) -> Result<Vec<String>, (StatusCode, Json<Value>)> {
+    if let Some(kind) = kind.map(str::trim)
+        && !PROFILE_KINDS.contains(&kind)
+    {
+        return Err(error(
+            StatusCode::BAD_REQUEST,
+            StableErrorCode::InvalidRequest,
+            &format!("kind \"{kind}\" is not one of {}", PROFILE_KINDS.join(", ")),
+            json!({"field": "kind"}),
+        ));
+    }
     if let Some(Err(message)) = delivers.map(tack_core::run_defaults::check_delivers) {
         return Err(error(
             StatusCode::BAD_REQUEST,
@@ -1334,8 +1357,23 @@ pub async fn update_profile(
         input.tool_policy.as_ref(),
         input.fleet_id.as_ref().and_then(|f| f.as_deref()),
         input.delivers.as_ref().and_then(|d| d.as_deref()),
+        input.kind.as_deref(),
     )
     .await?;
+    if let Some(kind) = input.kind.as_deref().map(str::trim) {
+        let current = agent_profiles::profile_by_id(&state.repo, &id)
+            .await
+            .map_err(|_| profile_db_error("Could not read agent profile"))?
+            .ok_or_else(profile_not_found)?;
+        if current.builtin != 0 && current.kind != kind {
+            return Err(error(
+                StatusCode::BAD_REQUEST,
+                StableErrorCode::InvalidRequest,
+                "A built-in profile keeps its kind",
+                json!({"field": "kind"}),
+            ));
+        }
+    }
     if let Some(limits) = &input.limits {
         check_limits(limits)?;
     }
@@ -1350,6 +1388,7 @@ pub async fn update_profile(
         tool_policy: tool_policy.as_deref(),
         limits: limits.as_deref(),
         summary: input.summary.as_deref(),
+        kind: input.kind.as_deref().map(str::trim),
         fleet_id: input.fleet_id.as_ref().map(|f| f.as_deref()),
         delivers: delivers.as_ref().map(|d| d.as_deref()),
     };

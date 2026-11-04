@@ -87,7 +87,7 @@ pub async fn seed_builtin_profiles(
             "INSERT OR IGNORE INTO agent_profiles \
              (id, name, instructions, tool_policy, limits, kind, builtin, summary, created_at, updated_at) \
              SELECT ?, ?, ?, ?, '{}', ?, 1, ?, ?, ? \
-             WHERE NOT EXISTS (SELECT 1 FROM agent_profiles WHERE kind = ?)",
+             WHERE NOT EXISTS (SELECT 1 FROM agent_profiles WHERE kind = ? AND builtin = 1)",
         )
         .bind(format!("ap_{}", uuid::Uuid::new_v4()))
         .bind(name)

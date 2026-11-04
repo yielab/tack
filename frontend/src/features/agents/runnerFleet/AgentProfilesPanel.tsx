@@ -16,6 +16,7 @@ import {
   teamsApi,
   type AgentProfileSummary,
   type ProfileHistory,
+  type ProfileKind,
 } from '../../../shared/execution';
 import { profileEditRequest, requestProfileEdit } from '../profileEditRequest';
 import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
@@ -35,6 +36,15 @@ const HARNESSES = Object.keys(KNOWN_TOOLS);
 
 /** The kinds of card a method can be named for; a project's own kinds are typed. */
 const CARD_KINDS = ['epic', 'feature', 'task', 'subtask', 'bug', 'requirement'];
+
+/** What a profile can do, in the order the select lists them. A run that changes the repository needs a team that delivers one. */
+const PROFILE_KINDS: ReadonlyArray<{ value: ProfileKind; label: string; says: string }> = [
+  { value: 'custom', label: 'Custom', says: 'Changes the repository, as its tools allow' },
+  { value: 'implementer', label: 'Implementer', says: 'Changes the repository' },
+  { value: 'reviewer', label: 'Reviewer', says: 'Reads the change and reports; changes nothing' },
+  { value: 'researcher', label: 'Researcher', says: 'Investigates and reports; may propose work' },
+  { value: 'planner', label: 'Planner', says: 'Plans: proposes work only' },
+];
 
 const FIELD_STYLE = {
   'background-color': 'var(--color-bg-base)',
@@ -134,7 +144,9 @@ const AgentProfilesPanel: Component = () => {
   const [summary, setSummary] = createSignal('');
   const [delivers, setDelivers] = createSignal('');
   const [team, setTeam] = createSignal('');
+  const [kind, setKind] = createSignal<ProfileKind>('custom');
   const teamId = createUniqueId();
+  const kindId = createUniqueId();
   const [instructions, setInstructions] = createSignal('');
   const instructionsId = createUniqueId();
   const [tools, setTools] = createStore<ToolForm>(blankTools());
@@ -193,6 +205,7 @@ const AgentProfilesPanel: Component = () => {
     setSummary(profile?.summary ?? '');
     setDelivers(profile?.delivers ?? '');
     setTeam(teamOf(profile ?? undefined) ?? '');
+    setKind(profile?.kind ?? 'custom');
     setMethodRows(methodsByType(profile?.tool_policy));
     setRefusal(null);
     setWarnings([]);
@@ -260,6 +273,8 @@ const AgentProfilesPanel: Component = () => {
       ...(existing || Object.keys(limits).length > 0 ? { limits } : {}),
       ...(summary().trim() || existing ? { summary: summary().trim() } : {}),
       ...(delivers().trim() ? { delivers: delivers().trim() } : existing?.delivers ? { delivers: null } : {}),
+      // A built-in profile keeps its kind, so it is never sent.
+      ...(!existing?.builtin && kind() !== (existing?.kind ?? 'custom') ? { kind: kind() } : {}),
     };
     setSaving(true);
     setRefusal(null);
@@ -457,6 +472,33 @@ const AgentProfilesPanel: Component = () => {
                   <For each={choices().notReported}>{(t) => <option value={t} selected={t === team()}>{t}</option>}</For>
                 </optgroup>
               </Show>
+            </select>
+          </FieldShell>
+          <FieldShell
+            label="What this profile does"
+            for={kindId}
+            hint={
+              editing()?.builtin
+                ? 'A built-in profile keeps what it does.'
+                : `${PROFILE_KINDS.find((k) => k.value === kind())!.says}. A profile that does not change the repository can run on a team that delivers a report.`
+            }
+          >
+            <select
+              id={kindId}
+              data-testid="profile-kind"
+              value={kind()}
+              disabled={!!editing()?.builtin}
+              onChange={(e) => setKind(e.currentTarget.value as ProfileKind)}
+              class="rounded-full border px-3 py-1 text-sm"
+              style={FIELD_STYLE}
+            >
+              <For each={PROFILE_KINDS}>
+                {(k) => (
+                  <option value={k.value} selected={k.value === kind()}>
+                    {k.label}: {k.says}
+                  </option>
+                )}
+              </For>
             </select>
           </FieldShell>
           <FieldShell

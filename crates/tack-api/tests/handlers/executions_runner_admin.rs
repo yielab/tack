@@ -2974,6 +2974,122 @@ async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_d
     assert_eq!(err["error"]["details"]["field"], "delivers");
 }
 
+// A person chooses what a profile does: the kind comes in on create and update, a kind outside the
+// list is refused naming the list, and a built-in profile keeps its own.
+#[tokio::test]
+async fn a_profile_takes_the_kind_a_person_chooses_and_a_builtin_keeps_its_own() {
+    let (app, repo, _item_id) = setup().await;
+    let (status, created) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "Digger", "instructions": "x", "kind": "researcher"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["kind"], "researcher");
+    let id = created["agent_profile_id"].as_str().unwrap().to_owned();
+    let (_, plain) = snd(
+        &app,
+        "POST",
+        "/agent-profiles",
+        json!({"name": "Plain", "instructions": "x"}).to_string(),
+    )
+    .await;
+    assert_eq!(plain["kind"], "custom", "{plain}");
+
+    let (status, patched) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"kind": "planner"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{patched}");
+    assert_eq!(
+        (patched["kind"].as_str(), patched["builtin"].as_bool()),
+        (Some("planner"), Some(false))
+    );
+    let (_, kept) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{id}"),
+        json!({"name": "Digger 2"}).to_string(),
+    )
+    .await;
+    assert_eq!(
+        kept["kind"], "planner",
+        "an omitted key leaves the kind alone"
+    );
+
+    for (method, path, body) in [
+        (
+            "POST",
+            "/agent-profiles".to_owned(),
+            json!({"name": "Bad", "instructions": "x", "kind": "wizard"}),
+        ),
+        (
+            "PATCH",
+            format!("/agent-profiles/{id}"),
+            json!({"kind": "wizard"}),
+        ),
+    ] {
+        let (status, err) = snd(&app, method, &path, body.to_string()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+        assert_eq!(err["error"]["details"]["field"], "kind");
+        assert!(
+            err["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("implementer, reviewer, researcher, planner, custom"),
+            "{err}"
+        );
+    }
+
+    // A custom profile of a built-in's kind does not stand in for it.
+    tack_db::repo::execution::seed_builtin_profiles(&repo, chrono::Utc::now())
+        .await
+        .expect("seed");
+    let (_, list) = snd(&app, "GET", "/agent-profiles", String::new()).await;
+    assert_eq!(
+        list["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["builtin"] == true)
+            .count(),
+        4,
+        "{list}"
+    );
+    let builtin = list["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["builtin"] == true && p["kind"] == "planner")
+        .expect("the built-in planner");
+    let builtin_id = builtin["agent_profile_id"].as_str().unwrap();
+    let (status, err) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{builtin_id}"),
+        json!({"kind": "implementer"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{err}");
+    let (status, same) = snd(
+        &app,
+        "PATCH",
+        &format!("/agent-profiles/{builtin_id}"),
+        json!({"kind": "planner"}).to_string(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{same}");
+    assert_eq!(
+        (same["kind"].as_str(), same["builtin"].as_bool()),
+        (Some("planner"), Some(true))
+    );
+}
+
 /// A request on `item_id` (queued) under its own idempotency key, stamped created at `at`.
 async fn queued_request_at(
     app: &axum::Router,
