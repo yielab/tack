@@ -1,10 +1,16 @@
 import { type Component, createSignal, createEffect, Show } from 'solid-js';
 import { api } from '../../../shared/api';
 import { toast } from '../../../shared/ui/toast';
-import { Button, Field, FieldShell, Badge } from '../../../shared/ui';
+import { Button, Field, FieldShell, Badge, Switch } from '../../../shared/ui';
+import {
+  disableNotifyWhenHidden,
+  enableNotifyWhenHidden,
+  notifyUnavailableReason,
+  notifyWhenHidden,
+} from '../../../shared/notify';
 import { useProject } from '../../../shared/state/projectContext';
 
-/** General project settings: name, description, type (read-only), archive. */
+/** General project settings: name, description, type (read-only), archive; and this browser's own choice to be notified while the tab is hidden. */
 const GeneralPanel: Component = () => {
   const { project, projectId, refetch } = useProject();
   const [name, setName] = createSignal('');
@@ -49,6 +55,17 @@ const GeneralPanel: Component = () => {
     }
   };
 
+  // The switch follows the click at once and goes back when the browser says no.
+  const [notify, setNotify] = createSignal(notifyWhenHidden());
+  const toggleNotify = async (on: boolean) => {
+    setNotify(on);
+    if (!on) return disableNotifyWhenHidden();
+    if (!(await enableNotifyWhenHidden())) {
+      setNotify(false);
+      toast.info('Notifications stay off: the browser did not allow them.');
+    }
+  };
+
   return (
     <div class="flex max-w-[560px] flex-col gap-3">
       <Field label="Name" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
@@ -73,6 +90,23 @@ const GeneralPanel: Component = () => {
         <div>
           <Badge tone="primary" class="text-xs!">{project()?.project_type ?? '—'}</Badge>
         </div>
+      </FieldShell>
+
+      <FieldShell label="Notifications">
+        <Switch
+          checked={notify()}
+          disabled={notifyUnavailableReason() !== null}
+          onChange={(on) => void toggleNotify(on)}
+        >
+          <span>
+            Notify me when this tab is hidden
+            <Show when={notifyUnavailableReason()}>
+              {(reason) => (
+                <span class="block text-xs" style={{ color: 'var(--color-text-secondary)' }}>{reason()}</span>
+              )}
+            </Show>
+          </span>
+        </Switch>
       </FieldShell>
 
       <div class="mt-1.5 flex items-center gap-2.5">

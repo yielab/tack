@@ -13,6 +13,18 @@ import { HELP } from '../../../shared/help/texts';
 import { toast } from '../../../shared/ui/toast';
 import { flush } from '../../../test/flush';
 
+const notifyMock = vi.hoisted(() => ({
+  reason: null as string | null,
+  enable: vi.fn(async () => false),
+  disable: vi.fn(),
+}));
+vi.mock('../../../shared/notify', () => ({
+  notifyUnavailableReason: () => notifyMock.reason,
+  notifyWhenHidden: () => false,
+  enableNotifyWhenHidden: notifyMock.enable,
+  disableNotifyWhenHidden: notifyMock.disable,
+}));
+
 const PROJECT = {
   id: 'p1',
   name: 'Project One',
@@ -163,6 +175,49 @@ describe('Settings panels', () => {
     );
     expect(patch).toBeTruthy();
     expect(JSON.parse((patch![1] as RequestInit).body as string)).toMatchObject({ name: 'Project One' });
+  });
+
+  describe('GeneralPanel: notify when this tab is hidden', () => {
+    const switchBox = (c: HTMLElement) => c.querySelector<HTMLInputElement>('input[role="switch"]')!;
+
+    it('asks the browser when turned on and stays on when it agrees', async () => {
+      notifyMock.reason = null;
+      notifyMock.enable.mockResolvedValue(true);
+      const { container } = mount(() => <GeneralPanel />);
+      await flush();
+      const box = switchBox(container);
+      expect(box.closest('label')!.textContent).toBe('Notify me when this tab is hidden');
+      expect(box.disabled).toBe(false);
+      box.click();
+      await flush();
+      expect(notifyMock.enable).toHaveBeenCalledOnce();
+      expect(box.checked).toBe(true);
+      box.click();
+      await flush();
+      expect(notifyMock.disable).toHaveBeenCalledOnce();
+      expect(box.checked).toBe(false);
+    });
+
+    it('goes back to off, and says so, when the browser refuses', async () => {
+      notifyMock.reason = null;
+      notifyMock.enable.mockResolvedValue(false);
+      const toastInfo = vi.spyOn(toast, 'info');
+      const { container } = mount(() => <GeneralPanel />);
+      await flush();
+      const box = switchBox(container);
+      box.click();
+      await flush();
+      expect(box.checked).toBe(false);
+      expect(toastInfo).toHaveBeenCalledWith(expect.stringContaining('did not allow'));
+    });
+
+    it('stays in the panel, off, with its reason when the browser cannot notify', async () => {
+      notifyMock.reason = 'This browser has no notifications.';
+      const { container } = mount(() => <GeneralPanel />);
+      await flush();
+      expect(switchBox(container).disabled).toBe(true);
+      expect(container.textContent).toContain('This browser has no notifications.');
+    });
   });
 
   it('RolesPanel adds a role via POST /projects/{id}/roles', async () => {

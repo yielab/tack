@@ -1,4 +1,5 @@
 import { type Component, For, Show, createEffect, createResource, createSignal, onCleanup, onMount } from 'solid-js';
+import { onInboxChange } from '../state/notifications';
 import { Badge, Button, EmptyState, Field, LoadError } from '../ui';
 import { toast } from '../ui/toast';
 import {
@@ -17,9 +18,6 @@ import RadioRow from './RadioRow';
 import { isTerminalAttemptState } from './attemptFormat';
 import { truncateMiddle } from '../ui/truncateMiddle';
 
-/** How often a question asked after the page opened is looked for, while the attempt is not over. */
-const LIVE_RELOAD_MS = 3000;
-
 export interface DecisionInboxProps {
   requestId: string;
   attemptNumber: number;
@@ -32,8 +30,9 @@ export interface DecisionInboxProps {
    *  immediately after, so a resolved row's badge updates without the
    *  caller needing to do anything. */
   onResolved?: (result: ResolveDecisionResult) => void;
-  /** The attempt's state. While it is not finished the list is read again every few seconds, so a
-   *  question asked after the page opened appears; when it is finished, or absent, it is read once. */
+  /** The attempt's state. While it is not finished the list is read again when the inbox says a
+   *  question of this run opened or closed, so one asked after the page opened appears; when it is
+   *  finished, or absent, it is read once. */
   attemptState?: string;
   /** Only the questions still waiting for an answer, and nothing at all when there is none. */
   pendingOnly?: boolean;
@@ -414,8 +413,12 @@ const DecisionInbox: Component<DecisionInboxProps> = (props) => {
 
   createEffect(() => {
     if (props.attemptState === undefined || isTerminalAttemptState(props.attemptState)) return;
-    const timer = setInterval(() => void refetch(), LIVE_RELOAD_MS);
-    onCleanup(() => clearInterval(timer));
+    // A change of another run's, or of a kind that is not a question, leaves this list as it is.
+    // A socket that reconnected may have missed one, so that reads it again too.
+    const stop = onInboxChange((change) => {
+      if (change === 'resync' || (change.kind === 'decision' && change.requestId === props.requestId)) void refetch();
+    });
+    onCleanup(stop);
   });
 
   // One `viewed` call per decision id for as long as the inbox is mounted:

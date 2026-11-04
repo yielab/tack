@@ -4,6 +4,7 @@ import { MemoryRouter, Route, createMemoryHistory } from '@solidjs/router';
 import { ExecutionStoreProvider } from '../../shared/state/executionContext';
 import AgentsPage from './AgentsPage';
 import Layout from '../../app/Layout';
+import { applyNotificationMessage } from '../../shared/state/notifications';
 import { flush } from '../../test/flush';
 
 // Every mounted page is disposed before the fetch mock goes, or its store's poll fires on the real `fetch`.
@@ -382,6 +383,33 @@ describe('AgentsPage — in the app shell', () => {
     await flush();
     expect(document.title).toBe('Agents · Tack');
     expect(container.querySelector('nav[aria-label="Breadcrumb"]')?.textContent?.trim()).toBe('Agents');
+    dispose();
+  });
+
+  it('the title starts with the count of what is open in the inbox, and loses it at 0', async () => {
+    mockFetch();
+    const history = createMemoryHistory();
+    history.set({ value: '/agents', replace: true });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const dispose = render(
+      () => (
+        <ExecutionStoreProvider>
+          <MemoryRouter history={history} root={Layout}>
+            <Route path="/agents" component={AgentsPage} />
+          </MemoryRouter>
+        </ExecutionStoreProvider>
+      ),
+      container,
+    );
+    await flush();
+    await flush();
+    applyNotificationMessage({ type: 'read', id: 'none', open: 3 });
+    await flush();
+    expect(document.title).toBe('(3) Agents · Tack');
+    applyNotificationMessage({ type: 'read', id: 'none', open: 0 });
+    await flush();
+    expect(document.title).toBe('Agents · Tack');
     dispose();
   });
 });
