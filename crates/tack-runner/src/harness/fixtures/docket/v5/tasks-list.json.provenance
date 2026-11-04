@@ -1,8 +1,8 @@
 constructed
 route: GET /tasks/<pod>
 status: 200
-built-from: task-done.json, with a second task that is running
-docket: docket 0.3.0b1 (API 6), source checkout 46e54ec7, read and not run
-source: specs/api/operator-api.spec.md "Task answers" (the paragraphs on current and rev) and specs/data/serve-read-api.spec.md "Task cursor"
-date: 2026-11-01
-note: from the spec. Not captured, because the capture script queues no task that stays running, and the only answers it holds are of tasks refused at claim. The plain list: every task of the pod, each as GET /tasks/<pod>/<id> sends it, with rev; a running task carries current, and one started at the CLI has channel cli and no externalRef. Its keys are those of a captured task plus rev and current, which the spec lists; the values are made up.
+built-from: a task of a real run of docket on a scripted model, as scripts/compare-constructed-docket-fixtures.py reads it over HTTP: a finished task with its three hops, and a second task that is running
+docket: docket 0.3.0b1 (API 6), source checkout 1d180651, run on a scripted model
+date: 2026-11-04
+note: not captured by the capture script, because a task would have to run on a model; the task is one a real docket answered, with its ids, times and paths redacted as the captures are; the second task is made a CLI task (channel cli, none of a request's echoes) by hand
+checked: the keys equal those of a real run of docket 0.3.0b1 (source checkout 1d180651), found by scripts/compare-constructed-docket-fixtures.py on 2026-11-04

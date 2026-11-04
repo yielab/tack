@@ -6,3 +6,4 @@ source: docket's report of its commit 4bf26e50 and of the 2026-10-31 run where T
 docket: docket 0.2.0b6 (API 6), 4bf26e50 as reported, not read here and not run
 date: 2026-10-31
 note: stays constructed on purpose. The capture script spends no model and waits for nothing, and docket's own deadline for an approval is hours (the escalation of an enqueue a policy holds expires on its own clock), so no run of the script can reach an approval that expires. A live run that waits it out replaces this file. failureKind is an open string, docket may add values.
+edited: 2026-11-04, `costUsd` removed (docket 0.3.0b1 at 1d180651 keeps no dollars)

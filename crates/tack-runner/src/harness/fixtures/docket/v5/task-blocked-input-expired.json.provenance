@@ -6,3 +6,4 @@ source: specs/api/operator-api.spec.md "Re-attaching after a restart" item 5 ("a
 docket: docket 0.2.0b6 (API 6), source checkout 9954b4f8, read and not run
 date: 2026-10-26
 note: confirmed by docket's spec and TaskRecord: the key blockedReason and the value input_expired are docket's. Not captured, because expiring a question needs a consult, which needs a model; the sentence in reason is made up. The attempt code not_answered is Tack's own.
+edited: 2026-11-04, `costUsd` and `brief` removed (docket 0.3.0b1 at 1d180651 sends neither: it keeps no dollars, and a task posted with `task` is echoed as `task`), and the description is the one of the capture it is built from

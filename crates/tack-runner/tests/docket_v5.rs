@@ -7407,9 +7407,10 @@ fn the_constructed_task_lists_have_the_keys_of_a_captured_task() {
     for name in ["tasks-list", "tasks-updated-since"] {
         let list = fixture(name);
         for task in list["tasks"].as_array().expect("tasks") {
-            // A task carries `rev` and, while running, `current`; nothing else beyond a captured one.
+            // A task carries `rev` and, while running, `current` and the pid of its claim; nothing
+            // else beyond a captured one.
             let mut keys: Vec<&String> = task.as_object().unwrap().keys().collect();
-            keys.retain(|key| !["current", "rev"].contains(&key.as_str()));
+            keys.retain(|key| !["current", "rev", "claimPid"].contains(&key.as_str()));
             let expected: Vec<&String> = captured
                 .as_object()
                 .unwrap()
@@ -7427,7 +7428,7 @@ fn the_constructed_task_lists_have_the_keys_of_a_captured_task() {
             }
         }
     }
-    assert_eq!(fixture("tasks-updated-since")["next"], json!("8"));
+    assert_eq!(fixture("tasks-updated-since")["next"], json!("24"));
 }
 
 #[tokio::test]
