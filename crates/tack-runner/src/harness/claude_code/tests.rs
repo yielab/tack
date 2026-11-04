@@ -26,10 +26,11 @@ fn invocation(spec: &crate::harness::ExecutionSpec) -> Result<Invocation, Harnes
 /// `(tools, network allowed) -> accepted`.
 #[test]
 fn a_request_is_refused_for_its_policy() {
-    let rows: [(&[&str], bool, bool); 3] = [
+    let rows: [(&[&str], bool, bool); 4] = [
         (&["Read"], true, true),
         (&["WebFetch"], false, false),
         (&["WebFetch"], true, true),
+        (&["webfetch", "WebSearch"], false, false),
     ];
     for (tools, network, accepted) in rows {
         let outcome = invocation(&request(tools, network));
@@ -38,6 +39,24 @@ fn a_request_is_refused_for_its_policy() {
             assert!(matches!(error, HarnessError::Rejected { .. }));
         }
     }
+}
+
+/// A list that names web tools beside others keeps the others when the run has no network.
+#[test]
+fn no_network_takes_the_named_web_tools_out_of_the_list() {
+    let tools_of = |tools: &[&str], network: bool| {
+        let args = invocation(&request(tools, network))
+            .expect("invocation")
+            .args;
+        let at = args
+            .iter()
+            .position(|arg| arg == "--tools")
+            .expect("--tools");
+        args[at + 1].clone()
+    };
+    let named = ["Read", "Grep", "WebFetch", "websearch", "Write"];
+    assert_eq!(tools_of(&named, false), "Read,Grep,Write");
+    assert_eq!(tools_of(&named, true), "Read,Grep,WebFetch,websearch,Write");
 }
 
 /// `*` (every tool, as the built-in profiles write it) is the eight file,
@@ -494,11 +513,15 @@ fn a_profiles_tools_fill_a_run_that_names_none() {
         value_of(&all, "--tools").as_deref(),
         Some("Bash,Edit,Glob,Grep,Read,Write")
     );
-    // A profile that names a web tool for a run without network is refused as a run's would be.
+    // A profile whose only tool is a web one leaves a run without network nothing, and is refused as a
+    // run's own list would be; with another tool beside it the web one is taken out.
     assert!(matches!(
         tools_arg(&[], false, profile(serde_json::json!(["WebFetch"]))),
         Err(HarnessError::Rejected { .. })
     ));
+    let mixed = tools_arg(&[], false, profile(serde_json::json!(["Read", "WebFetch"])))
+        .expect("invocation");
+    assert_eq!(value_of(&mixed, "--tools").as_deref(), Some("Read"));
 }
 
 /// `live-usage.jsonl` (2.1.302) read line by line the way `wait` reads it: each API call

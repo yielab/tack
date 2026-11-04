@@ -146,8 +146,11 @@ or in a container that cannot.
 A profile can say its role needs the network: the box **This role needs the network (web search
 and reading sources)** on the profile form, or `tool_policy.network: true` in the project file.
 The switch then starts on for that profile's runs, and a run a task starts by itself has it on
-without anyone ticking it. A profile that says nothing is off, and a run that sets the switch
-itself keeps its own choice.
+without anyone ticking it. A profile whose tools for the agent include the web tools, or every tool,
+starts on too, for any agent but docket. A profile that says nothing else is off, and a run that sets
+the switch itself keeps its own choice. A run with the switch off drops the web tools from the tools
+the profile names and keeps the rest; it is refused only when the web tools were the only ones named.
+opencode reaches the network on every run, so its switch is always on.
 
 ## MCP
 

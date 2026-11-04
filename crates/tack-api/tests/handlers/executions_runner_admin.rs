@@ -2785,6 +2785,34 @@ async fn the_auto_start_tick_gives_a_run_the_network_its_profile_asks_for() {
     assert_eq!(network_of(&repo, &research).await, Some(true));
 }
 
+// An auto-started run on an agent whose tools for the profile name the web gets the network, as
+// the Run dialog's would; the same tools for another agent do not.
+#[tokio::test]
+async fn the_auto_start_tick_gives_a_run_the_network_its_tools_for_the_agent_name() {
+    let (repo, state, _item_id, project_id) = auto_start_board().await;
+    add_profile_with_policy(
+        &repo,
+        "profile-web",
+        &json!({"tools": {"codex": ["Read", "WebFetch"]}}),
+    )
+    .await;
+    add_profile_with_policy(
+        &repo,
+        "profile-web-elsewhere",
+        &json!({"tools": {"claude-code": ["Read", "WebFetch"]}}),
+    )
+    .await;
+    let named = add_item(&repo, project_id, "named").await;
+    add_role(&repo, &named, "Research", Some("profile-web")).await;
+    let elsewhere = add_item(&repo, project_id, "elsewhere").await;
+    add_role(&repo, &elsewhere, "Research", Some("profile-web-elsewhere")).await;
+    tack_app::auto_start::tick(&state.repo, &tack_protocol::SystemClock)
+        .await
+        .unwrap();
+    assert_eq!(network_of(&repo, &named).await, Some(true));
+    assert_eq!(network_of(&repo, &elsewhere).await, Some(false));
+}
+
 // A run that does not say `network` takes its profile's; one that says so keeps its own; a
 // profile without the key behaves as before (off).
 #[tokio::test]
@@ -2792,8 +2820,24 @@ async fn a_runs_network_comes_from_the_request_then_the_profile_then_off() {
     let (app, repo, item_id) = setup().await;
     add_profile_with_policy(&repo, "profile-net-on", &json!({"network": true})).await;
     add_profile_with_policy(&repo, "profile-net-off", &json!({"network": false})).await;
+    // Tools that name the web mean the network for the agent they are written for (codex here).
+    add_profile_with_policy(
+        &repo,
+        "profile-web-tools",
+        &json!({"tools": {"codex": ["Read", "webfetch"]}}),
+    )
+    .await;
+    add_profile_with_policy(
+        &repo,
+        "profile-web-tools-elsewhere",
+        &json!({"tools": {"claude-code": ["Read", "WebFetch"]}}),
+    )
+    .await;
     // (profile, the request's network, what the run gets)
     let rows = [
+        ("profile-web-tools", None, true),
+        ("profile-web-tools", Some(false), false),
+        ("profile-web-tools-elsewhere", None, false),
         ("profile-net-on", None, true),
         ("profile-net-on", Some(false), false),
         ("profile-net-on", Some(true), true),
@@ -2878,6 +2922,12 @@ async fn a_profile_keeps_what_it_delivers_and_its_team_and_derives_what_it_can_d
             row["uses_network"].as_bool()
         ),
         (Some(true), Some(false), Some(true))
+    );
+    // The server says, per agent, whether a run starts with the network: the tools name the web
+    // for claude-code, not for codex; opencode always reaches it; docket reads the flag alone.
+    assert_eq!(
+        row["default_network"],
+        json!({"claude-code": true, "codex": false, "opencode": true, "docket": false})
     );
 
     let patch = json!({"delivers": "an answer", "tool_policy": {"agent": "claude-code", "docket": {"team": "other"}, "tools": {"claude-code": ["Bash"]}}});

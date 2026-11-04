@@ -9075,7 +9075,8 @@
           "builtin",
           "changes_files",
           "runs_commands",
-          "uses_network"
+          "uses_network",
+          "default_network"
         ],
         "properties": {
           "agent_profile_id": {
@@ -9088,6 +9089,18 @@
             "type": "boolean",
             "description": "Read only: whether its tools can change files, derived from `tool_policy`.",
             "readOnly": true
+          },
+          "default_network": {
+            "type": "object",
+            "description": "Read only: for each agent, whether a run with this profile starts with the network when its\nrequest does not say (`tack_core::run_defaults::profile_network_for`).",
+            "additionalProperties": {
+              "type": "boolean",
+              "readOnly": true
+            },
+            "propertyNames": {
+              "type": "string",
+              "readOnly": true
+            }
           },
           "delivers": {
             "type": [

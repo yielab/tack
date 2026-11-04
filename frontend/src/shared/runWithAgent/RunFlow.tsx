@@ -88,6 +88,8 @@ export interface RunFlowProps {
   onApprovals: () => void;
   /** The person set the Web tools box, so a profile change no longer fills it. */
   onNetwork: () => void;
+  /** Why the Web tools box is on and cannot be changed, or null when it can. */
+  networkLocked: Accessor<string | null>;
   /** The selected runner's own config has a verifier / pushes branches. */
   verifyConfigured: Accessor<boolean>;
   pushConfigured: Accessor<boolean>;
@@ -318,12 +320,16 @@ const RunFlow: Component<RunFlowProps> = (props) => {
           class="flex-1 cursor-pointer rounded-full px-4 py-2.5"
           style={PILL}
           checked={props.form.allowNetwork}
+          disabled={props.networkLocked() !== null}
           onChange={(checked) => { props.onNetwork(); props.setForm('allowNetwork', checked); }}
         >
           Web tools
         </Switch>
         <HelpHint label="Web tools" help={HELP.webTools} />
         </div>
+        <Show when={props.networkLocked()}>
+          {(reason) => <p class="pl-4 text-xs" data-testid="web-tools-locked" style={{ color: 'var(--color-text-tertiary)' }}>Web tools stay on: {reason()}.</p>}
+        </Show>
       </div>
 
       <details>

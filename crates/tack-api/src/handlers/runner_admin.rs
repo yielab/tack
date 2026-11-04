@@ -234,6 +234,10 @@ pub struct AgentProfileSummary {
     /// Read only: whether its tools or its network flag reach the network, derived from `tool_policy`.
     #[schema(read_only)]
     pub uses_network: bool,
+    /// Read only: for each agent, whether a run with this profile starts with the network when its
+    /// request does not say (`tack_core::run_defaults::profile_network_for`).
+    #[schema(read_only)]
+    pub default_network: std::collections::BTreeMap<String, bool>,
 }
 
 /// Keeps a present `null` apart from an absent key: `Some(None)` clears, `None` leaves alone.
@@ -1061,6 +1065,15 @@ fn profile_from_row(
         corrupt("Agent profile policy is corrupt")
     })?;
     let caps = tack_core::run_defaults::profile_capabilities(&tool_policy);
+    let default_network = HARNESS_KINDS
+        .iter()
+        .map(|agent| {
+            (
+                (*agent).to_owned(),
+                tack_core::run_defaults::profile_network_for(&tool_policy, agent),
+            )
+        })
+        .collect();
     Ok(AgentProfileSummary {
         agent_profile_id: r.id,
         name: r.name,
@@ -1078,6 +1091,7 @@ fn profile_from_row(
         changes_files: caps.changes_files,
         runs_commands: caps.runs_commands,
         uses_network: caps.uses_network,
+        default_network,
     })
 }
 

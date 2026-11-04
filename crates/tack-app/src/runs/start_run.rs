@@ -93,7 +93,7 @@ impl PermissionRequest {
         }
     }
 
-    /// The policy to store: `network` as the caller said it, or `profile_network` when it did not.
+    /// The policy to store: `network` as the caller said it, or the profile's default network when it did not.
     pub fn resolved(self, profile_network: bool) -> PermissionPolicy {
         PermissionPolicy {
             tools: self.tools,
@@ -814,12 +814,13 @@ async fn load_profile(
     };
     let limits = serde_json::from_str::<Value>(&row.limits).unwrap_or_else(|_| json!({}));
     let tool_policy = serde_json::from_str::<Value>(&row.tool_policy).unwrap_or_else(|_| json!({}));
-    // A request that does not say `network` gets what the profile's role needs; one that does,
-    // true or false, keeps its own.
+    // A request that does not say `network` gets what the profile's role and its tools for this
+    // agent need; one that does, true or false, keeps its own.
+    let agent = input.requested_harness_kind.clone().unwrap_or_default();
     input
         .permission_policy
         .network
-        .get_or_insert_with(|| tack_core::run_defaults::profile_network(&tool_policy));
+        .get_or_insert_with(|| tack_core::run_defaults::profile_network_for(&tool_policy, &agent));
     let (budgets, timeout_seconds, source) = run_limits(input, &limits, provisional)?;
     input.budgets = budgets;
     input.timeout_seconds = Some(timeout_seconds);

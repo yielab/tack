@@ -58,7 +58,7 @@ On an existing project the whole `project` block is ignored with a warning: the 
 | `name` | text | Matched across the whole board |
 | `kind` | text | `implementer`, `reviewer`, `researcher`, `planner` or `custom` (default) |
 | `instructions` | text | What the agent is told before the task |
-| `tool_policy` | object | `agent` (one of `claude-code`, `codex`, `opencode`, `docket`), `network` (`true` or `false`; absent is `false`: the role's runs start with web tools on), `tools`, and `docket.team`, `docket.denied_tools`, `docket.pipeline_by_type` |
+| `tool_policy` | object | `agent` (one of `claude-code`, `codex`, `opencode`, `docket`), `network` (`true` or `false`; absent is `false`: the role's runs start with web tools on; a profile whose `tools` for the agent include `*`, WebFetch or WebSearch starts them on too, except for docket), `tools`, and `docket.team`, `docket.denied_tools`, `docket.pipeline_by_type` |
 | `limits` | object | Budgets and the time the agent may take |
 | `fleet` | text | A fleet's name. Absent means any computer |
 | `summary` | text | One line beside the profile's name |

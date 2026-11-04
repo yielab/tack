@@ -213,7 +213,9 @@ read-only, and each part links to the page that owns it, so nothing is asked twi
   and waits for your answer: see [Asking before acting](#asking-before-acting). For an agent that cannot
   pause, the switch is disabled and says why.
 - **Web tools.** Off by default, unless the profile says its role needs the network (the profile's box on
-  the Agents page), in which case the switch starts on and you can turn it off for this run. A choice the
+  the Agents page) or, for any agent but docket, the profile's tools for the agent you picked include the
+  web tools, in which case the switch starts on and you can turn it off for this run. opencode reaches the
+  network on every run, so for it the switch is on, disabled, and says why. A choice the
   task remembered wins over the profile. Turning it on lets the agent fetch pages and search the web. Off
   turns those tools off, but the agent's shell can still reach the network. A line under the switches says
   whether the agent is sandboxed or has your user's access to this machine; see
