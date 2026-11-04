@@ -57,7 +57,7 @@ reported and probed, never required. Four additive asks go to docket, each probe
 Seven cards in five rounds.
 
 **Phase 90 — a run is never refused for a contradiction Tack wrote itself** (2026-11-03, no plan
-file, no ADR; from the seven runs of one research task). Two cards, one round:
+file, no ADR; from the seven runs of one research task; both cards built in `develop` the same day). Two cards, one round:
 
 - **A — one rule for a run's network.** The built-in Researcher, Planner and Reviewer name
   WebFetch (the Researcher WebSearch too) and no `network`, so a run that leaves the network to the
