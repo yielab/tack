@@ -123,7 +123,6 @@ async fn seeded_rows_yield_the_expected_ratios() {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     }));
@@ -455,7 +454,6 @@ async fn start_triggers_and_lights_off_are_counted_from_rows() {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     }));
@@ -569,7 +567,6 @@ async fn a_decision_answered_elsewhere_counts_as_answered() {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     }));
@@ -693,7 +690,6 @@ async fn quality_is_prills_and_cost_is_the_rate_cards() {
         workspace_id,
         broadcast_tx: tx.clone(),
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -874,7 +870,6 @@ async fn an_escalation_decided_alone_is_counted_beside_decisions_and_never_insid
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     }));

@@ -15,6 +15,8 @@ use tracing::{info, warn};
 
 use crate::background::Loops;
 use crate::github_sync::GitHub;
+use crate::notifications::channel::Channel;
+use crate::notifications::webhook::{self, WebhookChannel};
 use crate::notifications::{Inbox, subscriber};
 use crate::ports::Ports;
 use crate::remote_backup::BackupConfig;
@@ -47,6 +49,17 @@ pub struct LoopConfig {
     /// How often the board looks for tasks a project starts by itself, in seconds. `0` is off.
     #[serde(default = "default_auto_start_seconds")]
     pub auto_start_seconds: u64,
+
+    /// Optional webhook URL. When set, Tack POSTs every notification that opens to it, signed
+    /// when `webhook_secret` is set, and retries a failed delivery (see
+    /// [`crate::notifications::delivery`]).
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+    /// Optional HMAC-SHA256 signing secret for webhook deliveries. When set, each request carries
+    /// an `X-Tack-Signature: sha256=<hex>` header so the receiver can verify authenticity. Never
+    /// logged.
+    #[serde(default)]
+    pub webhook_secret: Option<String>,
 
     /// S3-compatible endpoint URL. Omit for AWS S3; set for R2/B2/MinIO.
     #[serde(default)]
@@ -129,6 +142,8 @@ impl Default for LoopConfig {
             github_api_base: default_github_api_base(),
             github_poll_seconds: 0,
             auto_start_seconds: default_auto_start_seconds(),
+            webhook_url: None,
+            webhook_secret: None,
             backup_endpoint: None,
             backup_bucket: None,
             backup_region: default_backup_region(),
@@ -153,6 +168,25 @@ impl LoopConfig {
             github_token: self.github_token.clone(),
             api_base: self.github_api_base.clone(),
         }
+    }
+
+    /// The names of [`Self::channels`], for a screen that reports on them.
+    pub fn channel_names(&self) -> Vec<&'static str> {
+        self.webhook_url.iter().map(|_| webhook::NAME).collect()
+    }
+
+    /// The channels a notification leaves the machine through: the webhook when a URL is set.
+    pub fn channels(&self) -> Vec<Arc<dyn Channel>> {
+        self.webhook_url
+            .iter()
+            .map(|url| {
+                info!(url = %url, "Webhook delivery enabled");
+                Arc::new(WebhookChannel::new(
+                    url.clone(),
+                    self.webhook_secret.clone(),
+                )) as Arc<dyn Channel>
+            })
+            .collect()
     }
 
     /// The backup settings the environment configured, with the local files a bundle is made of.

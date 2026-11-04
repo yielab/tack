@@ -50,7 +50,6 @@ async fn real_app(storage_dir: &std::path::Path) -> (axum::Router, Repository) {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

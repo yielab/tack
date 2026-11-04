@@ -11,6 +11,7 @@ import Limits from './Limits';
 import Rungs from './Rungs';
 import AgentsOnBoard from './AgentsOnBoard';
 import Triggers from './Triggers';
+import Notifications from './Notifications';
 import { Section, inputStyle } from './parts';
 
 interface Props {
@@ -34,11 +35,12 @@ const SECTIONS = [
   { id: 'automation-merge', label: 'Merge' },
   { id: 'automation-limits', label: 'Limits' },
   { id: 'automation-agents', label: 'Agents' },
+  { id: 'automation-notifications', label: 'Notifications' },
 ] as const;
 
 /**
- * The ladder graphic, then the five sections in the order a person sets them up: Who, When,
- * Merge, Limits, Agents. It owns what several of them share: the project's roles and its autonomy settings.
+ * The ladder graphic, then the six sections in the order a person sets them up: Who, When,
+ * Merge, Limits, Agents, Notifications. It owns what several of them share: the project's roles and its autonomy settings.
  */
 const Ladder: Component<Props> = (props) => {
   const [roles, { refetch: refetchRoles }] = createResource(() => props.projectId, (id) => api.roles.list(id));
@@ -109,6 +111,9 @@ const Ladder: Component<Props> = (props) => {
           <Section id="automation-agents" title="Agents" lead="How far an agent may go on this board, and what wakes it.">
             <AgentsOnBoard project={props.project} save={props.saveProject} />
             <Triggers projectId={props.projectId} profiles={props.profiles} />
+          </Section>
+          <Section id="automation-notifications" title="Notifications" lead="Where what needs you is sent besides this screen. The same for every project.">
+            <Notifications />
           </Section>
         </div>
       </div>

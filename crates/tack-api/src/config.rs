@@ -39,18 +39,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub api_token: Option<String>,
 
-    /// Optional outbound webhook URL. When set, Tack POSTs a JSON payload to
-    /// this URL on every item create/update/delete, sprint status change, and
-    /// when items become due within the next hour (background check every 60 min).
-    #[serde(default)]
-    pub webhook_url: Option<String>,
-
-    /// Optional HMAC-SHA256 signing secret for webhook deliveries. When set,
-    /// each request includes an `X-Tack-Signature: sha256=<hex>` header so
-    /// the receiver can verify authenticity.
-    #[serde(default)]
-    pub webhook_secret: Option<String>,
-
     /// What configures the background loops (GitHub poll, auto-start, backup, retention, health
     /// watch). Owned by `tack-app`; flattened, so the keys and variables keep their names.
     #[serde(flatten)]
@@ -121,8 +109,6 @@ impl Default for AppConfig {
             allowed_origins: default_allowed_origins(),
             max_body_size_bytes: default_max_body_size_bytes(),
             api_token: None,
-            webhook_url: None,
-            webhook_secret: None,
             loops: LoopConfig::default(),
             search_path: DEFAULT_SEARCH_PATH.to_owned(),
             launch_nonce: None,
@@ -283,7 +269,7 @@ impl AppConfig {
             validate_origin(origin)?;
         }
         validate_outbound_url("github_api_base", &self.loops.github_api_base)?;
-        if let Some(url) = &self.webhook_url {
+        if let Some(url) = &self.loops.webhook_url {
             validate_outbound_url("webhook_url", url)?;
         }
         if let Some(url) = &self.loops.backup_endpoint {
@@ -358,12 +344,12 @@ impl AppConfig {
         if let Ok(v) = std::env::var("TACK_WEBHOOK_URL")
             && !v.is_empty()
         {
-            config.webhook_url = Some(v);
+            config.loops.webhook_url = Some(v);
         }
         if let Ok(v) = std::env::var("TACK_WEBHOOK_SECRET")
             && !v.is_empty()
         {
-            config.webhook_secret = Some(v);
+            config.loops.webhook_secret = Some(v);
         }
         config.search_path =
             std::env::var("PATH").unwrap_or_else(|_| DEFAULT_SEARCH_PATH.to_owned());

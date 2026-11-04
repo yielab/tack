@@ -174,13 +174,12 @@ pub struct AppState {
     pub workspace_id: Uuid,
     pub broadcast_tx: broadcast::Sender<BoardEvent>,
     pub event_bus: EventBus,
-    pub webhook: Option<WebhookClient>,
     pub local_runner: Option<Arc<dyn LocalRunnerControl>>,
     pub tasks: TaskTracker,
 }
 ```
 
-`AppState` is the equivalent of Express's `app.locals` (or a FastAPI `app.state`). It contains everything handlers need that is not in the request itself: the repository (which wraps the database pool), the configuration, the channels that carry events to the browser and to other consumers, the optional webhook client, the embedded runner's control, and the tracker for work a handler starts after it has answered.
+`AppState` is the equivalent of Express's `app.locals` (or a FastAPI `app.state`). It contains everything handlers need that is not in the request itself: the repository (which wraps the database pool), the configuration, the channels that carry events to the browser and to other consumers, the embedded runner's control, and the tracker for work a handler starts after it has answered.
 
 It is registered once at startup and then cloned into every handler call:
 
@@ -245,6 +244,6 @@ Here is what happens when `PATCH /api/items/{id}` is called:
 4. **require_token** (after the host and cross-site checks) checks `Authorization: Bearer ...`; returns 401 if invalid
 5. **Axum router** matches `/api/items/{id}` → `patch(items::update_item)`
 6. **Extractors** run: `State` clones AppState; `Path` parses the UUID; `Json` deserializes the body into `UpdateItem`; if any extractor fails, request is rejected before reaching handler
-7. **update_item handler** runs: validates the input, loads the project, calls `repo.update_item_atomically()` (which asks the workflow whether the move is allowed and counts the WIP limit inside one transaction), then `after_update` emits the domain event for the WebSocket, fires the webhook and starts the recurrence and the GitHub sync
+7. **update_item handler** runs: validates the input, loads the project, calls `repo.update_item_atomically()` (which asks the workflow whether the move is allowed and counts the WIP limit inside one transaction), then `after_update` emits the domain event for the WebSocket and starts the recurrence and the GitHub sync
 8. Handler returns `Ok(Json(item))` → Axum serializes to JSON, sets `Content-Type: application/json`, returns 200
 9. If any step returned `Err(ApiError::...)`, **IntoResponse** converts it to the appropriate status + JSON error body

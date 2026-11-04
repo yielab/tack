@@ -3833,6 +3833,30 @@
         }
       }
     },
+    "/api/notifications/channels": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "GET /api/notifications/channels",
+        "operationId": "get_channels",
+        "responses": {
+          "200": {
+            "description": "Every channel notifications leave through, with how many deliveries wait, how many were given up on, and the last error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NotificationChannel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/notifications/read-all": {
       "post": {
         "tags": [
@@ -14212,6 +14236,40 @@
           }
         }
       },
+      "NotificationChannel": {
+        "type": "object",
+        "description": "How one channel's deliveries stand.",
+        "required": [
+          "name",
+          "pending",
+          "failed"
+        ],
+        "properties": {
+          "failed": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deliveries given up on: refused for good, or still failing after the last try.",
+            "minimum": 0
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the newest failing delivery failed."
+          },
+          "name": {
+            "type": "string",
+            "description": "The channel's name, as the deliveries know it."
+          },
+          "pending": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Deliveries waiting for their first or next try.",
+            "minimum": 0
+          }
+        }
+      },
       "NotificationList": {
         "type": "object",
         "required": [
@@ -19135,6 +19193,10 @@
     {
       "name": "projects",
       "description": "Projects: the top-level container for work."
+    },
+    {
+      "name": "notifications",
+      "description": "What needs a person, and the channels it leaves through."
     },
     {
       "name": "digest",

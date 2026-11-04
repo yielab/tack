@@ -788,7 +788,7 @@ describe('Settings panels', () => {
   });
 
   describe('The sections', () => {
-    const sectionIds = ['automation-who', 'automation-when', 'automation-merge', 'automation-limits', 'automation-agents'];
+    const sectionIds = ['automation-who', 'automation-when', 'automation-merge', 'automation-limits', 'automation-agents', 'automation-notifications'];
     const section = (c: HTMLElement, id: string) => c.querySelector<HTMLElement>(`section[data-testid="${id}"]`)!;
 
     it('come_in_the_order_a_person_sets_them_up_after_the_ladder', async () => {
@@ -797,7 +797,7 @@ describe('Settings panels', () => {
       await flush();
       const all = Array.from(container.querySelectorAll('[data-testid="ladder"] section')).map((e) => e.getAttribute('data-testid'));
       expect(all).toEqual(['rung-ceiling', ...sectionIds]);
-      expect(sectionIds.map((id) => section(container, id).querySelector('h2')!.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits', 'Agents']);
+      expect(sectionIds.map((id) => section(container, id).querySelector('h2')!.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits', 'Agents', 'Notifications']);
     });
 
     it('have_a_section_index_that_links_to_each', async () => {
@@ -805,7 +805,7 @@ describe('Settings panels', () => {
       await flush();
       await flush();
       const links = Array.from(container.querySelectorAll<HTMLAnchorElement>('[data-testid="section-index"] a'));
-      expect(links.map((a) => a.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits', 'Agents']);
+      expect(links.map((a) => a.textContent)).toEqual(['Who', 'When', 'Merge', 'Limits', 'Agents', 'Notifications']);
       expect(links.map((a) => a.getAttribute('href'))).toEqual(sectionIds.map((id) => `#${id}`));
       expect(container.querySelector('[data-testid="section-index"]')!.className).toContain('lg:sticky');
     });

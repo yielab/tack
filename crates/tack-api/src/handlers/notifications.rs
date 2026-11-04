@@ -176,3 +176,51 @@ pub async fn notifications_live(
         }
     }))
 }
+
+/// How one channel's deliveries stand.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub struct NotificationChannel {
+    /// The channel's name, as the deliveries know it.
+    pub name: String,
+    /// Deliveries waiting for their first or next try.
+    pub pending: u32,
+    /// Deliveries given up on: refused for good, or still failing after the last try.
+    pub failed: u32,
+    /// Why the newest failing delivery failed.
+    pub last_error: Option<String>,
+}
+
+/// GET /api/notifications/channels
+#[instrument(skip(state))]
+#[utoipa::path(
+    get,
+    path = "/api/notifications/channels",
+    tag = "notifications",
+    responses(
+        (status = 200, description = "Every channel notifications leave through, with how many deliveries wait, how many were given up on, and the last error", body = Vec<NotificationChannel>),
+    ),
+)]
+pub async fn get_channels(
+    State(state): State<AppState>,
+) -> ApiResult<Json<Vec<NotificationChannel>>> {
+    let mut statuses = state.repo.channel_statuses().await?;
+    let channels = state
+        .config
+        .loops
+        .channel_names()
+        .into_iter()
+        .map(|name| {
+            let status = statuses
+                .iter()
+                .position(|s| s.channel == name)
+                .map(|at| statuses.swap_remove(at));
+            NotificationChannel {
+                name: name.to_owned(),
+                pending: status.as_ref().map_or(0, |s| s.pending),
+                failed: status.as_ref().map_or(0, |s| s.failed),
+                last_error: status.and_then(|s| s.last_error),
+            }
+        })
+        .collect();
+    Ok(Json(channels))
+}

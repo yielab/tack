@@ -130,7 +130,7 @@ Handler: update_item (tack-api/src/handlers/items.rs)
     │     inside one transaction calls workflow.validate_transition(old, new) and
     │     workflow.check_wip_limit(new, count)  ← both pure, no I/O in tack-core
     │  4. after_update(...) then: state.events().emit(DomainEvent::item_changed(...))  ← the bus,
-    │     and with it the WebSocket event; the webhook fires
+    │     and with it the WebSocket event
     │  5. create_next_recurrence(...)  ← a repeating task that reached Done makes its successor
     │  6. maybe_sync_github(...) and, for a task moved to Done, merge::on_done(...)
     ▼

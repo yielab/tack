@@ -15,7 +15,7 @@ always runs and an agent executor that stays off until you turn it on. Everythin
 | Board, list, calendar, timeline and dashboard views | The **Run with agent** button on a task |
 | Creating, moving, commenting on and searching tasks | An agent such as Claude Code or Codex working on your code |
 | The CLI and `tack mcp` for all of the above | A task that starts by itself ([Automating a Project](automation.md)) |
-| Webhooks, GitHub sync and backups | |
+| A webhook for what needs you, GitHub sync and backups | |
 
 With no agent turned on, **Run with agent** says "Agent execution is off" instead of showing a form.
 

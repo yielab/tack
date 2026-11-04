@@ -128,61 +128,61 @@ The file-upload endpoint (`POST /api/items/{id}/attachments`) is exempt from thi
 
 ## Webhooks
 
-Set `TACK_WEBHOOK_URL` to receive an HTTP `POST` whenever work changes. Delivery is fire-and-forget: each event is sent on a background task with a 10-second timeout, and failures are logged but never block the originating request.
+Set `TACK_WEBHOOK_URL` to receive an HTTP `POST` for every notification Tack opens: a question an agent asks, a run that failed, a change set that waits, a run that finished, an item due within the hour. Edits to items and sprints are not sent; the board's API and live view carry those.
 
 ```sh
 TACK_WEBHOOK_URL='https://hooks.example.com/tack' tack serve
 ```
 
+Delivery is at least once. A notification is queued when it opens and tried at once, with a 10-second timeout; the receiver should deduplicate on the notification's `id`. Redirects are never followed.
+
 ### Event types
 
 The event name is sent both as the `X-Tack-Event` request header and as the `event` field in the JSON body.
 
-| Event | When it fires |
-|-------|---------------|
-| `item.created` | An item is created |
-| `item.updated` | An item is updated (including status changes) |
-| `item.deleted` | An item is deleted |
-| `sprint.started` | A sprint transitions to **Active** |
-| `sprint.completed` | A sprint transitions to **Closed** |
-| `sprint.updated` | Any other sprint status change |
-| `item.due_soon` | An item is due within the next hour (background check runs hourly) |
+| Event | When it is sent |
+|-------|-----------------|
+| `notification.decision` | An agent asked a question and its run waits for an answer |
+| `notification.run_failed` | A run failed |
+| `notification.change_set` | An agent proposed a change set |
+| `notification.run_finished` | A run finished |
+| `notification.due_soon` | An item is due within the next hour (checked hourly) |
 
-### Payload shapes
-
-Every payload carries `event`, an RFC 3339 `timestamp`, and `project_id`. The remaining fields depend on the event:
+### Payload
 
 ```json
-// item.created / item.updated / item.due_soon
 {
-  "event": "item.updated",
-  "timestamp": "2026-06-26T12:00:00+00:00",
-  "project_id": "1f0c…",
-  "item": { /* full item object */ }
+  "event": "notification.decision",
+  "notification": {
+    "id": "5c1e…",
+    "project_id": "1f0c…",
+    "kind": "decision",
+    "level": "needs_you",
+    "key": "decision:42",
+    "item_id": "9ab3…",
+    "request_id": "req-7",
+    "title": "A run is asking a question",
+    "cause": "runner:local",
+    "created_at": "2026-11-03T12:00:00Z",
+    "read_at": null,
+    "resolved_at": null
+  }
 }
 ```
 
-```json
-// item.deleted — carries the id only, since the item is gone
-{
-  "event": "item.deleted",
-  "timestamp": "2026-06-26T12:00:00+00:00",
-  "project_id": "1f0c…",
-  "item_id": "9ab3…"
-}
-```
+`level` is `needs_you` for what waits on a person and `info` for what only happened.
 
-```json
-// sprint.started / sprint.completed / sprint.updated
-{
-  "event": "sprint.started",
-  "timestamp": "2026-06-26T12:00:00+00:00",
-  "project_id": "1f0c…",
-  "sprint_id": "44de…",
-  "sprint_name": "Sprint 7",
-  "status": "active"
-}
-```
+### Retries
+
+A delivery the receiver answers with a `2xx` is done. Anything else is tried again later, up to eight tries in all, and then given up.
+
+| Answer | What Tack does |
+|--------|----------------|
+| `2xx` | Delivered |
+| `5xx`, `408`, `429`, a timeout or a connection error | Tries again after 30 seconds, then 60, 120 and so on (doubling, never more than 6 hours between tries), until the eighth failure |
+| any other `4xx`, or a redirect | Refused: not tried again |
+
+Settings → Automation → Notifications shows, for the webhook, how many deliveries wait, how many were given up on and the last error. A delivery that is given up on is not sent again. A delivery queued when no webhook is set is given up on the next pass, so a webhook switched on later does not send old notifications.
 
 ### Signing
 

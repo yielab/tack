@@ -8,6 +8,8 @@ export type InboxNotification = Schemas['Notification'];
 export type NotificationKind = Schemas['Kind'];
 export type NotificationLevel = Schemas['Level'];
 export type NotificationList = Schemas['NotificationList'];
+/** How one channel notifications leave through stands: deliveries waiting, given up on, and the last error. */
+export type NotificationChannel = Schemas['NotificationChannel'];
 
 export const notifications = {
   /** `open` (the default): what still asks something of the person; `all`: everything kept, newest first. */
@@ -18,4 +20,6 @@ export const notifications = {
   },
   read: (id: string) => request<void>(`/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),
   readAll: () => request<{ read: number }>('/notifications/read-all', { method: 'POST' }),
+  /** The configured channels; empty when none is. */
+  channels: () => request<NotificationChannel[]>('/notifications/channels'),
 };

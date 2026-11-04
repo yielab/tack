@@ -1,6 +1,5 @@
 use crate::extract::{Json, Path};
 use axum::extract::State;
-use chrono::Utc;
 use tracing::instrument;
 use uuid::Uuid;
 
@@ -111,19 +110,6 @@ pub async fn update_sprint(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Sprint {id} not found")))?;
 
-    if let Some(wh) = &state.webhook {
-        wh.fire(
-            "sprint.updated",
-            serde_json::json!({
-                "event": "sprint.updated",
-                "timestamp": Utc::now().to_rfc3339(),
-                "project_id": sprint.project_id,
-                "sprint_id": id,
-                "sprint_name": sprint.name,
-            }),
-        );
-    }
-
     Ok(Json(serde_json::to_value(sprint).unwrap()))
 }
 
@@ -151,39 +137,9 @@ pub async fn update_sprint_status(
         .validate()
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
-    // Fetch sprint first so we have project_id for the webhook payload
-    let sprint = state
-        .repo
-        .get_sprint(id)
-        .await?
-        .ok_or_else(|| ApiError::NotFound(format!("Sprint {id} not found")))?;
-
-    let new_status = input.status;
-    let updated = state
-        .repo
-        .update_sprint_status(id, new_status.clone())
-        .await?;
+    let updated = state.repo.update_sprint_status(id, input.status).await?;
     if !updated {
         return Err(ApiError::NotFound(format!("Sprint {id} not found")));
-    }
-
-    if let Some(wh) = &state.webhook {
-        let event = match new_status {
-            SprintStatus::Active => "sprint.started",
-            SprintStatus::Closed => "sprint.completed",
-            _ => "sprint.updated",
-        };
-        wh.fire(
-            event,
-            serde_json::json!({
-                "event": event,
-                "timestamp": Utc::now().to_rfc3339(),
-                "project_id": sprint.project_id,
-                "sprint_id": id,
-                "sprint_name": sprint.name,
-                "status": format!("{new_status:?}").to_lowercase(),
-            }),
-        );
     }
 
     Ok(Json(serde_json::json!({"updated": true})))

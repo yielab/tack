@@ -588,7 +588,6 @@ async fn setup_with_pool() -> (Router, Repository) {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -619,7 +618,6 @@ async fn setup_without_workspace() -> Router {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -655,7 +653,6 @@ async fn setup_with_builtins() -> (Router, Repository) {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

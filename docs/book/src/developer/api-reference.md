@@ -1,6 +1,6 @@
 # API Reference
 
-Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (121 paths, 165 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
+Generated from [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) (122 paths, 166 operations) by `scripts/gen-api-reference.py` — do not hand-edit. Regenerate with `./scripts/regen-generated.sh` after the spec changes.
 
 This page lists every path, method, parameter and request/response schema name. It does not inline schema bodies — load [`docs/openapi.json`](https://github.com/yielab/tack/blob/develop/docs/openapi.json) into an OpenAPI viewer (Redocly, Scalar, Swagger Editor) for the full definitions, or read them directly in the spec file.
 
@@ -108,6 +108,55 @@ start
 
 ---
 
+## Notifications
+
+What needs a person: an inbox of open and settled notifications, and a live socket that tells when it changes.
+
+#### `GET /api/notifications`
+
+GET /api/notifications
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `state` | path | `NotificationState` | yes | `open` (the default): what still asks something of the person. `all`: everything kept, |
+| `limit` | path | `['integer', 'null']` | yes | How many to return, 50 by default and 500 at most. `0` returns none, for a caller that |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | The notifications, newest first, and how many are open | `NotificationList` |
+| 400 | `state` or `limit` is not what it should be | `ErrorEnvelope` |
+
+#### `GET /api/notifications/channels`
+
+GET /api/notifications/channels
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every channel notifications leave through, with how many deliveries wait, how many were given up on, and the last error | `NotificationChannel`[] |
+
+#### `POST /api/notifications/read-all`
+
+all
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every unread notification is read now | `ReadAll` |
+
+#### `POST /api/notifications/{id}/read`
+
+POST /api/notifications/{id}/read
+
+| Param | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | `string` | yes | The notification |
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 204 | Marked read; one that is read already, or not there, changes nothing | — |
+| 400 | `id` is not an id | `ErrorEnvelope` |
+
+---
+
 ## Digest
 
 A computed, bounded summary of the projects a caller may read.
@@ -147,6 +196,14 @@ GET /api/notifications
 |---|---|---|
 | 200 | The notifications, newest first, and how many are open | `NotificationList` |
 | 400 | `state` or `limit` is not what it should be | `ErrorEnvelope` |
+
+#### `GET /api/notifications/channels`
+
+GET /api/notifications/channels
+
+| Status | Meaning | Schema |
+|---|---|---|
+| 200 | Every channel notifications leave through, with how many deliveries wait, how many were given up on, and the last error | `NotificationChannel`[] |
 
 #### `POST /api/notifications/read-all`
 

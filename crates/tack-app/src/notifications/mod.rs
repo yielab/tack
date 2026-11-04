@@ -10,12 +10,15 @@ use tack_core::notification::{Key, Notice, Notification};
 use tack_db::Repository;
 use tack_db::repo::notifications::Listing;
 use tack_protocol::Clock;
-use tokio::sync::broadcast;
+use tokio::sync::{Notify, broadcast};
 use uuid::Uuid;
 
 use crate::AppError;
 
+pub mod channel;
+pub mod delivery;
 pub mod subscriber;
+pub mod webhook;
 
 /// What happened to the inbox, as the live socket tells it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -37,6 +40,8 @@ pub struct Inbox {
     clock: Arc<dyn Clock>,
     channels: Arc<Vec<String>>,
     live: broadcast::Sender<Change>,
+    /// Pinged when something was queued for a channel, so delivery need not wait for its tick.
+    queued: Arc<Notify>,
 }
 
 impl Inbox {
@@ -46,7 +51,13 @@ impl Inbox {
             clock,
             channels: Arc::new(channels),
             live: broadcast::channel(CAPACITY).0,
+            queued: Arc::new(Notify::new()),
         }
+    }
+
+    /// Pinged each time a notification opens with a channel to deliver it through.
+    pub fn queued(&self) -> Arc<Notify> {
+        self.queued.clone()
     }
 
     /// Opens `notice` and queues it for each channel. `None` when its situation was open already:
@@ -58,6 +69,9 @@ impl Inbox {
             .await?;
         if let Some(notification) = &opened {
             self.tell(Change::Opened(notification.clone()));
+            if !self.channels.is_empty() {
+                self.queued.notify_one();
+            }
         }
         Ok(opened)
     }

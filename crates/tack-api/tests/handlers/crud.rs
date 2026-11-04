@@ -2082,7 +2082,6 @@ async fn github_poll_moves_item_through_issue_state_then_a_304_writes_nothing() 
         workspace_id,
         broadcast_tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -2274,7 +2273,6 @@ async fn creating_comment_on_linked_item_pushes_it_to_github_and_stores_the_id()
         workspace_id,
         broadcast_tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -2397,7 +2395,6 @@ async fn github_poll_mirrors_comments_in_and_never_pushes_them_back() {
         workspace_id,
         broadcast_tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
@@ -2531,7 +2528,6 @@ async fn pull_request_poll_state_and_item(gh_uri: String) -> (tack_api::AppState
         workspace_id,
         broadcast_tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

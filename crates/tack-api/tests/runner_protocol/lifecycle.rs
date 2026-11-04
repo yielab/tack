@@ -619,7 +619,6 @@ fn prill_board(fx: &mut Fixture, root: &std::path::Path) -> tack_api::AppState {
         workspace_id: Uuid::new_v4(),
         broadcast_tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

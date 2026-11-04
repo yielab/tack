@@ -23,6 +23,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
+# Signs a webhook body.
+hmac = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }

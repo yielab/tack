@@ -357,7 +357,6 @@ async fn test_run_creates_a_hidden_project_and_a_request() {
             workspace_id,
             broadcast_tx: tx,
             event_bus: Default::default(),
-            webhook: None,
             local_runner: Some(control.clone()),
             tasks: Default::default(),
         }));
@@ -420,7 +419,6 @@ async fn test_run_is_refused_when_the_runner_is_not_enrolled() {
             workspace_id,
             broadcast_tx: tx,
             event_bus: Default::default(),
-            webhook: None,
             local_runner: Some(control.clone()),
             tasks: Default::default(),
         }));

@@ -39,7 +39,6 @@ async fn setup_with_repo() -> (Router, Repository) {
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };

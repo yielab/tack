@@ -17,7 +17,6 @@ pub mod rate_card;
 pub mod request_id;
 pub mod router;
 pub mod server;
-pub mod webhook;
 
 // Re-export commonly used items
 pub use router::AppState;

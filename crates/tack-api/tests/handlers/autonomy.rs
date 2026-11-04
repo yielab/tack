@@ -72,7 +72,6 @@ pub(crate) async fn board(storage: &std::path::Path, github: Option<&str>, prill
         workspace_id,
         broadcast_tx: tx,
         event_bus: Default::default(),
-        webhook: None,
         local_runner: None,
         tasks: Default::default(),
     };
