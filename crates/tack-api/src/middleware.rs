@@ -20,7 +20,10 @@ fn is_public_route(path: &str) -> bool {
 /// Browser WebSockets cannot attach `Authorization`. The token middleware
 /// checks the dedicated subprotocol during the upgrade; this narrow route
 /// recognizer prevents a suffix lookalike from bypassing auth.
-fn is_board_websocket_route(path: &str) -> bool {
+fn is_live_websocket_route(path: &str) -> bool {
+    if matches!(path, "/api/notifications/live" | "/notifications/live") {
+        return true;
+    }
     let Some(project) = path
         .strip_prefix("/api/projects/")
         .or_else(|| path.strip_prefix("/projects/"))
@@ -53,7 +56,7 @@ fn origin_is_loopback(origin: &str) -> bool {
 /// included) reach the socket with no configuration; it does not change
 /// what a non-loopback bind accepts, since that check still requires an
 /// exact match against the configured list.
-fn board_websocket_is_authorized(req: &Request, state: &AppState) -> bool {
+fn live_websocket_is_authorized(req: &Request, state: &AppState) -> bool {
     if let Some(origin) = req.headers().get(header::ORIGIN) {
         let Ok(origin) = origin.to_str() else {
             return false;
@@ -280,8 +283,8 @@ pub async fn require_token(
         return next.run(req).await;
     }
 
-    if is_board_websocket_route(&path) {
-        return if board_websocket_is_authorized(&req, &state) {
+    if is_live_websocket_route(&path) {
+        return if live_websocket_is_authorized(&req, &state) {
             req.extensions_mut()
                 .insert(operator_principal(&state.config));
             next.run(req).await
@@ -426,7 +429,7 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        constant_time_eq, decode_base64url, is_board_websocket_route, is_public_route,
+        constant_time_eq, decode_base64url, is_live_websocket_route, is_public_route,
         operator_principal,
     };
     use crate::config::AppConfig;
@@ -459,18 +462,24 @@ mod tests {
 
     #[test]
     fn only_the_exact_board_websocket_shape_defers_to_upgrade_auth() {
-        assert!(is_board_websocket_route(
+        assert!(is_live_websocket_route(
             "/api/projects/00000000-0000-0000-0000-000000000000/boards/live"
         ));
-        assert!(!is_board_websocket_route(
+        assert!(!is_live_websocket_route(
             "/api/projects/not-a-uuid/boards/live"
         ));
-        assert!(!is_board_websocket_route(
-            "/api/projects/health/boards/live"
-        ));
-        assert!(!is_board_websocket_route(
+        assert!(!is_live_websocket_route("/api/projects/health/boards/live"));
+        assert!(!is_live_websocket_route(
             "/api/projects/00000000-0000-0000-0000-000000000000/boards/live-evil"
         ));
+    }
+
+    #[test]
+    fn only_the_exact_notifications_websocket_shape_defers_to_upgrade_auth() {
+        assert!(is_live_websocket_route("/api/notifications/live"));
+        assert!(!is_live_websocket_route("/api/notifications/live-evil"));
+        assert!(!is_live_websocket_route("/api/notifications/live/more"));
+        assert!(!is_live_websocket_route("/api/notifications"));
     }
 
     #[test]

@@ -33,6 +33,7 @@ async fn setup_with_repo() -> (Router, Repository) {
         ..AppConfig::default()
     };
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config,
         workspace_id,

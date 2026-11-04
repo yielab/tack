@@ -3777,6 +3777,119 @@
         }
       }
     },
+    "/api/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "GET /api/notifications",
+        "operationId": "list_notifications",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "path",
+            "description": "`open` (the default): what still asks something of the person. `all`: everything kept,\nnewest first.",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NotificationState"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "path",
+            "description": "How many to return, 50 by default and 500 at most. `0` returns none, for a caller that\nwants only `open`.",
+            "required": true,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The notifications, newest first, and how many are open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`state` or `limit` is not what it should be",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "POST /api/notifications/read-all",
+        "operationId": "read_all_notifications",
+        "responses": {
+          "200": {
+            "description": "Every unread notification is read now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadAll"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "POST /api/notifications/{id}/read",
+        "operationId": "read_notification",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The notification",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Marked read; one that is read already, or not there, changes nothing"
+          },
+          "400": {
+            "description": "`id` is not an id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects": {
       "get": {
         "tags": [
@@ -13695,6 +13808,21 @@
           }
         ]
       },
+      "Key": {
+        "type": "string",
+        "description": "The situation a notification is about, so the same situation is never open twice and the\nfact that ends it can name it: `decision:<id>`, `run:<request>`, `change_set:<id>`,\n`finished:<request>`, `due:<item>:<yyyy-mm-dd>`."
+      },
+      "Kind": {
+        "type": "string",
+        "description": "What happened that a person is told about.",
+        "enum": [
+          "decision",
+          "run_failed",
+          "change_set",
+          "run_finished",
+          "due_soon"
+        ]
+      },
       "LatestHop": {
         "type": "object",
         "description": "The step of a docket run an attempt is in, read from the text of its latest hop event so a\nscreen finds the step on the team's list without fetching the events.",
@@ -13727,6 +13855,14 @@
             "description": "How the hop ended, in the event's words (`done` when it reported no verdict); null for a\nhop that has started."
           }
         }
+      },
+      "Level": {
+        "type": "string",
+        "description": "How much a notification asks of a person.",
+        "enum": [
+          "needs_you",
+          "info"
+        ]
       },
       "LinearImportRequest": {
         "type": "object",
@@ -13989,6 +14125,104 @@
         "enum": [
           "accept",
           "reject"
+        ]
+      },
+      "Notification": {
+        "type": "object",
+        "description": "A notice as the inbox keeps it.",
+        "required": [
+          "id",
+          "project_id",
+          "kind",
+          "level",
+          "key",
+          "title",
+          "cause",
+          "created_at"
+        ],
+        "properties": {
+          "cause": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "item_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "key": {
+            "$ref": "#/components/schemas/Key"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/Kind"
+          },
+          "level": {
+            "$ref": "#/components/schemas/Level"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "read_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "request_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resolved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "NotificationList": {
+        "type": "object",
+        "required": [
+          "open",
+          "notifications"
+        ],
+        "properties": {
+          "notifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "open": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many notifications are open, whatever `limit` cut.",
+            "minimum": 0
+          }
+        }
+      },
+      "NotificationState": {
+        "type": "string",
+        "enum": [
+          "open",
+          "all"
         ]
       },
       "OpResult": {
@@ -15241,6 +15475,19 @@
             ],
             "format": "double",
             "description": "`null` when `null_reason` is set."
+          }
+        }
+      },
+      "ReadAll": {
+        "type": "object",
+        "required": [
+          "read"
+        ],
+        "properties": {
+          "read": {
+            "type": "integer",
+            "description": "How many were unread.",
+            "minimum": 0
           }
         }
       },
@@ -18877,6 +19124,10 @@
     {
       "name": "digest",
       "description": "A computed, bounded summary of the projects a caller may read."
+    },
+    {
+      "name": "notifications",
+      "description": "What needs a person: an inbox of open and settled notifications, and a live socket that tells when it changes."
     },
     {
       "name": "threads",

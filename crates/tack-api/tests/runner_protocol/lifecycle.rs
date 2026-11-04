@@ -609,6 +609,7 @@ fn prill_board(fx: &mut Fixture, root: &std::path::Path) -> tack_api::AppState {
 
     let (broadcast_tx, _rx) = tokio::sync::broadcast::channel(4);
     let app = tack_api::AppState {
+        notifications: crate::common::inbox(&fx.repo),
         repo: fx.repo.clone(),
         config: tack_api::config::AppConfig {
             storage_dir: root.to_string_lossy().into_owned(),

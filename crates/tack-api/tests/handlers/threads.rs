@@ -293,6 +293,7 @@ async fn runnable_after_patching(patch: Value) -> (Setup, String) {
     .unwrap();
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config: AppConfig {
             api_token: Some("operator-token".into()),

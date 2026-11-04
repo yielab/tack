@@ -2,11 +2,14 @@ use crate::extract::{Path, Upgrade};
 use axum::{
     extract::{
         State,
-        ws::{Message, WebSocket},
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::Response,
 };
-use futures::{SinkExt, stream::StreamExt};
+use futures::{
+    SinkExt,
+    stream::{SplitSink, StreamExt},
+};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use uuid::Uuid;
@@ -40,15 +43,64 @@ pub enum BoardEvent {
     Ping,
 }
 
-/// The one subprotocol this handshake ever selects — it names the message
-/// format this module actually sends (the tagged `BoardEvent` JSON above),
-/// nothing more. The frontend (`shared/realtime/boardSocket.ts`) always
-/// offers it. A client that offers a subprotocol and gets a handshake
-/// response with no `Sec-WebSocket-Protocol` header at all must fail the
-/// connection per the WebSocket spec (RFC 6455 §4.1), so a server that does
-/// not select it here is silently unreachable from every browser, even though
-/// the handshake itself still completes with a 101.
-const BOARD_SUBPROTOCOL: &str = "tack.v1";
+/// The one subprotocol every live socket's handshake selects — it names the message
+/// format the sockets actually send (tagged JSON), nothing more. The frontend
+/// (`shared/realtime/boardSocket.ts`) always offers it. A client that offers a
+/// subprotocol and gets a handshake response with no `Sec-WebSocket-Protocol`
+/// header at all must fail the connection per the WebSocket spec (RFC 6455 §4.1),
+/// so a server that does not select it here is silently unreachable from every
+/// browser, even though the handshake itself still completes with a 101.
+const LIVE_SUBPROTOCOL: &str = "tack.v1";
+
+/// The sending half of a live socket.
+pub struct Outbox(SplitSink<WebSocket, Message>);
+
+impl Outbox {
+    /// Sends `value` as one JSON text frame. `false` when the client is gone, which ends the feed.
+    pub async fn send<T: Serialize>(&mut self, value: &T) -> bool {
+        match serde_json::to_string(value) {
+            Ok(json) => self.0.send(Message::Text(json.into())).await.is_ok(),
+            Err(e) => {
+                tracing::error!("Failed to serialize event: {}", e);
+                true
+            }
+        }
+    }
+}
+
+/// Accepts the upgrade, selecting [`LIVE_SUBPROTOCOL`], and runs `feed` against the client until
+/// either side hangs up. The token travels in a second subprotocol the auth middleware reads
+/// before this runs, so the handlers behind it never see it.
+pub fn serve_live<F, Fut>(ws: WebSocketUpgrade, feed: F) -> Response
+where
+    F: FnOnce(Outbox) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    ws.protocols([LIVE_SUBPROTOCOL])
+        .on_upgrade(move |socket| async move {
+            let (sender, mut receiver) = socket.split();
+
+            // Everything the client sends is ignored but a close; axum answers pings itself.
+            let mut send_task = tokio::spawn(feed(Outbox(sender)));
+            let mut recv_task = tokio::spawn(async move {
+                while let Some(Ok(msg)) = receiver.next().await {
+                    if matches!(msg, Message::Close(_)) {
+                        break;
+                    }
+                }
+            });
+
+            // Wait for either task to finish
+            tokio::select! {
+                _ = &mut send_task => {
+                    recv_task.abort();
+                }
+                _ = &mut recv_task => {
+                    send_task.abort();
+                }
+            }
+        })
+}
 
 /// WebSocket handler for live board updates
 #[instrument(skip(ws, state))]
@@ -64,66 +116,15 @@ pub async fn board_live(
         .await?
         .ok_or_else(|| ApiError::NotFound(format!("Project {} not found", project_id)))?;
 
-    let ws = ws.protocols([BOARD_SUBPROTOCOL]);
-    Ok(ws.on_upgrade(move |socket| handle_socket(socket, project_id, state)))
-}
-
-/// Handle individual WebSocket connection
-async fn handle_socket(socket: WebSocket, project_id: Uuid, state: AppState) {
-    let (mut sender, mut receiver) = socket.split();
-
-    // Subscribe to broadcast channel
-    let mut rx = state.broadcast_tx.subscribe();
-
-    // Spawn task to receive broadcast messages and send to client
-    let mut send_task = tokio::spawn(async move {
+    Ok(serve_live(ws, move |mut out| async move {
+        let mut rx = state.broadcast_tx.subscribe();
         while let Ok(event) = rx.recv().await {
             // Only send events for this project
-            if event_matches_project(&event, project_id) {
-                let msg = match serde_json::to_string(&event) {
-                    Ok(json) => Message::Text(json.into()),
-                    Err(e) => {
-                        tracing::error!("Failed to serialize event: {}", e);
-                        continue;
-                    }
-                };
-
-                if sender.send(msg).await.is_err() {
-                    break;
-                }
+            if event_matches_project(&event, project_id) && !out.send(&event).await {
+                break;
             }
         }
-    });
-
-    // Spawn task to receive messages from client (mostly pings)
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = receiver.next().await {
-            match msg {
-                Message::Text(text) => {
-                    tracing::debug!("Received WebSocket message: {}", text);
-                    // Could handle client commands here if needed
-                }
-                Message::Close(_) => {
-                    break;
-                }
-                Message::Ping(data) => {
-                    // Axum handles ping/pong automatically, but we log it
-                    tracing::trace!("Received ping: {:?}", data);
-                }
-                _ => {}
-            }
-        }
-    });
-
-    // Wait for either task to finish
-    tokio::select! {
-        _ = &mut send_task => {
-            recv_task.abort();
-        }
-        _ = &mut recv_task => {
-            send_task.abort();
-        }
-    }
+    }))
 }
 
 /// Check if event is relevant for this project

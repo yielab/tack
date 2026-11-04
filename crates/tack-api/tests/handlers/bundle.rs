@@ -28,6 +28,7 @@ pub(crate) async fn app() -> Router {
         ..AppConfig::default()
     };
     let state = AppState {
+        notifications: crate::common::inbox(&repo),
         repo,
         config,
         workspace_id,

@@ -14,6 +14,7 @@ use tack_api::server::prepare;
 use tack_api::webhook::WebhookClient;
 use tack_app::background::{Loops, STOP_GRACE};
 use tack_app::due_soon::DueSoonSink;
+use tack_app::notifications::Inbox;
 use tack_db::{Repository, init_pool, migrations, repo};
 use tack_protocol::{Clock, SystemClock};
 use tokio::sync::oneshot;
@@ -49,6 +50,14 @@ pub async fn run(
         );
     }
 
+    // The channels a new notification is queued for: the webhook, when one is set.
+    let channels = config
+        .webhook_url
+        .iter()
+        .map(|_| "webhook".to_string())
+        .collect();
+    let notifications = Inbox::new(repo.clone(), Arc::new(SystemClock), channels);
+
     // WebSocket update fan-out; capacity 100 messages.
     let (broadcast_tx, _) = tokio::sync::broadcast::channel(100);
 
@@ -66,6 +75,7 @@ pub async fn run(
         broadcast_tx,
         event_bus: Default::default(),
         webhook,
+        notifications,
         local_runner,
         tasks: TaskTracker::new(),
     };

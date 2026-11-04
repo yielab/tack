@@ -26,6 +26,7 @@ async fn setup() -> (axum::Router, Repository, String) {
     let workspace_id = create_test_workspace(&repo).await;
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let state = AppState {
+        notifications: crate::common::inbox(&repo.clone()),
         repo: repo.clone(),
         config: AppConfig {
             api_token: Some(OPERATOR_TOKEN.into()),

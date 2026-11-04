@@ -25,9 +25,9 @@ use crate::handlers::spa;
 use crate::handlers::{
     agent_credentials, attachments, attempt_lists, auto_start, autonomy, backup, boards_multi,
     briefs, change_sets, comments, custom_fields, decisions, dependencies, digest, executions,
-    export, import_github, import_linear, items, local_runner, metrics, mrp, outline, projects,
-    roles, runner_admin, runner_protocol, settings, sprints, teams, templates, threads, triggers,
-    websocket,
+    export, import_github, import_linear, items, local_runner, metrics, mrp, notifications,
+    outline, projects, roles, runner_admin, runner_protocol, settings, sprints, teams, templates,
+    threads, triggers, websocket,
 };
 use crate::middleware::{
     inject_operator_principal, read_client, refuse_cross_site, require_host, require_token,
@@ -49,6 +49,8 @@ pub struct AppState {
     pub event_bus: tack_app::events::EventBus,
     /// Optional outbound webhook client (None when TACK_WEBHOOK_URL is unset)
     pub webhook: Option<WebhookClient>,
+    /// What needs a person: the one write path of the inbox, shared with the loops that fill it.
+    pub notifications: tack_app::notifications::Inbox,
     /// Seam to an embedded runner living in the same process — see
     /// `handlers::local_runner`'s module doc for why this crate holds a
     /// trait object rather than depending on `tack-runner` directly.
@@ -114,6 +116,26 @@ fn local_runner_routes() -> Router<AppState> {
             post(local_runner::init_local_runner_folder),
         )
         .route("/local-runner/test-run", post(local_runner::post_test_run))
+}
+
+/// The inbox of what needs a person, and the socket that tells when it changes. Merged into `api`
+/// before `require_token`, like every other `/api/*` route; the socket's token travels in its
+/// handshake (see `middleware::is_live_websocket_route`).
+fn notification_routes() -> Router<AppState> {
+    Router::new()
+        .route("/notifications", get(notifications::list_notifications))
+        .route(
+            "/notifications/read-all",
+            post(notifications::read_all_notifications),
+        )
+        .route(
+            "/notifications/{id}/read",
+            post(notifications::read_notification),
+        )
+        .route(
+            "/notifications/live",
+            get(notifications::notifications_live),
+        )
 }
 
 /// What an agent proposes to change on a board: a project's change sets, and the person's
@@ -535,6 +557,7 @@ pub fn build_router(state: AppState) -> Router {
         // comment for why this is a `merge`, not a `nest`. ───────────────
         .merge(operator_execution_routes(&state))
         .merge(change_set_routes())
+        .merge(notification_routes())
         .merge(conversation_routes())
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .layer(middleware::from_fn(read_client))
