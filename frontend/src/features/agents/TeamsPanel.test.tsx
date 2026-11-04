@@ -23,6 +23,11 @@ const FULL_TEAM = {
     profile: 'saas',
     shape: 'build',
     works_in: 'repository',
+    delivers: 'branch',
+    methods: [
+      { name: 'tdd', source: 'shipped', default: true, missing_roles: [] },
+      { name: 'secure-build', source: 'shipped', default: false, missing_roles: ['security-vetter'] },
+    ],
     members: [
       { role: 'Lead', model: 'opus', can_propose: true, writes_project: false },
       { role: 'Reviewer', model: 'sonnet' },
@@ -66,10 +71,20 @@ const DOCKET = {
   features: { proposals: { support: 'supported', reason: 'through a record set' } },
 };
 
-function mockApi(teams: unknown[], profiles: unknown[] = PROFILES) {
+interface Project {
+  autonomy: unknown;
+  roles: unknown[];
+}
+
+const PROJECT_ID = '11111111-1111-1111-1111-111111111111';
+
+function mockApi(teams: unknown[], profiles: unknown[] = PROFILES, project?: Project) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
     const url = String(input);
     const method = (init as RequestInit | undefined)?.method ?? 'GET';
+    if (project && url.endsWith('/api/projects')) return Promise.resolve(new Response(JSON.stringify([{ id: PROJECT_ID, name: 'Shop', default_profile_id: 'ap_i' }]), { status: 200 }));
+    if (project && url.endsWith(`/api/projects/${PROJECT_ID}/autonomy`)) return Promise.resolve(new Response(JSON.stringify(project.autonomy), { status: 200 }));
+    if (project && url.endsWith(`/api/projects/${PROJECT_ID}/roles`)) return Promise.resolve(new Response(JSON.stringify(project.roles), { status: 200 }));
     if (url.endsWith('/api/teams')) return Promise.resolve(new Response(JSON.stringify({ teams }), { status: 200 }));
     if (url.endsWith('/api/agent-profiles') && method === 'POST') {
       return Promise.resolve(new Response(JSON.stringify({ protocol_version: 1, agent_profile_id: 'ap_new', name: 'saas-code' }), { status: 200 }));
@@ -418,5 +433,135 @@ describe('TeamsPanel', () => {
     expect(team.textContent).toContain('Not reported by any computer');
     expect(team.textContent).toContain('Reviewer');
     expect(team.textContent).not.toContain('Make a profile');
+  });
+});
+
+describe('TeamsPanel sheet', () => {
+  const AUTONOMY = {
+    level: 'L4',
+    ceiling: 'L3',
+    teams: [{ name: 'saas-code', profile: 'Implementer', caps_at: 'L3', fix: 'Set the team to lights-out' }],
+  };
+  const SOLO = {
+    name: 'claude-code',
+    harness: 'claude-code',
+    reported: true,
+    runner: 'This computer',
+    reported_at: '2026-10-31T10:00:00Z',
+    profiles: [{ id: 'ap_r', name: 'Reviewer' }],
+    report: {
+      name: 'claude-code',
+      delivers: 'branch',
+      members: [{ role: 'agent', model: 'opus' }],
+      methods: [{ name: 'agent', source: 'harness', default: true, missing_roles: [] }],
+      needs: [{ kind: 'sign_in', name: 'signed in', fix: 'Run `claude login` on the runner\'s computer.', satisfied: false }],
+    },
+  };
+
+  const headings = (el: HTMLElement) => Array.from(el.querySelectorAll('h4')).map((h) => h.textContent);
+
+  it('answers the six questions of the guide in order, from the report', async () => {
+    mockApi([FULL_TEAM], PROFILES, { autonomy: AUTONOMY, roles: [{ id: 'r1', name: 'Backend', agent_profile_id: 'ap_i' }, { id: 'r2', name: 'Docs', agent_profile_id: null }] });
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const team = card(c, 'saas-code');
+    expect(headings(team)).toEqual([
+      'What is it for?',
+      'Who is in it?',
+      'What happens to a card?',
+      'When does it ask?',
+      'How far does it go?',
+      'How do I send it work?',
+    ]);
+    // 1 purpose, 2 members, 3 method, 4 asks, 5 far, 6 send
+    expect(team.querySelector('[data-testid="team-q-purpose"]')!.textContent).toContain('Hands back a branch of the repository to review and merge');
+    expect(team.querySelector('[data-testid="team-q-members"]')!.textContent).toContain('opus');
+    const method = team.querySelector('[data-testid="team-q-method"]')!;
+    expect(method.querySelector('[data-testid="team-method-tdd"]')!.textContent).toContain('Default');
+    expect(method.querySelector('[data-testid="team-method-secure-build"]')!.textContent).toContain('no member plays security-vetter');
+    expect(method.textContent).toContain('Steps of tdd');
+    expect(team.querySelector('[data-testid="team-q-asks"]')!.textContent).toContain('Stops to ask a person');
+    // The project's ceiling and its roles answer the last two.
+    expect(team.querySelector('[data-testid="team-ceiling"]')!.textContent).toContain('In Shop, its tasks stay at L3: a person merges.');
+    expect(team.querySelector('[data-testid="team-ceiling"]')!.textContent).toContain('Shop can reach L3 at most.');
+    const roles = Array.from(team.querySelectorAll('[data-testid="team-roles"] li')).map((li) => li.textContent);
+    expect(roles).toEqual(['Backend through the profile Implementer', 'A task with no role through the profile Implementer']);
+    // A footer holds the actions, for buttons that act on the team.
+    expect(team.querySelector('[data-testid="team-actions"]')).not.toBeNull();
+  });
+
+  it('says what is not known of a project while none is read, with the line disabled', async () => {
+    mockApi([FULL_TEAM]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const team = card(c, 'saas-code');
+    expect(team.querySelector('[data-testid="team-ceiling-none"]')!.getAttribute('aria-disabled')).toBe('true');
+    expect(team.querySelector('[data-testid="team-roles-none"]')!.textContent).toContain('Choose a project above');
+  });
+
+  it('names the method each profile gives to a kind of card', async () => {
+    const profiles = [{ ...PROFILES[0], tool_policy: { docket: { team: 'saas-code', pipeline_by_type: { bug: 'tdd', feature: 'secure-build' } } } }, PROFILES[1]];
+    mockApi([FULL_TEAM], profiles);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const rows = Array.from(card(c, 'saas-code').querySelectorAll('[data-testid="team-by-type"] li')).map((li) => li.textContent);
+    expect(rows).toEqual(['A bug goes through tdd (Implementer)', 'A feature goes through secure-build (Implementer)']);
+  });
+
+  it('reads a team of one as one agent, with its sign-in under when it asks', async () => {
+    mockApi([SOLO]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const team = card(c, 'claude-code');
+    expect(team.textContent).toContain('A team of one');
+    expect(row(team, 'members').textContent).toBe('One agent, claude-code · model opus');
+    // No pod-only line is drawn for it, so nothing says "Not reported" about a setting it has none of;
+    // whether the agent proposes is the one thing still asked of the runner.
+    expect(Array.from(team.querySelectorAll('[data-reported="no"]')).map((l) => l.closest('[data-testid]')!.getAttribute('data-testid'))).toEqual(['team-proposals']);
+    expect(team.querySelector('[data-testid="team-supervision"]')).toBeNull();
+    const need = team.querySelector('[data-testid="team-needs"] li')!;
+    expect(need.textContent).toContain('The operator still has to: signed in.');
+    expect(need.textContent).toContain('Run `claude login`');
+    expect(team.querySelector('[data-testid="team-method-agent"]')!.textContent).toContain("The agent's own loop");
+    // The profiles of that agent are listed by the sheet, not a second time under "no team".
+    expect(c.querySelector('[data-testid="no-team-claude-code"]')).toBeNull();
+  });
+
+  it('says in a person\'s words why each new kind of misfit refuses a profile', async () => {
+    const team = {
+      ...FULL_TEAM,
+      profiles: [
+        { id: 'ap_a', name: 'Fixer', misfits: ['no_repository', { unknown_method: { name: 'lint' } }, { steps_skipped: { method: 'secure-build', roles: ['security-vetter'] } }] },
+        { id: 'ap_b', name: 'Planner', misfits: [{ needs_unmet: { name: 'signed in' } }] },
+      ],
+      report: { ...FULL_TEAM.report, delivers: 'report', needs: [{ kind: 'sign_in', name: 'signed in', fix: 'Run `docket login`.', satisfied: false }] },
+    };
+    mockApi([team]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const lines = Array.from(card(c, 'saas-code').querySelectorAll('[data-testid="team-misfit"]')).map((l) => l.textContent);
+    expect(lines).toHaveLength(4);
+    expect(lines[0]).toContain("changes the project's repository, and saas-code hands back a report, not a branch");
+    expect(lines[1]).toContain('names the method lint, which saas-code does not have. It has tdd, secure-build');
+    expect(lines[2]).toContain('which would skip steps on saas-code: no member plays security-vetter');
+    expect(lines[3]).toContain('not signed in on the runner. Run `docket login`.');
+    expect(lines.join(' ')).not.toContain('delivers only proposed items');
+  });
+
+  it('says what the sandbox reads and where to learn to grant a toolchain', async () => {
+    mockApi([{ ...FULL_TEAM, report: { ...FULL_TEAM.report, read_only: [] } }, { ...FULL_TEAM, name: 'reads', report: { ...FULL_TEAM.report, name: 'reads', read_only: ['/home/x/venv'] } }]);
+    const c = mount([runner([DOCKET])]);
+    await flush();
+    await flush();
+    const none = card(c, 'saas-code').querySelector('[data-testid="team-reads"]')!;
+    expect(none.textContent).toContain('reads only its own work');
+    expect(none.querySelector('a')!.textContent).toContain('Administrator Guide');
+    const some = card(c, 'reads').querySelector('[data-testid="team-reads"]')!;
+    expect(some.textContent).toBe('Its sandbox also reads /home/x/venv, and cannot change them.');
   });
 });

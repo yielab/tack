@@ -726,6 +726,25 @@ describe('Orchestration: Map and Compare', () => {
     expect(node(c, 'team:saas-notes').getAttribute('data-dashed')).toBeNull();
   });
 
+  it('greys_a_team_no_computer_reports_and_lists_the_command_that_makes_it_with_a_button_that_copies_it', async () => {
+    const written: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: (t: string) => { written.push(t); return Promise.resolve(); } }, configurable: true });
+    const c = await mount(mapWorld());
+    modeButton(c, 'map').click();
+    await settle();
+    const lonely = node(c, 'team:lonely');
+    expect(lonely.getAttribute('data-missing')).toBe('true');
+    expect(lonely.getAttribute('aria-label')).toContain('No computer reports it');
+    // A team a computer reports is not greyed.
+    expect(node(c, 'team:saas-notes').getAttribute('data-missing')).toBeNull();
+    const entries = qa(c, '[data-testid="map-missing-entry"]');
+    expect(entries.map((e) => e.getAttribute('data-kind'))).toEqual(['team']);
+    expect(q(entries[0], '[data-testid="copy-fix-text"]')!.textContent).toBe('docket init lonely');
+    q<HTMLButtonElement>(entries[0], 'button[aria-label="Copy the fix for lonely"]')!.click();
+    await flush();
+    expect(written).toEqual(['docket init lonely']);
+  });
+
   it('moves_between_nodes_with_the_arrow_keys', async () => {
     const c = await mount(mapWorld());
     modeButton(c, 'map').click();

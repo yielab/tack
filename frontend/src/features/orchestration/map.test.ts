@@ -163,6 +163,35 @@ describe('buildMap: the four columns', () => {
   });
 });
 
+describe('buildMap: what no computer reports is greyed with its fix', () => {
+  it('greys_a_named_team_nobody_reports_and_leaves_a_reported_one_alone', () => {
+    const { input } = world();
+    const model = buildMap({ ...input, teams: [team('saas-notes', { reported: false, report: null, runner: null }), ...input.teams.slice(1)] });
+    expect(node(model, 'team:saas-notes').missing).toBe(true);
+    expect(node(model, 'team:saas-review').missing).toBe(false);
+    expect(model.missing).toEqual([{ nodeId: 'team:saas-notes', kind: 'team', name: 'saas-notes', fix: 'docket init saas-notes' }]);
+    const note = routesText(model).find((g) => g.key === 'notes')!.lines.find((l) => l.id === 'missing:team:saas-notes')!;
+    expect(note.text).toBe('No computer reports the team saas-notes. To make it: docket init saas-notes');
+  });
+
+  it('greys_an_agent_the_routes_say_no_runner_reports_with_the_sentence_that_installs_it', () => {
+    const profiles = [profile('cx', undefined, 'codex')];
+    const items = [item('t1')];
+    const base = { items, blockers: new Map(), runs: [], profiles, teams: [] as TeamEntry[], projectRoles: [], defaultProfileId: 'cx', statuses: [{ name: 'To Do', category: 'todo' }, { name: 'Done', category: 'done' }], startStatus: 'To Do', autoStart: true, autonomy: { level: 'L3', teams: [] } };
+    const routing = new Map([['t1', { item_id: 't1', profile_id: 'cx', source: 'project_default', role: null, team: null, harness: 'codex', nobody: 'harness_not_reported' as const }]]);
+    const flow = buildFlow({ ...base, routing });
+    const model = buildMap({ flow, roles: [], profiles, teams: [], defaultProfileId: 'cx', runners: [] });
+    expect(node(model, 'agent:codex').missing).toBe(true);
+    expect(model.missing).toEqual([
+      { nodeId: 'agent:codex', kind: 'harness', name: 'codex', fix: 'No computer reports codex. Install it on a computer that runs a runner, then run `tack runner doctor` there to check it.' },
+    ]);
+  });
+
+  it('greys_nothing_when_every_team_and_agent_is_reported', () => {
+    expect(world().model.missing).toEqual([]);
+  });
+});
+
 describe('buildMap: links are as wide as the open tasks routed along them', () => {
   const { model } = world();
 

@@ -9,6 +9,8 @@ import {
   SINGLE_AGENT_TEXT,
   agentProfilesApi,
   profileAgentText,
+  methodsByType,
+  podsOnly,
   teamChoices,
   teamOf,
   teamsApi,
@@ -30,6 +32,15 @@ import { KNOWN_TOOLS } from '../../../shared/runWithAgent/models';
  * derived by the server from its tools and only shown.
  */
 const HARNESSES = Object.keys(KNOWN_TOOLS);
+
+/** The kinds of card a method can be named for; a project's own kinds are typed. */
+const CARD_KINDS = ['epic', 'feature', 'task', 'subtask', 'bug', 'requirement'];
+
+const FIELD_STYLE = {
+  'background-color': 'var(--color-bg-base)',
+  color: 'var(--color-text-primary)',
+  'border-color': 'var(--color-border-medium)',
+} as const;
 
 interface ToolState { all: boolean; checked: string[]; extra: string }
 type ToolForm = Record<string, ToolState>;
@@ -131,14 +142,22 @@ const AgentProfilesPanel: Component = () => {
   const [tokenLimit, setTokenLimit] = createSignal('');
   const [timeLimit, setTimeLimit] = createSignal('');
   const [saving, setSaving] = createSignal(false);
+  /** The method this profile gives to each kind of card (`docket.pipeline_by_type`), as rows being edited. */
+  const [methodRows, setMethodRows] = createSignal<Array<{ type: string; method: string }>>([]);
+  /** What the last save was refused for, and what it was saved with a second look at. */
+  const [refusal, setRefusal] = createSignal<string | null>(null);
+  const [warnings, setWarnings] = createSignal<string[]>([]);
 
   const rows = (): AgentProfileSummary[] => profiles()?.data.data ?? [];
 
-  const [teamList] = createResource(() => teamsApi.list());
+  const [teamList, { refetch: refetchTeams }] = createResource(() => teamsApi.list());
   /** The teams an agent reports, then the names only profiles use (and the one being edited). */
   const choices = () =>
     teamChoices(teamList.error ? [] : (teamList() ?? []), [...rows().map((p) => teamOf(p)), team()]);
   const reportedTeam = (name: string | null) => !!name && choices().reported.includes(name);
+  /** The methods the chosen team reports it has, once a computer reports them; absent otherwise. */
+  const catalogue = () =>
+    (teamList.error ? [] : (teamList() ?? [])).find((e) => e.reported && e.name === team() && podsOnly([e]).length === 1)?.report?.methods?.map((m) => m.name) ?? null;
 
   // The history of the profile being edited; a new profile has none.
   const [historyResource, { refetch: refetchHistory }] = createResource(
@@ -174,6 +193,9 @@ const AgentProfilesPanel: Component = () => {
     setSummary(profile?.summary ?? '');
     setDelivers(profile?.delivers ?? '');
     setTeam(teamOf(profile ?? undefined) ?? '');
+    setMethodRows(methodsByType(profile?.tool_policy));
+    setRefusal(null);
+    setWarnings([]);
     setInstructions(profile?.instructions ?? '');
     setTools(toolsFromPolicy(profile?.tool_policy));
     setNetwork((profile?.tool_policy as { network?: unknown } | null)?.network === true);
@@ -206,8 +228,13 @@ const AgentProfilesPanel: Component = () => {
     const existing = editing();
     const base = (existing?.tool_policy ?? {}) as Record<string, unknown>;
     const { network: _network, docket, ...rest } = base;
-    const { team: _team, ...docketRest } = (docket ?? {}) as Record<string, unknown>;
-    const nextDocket = team() ? { ...docketRest, team: team() } : docketRest;
+    const { team: _team, pipeline_by_type: _byType, ...docketRest } = (docket ?? {}) as Record<string, unknown>;
+    const byType = Object.fromEntries(methodRows().filter((r) => r.type.trim() && r.method.trim()).map((r) => [r.type.trim(), r.method.trim()]));
+    const nextDocket = {
+      ...docketRest,
+      ...(team() ? { team: team() } : {}),
+      ...(Object.keys(byType).length > 0 ? { pipeline_by_type: byType } : {}),
+    };
     const tool_policy = {
       ...rest,
       ...(Object.keys(nextDocket).length > 0 ? { docket: nextDocket } : {}),
@@ -235,19 +262,36 @@ const AgentProfilesPanel: Component = () => {
       ...(delivers().trim() ? { delivers: delivers().trim() } : existing?.delivers ? { delivers: null } : {}),
     };
     setSaving(true);
+    setRefusal(null);
+    setWarnings([]);
     try {
+      let saidSo: string[] = [];
+      let made: string | null = null;
       if (existing) {
-        await agentProfilesApi.update(existing.agent_profile_id, fields);
+        saidSo = (await agentProfilesApi.update(existing.agent_profile_id, fields))?.warnings ?? [];
         toast.success(`Saved agent profile "${fields.name}"`);
-        void refetch();
       } else {
         const created = await agentProfilesApi.create(fields);
+        saidSo = created.warnings ?? [];
+        made = created.agent_profile_id;
         toast.success(`Created agent profile "${created.name}"`);
-        void refetch();
       }
-      setShowForm(false);
+      void refetch();
+      void refetchTeams();
+      // A save that deserves a second look stays open on it.
+      if (saidSo.length > 0) {
+        // A profile just made is open for editing, so a second save updates it and makes no copy.
+        if (made) {
+          const fresh = await agentProfilesApi.list().catch(() => undefined);
+          const wanted = fresh?.data.data.find((p) => p.agent_profile_id === made);
+          if (wanted) openForm(wanted);
+        }
+        setWarnings(saidSo);
+      } else setShowForm(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save agent profile');
+      const message = err instanceof Error ? err.message : 'Failed to save agent profile';
+      setRefusal(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -415,6 +459,82 @@ const AgentProfilesPanel: Component = () => {
               </Show>
             </select>
           </FieldShell>
+          <FieldShell
+            label="Method for each kind of card"
+            hint="How a task of that kind is worked: the team offers a catalogue and the card's kind picks from it. A kind left out goes through the team's default."
+          >
+            <Show
+              when={team()}
+              fallback={
+                <p data-testid="methods-disabled" aria-disabled="true" class="text-small" style={{ color: 'var(--color-text-tertiary)' }}>
+                  A profile that runs a single agent has one method, the agent's own loop, so there is none to choose. Choose a team above to name one for each kind of card.
+                </p>
+              }
+            >
+              <div class="space-y-2" data-testid="method-rows">
+                <datalist id={`${teamId}-kinds`}>
+                  <For each={CARD_KINDS}>{(kind) => <option value={kind} />}</For>
+                </datalist>
+                <For each={methodRows()}>
+                  {(row, i) => (
+                    <div class="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        list={`${teamId}-kinds`}
+                        aria-label={`Kind of card, row ${i() + 1}`}
+                        placeholder="bug"
+                        value={row.type}
+                        onInput={(e) => setMethodRows((rs) => rs.map((r, j) => (j === i() ? { ...r, type: e.currentTarget.value } : r)))}
+                        class="w-32 rounded-item border px-3 py-1.5 text-sm"
+                        style={FIELD_STYLE}
+                      />
+                      <Show
+                        when={catalogue()}
+                        fallback={
+                          <input
+                            type="text"
+                            aria-label={`Method for ${row.type || `row ${i() + 1}`}`}
+                            placeholder="tdd"
+                            value={row.method}
+                            onInput={(e) => setMethodRows((rs) => rs.map((r, j) => (j === i() ? { ...r, method: e.currentTarget.value } : r)))}
+                            class="w-44 rounded-item border px-3 py-1.5 text-sm"
+                            style={FIELD_STYLE}
+                          />
+                        }
+                      >
+                        {(names) => (
+                          <select
+                            aria-label={`Method for ${row.type || `row ${i() + 1}`}`}
+                            value={row.method}
+                            onChange={(e) => setMethodRows((rs) => rs.map((r, j) => (j === i() ? { ...r, method: e.currentTarget.value } : r)))}
+                            class="rounded-full border px-3 py-1 text-sm"
+                            style={FIELD_STYLE}
+                          >
+                            <option value="" selected={!row.method}>Choose a method</option>
+                            <For each={names()}>{(name) => <option value={name} selected={name === row.method}>{name}</option>}</For>
+                            <Show when={row.method && !names().includes(row.method)}>
+                              <option value={row.method} selected>{row.method} (the team does not have it)</option>
+                            </Show>
+                          </select>
+                        )}
+                      </Show>
+                      <Button type="button" variant="ghost" size="sm" aria-label={`Remove the method for ${row.type || `row ${i() + 1}`}`} onClick={() => setMethodRows((rs) => rs.filter((_, j) => j !== i()))}>
+                        Remove
+                      </Button>
+                    </div>
+                  )}
+                </For>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setMethodRows((rs) => [...rs, { type: '', method: '' }])}>
+                  + Name a method for a kind of card
+                </Button>
+                <Show when={catalogue() === null}>
+                  <p class="text-caption" style={{ color: 'var(--color-text-tertiary)' }} aria-disabled="true">
+                    No computer reports this team's methods, so a name is not checked until a run.
+                  </p>
+                </Show>
+              </div>
+            </Show>
+          </FieldShell>
           <Field
             label="Token limit per run"
             type="number"
@@ -487,6 +607,21 @@ const AgentProfilesPanel: Component = () => {
               </For>
             </div>
           </FieldShell>
+          <Show when={refusal()}>
+            {(message) => (
+              <p data-testid="profile-refusal" role="alert" class="text-small" style={{ color: 'var(--color-danger-600)' }}>
+                Not saved: {message()}
+              </p>
+            )}
+          </Show>
+          <Show when={warnings().length > 0}>
+            <div data-testid="profile-warnings" role="status" class="rounded-item px-3 py-2 text-small" style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)' }}>
+              <p class="font-semibold">Saved, with a second look to take:</p>
+              <ul class="list-disc pl-5">
+                <For each={warnings()}>{(w) => <li>{w}</li>}</For>
+              </ul>
+            </div>
+          </Show>
           <div class="flex gap-2">
             <Button type="submit" loading={saving()} disabled={saving() || !name().trim() || !instructions().trim() || limitsInvalid()}>
               {editing() ? 'Save' : 'Create'}

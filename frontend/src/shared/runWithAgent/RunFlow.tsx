@@ -96,6 +96,8 @@ export interface RunFlowProps {
   errors: Accessor<string[]>;
   submitting: Accessor<boolean>;
   canSubmit: Accessor<boolean>;
+  /** Why the profile's team would refuse this run, in a sentence; null when it takes it. */
+  misfit?: Accessor<string | null>;
   onClose: () => void;
 }
 
@@ -462,6 +464,19 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             </span>
           )}
         </Show>
+        <Show when={props.misfit?.()}>
+          {(text) => (
+            <p
+              id="run-misfit"
+              data-testid="run-misfit"
+              role="alert"
+              class="min-w-0 basis-full rounded-item px-3 py-2 text-small"
+              style={{ 'background-color': 'var(--color-warning-100)', color: 'var(--color-warning-700)', 'overflow-wrap': 'anywhere' }}
+            >
+              {text()}
+            </p>
+          )}
+        </Show>
         <Button type="button" variant="secondary" onClick={props.onClose} disabled={props.submitting()}>
           Cancel
         </Button>
@@ -471,7 +486,7 @@ const RunFlow: Component<RunFlowProps> = (props) => {
             <Show
               when={modelBlocked()}
               fallback={
-                <Button type="submit" data-testid="run-start" loading={props.submitting()} disabled={!props.canSubmit()}>
+                <Button type="submit" data-testid="run-start" loading={props.submitting()} disabled={!props.canSubmit()} aria-describedby={props.misfit?.() ? 'run-misfit' : undefined}>
                   Start run
                 </Button>
               }

@@ -7,8 +7,8 @@ import { BOOK } from '../help/routes';
 import { api, ApiError } from '../api';
 import type { AgentContextRun } from '../api/briefs';
 import {
-  fleetsApi, agentProfilesApi, runnersApi, listReportedHarnessKinds, teamOf,
-  type AgentProfileSummary, type RunnerCapabilities, type RunnerSummary,
+  fleetsApi, agentProfilesApi, runnersApi, teamsApi, listReportedHarnessKinds, teamOf, notSentText,
+  type AgentProfileSummary, type TeamEntry, type RunnerCapabilities, type RunnerSummary,
 } from '../execution';
 import { useExecutionStore } from '../state/executionContext';
 import {
@@ -61,6 +61,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   const [fleets, { refetch: refetchFleets }] = createResource(open, () => fleetsApi.list().then((r) => r.data.data));
   const [agentProfiles, { refetch: refetchAgentProfiles }] = createResource(open, () => agentProfilesApi.list().then((r) => r.data.data));
   const [liveRunners, { refetch: refetchRunners }] = createResource(open, () => runnersApi.list().then((r) => r.data.data));
+  const [teams] = createResource(open, () => teamsApi.list().catch(() => [] as TeamEntry[]));
 
   const runnersData = (): RunnerSummary[] => (liveRunners.error !== undefined ? [] : (liveRunners() ?? []));
   const activeRunners = (): RunnerSummary[] => runnersData().filter((r) => isActiveRunnerState(r.state));
@@ -419,7 +420,20 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
   };
   const missingRow = () => Object.values(rows).some((r) => r() === 'missing');
 
-  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && failed() === null && structuralErrors().length === 0 && modelGate().allowed && !missingRow() && !submitting());
+  // The chosen profile's team says it cannot take this run: the sentence stands before Start and Start waits.
+  // The server judges a profile by its own network; a run that turns Web tools off no longer needs the web.
+  const misfit = createMemo(() => {
+    const id = form.agentProfileId;
+    if (!id) return null;
+    for (const entry of teams() ?? []) {
+      const line = entry.profiles.find((p) => p.id === id);
+      const found = (line?.misfits ?? []).find((m) => m !== 'no_web' || form.allowNetwork);
+      if (line && found) return notSentText(line.name, entry.name, found, entry.report);
+    }
+    return null;
+  });
+
+  const canSubmit = createMemo(() => project()?.code_origin !== 'none' && failed() === null && structuralErrors().length === 0 && modelGate().allowed && !missingRow() && misfit() === null && !submitting());
 
   const buildValues = (): RunWithAgentFormValues => {
     return {
@@ -578,6 +592,7 @@ const RunWithAgentModal: Component<RunWithAgentModalProps> = (props) => {
             errors={structuralErrors}
             submitting={submitting}
             canSubmit={canSubmit}
+            misfit={misfit}
             onClose={props.onClose}
           />
         </form>

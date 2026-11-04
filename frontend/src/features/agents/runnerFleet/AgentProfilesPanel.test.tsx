@@ -271,4 +271,96 @@ describe('AgentProfilesPanel', () => {
     await flush();
     expect(container.querySelector<HTMLInputElement>('input[placeholder="reviewer"]')!.value).toBe('saas-code');
   });
+
+  describe('the method for each kind of card', () => {
+    const profile = { agent_profile_id: 'ap_a', name: 'builder', instructions: 'Build.', tool_policy: { agent: 'docket', docket: { team: 'saas-code', pipeline_by_type: { bug: 'tdd' } } }, limits: {} };
+    const pod = (methods?: unknown) => ({
+      name: 'saas-code', harness: 'docket', reported: true, profiles: [{ id: 'ap_a', name: 'builder' }],
+      report: { name: 'saas-code', profile: 'attended', ...(methods ? { methods } : {}) },
+    });
+    const SOLO = { name: 'claude-code', harness: 'claude-code', reported: true, profiles: [], report: { name: 'claude-code', delivers: 'branch' } };
+
+    function api(teams: unknown[], onPatch?: () => Response) {
+      return vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+        const method = (init as RequestInit | undefined)?.method ?? 'GET';
+        if (method === 'PATCH') return Promise.resolve(onPatch ? onPatch() : new Response('{}', { status: 200 }));
+        const body = String(input).endsWith('/api/teams') ? { teams } : { protocol_version: 1, data: [profile] };
+        return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+      });
+    }
+    const edit = async (container: HTMLElement) => {
+      await flush();
+      await flush();
+      Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Edit')!.click();
+      await flush();
+    };
+    const save = async (container: HTMLElement) => {
+      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+      await flush();
+      await flush();
+    };
+
+    it('is a select over the methods the team reports, and saves the choice', async () => {
+      const fetchMock = api([pod([{ name: 'tdd', source: 'shipped', default: true, missing_roles: [] }, { name: 'research-review', source: 'shipped', default: false, missing_roles: [] }])]);
+      const { container } = mount();
+      await edit(container);
+      const select = container.querySelector<HTMLSelectElement>('select[aria-label="Method for bug"]')!;
+      expect(Array.from(select.options).map((o) => o.textContent)).toEqual(['Choose a method', 'tdd', 'research-review']);
+      expect(select.value).toBe('tdd');
+      select.value = 'research-review';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      await save(container);
+      const sent = JSON.parse((fetchMock.mock.calls.find((c) => (c[1] as RequestInit)?.method === 'PATCH')![1] as RequestInit).body as string);
+      expect(sent.tool_policy.docket).toEqual({ team: 'saas-code', pipeline_by_type: { bug: 'research-review' } });
+    });
+
+    it('is free text while no computer reports the team\'s methods, and says so', async () => {
+      api([pod()]);
+      const { container } = mount();
+      await edit(container);
+      expect(container.querySelector('select[aria-label="Method for bug"]')).toBeNull();
+      expect(container.querySelector<HTMLInputElement>('input[aria-label="Method for bug"]')!.value).toBe('tdd');
+      expect(container.textContent).toContain('not checked until a run');
+    });
+
+    it('is shown disabled, with its reason, for a profile that runs a single agent', async () => {
+      api([SOLO]);
+      const { container } = mount();
+      await edit(container);
+      // A local agent is not a team a profile can name, so it is not offered as one.
+      const team = container.querySelector<HTMLSelectElement>('select')!;
+      expect(Array.from(team.options).map((o) => o.textContent)).toEqual(['No team', 'saas-code']);
+      team.value = '';
+      team.dispatchEvent(new Event('change', { bubbles: true }));
+      await flush();
+      const note = container.querySelector('[data-testid="methods-disabled"]')!;
+      expect(note.getAttribute('aria-disabled')).toBe('true');
+      expect(note.textContent).toContain('one method, the agent\'s own loop');
+      expect(container.querySelector('[data-testid="method-rows"]')).toBeNull();
+    });
+
+    it('shows the refusal of a method the team does not have, and stays open', async () => {
+      api([pod([{ name: 'tdd', source: 'shipped', default: true, missing_roles: [] }])], () =>
+        new Response(JSON.stringify({ error: { status: 400, message: 'The team saas-code has no method named lint; it offers tdd.' } }), { status: 400 }),
+      );
+      const { container } = mount();
+      await edit(container);
+      await save(container);
+      expect(container.querySelector('[data-testid="profile-refusal"]')!.textContent).toBe('Not saved: The team saas-code has no method named lint; it offers tdd.');
+      expect(container.querySelector('button[type="submit"]')).not.toBeNull();
+    });
+
+    it('shows what a save deserves a second look at, and keeps the form on it', async () => {
+      api([pod([{ name: 'tdd', source: 'shipped', default: true, missing_roles: ['reviewer'] }])], () =>
+        new Response(JSON.stringify({ agent_profile_id: 'ap_a', warnings: ['The method tdd on the team saas-code has no member for reviewer: its steps would be skipped.'] }), { status: 200 }),
+      );
+      const { container } = mount();
+      await edit(container);
+      await save(container);
+      const warnings = container.querySelector('[data-testid="profile-warnings"]')!;
+      expect(warnings.textContent).toContain('has no member for reviewer');
+      expect(container.querySelector('[data-testid="profile-refusal"]')).toBeNull();
+    });
+  });
 });

@@ -149,8 +149,9 @@ routes stand out and a route nothing uses is a hairline. Under each team's name 
 runs, on this computer or on another. The project's default profile is marked, and a task that names no
 role and no profile of its own goes to it. A role with no profile and a team no profile names are drawn
 with a dashed edge, say so in words, and carry the fix as a link: **Settings → Automation → Teams** to
-give the role a profile, **Agents → profiles** to make one for the team. The Map is a view; nothing is
-edited on it.
+give the role a profile, **Agents → profiles** to make one for the team. A team or an agent that a profile
+names and no computer reports is drawn grey, and listed under the diagram with the command or the sentence
+that closes the gap and a **Copy** button. The Map is a view; nothing is edited on it.
 
 Press a box, or a column's title, to go to Flow narrowed to what passes through it: the lanes that role,
 profile, team or member can reach, and the tasks nobody will take because of it. A line above the lanes

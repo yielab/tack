@@ -1,5 +1,6 @@
 import { type Component, For, Show, createSignal } from 'solid-js';
 import { A, useNavigate } from '@solidjs/router';
+import { CopyFix } from '../../shared/ui';
 import {
   NODE_H,
   NODE_W,
@@ -28,6 +29,7 @@ const fixHref = (fix: MapFix, projectId: string): string =>
 /** The sentence a screen reader hears for a node: what it is, what it says of itself and what it opens. */
 function nodeWords(node: MapNode): string {
   const parts = [`${node.kind === 'agent' ? 'Agent' : node.kind[0].toUpperCase() + node.kind.slice(1)} ${node.label}${node.group ? ` of ${node.group}` : ''}`];
+  if (node.missing) parts.push('No computer reports it');
   if (node.sub) parts.push(node.sub);
   if (node.isDefault) parts.push("the project's default profile");
   if (node.dashed && node.reason) parts.push(node.reason);
@@ -178,6 +180,7 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                     data-node={node.id}
                     data-kind={node.kind}
                     data-dashed={node.dashed ? 'true' : undefined}
+                    data-missing={node.missing ? 'true' : undefined}
                     data-default={node.isDefault ? 'true' : undefined}
                     role="button"
                     tabindex={tabbable(node.id)}
@@ -200,10 +203,11 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
                       width={NODE_W}
                       height={NODE_H}
                       rx="8"
-                      fill={node.dashed ? 'var(--run-needs-soft)' : 'var(--color-bg-elevated)'}
+                      fill={node.missing ? 'var(--color-bg-subtle)' : node.dashed ? 'var(--run-needs-soft)' : 'var(--color-bg-elevated)'}
                       stroke={ring() === node.id ? 'var(--color-accent-ink)' : node.dashed ? 'var(--run-needs-ink)' : node.isDefault ? 'var(--color-accent-ink)' : 'var(--color-border-medium)'}
                       stroke-width={ring() === node.id || node.isDefault ? 2 : 1}
-                      stroke-dasharray={node.dashed ? '6 4' : undefined}
+                      stroke-dasharray={node.dashed ? '6 4' : node.missing ? '2 3' : undefined}
+                      opacity={node.missing ? 0.75 : undefined}
                     />
                     <text x={node.x + 10} y={node.y + 20} font-size="13" font-weight="700" fill="var(--color-text-primary)">
                       {clip(node.group ? `${node.group} · ${node.label}` : node.label, 24)}
@@ -247,6 +251,26 @@ const MapView: Component<{ model: MapModel; projectId: string; onSelect: (id: st
             </For>
           </svg>
         </div>
+
+        <Show when={model().missing.length > 0}>
+          <section data-testid="map-missing" aria-labelledby="map-missing-title" class="flex min-w-0 flex-col gap-1.5">
+            <h4 id="map-missing-title" class="text-caption font-bold uppercase tracking-widest" style={{ color: 'var(--color-text-tertiary)' }}>
+              Greyed: no computer reports it
+            </h4>
+            <ul class="flex min-w-0 flex-col gap-2">
+              <For each={model().missing}>
+                {(gap) => (
+                  <li data-testid="map-missing-entry" data-kind={gap.kind} class="flex min-w-0 flex-col gap-1 text-small">
+                    <span class="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                      {gap.kind === 'team' ? 'Team' : 'Agent'} {gap.name}
+                    </span>
+                    <CopyFix fix={gap.fix} what={gap.name} />
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </Show>
 
         <details data-testid="map-routes" class="min-w-0">
           <summary class="cursor-pointer text-small font-bold" style={{ color: 'var(--color-text-primary)' }}>Routes as text</summary>
