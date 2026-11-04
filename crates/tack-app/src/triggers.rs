@@ -165,31 +165,31 @@ async fn happened_of(
     clock: &dyn Clock,
     event: &DomainEvent,
 ) -> Result<Option<Happened>, AppError> {
-    let run = |run: &RunRef| run.item_id;
+    let run = |run: &RunRef| Some(run.item_id);
     let (kind, status, subject, item) = match &event.fact {
         Fact::ItemCreated { item_id, status } => (
             EventKind::ItemCreated,
             Some(status.clone()),
             format!("item {item_id}"),
-            *item_id,
+            Some(*item_id),
         ),
         Fact::ItemUpdated { item_id, status } => (
             EventKind::ItemUpdated,
             Some(status.clone()),
             format!("item {item_id}"),
-            *item_id,
+            Some(*item_id),
         ),
         Fact::ItemMoved { item_id, to, .. } => (
             EventKind::ItemMoved,
             Some(to.clone()),
             format!("item {item_id}"),
-            *item_id,
+            Some(*item_id),
         ),
         Fact::ItemDeleted { item_id } => (
             EventKind::ItemDeleted,
             None,
             format!("item {item_id}"),
-            *item_id,
+            Some(*item_id),
         ),
         Fact::RunStarted { run: r } => (
             EventKind::RunStarted,
@@ -233,13 +233,31 @@ async fn happened_of(
             format!("decision {decision_id}"),
             run(r),
         ),
-        // A change set is waited for on a timer (`ChangeSetWaiting`), not announced when it is made.
-        Fact::ChangeSetProposed { .. } | Fact::ChangeSetSettled { .. } => return Ok(None),
+        Fact::ChangeSetProposed {
+            change_set_id,
+            item_id,
+        } => (
+            EventKind::ChangeSetProposed,
+            None,
+            format!("change set {change_set_id}"),
+            *item_id,
+        ),
+        Fact::ChangeSetSettled { change_set_id } => (
+            EventKind::ChangeSetSettled,
+            None,
+            format!("change set {change_set_id}"),
+            None,
+        ),
     };
-    if repo.item_is_hidden(item).await? {
+    if let Some(item) = item
+        && repo.item_is_hidden(item).await?
+    {
         return Ok(None);
     }
-    let title = title_of(repo, item).await;
+    let title = match item {
+        Some(item) => title_of(repo, item).await,
+        None => String::new(),
+    };
     let detail = match &event.fact {
         Fact::ItemMoved { from, to, .. } => format!("\"{title}\" moved from {from} to {to}"),
         _ if title.is_empty() => String::new(),

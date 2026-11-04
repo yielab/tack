@@ -1,11 +1,14 @@
-//! The rule behind the hourly `item.due_soon` webhook: an incomplete item due within the next
-//! hour is announced once per pass; one due later, already past, or without a date is not.
+//! The rule behind the hourly due-soon pass: an incomplete item due within the next hour is
+//! opened in the inbox, once for the day it falls due; one due later, already past, or without a
+//! date is not.
 
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
-use tack_app::due_soon::{self, DueSoonSink};
+use tack_app::due_soon;
+use tack_app::notifications::Inbox;
 use tack_core::models::CreateItem;
+use tack_core::notification::{Kind, Level};
 use tack_db::Repository;
 use tack_protocol::Clock;
 use tack_test_support::{ControllableClock, create_test_workspace, make_project, setup_test_db};
@@ -18,13 +21,12 @@ impl Clock for FakeClock {
     }
 }
 
-#[derive(Default)]
-struct Recorded(Mutex<Vec<(String, serde_json::Value)>>);
-
-impl DueSoonSink for Recorded {
-    fn fire(&self, event: &str, payload: serde_json::Value) {
-        self.0.lock().unwrap().push((event.to_owned(), payload));
-    }
+fn inbox(repo: &Repository, now: DateTime<Utc>) -> Inbox {
+    Inbox::new(
+        repo.clone(),
+        Arc::new(tack_test_support::FixedClock(now)),
+        Vec::new(),
+    )
 }
 
 async fn item_due(
@@ -70,18 +72,20 @@ async fn announces_only_the_items_due_within_the_next_hour() {
     item_due(&repo, &project, "past", Some(now - Duration::minutes(5))).await;
     item_due(&repo, &project, "undated", None).await;
 
-    let sink = Recorded::default();
-    let announced = due_soon::tick(&repo, &clock, &sink).await.expect("tick");
+    let inbox = inbox(&repo, now);
+    let announced = due_soon::tick(&repo, &clock, &inbox).await.expect("tick");
 
     assert_eq!(announced, 1);
-    let fired = sink.0.lock().unwrap();
-    assert_eq!(fired.len(), 1);
-    let (event, payload) = &fired[0];
-    assert_eq!(event, "item.due_soon");
-    assert_eq!(payload["event"], "item.due_soon");
-    assert_eq!(payload["timestamp"], now.to_rfc3339());
-    assert_eq!(payload["project_id"], project.id.to_string());
-    assert_eq!(payload["item"]["title"], "soon");
+    let open = inbox.open_notifications(10).await.unwrap();
+    assert_eq!(open.len(), 1);
+    assert_eq!(open[0].kind, Kind::DueSoon);
+    assert_eq!(open[0].level, Level::Info);
+    assert_eq!(open[0].project_id, project.id);
+    assert!(open[0].title.contains("soon"));
+
+    // The same pass again, or the next one within the day, announces nothing more.
+    assert_eq!(due_soon::tick(&repo, &clock, &inbox).await.unwrap(), 0);
+    assert_eq!(inbox.open_count().await.unwrap(), 1);
 }
 
 #[tokio::test]
@@ -93,8 +97,8 @@ async fn a_later_pass_announces_what_has_come_into_the_window() {
     let project = make_project(&repo, workspace).await;
     item_due(&repo, &project, "later", Some(now + Duration::hours(2))).await;
 
-    let sink = Recorded::default();
-    assert_eq!(due_soon::tick(&repo, &clock, &sink).await.unwrap(), 0);
+    let inbox = inbox(&repo, now);
+    assert_eq!(due_soon::tick(&repo, &clock, &inbox).await.unwrap(), 0);
     clock.0.advance(Duration::minutes(90));
-    assert_eq!(due_soon::tick(&repo, &clock, &sink).await.unwrap(), 1);
+    assert_eq!(due_soon::tick(&repo, &clock, &inbox).await.unwrap(), 1);
 }

@@ -211,6 +211,7 @@ pub async fn propose_change_set(
     let proposed = change_sets::propose(
         &state.repo,
         &tack_protocol::SystemClock,
+        state.events().as_ref(),
         Proposal {
             project: project_id,
             principal: &principal,
@@ -292,6 +293,7 @@ pub async fn apply_change_set(
     let after = change_sets::apply(
         &state.repo,
         &tack_protocol::SystemClock,
+        state.events().as_ref(),
         id,
         &principal,
         Application {
@@ -332,6 +334,7 @@ pub async fn reject_change_set(
         change_sets::reject(
             &state.repo,
             &tack_protocol::SystemClock,
+            state.events().as_ref(),
             id,
             &principal,
             &input.reason,

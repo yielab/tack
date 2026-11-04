@@ -15,6 +15,8 @@ use uuid::Uuid;
 
 use crate::AppError;
 
+pub mod subscriber;
+
 /// What happened to the inbox, as the live socket tells it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

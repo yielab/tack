@@ -146,13 +146,18 @@ async fn an_agents_change_set_is_announced_when_it_applies_with_the_agents_princ
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{proposed}");
-    assert_eq!(
-        drain(&mut events),
-        vec![],
-        "a proposal that waits changes nothing"
-    );
-
     let id = proposed["change_set"]["id"].as_str().unwrap();
+    let said = drain(&mut events);
+    assert_eq!(
+        said.iter().map(|e| &e.fact).collect::<Vec<_>>(),
+        [&Fact::ChangeSetProposed {
+            change_set_id: id.to_owned(),
+            item_id: None
+        }],
+        "a proposal that waits changes nothing on the board, and is announced as proposed"
+    );
+    assert_eq!(said[0].principal.id, credential);
+
     let (status, applied) = operator(
         &board.app,
         "POST",
@@ -163,10 +168,11 @@ async fn an_agents_change_set_is_announced_when_it_applies_with_the_agents_princ
     assert_eq!(status, StatusCode::OK, "{applied}");
 
     let heard = drain(&mut events);
-    assert_eq!(heard.len(), 2, "{heard:?}");
-    assert!(matches!(heard[0].fact, Fact::ItemCreated { .. }));
-    assert!(matches!(heard[1].fact, Fact::ItemUpdated { .. }));
-    for event in &heard {
+    assert_eq!(heard.len(), 3, "{heard:?}");
+    assert!(matches!(heard[0].fact, Fact::ChangeSetSettled { .. }));
+    assert!(matches!(heard[1].fact, Fact::ItemCreated { .. }));
+    assert!(matches!(heard[2].fact, Fact::ItemUpdated { .. }));
+    for event in &heard[1..] {
         assert_eq!(event.project_id, board.project);
         assert_eq!(event.principal.kind, PrincipalKind::Agent);
         assert_eq!(

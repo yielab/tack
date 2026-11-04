@@ -13,7 +13,6 @@ use tack_api::router::AppState;
 use tack_api::server::prepare;
 use tack_api::webhook::WebhookClient;
 use tack_app::background::{Loops, STOP_GRACE};
-use tack_app::due_soon::DueSoonSink;
 use tack_app::notifications::Inbox;
 use tack_db::{Repository, init_pool, migrations, repo};
 use tack_protocol::{Clock, SystemClock};
@@ -80,19 +79,14 @@ pub async fn run(
         tasks: TaskTracker::new(),
     };
 
-    // The loops the configuration turns on; the announcement of items due within the hour goes
-    // to the webhook, when one is there to hear it.
-    let due_soon = state
-        .webhook
-        .clone()
-        .map(|webhook| Arc::new(webhook) as Arc<dyn DueSoonSink>);
+    // The loops the configuration turns on.
     state.config.loops.start(
         &mut loops,
         &state.repo,
         Arc::new(SystemClock),
         state.ports(),
         state.config.backup_config(),
-        due_soon,
+        state.notifications.clone(),
     );
 
     let served = tack_api::serve(state, ready_tx).await;

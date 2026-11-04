@@ -173,6 +173,15 @@ pub async fn item_description(repo: &Repository, item_id: &str, description: &st
         .expect("seed items description");
 }
 
+/// Hides an item, as the anchor of a thread or a trigger is hidden.
+pub async fn item_hidden(repo: &Repository, item_id: &str) {
+    sqlx::query("UPDATE items SET hidden = 1 WHERE id = ?")
+        .bind(item_id)
+        .execute(repo.pool())
+        .await
+        .expect("seed items hidden");
+}
+
 /// Stamps an item as last changed at `at` (RFC 3339).
 pub async fn item_updated_at(repo: &Repository, item_id: &str, at: &str) {
     sqlx::query("UPDATE items SET updated_at = ? WHERE id = ?")

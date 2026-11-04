@@ -82,6 +82,50 @@ struct DueRow {
     attempts: i64,
 }
 
+/// A run waiting on a person, as the store holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WaitingRun {
+    pub project_id: Uuid,
+    pub item_id: Uuid,
+    pub request_id: String,
+    pub attempt_id: String,
+}
+
+/// A question a run waits on: the run, and the id the runner gave the question.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingDecision {
+    pub run: WaitingRun,
+    pub decision_id: String,
+}
+
+/// A change set that still has an operation waiting for a person.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WaitingChangeSet {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub anchor: Option<Uuid>,
+}
+
+#[derive(sqlx::FromRow)]
+struct WaitingRunRow {
+    project_id: String,
+    item_id: String,
+    request_id: String,
+    attempt_id: String,
+    decision_id: Option<String>,
+}
+
+impl WaitingRunRow {
+    fn into_run(self) -> Result<WaitingRun, StoreError> {
+        Ok(WaitingRun {
+            project_id: decode::uuid("items", "project_id", &self.project_id)?,
+            item_id: decode::uuid("execution_requests", "item_id", &self.item_id)?,
+            request_id: self.request_id,
+            attempt_id: self.attempt_id,
+        })
+    }
+}
+
 impl Repository {
     /// Opens `notice` unless its situation is open already, and queues it for each of `channels`,
     /// in one transaction. `None` when the key was open: nothing was written.
@@ -304,5 +348,83 @@ impl Repository {
         .execute(self.pool())
         .await?
         .rows_affected())
+    }
+
+    /// The questions runs wait on, in items that are not hidden.
+    #[instrument(skip(self))]
+    pub async fn pending_decisions(&self) -> Result<Vec<PendingDecision>, StoreError> {
+        let rows: Vec<WaitingRunRow> = sqlx::query_as(
+            "SELECT i.project_id AS project_id, r.item_id AS item_id, r.id AS request_id,
+                    a.id AS attempt_id, d.decision_id AS decision_id
+             FROM execution_decisions d
+             JOIN execution_attempts a ON a.id = d.attempt_id
+             JOIN execution_requests r ON r.id = a.request_id
+             JOIN items i ON i.id = r.item_id
+             WHERE d.state = 'pending' AND i.hidden = 0
+             ORDER BY d.created_at, d.id",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                let decision_id = row.decision_id.clone().unwrap_or_default();
+                Ok(PendingDecision {
+                    run: row.into_run()?,
+                    decision_id,
+                })
+            })
+            .collect()
+    }
+
+    /// The runs that failed at or after `since`, in items that are not hidden, and that no later
+    /// request of the same item has followed: the failures a person has not yet answered with
+    /// another run.
+    #[instrument(skip(self))]
+    pub async fn unanswered_failed_runs(
+        &self,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<WaitingRun>, StoreError> {
+        let rows: Vec<WaitingRunRow> = sqlx::query_as(super::execution::state::sql(
+            "SELECT i.project_id AS project_id, r.item_id AS item_id, r.id AS request_id,
+                    COALESCE((SELECT a.id FROM execution_attempts a WHERE a.request_id = r.id
+                              ORDER BY a.attempt_number DESC LIMIT 1), '') AS attempt_id,
+                    NULL AS decision_id
+             FROM execution_requests r JOIN items i ON i.id = r.item_id
+             WHERE r.state = {failed} AND i.hidden = 0
+               AND julianday(r.updated_at) >= julianday(?)
+               AND NOT EXISTS (
+                   SELECT 1 FROM execution_requests later
+                   WHERE later.item_id = r.item_id
+                     AND (later.created_at > r.created_at
+                          OR (later.created_at = r.created_at AND later.rowid > r.rowid)))
+             ORDER BY r.updated_at, r.id",
+        ))
+        .bind(since.to_rfc3339())
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter().map(WaitingRunRow::into_run).collect()
+    }
+
+    /// The change sets with an operation still waiting for a person.
+    #[instrument(skip(self))]
+    pub async fn waiting_change_sets(&self) -> Result<Vec<WaitingChangeSet>, StoreError> {
+        let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
+            "SELECT id, project_id, anchor_item_id FROM change_sets
+             WHERE status IN ('waiting', 'partly')
+               AND EXISTS (SELECT 1 FROM json_each(ops)
+                           WHERE COALESCE(json_extract(value, '$.state'), 'waiting') = 'waiting')
+             ORDER BY created_at, id",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter()
+            .map(|(id, project, anchor)| {
+                Ok(WaitingChangeSet {
+                    id: decode::uuid("change_sets", "id", &id)?,
+                    project_id: decode::uuid("change_sets", "project_id", &project)?,
+                    anchor: decode::optional_uuid("change_sets", "anchor", anchor.as_deref())?,
+                })
+            })
+            .collect()
     }
 }

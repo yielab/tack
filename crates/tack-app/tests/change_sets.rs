@@ -4,6 +4,7 @@
 
 use tack_app::AppError;
 use tack_app::change_sets::{Application, Mode, Proposal, Proposed, apply, propose, reject};
+use tack_app::events::{DomainEvent, Fact, RecordedEvents};
 use tack_core::change_set::{
     AgentsOnBoard, ChangeSetStatus, CreateOp, ItemRef, OpState, Operation, Origin, RungLevel,
 };
@@ -16,6 +17,7 @@ use uuid::Uuid;
 
 struct Board {
     repo: Repository,
+    events: RecordedEvents,
     project: Project,
     item: Uuid,
 }
@@ -28,6 +30,7 @@ async fn board(rung: AgentsOnBoard) -> Board {
     let project = set_rung(&repo, project.id, rung).await;
     Board {
         repo,
+        events: RecordedEvents::default(),
         project,
         item,
     }
@@ -127,6 +130,29 @@ async fn titles(repo: &Repository, project: Uuid) -> Vec<String> {
     found
 }
 
+/// What the board's listeners were told of a change set, in order.
+fn told(board: &Board) -> Vec<Fact> {
+    board
+        .events
+        .events()
+        .into_iter()
+        .map(|DomainEvent { fact, .. }| fact)
+        .collect()
+}
+
+fn proposed_fact(id: Uuid) -> Fact {
+    Fact::ChangeSetProposed {
+        change_set_id: id.to_string(),
+        item_id: None,
+    }
+}
+
+fn settled_fact(id: Uuid) -> Fact {
+    Fact::ChangeSetSettled {
+        change_set_id: id.to_string(),
+    }
+}
+
 fn states(proposed: &Proposed) -> Vec<OpState> {
     proposed.change_set.ops.iter().map(|op| op.state).collect()
 }
@@ -138,6 +164,7 @@ async fn at_propose_every_change_set_waits_and_nothing_is_written() {
     let proposed = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, None, mixed(board.item)),
     )
     .await
@@ -146,6 +173,12 @@ async fn at_propose_every_change_set_waits_and_nothing_is_written() {
     assert_eq!(proposed.change_set.status, ChangeSetStatus::Waiting);
     assert!(states(&proposed).iter().all(|s| *s == OpState::Waiting));
     assert_eq!(titles(&board.repo, board.project.id).await, ["Test Item"]);
+    assert_eq!(
+        told(&board),
+        [proposed_fact(proposed.change_set.id)],
+        "a change set that waits is announced as proposed"
+    );
+    assert_eq!(board.events.events()[0].principal, principal);
 }
 
 #[tokio::test]
@@ -155,6 +188,7 @@ async fn at_act_creates_wait_and_the_rest_applies() {
     let proposed = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, None, mixed(board.item)),
     )
     .await
@@ -174,6 +208,11 @@ async fn at_act_creates_wait_and_the_rest_applies() {
     let item = board.repo.get_item(board.item).await.unwrap().unwrap();
     assert_eq!(item.priority, Priority::High);
     assert_eq!(titles(&board.repo, board.project.id).await, ["Test Item"]);
+    assert_eq!(
+        told(&board),
+        [proposed_fact(proposed.change_set.id)],
+        "what the rung let through does not hide what still waits"
+    );
 }
 
 #[tokio::test]
@@ -183,6 +222,7 @@ async fn at_create_creates_apply_within_the_caps_and_wait_beyond_them() {
     let first = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, None, mixed(board.item)),
     )
     .await
@@ -209,6 +249,7 @@ async fn at_create_creates_apply_within_the_caps_and_wait_beyond_them() {
         let proposed = propose(
             &board.repo,
             &SystemClock,
+            &board.events,
             proposal(&board, &principal, None, vec![create(&format!("more {n}"))]),
         )
         .await
@@ -225,6 +266,7 @@ async fn create_with_no_caps_behaves_as_act() {
     let proposed = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, None, mixed(board.item)),
     )
     .await
@@ -239,6 +281,7 @@ async fn the_stricter_of_the_rung_and_the_credential_wins() {
     let proposed = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &proposer, None, mixed(board.item)),
     )
     .await
@@ -249,6 +292,7 @@ async fn the_stricter_of_the_rung_and_the_credential_wins() {
     let refused = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &reader, None, mixed(board.item)),
     )
     .await;
@@ -259,6 +303,7 @@ async fn the_stricter_of_the_rung_and_the_credential_wins() {
     let refused = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &actor, None, mixed(board.item)),
     )
     .await;
@@ -272,6 +317,7 @@ async fn a_repeated_key_returns_the_first_answer() {
     let first = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, Some("k-1"), mixed(board.item)),
     )
     .await
@@ -281,6 +327,7 @@ async fn a_repeated_key_returns_the_first_answer() {
     let again = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, Some("k-1"), vec![create("other")]),
     )
     .await
@@ -352,6 +399,7 @@ async fn a_cycle_a_missing_status_and_a_full_column_are_refused_whole_with_every
     let refused = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, Some("k"), operations),
     )
     .await;
@@ -398,16 +446,19 @@ async fn a_person_applies_part_of_a_change_set_with_an_edit_and_rejects_the_rest
     let proposed = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(&board, &principal, None, mixed(board.item)),
     )
     .await
     .expect("propose");
     let id = proposed.change_set.id;
+    assert_eq!(told(&board), [proposed_fact(id)]);
 
     // Applying a comment without the create it names is refused, and the set is as it was.
     let refused = apply(
         &board.repo,
         &SystemClock,
+        &board.events,
         id,
         &operator,
         Application {
@@ -422,6 +473,7 @@ async fn a_person_applies_part_of_a_change_set_with_an_edit_and_rejects_the_rest
     let edited = apply(
         &board.repo,
         &SystemClock,
+        &board.events,
         id,
         &operator,
         Application {
@@ -433,6 +485,11 @@ async fn a_person_applies_part_of_a_change_set_with_an_edit_and_rejects_the_rest
     .expect("apply part");
     assert_eq!(edited.status, ChangeSetStatus::Partly);
     assert_eq!(edited.decided_by.as_deref(), Some("operator:local"));
+    assert_eq!(
+        told(&board),
+        [proposed_fact(id)],
+        "part of it still waits, so it is not settled"
+    );
     assert_eq!(
         titles(&board.repo, board.project.id).await,
         ["Test Item", "first, edited"]
@@ -452,6 +509,7 @@ async fn a_person_applies_part_of_a_change_set_with_an_edit_and_rejects_the_rest
     let twice = apply(
         &board.repo,
         &SystemClock,
+        &board.events,
         id,
         &operator,
         Application {
@@ -462,11 +520,19 @@ async fn a_person_applies_part_of_a_change_set_with_an_edit_and_rejects_the_rest
     .await;
     assert!(matches!(twice, Err(AppError::Conflict(_))));
 
-    let rejected = reject(&board.repo, &SystemClock, id, &operator, "Not this sprint")
-        .await
-        .expect("reject");
+    let rejected = reject(
+        &board.repo,
+        &SystemClock,
+        &board.events,
+        id,
+        &operator,
+        "Not this sprint",
+    )
+    .await
+    .expect("reject");
     assert_eq!(rejected.status, ChangeSetStatus::Partly);
     assert_eq!(rejected.rejection.as_deref(), Some("Not this sprint"));
+    assert_eq!(told(&board), [proposed_fact(id), settled_fact(id)]);
     assert_eq!(
         rejected.ops.iter().map(|op| op.state).collect::<Vec<_>>(),
         [
@@ -477,7 +543,15 @@ async fn a_person_applies_part_of_a_change_set_with_an_edit_and_rejects_the_rest
         ]
     );
     // Nothing waits any more.
-    let nothing = reject(&board.repo, &SystemClock, id, &operator, "again").await;
+    let nothing = reject(
+        &board.repo,
+        &SystemClock,
+        &board.events,
+        id,
+        &operator,
+        "again",
+    )
+    .await;
     assert!(matches!(nothing, Err(AppError::Conflict(_))));
     let item = board.repo.get_item(board.item).await.unwrap().unwrap();
     assert_ne!(item.priority, Priority::High);
@@ -491,6 +565,7 @@ async fn a_change_set_gone_stale_is_refused_whole_when_applied() {
     let proposed = propose(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposal(
             &board,
             &principal,
@@ -511,6 +586,7 @@ async fn a_change_set_gone_stale_is_refused_whole_when_applied() {
     let refused = apply(
         &board.repo,
         &SystemClock,
+        &board.events,
         proposed.change_set.id,
         &operator,
         Application::default(),
@@ -537,13 +613,17 @@ async fn a_persons_plan_applies_at_once_or_not_at_all() {
     let mut plan = proposal(&board, &operator, None, vec![create("a"), create("b")]);
     plan.mode = Mode::Now;
     plan.origin = Origin::Run;
-    let proposed = propose(&board.repo, &SystemClock, plan)
+    let proposed = propose(&board.repo, &SystemClock, &board.events, plan)
         .await
         .expect("plan");
     assert_eq!(proposed.change_set.status, ChangeSetStatus::Applied);
     assert_eq!(
         titles(&board.repo, board.project.id).await,
         ["Test Item", "a", "b"]
+    );
+    assert!(
+        told(&board).is_empty(),
+        "a set that never waited is not announced"
     );
     // The daily count of the rung is not spent by a person's own plan.
     assert_eq!(
@@ -554,4 +634,48 @@ async fn a_persons_plan_applies_at_once_or_not_at_all() {
             .unwrap(),
         0
     );
+}
+
+#[tokio::test]
+async fn applying_the_last_of_what_waits_settles_the_change_set() {
+    let board = board(AgentsOnBoard::default()).await;
+    let principal = agent(board.project.id, &[Capability::Propose]);
+    let operator = Principal::operator("local");
+    let proposed = propose(
+        &board.repo,
+        &SystemClock,
+        &board.events,
+        proposal(&board, &principal, None, vec![create("a"), create("b")]),
+    )
+    .await
+    .expect("propose");
+    let id = proposed.change_set.id;
+
+    apply(
+        &board.repo,
+        &SystemClock,
+        &board.events,
+        id,
+        &operator,
+        Application {
+            operations: Some(vec![0]),
+            edits: Vec::new(),
+        },
+    )
+    .await
+    .expect("apply the first");
+    assert_eq!(told(&board), [proposed_fact(id)]);
+
+    apply(
+        &board.repo,
+        &SystemClock,
+        &board.events,
+        id,
+        &operator,
+        Application::default(),
+    )
+    .await
+    .expect("apply the rest");
+    assert_eq!(told(&board), [proposed_fact(id), settled_fact(id)]);
+    assert_eq!(board.events.events()[1].principal, operator);
 }
