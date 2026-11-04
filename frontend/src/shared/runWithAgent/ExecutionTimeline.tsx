@@ -6,7 +6,7 @@ import { useExecutionStore } from '../state/executionContext';
 import AttemptList, { attemptRunState } from './AttemptList';
 import RunChips, { chipState } from './RunChips';
 import RunWithAgentModal from './RunWithAgentModal';
-import { describeAttemptStatus } from './attemptFormat';
+import { describeAttemptStatus, neverStarted } from './attemptFormat';
 import { runWho } from './TeamSteps';
 import { describeExecutionState, isTerminalStateString, relativeTimeFromIso } from './shared';
 import type { AttemptSummary, ExecutionRequestRecord } from '../execution';
@@ -146,7 +146,10 @@ function runStatus(store: ReturnType<typeof useExecutionStore>, record: Executio
   const a = store.attemptsFor(record.summary?.request_id ?? '');
   const latest = a.status === 'ready' ? latestOf(a.data) : undefined;
   if (latest) return { ...describeAttemptStatus(latest, latest.review), known: true };
-  return describeExecutionState(record.summary?.state ?? 'unknown');
+  // Attempts not loaded yet: a run turned away before it started still reads Not started, as the board's card does.
+  const s = record.summary;
+  if (s && neverStarted(s)) return { ...describeAttemptStatus({ state: s.state, terminal_reason: null, never_started: true }), known: true };
+  return describeExecutionState(s?.state ?? 'unknown');
 }
 
 const latestOf = (attempts: AttemptSummary[]) =>

@@ -126,6 +126,7 @@ maintainer renames `[Unreleased]` to the version, and the release notes are that
 
 ### Fixed
 
+- A run the computer or the team's ceiling turned away before it started reads **Not started** on every run chip of the Execution tab, as it does on the board's card; before, a chip whose attempts had not loaded yet read it as Failed.
 - A button that has a place for a reason but no reason to show (Back up now, Rotate, Browse…, Close thread) lays out exactly as a plain button again: its wrapper takes no box, so a button's own width and margins reach the row it sits in.
 - The top bar's waiting badge and the ⌃K button now have accessible names that start with the text they show ("0: Nothing is waiting for you", "⌃K Command palette"), so a screen reader or voice-control user who says what they see reaches them (WCAG 2.5.3).
 - Pressing **Close thread** no longer ends in "This page could not be shown" ("The new child element contains the parent"): the thread closed on the server and the page failed while redrawing the button that now says why it is disabled. Any button that gives a reason only some of the time (the thread's close button, a form's submit button while its form is incomplete, the cloud-backup actions) failed the same way when the reason appeared.
